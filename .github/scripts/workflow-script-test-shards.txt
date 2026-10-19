@@ -47,6 +47,7 @@
 2 crates/runner/tests/behavior/tests/runner-behavior-agent-ready-benchmark-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-submit-test.sh
+2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-pressure-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-balloon-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-keep-alive-test.sh
 2 runner-binary-early-publication-test.sh

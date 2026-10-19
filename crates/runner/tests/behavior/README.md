@@ -35,6 +35,38 @@ control-latency measurements do not decide functional success on shared hosts.
 The coordinator emits bounded invocation/run-scoped failure diagnostics before
 bounded transient-service cleanup and retains state if inactivity is unconfirmed.
 
+The required nested-task global-OOM case uses
+`@guest-wide-task-oom-injected`. Four workers each retain 96 MiB, report readiness
+through an owned pipe after touching their allocation, and remain in the nested
+task runtime. Only after all reports and cgroup/priority checks does the mock
+request a kernel global OOM through the disposable Guest's SysRq interface.
+The kernel still chooses the victim. The test requires group kill, main/sibling
+survival, task-family retirement, reclaimed charge, contained-tool attribution
+and a successful same-sandbox follow-up. Guest-only injection does not measure
+physical-exhaustion or reclaim latency.
+
+`@guest-wide-task-oom` retains the real distributed memory-pressure regression.
+On a reserved provisioned host with an owned, locally configured Runner and
+matching binaries/images, run it explicitly, then submit a follow-up using the
+same thread/session:
+
+```bash
+TASK_PRESSURE_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
+sudo "$BIN_DIR/runner" local submit --group "$GROUP" --timeout 240 \
+  --chat-thread-id "$TASK_PRESSURE_THREAD_ID" --session-id nested-task-pressure \
+  --feature-flag sandboxReuse=true --prompt '@guest-wide-task-oom'
+sudo "$BIN_DIR/runner" local submit --group "$GROUP" --timeout 240 \
+  --chat-thread-id "$TASK_PRESSURE_THREAD_ID" --session-id nested-task-pressure \
+  --feature-flag sandboxReuse=true --prompt 'true'
+```
+
+Retain the Guest `guest_wide=true`, `memcg_ooms=0` and `trigger=pressure` evidence,
+and verify the follow-up's Runner terminal record has
+`reused=true`. The injected mode reports `trigger=sysrq`; it preserves the same
+native cleanup contract without allocating toward Guest exhaustion. Both nested
+cases retain private task stderr; failures emit a bounded tail with the last
+completed stage and child error. Neither marker is a standalone host setup command.
+
 Home-cache restoration and Agent-ready measurements are **manual verification**,
 outside required per-PR CI. Different PRs can share a metal host and its global
 cache capacity/GC locks. Optional publication may correctly skip under contention,
