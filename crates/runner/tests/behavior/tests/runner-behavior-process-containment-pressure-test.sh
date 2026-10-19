@@ -51,6 +51,11 @@ case "$prompt" in
     printf '%s\n' \
       "nested-managed-task-oom-survived oom_group_kill=1 guest_wide=true memcg_ooms=0 trigger=$trigger reclaimed_bytes=100000000" \
       "oom_classification=$classification" > "$log"
+    if [ "$TEST_MODE" = late-classification ]; then
+      head -n 1 "$log" > "$log.pending"
+      mv "$log.pending" "$log"
+      printf '%s\n' "$log" > "$TEST_STATE/delayed-log"
+    fi
     ;;
   @runtime-only-oom)
     status=1
@@ -94,10 +99,21 @@ case "$command" in
 esac
 SUDO
 
-# Classification delivery is controlled by the external peer; a missing record
-# is final in these cases, so the existing bounded log observer needs no delay.
+# Control stream delivery at the final bounded observation without a real-time
+# wait. Other cases keep their classification present or permanently absent.
 cat > "$tmp/bin/sleep" << 'SLEEP'
 #!/usr/bin/env bash
+set -euo pipefail
+if [ -f "$TEST_STATE/delayed-log" ]; then
+  count=0
+  if [ -f "$TEST_STATE/observations" ]; then count=$(< "$TEST_STATE/observations"); fi
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$TEST_STATE/observations"
+  if [ "$count" -eq 50 ]; then
+    printf '%s\n' 'oom_classification=contained_tool_oom' >> "$(< "$TEST_STATE/delayed-log")"
+    rm "$TEST_STATE/delayed-log"
+  fi
+fi
 exit 0
 SLEEP
 chmod +x "$tmp/bin/submit" "$tmp/bin/sudo" "$tmp/bin/sleep"
@@ -121,6 +137,7 @@ run_case() {
 }
 
 run_case success 0 'PASS: Guest-wide OOM preserved tool isolation and runtime-only OOM attribution'
+run_case late-classification 0 'PASS: Guest-wide OOM preserved tool isolation and runtime-only OOM attribution'
 run_case wrong-trigger 1 'task family retirement, memory reclamation or OOM scope was not verified'
 run_case unproven 1 'nested task guest OOM was not classified as contained'
 run_case not-reused 1 'task OOM follow-up did not reuse its sandbox'

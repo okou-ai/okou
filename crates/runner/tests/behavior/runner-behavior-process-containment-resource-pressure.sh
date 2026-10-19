@@ -20,6 +20,9 @@ require_contained_tool_oom() {
     fi
     sleep 0.1
   done
+  if sudo grep -F -q 'oom_classification=contained_tool_oom' "$log"; then
+    return 0
+  fi
   sudo tail -n 80 "$log" >&2 || true
   fail "$2"
 }
