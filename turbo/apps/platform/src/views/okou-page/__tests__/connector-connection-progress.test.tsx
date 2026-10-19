@@ -67,7 +67,9 @@ function expectBoundedWaitDiagnostics(oauthAttemptId: string, enabled = true) {
     "error_kind",
   ]);
   for (const entry of breadcrumbs) {
-    expect(typeof entry.data?.flow_id).toBe("string");
+    expect(entry.data?.flow_id).toMatch(
+      /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u,
+    );
     expect(
       Object.keys(entry.data ?? {}).filter((key) => {
         return !allowed.has(key);
@@ -77,6 +79,7 @@ function expectBoundedWaitDiagnostics(oauthAttemptId: string, enabled = true) {
   const serialized = JSON.stringify(breadcrumbs);
   expect(serialized).not.toContain(oauthAttemptId);
   expect(serialized).not.toContain("https://");
+  expect(serialized).not.toContain("stripe");
   expect(serialized).not.toContain("OAuth completion is unavailable");
   return breadcrumbs;
 }

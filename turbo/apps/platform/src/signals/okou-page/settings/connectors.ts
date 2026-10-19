@@ -8,7 +8,7 @@ import {
 
 import { accept } from "../../../lib/accept.ts";
 import {
-  recordConnectorOAuthWaitDiagnostic,
+  createConnectorOAuthWaitDiagnostics,
   type ConnectorOAuthWaitDiagnostic,
 } from "../../../lib/connector-oauth-diagnostics.ts";
 import { now } from "../../../lib/time.ts";
@@ -2634,6 +2634,7 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
     });
 
     const waitSignal = set(resetOAuthAuthCodeWaitSignal$, signal);
+    const recordDiagnostic = createConnectorOAuthWaitDiagnostics();
     const recordWait = (
       phase: ConnectorOAuthWaitDiagnostic["phase"],
       detail: Pick<
@@ -2641,7 +2642,7 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
         "branch" | "cleanupOwned" | "accepted" | "error"
       > = {},
     ) => {
-      recordConnectorOAuthWaitDiagnostic(() => {
+      recordDiagnostic(() => {
         const current = get(internalConnectorOAuthAuthCodeWaitState$);
         const isCurrent = connectorOAuthAuthCodeWaitIsCurrent(
           current,
@@ -2649,7 +2650,6 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
           oauthStart.oauthAttemptId,
         );
         return {
-          flowId,
           phase,
           parentAborted: signal.aborted,
           waitAborted: waitSignal.aborted,
