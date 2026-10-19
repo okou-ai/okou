@@ -26,10 +26,8 @@ import {
   uploadWechatMedia,
   WechatMediaUploadError,
 } from "../external/wechat-media";
-import {
-  type WechatMessage,
-  WechatRequestError,
-} from "../external/wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
+import { WechatRequestError } from "@okouai/core/wechat-client";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";

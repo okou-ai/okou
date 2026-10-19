@@ -5,25 +5,21 @@ import { wechatGatewayContract } from "@okouai/api-contracts/contracts/integrati
 import { wechatConnections } from "@okouai/db/schema/wechat";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { logger } from "../../lib/log";
 import { verifyWechatGatewaySignature } from "../../lib/wechat-gateway-verification";
 import { request$ } from "../context/hono";
 import { writeDb$ } from "../external/db";
+import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
   getWechatUpdates,
-  wechatUpdatesSchema,
   WechatSessionExpiredError,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "../services/crypto.utils";
 import { wechatEnabled$ } from "../services/wechat-config";
-import { receiveWechatMessage$ } from "../services/wechat-ingress.service";
-import { sendWechatReconnectNotice$ } from "../services/wechat-notice.service";
+import { dispatchWechatBatch$ } from "../services/wechat-gateway-batch.service";
 import type { RouteEntry } from "../route-entry";
-
-const log = logger("api:wechat:gateway");
 
 const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   const req = get(request$);
@@ -65,6 +61,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (
     !connection ||
+    connection.workflowReceiver ||
     connection.status === "reconnect_required" ||
     !(await set(wechatEnabled$, connection.orgId, connection.userId, signal))
   ) {
@@ -73,6 +70,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const live = and(
     eq(wechatConnections.id, connection.id),
+    eq(wechatConnections.workflowReceiver, false),
     eq(wechatConnections.generation, connection.generation),
     eq(wechatConnections.status, connection.status),
   );
@@ -133,19 +131,11 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     JSON.parse(await decryptStoredSecretValue(batchCiphertext)) as unknown,
   );
 
-  for (const message of batch.msgs ?? []) {
-    // A notice failure must not block a user's prompt or replay an ambiguous send.
-    const notice = await settle(
-      set(sendWechatReconnectNotice$, { connection, message }, signal),
-      signal,
-    );
-    if (!notice.ok) {
-      log.warn("WeChat notice failed", { error: notice.error });
-    }
-    if (connection.status === "active") {
-      await set(receiveWechatMessage$, { connection, message }, signal);
-    }
-  }
+  await set(
+    dispatchWechatBatch$,
+    { connection, messages: batch.msgs ?? [] },
+    signal,
+  );
   await db
     .update(wechatConnections)
     .set({ pendingBatchCiphertext: null, updatedAt: nowDate() })

@@ -19,7 +19,7 @@ import {
   pollWechatQr,
   WECHAT_ORIGIN,
   wechatOrigin,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import {
   encryptStoredSecretValue,
   decryptStoredSecretValue,
@@ -52,7 +52,11 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const auth = get(organizationAuthContext$);
   const [row] = await set(writeDb$)
-    .select({ id: wechatConnections.id, status: wechatConnections.status })
+    .select({
+      id: wechatConnections.id,
+      status: wechatConnections.status,
+      generation: wechatConnections.generation,
+    })
     .from(wechatConnections)
     .where(
       and(
@@ -64,7 +68,7 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   // Also repairs a connection committed just before the browser/API lost its response.
   if (row && row.status !== "reconnect_required" && wechatConfigured()) {
-    await startWechatPoller(row.id, signal);
+    await startWechatPoller(row.id, row.generation, signal);
   }
   return {
     status: 200 as const,
@@ -228,7 +232,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
       "This connection attempt is no longer available. Disconnect the existing WeChat binding before connecting a different account.",
     );
   }
-  await startWechatPoller(row.id, signal);
+  await startWechatPoller(row.id, generation, signal);
   // The binding succeeds independently of this one best-effort delivery.
   waitUntil(
     tapError(
@@ -326,7 +330,7 @@ const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
       "This reconnect link is unavailable for the current account and workspace. Send another WeChat message for a new link or scan a new QR code.",
     );
   }
-  await startWechatPoller(row.id, signal);
+  await startWechatPoller(row.id, generation, signal);
   waitUntil(
     tapError(
       set(sendWechatWelcome$, row.id, generation, AbortSignal.timeout(60_000)),
@@ -372,6 +376,33 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     DELETE FROM wechat_messages WHERE connection_id IN (SELECT id FROM disconnected)
   ) DELETE FROM wechat_chat_thread_routes WHERE connection_id IN (SELECT id FROM disconnected)`);
   signal.throwIfAborted();
+  const [connection] = await set(writeDb$)
+    .select({
+      id: wechatConnections.id,
+      generation: wechatConnections.generation,
+    })
+    .from(wechatConnections)
+    .where(
+      and(
+        eq(wechatConnections.orgId, auth.orgId),
+        eq(wechatConnections.userId, auth.userId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (connection && wechatConfigured()) {
+    const refreshed = await settle(
+      startWechatPoller(connection.id, connection.generation, signal),
+      signal,
+    );
+    if (!refreshed.ok) {
+      // Revocation already committed; delivery rejects the previous generation.
+      log.warn(
+        "WeChat receiver will refresh its disconnected binding on renewal",
+        { error: refreshed.error },
+      );
+    }
+  }
   return { status: 204 as const, body: undefined };
 });
 const auth = {
