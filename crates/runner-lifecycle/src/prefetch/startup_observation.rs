@@ -3,6 +3,7 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use super::outcome_accounting::ReaderAccounting;
 use super::{MemoryPrefetchTasks, PrefetchOutcome};
 
 /// Concrete reader outcomes. Only a separate positive drain proves producer joins.
@@ -12,6 +13,7 @@ pub struct StartupPrefetchSnapshot {
     pub completed: usize,
     pub cancelled: usize,
     pub failed: usize,
+    /// Total consumed bytes, including partial cancelled and failed reads.
     pub read_bytes: u64,
     pub last_error: Option<String>,
 }
@@ -27,25 +29,15 @@ impl Observer {
 
     pub(super) fn finished(&self, outcome: &PrefetchOutcome) {
         let mut report = self.0.lock().expect("startup reader observer poisoned");
-        match outcome {
-            PrefetchOutcome::Complete { bytes } => {
-                report.completed += 1;
-                report.read_bytes += bytes;
-            }
-            PrefetchOutcome::Cancelled { bytes } => {
-                report.cancelled += 1;
-                report.read_bytes += bytes;
-            }
-            PrefetchOutcome::OpenFailed { error } => {
-                report.failed += 1;
-                report.last_error = Some(error.to_string());
-            }
-            PrefetchOutcome::ReadFailed { bytes, error } => {
-                report.failed += 1;
-                report.read_bytes += bytes;
-                report.last_error = Some(error.to_string());
-            }
+        let report = &mut *report;
+        ReaderAccounting {
+            completed: &mut report.completed,
+            cancelled: &mut report.cancelled,
+            failed: &mut report.failed,
+            read_bytes: &mut report.read_bytes,
+            last_error: &mut report.last_error,
         }
+        .record(outcome);
     }
 }
 
