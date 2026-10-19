@@ -120,7 +120,7 @@ class ReplayTests(unittest.TestCase):
                 response.update(
                     {
                         "child": {
-                            "identity": {**worker, "pid": 101, "start_ticks": 1001},
+                            "identity": {**worker, "pid": 101, "start_ticks": 1000},
                             "touched_bytes": 16 * MIB,
                         },
                         "child_exit_code": 0,
@@ -238,6 +238,9 @@ class ReplayTests(unittest.TestCase):
             "lost_transient": lambda: self.rows[4].update(peak_bytes=7 * MIB),
             "sampled_live_only": lambda: self.rows[4].update(current_bytes=24 * MIB),
             "peak_below_current": lambda: self.rows[5].update(peak_bytes=40 * MIB),
+            "inner_peak_exceeds_outer": lambda: self.rows[4].update(
+                peak_bytes=100 * MIB
+            ),
             "negative_counter": lambda: self.rows[4].update(peak_bytes=-1),
             "bool_counter": lambda: self.rows[4].update(file_bytes=False),
             "reversed_clock": lambda: self.rows[3].update(completed_monotonic_ns=1200),
@@ -248,6 +251,9 @@ class ReplayTests(unittest.TestCase):
             "no_transient_wait": lambda: self.capture["requests"][2]["response"].update(
                 child_wait_confirmed=False
             ),
+            "child_predates_driver": lambda: self.capture["requests"][2]["response"][
+                "child"
+            ]["identity"].update(start_ticks=999),
             "wrong_file_inode": lambda: self.capture["retained_file"].update(inode=32),
             "missing_retained_charge": lambda: self.rows[5].update(file_bytes=0),
             "false_empty_group": lambda: self.capture["cleanup_records"][0].update(
@@ -369,6 +375,93 @@ class ReplayTests(unittest.TestCase):
 
 
 class SafetyTests(unittest.TestCase):
+    @unittest.skipUnless(
+        os.environ.get("OKOU_CHARGE_TEST_PARENT"),
+        "opt-in real cgroup-v2 early-pipe-failure test",
+    )
+    def test_live_broken_worker_input_preserves_capture_and_owned_cleanup(self):
+        """Use the real seed helper and a child that closes its input peer."""
+        program = """
+import json, os, pathlib, subprocess, sys, unittest.mock
+sys.path.insert(0, sys.argv[1])
+import charged_windows as lib
+import charged_windows_probe as probe
+
+original_popen = subprocess.Popen
+groups, processes, fallback_removed = [], [], []
+worker = '''
+import json, os, pathlib
+os.close(0)
+print(json.dumps({"ready": {
+    "pid": os.getpid(),
+    "start_ticks": int(pathlib.Path("/proc/self/stat").read_bytes().rsplit(b")", 1)[1].split()[19]),
+    "cgroup": pathlib.Path("/proc/self/cgroup").read_text().strip(),
+}}), flush=True)
+'''
+
+def launch(command, **kwargs):
+    command = list(command)
+    seed = command.index("--seed")
+    leaf = pathlib.Path(command[seed + 1])
+    for path in (leaf, leaf.parent, leaf.parent.parent):
+        groups.append(lib.Group(path))
+    command[seed + 5:] = [sys.executable, "-B", "-c", worker]
+    process = original_popen(command, **kwargs)
+    processes.append(process)
+    return process
+
+try:
+    with unittest.mock.patch.object(subprocess, "Popen", launch):
+        result = probe.run(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
+finally:
+    # Keep the regression safe even when the old cleanup path raises early.
+    for group in groups:
+        try:
+            if group.path.exists():
+                group.verify()
+                events = dict(line.split() for line in lib.read_at(group.fd, "cgroup.events").splitlines())
+                assert events.get("populated") == "0"
+                assert not lib.read_at(group.fd, "cgroup.procs").strip()
+                os.rmdir(group.path)
+                fallback_removed.append(str(group.path))
+        finally:
+            os.close(group.fd)
+    print(json.dumps({"observer_cleanup_removed": fallback_removed}), flush=True)
+
+assert len(processes) == 1
+assert processes[0].stdin.closed and processes[0].stdout.closed
+print(json.dumps(result), flush=True)
+"""
+        with tempfile.TemporaryDirectory(
+            prefix="charged-window-early-pipe-"
+        ) as directory:
+            output = Path(directory) / "capture"
+            child = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    "-c",
+                    program,
+                    str(OWNER),
+                    str(output),
+                    os.environ["OKOU_CHARGE_TEST_PARENT"],
+                ],
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(child.returncode, 0, child.stderr + child.stdout)
+            observer, capture = [json.loads(line) for line in child.stdout.splitlines()]
+            self.assertEqual(observer["observer_cleanup_removed"], [])
+            self.assertEqual(json.loads((output / "capture.json").read_text()), capture)
+            self.assertTrue(capture["error"].startswith("BrokenPipeError:"))
+            self.assertTrue(capture["wait_confirmed"])
+            self.assertEqual(len(capture["cleanup_errors"]), 1)
+            self.assertEqual(capture["cleanup_errors"][0]["stream"], "stdin")
+            self.assertEqual(len(capture["cleanup_records"]), 3)
+            self.assertTrue(all(row["removed"] for row in capture["cleanup_records"]))
+            self.assertFalse(Path(capture["root"]).exists())
+
     @unittest.skipUnless(
         os.environ.get("OKOU_CHARGE_TEST_PARENT"),
         "opt-in real cgroup-v2 setup-failure test",

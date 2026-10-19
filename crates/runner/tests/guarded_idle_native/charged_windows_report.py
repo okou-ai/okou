@@ -340,6 +340,11 @@ def replay(root, invocation, source_sha256):
         and rows[4]["peak_bytes"] > rows[4]["current_bytes"] + 8 * MIB,
         "between-observation descendant peak missing",
     )
+    # The unreset outer ancestor covers the complete inner window.
+    require(
+        rows[5]["peak_bytes"] >= rows[4]["peak_bytes"],
+        "covering ancestor peak is below descendant peak",
+    )
     require(rows[5]["file_bytes"] >= 64 * MIB, "post-exit retained charge missing")
     requests = capture["requests"]
     require(type(requests) is list and len(requests) == 5, "missing worker phase")
@@ -368,6 +373,11 @@ def replay(root, invocation, source_sha256):
     transient = requests[2]["response"]
     keys(transient["child"], "identity touched_bytes")
     worker_identity(transient["child"]["identity"], leaf)
+    require(
+        transient["child"]["identity"]["start_ticks"]
+        >= capture["worker"]["start_ticks"],
+        "transient child predates its driver",
+    )
     require(
         transient["child"]["identity"]["pid"] != capture["worker"]["pid"]
         and type(transient["child"]["touched_bytes"]) is int

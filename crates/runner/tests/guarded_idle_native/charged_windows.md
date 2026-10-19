@@ -112,14 +112,17 @@ qualification is explicitly opt-in with the command above; native phase/file/
 kernel/NBD/shared completeness, cold lineage and matching-source fresh/snapshot
 overlaps require their own acquisition and acceptance.
 
-The constructor-failure regression is skipped in ordinary CI. To run it against
-real delegated cgroups, explicitly set `OKOU_CHARGE_TEST_PARENT`:
+The constructor- and early-pipe-failure regressions are skipped in ordinary CI.
+To run them against real delegated cgroups, explicitly set `OKOU_CHARGE_TEST_PARENT`:
 
 ```sh
 sudo env OKOU_CHARGE_TEST_PARENT=/sys/fs/cgroup python3 -m unittest discover \
   -s crates/runner/tests/guarded_idle_native -p 'charged_windows_test.py'
 ```
 
-It injects one external `fstat` error after opening a real peak file, verifies the
-original FD is closed and removes only the new empty subtree. It launches no
-workload and still requires 8 GiB headroom.
+The constructor case injects one external `fstat` error after opening a real peak
+file, verifies the original FD is closed and removes only the new empty subtree.
+The pipe case uses the real seed helper and a newly owned child that closes stdin
+before its ready reply; it verifies the original error, positive wait, persisted
+failure capture and empty-group cleanup even when stream close also fails.
+Both require 8 GiB headroom; the constructor case launches no workload.

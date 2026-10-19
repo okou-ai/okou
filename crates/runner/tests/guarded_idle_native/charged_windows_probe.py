@@ -298,9 +298,18 @@ def run(output, parent):
                 result["cleanup_errors"].append(
                     {"process": process.pid, "error": str(error)}
                 )
-            for stream in (process.stdin, process.stdout):
+            for name, stream in (("stdin", process.stdin), ("stdout", process.stdout)):
                 if stream is not None:
-                    stream.close()
+                    try:
+                        stream.close()
+                    except OSError as error:
+                        result["cleanup_errors"].append(
+                            {
+                                "process": process.pid,
+                                "stream": name,
+                                "error": str(error),
+                            }
+                        )
         if pidfd is not None:
             os.close(pidfd)
         if subreaper_changed:
