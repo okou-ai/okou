@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.401.1](https://github.com/okou-ai/okou/compare/cli-v9.401.0...cli-v9.401.1) (2026-10-19)
+
+
+### Documentation
+
+* **cli:** correct vnc network rebind guidance ([#41018](https://github.com/okou-ai/okou/issues/41018)) ([05feb23](https://github.com/okou-ai/okou/commit/05feb23d324709bd90620b4f027f538fe53974de))
+
+
+### Refactoring
+
+* **vnc:** require canonical private-network metadata ([#41009](https://github.com/okou-ai/okou/issues/41009)) ([38331a6](https://github.com/okou-ai/okou/commit/38331a61885b86154b21c5585387e250bede70ae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.1
+    * @okouai/core bumped to 8.767.1
+    * @okouai/pi-agent-runtime bumped to 1.50.20
+
 ## [9.401.0](https://github.com/okou-ai/okou/compare/cli-v9.400.3...cli-v9.401.0) (2026-10-17)
 
 

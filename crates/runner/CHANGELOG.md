@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.234.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.9...runner-rs-v0.234.10) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** own service unit staging cleanup ([#41023](https://github.com/okou-ai/okou/issues/41023)) ([c4adc4b](https://github.com/okou-ai/okou/commit/c4adc4bb2a047ab7aa491da6b881f77c5f6dc10e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.8...runner-rs-v0.234.9) (2026-10-17)
 
 ### Release Dependencies

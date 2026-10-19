@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.14...runner-provider-v0.8.15) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-provider:** remove redundant inbox overflow state ([#41086](https://github.com/okou-ai/okou/issues/41086)) ([dff8b90](https://github.com/okou-ai/okou/commit/dff8b908ba24d57fc725de71111b483e69b4e40d))
+* **runner-provider:** share successful poll wakeup completion ([#41112](https://github.com/okou-ai/okou/issues/41112)) ([bd2208e](https://github.com/okou-ai/okou/commit/bd2208e003fc0022257fbbb3e9be08340d421be6))
+
 ## [0.8.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.13...runner-provider-v0.8.14) (2026-10-17)
 
 

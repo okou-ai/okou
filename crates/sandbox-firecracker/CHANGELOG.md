@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.0...sandbox-firecracker-v0.53.1) (2026-10-19)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** encode factory cleanup lifecycle ([#41051](https://github.com/okou-ai/okou/issues/41051)) ([92291f8](https://github.com/okou-ai/okou/commit/92291f87e78b101f0cfef54ea96de6e7055d3f3d))
+
 ## [0.53.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.7...sandbox-firecracker-v0.53.0) (2026-10-17)
 
 
