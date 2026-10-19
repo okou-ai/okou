@@ -16,7 +16,7 @@ import time
 import urllib.parse
 from collections.abc import Callable
 from contextlib import suppress
-from typing import NamedTuple, Protocol
+from typing import NamedTuple, Protocol, cast
 
 import mitmproxy_rs
 from mitmproxy import http
@@ -169,8 +169,36 @@ def _get_https_context() -> ssl.SSLContext:
         return context
 
 
+class _HTTPResponseStatusReader(Protocol):
+    """Pinned CPython status-reading hook omitted from the public type stubs."""
+
+    def _read_status(self) -> tuple[str, int, str]:
+        raise NotImplementedError
+
+
+class _FinalHTTPResponse(http_client.HTTPResponse):
+    """Keep interim responses on one stream until the final response begins."""
+
+    def _read_status(self) -> tuple[str, int, str]:
+        # HTTPResponse.begin() skips only 100. Extend its status-reading hook
+        # so it still owns final headers, body framing, and connection lifetime.
+        read_status = cast(_HTTPResponseStatusReader, super())._read_status
+        while True:
+            version, status, reason = read_status()
+            if status == http_client.SWITCHING_PROTOCOLS:
+                raise http_client.HTTPException(
+                    "auth.base forwarding does not support protocol upgrades"
+                )
+            if not http_client.CONTINUE <= status < http_client.OK:
+                return version, status, reason
+            # Reuse the bounded header parser and the same buffered file; a
+            # second getresponse() would violate the connection's request state.
+            http_client.parse_headers(self.fp)
+
+
 class _ValidatedTLSConnection(http_client.HTTPConnection):
     default_port = DEFAULT_HTTPS_PORT
+    response_class = _FinalHTTPResponse
 
     def __init__(
         self,

@@ -87,11 +87,11 @@ class _SocketBackedForwardSocket(FakeSocket):
 
 
 class _TricklingResponseServer:
-    def __init__(self, response_head: bytes) -> None:
+    def __init__(self, response_head: bytes, *, response_body: bytes = bytes(range(256))) -> None:
         self.client_socket, self.server_socket = forwarder.socket.socketpair()
         self.connection_closed = threading.Event()
         self.response_started = threading.Event()
-        self.response_body = bytes(range(256))
+        self.response_body = response_body
         self.sent_body_bytes: list[bytes] = []
         self.socket = _SocketBackedForwardSocket(
             self.client_socket,
@@ -645,6 +645,63 @@ class TestForwardRequestAsyncWrapper:
         assert not server.thread.is_alive()
         assert 2 <= len(server.sent_body_bytes) < len(server.response_body)
         assert server.socket.shutdown_calls == [forwarder.socket.SHUT_RDWR]
+
+    @pytest.mark.parametrize("stop", ["deadline", "shutdown", "caller-cancel"])
+    async def test_informational_response_keeps_worker_owned_until_cleanup(self, stop: str):
+        server = _TricklingResponseServer(
+            http_response(status=103, body=b"") + http_response(status=102, body=b""),
+            response_body=http_response(status=103, body=b"") * 20,
+        )
+        sockets = iter((server.socket, FakeSocket(http_response())))
+        server.start()
+        task = None
+        try:
+            with (
+                patch.object(forwarder, "MAX_CONCURRENT_AUTH_BASE_FORWARDS", 1),
+                patch.object(forwarder, "AUTH_BASE_FORWARD_DEADLINE_SECONDS", 0.3),
+                fake_forwarder_upstream(socket_factory=lambda: next(sockets)),
+            ):
+                task = asyncio.create_task(
+                    forwarder.forward_request("https://example.com", "POST", [], b"{}")
+                )
+                assert await asyncio.to_thread(server.response_started.wait, 1)
+
+                if stop == "shutdown":
+                    forwarder.shutdown_forward_request_workers(wait=False)
+                    with pytest.raises(RuntimeError, match="workers are shut down"):
+                        await asyncio.wait_for(task, timeout=2)
+                else:
+                    if stop == "caller-cancel":
+                        task.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await task
+                        assert forwarder.forward_request_admission_state_for_tests() == (1, 2)
+                    else:
+                        with pytest.raises(forwarder.AuthBaseForwardingDeadlineExceededError):
+                            await asyncio.wait_for(task, timeout=2)
+
+                    # A cancelled caller leaves the running worker's timer and
+                    # admission intact; the next request waits for its cleanup.
+                    with patch.object(forwarder, "AUTH_BASE_FORWARD_DEADLINE_SECONDS", 2):
+                        status, body, _headers = await asyncio.wait_for(
+                            forwarder.forward_request("https://example.com", "GET", [], None),
+                            timeout=2,
+                        )
+                    assert status == 200
+                    assert body == b"ok"
+        finally:
+            if task is not None:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await server.close()
+
+        assert server.socket.closed
+        assert server.connection_closed.is_set()
+        assert not server.thread.is_alive()
+        assert server.socket.shutdown_calls == [forwarder.socket.SHUT_RDWR]
+        assert server.socket.request_text().count("POST / HTTP/1.1\r\n") == 1
+        assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
     async def test_shutdown_stops_detached_trickling_response(self):
         server = _TricklingResponseServer(
