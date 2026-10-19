@@ -20,7 +20,6 @@ import {
   discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
-  listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
 import {
@@ -31,6 +30,7 @@ import {
 import {
   catalogSource,
   connectorCatalogConnectItemsFromSource,
+  listExternalPublicConnectorCatalog,
   loadAcceptedConnectorCatalogSnapshot,
   publicConnectorCatalogStatusFromSource,
   type ConnectorCatalogSlugSource,
@@ -93,11 +93,15 @@ const listConnectorCatalogInner$ = command(
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
 
+    const catalogReadDb = context.db;
+    const catalogReadFeatureStates = context.featureStates;
     const catalog = await settleConnectorCatalogRead(
-      listPublicConnectorCatalog({
-        db: context.db,
-        featureStates: context.featureStates,
-      }),
+      (async () => {
+        return await listExternalPublicConnectorCatalog({
+          db: catalogReadDb,
+          featureStates: catalogReadFeatureStates,
+        });
+      })(),
       signal,
     );
     if (!catalog.ok) {
