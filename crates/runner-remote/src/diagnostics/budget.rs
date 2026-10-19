@@ -25,8 +25,20 @@ impl Report {
                     .retain(|step| !matches!(step.status, Progress::Passed | Progress::Reused));
             }
             if let Some(vnc) = &mut self.vnc {
-                vnc.steps
-                    .retain(|step| !matches!(step.status, Progress::Passed | Progress::Reused));
+                vnc.steps.retain(|step| {
+                    use crate::vnc::evidence::Stage as V;
+                    !matches!(
+                        step.status,
+                        Progress::Passed | Progress::Reused | Progress::NotReached
+                    ) || matches!(
+                        step.stage,
+                        V::Authentication
+                            | V::Initialization
+                            | V::KdcTransport
+                            | V::KdcExchange
+                            | V::Retirement
+                    )
+                });
                 for carrier in [&mut vnc.rfb_carrier, &mut vnc.kdc_carrier]
                     .into_iter()
                     .flatten()

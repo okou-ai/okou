@@ -12,6 +12,7 @@ mod notifications;
 mod observations;
 pub(crate) mod peer;
 mod rsa_aes;
+mod timing;
 
 use std::{io::Cursor, sync::Arc};
 

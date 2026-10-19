@@ -134,6 +134,8 @@ async fn active_check_timeout_retains_physical_dns_capacity_and_does_not_publish
         assert_eq!(result["status"], "failed", "{result}");
         assert!(diagnostic_text(&result).contains("timed out"));
         assert!(diagnostic_text(&result).contains("Check-owned cleanup: unknown."));
+        assert!(diagnostic_text(&result).contains("VNC destination: unknown.\n  Elapsed:"));
+        assert!(diagnostic_text(&result).contains("VNC retirement: not reached."));
     }
     let full = h
         .run

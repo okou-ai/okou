@@ -193,6 +193,19 @@ reused setup cannot prove fresh health. File causes remain file causes.
 The first Cloudflare cause survives later carrier/cleanup failures. Safe logs
 and explanation text use the same typed source facts.
 
+VNC stages retain monotonic local elapsed milliseconds only when collection is
+enabled. A measured zero differs from unavailable timing; not-reached stages
+have no duration. Setup is frozen when captured for a report or native watch.
+Later operations label that setup as reused and time only their own observed
+work after session lookup, including engine-lock waits. Unobserved background
+retirement has no request duration. Explicit checks time their temporary
+session's retirement wait, including an unknown result at its deadline.
+Authentication includes nested KDC work; independent KDC transport/exchange
+durations accumulate across exchanges, so stage times must not be added.
+Reports and shared explanation text retain the existing 8 KiB limits. Semantic
+compaction preserves critical VNC authentication, initialization, KDC and
+retirement timing and identifies omitted noncritical timing.
+
 Native readiness, first terminal work cause and physical cleanup are distinct.
 A finite native trace records application-observed provisioning/control,
 map framing/validation, selected terminal root and relay stages. Selected typed

@@ -53,11 +53,48 @@ enum Profile {
 pub(crate) const PLAIN_USERNAME: &str = " operator界 ";
 pub(crate) const PLAIN_PASSWORD: &str = " päss 界 ";
 
+pub(crate) struct StageGate {
+    pub(crate) reached: CancellationToken,
+    pub(crate) release: Semaphore,
+}
+
+impl StageGate {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            reached: CancellationToken::new(),
+            release: Semaphore::new(0),
+        })
+    }
+
+    async fn wait(gate: &Mutex<Option<Arc<Self>>>) {
+        let gate = gate.lock().await.clone();
+        if let Some(gate) = gate {
+            gate.reached.cancel();
+            gate.release.acquire().await.unwrap().forget();
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SetupGates {
+    pub(crate) authentication: Mutex<Option<Arc<StageGate>>>,
+    pub(crate) initialization: Mutex<Option<Arc<StageGate>>>,
+}
+
+#[derive(Clone, Default)]
+struct Controls {
+    setup: Arc<SetupGates>,
+    capture: Arc<Mutex<Option<Arc<Semaphore>>>>,
+    refuse: Arc<AtomicBool>,
+    disconnect: CancellationToken,
+}
+
 pub(crate) struct Peer {
     pub(crate) address: std::net::SocketAddr,
     pub(crate) ca: String,
     pub(super) client_identity: Option<(Vec<String>, String)>,
     pub(crate) capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
+    pub(crate) setup: Arc<SetupGates>,
     pub(crate) refuse: Arc<AtomicBool>,
     pub(super) disconnect: CancellationToken,
     events: Mutex<mpsc::UnboundedReceiver<Event>>,
@@ -153,12 +190,8 @@ impl Peer {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (events, receiver) = mpsc::unbounded_channel();
-        let capture_gate = Arc::new(Mutex::new(None));
-        let gate = Arc::clone(&capture_gate);
-        let refuse = Arc::new(AtomicBool::new(false));
-        let reject = Arc::clone(&refuse);
-        let disconnect = CancellationToken::new();
-        let disconnect_task = disconnect.clone();
+        let controls = Controls::default();
+        let task_controls = controls.clone();
         let task = tokio::spawn(async move {
             let mut tasks = JoinSet::new();
             let config = Arc::new(config);
@@ -168,11 +201,9 @@ impl Peer {
                         let Ok((socket, _)) = result else { break; };
                         let config = Arc::clone(&config);
                         let events = events.clone();
-                        let gate = Arc::clone(&gate);
-                        let reject = Arc::clone(&reject);
-                        let disconnect = disconnect_task.clone();
+                        let controls = task_controls.clone();
                         tasks.spawn(async move {
-                            let _ = serve(socket, config, &events, gate, reject, disconnect, profile).await;
+                            let _ = serve(socket, config, &events, controls, profile).await;
                             let _ = events.send(Event::Closed);
                         });
                     }
@@ -189,9 +220,10 @@ impl Peer {
                 base64::engine::general_purpose::STANDARD.encode(root_certificate.der())
             ),
             client_identity,
-            capture_gate,
-            refuse,
-            disconnect,
+            capture_gate: controls.capture,
+            setup: controls.setup,
+            refuse: controls.refuse,
+            disconnect: controls.disconnect,
             events: Mutex::new(receiver),
             task,
         }
@@ -212,11 +244,15 @@ async fn serve(
     mut socket: TcpStream,
     config: Arc<ServerConfig>,
     events: &mpsc::UnboundedSender<Event>,
-    capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
-    refuse: Arc<AtomicBool>,
-    disconnect: CancellationToken,
+    controls: Controls,
     profile: Profile,
 ) -> io::Result<()> {
+    let Controls {
+        setup,
+        capture: capture_gate,
+        refuse,
+        disconnect,
+    } = controls;
     socket.set_nodelay(true)?;
     socket
         .write_all(if matches!(profile, Profile::Classic) {
@@ -291,6 +327,7 @@ async fn serve(
             return Ok(());
         }
     }
+    StageGate::wait(&setup.authentication).await;
     if refuse.load(Ordering::SeqCst) {
         socket.write_u32(1).await?;
         socket.write_u32(0).await?;
@@ -301,6 +338,7 @@ async fn serve(
     socket.flush().await?;
     let mode = socket.read_u8().await?;
     events.send(Event::Mode(mode)).unwrap();
+    StageGate::wait(&setup.initialization).await;
     socket
         .write_u16(if matches!(profile, Profile::InvalidFramebuffer) {
             0

@@ -1,5 +1,81 @@
 use super::*;
 
+#[test]
+fn bounded_vnc_text_keeps_critical_timing_and_distinguishes_zero_from_unavailable() {
+    use crate::vnc::evidence::{Carrier, Snapshot, Stage as V};
+    let handle = Handle::new(RunId::new_v4(), true);
+    let mut vnc = Snapshot::default();
+    for step in &mut vnc.steps {
+        step.status = trace::Progress::Passed;
+        step.elapsed_ms = Some(123);
+        if step.stage == V::Retirement {
+            step.elapsed_ms = Some(0);
+        }
+        if step.stage == V::Capture {
+            step.status = trace::Progress::Unknown;
+            step.elapsed_ms = None;
+        }
+    }
+    let mut access = trace::Trace::new(true).snapshot().unwrap();
+    for step in &mut access.stages {
+        step.status = trace::Progress::Passed;
+        step.timing.elapsed_ms = u64::MAX;
+    }
+    let carrier = || {
+        Box::new(Carrier {
+            configuration_id: Uuid::new_v4(),
+            generation: i64::MAX,
+            attempt_id: Uuid::new_v4(),
+            resource_id: Some(Uuid::new_v4()),
+            connection_id: Some(Uuid::new_v4()),
+            status: trace::Progress::Passed,
+            node_setup: Some(trace::Progress::Reused),
+            origin_tls: Some(trace::Progress::Passed),
+            access: Some(access.clone()),
+        })
+    };
+    vnc.rfb_carrier = Some(carrier());
+    vnc.kdc_carrier = Some(carrier());
+    let report = handle
+        .record(Record {
+            effects: None,
+            protocol: Protocol::Vnc,
+            connection: Uuid::new_v4(),
+            operation: Operation::Capture,
+            identity: Identity::default(),
+            cause: Some(Cause::Vnc(crate::vnc::Failure::TimedOut)),
+            dependency: None,
+            native: None,
+            ssh: Some(access),
+            vnc: Some(vnc),
+        })
+        .unwrap();
+    assert!(
+        serde_json::to_vec(&report.evidence().unwrap())
+            .unwrap()
+            .len()
+            <= MAX_REPORT_BYTES
+    );
+    let full = report.message().unwrap();
+    let budget = full.len() - 200;
+    let compact = report.message_with_budget(budget).unwrap();
+    assert!(compact.len() <= budget && compact.len() <= MAX_REPORT_BYTES);
+    assert!(compact.contains("Noncritical VNC stages and timing may be omitted."));
+    for stage in [
+        "authentication",
+        "initialization",
+        "kdc transport",
+        "kdc exchange",
+    ] {
+        assert!(
+            compact.contains(&format!("VNC {stage}: passed.\n  Elapsed: 123 ms.")),
+            "{compact}"
+        );
+    }
+    assert!(compact.contains("VNC retirement: passed.\n  Elapsed: 0 ms."));
+    assert!(compact.contains("VNC capture: unknown.\n  Timing unavailable."));
+}
+
 fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
     let _ = handle.record(Record {
         effects: None,

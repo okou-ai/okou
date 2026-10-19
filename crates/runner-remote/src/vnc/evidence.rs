@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use std::net::SocketAddr;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 use super::{Failure, authority::Transport};
@@ -30,6 +31,35 @@ pub(crate) enum Stage {
 pub(crate) struct Step {
     pub(crate) stage: Stage,
     pub(crate) status: Progress,
+    /// Local observed time; authentication includes its nested KDC work.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) elapsed_ms: Option<u64>,
+    #[serde(skip)]
+    started: Option<Instant>,
+}
+
+impl Step {
+    fn freeze(&mut self) {
+        if let Some(started) = self.started.take() {
+            let elapsed = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+            self.elapsed_ms = Some(self.elapsed_ms.unwrap_or(0).saturating_add(elapsed));
+        }
+    }
+
+    fn set(&mut self, status: Progress) {
+        if status == Progress::NotReached {
+            self.started = None;
+            self.elapsed_ms = None;
+        } else if status == Progress::Running {
+            if self.status != Progress::Running {
+                // Independent KDC stages can run several times in one setup.
+                self.started = Some(Instant::now());
+            }
+        } else {
+            self.freeze();
+        }
+        self.status = status;
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -108,6 +138,8 @@ impl Default for Snapshot {
             .map(|stage| Step {
                 stage,
                 status: Progress::NotReached,
+                elapsed_ms: None,
+                started: None,
             })
             .collect(),
         }
@@ -143,14 +175,32 @@ impl Snapshot {
     pub(super) fn begin(&mut self, stage: Stage) {
         for step in &mut self.steps {
             if step.status == Progress::Running {
-                step.status = Progress::Passed;
+                step.set(Progress::Passed);
             }
         }
         self.set(stage, Progress::Running);
     }
     pub(super) fn set(&mut self, stage: Stage, status: Progress) {
         if let Some(step) = self.steps.iter_mut().find(|s| s.stage == stage) {
-            step.status = status;
+            step.set(status);
+        }
+    }
+    pub(crate) fn frozen(mut self) -> Self {
+        for step in &mut self.steps {
+            step.freeze();
+            if step.status == Progress::Running {
+                step.status = Progress::Pending;
+            }
+        }
+        self
+    }
+
+    pub(super) fn observed(&mut self, stage: Stage, status: Progress, started: Option<Instant>) {
+        if let Some(step) = self.steps.iter_mut().find(|s| s.stage == stage) {
+            step.elapsed_ms = None;
+            step.started = started;
+            step.status = Progress::Running;
+            step.set(status);
         }
     }
     pub(super) fn finish(&mut self, failure: Failure) {
@@ -177,7 +227,7 @@ impl Snapshot {
         }
         for step in &mut self.steps {
             if step.status == Progress::Running {
-                step.status = if matches!(
+                let status = if matches!(
                     failure,
                     Failure::Cancelled | Failure::TimedOut | Failure::DeliveryUnknown
                 ) {
@@ -185,10 +235,16 @@ impl Snapshot {
                 } else {
                     Progress::Failed
                 };
+                step.set(status);
             }
         }
     }
-    pub(super) fn operation(&self, operation: Operation, failure: Failure) -> Self {
+    pub(super) fn operation(
+        &self,
+        operation: Operation,
+        failure: Failure,
+        started: Option<Instant>,
+    ) -> Self {
         let mut snapshot = self.clone();
         for carrier in [&mut snapshot.rfb_carrier, &mut snapshot.kdc_carrier]
             .into_iter()
@@ -221,12 +277,12 @@ impl Snapshot {
             Operation::Retirement => Stage::Retirement,
             _ => Stage::Status,
         };
-        snapshot.set(stage, Progress::Running);
+        snapshot.observed(stage, Progress::Running, started);
         snapshot.finish(failure);
         snapshot
     }
     pub(crate) fn native_failure(&self, resource: Uuid) -> Self {
-        let mut snapshot = self.operation(Operation::Native, Failure::Network);
+        let mut snapshot = self.operation(Operation::Native, Failure::Network, None);
         // A background source event did not execute a VNC status request.
         snapshot.set(Stage::Status, Progress::NotReached);
         if !self

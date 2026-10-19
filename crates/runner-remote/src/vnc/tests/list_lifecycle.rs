@@ -121,6 +121,10 @@ async fn interrupted_list(cancel_run: bool) {
             "{explanation}"
         );
         assert!(
+            super::timing::elapsed(explanation, "status") >= 900,
+            "the status duration must include its engine-lock wait: {explanation}"
+        );
+        assert!(
             explanation.contains(&format!("Session: {session}\n")),
             "{explanation}"
         );

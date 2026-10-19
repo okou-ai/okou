@@ -61,6 +61,7 @@ impl Run {
             .await
         {
             Ok(session) => {
+                let started = session.diagnostic_started();
                 session.close();
                 let result = scope.wait(session.closed.cancelled()).await;
                 let cleanup = if result.is_ok() {
@@ -68,7 +69,10 @@ impl Run {
                 } else {
                     Progress::Unknown
                 };
-                (session.check_report(result.err(), cleanup), cleanup)
+                (
+                    session.check_report(result.err(), cleanup, started),
+                    cleanup,
+                )
             }
             Err(failure) => (failure.report.map(|r| *r), Progress::Unknown),
         };
