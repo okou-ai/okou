@@ -2154,33 +2154,37 @@ function createSlashHintPlugin(key: PluginKey<boolean>): Plugin<boolean> {
         if (
           key.getState(state) ||
           !selection.empty ||
-          !$head.parent.isTextblock ||
-          $head.parentOffset !== $head.parent.content.size
+          !$head.parent.isTextblock
         ) {
           return DecorationSet.empty;
         }
         const text = nodeText($head.parent);
-        if (findActiveSlashWorkflowRange(text, text.length)?.query !== "") {
+        const caretIndex = nodeText($head.parent, $head.parentOffset).length;
+        if (
+          findActiveSlashWorkflowRange(text, caretIndex)?.query !== "" ||
+          /^\S/u.test(text.slice(caretIndex))
+        ) {
           return DecorationSet.empty;
         }
+        const attributes = {
+          class:
+            "after:pointer-events-none after:select-none " +
+            "after:text-muted-foreground/80 after:content-[attr(data-placeholder)]",
+          "data-placeholder": ` ${i18n.t(($) => {
+            return $.chat.composer.slashPanel.hint;
+          })}`,
+        };
         return DecorationSet.create(doc, [
-          // Decorate the existing paragraph instead of inserting a widget:
-          // ArrowRight must never move the DOM caret past the hint and then
-          // snap back to the real text. Generated content also stays out of
-          // the clipboard, draft and sent message.
-          Decoration.node($head.before(), $head.after(), {
-            class:
-              "after:pointer-events-none after:select-none " +
-              "after:text-muted-foreground/80 after:content-[attr(data-placeholder)]",
-            "data-placeholder": ` ${i18n.t(($) => {
-              return $.chat.composer.slashPanel.hint;
-            })}`,
-          }),
+          // Generated content has no extra caret stop and stays out of copied,
+          // drafted and sent text. A slash before existing text needs its own
+          // decoration so the hint follows the slash, not the whole paragraph.
+          $head.parentOffset === $head.parent.content.size
+            ? Decoration.node($head.before(), $head.after(), attributes)
+            : Decoration.inline($head.pos - 1, $head.pos, attributes),
         ]);
       },
       handleDOMEvents: {
         compositionstart(view) {
-          // Only paragraph attributes change; the IME keeps its text node.
           view.dispatch(view.state.tr.setMeta(key, true));
           return false;
         },

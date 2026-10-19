@@ -432,6 +432,7 @@ interface AutomaticMcpOAuthProviderOptions {
 
 interface AutomaticMcpOAuthProviderRecorder {
   readonly endpoint: string;
+  readonly endpointRequests: readonly string[];
   readonly issuer: string;
   readonly registrationBodies: readonly Record<string, unknown>[];
   advertiseAuthorizationServers(issuers: readonly string[]): void;
@@ -519,6 +520,7 @@ export function mockAutomaticMcpOAuthProvider(
   const endpoint =
     options.endpoint ?? "https://automatic-mcp.example.test/server";
   const endpointUrl = new URL(endpoint);
+  const endpointMatcher = `${endpointUrl.origin}${endpointUrl.pathname}`;
   const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
   const issuer = automaticOAuthProviderIssuer(options);
   const authorizationUrl = `${issuer}/authorize`;
@@ -565,6 +567,7 @@ export function mockAutomaticMcpOAuthProvider(
     ]);
   }
   const registrationBodies: Record<string, unknown>[] = [];
+  const endpointRequests: string[] = [];
   const tokenBodies: URLSearchParams[] = [];
   const tokenAuthorizationHeaders: (string | null)[] = [];
   let authorizationServerDiscoveryCallCount = 0;
@@ -600,13 +603,14 @@ export function mockAutomaticMcpOAuthProvider(
     }
   };
   server.use(
-    http.get(endpoint, () => {
+    http.get(endpointMatcher, () => {
       return new HttpResponse(null, {
         status: 405,
         headers: { allow: "POST" },
       });
     }),
-    http.post(endpoint, async ({ request }) => {
+    http.post(endpointMatcher, async ({ request }) => {
+      endpointRequests.push(request.url);
       if (options.authentication === "invalid") {
         return new HttpResponse(null, { status: 403 });
       }
@@ -805,6 +809,7 @@ export function mockAutomaticMcpOAuthProvider(
   );
   return {
     endpoint,
+    endpointRequests,
     issuer,
     registrationBodies,
     advertiseAuthorizationServerScopes(scopes: readonly string[]): void {

@@ -1,5 +1,5 @@
 {
-  "id": "aa382b02-29ec-4e2c-a4ea-b1731ad8ec4b",
+  "id": "9f282c14-1e46-462e-95e2-ba4014221e5c",
   "prevId": "ca838b6c-7fb8-47b9-ae10-d11f37e2b36f",
   "version": "7",
   "dialect": "postgresql",
@@ -17438,18 +17438,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "approval_thread_id": {
-          "name": "approval_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approval_run_id": {
-          "name": "approval_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "provider_spend_id": {
           "name": "provider_spend_id",
           "type": "varchar(256)",
@@ -17502,12 +17490,6 @@
         "approval_url": {
           "name": "approval_url",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action_resolution": {
-          "name": "action_resolution",
-          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -17573,28 +17555,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_link_wallet_spends_approval_deadline": {
-          "name": "idx_link_wallet_spends_approval_deadline",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"link_wallet_spends\".\"approval_thread_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -17622,19 +17582,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "link_wallet_spends_approval_thread_id_chat_threads_id_fk": {
-          "name": "link_wallet_spends_approval_thread_id_chat_threads_id_fk",
-          "tableFrom": "link_wallet_spends",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "approval_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -34906,13 +34853,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "workflow_receiver": {
-          "name": "workflow_receiver",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",

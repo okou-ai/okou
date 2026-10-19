@@ -144,6 +144,7 @@ impl Session {
     ) -> Option<Report> {
         let handle = self.diagnostics.as_ref()?;
         handle.record(crate::diagnostics::Record {
+            effects: None,
             protocol: crate::diagnostics::Protocol::Vnc,
             connection: self.info.connection_id,
             operation: crate::diagnostics::Operation::ActiveCheck,
@@ -205,6 +206,7 @@ impl Session {
         let observed_at = *terminal.observed_at.get_or_insert_with(chrono::Utc::now);
         self.diagnostics.as_ref().and_then(|diagnostics| {
             diagnostics.record(crate::diagnostics::Record {
+                effects: None,
                 protocol: crate::diagnostics::Protocol::Vnc,
                 connection: self.info.connection_id,
                 operation,
@@ -560,6 +562,7 @@ impl Run {
             }
             evidence.handle.as_ref().and_then(|diagnostics| {
                 diagnostics.record(crate::diagnostics::Record {
+                    effects: None,
                     protocol: crate::diagnostics::Protocol::Vnc,
                     connection,
                     operation: if active_check {

@@ -282,35 +282,6 @@ function measureCatalogLoadSync<T>(
   return timing ? timing.measureSync(actionType, operation) : operation();
 }
 
-async function readCurrentIdentity(args: {
-  readonly db: ReadonlyDb;
-  readonly capabilityDigest: string;
-  readonly timing?: ConnectorCatalogLoadTiming;
-}): Promise<ExternalCatalogIdentity | undefined> {
-  const [row] = await measureCatalogLoad(
-    args.timing,
-    "api_dispatch_connector_catalog_query_identity",
-    async () => {
-      return await args.db
-        .select({
-          schemaVersion: connectorCatalog.schemaVersion,
-          hash: connectorCatalog.hash,
-        })
-        .from(connectorCatalog)
-        .where(
-          eq(
-            connectorCatalog.schemaVersion,
-            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-          ),
-        )
-        .limit(1);
-    },
-  );
-  return row
-    ? catalogIdentityFromCapture(row, args.capabilityDigest)
-    : undefined;
-}
-
 async function readCurrentCatalog(args: {
   readonly db: ReadonlyDb;
   readonly identity: ExternalCatalogIdentity;
@@ -468,11 +439,33 @@ export async function loadAcceptedConnectorCatalogSnapshot(
   projection: "display" | "runtime" = "runtime",
 ): Promise<AcceptedDisplayCatalogSnapshot | AcceptedConnectorCatalogSnapshot> {
   const capability = connectorCatalogExecutableCapabilityState();
-  const identity = await readCurrentIdentity({
-    db,
-    capabilityDigest: capability.digest,
-    ...(timing === undefined ? {} : { timing }),
-  });
+  const identityReadDb = db;
+  const identityReadCapabilityDigest = capability.digest;
+  const identityReadTiming = timing === undefined ? undefined : timing;
+  const identity = await (async () => {
+    const [row] = await measureCatalogLoad(
+      identityReadTiming,
+      "api_dispatch_connector_catalog_query_identity",
+      async () => {
+        return await identityReadDb
+          .select({
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
+          })
+          .from(connectorCatalog)
+          .where(
+            eq(
+              connectorCatalog.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
+          )
+          .limit(1);
+      },
+    );
+    return row
+      ? catalogIdentityFromCapture(row, identityReadCapabilityDigest)
+      : undefined;
+  })();
   if (!identity) {
     throw new ExternalConnectorCatalogUnavailableError(
       "missing_current_identity",

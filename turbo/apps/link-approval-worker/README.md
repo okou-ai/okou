@@ -29,7 +29,7 @@ before credentials are released; approval is not payment.
 
 ## Rollout
 
-1. Apply additive migration `1417_link_approval_continuation`; old requests retain
+1. Apply additive migration `1418_link_approval_continuation`; old requests retain
    null provenance and their manual flow.
 2. Configure separate, random secrets of at least 32 characters in the target
    GitHub environment: `LINK_APPROVAL_WORKER_SECRET` (Worker → API HMAC) and

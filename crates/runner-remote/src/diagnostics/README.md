@@ -48,6 +48,22 @@ headers are not authentication evidence and transport-data includes keepalives.
 A local SYN can await encryption. Only admitted exact-tuple TCP facts establish
 that connection's replies.
 
+Status-update receipt time belongs to the map-owned peer. Only a known status
+in a full/upsert node or a status patch refreshes it; an unknown patch means no
+change. Empty/unrelated maps and bindings that reuse cached peer state preserve
+that receipt. Local sampling, local status receipt, provider last-seen and the
+SDK's local offline estimate are distinct clocks/facts, frozen with the report.
+The existing structured `observed_at` field remains the local sample time;
+optional `status_received_at` records receipt of the target's status assertion.
+
+Explanations lead with a native boundary summary and the strongest supported
+next step. PeerGone and offline/no-input hints retain their selected-peer/relay
+scope and uncertainty after stronger root, trust and transport failures.
+SSH command, session program and independent session request effects are
+captured from their actual owners with the business result's unchanged semantics.
+They are labelled separately and never replace CLI/helper delivery uncertainty;
+a failed session request does not describe its existing program's effects.
+
 The existing bounded DERP reader optionally observes complete KeepAlive/Ping
 frames and SDK-typed PeerGone reasons. Controls belong to a regional incarnation;
 PeerGone is correlated to the selected peer before capture. A private 64-entry
@@ -59,6 +75,9 @@ Both retained evidence and rendered text keep the 8192-byte limit. Lower-priorit
 completed detail can be omitted with an explicit notice to preserve the incident,
 critical path, context and next action. A pending relay read is normal waiting,
 not evidence that a remote endpoint failed.
+Active checks subtract their actual wrapper size and use the same semantic
+renderer to fit the remaining budget, preserving critical facts and the omission
+notice rather than discarding an otherwise renderable near-limit explanation.
 
 Process status/read use their retained terminal receipt. Later unrelated
 operations cannot replace it. Completed remote nonzero exits and intentional

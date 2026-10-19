@@ -1,16 +1,54 @@
 //! Explain observed path progress without promoting local sends to remote proof.
 
 use super::{Report, words};
-use crate::tailscale::evidence::{Detail, Snapshot, Stage, Status};
+use crate::tailscale::evidence::{Detail, PeerStatus, Snapshot, Stage, Status};
 
 impl Report {
+    pub(super) fn native_summary(&self, text: &mut String) -> Option<()> {
+        let Some(connection) = &self.native_connection else {
+            return Some(());
+        };
+        text.push_str("\nNative path summary:");
+        if let Some(root) = self.native_layers.as_ref().and_then(|layers| layers.root) {
+            text.push_str(&format!(" captured native terminal root {};", words(root)?));
+        }
+        if connection.relay.as_ref().is_some_and(|relay| {
+            relay
+                .steps
+                .iter()
+                .any(|step| step.stage == Stage::RelayProtocol && step.status == Status::Passed)
+        }) {
+            text.push_str(" selected regional DERP setup passed;");
+        }
+        if let Some(peer) = &connection.peer {
+            text.push_str(&format!(" cached peer map status {};", words(peer.status)?));
+        }
+        if let Some(tcp) = connection
+            .steps
+            .iter()
+            .find(|s| s.stage == Stage::PrivateTcp)
+        {
+            text.push_str(&format!(" private TCP {};", words(tcp.status)?));
+        }
+        if connection
+            .progress
+            .as_ref()
+            .is_some_and(|progress| progress.initiation_without_peer_input())
+        {
+            text.push_str(" shared-peer initiation output without observed peer input or transport-data output;");
+        }
+        text.push_str(" map status may be stale; shared headers do not prove authentication or this connection's delivery.\n");
+        Some(())
+    }
+
     pub(super) fn native_path(&self, text: &mut String) -> Option<()> {
         let Some(connection) = &self.native_connection else {
             return Some(());
         };
         text.push_str("\nActual path: embedded Tailscale over DERP, then private TCP.\n");
         if let Some(peer) = &connection.peer {
-            text.push_str(&format!("- Selected peer control-plane status: {}; map fact recorded locally at {}. This may be stale and does not prove reachability.\n", words(peer.status)?, super::timestamp(peer.observed_at)));
+            text.push_str(&format!("- Selected peer control-plane status: {}; map fact sampled locally at {}. This may be stale and does not prove reachability.\n", words(peer.status)?, super::timestamp(peer.sampled_at)));
+            text.push_str(&format!("- Target status update last received locally at: {}. Unrelated map updates and cached bindings do not refresh this time; this is not the provider's clock.\n", super::observed(peer.status_received_at.map(super::timestamp))));
             if let Some(at) = peer.control_last_seen {
                 text.push_str(&format!("- Peer last seen by control: {}; provider clock, possibly rounded by about 10 minutes.\n", super::timestamp(at)));
             }
@@ -132,6 +170,34 @@ impl Report {
         if tcp.detail == Detail::ResetOrClosed {
             return Some(
                 "The private netstack reported reset-or-closed. Check the configured target service and admitted peer path; this SDK category alone does not prove a received TCP RST or a closed port.",
+            );
+        }
+        if connection.relay.as_ref().is_some_and(|relay| {
+            relay
+                .controls
+                .as_ref()
+                .is_some_and(|controls| controls.target_gone.is_some())
+        }) {
+            return Some(
+                "The selected relay recorded PeerGone for this target. Check the target's Tailscale connection and relay association. This notification belongs to that relay incarnation, may predate the operation, and does not establish global offline state or a closed port.",
+            );
+        }
+        if connection
+            .peer
+            .as_ref()
+            .is_some_and(|peer| matches!(peer.status, PeerStatus::Offline))
+        {
+            return Some(
+                "The control map marks the target offline. Check the target's Tailscale client and network first. This cached map hint may be stale; it does not establish device power state or firewall denial. Private TCP was not established, so target service authentication remains unverified.",
+            );
+        }
+        if connection
+            .progress
+            .as_ref()
+            .is_some_and(|progress| progress.initiation_without_peer_input())
+        {
+            return Some(
+                "Shared-peer WireGuard initiation output was observed without peer input or transport-data output. Check the target's Tailscale connection and selected relay path. Local SYNs may still await encryption; silence does not identify the device or network cause.",
             );
         }
         Some(

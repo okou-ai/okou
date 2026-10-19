@@ -74,10 +74,6 @@ impl Handle {
         // This slot never replaces either protocol's pinned operational failure.
         state.last_check = Some(report.clone());
         drop(state);
-        // Reserve the fixed header and cleanup-scope explanation within 8 KiB.
-        let detail = report.message().filter(|text| text.len() <= MAX_REPORT_BYTES - 512).unwrap_or_else(|| {
-            format!("Detailed check evidence unavailable within the output budget. Run: {}\nAttempt: {}\nConnection: {}\nDo not infer unobserved stages or replay work.", report.run_id, report.attempt_id, report.connection_id)
-        });
         let cleanup = if cleanup == Progress::Passed {
             "passed"
         } else {
@@ -95,10 +91,18 @@ impl Handle {
                 "Temporary VNC session closure. SSH/Kerberos descendants retain their own owners until completion; their cleanup and shared native cleanup are not asserted here."
             }
         };
-        let message = format!(
-            "Active check ({protocol}): {status}. Checked at: {}\nCheck-owned cleanup: {cleanup}.\nCleanup scope: {cleanup_scope}\n{detail}",
+        let prefix = format!(
+            "Active check ({protocol}): {status}. Checked at: {}\nCheck-owned cleanup: {cleanup}.\nCleanup scope: {cleanup_scope}\n",
             Utc::now().to_rfc3339()
         );
+        // This prefix contains fixed labels and a UTC timestamp. Compact the
+        // captured report to the actual remaining space, including this wrapper.
+        let detail = report
+            .message_with_budget(MAX_REPORT_BYTES - prefix.len())
+            .unwrap_or_else(|| {
+                format!("Detailed check evidence unavailable within the output budget. Run: {}\nAttempt: {}\nConnection: {}\nDo not infer unobserved stages or replay work.", report.run_id, report.attempt_id, report.connection_id)
+            });
+        let message = format!("{prefix}{detail}");
         tracing::info!(active_check = %message, "Remote active check completed");
         json!({"type":"active_check","status":status,"message":message})
     }

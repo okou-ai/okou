@@ -415,6 +415,22 @@ assert_line_count "$actual_failure/stderr" 1 "actual stderr"
 assert_contains "$actual_failure/stderr" "SSH master stderr"
 assert_contains "$actual_failure/stderr" "debug1: master ready"
 assert_contains "$actual_failure/stderr" "Tool: ssh; host: dev-1.aws.vm3.ai; exit: 42; started:"
+python3 - "$actual_failure/stderr" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+phases = [dict(part.split('=', 1) for part in line.split())
+          for line in text.splitlines() if line.startswith('event=')]
+assert [p['event'] for p in phases] == [
+    'probe-start', 'probe-result', 'transport-selected', 'caller-start', 'caller-result']
+assert phases[1]['status'] == '0' and phases[-1]['status'] == '42'
+assert len({p['call'] for p in phases}) == 1
+assert len({p['master'] for p in phases}) == 1
+assert re.fullmatch('[0-9a-f]{24}', phases[0]['master'])
+assert 'master=' + phases[0]['master'] in text
+elapsed = [int(p['elapsed_centiseconds']) for p in phases]
+assert elapsed == sorted(elapsed) and elapsed[0] == 0
+assert all(p['utc'].endswith('Z') and p['uptime_seconds'] != 'unavailable' for p in phases)
+PY
 
 scp_failure="${tmp}/scp-failure"
 setup_case "$scp_failure"
@@ -561,6 +577,7 @@ if [ "$actual_cancel_status" -ne 143 ]; then
 fi
 assert_contains "$actual_cancel/stderr" 'Cloudflare SSH caller signal:'
 assert_contains "$actual_cancel/stderr" 'signal=TERM'
+assert_contains "$actual_cancel/stderr" 'event=caller-signal'
 assert_line_count "$actual_cancel/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-until-cancelled"
 assert_process_gone "$actual_cancel/actual-ssh.pid" "cancelled SSH caller"
