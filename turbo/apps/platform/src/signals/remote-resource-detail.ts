@@ -14,12 +14,28 @@ import {
   closeTailscaleDialog$,
   saveTailscale$,
   tailscaleDialog$,
+  tailscaleConfigs$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
   saveCloudflareAccess$,
   cloudflareAccessDialog$,
+  cloudflareAccessConfigs$,
+  cloudflareAccessSummary$,
 } from "./cloudflare-access.ts";
+
+export const privateNetworkDirectorySummary$ = computed(async (get) => {
+  if (!get(remoteControlGuidedEnabled$)) {
+    return await get(cloudflareAccessSummary$);
+  }
+  const [tailscale, cloudflare] = await Promise.all([
+    get(tailscaleConfigs$),
+    get(cloudflareAccessConfigs$),
+  ]);
+  return {
+    configuredCount: (tailscale?.length ?? 0) + (cloudflare?.length ?? 0),
+  };
+});
 
 export type RemoteResourceKind = "ssh" | "vnc" | "tailscale" | "cloudflare";
 export function remoteResourceHref(

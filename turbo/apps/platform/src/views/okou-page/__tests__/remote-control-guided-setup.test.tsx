@@ -1084,6 +1084,11 @@ test("Members see personal and organization networks together, with separate man
   const organization = screen.getByRole("region", {
     name: "Organization networks",
   });
+  await waitFor(() => {
+    expect(
+      screen.getByTestId("connectors-scope-private-network"),
+    ).toHaveTextContent("Private network2");
+  });
   expect(within(personal).getByText(network.name)).toBeInTheDocument();
   expect(
     within(personal).getByText("Can use · Can manage"),

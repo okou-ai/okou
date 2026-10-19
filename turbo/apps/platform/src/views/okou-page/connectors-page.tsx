@@ -1,6 +1,7 @@
 import {
   remoteResource$,
   remoteNetworkPage$,
+  privateNetworkDirectorySummary$,
 } from "../../signals/remote-resource-detail.ts";
 import {
   RemoteResourcePage,
@@ -150,7 +151,6 @@ import {
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { sshSummary$ } from "../../signals/ssh.ts";
-import { cloudflareAccessSummary$ } from "../../signals/cloudflare-access.ts";
 import {
   PrivateNetworkPanel,
   RemoteControlPanel,
@@ -1358,7 +1358,7 @@ export function ConnectorsPage() {
   );
   const sshSummary = useLoadable(sshSummary$);
   const vncSummary = useLoadable(vncSummary$);
-  const cloudflareAccessSummary = useLoadable(cloudflareAccessSummary$);
+  const privateNetworkSummary = useLoadable(privateNetworkDirectorySummary$);
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
   const connectedTargetsLoadable = useLastLoadable(
     connectedConnectorTargetKeys$,
@@ -1406,7 +1406,7 @@ export function ConnectorsPage() {
     custom.all.length,
     configuredRemoteAccessResources(sshSummary) +
       (vncEnabled ? configuredRemoteAccessResources(vncSummary) : 0),
-    configuredRemoteAccessResources(cloudflareAccessSummary),
+    configuredRemoteAccessResources(privateNetworkSummary),
   );
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
