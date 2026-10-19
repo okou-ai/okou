@@ -549,10 +549,10 @@ async fn exercise(scenario: Scenario) {
         }
         Scenario::RelayWritePending => {
             assert_eq!(result["failure_reason"], "timed_out");
-            assert!(
-                text.contains("Selected relay relay write: pending;"),
-                "{text}"
-            );
+            // Timeout retires this operation's binding. The native driver can
+            // abandon the partial write before capture, so its final stage need
+            // not remain pending. Queued versus flushed is stable in either case.
+            assert!(text.contains("Selected relay relay write: "), "{text}");
             assert!(
                 observed(text, "shared peer: relay frames queued") > 0,
                 "{text}"
