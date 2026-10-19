@@ -14,7 +14,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { waitUntil } from "../context/wait-until";
 import { bodyResultOf, queryOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
@@ -172,26 +172,11 @@ async function publishTelegramUserChanged(userId: string): Promise<void> {
   await publishUserSignal([userId], "telegram:changed");
 }
 
-async function resolveOfficialConnectComposeId(
-  db: Db,
+function officialConnectAgentCondition(
+  defaultAgentId: string,
   auth: OrganizationAuth,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, auth.orgId))
-    .limit(1);
-  const defaultAgentId = metadata?.defaultAgentId ?? null;
-  if (!defaultAgentId) {
-    return null;
-  }
-
-  const [compose] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.id, defaultAgentId), eq(agents.orgId, auth.orgId)))
-    .limit(1);
-  return compose?.id ?? null;
+) {
+  return and(eq(agents.id, defaultAgentId), eq(agents.orgId, auth.orgId));
 }
 
 const unlinkInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -248,7 +233,26 @@ const linkOfficialInner$ = command(
       }
 
       const db = set(writeDb$);
-      const composeId = await resolveOfficialConnectComposeId(db, args.auth);
+      const connectAuth = args.auth;
+      const composeId = await (async (): Promise<string | null> => {
+        const auth = connectAuth;
+        const [metadata] = await db
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, auth.orgId))
+          .limit(1);
+        const defaultAgentId = metadata?.defaultAgentId ?? null;
+        if (!defaultAgentId) {
+          return null;
+        }
+
+        const [compose] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(officialConnectAgentCondition(defaultAgentId, auth))
+          .limit(1);
+        return compose?.id ?? null;
+      })();
       signal.throwIfAborted();
       if (!composeId) {
         return missingOfficialAgentResponse();
@@ -291,7 +295,26 @@ const linkOfficialInner$ = command(
         return invalidConnectSignatureResponse();
       }
       const db = set(writeDb$);
-      const composeId = await resolveOfficialConnectComposeId(db, args.auth);
+      const connectAuth = args.auth;
+      const composeId = await (async (): Promise<string | null> => {
+        const auth = connectAuth;
+        const [metadata] = await db
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, auth.orgId))
+          .limit(1);
+        const defaultAgentId = metadata?.defaultAgentId ?? null;
+        if (!defaultAgentId) {
+          return null;
+        }
+
+        const [compose] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(officialConnectAgentCondition(defaultAgentId, auth))
+          .limit(1);
+        return compose?.id ?? null;
+      })();
       signal.throwIfAborted();
       if (!composeId) {
         return missingOfficialAgentResponse();
