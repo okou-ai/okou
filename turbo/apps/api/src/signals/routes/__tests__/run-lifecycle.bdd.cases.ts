@@ -11703,7 +11703,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
-          expect(prompt).toContain("okou ssh diagnose <connection-id> --json");
+          expect(prompt).toContain(
+            "okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json",
+          );
           expect(prompt).toContain("passive history");
           expect(prompt).toContain(
             "unavailable evidence does not establish a cause",
@@ -11722,7 +11724,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(prompt).toContain("okou vnc session close");
             expect(prompt).toContain("okou vnc --help");
             expect(prompt).toContain(
-              "okou vnc diagnose <connection-id> --json",
+              "okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json",
             );
           } else {
             expect(capabilities).not.toContain("vnc:read");

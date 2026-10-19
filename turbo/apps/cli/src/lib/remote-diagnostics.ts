@@ -106,12 +106,17 @@ export function createDiagnoseCommand(protocol: Protocol) {
       "[connection-id]",
       "Exact host ID; omit selectors for this protocol's last failure",
     )
-    .option("--attempt-id <id>", "Exact retained diagnostic attempt UUID")
+    .option(
+      "--attempt-id <id>",
+      "Prefer the Attempt ID from the actual failed operation",
+    )
     .option("--session-id <id>", "Exact SSH/VNC session UUID")
     .option("--json", "Print query status and Runner-authored explanation text")
     .addHelpText(
       "after",
-      "\nPassive history only, within this Run. Current read permission and host/chat visibility are required. Latest SSH/VNC failures are pinned; other details are limited to 64 reports. Missing evidence is not a connectivity result. This command never retries commands or input.",
+      `\nPrefer the actual failed operation's Attempt ID: okou ${protocol} diagnose <connection-id> --attempt-id <attempt-id> --json. Add --session-id <id> when known; all supplied selectors must match.
+Without --attempt-id, this returns the latest matching retained failure. Verify its operation, connection, session, and time before attributing it to a particular operation. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure.
+Passive history only, within this Run. Current read permission and host/chat visibility are required. Latest SSH/VNC failures are pinned; other details are limited to 64 reports. Missing evidence is not a connectivity result. This command never retries commands or input. Never automatically replay uncertain commands, input, or checks.`,
     )
     .action(
       withErrorHandler(
