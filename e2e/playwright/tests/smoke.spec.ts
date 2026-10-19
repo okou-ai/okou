@@ -31,8 +31,6 @@ test("send a message and receive the assistant reply", async ({ page }) => {
   });
 
   await expect(
-    page
-      .locator('[data-role="assistant"] [data-chat-selection-source]')
-      .first(),
+    page.locator('[data-role="assistant"] [data-chat-selection-source]').last(),
   ).toHaveText(/^\s*3\s*$/, { timeout: 90_000 });
 });
