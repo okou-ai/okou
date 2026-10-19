@@ -5123,6 +5123,15 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
+      "proactiveSuggestions": {
+        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "preparationFailed": "Penyiapan tidak dapat diselesaikan. Coba lagi.",
+        "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
+        "retry": "Coba lagi",
+        "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Saran proaktif"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Tekan ⌘/Ctrl+Enter untuk mengirim, Enter untuk baris baru",

@@ -281,7 +281,7 @@ function withScheduleTimezoneDefault(
   };
 }
 
-function resolveBlueprint(
+export function resolveBlueprint(
   blueprint: OfficialWorkflowAcceptedBlueprint,
   supplied: OfficialWorkflowBlueprintBindings,
   defaultTimezone: string | null,

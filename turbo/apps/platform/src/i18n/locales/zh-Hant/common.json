@@ -5123,6 +5123,15 @@
         "retryMessage": "晨報設定無法載入或更新，請重試以繼續。",
         "title": "晨報"
       },
+      "proactiveSuggestions": {
+        "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
+        "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
+        "preparationFailed": "主動建議設定未能完成，請重試。",
+        "preparing": "正在準備每小時建議，你可以隨時關閉。",
+        "retry": "重試",
+        "retryMessage": "無法載入或更新主動建議設定，請重試。",
+        "title": "主動建議"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "按⌘/Ctrl+Enter 傳送，按 Enter 換行",
