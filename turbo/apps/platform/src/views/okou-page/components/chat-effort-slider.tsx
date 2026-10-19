@@ -74,8 +74,6 @@ interface ChatEffortSliderProps {
   readonly label: string;
   /** The selected step in the user's words, for assistive technology. */
   readonly valueText: string;
-  /** The range input the thumb wraps, which takes keyboard focus. */
-  readonly inputRef: (input: HTMLInputElement | null) => void;
   readonly onValueChange: (index: number) => void;
 }
 
@@ -100,7 +98,6 @@ export function ChatEffortSlider({
   disabled,
   label,
   valueText,
-  inputRef,
   onValueChange,
 }: ChatEffortSliderProps) {
   const atMax = value === steps - 1;
@@ -180,7 +177,6 @@ export function ChatEffortSlider({
           <SliderPrimitive.Thumb
             aria-label={label}
             aria-valuetext={valueText}
-            inputRef={inputRef}
             className={cn(
               "h-9 w-[18px] bg-gray-300 outline-none [clip-path:var(--okou-effort-thumb-clip)] dark:bg-gray-500",
               "drop-shadow-[0_1px_2px_hsl(var(--state-layer)/0.22)]",

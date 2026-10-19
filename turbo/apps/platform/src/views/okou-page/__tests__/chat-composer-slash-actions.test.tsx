@@ -16,7 +16,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { CREATE_AUTOMATION_CHAT_PROMPT } from "../../../signals/chat-page/workflow-prompt-action.ts";
+import {
+  CREATE_AUTOMATION_CHAT_PROMPT,
+  scheduledAutomationChatPrompt,
+} from "../../../signals/chat-page/workflow-prompt-action.ts";
 import {
   AGENT_ID,
   buildRunModel,
@@ -119,7 +122,7 @@ function firstLevelNames(): string[] {
   return queryAllByRoleFast("button", screen.getByTestId("slash-workflow-menu"))
     .filter((button) => {
       return !button.closest(
-        '[data-slot="slash-workflow-detail"], [data-slot="slash-templates-detail"]',
+        '[data-slot="slash-workflow-detail"], [data-slot="slash-templates-detail"], [data-slot="slash-submenu-detail"]',
       );
     })
     .map((button) => {
@@ -228,19 +231,162 @@ test("Templates opens its types with their counts, and Browse all opens the pick
   expect(tabByText("Presentation")).toBeInTheDocument();
 });
 
-test("Schedule writes the automation request where the slash was", async () => {
+function pointAt(row: HTMLElement): void {
+  fireEvent.mouseOver(row);
+  fireEvent.mouseMove(row);
+}
+
+function paneRow(pane: HTMLElement, name: string): HTMLElement {
+  const row = queryAllByRoleFast("button", pane).find((candidate) => {
+    return candidate.textContent?.replace(/\s+/gu, " ").trim() === name;
+  });
+  if (!row) {
+    throw new Error(`Expected ${name} in the second level`);
+  }
+  return row;
+}
+
+function modelTrigger(name: RegExp): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((button) => {
+    return name.test(button.getAttribute("aria-label") ?? "");
+  });
+}
+
+test("Pointing at Model lists the models beside the first level, and one switches the chat", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  const user = userEvent.setup();
+  const { editor, menu } = await openSlashActions();
+  const entry = await waitFor(() => {
+    return menuButton("Model");
+  });
+  pointAt(entry);
+
+  const pane = within(menu).getByRole("region", { name: "Model" });
+  expect(entry).toHaveAttribute("aria-expanded", "true");
+  // A row names its model once the catalog it reads has resolved.
+  await waitFor(() => {
+    expect(paneRow(pane, "Claude Fable 5.1")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+  await user.click(paneRow(pane, "Claude Sonnet 5"));
+
+  await waitFor(() => {
+    expect(modelTrigger(/^Claude Sonnet 5\b/u)).toBeInTheDocument();
+  });
+  expect(editor).toHaveTextContent(/^Draft$/u);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("Pointing at Effort lists its levels, and one sets the chat's effort", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  const user = userEvent.setup();
+  const { menu } = await openSlashActions();
+  const entry = await waitFor(() => {
+    return menuButton("Effort");
+  });
+  pointAt(entry);
+
+  const pane = within(menu).getByRole("region", { name: "Effort" });
+  await user.click(paneRow(pane, "Low"));
+
+  await waitFor(() => {
+    expect(modelTrigger(/^Claude Fable 5\.1, Low$/u)).toBeInTheDocument();
+  });
+});
+
+test("Schedule lists how often to run, and a choice writes the request with it", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  const user = userEvent.setup();
+  const { editor, menu } = await openSlashActions();
+  await waitFor(() => {
+    return menuButton("Schedule");
+  });
+
+  // Choosing the row opens its choices instead of leaving the menu.
+  await user.click(menuButton("Schedule"));
+  const pane = within(menu).getByRole("region", { name: "Schedule" });
+  await user.click(paneRow(pane, "Every weekday"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(
+      `Draft ${scheduledAutomationChatPrompt("every weekday at 9:00")}`,
+    );
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("Custom schedule writes the request without a cadence", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  const user = userEvent.setup();
+  const { editor, menu } = await openSlashActions();
+  pointAt(
+    await waitFor(() => {
+      return menuButton("Schedule");
+    }),
+  );
+
+  const pane = within(menu).getByRole("region", { name: "Schedule" });
+  await user.click(paneRow(pane, "Custom schedule"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`Draft ${CREATE_AUTOMATION_CHAT_PROMPT}`);
+  });
+});
+
+test("The keyboard enters an action's choices and leaves them again", async () => {
+  context.mocks.browser.matchMedia(true);
   const user = userEvent.setup();
   const { editor } = await openSlashActions();
   await waitFor(() => {
     return menuButton("Schedule");
   });
 
-  await user.click(menuButton("Schedule"));
+  // Up from the composer reaches Templates, Workflows, then Schedule.
+  await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+  expect(menuButton("Schedule")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowRight}");
+  expect(menuButton("Every morning")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowLeft}");
+  expect(menuButton("Schedule")).toHaveAttribute("data-active", "true");
 
+  await user.keyboard("{Enter}{ArrowDown}{Enter}");
   await waitFor(() => {
-    expect(editor).toHaveTextContent(`Draft ${CREATE_AUTOMATION_CHAT_PROMPT}`);
+    expect(editor).toHaveTextContent(
+      `Draft ${scheduledAutomationChatPrompt("every weekday at 9:00")}`,
+    );
   });
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("On a narrow screen an action's choices replace the first level", async () => {
+  context.mocks.browser.matchMedia(false);
+  const user = userEvent.setup();
+  await openSlashActions();
+  await waitFor(() => {
+    return menuButton("Effort");
+  });
+
+  await user.click(menuButton("Effort"));
+  expect(menuButton("Low")).toBeInTheDocument();
+  expect(
+    firstLevelNames().find((name) => {
+      return name.startsWith("Model");
+    }),
+  ).toBeUndefined();
+
+  await user.click(menuButton("Effort"));
+  await waitFor(() => {
+    expect(menuButton("Model")).toBeInTheDocument();
+  });
 });
 
 test("Typing after the slash still searches workflows and types in one list", async () => {
@@ -317,49 +463,6 @@ test("A typed command keyword finds the chat's own actions", async () => {
       return name.startsWith("Share");
     }),
   ).toBeUndefined();
-});
-
-test("Effort opens the model panel with the keyboard on its effort bar", async () => {
-  const user = userEvent.setup();
-  const { editor } = await openSlashActions();
-  await fill(editor, "Draft /eff");
-  await waitFor(() => {
-    expect(menuButton("Effort")).toHaveAttribute("data-active", "true");
-  });
-
-  await user.keyboard("{Enter}");
-
-  const panel = await screen.findByRole("dialog", { name: "Chat models" });
-  const slider = await within(panel).findByRole("slider", { name: "Effort" });
-  await waitFor(() => {
-    expect(slider).toHaveFocus();
-  });
-  expect(editor).toHaveTextContent(/^Draft$/u);
-  // Arrow keys now set the effort without leaving the panel.
-  const before = slider.getAttribute("aria-valuetext");
-  await user.keyboard("{Home}");
-  await waitFor(() => {
-    expect(slider.getAttribute("aria-valuetext")).not.toBe(before);
-  });
-});
-
-test("Model opens the same panel on its model list", async () => {
-  const user = userEvent.setup();
-  const { editor } = await openSlashActions();
-  await fill(editor, "Draft /mod");
-  await waitFor(() => {
-    expect(menuButton("Model")).toHaveAttribute("data-active", "true");
-  });
-
-  await user.keyboard("{Enter}");
-
-  const panel = await screen.findByRole("dialog", { name: "Chat models" });
-  await waitFor(() => {
-    expect(panel).toContainElement(document.activeElement as HTMLElement);
-  });
-  expect(
-    within(panel).getByRole("slider", { name: "Effort" }),
-  ).not.toHaveFocus();
 });
 
 function customTemplate(

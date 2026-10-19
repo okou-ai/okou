@@ -10,7 +10,10 @@ import {
 import {
   Archive,
   Box,
+  BriefcaseBusiness,
   CalendarClock,
+  CalendarDays,
+  CalendarRange,
   Gauge,
   PencilLine,
   Pin,
@@ -18,12 +21,19 @@ import {
   Plug,
   Share2,
   SquarePen,
+  Sun,
   type LucideIcon,
 } from "lucide-react";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import { CREATE_AUTOMATION_CHAT_PROMPT } from "../../signals/chat-page/workflow-prompt-action.ts";
+import {
+  CREATE_AUTOMATION_CHAT_PROMPT,
+  scheduledAutomationChatPrompt,
+} from "../../signals/chat-page/workflow-prompt-action.ts";
 import {
   pinChatThread$,
   unpinChatThread$,
@@ -33,12 +43,23 @@ import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { startComposerThreadSharing$ } from "../../signals/okou-page/slash-actions.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { useChatEffort } from "./components/chat-effort-controls.tsx";
+import {
+  formatChatEffort,
+  useChatEffort,
+} from "./components/chat-effort-controls.tsx";
+import {
+  resolveModelFirstModelPickerState,
+  selectedModelControlValue,
+  selectedModelDisplayName,
+  useExplicitModelSelectionChange,
+  type ModelProviderSelection,
+} from "./components/model-provider-picker.tsx";
 
 export interface SlashAction {
   readonly id: string;
@@ -51,7 +72,29 @@ export interface SlashAction {
    * like the commands of other chat apps, while the label is translated.
    */
   readonly keywords: readonly string[];
+  /** Choices the overview lists as this action's second level. */
+  readonly submenu?: SlashSubmenu;
+  /** What choosing it does where there is no second level, as in a search. */
   readonly run: () => void;
+}
+
+/** One row of an action's second level. */
+export interface SlashSubmenuItem {
+  readonly id: string;
+  /** The row's name, and its accessible name. */
+  readonly label: string;
+  readonly Icon?: LucideIcon;
+  /** A model row draws the model picker's own row content. */
+  readonly runModel?: AvailableRunModel;
+  readonly checked?: boolean;
+  readonly disabled?: boolean;
+  readonly run: () => void;
+}
+
+export interface SlashSubmenu {
+  readonly items: readonly SlashSubmenuItem[];
+  /** A quieter last row under a divider, such as Custom schedule. */
+  readonly footer?: SlashSubmenuItem;
 }
 
 /**
@@ -98,25 +141,114 @@ function useModelPickerShown(composer: ComposerSignals): boolean {
   );
 }
 
-/** Whether the chat model offers effort levels, so the picker shows its bar. */
-function useEffortShown(composer: ComposerSignals): boolean {
-  const selection = useLastResolved(composer.model.modelSelection$);
-  return useChatEffort(selection).efforts.length > 0;
+function useModelSelectionChange(
+  composer: ComposerSignals,
+): (selection: ModelProviderSelection | null) => void {
+  const setModelSelection = useSet(composer.model.setModelSelection$);
+  const pageSignal = useGet(pageSignal$);
+  return (selection) => {
+    detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
+  };
 }
 
-/** Model, and Effort when the model has levels; both need the picker. */
+/**
+ * The model picker's choices as second levels: its models, then the checked
+ * model's effort levels. Choosing one applies it the way the picker does.
+ */
+function useModelSubmenus(
+  composer: ComposerSignals,
+  selection: ModelProviderSelection | null,
+  leave: () => void,
+): { readonly model: SlashSubmenu; readonly effort: SlashSubmenu } {
+  const models = useLastResolved(availableRunModels$);
+  const catalog = useLastResolved(modelCatalog$);
+  const onChange = useModelSelectionChange(composer);
+  const changeModel = useExplicitModelSelectionChange({
+    value: selection,
+    onChange,
+  });
+  const { efforts, effort: currentEffort } = useChatEffort(selection);
+  if (selection === null) {
+    return { model: { items: [] }, effort: { items: [] } };
+  }
+  const state = resolveModelFirstModelPickerState({
+    value: selection,
+    modelsResponse: models,
+    catalog,
+  });
+  const selectedRunModel = state.models.find((runModel) => {
+    return runModel.model === selection.selectedModel;
+  });
+  const configurable =
+    selectedRunModel !== undefined &&
+    isMemberRunModelConfigurable(selectedRunModel);
+  return {
+    model: {
+      items: state.models.map((runModel) => {
+        return {
+          id: selectedModelControlValue(runModel.model),
+          label: selectedModelDisplayName(catalog, runModel.model),
+          runModel,
+          checked: state.selection?.selectedModel === runModel.model,
+          disabled: !isMemberRunModelConfigurable(runModel),
+          run: () => {
+            leave();
+            changeModel(
+              selection.selectedModel === runModel.model
+                ? selection
+                : { selectedModel: runModel.model },
+            );
+          },
+        };
+      }),
+    },
+    effort: {
+      items: efforts.map((level) => {
+        return {
+          id: level,
+          label: formatChatEffort(level),
+          checked: level === currentEffort,
+          disabled: !configurable,
+          run: () => {
+            leave();
+            const model = selection.selectedModel;
+            if (model !== null) {
+              onChange({
+                ...selection,
+                modelSettings: withModelReasoningEffort(
+                  selection.modelSettings,
+                  { model, effort: level },
+                ),
+              });
+            }
+          },
+        };
+      }),
+    },
+  };
+}
+
+/**
+ * Model, and Effort when the model has levels; both need the picker. Their
+ * second levels list the choices; a typed search runs them straight into the
+ * picker instead.
+ */
 function useModelActions(
   composer: ComposerSignals,
   leave: () => void,
 ): SlashAction[] {
   const { t } = useTranslation();
   const openModelPicker = useSet(composer.model.setModelPickerOpen$);
-  const openEffort = useSet(composer.model.openModelPickerAtEffort$);
   const pickerShown = useModelPickerShown(composer);
-  const effortShown = useEffortShown(composer);
+  const selection = useLastResolved(composer.model.modelSelection$) ?? null;
+  const submenus = useModelSubmenus(composer, selection, leave);
   if (!pickerShown) {
     return [];
   }
+  const openPicker = () => {
+    leave();
+    openModelPicker(true);
+  };
   const model: SlashAction = {
     id: "model",
     Icon: Box,
@@ -127,13 +259,10 @@ function useModelActions(
       return $.chat.composer.slashActions.modelHint;
     }),
     keywords: ["model"],
-    run: () => {
-      leave();
-      openModelPicker(true);
-    },
+    submenu: submenus.model,
+    run: openPicker,
   };
   const effort: SlashAction = {
-    // Effort lives in the model picker, so it opens that panel on its bar.
     id: "effort",
     Icon: Gauge,
     label: t(($) => {
@@ -143,12 +272,80 @@ function useModelActions(
       return $.chat.composer.slashActions.effortHint;
     }),
     keywords: ["effort", "reasoning", "think"],
-    run: () => {
+    submenu: submenus.effort,
+    run: openPicker,
+  };
+  return submenus.effort.items.length > 0 ? [model, effort] : [model];
+}
+
+/**
+ * How often a new automation runs. Choosing one writes the automation request
+ * with that cadence; Custom schedule writes it without one.
+ */
+function useScheduleSubmenu(
+  composer: ComposerSignals,
+  leave: () => void,
+): SlashSubmenu {
+  const { t } = useTranslation();
+  const insertText = useSet(composer.editor.insertText$);
+  const write = (prompt: string) => {
+    return () => {
       leave();
-      openEffort();
+      insertText(prompt);
+    };
+  };
+  const presets = [
+    {
+      id: "every-morning",
+      Icon: Sun,
+      label: t(($) => {
+        return $.chat.composer.slashActions.scheduleEveryMorning;
+      }),
+      cadence: "every morning at 9:00",
+    },
+    {
+      id: "every-weekday",
+      Icon: BriefcaseBusiness,
+      label: t(($) => {
+        return $.chat.composer.slashActions.scheduleEveryWeekday;
+      }),
+      cadence: "every weekday at 9:00",
+    },
+    {
+      id: "every-monday",
+      Icon: CalendarDays,
+      label: t(($) => {
+        return $.chat.composer.slashActions.scheduleEveryMonday;
+      }),
+      cadence: "every Monday at 9:00",
+    },
+    {
+      id: "every-month",
+      Icon: CalendarRange,
+      label: t(($) => {
+        return $.chat.composer.slashActions.scheduleEveryMonth;
+      }),
+      cadence: "on the first day of every month at 9:00",
+    },
+  ];
+  return {
+    items: presets.map((preset) => {
+      return {
+        id: preset.id,
+        Icon: preset.Icon,
+        label: preset.label,
+        run: write(scheduledAutomationChatPrompt(preset.cadence)),
+      };
+    }),
+    footer: {
+      id: "custom",
+      Icon: CalendarClock,
+      label: t(($) => {
+        return $.chat.composer.slashActions.scheduleCustom;
+      }),
+      run: write(CREATE_AUTOMATION_CHAT_PROMPT),
     },
   };
-  return effortShown ? [model, effort] : [model];
 }
 
 /** The actions that change how this chat runs. */
@@ -188,6 +385,7 @@ function useComposerActions(
         return $.chat.composer.slashActions.scheduleHint;
       }),
       keywords: ["schedule", "automation"],
+      submenu: useScheduleSubmenu(composer, leave),
       run: () => {
         leave();
         insertText(CREATE_AUTOMATION_CHAT_PROMPT);

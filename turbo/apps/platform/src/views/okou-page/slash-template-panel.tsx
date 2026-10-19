@@ -823,6 +823,8 @@ export function SlashActionRow({
   index,
   marked,
   scrollOnMount = false,
+  expanded,
+  onOpen,
   onPreview,
 }: {
   readonly action: SlashAction;
@@ -830,6 +832,13 @@ export function SlashActionRow({
   readonly marked: boolean;
   /** Bring the keyboard's row into view when a reversed list opens on it. */
   readonly scrollOnMount?: boolean;
+  /**
+   * Whether the second level this row opens is showing. Set only where the
+   * row opens one, which also draws its chevron.
+   */
+  readonly expanded?: boolean;
+  /** Opens the second level instead of running the action. */
+  readonly onOpen?: () => void;
   readonly onPreview: (index: number) => void;
 }) {
   const { Icon } = action;
@@ -838,6 +847,7 @@ export function SlashActionRow({
       id={slashWorkflowOptionId(slashActionOptionId(action.id))}
       ref={scrollOnMount ? scrollSelectedSlashOptionOnMount : undefined}
       type="button"
+      aria-expanded={expanded}
       data-active={marked ? "true" : undefined}
       className={cn(
         "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
@@ -846,7 +856,7 @@ export function SlashActionRow({
       onMouseMove={() => {
         onPreview(index);
       }}
-      onClick={action.run}
+      onClick={onOpen ?? action.run}
     >
       <Icon size={16} className="shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1 truncate">
@@ -860,6 +870,13 @@ export function SlashActionRow({
           </>
         )}
       </span>
+      {expanded !== undefined && (
+        <ChevronRight
+          size={16}
+          className="shrink-0 text-muted-foreground/50"
+          aria-hidden
+        />
+      )}
     </button>
   );
 }

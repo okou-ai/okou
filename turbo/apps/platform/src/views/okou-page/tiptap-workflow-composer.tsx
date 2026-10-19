@@ -364,6 +364,8 @@ interface ComposerSuggestionMenuState {
   readonly newWorkflow: () => void;
   /** The slash-actions overview, when it replaces the panel's own. */
   readonly actionsOverview: SlashActionsOverview | null;
+  /** The overview's first and second levels are separate cards. */
+  readonly cascade: boolean;
   /** The chat actions a typed slash query names. */
   readonly searchActions: readonly SlashAction[];
   readonly showWorkflows: boolean;
@@ -876,6 +878,7 @@ function useComposerSuggestionMenu({
     showWorkflowActions: rows.workflowActions,
     newWorkflow: templatePanel.newWorkflow,
     actionsOverview,
+    cascade: actionsOverview !== null && isDesktop,
     searchActions: slashActions.searchActions,
     showWorkflows,
     agents,
@@ -987,6 +990,7 @@ function ComposerSuggestionMenu({
           menuRef={
             slashHintEnabled ? setSlashHintMenuRef : setSuggestionMenuRef
           }
+          bare={suggestionMenu.cascade}
           anchor={suggestionAnchor}
         >
           {suggestionMenu.actionsOverview ? (
