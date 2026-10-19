@@ -165,6 +165,89 @@ async fn home_cache_retries_bound_physical_probes_and_service_later_keys_fairly(
 }
 
 #[tokio::test]
+async fn repeated_home_cache_events_cannot_starve_a_later_quiet_publication() {
+    for hot_keys_stay_locked in [true, false] {
+        let (dir, home, mut refresh, cache) = fixture();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        let quiet_key = publish(&cache, &paths, "quiet-publication").await;
+        let quiet_lock =
+            runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), &quiet_key))
+                .await
+                .unwrap();
+        let hot_keys = (0..RETRY_KEYS_PER_ROUND)
+            .map(|index| format!("{index:064x}"))
+            .collect::<BTreeSet<_>>();
+        let mut locks = Vec::new();
+        for key in &hot_keys {
+            assert!(key < &quiet_key);
+            locks.push(
+                runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), key))
+                    .await
+                    .unwrap(),
+            );
+        }
+        let mut keys = hot_keys.clone();
+        keys.insert(quiet_key);
+        refresh.request(HomeCacheChange {
+            observed_at: Instant::now(),
+            dirty_cache_keys: keys,
+            requires_full_reconcile: false,
+        });
+        assert!(step(&mut refresh).await.is_none());
+        drop(quiet_lock);
+        if !hot_keys_stay_locked {
+            locks.clear();
+        }
+        cache.reset_inventory_key_probe_count();
+        let mut recovered = false;
+        for _ in 0..2 {
+            if refresh.task.is_none() {
+                let deadline = refresh.retry_deadline().unwrap();
+                tokio::time::pause();
+                if deadline > Instant::now() {
+                    {
+                        let wait = refresh.wait();
+                        tokio::pin!(wait);
+                        assert!(futures_util::poll!(&mut wait).is_pending());
+                    }
+                    tokio::time::advance(deadline.saturating_duration_since(Instant::now())).await;
+                }
+                tokio::time::resume();
+            }
+            let change = HomeCacheChange {
+                observed_at: Instant::now(),
+                dirty_cache_keys: hot_keys.clone(),
+                requires_full_reconcile: false,
+            };
+            // Accept a due round, then enqueue another event before the
+            // current-thread runtime can poll or join its filesystem work.
+            refresh.request(change.clone());
+            assert!(refresh.task.is_some());
+            refresh.request(change);
+            let before = cache.inventory_key_probe_count();
+            step(&mut refresh).await;
+            assert!(cache.inventory_key_probe_count() - before <= RETRY_KEYS_PER_ROUND);
+            recovered = refresh
+                .context
+                .snapshot
+                .loaded_home_cache_snapshot()
+                .states
+                .iter()
+                .any(|state| state.reuse_key == "quiet-publication");
+            if recovered {
+                break;
+            }
+        }
+        assert!(
+            recovered,
+            "a quiet unlocked publication must progress while earlier keys receive overlapping events"
+        );
+        assert_eq!(cache.held_state_root_scan_count(), 0);
+        refresh.drain().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn busy_home_cache_retries_do_not_refill_a_truncated_snapshot_or_emit_changes() {
     let (_dir, home, mut refresh, cache) = fixture();
     let snapshot = &refresh.context.snapshot;

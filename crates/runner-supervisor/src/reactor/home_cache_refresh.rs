@@ -244,12 +244,18 @@ impl HomeCacheRefresh {
         let pending = self.pending.as_ref();
         let superseded =
             |key: &String| pending.is_some_and(|pending| pending.dirty_cache_keys.contains(key));
+        let now = Instant::now();
         for key in &result.change.dirty_cache_keys {
-            if !superseded(key) && !result.busy_keys.contains(key) {
+            if superseded(key) {
+                if let Some(busy) = self.busy_keys.get_mut(key) {
+                    // Retain the newer mutation, but a key just inspected must
+                    // yield its old priority to due work still awaiting a turn.
+                    busy.retry_at = busy.retry_at.max(now);
+                }
+            } else if !result.busy_keys.contains(key) {
                 self.busy_keys.remove(key);
             }
         }
-        let now = Instant::now();
         let mut overflow = false;
         for key in result.busy_keys {
             if let Some(busy) = self.busy_keys.get_mut(&key) {
