@@ -19,6 +19,7 @@ mod foreground_probe;
 mod guarded_readers;
 mod incoming_progress;
 mod incoming_work;
+mod later_parking;
 mod logical_progress;
 mod logical_work;
 mod observer_loss;
@@ -86,6 +87,7 @@ enum Corpus {
     ReturnedGuest(sandbox_firecracker::GuestPreparationStage),
     ObserverLoss(bool),
     StatusFailure,
+    LaterParking(bool),
 }
 
 enum PreparationProbe<'a> {
@@ -326,6 +328,7 @@ enum NativeScope {
     FinalizingParked,
     FinalizingRunning,
     Pressure,
+    LaterParking,
 }
 
 fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
@@ -335,9 +338,10 @@ fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
         // ResourceBudget's host CPU reservation. This is logical fixture
         // capacity, not a measurement of available physical host CPUs.
         NativeScope::Critical => (10, 16384),
-        NativeScope::Replacement | NativeScope::Restore | NativeScope::ForegroundFresh => {
-            (6, 12288)
-        }
+        NativeScope::Replacement
+        | NativeScope::Restore
+        | NativeScope::ForegroundFresh
+        | NativeScope::LaterParking => (6, 12288),
         NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
             (12, 24576)
         }
@@ -561,6 +565,32 @@ fn native_status_failure_report_requires_saved_data_and_current_retry() {
         "status failure report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn native_later_parking_report_requires_fixed_selection_and_current_inventory() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/later_parking_report_test.py"
+        ))
+        .output()
+        .expect("native later parking report requires Python3");
+    assert!(
+        output.status.success(),
+        "later parking report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source later-parking P1 proof"]
+async fn native_fixed_batch_preserves_later_exact_and_blank_inventory() -> TestResult<()> {
+    measured_selected_corpora(
+        &[NativeScope::LaterParking],
+        &[Corpus::LaterParking(false), Corpus::LaterParking(true)],
+    )
+    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -890,6 +920,8 @@ async fn exercise_selected_factories(
                                 format!("Observer{}", if panic { "Panic" } else { "Drop" })
                             } else if corpus == Corpus::StatusFailure {
                                 "StatusFailure".into()
+                            } else if let Corpus::LaterParking(blank) = corpus {
+                                format!("Later{}", if blank { "Blank" } else { "Exact" })
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1229,6 +1261,7 @@ async fn exercise_retirement(
             | Corpus::ReturnedGuest(_)
             | Corpus::ObserverLoss(_)
             | Corpus::StatusFailure
+            | Corpus::LaterParking(_)
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1319,6 +1352,18 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::LaterParking => {
+                let Corpus::LaterParking(blank) = corpus else {
+                    return Err(io::Error::other("later parking corpus missing").into());
+                };
+                later_parking::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, proof.ok_or_else(|| io::Error::other("later parking proof missing"))?,
+                    paths.base_dir(), backing.clone(), blank).await?;
+                Ok(None)
+            }
             NativeScope::ForegroundFresh | NativeScope::ForegroundReuse => {
                 foreground::exercise(foreground::Request { context: transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
