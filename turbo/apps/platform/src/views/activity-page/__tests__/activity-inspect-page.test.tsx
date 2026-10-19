@@ -542,6 +542,19 @@ test("A user can inspect steps, context, and network details from an exported lo
   const details = document.getElementById(detailsId);
   expect(details).not.toBeVisible();
 
+  const targetText = within(networkRow).getByText(
+    "https://api.github.com/repos/okou-ai/okou",
+  );
+  expect(targetText.closest("button, a")).toBeNull();
+
+  click(within(networkRow).getByText("200"));
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  expect(details).toBeVisible();
+
+  click(networkRow);
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  expect(details).not.toBeVisible();
+
   await user.click(disclosure);
   await waitFor(() => {
     expect(screen.getByText("github-connector")).toBeInTheDocument();
@@ -575,7 +588,9 @@ test("A user can inspect steps, context, and network details from an exported lo
   expect(details).not.toBeVisible();
   const nextDisclosure = queryAllByRoleFast("button", networkTable).find(
     (button) => {
-      return button.textContent?.trim() === "https://slack.com/api/auth.test";
+      return (
+        button.getAttribute("aria-label") === "https://slack.com/api/auth.test"
+      );
     },
   );
   if (!nextDisclosure) {
@@ -585,6 +600,52 @@ test("A user can inspect steps, context, and network details from an exported lo
   await user.click(nextDisclosure);
   expect(nextDisclosure).toHaveFocus();
   expect(screen.getByText("slack-connector")).toBeInTheDocument();
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+});
+
+test("Selecting and copying a network URL preserves its request details", async () => {
+  await setupPage({
+    context,
+    path: "/activities/inspect?tab=network",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await screen.findByText("No log loaded");
+  await user.upload(getFileInput(), inspectFile());
+  const target = "https://api.github.com/repos/okou-ai/okou";
+  const url = await screen.findByText(target);
+  const row = url.closest("tr");
+  if (!row) {
+    throw new Error("Expected the network URL in a request row");
+  }
+  const disclosure = queryAllByRoleFast("button", row)[0];
+  if (!disclosure) {
+    throw new Error("Expected a network detail disclosure button");
+  }
+
+  await user.pointer([
+    { target: url, offset: 0, keys: "[MouseLeft>]" },
+    { offset: target.length },
+    { keys: "[/MouseLeft]" },
+  ]);
+  expect(window.getSelection()?.toString()).toBe(target);
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await user.copy();
+  await expect(navigator.clipboard.readText()).resolves.toBe(target);
+
+  // Explicit arrow activation still works while a URL selection exists.
+  click(disclosure);
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  await user.pointer([
+    { target: url, offset: 0, keys: "[MouseLeft>]" },
+    { offset: target.length },
+    { keys: "[/MouseLeft]" },
+  ]);
+  expect(window.getSelection()?.toString()).toBe(target);
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("github-connector")).toBeInTheDocument();
+
+  window.getSelection()?.removeAllRanges();
+  click(within(row).getByText("GET"));
   expect(disclosure).toHaveAttribute("aria-expanded", "false");
 });
 
