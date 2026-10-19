@@ -25,7 +25,6 @@ import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
-  addFeishuMessageReaction,
   listFeishuMessages,
   replyWithFeishuMessage,
   type FeishuHistoryMessage,
@@ -41,7 +40,6 @@ import {
 } from "./feishu-realtime.service";
 
 const L = logger("FeishuDispatch");
-const FEISHU_THINKING_EMOJI = "Typing";
 interface FeishuPromptContext {
   readonly text: string;
   readonly files: readonly FeishuPromptFile[];
@@ -691,31 +689,3 @@ export const dispatchConnectedFeishuCommand$ = command(
     return true;
   },
 );
-
-export async function addFeishuThinkingReaction(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-  },
-  signal: AbortSignal,
-): Promise<string | undefined> {
-  const reactionId = await tapError(
-    addFeishuMessageReaction(
-      {
-        db: args.db,
-        installationId: args.message.installationId,
-        messageId: args.message.messageId,
-        emojiType: FEISHU_THINKING_EMOJI,
-      },
-      signal,
-    ),
-    (error) => {
-      L.warn("Failed to set Feishu thinking indicator", {
-        error,
-        messageId: args.message.messageId,
-      });
-    },
-  );
-  signal.throwIfAborted();
-  return reactionId;
-}

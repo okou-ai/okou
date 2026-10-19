@@ -139,7 +139,6 @@ export const processPendingBatch$ = command(
       eq(wechatConnections.id, connection.id),
       eq(wechatConnections.generation, connection.generation),
       eq(wechatConnections.status, connection.status),
-      eq(wechatConnections.workflowReceiver, connection.workflowReceiver),
     );
     const batch = pendingBatchSchema.parse(
       JSON.parse(await decryptStoredSecretValue(batchCiphertext)) as unknown,

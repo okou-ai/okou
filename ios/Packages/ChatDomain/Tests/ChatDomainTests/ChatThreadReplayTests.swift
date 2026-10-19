@@ -9,7 +9,8 @@ private let replayAgent = "10000000-0000-4000-8000-000000000103"
 final class ChatThreadReplayTests: XCTestCase {
 
   func testHiddenThreadsCanBecomeVisibleWithoutLosingConversationMetadata() throws {
-    let snapshot = ChatThreadReplay.replay(snapshot: [], events: [event(.created, at: 1, title: "Brief")])
+    let snapshot = ChatThreadReplay.replay(
+      snapshot: [], events: [event(.created, at: 1, title: "Brief")])
     let hide = ChatThreadChange(
       kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
       hidden: true, createdAt: date(10))

@@ -2378,8 +2378,15 @@
     {
       "idx": 1417,
       "version": "7",
-      "when": 1792397801030,
-      "tag": "1417_official_workflow_hidden_threads",
+      "when": 1792397522153,
+      "tag": "1417_wechat_workflows_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 1418,
+      "version": "7",
+      "when": 1792402072046,
+      "tag": "1418_official_workflow_hidden_threads",
       "breakpoints": true
     }
   ]

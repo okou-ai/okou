@@ -24,10 +24,10 @@ use super::gc_metadata::read_gc_metadata_file;
 use super::gc_pressure::{GcContinuation, GcTarget, HomeCacheReclaimStatus};
 use super::io_context::with_path;
 
+/// An identity/LRU observation; only selected victims need allocation accounting.
 pub(super) struct GcCandidate {
     pub(super) cache_key: String,
     pub(super) image_generation: String,
-    pub(super) allocated_bytes: u64,
     pub(super) prospective_cleanup_bytes: u64,
     file_dev: u64,
     file_ino: u64,
@@ -76,6 +76,22 @@ fn routine_gc_is_due(capacity_lock: &File, minimum_interval: Duration) -> std::i
 }
 
 impl GcCandidate {
+    fn from_observation(
+        cache_key: String,
+        file_metadata: std::fs::Metadata,
+        last_used_at: String,
+        image_generation: String,
+    ) -> Self {
+        Self {
+            cache_key,
+            image_generation,
+            prospective_cleanup_bytes: 0,
+            file_dev: file_metadata.dev(),
+            file_ino: file_metadata.ino(),
+            last_used_at,
+        }
+    }
+
     pub(super) fn same_current_image(&self, other: &Self) -> bool {
         self.file_dev == other.file_dev
             && self.file_ino == other.file_ino
@@ -521,18 +537,15 @@ impl HomeImageCache {
         let pre_cleanup_freed_bytes = self
             .gc_temporary_paths(entry, dry_run, Some(&metadata.image_generation))
             .await?;
-        let candidate = self
-            .gc_candidate_from_observation(
-                entry.cache_key.clone(),
-                &entry.paths,
-                current_metadata,
-                metadata.last_used_at,
-                metadata.image_generation,
-            )
-            .await;
+        let candidate = GcCandidate::from_observation(
+            entry.cache_key.clone(),
+            current_metadata,
+            metadata.last_used_at,
+            metadata.image_generation,
+        );
         Ok(GcEntryInventory {
             pre_cleanup_freed_bytes,
-            candidate,
+            candidate: Some(candidate),
         })
     }
 
@@ -816,28 +829,6 @@ impl HomeImageCache {
         Ok(Some(candidates))
     }
 
-    async fn gc_candidate_from_observation(
-        &self,
-        cache_key: String,
-        paths: &CacheEntryPaths,
-        file_metadata: std::fs::Metadata,
-        last_used_at: String,
-        image_generation: String,
-    ) -> Option<GcCandidate> {
-        let total = super::fs::measured_entry_bytes(paths.entry_dir())
-            .await
-            .ok()?;
-        Some(GcCandidate {
-            cache_key,
-            image_generation,
-            allocated_bytes: total,
-            prospective_cleanup_bytes: 0,
-            file_dev: file_metadata.dev(),
-            file_ino: file_metadata.ino(),
-            last_used_at,
-        })
-    }
-
     async fn gc_candidate_for_entry(&self, entry: &GcCacheEntry) -> Option<GcCandidate> {
         if !cache_entry_dir_is_dir(entry.paths.entry_dir()).await.ok()? {
             return None;
@@ -848,14 +839,12 @@ impl HomeImageCache {
         if metadata.validate_current_image(&file_metadata).is_err() {
             return None;
         }
-        self.gc_candidate_from_observation(
+        Some(GcCandidate::from_observation(
             entry.cache_key.clone(),
-            &entry.paths,
             file_metadata,
             metadata.last_used_at,
             metadata.image_generation,
-        )
-        .await
+        ))
     }
 
     pub(super) async fn gc_candidate(&self, cache_key: String) -> Option<GcCandidate> {

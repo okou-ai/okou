@@ -2,9 +2,9 @@ import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/mode
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersByTypeContract,
-  personalModelProvidersMainContract,
   personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { mockApi } from "../msw-contract.ts";
 
 // Mock personal model providers data — empty by default
@@ -54,9 +54,9 @@ export const apiPersonalModelProvidersHandlers = [
           });
     },
   ),
-  // GET /api/me/model-providers - List the user's personal model providers
-  mockApi(personalModelProvidersMainContract.list, ({ respond }) => {
-    return respond(200, { modelProviders: mockPersonalModelProviders });
+  // GET /api/me/3rd-party-subscriptions - List the user's subscriptions
+  mockApi(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
+    return respond(200, { subscriptions: mockPersonalModelProviders });
   }),
 
   // POST /api/me/model-providers/:type/subscription-reset - Reset Codex usage

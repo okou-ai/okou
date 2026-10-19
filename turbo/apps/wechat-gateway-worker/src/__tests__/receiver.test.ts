@@ -4,6 +4,7 @@ import { convertV4MiniflareOptions, Miniflare, Response } from "miniflare";
 import { expect, it, onTestFinished } from "vitest";
 const control = randomUUID();
 const secret = randomUUID();
+const generation = randomUUID();
 const connectionId = "00000000-0000-4000-8000-000000000001";
 function fixture(enabled = true) {
   const received = Promise.withResolvers<{
@@ -33,14 +34,14 @@ function fixture(enabled = true) {
       },
       bindings: {
         WECHAT_GATEWAY_ENABLED: String(enabled),
-        WECHAT_WORKFLOWS_ENABLED: "false",
+        WECHAT_RECEIVER_ENCRYPTION_KEY: randomUUID(),
         WECHAT_GATEWAY_SECRET: secret,
         WECHAT_GATEWAY_CONTROL_SECRET: control,
         API_ORIGIN: "https://api.example.test",
       },
       outboundService: async (request) => {
         expect(request.url).toBe(
-          "https://api.example.test/api/internal/wechat/poll",
+          "https://api.example.test/api/internal/wechat/receiver",
         );
         const body = await request.text();
         received.resolve({
@@ -64,7 +65,7 @@ it("requires authenticated control and remains disabled by default", async () =>
       await disabled.runtime.dispatchFetch("https://worker/start", {
         method: "POST",
         headers: { Authorization: `Bearer ${control}` },
-        body: JSON.stringify({ connectionId }),
+        body: JSON.stringify({ connectionId, generation }),
       })
     ).status,
   ).toBe(503);
@@ -82,7 +83,7 @@ it("requires authenticated control and remains disabled by default", async () =>
     (
       await enabled.runtime.dispatchFetch("https://worker/start", {
         method: "POST",
-        body: JSON.stringify({ connectionId }),
+        body: JSON.stringify({ connectionId, generation }),
       })
     ).status,
   ).toBe(401);
@@ -94,7 +95,7 @@ it("an authorized start durably schedules a signed canonical API request", async
       await runtime.dispatchFetch("https://worker/start", {
         method: "POST",
         headers: { Authorization: `Bearer ${control}` },
-        body: JSON.stringify({ connectionId }),
+        body: JSON.stringify({ connectionId, generation }),
       })
     ).status,
   ).toBe(200);
@@ -106,3 +107,19 @@ it("an authorized start durably schedules a signed canonical API request", async
       .digest("hex"),
   );
 });
+
+it.each([undefined, "invalid-generation"])(
+  "requires a valid generation to start (%s)",
+  async (invalidGeneration) => {
+    const { runtime } = fixture();
+    expect(
+      (
+        await runtime.dispatchFetch("https://worker/start", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${control}` },
+          body: JSON.stringify({ connectionId, generation: invalidGeneration }),
+        })
+      ).status,
+    ).toBe(400);
+  },
+);

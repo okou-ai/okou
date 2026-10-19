@@ -5,11 +5,11 @@ import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okoua
 import {
   activatePersonalModelProviderAccount$,
   deletePersonalModelProviderAccount$,
-  personalModelProviders$,
   resetPersonalCodexAccountSubscriptionUsage$ as resetPersonalCodexAccountSubscriptionUsageRequest$,
   resetPersonalCodexSubscriptionUsage$ as resetPersonalCodexSubscriptionUsageRequest$,
 } from "../../external/personal-model-providers.ts";
 import { i18n } from "../../../i18n/index.ts";
+import { thirdPartySubscriptions$ } from "../../external/third-party-subscriptions.ts";
 
 // ---------------------------------------------------------------------------
 // Action promise (loading state)
@@ -79,8 +79,8 @@ export const setPersonalAccountDisconnectDialog$ = command(
 // ---------------------------------------------------------------------------
 
 export const personalConfiguredProviders$ = computed(async (get) => {
-  const { modelProviders } = await get(personalModelProviders$);
-  return [...modelProviders].sort((a, b) => {
+  const { subscriptions } = await get(thirdPartySubscriptions$);
+  return [...subscriptions].sort((a, b) => {
     if (a.type === b.type && a.isActive !== b.isActive) {
       return a.isActive ? -1 : 1;
     }

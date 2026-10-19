@@ -8,10 +8,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  personalModelProvidersByTypeContract,
-  personalModelProvidersMainContract,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
@@ -279,14 +277,14 @@ test("Keep Codex reset pending until refreshed account-menu usage is ready", asy
   const finishRefresh = context.mocks.deferred<void>();
   let resetCompleted = false;
   context.mocks.api(
-    personalModelProvidersMainContract.list,
+    thirdPartySubscriptionsMainContract.list,
     async ({ respond }) => {
       if (resetCompleted) {
         refreshStarted.resolve();
         await finishRefresh.promise;
       }
       return respond(200, {
-        modelProviders: [
+        subscriptions: [
           connectedPersonalCodexProvider({
             subscriptionResetCredits: resetCompleted ? 1 : 2,
           }),
@@ -399,7 +397,7 @@ test.each([null] as const)(
     let menuOpened = false;
 
     context.mocks.api(
-      personalModelProvidersMainContract.list,
+      thirdPartySubscriptionsMainContract.list,
       async ({ respond }) => {
         if (menuOpened) {
           await providerResponse.promise;

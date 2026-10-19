@@ -88,7 +88,8 @@ struct ThreadEvent: Codable, Sendable {
     ChatThreadChange(
       kind: kind, chatThreadId: chatThreadId, agentId: agentId,
       reassignedAgentId: reassignedAgentId, title: title, selectedModel: selectedModel,
-      pinOrder: pinOrder, hidden: hidden, modelSettings: modelSettings, modelSettingsPatch: modelSettingsPatch,
+      pinOrder: pinOrder, hidden: hidden, modelSettings: modelSettings,
+      modelSettingsPatch: modelSettingsPatch,
       serviceTier: serviceTier, computerUseHostId: computerUseHostId,
       cloudBrowserEnabled: cloudBrowserEnabled, createdAt: createdAt)
   }

@@ -227,7 +227,9 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
     resourceButton().focus();
   });
   expect(resourceButton()).toHaveFocus();
-  const link = within(panel).getByText("Current guide");
+  const link = queryAllByRoleFast("link", panel).find((candidate) => {
+    return candidate.textContent === "Current guide";
+  })!;
   act(() => {
     link.focus();
   });

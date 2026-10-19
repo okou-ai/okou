@@ -13,8 +13,11 @@ final class ConversationHistoryFixture: Sendable {
   let http: ChatHTTPFixture
   private let rows: HistoryRows
 
-  init(count: Int = 100) {
-    let initial = (0..<count).map { Self.row($0 + 1) }
+  convenience init(count: Int = 100) {
+    self.init(rows: (0..<count).map { Self.row($0 + 1) })
+  }
+
+  init(rows initial: [String]) {
     let rows = HistoryRows(initial)
     self.rows = rows
     http = ChatHTTPFixture { request in
@@ -53,6 +56,8 @@ final class ConversationHistoryFixture: Sendable {
   }
 
   func appendMessage() { rows.values.withLock { $0.append(Self.row($0.count + 1)) } }
+
+  func append(_ row: String) { rows.values.withLock { $0.append(row) } }
 
   func revoke(_ sequence: Int) {
     rows.values.withLock { values in

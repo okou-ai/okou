@@ -1,5 +1,5 @@
 {
-  "id": "ab11ccf1-0436-4ba2-9b28-e93263fdf124",
+  "id": "9f282c14-1e46-462e-95e2-ba4014221e5c",
   "prevId": "ca838b6c-7fb8-47b9-ae10-d11f37e2b36f",
   "version": "7",
   "dialect": "postgresql",
@@ -8173,12 +8173,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "hidden": {
-          "name": "hidden",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
         "selected_model": {
           "name": "selected_model",
           "type": "varchar(255)",
@@ -8689,13 +8683,6 @@
         },
         "archived": {
           "name": "archived",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "hidden": {
-          "name": "hidden",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -19974,13 +19961,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "hidden_thread_definition_names": {
-          "name": "hidden_thread_definition_names",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -34873,13 +34853,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "workflow_receiver": {
-          "name": "workflow_receiver",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",

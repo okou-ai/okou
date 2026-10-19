@@ -29,6 +29,7 @@ import {
   RESOURCE_PREVIEW_LIMIT,
 } from "./chat-resource-section.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
@@ -115,9 +116,8 @@ function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
       pathname={ROUTES.chat}
       options={{ pathParams: { threadId: chat.threadId } }}
       className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.75 text-[13px] leading-5 transition-colors hover:bg-gray-50 focus-visible:bg-gray-50"
-      title={title}
     >
-      <span className="min-w-0 flex-1 truncate">{title}</span>
+      <HoverScrollTitle title={title} />
       <span
         role="img"
         aria-label={status}
