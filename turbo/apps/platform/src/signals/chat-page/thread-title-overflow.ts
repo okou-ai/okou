@@ -32,15 +32,15 @@ function writeTitleOverflow(element: HTMLElement): void {
 }
 
 /**
- * Publishes how much of a sidebar thread title is cut off. The stylesheet
+ * Publishes how much of a thread title is cut off. The stylesheet
  * derives both the fade mask and the hover travel from that one number, so a
  * title that fits gets neither without a second code path.
  *
- * The observer watches the box for sidebar width changes and the text for
+ * The observer watches the box for container width changes and the text for
  * renames and late web-font metrics. Neither remounts the element, so the ref
  * on its own would leave a stale distance behind.
  */
-export const sidebarThreadTitleOverflowRef$ = onRef(
+export const threadTitleOverflowRef$ = onRef(
   command((_context, element: HTMLElement, signal: AbortSignal) => {
     writeTitleOverflow(element);
 
