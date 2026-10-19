@@ -25,15 +25,16 @@ def _flow(real_flow, tmp_path, *, path="/2/tweets", permission="tweet.read"):
     )
 
 
-def _complete(flow, body):
+async def _complete(flow, body):
     mitm_addon.responseheaders(flow)
     response_stream(flow)(body)
+    await mitm_addon.responseinspection(flow)
     response_stream(flow)(b"")
     mitm_addon.response(flow)
     usage.flush_usage_events(trigger="test")
 
 
-def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_remainder(
+async def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_remainder(
     real_flow, tmp_path, usage_webhook_api
 ):
     flow = _flow(real_flow, tmp_path)
@@ -54,7 +55,7 @@ def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_remain
         }
     ).encode()
     with usage_webhook_api() as webhook:
-        _complete(flow, body)
+        await _complete(flow, body)
         # Even after flush, duplicate terminal hooks cannot create another obligation.
         mitm_addon.response(flow)
         flow.error = Error("late transport close")
@@ -92,29 +93,29 @@ def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_remain
         ),
     ],
 )
-def test_bounded_or_malformed_identity_inspection_preserves_original_count(
+async def test_bounded_or_malformed_identity_inspection_preserves_original_count(
     real_flow, tmp_path, usage_webhook_api, body, reason, quantity
 ):
     flow = _flow(real_flow, tmp_path, path="/2/tweets?ids=1,2")
     with usage_webhook_api() as webhook:
-        _complete(flow, body)
+        await _complete(flow, body)
     (event,) = webhook.usage_events()
     assert event["remainder"] == [{"reason": reason, "quantity": quantity}]
     assert event["quantity"] == sum(item["occurrences"] for item in event["resources"]) + quantity
     assert len(event["resources"]) <= 1000
 
 
-def test_profile_ids_are_supported_but_unknown_posts_paths_do_not_claim_ids(
+async def test_profile_ids_are_supported_but_unknown_posts_paths_do_not_claim_ids(
     real_flow, tmp_path, usage_webhook_api
 ):
     with usage_webhook_api() as webhook:
-        _complete(
+        await _complete(
             _flow(
                 real_flow, tmp_path, path="/2/users/by/username/example", permission="users.read"
             ),
             b'{"data":{"id":"0007"}}',
         )
-        _complete(
+        await _complete(
             _flow(real_flow, tmp_path, path="/2/tweets/compliance/stream"),
             b'{"data":{"id":"900"}}\n',
         )
@@ -124,7 +125,7 @@ def test_profile_ids_are_supported_but_unknown_posts_paths_do_not_claim_ids(
     assert events["posts.read"]["remainder"] == [{"reason": "unsupported_resource", "quantity": 1}]
 
 
-def test_count_endpoint_ignores_data_and_expansion_ids_when_preserving_total(
+async def test_count_endpoint_ignores_data_and_expansion_ids_when_preserving_total(
     real_flow, tmp_path, usage_webhook_api
 ):
     flow = _flow(real_flow, tmp_path, path="/2/tweets/counts/recent")
@@ -136,7 +137,7 @@ def test_count_endpoint_ignores_data_and_expansion_ids_when_preserving_total(
         }
     ).encode()
     with usage_webhook_api() as webhook:
-        _complete(flow, body)
+        await _complete(flow, body)
     (event,) = webhook.usage_events()
     assert event["quantity"] == 2
     assert event["resources"] == []

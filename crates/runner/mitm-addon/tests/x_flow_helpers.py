@@ -1,5 +1,6 @@
 """Shared X connector flow and payload builders for mitm-addon tests."""
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,6 +16,24 @@ RealFlowFactory = Callable[..., http.HTTPFlow]
 _JSON_EXCESSIVE_NESTING_DEPTH = 10_000
 _JSON_INTEGER_DIGIT_LIMIT_DIGITS = 10_000
 _X_DENSE_OBJECT_COUNT = 30_000
+
+
+def x_json_user_page(count: int = 1_000, *, representation: str = "escaped") -> bytes:
+    """A supported users/search page with ordinary 160-character descriptions."""
+    description = ("a" if representation == "ascii" else "中") * 160
+    users = [
+        {
+            "id": str(10**18 + index),
+            "name": f"User {index}",
+            "username": f"user{index}",
+            "description": description,
+        }
+        for index in range(count)
+    ]
+    return json.dumps(
+        {"data": users, "meta": {"result_count": count}},
+        ensure_ascii=representation != "utf8",
+    ).encode()
 
 
 def x_original_url(path: str, query: str = "") -> str:
