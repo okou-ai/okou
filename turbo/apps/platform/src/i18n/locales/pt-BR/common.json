@@ -605,6 +605,23 @@
       "uploadSheets": "Enviar para o Google Sheets",
       "uploadSlides": "Enviar para o Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Todos os itens exibidos",
+      "arrayCount": "Itens: {{formattedCount}}",
+      "collapse": "Recolher {{label}}",
+      "collapseAll": "Recolher tudo",
+      "complexity": "Este JSON é complexo demais para a árvore. Exibindo o código-fonte.",
+      "copyNode": "Copiar {{label}}",
+      "copySource": "Copiar código-fonte da prévia",
+      "expand": "Expandir {{label}}",
+      "incomplete": "Apenas parte do arquivo foi carregada. Exibindo o código-fonte; baixe o arquivo para ver todo o conteúdo.",
+      "invalid": "Este JSON não é válido. Exibindo o código-fonte.",
+      "limited": "Alguns nós estão ocultos. Alterne para o código-fonte para ver todo o texto carregado.",
+      "more": "Mostrar mais",
+      "objectCount": "Chaves: {{formattedCount}}",
+      "source": "Código-fonte",
+      "tree": "Árvore"
+    },
     "kinds": {
       "audio": "Áudio",
       "avatar": "Avatar",

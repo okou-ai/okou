@@ -44,6 +44,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.JsonTreePreview]: {
+    maintainer: "liangyou@vm0.ai",
+    displayName: "JSON tree previews",
+    description: "Explore JSON nodes in file and artifact previews.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
   [FeatureSwitchKey.HostedSiteUrlEditing]: {

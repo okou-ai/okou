@@ -47,9 +47,13 @@ import {
   currentLeftThread$,
   currentRightThread$,
 } from "../../signals/chat-page/chat-thread-panes.ts";
-import { detach, jsonParseOr, Reason } from "../../signals/utils.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
-import type { TextPreviewComputed } from "../../signals/text-preview.ts";
+import type {
+  TextPreviewComputed,
+  TextPreviewContent,
+} from "../../signals/text-preview.ts";
+import { JsonPreview } from "../components/json-preview.tsx";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
 import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import {
@@ -111,10 +115,17 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
 import { isOfficeFilePreview } from "./office-file-preview.ts";
 
-type TextPreviewLoadState = {
-  readonly status: "loading" | "loaded" | "error";
-  readonly text: string;
-};
+type TextPreviewLoadState =
+  | {
+      readonly status: "loaded";
+      readonly text: string;
+      readonly preview: TextPreviewContent;
+    }
+  | {
+      readonly status: "loading" | "error";
+      readonly text: "";
+      readonly preview: null;
+    };
 
 type DocumentAttachmentPreviewKind =
   "markdown" | "text" | "json" | "csv" | "html" | "pdf";
@@ -153,23 +164,16 @@ export function TextPreviewLoader({
 }) {
   const loadable = useLoadable(text$);
   if (loadable.state === "hasData") {
-    return children({ status: "loaded", text: loadable.data });
+    return children({
+      status: "loaded",
+      text: loadable.data.text,
+      preview: loadable.data,
+    });
   }
   if (loadable.state === "hasError") {
-    return children({ status: "error", text: "" });
+    return children({ status: "error", text: "", preview: null });
   }
-  return children({ status: "loading", text: "" });
-}
-
-function formatPlainPreviewText(
-  kind: "text" | "json" | "csv",
-  text: string,
-): string {
-  if (kind === "json") {
-    const parsed = jsonParseOr<unknown>(text, null);
-    return parsed === null ? text : JSON.stringify(parsed, null, 2);
-  }
-  return text;
+  return children({ status: "loading", text: "", preview: null });
 }
 
 /** Null keeps source visible when CSV cannot form a faithful, bounded table. */
@@ -593,7 +597,7 @@ function ArtifactDialogTextBody({
           });
   return (
     <TextPreviewLoader text$={text$}>
-      {({ status, text }) => {
+      {({ status, text, preview }) => {
         if (status === "loading") {
           return (
             <ArtifactDialogStage>
@@ -614,6 +618,15 @@ function ArtifactDialogTextBody({
           );
         }
 
+        if (kind === "json" && preview) {
+          return (
+            <ArtifactDialogStage scrollable={false}>
+              <ArtifactDialogCard fillHeight>
+                <JsonPreview preview={preview} maxCharacters={maxCharacters} />
+              </ArtifactDialogCard>
+            </ArtifactDialogStage>
+          );
+        }
         const rows = kind === "csv" ? parseCsvPreviewRows(text) : null;
         if (rows) {
           return (
@@ -640,7 +653,7 @@ function ArtifactDialogTextBody({
           );
         }
 
-        const formatted = formatPlainPreviewText(kind, text);
+        const formatted = text;
         const display =
           formatted.length > maxCharacters
             ? `${formatted.slice(0, maxCharacters)}\n\n…`

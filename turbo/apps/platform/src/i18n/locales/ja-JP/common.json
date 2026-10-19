@@ -586,6 +586,23 @@
       "uploadSheets": "Google スプレッドシートにアップロード",
       "uploadSlides": "Google Slides にアップロード"
     },
+    "jsonPreview": {
+      "allShown": "すべての項目を表示済み",
+      "arrayCount": "項目数：{{formattedCount}}",
+      "collapse": "{{label}} を折りたたむ",
+      "collapseAll": "すべて折りたたむ",
+      "complexity": "この JSON は複雑すぎるため、ソースを表示しています。",
+      "copyNode": "{{label}} をコピー",
+      "copySource": "プレビューのソースをコピー",
+      "expand": "{{label}} を展開",
+      "incomplete": "ファイルの一部のみ読み込まれています。ソースを表示しています。全内容はファイルをダウンロードして確認してください。",
+      "invalid": "有効な JSON ではありません。ソースを表示しています。",
+      "limited": "一部のノードは非表示です。読み込んだ全文はソースで確認できます。",
+      "more": "さらに表示",
+      "objectCount": "キー数：{{formattedCount}}",
+      "source": "ソース",
+      "tree": "ツリー"
+    },
     "kinds": {
       "audio": "オーディオ",
       "avatar": "アバター",

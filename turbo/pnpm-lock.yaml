@@ -701,6 +701,9 @@ importers:
       idb:
         specifier: ~8.0.3
         version: 8.0.3
+      jsonc-parser:
+        specifier: 3.3.1
+        version: 3.3.1
       katex:
         specifier: 0.18.7
         version: 0.18.7
