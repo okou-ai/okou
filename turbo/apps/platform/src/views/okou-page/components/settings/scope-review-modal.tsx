@@ -21,25 +21,22 @@ interface ScopeReviewModalProps {
   onReconnect: (selection: BuiltinConnectorScopeReviewSelection) => void;
 }
 
-export function ScopeReviewContent({
+function ScopeReviewContent({
   addedScopes,
   removedScopes,
-  description,
   children,
 }: {
   addedScopes: readonly string[];
   removedScopes: readonly string[];
-  description?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        {description ??
-          t(($) => {
-            return $.connectors.permissions.scopeReview.description;
-          })}
+        {t(($) => {
+          return $.connectors.permissions.scopeReview.description;
+        })}
       </p>
 
       {addedScopes.length > 0 && (
