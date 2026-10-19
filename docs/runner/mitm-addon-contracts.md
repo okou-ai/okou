@@ -88,6 +88,41 @@ native HTTP stream hooks and fixture-owned TCP peers for both paths to verify
 fairness, byte forwarding and read backpressure. These tests do not claim
 production latency or a production load soak.
 
+### Responses WebSocket message inspection
+
+Activated Responses WebSockets use the same owner-loop inspection driver.
+Client intent and shared server lifecycle/usage parsing feed at most 4 KiB per
+step, with at most eight steps before yielding. Each complete message retains
+the existing 65,536-unit total parser-work budget across all feeds. The separate
+4 KiB event-type prefix probe and documented non-usage fast path remain bounded
+and synchronous. Observations commit only after complete accepted extraction;
+failed or abandoned messages never contribute authoritative partial usage.
+
+The native message hook awaits remaining work before forwarding and before the
+next message hook. Its pinned `WebsocketLayer.relay_messages` bridge preserves
+the original hook, framing and message bytes, protects message history from
+earlier deferred trim callbacks, and joins the complete hook continuation in
+both peers' existing reader `drain_writers()` boundaries. Each peer waits before
+its next read, bounding the paused layer's queued socket input. Successor
+messages already in one read transfer checkpoints back to that reader, avoiding a retained chain of
+native hook tasks. The addon creates no detached inspection task or payload
+queue. Ordinary WebSocket hooks keep their native behavior.
+
+Hook cancellation, reader cancellation, connection errors and terminal release
+discard pending parser state and mark interrupted coverage and ambiguous
+correlation. A checkpoint abandoned before its hook starts cannot later inspect
+the message. An already resumed hook is never completed a second time after a
+continuation failure. Earlier complete observations remain valid and later
+messages can recover. Deferred trims resume after the native hook, and terminal
+cleanup prevents stale completion from restoring usage or retained history.
+
+`tests/test_websocket_cooperative_inspection.py` covers costly accepted/rejected
+messages, exact budgets, consistency, recovery, retention and terminal cleanup.
+`tests/test_mitmproxy_websocket_inspection.py` uses the real pinned WebSocket
+layer and read loop with local TCP peers for forwarding, ordering, read
+backpressure, bounded native hook ownership and cancellation. These are local
+protocol tests, not live-provider or production latency measurements.
+
 ## Platform connector authorization path policy
 
 Registered sandbox requests to the configured platform API normally use the

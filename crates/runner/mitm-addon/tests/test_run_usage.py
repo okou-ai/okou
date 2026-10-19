@@ -28,6 +28,7 @@ from tests.model_provider_websocket_helpers import (
     set_websocket_message,
 )
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
+from tests.websocket_cooperative_helpers import costly_message, deliver
 
 
 @pytest.fixture
@@ -705,7 +706,11 @@ async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery
 
         # Correlation and accounting still inspect this frame after all four
         # diagnostics have been spent on a different error kind.
-        feed_websocket_server_message(flow, b'{"padding":[' + b",".join([b"0"] * 40_000) + b"]}")
+        completion = feed_websocket_server_message(
+            flow, b'{"padding":[' + b",".join([b"0"] * 40_000) + b"]}"
+        )
+        assert completion is not None
+        await completion
         run_deferred_websocket_trims(scheduled)
         assert "ambiguous_response" in read_usage(control)["reasons"]
         feed_websocket_server_message(
@@ -727,6 +732,81 @@ async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery
     assert result["complete"] is False
     assert "parse_error" in result["reasons"]
     assert "ambiguous_response" in result["reasons"]
+
+
+@pytest.mark.parametrize("termination", ["cancel", "end", "error"])
+async def test_abandoned_websocket_inspection_preserves_cumulative_observations(
+    tmp_path, control, real_flow, mitm_ctx, fake_firewall_headers, termination
+):
+    path = write_registration(tmp_path)
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = make_openai_responses_websocket_request_flow(real_flow)
+        await mitm_addon.request(flow)
+        flow.response = tutils.tresp(
+            status_code=101, headers=make_openai_responses_websocket_response_headers()
+        )
+        mitm_addon.responseheaders(flow)
+        assert mitm_addon.response(flow) is None
+        await deliver(flow, b'{"type":"response.create"}', from_client=True)
+        await deliver(flow, b'{"type":"response.created","response":{"id":"previous"}}')
+        await deliver(flow, openai_websocket_usage_frame("previous"))
+        await deliver(flow, b'{"type":"response.create"}', from_client=True)
+        await deliver(flow, b'{"type":"response.created","response":{"id":"resp_costly"}}')
+        set_websocket_message(flow, from_client=False, content=costly_message("terminal", 250_000))
+        completion = mitm_addon.websocket_message(flow)
+        assert completion is not None
+        owner = asyncio.ensure_future(completion)
+        await asyncio.sleep(0)
+        pending = read_usage(control)
+        assert pending["totals"]["total"] == 14
+        assert pending["outstandingResponses"] == 1
+        if termination == "cancel":
+            owner.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await owner
+            await deliver(flow, openai_websocket_usage_frame("recovery"))
+            mitm_addon.websocket_end(flow)
+        elif termination == "end":
+            mitm_addon.websocket_end(flow)
+            await owner
+        else:
+            flow.error = Error("connection closed during message inspection")
+            assert mitm_addon.error(flow) is None
+            await owner
+    result = read_usage(control)
+    assert result["totals"]["total"] == (28 if termination == "cancel" else 14)
+    assert result["observedResponses"] == (2 if termination == "cancel" else 1)
+    assert result["outstandingResponses"] == 0
+    assert result["complete"] is False
+    assert {"parse_error", "interrupted", "ambiguous_response"} <= set(result["reasons"])
+
+
+@pytest.mark.parametrize("repetitions", [250_000, 350_000], ids=["accepted", "over-budget"])
+async def test_costly_websocket_client_intent_commits_after_complete_inspection(
+    tmp_path, control, real_flow, mitm_ctx, fake_firewall_headers, repetitions
+):
+    path = write_registration(tmp_path)
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = make_openai_responses_websocket_request_flow(real_flow)
+        await mitm_addon.request(flow)
+        flow.response = tutils.tresp(
+            status_code=101, headers=make_openai_responses_websocket_response_headers()
+        )
+        mitm_addon.responseheaders(flow)
+        assert mitm_addon.response(flow) is None
+        set_websocket_message(flow, from_client=True, content=costly_message("client", repetitions))
+        completion = mitm_addon.websocket_message(flow)
+        assert completion is not None
+        pulse = asyncio.get_running_loop().create_future()
+        asyncio.get_running_loop().call_soon(lambda: pulse.set_result(read_usage(control)))
+        await completion
+        assert (await pulse)["outstandingResponses"] == 0
+        observed = read_usage(control)
+        assert observed["outstandingResponses"] == int(repetitions == 250_000)
+        assert ("ambiguous_response" in observed["reasons"]) is (repetitions == 350_000)
+        assert observed["totals"]["total"] == 0
+        mitm_addon.websocket_end(flow)
+    assert read_usage(control)["outstandingResponses"] == 0
 
 
 async def test_global_response_capacity_does_not_erase_another_run(
