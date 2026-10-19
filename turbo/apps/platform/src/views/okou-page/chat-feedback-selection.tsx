@@ -16,6 +16,7 @@ import type {
   ChatThreadFeedbackSignals,
 } from "../../signals/chat-page/chat-thread-feedback.ts";
 import { ChatForwardDialog } from "./chat-forward-dialog.tsx";
+import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 
 function selectionAnchor(selection: ChatThreadFeedbackSelection) {
   return {
@@ -102,8 +103,9 @@ function FeedbackToolbar({
   );
 }
 
-// Mounts the selection listeners and the floating Copy / Quote / Forward
-// toolbar anchored to the selected passage. Picking "Quote"
+// Mounts the selection listeners and the desktop Copy / Quote / Forward
+// toolbar anchored to the selected passage. Touch actions live in the composer
+// footer so they do not compete with the native selection menu. Picking "Quote"
 // drops the quoted passage straight into the composer (see the feedback rows in
 // chat-composer.tsx) — there is no separate feedback panel.
 export function ChatFeedbackSelection({
@@ -129,7 +131,7 @@ export function ChatFeedbackSelection({
   return (
     <>
       <span ref={setFeedbackSelectionListenersRef} hidden />
-      {selection ? (
+      {selection?.presentation === "floating" ? (
         <Popover
           open
           onOpenChange={(next, eventDetails) => {
@@ -186,5 +188,57 @@ export function ChatFeedbackSelection({
         />
       ) : null}
     </>
+  );
+}
+
+export function ChatComposerSelectionActions({
+  feedback,
+}: {
+  readonly feedback: ChatThreadFeedbackSignals;
+}) {
+  const { t } = useTranslation();
+  const selection = useGet(feedback.selection$);
+  const setToolbarRef = useSet(feedback.setToolbarRef$);
+  const quote = useSet(feedback.start$);
+  const forward = useSet(feedback.startForward$);
+
+  // This normal-flow row changes the footer's height. Acknowledge its commit
+  // through the same owner as other composer geometry changes, preserving the
+  // transcript's reading anchor instead of covering the selected message.
+  return withChatScrollLayout(
+    selection?.presentation === "composer" ? (
+      <div
+        ref={setToolbarRef}
+        data-chat-selection-interaction
+        className="flex items-center justify-end gap-1 pb-2"
+      >
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          onClick={quote}
+          className="min-h-11 text-foreground"
+        >
+          <MessageCircle />
+          {t(($) => {
+            return $.chat.feedback.quote;
+          })}
+        </Button>
+        {selection.threadId && selection.runId ? (
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            onClick={forward}
+            className="min-h-11 text-foreground"
+          >
+            <Forward />
+            {t(($) => {
+              return $.chat.forward.action;
+            })}
+          </Button>
+        ) : null}
+      </div>
+    ) : null,
   );
 }

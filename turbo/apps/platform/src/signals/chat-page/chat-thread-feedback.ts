@@ -41,6 +41,7 @@ const SELECTION_INTERACTION_SELECTOR = "[data-chat-selection-interaction]";
 const SELECTION_SCROLL_DISMISS_DISTANCE_PX = 8;
 
 export interface ChatThreadFeedbackSelection {
+  readonly presentation: "floating" | "composer";
   readonly rect: {
     readonly top: number;
     readonly left: number;
@@ -56,6 +57,7 @@ export interface ChatThreadFeedbackSelection {
 }
 
 interface CapturedFeedbackSelection {
+  readonly presentation: ChatThreadFeedbackSelection["presentation"];
   readonly text: string;
   readonly rect: ChatThreadFeedbackSelection["rect"];
   readonly scrollReferenceRect: ChatThreadFeedbackSelection["rect"];
@@ -90,6 +92,7 @@ function isSameFeedbackSelection(
   next: CapturedFeedbackSelection,
 ): boolean {
   return (
+    current.presentation === next.presentation &&
     current.text === next.text &&
     current.threadId === next.threadId &&
     current.runId === next.runId &&
@@ -147,6 +150,15 @@ function closestExpandedFeedbackSource(node: Node | null): Element | null {
 
 function shouldExpandSelectionToAssistantReply(): boolean {
   return !window.matchMedia(COARSE_POINTER_QUERY).matches;
+}
+
+function isFeedbackSourceTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Node &&
+    (shouldExpandSelectionToAssistantReply()
+      ? closestExpandedFeedbackSource(target)
+      : closestFeedbackSource(target)) !== null
+  );
 }
 
 function resolveSelectionSource(range: Range): Element | null {
@@ -298,7 +310,9 @@ function rectFromRange(range: Range): ChatThreadFeedbackSelection["rect"] {
   return { top, left, width: right - left, height: bottom - top };
 }
 
-function readFeedbackSelection(): CapturedFeedbackSelection | null {
+function readFeedbackSelection(
+  presentation: ChatThreadFeedbackSelection["presentation"],
+): CapturedFeedbackSelection | null {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
     return null;
@@ -316,6 +330,7 @@ function readFeedbackSelection(): CapturedFeedbackSelection | null {
   const location = resolveFeedbackLocation(range);
   const rect = rectFromRange(range);
   return {
+    presentation,
     text,
     rect,
     scrollReferenceRect: rect,
@@ -333,6 +348,20 @@ function isSelectionInteractionTarget(target: EventTarget | null): boolean {
   );
 }
 
+function selectionPresentation(
+  pointerType: string | null,
+): ChatThreadFeedbackSelection["presentation"] {
+  if (pointerType === "mouse") {
+    return "floating";
+  }
+  if (pointerType === "touch" || pointerType === "pen") {
+    return "composer";
+  }
+  return window.matchMedia(COARSE_POINTER_QUERY).matches
+    ? "composer"
+    : "floating";
+}
+
 function createSelectionState(threadId: string) {
   const internalSelection$ = state<CapturedFeedbackSelection | null>(null);
   const pendingCopyCount$ = state(0);
@@ -341,6 +370,7 @@ function createSelectionState(threadId: string) {
     const selection = get(internalSelection$);
     return selection
       ? {
+          presentation: selection.presentation,
           rect: selection.rect,
           text: selection.text,
           threadId: selection.threadId,
@@ -356,28 +386,34 @@ function createSelectionState(threadId: string) {
     set(resetToolbarSignal$);
     set(internalSelection$, null);
   });
-  const capture$ = command(({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const selection = readFeedbackSelection();
-    if (!selection || selection.threadId !== threadId) {
-      set(close$);
-      return;
-    }
-    const currentSelection = get(internalSelection$);
-    if (
-      currentSelection &&
-      isSameFeedbackSelection(currentSelection, selection)
-    ) {
-      return;
-    }
-    set(internalSelection$, selection);
-  });
+  const capture$ = command(
+    (
+      { get, set },
+      presentation: ChatThreadFeedbackSelection["presentation"],
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      const selection = readFeedbackSelection(presentation);
+      if (!selection || selection.threadId !== threadId) {
+        set(close$);
+        return;
+      }
+      const currentSelection = get(internalSelection$);
+      if (
+        currentSelection &&
+        isSameFeedbackSelection(currentSelection, selection)
+      ) {
+        return;
+      }
+      set(internalSelection$, selection);
+    },
+  );
   const reconcileAfterScroll$ = command(({ get, set }) => {
     const currentSelection = get(internalSelection$);
     if (!currentSelection) {
       return;
     }
-    const selection = readFeedbackSelection();
+    const selection = readFeedbackSelection(currentSelection.presentation);
     if (
       !selection ||
       selection.threadId !== threadId ||
@@ -566,6 +602,7 @@ function createStartForward(
 }
 
 function createToolbarRef({
+  selection$,
   resetToolbarSignal$,
   pendingCopyCount$,
   close$,
@@ -573,6 +610,7 @@ function createToolbarRef({
   start$,
   startForward$,
 }: {
+  selection$: State<CapturedFeedbackSelection | null>;
   resetToolbarSignal$: ReturnType<typeof resetSignal>;
   pendingCopyCount$: State<number>;
   close$: Command<void, []>;
@@ -613,6 +651,9 @@ function createToolbarRef({
           if (isEditableTarget(event.target)) {
             return;
           }
+          if (get(selection$)?.presentation !== "floating") {
+            return;
+          }
           if (matchShortcut("c", event)) {
             event.preventDefault();
             await set(copy$, signal);
@@ -637,7 +678,10 @@ function createToolbarRef({
 interface SelectionListenerSignals {
   readonly selection$: State<CapturedFeedbackSelection | null>;
   readonly close$: Command<void, []>;
-  readonly capture$: Command<void, [AbortSignal]>;
+  readonly capture$: Command<
+    void,
+    [ChatThreadFeedbackSelection["presentation"], AbortSignal]
+  >;
   readonly reconcileAfterScroll$: Command<void, []>;
   readonly isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
 }
@@ -652,6 +696,7 @@ function createListenersRef({
   return onRef(
     command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
       const doc = el.ownerDocument;
+      let pointerType: string | null = null;
       let mouseSelectionPointerId: number | null = null;
       let mouseSelectionChanged = false;
       let selectionInteractionInProgress = false;
@@ -663,24 +708,25 @@ function createListenersRef({
       doc.addEventListener(
         "pointerdown",
         (event) => {
+          pointerType = event.pointerType;
           selectionInteractionInProgress = isSelectionInteractionTarget(
             event.target,
           );
           resetMouseSelectionGesture();
-          const mouseSelectionStarted =
-            event.pointerType === "mouse" &&
-            event.button === 0 &&
-            event.target instanceof Node &&
-            (shouldExpandSelectionToAssistantReply()
-              ? closestExpandedFeedbackSource(event.target)
-              : closestFeedbackSource(event.target)) !== null;
-          if (mouseSelectionStarted) {
-            mouseSelectionPointerId = event.pointerId;
+          const selectionStarted =
+            event.button === 0 && isFeedbackSourceTarget(event.target);
+          if (selectionStarted) {
+            if (event.pointerType === "mouse") {
+              mouseSelectionPointerId = event.pointerId;
+            }
             const activeElement = doc.activeElement;
             if (
               activeElement instanceof HTMLElement &&
               activeElement.closest(CHAT_COMPOSER_SELECTOR) !== null
             ) {
+              // Hand focus from the composer to native passage selection on
+              // touch as well: a focused editor can restore its caret over
+              // the selected message and dismiss the passage actions.
               activeElement.blur();
             }
           }
@@ -721,7 +767,7 @@ function createListenersRef({
           const selectionChanged = mouseSelectionChanged;
           resetMouseSelectionGesture();
           if (selectionChanged) {
-            set(capture$, signal);
+            set(capture$, selectionPresentation(pointerType), signal);
           }
         },
         { signal },
@@ -734,7 +780,7 @@ function createListenersRef({
             resetMouseSelectionGesture();
           }
           if (get(selection$) !== null) {
-            set(capture$, signal);
+            set(capture$, selectionPresentation(pointerType), signal);
           }
         },
         { capture: true, signal },
@@ -751,7 +797,7 @@ function createListenersRef({
           if (selectionInteractionInProgress) {
             return;
           }
-          set(capture$, signal);
+          set(capture$, selectionPresentation(pointerType), signal);
         },
         { signal },
       );
@@ -802,6 +848,7 @@ export function createChatThreadFeedbackSignals(
     forward.openForward$,
   );
   const setToolbarRef$ = createToolbarRef({
+    selection$: selection.internalSelection$,
     resetToolbarSignal$: selection.resetToolbarSignal$,
     pendingCopyCount$: selection.pendingCopyCount$,
     close$: selection.close$,

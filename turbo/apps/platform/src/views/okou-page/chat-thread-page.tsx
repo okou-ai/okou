@@ -315,7 +315,10 @@ import {
   ModelProviderPicker,
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
-import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
+import {
+  ChatComposerSelectionActions,
+  ChatFeedbackSelection,
+} from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -4287,6 +4290,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
         )}
       >
         <div className="mx-auto max-w-[900px]">
+          <ChatComposerSelectionActions feedback={thread.feedback} />
           <ChatComposer signals={thread.composer} />
         </div>
       </div>

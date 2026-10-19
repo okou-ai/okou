@@ -165,7 +165,7 @@ function visibleSelectionRange(
 function setPassageSelection(
   passage: string,
   occurrence = 0,
-  interaction: "mouse" | "native" = "mouse",
+  interaction: "mouse" | "touch" | "native" = "mouse",
 ): void {
   const node = textNodeContaining(passage, occurrence);
   const start = node.data.indexOf(passage);
@@ -173,12 +173,12 @@ function setPassageSelection(
   if (!target) {
     throw new Error("Selectable passage has no element target");
   }
-  if (interaction === "mouse") {
+  if (interaction !== "native") {
     fireEvent.pointerDown(target, {
       button: 0,
       isPrimary: true,
       pointerId: 1,
-      pointerType: "mouse",
+      pointerType: interaction,
     });
   }
   const range = visibleSelectionRange(
@@ -207,14 +207,23 @@ function setPassageSelection(
     fireEvent.click(target, { button: 0 });
   } else {
     fireEvent(document, new Event("selectionchange"));
+    if (interaction === "touch") {
+      fireEvent.pointerUp(target, {
+        button: 0,
+        isPrimary: true,
+        pointerId: 1,
+        pointerType: "touch",
+      });
+    }
   }
 }
 
 export async function selectPassage(
   passage: string,
   occurrence = 0,
+  interaction: "mouse" | "touch" | "native" = "mouse",
 ): Promise<void> {
-  setPassageSelection(passage, occurrence);
+  setPassageSelection(passage, occurrence, interaction);
   await findButton("Quote");
 }
 
