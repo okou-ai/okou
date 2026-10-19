@@ -3108,15 +3108,20 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       prompt: "Create a presentation with off-page background artwork",
     });
     const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
-    // Wrap the claim's storage fixture; never invent an application object key.
+    // Drive imports consume public-storage files. Use the supported org-less
+    // upload producer, then publish with this user's real Run claim. Do not
+    // fabricate a legacy object key or relax the private-artifact boundary.
     installSharedThreadStorage(context);
     const prepared = await owned.run(() => {
-      return chat.prepareUpload(actor, {
-        filename: "deck.pptx",
-        contentType: picturePptxMime,
-        size: bytes.byteLength,
-        purpose: "artifact",
-      });
+      return chat.prepareUpload(
+        { ...actor, orgId: null },
+        {
+          filename: "deck.pptx",
+          contentType: picturePptxMime,
+          size: bytes.byteLength,
+          purpose: "artifact",
+        },
+      );
     });
     if (!("uploadUrl" in prepared)) {
       throw new Error("Expected a single-part artifact upload");
@@ -3136,8 +3141,25 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         [200],
       );
     });
-    const artifactId = await owned.run(() => {
-      return chat.resolveCatalogArtifactId(actor, run.threadId, prepared.id);
+    const artifactId = await owned.run(async () => {
+      const catalog = await chat.listArtifactCatalog(actor, {
+        chatThreadId: run.threadId,
+      });
+      expect(catalog.artifacts).toHaveLength(1);
+      const detail = await chat.getArtifactCatalogEntry(
+        actor,
+        catalog.artifacts[0]!.id,
+      );
+      expect(detail).toMatchObject({
+        kind: "file",
+        file: {
+          url: prepared.url,
+          filename: "deck.pptx",
+          contentType: picturePptxMime,
+          size: bytes.byteLength,
+        },
+      });
+      return detail.id;
     });
     mockGoogleDriveConnectorOAuth();
     const oauth = await owned.run(() => {
