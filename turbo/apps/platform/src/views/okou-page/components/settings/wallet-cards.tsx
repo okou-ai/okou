@@ -7,11 +7,10 @@ import {
   surfaceVariants,
 } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import { useLoadable, useSet } from "ccstate-react";
+import { useLastLoadable, useSet } from "ccstate-react";
 import { Check, CreditCard, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  observeWalletCards$,
   refreshWalletCards$,
   walletCards$,
 } from "../../../../signals/okou-page/settings/wallet.ts";
@@ -64,15 +63,13 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
 
 export function WalletCards() {
   const { t } = useTranslation();
-  const cards = useLoadable(walletCards$);
+  const cards = useLastLoadable(walletCards$);
   const retry = useSet(refreshWalletCards$);
-  const observe = useSet(observeWalletCards$);
   const title = t(($) => {
     return $.settings.wallet.cards.title;
   });
   return (
     <Card
-      ref={observe}
       role="region"
       aria-label={title}
       className={surfaceVariants({ className: "shrink-0" })}

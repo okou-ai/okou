@@ -10,7 +10,7 @@ import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { generateRouterPath } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
-import { onRef, withCleanup } from "../../utils.ts";
+import { withCleanup } from "../../utils.ts";
 
 export const walletSettingsEnabled$ = computed((get) => {
   const features = get(featureSwitch$);
@@ -41,7 +41,7 @@ export const walletCards$ = computed(async (get) => {
   );
   return result.body.data
     .filter((method) => {
-      return method.type === "card";
+      return method.type === "CARD";
     })
     .sort((a, b) => {
       return Number(b.isDefault) - Number(a.isDefault);
@@ -52,17 +52,6 @@ export const refreshWalletCards$ = command(({ set }) => {
     return version + 1;
   });
 });
-export const observeWalletCards$ = onRef(
-  command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
-    const refresh = () => {
-      if (document.visibilityState === "visible") {
-        set(refreshWalletCards$);
-      }
-    };
-    window.addEventListener("focus", refresh, { signal });
-    document.addEventListener("visibilitychange", refresh, { signal });
-  }),
-);
 const transactionsVersion$ = state(0);
 export const walletTransactions$ = computed(async (get) => {
   get(transactionsVersion$);

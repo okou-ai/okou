@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
   surfaceVariants,
 } from "@okouai/ui";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { EllipsisVertical, Loader2, Wallet } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -154,7 +154,7 @@ function WalletActions({
 
 export function WalletSection() {
   const { t } = useTranslation();
-  const connection = useLoadable(walletConnection$);
+  const connection = useLastLoadable(walletConnection$);
   const [connecting, connect] = useLoadableSet(connectWallet$);
   const [disconnecting, disconnect] = useLoadableSet(disconnectWallet$);
   const refresh = useSet(refreshWalletConnection$);

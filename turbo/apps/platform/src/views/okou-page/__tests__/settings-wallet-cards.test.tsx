@@ -16,7 +16,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const everyday = Object.freeze<WalletPaymentMethod>({
   id: "pm_everyday",
-  type: "card",
+  type: "CARD",
   name: "Visa",
   nickname: "Everyday",
   isDefault: true,
@@ -24,7 +24,7 @@ const everyday = Object.freeze<WalletPaymentMethod>({
 });
 const business = Object.freeze<WalletPaymentMethod>({
   id: "pm_business",
-  type: "card",
+  type: "CARD",
   name: "Mastercard",
   nickname: "Business",
   isDefault: false,
@@ -32,7 +32,7 @@ const business = Object.freeze<WalletPaymentMethod>({
 });
 const bank = Object.freeze<WalletPaymentMethod>({
   id: "pm_bank",
-  type: "bank_account",
+  type: "BANK_ACCOUNT",
   name: "Checking account",
   isDefault: false,
   bankAccount: { last4: "9876", bankName: "Example Bank" },
@@ -100,7 +100,7 @@ beforeEach(() => {
   });
 });
 
-test("shows the default card first and offers one Link management action in a new tab", async () => {
+test("shows Link CARD methods with the default first and one management action in a new tab", async () => {
   context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
     return respond(200, { data: [business, bank, everyday] });
   });
@@ -136,7 +136,7 @@ test("uses the provider name when card details are absent and does not invent a 
         { ...bank, isDefault: true },
         {
           id: "pm_limited",
-          type: "card",
+          type: "CARD",
           name: "Saved card",
           isDefault: false,
         },
@@ -154,14 +154,12 @@ test("uses the provider name when card details are absent and does not invent a 
   expect(manageCards(region)).toBeInTheDocument();
 });
 
-test("keeps management available while loading and refreshes an empty wallet on return", async () => {
+test("keeps management available while loading and when the wallet is empty", async () => {
   const pending = context.mocks.deferred<void>();
-  let methods: WalletPaymentMethod[] = [];
   context.mocks.api(walletUserContract.paymentMethods, async ({ respond }) => {
     await pending.promise;
-    return respond(200, { data: methods });
+    return respond(200, { data: [] });
   });
-  const visibility = context.mocks.browser.visibilityState("visible");
   await openWallet();
   const region = await screen.findByRole("region", {
     name: "Your cards in Link",
@@ -170,18 +168,104 @@ test("keeps management available while loading and refreshes an empty wallet on 
   expect(manageCards(region)).toBeInTheDocument();
   pending.resolve();
   await within(region).findByText("No cards in your Link wallet yet");
-  act(() => {
-    visibility.changeTo("hidden");
-  });
-  methods = [everyday];
-  act(() => {
-    visibility.changeTo("visible");
-  });
-  await within(region).findByText("Everyday");
-  expect(within(region).getByText("Default")).toBeInTheDocument();
+  expect(manageCards(region)).toBeInTheDocument();
 });
 
-test("refreshes a changed default on focus without keeping stale cards after a failed refresh", async () => {
+test("keeps cards and transactions on tab return and refreshes both after a wallet change", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const connectionRequested = context.mocks.deferred<void>();
+  const connectionPending = context.mocks.deferred<void>();
+  const cardsRequested = context.mocks.deferred<void>();
+  const transactionsRequested = context.mocks.deferred<void>();
+  const listsPending = context.mocks.deferred<void>();
+  let refresh = false;
+  let requestsAllowed = true;
+  context.mocks.api(walletUserContract.status, async ({ respond, never }) => {
+    if (!requestsAllowed) {
+      return never();
+    }
+    if (refresh) {
+      connectionRequested.resolve();
+      await connectionPending.promise;
+    }
+    const status = connection();
+    status.authorization!.capabilities.transactions = true;
+    return respond(200, status);
+  });
+  context.mocks.api(
+    walletUserContract.paymentMethods,
+    async ({ respond, never }) => {
+      if (!requestsAllowed) {
+        return never();
+      }
+      if (refresh) {
+        cardsRequested.resolve();
+        await listsPending.promise;
+      }
+      return respond(200, {
+        data: refresh ? [{ ...business, isDefault: true }] : [everyday],
+      });
+    },
+  );
+  context.mocks.api(walletUserContract.activity, async ({ respond, never }) => {
+    if (!requestsAllowed) {
+      return never();
+    }
+    if (refresh) {
+      transactionsRequested.resolve();
+      await listsPending.promise;
+    }
+    return respond(200, {
+      data: [
+        {
+          id: "txn_wallet",
+          sourceId: null,
+          amount: -100,
+          currency: "usd",
+          date: "2026-10-19",
+          description: refresh ? "Updated purchase" : "Recent purchase",
+          origin: "link",
+          category: null,
+          status: "posted",
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+  });
+  await openWallet();
+  await screen.findByText("Everyday");
+  await screen.findByText("Recent purchase");
+  requestsAllowed = false;
+  await act(() => {
+    visibility.changeTo("hidden");
+    visibility.changeTo("visible");
+    window.dispatchEvent(new Event("focus"));
+    return Promise.resolve();
+  });
+  expect(screen.getByText("Everyday")).toBeInTheDocument();
+  expect(screen.getByText("Recent purchase")).toBeInTheDocument();
+
+  requestsAllowed = true;
+  refresh = true;
+  context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
+  await connectionRequested.promise;
+  expect(screen.getByText("Everyday")).toBeInTheDocument();
+  expect(screen.getByText("Recent purchase")).toBeInTheDocument();
+
+  connectionPending.resolve();
+  await Promise.all([cardsRequested.promise, transactionsRequested.promise]);
+  expect(screen.getByText("Everyday")).toBeInTheDocument();
+  expect(screen.getByText("Recent purchase")).toBeInTheDocument();
+  listsPending.resolve();
+  await screen.findByText("Business");
+  await screen.findByText("Updated purchase");
+  expect(screen.getByText("Default")).toBeInTheDocument();
+  expect(screen.queryByText("Everyday")).not.toBeInTheDocument();
+  expect(screen.queryByText("Recent purchase")).not.toBeInTheDocument();
+});
+
+test("shows a failed wallet refresh and retries with the updated default card", async () => {
   let fail = false;
   let methods = [everyday, business];
   context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
@@ -197,9 +281,7 @@ test("refreshes a changed default on focus without keeping stale cards after a f
   });
   await within(region).findByText("Everyday");
   fail = true;
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
+  context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
   await within(region).findByText("Couldn’t load your cards. Try again.");
   expect(within(region).queryByText("Everyday")).not.toBeInTheDocument();
   expect(manageCards(region)).toBeInTheDocument();
@@ -262,9 +344,7 @@ test("hides cards after disconnect even when an earlier refresh completes later"
   await openWallet();
   await screen.findByText("Everyday");
   refresh = true;
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
+  context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
   await requested.promise;
   connected = false;
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
