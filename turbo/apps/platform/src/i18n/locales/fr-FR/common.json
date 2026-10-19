@@ -1573,13 +1573,17 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
-      "continueChat": "Continuer la discussion",
       "dismiss": "Ignorer",
       "label": "Suggestions",
-      "newChat": "Nouvelle discussion",
       "next": "Suggestion suivante",
       "position": "{{current}} sur {{total}}",
-      "previous": "Suggestion précédente"
+      "previous": "Suggestion précédente",
+      "recoveryHint": "Vérifiez la conversation avant de renvoyer. Vous pouvez restaurer la suggestion dans votre brouillon.",
+      "restoreDraft": "Restaurer le brouillon",
+      "runFailed": "Impossible de lancer la suggestion",
+      "runInChat": "Exécuter dans cette conversation",
+      "runNewChat": "Exécuter dans une nouvelle conversation",
+      "starting": "Démarrage…"
     },
     "attachments": {
       "attach": "Joindre",

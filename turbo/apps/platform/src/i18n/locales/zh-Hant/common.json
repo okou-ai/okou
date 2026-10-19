@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "continueChat": "繼續聊天",
       "dismiss": "忽略",
       "label": "建議",
-      "newChat": "新建聊天",
       "next": "下一則建議",
       "position": "{{current}} / {{total}}",
-      "previous": "上一則建議"
+      "previous": "上一則建議",
+      "recoveryHint": "重新傳送前請先檢查聊天。你可以將建議還原到草稿。",
+      "restoreDraft": "還原至草稿",
+      "runFailed": "無法啟動建議",
+      "runInChat": "在原聊天執行",
+      "runNewChat": "在新聊天執行",
+      "starting": "正在啟動…"
     },
     "attachments": {
       "attach": "新增附件",

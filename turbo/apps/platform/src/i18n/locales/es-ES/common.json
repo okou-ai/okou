@@ -1573,13 +1573,17 @@
       "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
-      "continueChat": "Continuar chat",
       "dismiss": "Descartar",
       "label": "Sugerencias",
-      "newChat": "Nuevo chat",
       "next": "Siguiente sugerencia",
       "position": "{{current}} de {{total}}",
-      "previous": "Sugerencia anterior"
+      "previous": "Sugerencia anterior",
+      "recoveryHint": "Revisa el chat antes de volver a enviar. Puedes restaurar la sugerencia en tu borrador.",
+      "restoreDraft": "Restaurar borrador",
+      "runFailed": "No se pudo iniciar la sugerencia",
+      "runInChat": "Ejecutar en este chat",
+      "runNewChat": "Ejecutar en un chat nuevo",
+      "starting": "Iniciando…"
     },
     "attachments": {
       "attach": "Adjuntar",

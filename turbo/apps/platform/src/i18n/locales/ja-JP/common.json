@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "continueChat": "チャットを続ける",
       "dismiss": "非表示にする",
       "label": "提案",
-      "newChat": "新しいチャット",
       "next": "次の提案",
       "position": "{{current}} / {{total}}",
-      "previous": "前の提案"
+      "previous": "前の提案",
+      "recoveryHint": "再送信する前にチャットを確認してください。提案を下書きに戻せます。",
+      "restoreDraft": "下書きに戻す",
+      "runFailed": "提案を開始できませんでした",
+      "runInChat": "このチャットで実行",
+      "runNewChat": "新しいチャットで実行",
+      "starting": "開始中…"
     },
     "attachments": {
       "attach": "添付する",
