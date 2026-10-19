@@ -1830,8 +1830,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
               cpu: 0.5,
               mem_used: 1,
               mem_total: 2,
-              disk_used: 3,
-              disk_total: 4,
             },
           ],
           networkLogs: [
@@ -2127,8 +2125,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
           cpu: 1,
           mem_used: 4096,
           mem_total: 16_384,
-          disk_used: 1024,
-          disk_total: 8192,
           memory,
         };
       });
@@ -2353,8 +2349,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
             cpu: 1,
             mem_used: 2,
             mem_total: 4,
-            disk_used: 8,
-            disk_total: 16,
           },
         ],
       },

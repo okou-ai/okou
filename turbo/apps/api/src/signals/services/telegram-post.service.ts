@@ -1404,8 +1404,35 @@ const handleTelegramAgentMessage$ = command(
       orgId: args.orgId,
       userLinkId: args.userLink.id,
     });
+    const messageDb = args.db;
+    async function storeTelegramMessage(args: {
+      readonly scope: TelegramMessageScope;
+      readonly chatId: string;
+      readonly message: TelegramMessage;
+    }): Promise<void> {
+      const file = extractTelegramFileForContext(args.message);
+      await messageDb
+        .insert(telegramMessages)
+        .values({
+          officialOrgId: args.scope.orgId,
+          officialUserLinkId: args.scope.userLinkId,
+          chatId: args.chatId,
+          messageId: String(args.message.message_id),
+          fromUserId: String(args.message.from?.id ?? 0),
+          fromUsername: args.message.from?.username ?? null,
+          fromDisplayName: formatTelegramUserDisplayName(
+            args.message.from ?? {},
+          ),
+          text: args.message.text ?? args.message.caption ?? null,
+          ...telegramFileDbValues(file),
+          entities: extractEntities(args.message)
+            ? [...extractEntities(args.message)!]
+            : null,
+          isBot: args.message.from?.is_bot ?? false,
+        })
+        .onConflictDoNothing();
+    }
     await storeTelegramMessage({
-      db: args.db,
       scope,
       chatId,
       message: args.message,

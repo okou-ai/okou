@@ -1,13 +1,19 @@
 import chalk from "chalk";
-import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
+import type {
+  ConnectorAccountSummary,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   ConnectorCatalogItem,
   ConnectorCatalogStatus,
 } from "../../lib/api/domains/connectors";
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
-import { renderConnectedAsCell } from "./connected-as";
 import { connectorInspectionType } from "./inspection";
+import {
+  memberConnectorAccountText,
+  memberConnectorFacts,
+} from "./member-status";
 
 interface CatalogConnectorDiscoveryDefinition {
   readonly kind: "catalog";
@@ -108,24 +114,21 @@ export function connectorDiscoveryTarget(
 
 export function renderConnectorDiscoveryConnectedAsCell(
   connector: ConnectorDiscoveryItem,
+  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
 ): string {
-  if (connector.kind === "catalog") {
-    return renderConnectedAsCell(connector.catalogConnector);
-  }
-  if (connector.customConnector.connected) {
-    return chalk.green("connected");
-  }
-  if (connector.customConnector.missingRequiredFields.length === 0) {
-    return chalk.dim("(not connected)");
-  }
-  return chalk.yellow(
-    `missing ${connector.customConnector.missingRequiredFields.join(", ")}`,
-  );
+  const definition =
+    connector.kind === "catalog"
+      ? connector.catalogConnector
+      : connector.customConnector;
+  const facts = memberConnectorFacts(definition, summaries);
+  const text = memberConnectorAccountText(definition, facts);
+  return facts.memberStatus === "connected" ? text : chalk.yellow(text);
 }
 
 export function connectorDiscoveryJson(
   connector: ConnectorDiscoveryItem,
   agentContext: ConnectorDiscoveryAgentContext | null,
+  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
 ) {
   const target = connectorDiscoveryTarget(connector);
   const identity = {
@@ -136,6 +139,12 @@ export function connectorDiscoveryJson(
     ),
     slug: connector.slug,
     label: connector.label,
+    ...memberConnectorFacts(
+      connector.kind === "catalog"
+        ? connector.catalogConnector
+        : connector.customConnector,
+      summaries,
+    ),
     authorized: agentContext
       ? isConnectorDiscoveryAuthorized(connector, agentContext)
       : null,
@@ -153,8 +162,8 @@ export function connectorDiscoveryJson(
         kind: "custom" as const,
         id: connector.customConnector.id,
         connected: connector.customConnector.connected,
-        connectionId: connector.customConnector.connectedAccountId ?? null,
         missingRequiredFields: connector.customConnector.missingRequiredFields,
+        configuredFieldKeys: connector.customConnector.configuredFieldKeys,
       };
 }
 

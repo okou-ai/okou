@@ -4,6 +4,7 @@ import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/conne
 import {
   listConnectorCatalog,
   listConnectorCatalogStatus,
+  listConnectorAccountSummaries,
   listCustomConnectors,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -37,6 +38,11 @@ import {
   type RunConnectorAccountLookup,
 } from "./run-account-context";
 import { connectorInspectionType } from "./inspection";
+import {
+  memberConnectorFacts,
+  memberConnectorStatusText,
+  type MemberConnectorFacts,
+} from "./member-status";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
@@ -82,19 +88,17 @@ function renderRunAvailabilityCell(lookup: RunConnectorAccountLookup): string {
 
 function renderCurrentAvailabilityCell(
   connector: ConnectorDiscoveryItem,
+  facts: MemberConnectorFacts,
   agentContext: Awaited<
     ReturnType<typeof resolveConnectorDiscoveryAgentContext>
   >,
 ): string {
-  if (connector.kind === "catalog") {
-    if (connector.catalogConnector.connectionStatus === "reconnect-required") {
-      return chalk.yellow("no (reconnect needed)");
-    }
-    if (!connector.catalogConnector.connected) {
-      return chalk.dim("no (not connected)");
-    }
-  } else if (!connector.customConnector.connected) {
-    return chalk.dim("no (not connected)");
+  if (facts.memberStatus !== "connected") {
+    const definition =
+      connector.kind === "catalog"
+        ? connector.catalogConnector
+        : connector.customConnector;
+    return chalk.yellow(`no (${memberConnectorStatusText(definition, facts)})`);
   }
 
   if (
@@ -284,6 +288,8 @@ Scope:
   Inside a run, availability and account identity describe the accounts admitted
   to that run. A supported connector can still be unavailable in this run.
   Outside a run, connection status describes the current member's accounts.
+  JSON accountSummary/memberStatus separate saved accounts and local status from
+  existing connected metadata and the Agent's authorization.
   Omit --agent inside a run to use the current Agent's authorization context;
   an explicit --agent must match that Agent and cannot change admitted accounts.
 
@@ -402,13 +408,19 @@ Examples:
           return;
         }
 
-        const [{ connectors }, customConnectors, agentContext, origin] =
-          await Promise.all([
-            listConnectorCatalogStatus(),
-            listCustomConnectors(),
-            resolveConnectorDiscoveryAgentContext(agentId),
-            getPlatformOrigin(),
-          ]);
+        const [
+          { connectors },
+          customConnectors,
+          agentContext,
+          origin,
+          summaries,
+        ] = await Promise.all([
+          listConnectorCatalogStatus(),
+          listCustomConnectors(),
+          resolveConnectorDiscoveryAgentContext(agentId),
+          getPlatformOrigin(),
+          listConnectorAccountSummaries(),
+        ]);
         const discoveredConnectors = connectorDiscoveryItems(
           connectors,
           customConnectors,
@@ -419,16 +431,34 @@ Examples:
           limit: options.limit,
           json: options.json,
           jsonConnector: (connector) => {
-            return connectorDiscoveryJson(connector, agentContext);
+            return connectorDiscoveryJson(connector, agentContext, summaries);
           },
           availabilityHeader: "AVAILABLE",
           renderAvailability: (connector) => {
-            return renderCurrentAvailabilityCell(connector, agentContext);
+            return renderCurrentAvailabilityCell(
+              connector,
+              memberConnectorFacts(
+                connector.kind === "catalog"
+                  ? connector.catalogConnector
+                  : connector.customConnector,
+                summaries,
+              ),
+              agentContext,
+            );
           },
           accountHeader: "CONNECTED AS",
-          renderAccount: renderConnectorDiscoveryConnectedAsCell,
+          renderAccount: (connector) => {
+            return renderConnectorDiscoveryConnectedAsCell(
+              connector,
+              summaries,
+            );
+          },
           connectionAction: (connector) => {
-            return currentConnectorSearchAction(connector, agentContext);
+            return currentConnectorSearchAction(
+              connector,
+              agentContext,
+              summaries,
+            );
           },
           origin,
           runBound: false,
