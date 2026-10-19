@@ -41,6 +41,7 @@ mod returned_guest;
 mod returned_guest_probe;
 mod shared_reads;
 mod snapshot_preparation;
+mod speculative_fault;
 mod startup;
 mod status_failure;
 mod tail;
@@ -97,6 +98,7 @@ enum Corpus {
     BatchRepark,
     BatchReplacement,
     ClaimLoss,
+    SpeculativeFault(bool),
 }
 
 enum PreparationProbe<'a> {
@@ -704,6 +706,36 @@ async fn native_provider_claim_rejection_preserves_guarded_rollback_and_required
     .await
 }
 
+#[test]
+fn native_speculative_fault_report_requires_uncertainty_and_complete_saving() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/speculative_fault_report_test.py"
+        ))
+        .output()
+        .expect("speculative fault report requires Python3");
+    assert!(
+        output.status.success(),
+        "speculative fault report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source callback drop/panic required-saving proof"]
+async fn native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving()
+-> TestResult<()> {
+    measured_selected_corpora(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        &[
+            Corpus::SpeculativeFault(false),
+            Corpus::SpeculativeFault(true),
+        ],
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
 async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
@@ -1041,6 +1073,8 @@ async fn exercise_selected_factories(
                                 "BatchReplacement".into()
                             } else if corpus == Corpus::ClaimLoss {
                                 "ClaimLoss".into()
+                            } else if let Corpus::SpeculativeFault(panic) = corpus {
+                                format!("Speculative{}", if panic { "Panic" } else { "Drop" })
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1388,6 +1422,7 @@ async fn exercise_retirement(
             | Corpus::BatchRepark
             | Corpus::BatchReplacement
             | Corpus::ClaimLoss
+            | Corpus::SpeculativeFault(_)
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1727,6 +1762,15 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if let Corpus::SpeculativeFault(panic) = corpus {
+                    speculative_fault::exercise(transitions::Context {
+                        factory:factory.clone(),pool:pool.clone(),status:status.clone(),
+                        operations:operations.clone(),budget:budget.clone(),tracker:tracker.clone(),
+                        rootfs_hash:rootfs_hash.clone(),reuse_key:reuse_key.clone(),
+                    },inputs,proof.ok_or_else(||io::Error::other("speculative fault proof missing"))?,
+                    paths.base_dir(),backing.clone(),run_id,panic).await?;
+                    return Ok(None);
+                }
                 if corpus == Corpus::ClaimLoss {
                     claim_loss::exercise(transitions::Context {
                         factory: factory.clone(), pool: pool.clone(), status: status.clone(),
