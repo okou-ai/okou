@@ -469,32 +469,6 @@ export const storeInboundAgentPhoneMessage$ = command(
   },
 );
 
-async function getWorkspaceAgent(
-  db: ReadonlyDb,
-  composeId: string,
-): Promise<WorkspaceAgent | null> {
-  const [row] = await db
-    .select({
-      composeId: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(eq(agents.id, composeId))
-    .limit(1);
-
-  if (!row) {
-    return null;
-  }
-
-  return {
-    composeId: row.composeId,
-    agentId: row.composeId,
-    name: row.name,
-    displayName: row.displayName,
-  };
-}
-
 async function resolveAgentPhoneAgent(
   db: ReadonlyDb,
   userLink: AgentPhoneUserLink,
@@ -504,7 +478,30 @@ async function resolveAgentPhoneAgent(
     return undefined;
   }
 
-  return (await getWorkspaceAgent(db, composeId)) ?? undefined;
+  return (
+    (await (async (): Promise<WorkspaceAgent | null> => {
+      const [row] = await db
+        .select({
+          composeId: agents.id,
+          name: agents.name,
+          displayName: agents.displayName,
+        })
+        .from(agents)
+        .where(eq(agents.id, composeId))
+        .limit(1);
+
+      if (!row) {
+        return null;
+      }
+
+      return {
+        composeId: row.composeId,
+        agentId: row.composeId,
+        name: row.name,
+        displayName: row.displayName,
+      };
+    })()) ?? undefined
+  );
 }
 
 export function agentPhoneFilenameFromMediaUrl(
