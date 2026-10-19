@@ -231,6 +231,8 @@ def main(directory):
         )
         text = result.stdout.decode()
         assert "SSH_MASTER_FAILURE" in text and "tcp-sample" in text
+        for field in ("bytes_acked", "rtt_us", "last_data_received_ms"):
+            assert f'"{field}":' in text
         assert '"origin_host":"example.test"' in text
         assert "fixture-secret" not in text and "Authorization" not in text
         for index in range(4):
@@ -289,6 +291,18 @@ def main(directory):
         )
         assert any(r.get("reason") == "EACCES" for r in unavailable)
         assert not any("bytes_acked" in r for r in unavailable)
+        published = subprocess.check_output(
+            [
+                sys.executable,
+                str(OWNER / "cloudflare-ssh-log.py"),
+                "sanitize",
+                str(denied_path),
+            ],
+            text=True,
+        )
+        assert '"event":"tcp-unavailable"' in published
+        assert '"reason":"EACCES"' in published
+        assert '"bytes_acked"' not in published
         print(
             "cloudflare-ssh-tcp-test: ok (real Linux TCP; controlled fixtures, not production attribution)"
         )

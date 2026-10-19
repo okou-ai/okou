@@ -52,16 +52,18 @@ def start_ticks(pid):
 
 def socket_inodes(pid):
     result = set()
-    entries = Path(f"/proc/{pid}/fd").iterdir()
-    for entry in itertools.islice(entries, 1024):
-        try:
-            target = os.readlink(entry)
-        except FileNotFoundError:
-            continue  # A closing descriptor is an ordinary sampling race.
-        if target.startswith("socket:[") and target.endswith("]"):
-            result.add(int(target[8:-1]))
-    if next(entries, None) is not None:
-        raise OSError(errno.EOVERFLOW, "descriptor observation limit")
+    # scandir streams entries; Path.iterdir can materialize the entire table
+    # before the observation cap is applied on supported Python versions.
+    with os.scandir(f"/proc/{pid}/fd") as entries:
+        for entry in itertools.islice(entries, 1024):
+            try:
+                target = os.readlink(entry.path)
+            except FileNotFoundError:
+                continue  # A closing descriptor is an ordinary sampling race.
+            if target.startswith("socket:[") and target.endswith("]"):
+                result.add(int(target[8:-1]))
+        if next(entries, None) is not None:
+            raise OSError(errno.EOVERFLOW, "descriptor observation limit")
     if len(result) > MAX_SOCKETS:
         raise OSError(errno.EOVERFLOW, "socket observation limit")
     return result
