@@ -781,9 +781,9 @@ function useComposerSuggestionMenu({
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
-  // Typed slash results read from strongest to weakest top-down on every
-  // screen. Preserve the anchored overview and @-mention navigation order.
-  const reversedSuggestions = !showWorkflows || (isDesktop && workflowOverview);
+  // Search results and @ mentions follow priority from top to bottom.
+  // Only the desktop slash overview keeps its anchored category order.
+  const reversedSuggestions = isDesktop && workflowOverview;
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;
@@ -1025,7 +1025,6 @@ function ComposerSuggestionMenu({
         <ComposerMentionSuggestionMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
-          reversed={suggestionMenu.reversed}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}
           selectedIndex={suggestionMenu.selectedIndex}
