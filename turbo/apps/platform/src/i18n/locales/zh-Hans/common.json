@@ -565,7 +565,7 @@
       "agentLoading": "智能体还在加载",
       "connect": "连接 Google Drive",
       "connectTooltip": "连接 Google Drive 后即可上传成果",
-      "conversionNotice": "创建可编辑的副本。格式可能发生变化，原文件将保留。",
+      "conversionNotice": "创建可编辑副本，格式可能有所变化。",
       "conversionUnconfirmed": "无法确认 Google 转换结果，请检查云端硬盘后再重试。",
       "noArtifacts": "没有可同步的成果",
       "openDocs": "在 Google 文档中打开",
@@ -651,6 +651,23 @@
       "panelTitle": "成果",
       "singularTitle": "成果",
       "unavailable": "这个成果已不再可用。"
+    },
+    "siteUrl": {
+      "available": "可以使用",
+      "cancel": "取消",
+      "checkFailed": "无法检查该网址，请修改后重试",
+      "checking": "正在检查…",
+      "customize": "自定义网址",
+      "hint": "选择一个简短易记的名称",
+      "invalid": "使用 3–63 位小写字母、数字或连字符，不能使用保留前缀",
+      "label": "网站网址",
+      "loadFailed": "无法加载网站设置",
+      "oldUrlWarning": "旧网址将失效，请更新已分享的链接。",
+      "published": "已发布",
+      "save": "保存",
+      "saveFailed": "保存失败，网址可能已被占用或更改。请刷新后重试。",
+      "taken": "该网址已被占用",
+      "updated": "网站网址已更新"
     },
     "templates": {
       "activeHtmlPreview": "{{title}} 当前 HTML 预览",
@@ -5185,6 +5202,16 @@
     },
     "wallet": {
       "actionError": "操作未完成。请检查网络、允许弹出窗口后重试。",
+      "cards": {
+        "default": "默认",
+        "description": "在 Link 钱包中添加卡片或更改默认卡片。",
+        "empty": "你的 Link 钱包中暂无卡片",
+        "expires": "有效期至 {{date}}",
+        "loadError": "无法加载卡片，请重试。",
+        "loading": "正在加载卡片",
+        "manage": "管理卡片",
+        "title": "你的 Link 卡片"
+      },
       "connect": "连接",
       "description": "让智能体发起购买请求并查看 Link 交易。每笔购买均由你批准。",
       "disconnect": "断开连接",

@@ -1,5 +1,6 @@
 """Tests for model-provider JSON response streaming usage reporting."""
 
+import asyncio
 import gzip
 import hashlib
 import json
@@ -205,6 +206,7 @@ class TestModelProviderJsonStreaming:
         callback = response_stream(flow)
         callback(b'{"id":"resp_1","model":"gpt-5.5","output":[{"text":"')
         callback(b"x" * (STREAM_BUFFER_LIMIT + 4096))
+        asyncio.run(mitm_addon.responseinspection(flow))
         callback(b'"}],"usage":{"input_tokens":50,"output_tokens":200}}')
         assert metadata_keys.STREAM_BUFFER not in flow.metadata
         assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
@@ -380,6 +382,7 @@ class TestModelProviderJsonStreaming:
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)
         assert callback(compressed) == compressed
+        asyncio.run(mitm_addon.responseinspection(flow))
         corrupt_followup = bytearray(
             gzip.compress(b"") if encoding_case == "gzip" else zlib.compress(b"")
         )

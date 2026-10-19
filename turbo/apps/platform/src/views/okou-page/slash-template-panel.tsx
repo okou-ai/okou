@@ -873,7 +873,9 @@ export function SlashActionRow({
       {expanded !== undefined && (
         <ChevronRight
           size={16}
-          className="shrink-0 text-muted-foreground/50"
+          // Points at the second level, which opens on the left at the end
+          // edge of the slash-actions overview.
+          className="shrink-0 text-muted-foreground/50 group-data-[side=end]/slash-panel:-scale-x-100"
           aria-hidden
         />
       )}

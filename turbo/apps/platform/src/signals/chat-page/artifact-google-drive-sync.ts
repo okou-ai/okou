@@ -12,6 +12,11 @@ import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { settle, withCleanup } from "../utils.ts";
 import { pageVersion$ } from "../page-signal.ts";
+import type { z } from "zod";
+
+type GoogleDriveUploadedFile = z.infer<
+  (typeof artifactGoogleDriveContract.uploadWithMode.responses)[200]
+>;
 
 type ArtifactGoogleDriveSyncParams = {
   readonly agentId: string;
@@ -76,7 +81,8 @@ function googleDriveSyncSuccessMessage(fileCount: number): string {
 }
 
 type ArtifactGoogleDriveSyncResult =
-  { readonly ok: true } | { readonly ok: false; readonly message: string };
+  | { readonly ok: true; readonly file: GoogleDriveUploadedFile }
+  | { readonly ok: false; readonly message: string };
 
 function isArtifactGoogleDriveSyncFailure(
   result: ArtifactGoogleDriveSyncResult,
@@ -89,7 +95,7 @@ async function syncArtifactFilesToGoogleDrive(
     readonly createClient: ApiClientFactory;
   },
   signal?: AbortSignal,
-): Promise<boolean> {
+): Promise<readonly ArtifactGoogleDriveSyncResult[]> {
   signal?.throwIfAborted();
   if (params.files.length === 0) {
     toast.error(
@@ -97,11 +103,11 @@ async function syncArtifactFilesToGoogleDrive(
         return $.artifacts.googleDrive.noArtifacts;
       }),
     );
-    return false;
+    return [];
   }
 
   const toastId = toast.loading(googleDriveSyncLoadingMessage(params.files));
-  const sync = async (): Promise<boolean> => {
+  const sync = async (): Promise<readonly ArtifactGoogleDriveSyncResult[]> => {
     const client = params.createClient(artifactGoogleDriveContract);
     const results: ArtifactGoogleDriveSyncResult[] = [];
     for (const file of params.files) {
@@ -136,7 +142,7 @@ async function syncArtifactFilesToGoogleDrive(
                   return $.artifacts.googleDrive.conversionUnconfirmed;
                 }),
               }
-            : { ok: true }
+            : { ok: true, file: settled.value.body }
           : { ok: false, message: settled.value.body.error.message }
         : {
             ok: false,
@@ -152,17 +158,8 @@ async function syncArtifactFilesToGoogleDrive(
     if (syncedCount === params.files.length) {
       toast.success(googleDriveSyncSuccessMessage(params.files.length), {
         id: toastId,
-        ...(params.files.some((file) => {
-          return file.mode === "google";
-        })
-          ? {
-              description: i18n.t(($) => {
-                return $.artifacts.googleDrive.conversionNotice;
-              }),
-            }
-          : {}),
       });
-      return true;
+      return results;
     }
 
     const firstFailure = results.find(isArtifactGoogleDriveSyncFailure);
@@ -183,7 +180,7 @@ async function syncArtifactFilesToGoogleDrive(
             })),
       { id: toastId },
     );
-    return syncedCount > 0;
+    return results;
   };
 
   return await withCleanup(sync(), () => {
@@ -198,8 +195,8 @@ async function syncArtifactFileToGoogleDrive(
     readonly createClient: ApiClientFactory;
   },
   signal?: AbortSignal,
-): Promise<boolean> {
-  return await syncArtifactFilesToGoogleDrive(
+): Promise<GoogleDriveUploadedFile | undefined> {
+  const results = await syncArtifactFilesToGoogleDrive(
     {
       createClient: params.createClient,
       agentId: params.agentId,
@@ -214,6 +211,8 @@ async function syncArtifactFileToGoogleDrive(
     },
     signal,
   );
+  const result = results[0];
+  return result?.ok ? result.file : undefined;
 }
 
 const internalGoogleDriveSyncPending$ = state<
@@ -230,10 +229,10 @@ const syncArtifactFileToGoogleDrive$ = command(
       readonly createClient: ApiClientFactory;
     },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<GoogleDriveUploadedFile | undefined> => {
     signal.throwIfAborted();
     if (get(internalGoogleDriveSyncPending$).has(params.artifactId)) {
-      return false;
+      return undefined;
     }
     set(
       internalGoogleDriveSyncPending$,
@@ -257,6 +256,8 @@ type GoogleDriveSyncAccount = {
   readonly artifactId: string;
   readonly agentId: string;
   readonly connectionId: string | undefined;
+  readonly ready: boolean;
+  readonly googleImport?: GoogleDriveUploadedFile | undefined;
 };
 
 function createGoogleDriveSyncAccount() {
@@ -274,8 +275,8 @@ export const googleDriveSyncAccount$ = computed((get) => {
   return get(get(pageGoogleDriveSyncAccount$));
 });
 
-// Retain the account selected by a successful operation, not the thread list's
-// stale connect/reconnect instruction. Catalog consumers can still refresh.
+// Retain the selected account and acknowledged native import without reloading
+// the thread's attachment list. Catalog consumers can still refresh.
 export const syncArtifactAndRefresh$ = command(
   async (
     { get, set },
@@ -290,23 +291,38 @@ export const syncArtifactAndRefresh$ = command(
     // a replacement page's graph even if its completion races navigation.
     const account$ = get(pageGoogleDriveSyncAccount$);
     const createClient = get(apiClient$);
+    const previous = get(account$);
+    const sameAccount =
+      previous?.artifactId === params.artifactId &&
+      previous.agentId === params.agentId &&
+      previous.connectionId === params.connectionId;
+    if (params.mode === "google" && sameAccount && previous.googleImport) {
+      return;
+    }
     if (params.authorize) {
       await authorizeGoogleDriveForAgent(
         { agentId: params.agentId, createClient },
         signal,
       );
     }
-    const success = await set(
+    const uploaded = await set(
       syncArtifactFileToGoogleDrive$,
       { ...params, createClient },
       signal,
     );
     signal.throwIfAborted();
-    if (success) {
+    if (uploaded) {
       set(account$, {
         artifactId: params.artifactId,
         agentId: params.agentId,
         connectionId: params.connectionId,
+        ready: true,
+        googleImport:
+          params.mode === "google"
+            ? uploaded
+            : sameAccount
+              ? previous.googleImport
+              : undefined,
       });
     } else {
       const account = get(account$);
@@ -315,10 +331,10 @@ export const syncArtifactAndRefresh$ = command(
         account.agentId === params.agentId &&
         account.connectionId === params.connectionId
       ) {
-        set(account$, undefined);
+        set(account$, { ...account, ready: false });
       }
     }
-    if (success) {
+    if (uploaded) {
       params.onSyncSuccess?.();
     }
   },

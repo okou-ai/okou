@@ -78,6 +78,7 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly PI_MEMORY_INPUT_REVISION_WRITER_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
+readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
@@ -603,6 +604,17 @@ if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
+fi
+
+# Host Worker aliases resolve through the API even while URL editing is disabled.
+# Earlier APIs cannot authorize a renamed site or preserve it on publication.
+hosted_site_url_routing_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$HOSTED_SITE_URL_ROUTING_PATH" | sed -n '1p')
+if [[ ! "$hosted_site_url_routing_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged hosted-site URL routing contract on main."
+fi
+if ! git merge-base --is-ancestor "$hosted_site_url_routing_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the hosted-site URL routing contract: ${hosted_site_url_routing_commit}."
 fi
 
 # Installed Native Desktop versions use Ably wakeups and heartbeat hints rather

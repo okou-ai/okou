@@ -383,6 +383,7 @@ suites before committing the upgrade.
 | `test_model_provider_response_parser_setup.py`          | Model-provider JSON and SSE response parser selection, feeding, and finalization                                     |
 | `test_response_stream_state_release.py`                 | Direct response-stream state release, idempotency, and callback ownership                                            |
 | `test_model_provider_json_streaming.py`                 | Model provider streaming JSON response usage pipeline                                                                |
+| `test_model_json_cooperative_streaming.py`              | HTTP JSON inspection fairness, parser steps, partitions, total work, terminal validation and cancellation            |
 | `model_provider_sse_usage_helpers.py`                   | Shared model-provider SSE flow, hook-driving, compression, and warning test mechanics                                |
 | `test_model_provider_sse_usage_openai_responses.py`     | OpenAI Responses-shaped model-provider SSE usage pipeline                                                            |
 | `test_model_provider_sse_usage_anthropic.py`            | Anthropic Messages SSE compressed-body and parse diagnostics                                                         |

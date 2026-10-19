@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   and,
@@ -1375,7 +1377,7 @@ const hostedSiteDetail$ = command(
           sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
             nullableDriverValueDecoder(pgIntegerDecoder),
           ),
-        url: hostedDeployments.url,
+        linkLayoutSegment: hostedSites.linkLayoutSegment,
         entrypoint: hostedDeployments.entrypoint,
         spaFallback: hostedDeployments.spaFallback,
       })
@@ -1394,7 +1396,10 @@ const hostedSiteDetail$ = command(
       id: row.id,
       slug: row.requestedSlug ?? row.slug,
       publicSlug: row.publicSlug,
-      url: row.url,
+      url: hostedLinkOrigin(
+        linkLayoutFromSegment(row.linkLayoutSegment),
+        row.publicSlug,
+      ),
       deploymentVersion: row.deploymentVersion,
       entrypoint: row.entrypoint,
       spaFallback: row.spaFallback,

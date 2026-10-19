@@ -581,7 +581,7 @@
       "agentLoading": "L'agent est encore en cours de chargement",
       "connect": "Connecter Google Drive",
       "connectTooltip": "Connecter Google Drive pour télécharger des artéfacts",
-      "conversionNotice": "Crée une copie modifiable. La mise en forme peut changer ; le fichier original est conservé.",
+      "conversionNotice": "Crée une copie modifiable ; la mise en forme peut varier.",
       "conversionUnconfirmed": "La conversion Google n’a pas pu être confirmée. Vérifiez Drive avant de réessayer.",
       "noArtifacts": "Aucun artéfact à synchroniser",
       "openDocs": "Ouvrir dans Google Docs",
@@ -670,6 +670,23 @@
       "panelTitle": "Artéfacts",
       "singularTitle": "Artéfact",
       "unavailable": "Cet artéfact n'est plus disponible."
+    },
+    "siteUrl": {
+      "available": "Disponible",
+      "cancel": "Annuler",
+      "checkFailed": "Impossible de vérifier cette adresse. Modifiez-la pour réessayer.",
+      "checking": "Vérification…",
+      "customize": "Personnaliser l’URL",
+      "hint": "Choisissez un nom court et mémorable",
+      "invalid": "3 à 63 lettres minuscules, chiffres ou tirets, sans préfixe réservé",
+      "label": "URL du site",
+      "loadFailed": "Impossible de charger les paramètres du site",
+      "oldUrlWarning": "L’ancienne URL ne fonctionnera plus. Mettez à jour les liens partagés.",
+      "published": "Publié",
+      "save": "Enregistrer",
+      "saveFailed": "Enregistrement impossible. L’adresse est peut-être prise ou modifiée. Actualisez et réessayez.",
+      "taken": "Cette adresse est déjà prise",
+      "updated": "URL du site mise à jour"
     },
     "templates": {
       "activeHtmlPreview": "Aperçu HTML actif de {{title}}",
@@ -5272,6 +5289,16 @@
     },
     "wallet": {
       "actionError": "Impossible de terminer cette action. Vérifie ta connexion, autorise les fenêtres pop-up et réessaie.",
+      "cards": {
+        "default": "Par défaut",
+        "description": "Ajoutez une carte ou changez la carte par défaut dans votre portefeuille Link.",
+        "empty": "Aucune carte dans votre portefeuille Link pour le moment",
+        "expires": "Expire en {{date}}",
+        "loadError": "Impossible de charger vos cartes. Réessayez.",
+        "loading": "Chargement des cartes",
+        "manage": "Gérer les cartes",
+        "title": "Vos cartes dans Link"
+      },
       "connect": "Connecter",
       "description": "Vos agents peuvent demander des achats et consulter les transactions Link. Vous approuvez chaque achat.",
       "disconnect": "Déconnecter",

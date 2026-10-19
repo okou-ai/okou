@@ -1,5 +1,5 @@
 {
-  "id": "e4c3ee84-1a05-4c6d-ad84-d2acacc41da2",
+  "id": "ca838b6c-7fb8-47b9-ae10-d11f37e2b36f",
   "prevId": "ff827d6e-6dc3-4720-b0f4-3969f281d5c0",
   "version": "7",
   "dialect": "postgresql",
@@ -16473,6 +16473,27 @@
           "method": "btree",
           "with": {}
         },
+        "idx_hosted_deployments_public_slug": {
+          "name": "idx_hosted_deployments_public_slug",
+          "columns": [
+            {
+              "expression": "(\"manifest\"->>'publicSlug')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "site_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_hosted_deployments_site_manifest_version": {
           "name": "idx_hosted_deployments_site_manifest_version",
           "columns": [
@@ -16654,6 +16675,21 @@
           "columns": [
             {
               "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_hosted_sites_slug": {
+          "name": "idx_hosted_sites_slug",
+          "columns": [
+            {
+              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -34817,6 +34853,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
+        },
+        "workflow_receiver": {
+          "name": "workflow_receiver",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",

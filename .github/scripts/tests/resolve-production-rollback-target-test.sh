@@ -24,7 +24,7 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
+    elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
       [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
@@ -92,6 +92,8 @@ case "${1:-}" in
       [ "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
+      [ "${MOCK_HOSTED_SITE_URL_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
       [ "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
@@ -140,7 +142,7 @@ case "${1:-}" in
     ;;
   log)
     if [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
-      printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5858585858585858585858585858585858585858}"
+      printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
     elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
     elif [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
@@ -207,6 +209,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *hosted-site-url-routing* ]]; then
+      printf '%s\n' "${MOCK_HOSTED_SITE_URL_ROUTING_COMMIT-5858585858585858585858585858585858585858}"
     elif [[ "$*" == *computer-use-command-notifications* ]]; then
       printf '%s\n' "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_COMMIT-4343434343434343434343434343434343434343}"
     elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
@@ -982,6 +986,20 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Browser mutation floor must fail before artifact or host access"
 fi
 
+for routing_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged hosted-site URL routing contract" \
+    run_resolver "${tmp_dir}/hosted-site-url-history.output" "MOCK_HOSTED_SITE_URL_ROUTING_COMMIT=${routing_commit}"
+  [ ! -s "${tmp_dir}/hosted-site-url-history.output" ] || fail "invalid hosted-site URL history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the hosted-site URL routing contract" \
+  run_resolver "${tmp_dir}/hosted-site-url-floor.output" MOCK_HOSTED_SITE_URL_ROUTING_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/hosted-site-url-floor.output" ] || fail "incompatible hosted-site API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "hosted-site URL routing floor must fail before artifact or host access"
+fi
+
 for migration_hop_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Desktop migration-hop policy" \
@@ -1413,6 +1431,11 @@ ruby - \
 
   host_worker_step = release.fetch("detect-host-worker-deploy-inputs").fetch("steps").find { |step| step["id"] == "detect" }
   raise "Host Worker detection must use the resolved release target" unless host_worker_step.fetch("run").include?("HEAD_SHA=\"#{expected_target}\"")
+  host_worker = release.fetch("deploy-host-worker-production")
+  unless Array(host_worker.fetch("needs")).include?("promote-api-production") &&
+      host_worker.fetch("if").include?("needs.promote-api-production.result == \x27success\x27")
+    raise "Host Worker authority must wait for successful API promotion"
+  end
   schema_step = release.fetch("deploy-api-schema").fetch("steps").find { |step| step["name"] == "Publish Runtime API Schema" }
   raise "Runtime API Schema must use the resolved release target" unless schema_step.fetch("env").fetch("RELEASE_SHA") == expected_target
   dashboard_step = release.fetch("update-rollback-dashboard").fetch("steps").find { |step| step["name"] == "Update rollback dashboard issue" }

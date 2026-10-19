@@ -1,11 +1,18 @@
 import type { BrowserOptions } from "@sentry/browser";
 
 import {
+  recordSentryBreadcrumb,
   recordSentryException,
   recordSentryInitialization,
   recordSentryMessage,
   recordSentryUser,
 } from "./sentry-behavior.ts";
+
+export function addBreadcrumb(
+  breadcrumb: Parameters<typeof import("@sentry/browser").addBreadcrumb>[0],
+): void {
+  recordSentryBreadcrumb(breadcrumb);
+}
 
 export function init(options?: BrowserOptions): void {
   recordSentryInitialization("shared-worker", options);

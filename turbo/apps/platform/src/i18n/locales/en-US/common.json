@@ -566,7 +566,7 @@
       "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
       "connectTooltip": "Connect Google Drive to upload artifacts",
-      "conversionNotice": "Creates an editable copy. Formatting may change; the original file is preserved.",
+      "conversionNotice": "Creates an editable copy. Some formatting may change.",
       "conversionUnconfirmed": "Google conversion could not be confirmed. Check Drive before retrying.",
       "noArtifacts": "No artifacts to sync",
       "openDocs": "Open in Google Docs",
@@ -652,6 +652,23 @@
       "panelTitle": "Artifacts",
       "singularTitle": "Artifact",
       "unavailable": "This artifact is no longer available."
+    },
+    "siteUrl": {
+      "available": "Available",
+      "cancel": "Cancel",
+      "checkFailed": "Could not check this address. Edit it to try again.",
+      "checking": "Checking availability…",
+      "customize": "Customize URL",
+      "hint": "Choose a short, memorable name",
+      "invalid": "Use 3–63 lowercase letters, numbers or hyphens; no reserved prefixes",
+      "label": "Website URL",
+      "loadFailed": "Could not load website settings",
+      "oldUrlWarning": "The old URL will stop working. Update any links you have shared.",
+      "published": "Published",
+      "save": "Save",
+      "saveFailed": "Could not save. The address may be taken or changed. Refresh and try again.",
+      "taken": "This address is already taken",
+      "updated": "Website URL updated"
     },
     "templates": {
       "activeHtmlPreview": "{{title}} active HTML preview",
@@ -5197,6 +5214,16 @@
     },
     "wallet": {
       "actionError": "Couldn’t complete the action. Check your connection, allow pop-ups, and try again.",
+      "cards": {
+        "default": "Default",
+        "description": "Add a card or change your default in your Link wallet.",
+        "empty": "No cards in your Link wallet yet",
+        "expires": "Expires {{date}}",
+        "loadError": "Couldn’t load your cards. Try again.",
+        "loading": "Loading cards",
+        "manage": "Manage cards",
+        "title": "Your cards in Link"
+      },
       "connect": "Connect",
       "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
