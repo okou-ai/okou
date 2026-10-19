@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 mod guarded;
+mod outcome_accounting;
 #[cfg(any(test, feature = "test-support"))]
 mod read_checkpoint;
 #[cfg(any(test, feature = "test-support"))]
