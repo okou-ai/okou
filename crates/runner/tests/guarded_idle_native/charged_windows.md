@@ -70,6 +70,12 @@ ordering. Original remote device/inode identities are compared across original
 records, not against a downloaded copy's new inode. Source hashes establish
 consistency/custody, not attestation against a hostile host. Run the retained
 reader for an old bundle; current source must not reinterpret unsupported formats.
+Before executing archived Python, verify a separately trusted archive digest or
+independently compute the source-bundle digest with trusted tooling. The source
+digest is SHA-256 of the sorted, compact JSON mapping the four runtime filenames
+to their SHA-256 file digests. An archived reader must already be trusted before
+it can validate other files; the trusted repository reader can instead verify a
+bundle in its supported format.
 
 The workload touches/releases 32 MiB, joins a 16 MiB transient child and writes
 and syncs a 64 MiB owned file. After positive driver wait, its file charge must
