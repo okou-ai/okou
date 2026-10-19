@@ -70,7 +70,7 @@ const CONNECTOR_POPULARITY_RANKING = [
   "salesforce",
   "hubspot",
   "pipedrive",
-  "attio",
+  "attio-mcp",
   "apollo",
   "clay",
   "gusto",
@@ -106,7 +106,7 @@ const CONNECTOR_POPULARITY_RANKING = [
   "asana",
   "trello",
   "clickup",
-  "monday",
+  "monday-mcp",
   "todoist",
   "smartsheet",
   // Models and generation.

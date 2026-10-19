@@ -4,6 +4,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
+  builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -657,6 +658,90 @@ describe("connector catalog v4 preparation", () => {
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
       { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },
     ]);
+  });
+
+  it("keeps migrated builtin MCP services ranked in discovery and search", async () => {
+    const candidate = release({
+      mutate(catalog) {
+        catalog.connectors = [
+          httpConnector("pipedrive", "Pipedrive"),
+          { ...mcpConnector("attio-mcp"), label: "Attio" },
+          httpConnector("apollo", "Apollo"),
+          httpConnector("clickup", "ClickUp"),
+          { ...mcpConnector("monday-mcp"), label: "Monday.com" },
+          httpConnector("todoist", "Todoist"),
+          httpConnector("pipedrive-mcp", "A similar MCP identity"),
+          httpConnector("custom-attio-mcp", "A custom Attio"),
+          ...Array.from({ length: 12 }, (_, index) => {
+            return httpConnector(`unranked-${index}`, `A service ${index}`);
+          }),
+        ];
+      },
+    });
+    serveObjects(candidate.objects);
+    expect((await sync()).body.outcome).toBe("accepted");
+
+    const catalog = await publicCatalog();
+    const slugs = catalog.body.connectors.map((connector) => {
+      return connector.slug;
+    });
+    expect(slugs).not.toContain("attio");
+    expect(slugs).not.toContain("monday");
+    expect(catalog.body.connectors).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: "attio-mcp", popularityRank: 25 }),
+        expect.objectContaining({ slug: "monday-mcp", popularityRank: 58 }),
+      ]),
+    );
+    for (const slug of ["pipedrive-mcp", "custom-attio-mcp", "unranked-0"]) {
+      const connector = catalog.body.connectors.find((entry) => {
+        return entry.slug === slug;
+      });
+      expect(connector).toMatchObject({ slug });
+      expect(connector).not.toHaveProperty("popularityRank");
+    }
+
+    const discovery = await accept(
+      catalogClient().discovery({ query: {}, headers: sessionHeaders }),
+      [200],
+    );
+    expect(discovery.body.connectors).toHaveLength(12);
+    expect(
+      discovery.body.connectors.slice(0, 6).map((connector) => {
+        return connector.slug;
+      }),
+    ).toStrictEqual([
+      "pipedrive",
+      "attio-mcp",
+      "apollo",
+      "clickup",
+      "monday-mcp",
+      "todoist",
+    ]);
+
+    const searchClient = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsSearchContract,
+    );
+    for (const [keyword, slug] of [
+      ["Attio", "attio-mcp"],
+      ["attio-mcp", "attio-mcp"],
+      ["Monday.com", "monday-mcp"],
+      ["monday-mcp", "monday-mcp"],
+    ] as const) {
+      const searched = await accept(
+        searchClient.search({ query: { keyword }, headers: sessionHeaders }),
+        [200],
+      );
+      expect(searched.body.connectors[0]).toMatchObject({ slug });
+      const discovered = await accept(
+        catalogClient().discovery({
+          query: { keyword },
+          headers: sessionHeaders,
+        }),
+        [200],
+      );
+      expect(discovered.body.connectors[0]).toMatchObject({ slug });
+    }
   });
 
   it("does not expose an accepted MCP transport as an executable HTTP permission bundle", async () => {
