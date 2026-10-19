@@ -423,7 +423,7 @@ export function createPublicDiscordBinding(
 /** Disconnect only this account as its actual workspace member. */
 export async function removePublicDiscordBinding(
   context: TestContext,
-  fixture: DiscordFixture,
+  fixture: DiscordActor,
 ): Promise<void> {
   createRouteMocks(context).clerk.session(
     fixture.userId,
