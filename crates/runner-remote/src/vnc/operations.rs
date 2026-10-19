@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-use tokio::sync::MutexGuard;
+use tokio::{sync::MutexGuard, time::Instant};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -44,6 +44,7 @@ async fn lock<'a>(
     session: &'a Session,
     scope: &Scope,
     operation: crate::diagnostics::Operation,
+    started: Option<Instant>,
     report: &mut Option<crate::diagnostics::Report>,
 ) -> Result<MutexGuard<'a, Engine>, Failure> {
     match scope.wait(session.engine.lock()).await {
@@ -52,7 +53,7 @@ async fn lock<'a>(
         Err(error) => {
             // Commit the observed failure before cancellation wakes other callers.
             if !session.cancel.is_cancelled() {
-                *report = session.failed(operation, error);
+                *report = session.failed_since(operation, error, started);
             }
             session.retire();
             Err(error)
@@ -174,6 +175,7 @@ impl Run {
                     parse::<protocol::Empty>(raw)?;
                     let mut admitted = Vec::<Arc<Session>>::new();
                     for session in self.snapshot()? {
+                        let started = session.diagnostic_started();
                         let operation = session_scope(&scope, &session);
                         let mut operation_report = None;
                         let result = async {
@@ -181,6 +183,7 @@ impl Run {
                                 &session,
                                 &operation,
                                 crate::diagnostics::Operation::Session,
+                                started,
                                 &mut operation_report,
                             )
                             .await?;
@@ -191,7 +194,11 @@ impl Run {
                         // but cancellation/deadline of the request still wins.
                         if let Err(error) = scope.check() {
                             report = operation_report.or_else(|| {
-                                session.failed(crate::diagnostics::Operation::Session, error)
+                                session.failed_since(
+                                    crate::diagnostics::Operation::Session,
+                                    error,
+                                    started,
+                                )
                             });
                             return Err(error);
                         }
@@ -202,7 +209,11 @@ impl Run {
                                 if session.cancel.is_cancelled() => {}
                             Err(error) => {
                                 report = operation_report.or_else(|| {
-                                    session.failed(crate::diagnostics::Operation::Session, error)
+                                    session.failed_since(
+                                        crate::diagnostics::Operation::Session,
+                                        error,
+                                        started,
+                                    )
                                 });
                                 return Err(error);
                             }
@@ -238,7 +249,8 @@ impl Run {
                 let result = async {
                     let params = parse::<protocol::SessionId>(raw)?;
                     let session = self.lookup(params.session_id)?;
-                    subject = Some(Arc::clone(&session));
+                    let started = session.diagnostic_started();
+                    subject = Some((Arc::clone(&session), started));
                     if request.method == "vnc.session.close" {
                         session.close();
                         scope.wait(session.closed.cancelled()).await?;
@@ -249,6 +261,7 @@ impl Run {
                             &session,
                             &scope,
                             crate::diagnostics::Operation::Session,
+                            started,
                             &mut report,
                         )
                         .await?;
@@ -259,8 +272,12 @@ impl Run {
                 .await;
                 let data = result.unwrap_or_else(|error| {
                     let report = report.or_else(|| {
-                        subject.and_then(|session| {
-                            session.failed(crate::diagnostics::Operation::Session, error)
+                        subject.and_then(|(session, started)| {
+                            session.failed_since(
+                                crate::diagnostics::Operation::Session,
+                                error,
+                                started,
+                            )
                         })
                     });
                     self.diagnosed(failed(error), report)
@@ -287,10 +304,11 @@ impl Run {
         let result = async {
             let params = parse::<protocol::SessionId>(raw)?;
             let session = self.lookup(params.session_id)?;
-            subject = Some(Arc::clone(&session));
+            let started = session.diagnostic_started();
+            subject = Some((Arc::clone(&session), started));
             let operation = session_scope(scope, &session);
             let mut engine = lock(
-                &session, &operation, crate::diagnostics::Operation::Capture, &mut report
+                &session, &operation, crate::diagnostics::Operation::Capture, started, &mut report
             ).await?;
             self.authorize(&session, &operation)?;
             let result = async {
@@ -330,7 +348,7 @@ impl Run {
                 Ok::<_, Failure>(())
             }.await;
             if let Err(error) = result {
-                report = session.failed(crate::diagnostics::Operation::Capture, error);
+                report = session.failed_since(crate::diagnostics::Operation::Capture, error, started);
                 session.retire();
                 engine.close();
             }
@@ -338,8 +356,8 @@ impl Run {
         }.await;
         if let Err(error) = result {
             let report = report.or_else(|| {
-                subject.and_then(|session| {
-                    session.failed(crate::diagnostics::Operation::Capture, error)
+                subject.and_then(|(session, started)| {
+                    session.failed_since(crate::diagnostics::Operation::Capture, error, started)
                 })
             });
             if streaming {
@@ -375,12 +393,14 @@ impl Run {
             let params = parse::<protocol::InputRequest>(raw)?;
             let keys = params.input.keys()?;
             let session = self.lookup(params.session_id)?;
-            subject = Some(Arc::clone(&session));
+            let started = session.diagnostic_started();
+            subject = Some((Arc::clone(&session), started));
             let operation = session_scope(scope, &session);
             let mut engine = lock(
                 &session,
                 &operation,
                 crate::diagnostics::Operation::Input,
+                started,
                 &mut report,
             )
             .await?;
@@ -393,10 +413,9 @@ impl Run {
                 ))
                 .await
                 .and_then(|r| r.map_err(Failure::from));
-            let report = result
-                .as_ref()
-                .err()
-                .and_then(|error| session.failed(crate::diagnostics::Operation::Input, *error));
+            let report = result.as_ref().err().and_then(|error| {
+                session.failed_since(crate::diagnostics::Operation::Input, *error, started)
+            });
             if result.is_err()
                 && (engine.is_closed()
                     || !matches!(result, Err(Failure::InvalidInput | Failure::StaleGeometry)))
@@ -423,8 +442,9 @@ impl Run {
         .await;
         if let Err(error) = result {
             let report = report.or_else(|| {
-                subject
-                    .and_then(|session| session.failed(crate::diagnostics::Operation::Input, error))
+                subject.and_then(|(session, started)| {
+                    session.failed_since(crate::diagnostics::Operation::Input, error, started)
+                })
             });
             terminal(
                 writer,

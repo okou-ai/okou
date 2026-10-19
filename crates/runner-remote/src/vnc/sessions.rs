@@ -137,10 +137,15 @@ struct DiagnosticTerminal {
 }
 
 impl Session {
+    pub(super) fn diagnostic_started(&self) -> Option<Instant> {
+        self.vnc.as_ref().map(|_| Instant::now())
+    }
+
     pub(super) fn check_report(
         &self,
         failure: Option<Failure>,
         cleanup: Progress,
+        started: Option<Instant>,
     ) -> Option<Report> {
         let handle = self.diagnostics.as_ref()?;
         handle.record(crate::diagnostics::Record {
@@ -157,7 +162,7 @@ impl Session {
                 .source
                 .vnc_snapshot(self.vnc.as_ref())
                 .map(|mut snapshot| {
-                    snapshot.set(Stage::Retirement, cleanup);
+                    snapshot.observed(Stage::Retirement, cleanup, started);
                     snapshot
                 }),
         })
@@ -179,6 +184,15 @@ impl Session {
         &self,
         operation: crate::diagnostics::Operation,
         failure: Failure,
+    ) -> Option<Report> {
+        self.failed_since(operation, failure, None)
+    }
+
+    pub(super) fn failed_since(
+        &self,
+        operation: crate::diagnostics::Operation,
+        failure: Failure,
+        started: Option<Instant>,
     ) -> Option<Report> {
         if matches!(
             failure,
@@ -221,7 +235,7 @@ impl Session {
                 native: self.source.native.clone(),
                 ssh: self.source.snapshot(),
                 vnc: self.source.vnc_snapshot(self.vnc.as_ref()).map(|snapshot| {
-                    let mut snapshot = snapshot.operation(operation, failure);
+                    let mut snapshot = snapshot.operation(operation, failure, started);
                     snapshot.first_failure = Some(source_failure);
                     snapshot.first_failure_at = Some(observed_at);
                     snapshot

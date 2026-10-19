@@ -160,6 +160,81 @@ async fn first_kdc_ssh_pin_is_reauthorized_and_retained_for_later_exchanges() {
 }
 
 #[tokio::test]
+async fn repeated_kdc_exchanges_accumulate_timing_inside_inclusive_authentication() {
+    use crate::diagnostics::{Cause, Handle, Identity, Operation, Protocol, Record};
+    use crate::vnc::evidence::Snapshot;
+    let mut h = Harness::new(Reply::default()).await;
+    let _resolve = h.resolve_for_run(h.run, h.credential(false)).await;
+    let _pin = pin(&h).await;
+    let _initial = check(&h, 7, "valid", None).await;
+    let _learned = check(&h, 8, "valid", None).await;
+    let mut diagnostics = super::super::sessions::StartEvidence::default();
+    diagnostics.vnc = Some(Snapshot::default());
+    diagnostics.begin(Stage::Authentication);
+    let delivery = AtomicBool::new(false);
+    let mut caller = caller(&h, &mut diagnostics, &delivery);
+    for _ in 0..2 {
+        let exchange = caller.exchange("EXAMPLE.TEST", b"test");
+        let kdc = async {
+            let mut stream = h.accept_forwarded().await;
+            receive(&mut stream).await;
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_millis(180)).await;
+            tokio::time::resume();
+            stream.write_u32(5).await.unwrap();
+            stream.write_all(b"reply").await.unwrap();
+            stream.shutdown().await.unwrap();
+        };
+        let (reply, ()) = tokio::join!(exchange, kdc);
+        assert_eq!(reply.unwrap().as_slice(), b"reply");
+    }
+    drop(caller);
+    diagnostics.begin(Stage::Initialization);
+    let handle = Handle::new(h.run, true);
+    let report = handle
+        .record(Record {
+            effects: None,
+            protocol: Protocol::Vnc,
+            connection: CONNECTION.parse().unwrap(),
+            operation: Operation::Start,
+            identity: Identity::default(),
+            cause: Some(Cause::Vnc(Failure::Protocol)),
+            dependency: None,
+            native: None,
+            ssh: None,
+            vnc: diagnostics.vnc.take(),
+        })
+        .unwrap();
+    let text = report.message().unwrap();
+    assert!(
+        text.contains("VNC kdc transport: passed.\n  Elapsed:"),
+        "{text}"
+    );
+    assert!(
+        text.contains("VNC kdc exchange: passed.\n  Elapsed:"),
+        "{text}"
+    );
+    let evidence = report.evidence().unwrap();
+    let elapsed = |stage| {
+        evidence["vnc"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["stage"] == stage)
+            .unwrap()["elapsed_ms"]
+            .as_u64()
+            .unwrap()
+    };
+    assert!(elapsed("kdc_exchange") >= 360, "{text}");
+    assert!(
+        elapsed("authentication") >= elapsed("kdc_exchange"),
+        "{text}"
+    );
+    assert!(!delivery.load(Ordering::Relaxed));
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn changed_kdc_grant_after_first_pin_denies_before_any_kdc_bytes() {
     let mut h = Harness::new(Reply::default()).await;
     let resolve = h.resolve_for_run(h.run, h.credential(false)).await;

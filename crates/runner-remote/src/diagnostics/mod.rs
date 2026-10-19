@@ -307,7 +307,7 @@ impl NativeWatch {
         vnc: Option<crate::vnc::evidence::Snapshot>,
         connection: Option<crate::tailscale::evidence::Trace>,
     ) -> Self {
-        self.vnc = vnc;
+        self.vnc = vnc.map(crate::vnc::evidence::Snapshot::frozen);
         self.native_connection = connection;
         self
     }
@@ -539,7 +539,7 @@ impl Handle {
                 Detail::NotObserved
             },
             ssh,
-            vnc,
+            vnc: vnc.map(crate::vnc::evidence::Snapshot::frozen),
             truncated: false,
         };
         // Keep the incident and critical path when optional completed detail grows.
