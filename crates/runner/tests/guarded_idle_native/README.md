@@ -1,5 +1,43 @@
 # Guarded idle terminal fixture
 
+## Cancelled or panicked speculative restore callbacks
+
+`native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving`
+runs drop/panic cases with fresh and newly matching snapshot factories. The
+original full-lease Guest actually unparks, completes production UTC state
+restoration and verifies its complete private marker, ordinary home and 64 KiB
+payload through Guest RPC. Only then does the borrowed restore callback wait at
+an invocation-owned response gate. Dropping that future or releasing its injected
+unwind must leave the production owner Uncertain and refuse commit, repark and
+reusable inventory. The original capsule stays outside the observed future.
+
+Production covered cleanup must save the entire original home. Held durable
+post-exit IO preserves the full lease/growth allowance while actual observation
+and acknowledged heartbeat progress through held pool/status locks. Joined
+saving releases the original lease; another heartbeat progresses through an
+observed current-status wait before empty regular status and all producer joins.
+The common cache restoration verifies every original payload byte and private
+runtime removal. Failure releases owned gates, joins accepted work and retains
+unresolved resources; intervention cannot produce successful proof.
+
+Use exact committed Host/current Guests, verified owned RootFS and a new matching
+snapshot with unchanged supplied policy/P1 guards. Include exact raw
+`native_speculative_fault_policy_json`, `native_terminal_artifacts` and matching
+`snapshot-preparation.json` in the original collector files:
+
+```sh
+<native-test-binary> native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/speculative_fault_report.py <p1-directory>
+```
+
+The injected failure is at the callback response boundary after completed actual
+restore/RPC. It does not prove cancellation inside unpark, an in-flight Guest RPC
+or repark, actual API claim arbitration or full Supervisor shutdown. Ordinary
+consumer regressions are separate from opt-in native execution. Complete C/D/P4,
+bootstrap provenance, residency, calibrated RAM relief and OOM/production
+protection remain separate gates.
+
 ## Actual provider claim rejection and guarded rollback
 
 `native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving`
