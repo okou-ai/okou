@@ -6652,6 +6652,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Akun",
+      "agentLabel": "Agen",
       "code": "Kode verifikasi",
       "connect": "Hubungkan",
       "connected": "Terhubung",
@@ -6661,11 +6663,15 @@
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat. Coba lagi.",
       "instructions": "Pindai kode QR ini dengan WeChat, lalu konfirmasi di ponsel Anda.",
+      "linkUnavailable": "Tautan ini tidak tersedia. Gunakan akun dan ruang kerja semula, lalu kirim pesan lagi di WeChat untuk mendapatkan tautan baru. Anda juga dapat memindai kode QR baru.",
       "name": "WeChat",
+      "newQr": "Hubungkan dengan kode QR baru",
       "reconnect": "Hubungkan kembali",
       "reconnect_required": "Pindai lagi untuk menghubungkan kembali.",
       "restart_required": "Akun WeChat ini sudah ditautkan. Buat kode QR baru untuk menghubungkannya kembali.",
+      "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "retry": "Buat kode QR baru",
+      "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
       "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
@@ -6673,7 +6679,8 @@
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
       "verification_required": "Masukkan kode verifikasi yang ditampilkan di WeChat.",
       "verify": "Verifikasi",
-      "waiting": "Menunggu pemindaian…"
+      "waiting": "Menunggu pemindaian…",
+      "workspaceLabel": "Ruang kerja"
     }
   }
 }

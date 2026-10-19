@@ -6652,6 +6652,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "账号",
+      "agentLabel": "Agent",
       "code": "验证码",
       "connect": "连接",
       "connected": "已连接",
@@ -6661,11 +6663,15 @@
       "expired": "二维码已过期，请重新生成。",
       "failed": "连接微信失败，请重试。",
       "instructions": "使用微信扫描二维码，然后在手机上确认。",
+      "linkUnavailable": "此链接不可用。请使用原账号和工作区，并在微信中再发一条消息获取新链接。也可以重新扫码连接。",
       "name": "微信",
+      "newQr": "使用新二维码连接",
       "reconnect": "重新连接",
       "reconnect_required": "请重新扫码连接。",
       "restart_required": "该微信已绑定，请重新生成二维码以连接。",
+      "restoreDescription": "将微信恢复连接到以下账号和工作区。",
       "retry": "重新生成二维码",
+      "returnToWechat": "返回微信，发送消息即可开始对话。",
       "scanned": "已扫码，请在手机上确认。",
       "scope": "只连接你与此智能体的单聊，目前支持文字消息。",
       "title": "连接微信",
@@ -6673,7 +6679,8 @@
       "verification_blocked": "验证码尝试次数过多，请重新生成二维码。",
       "verification_required": "输入微信中显示的验证码。",
       "verify": "验证",
-      "waiting": "等待扫码…"
+      "waiting": "等待扫码…",
+      "workspaceLabel": "工作区"
     }
   }
 }

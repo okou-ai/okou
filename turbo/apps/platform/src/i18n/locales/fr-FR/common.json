@@ -6762,6 +6762,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Compte",
+      "agentLabel": "Agent",
       "code": "Code de vérification",
       "connect": "Connecter",
       "connected": "Connecté",
@@ -6771,11 +6773,15 @@
       "expired": "Ce code QR a expiré. Créez-en un nouveau.",
       "failed": "Impossible de se connecter à WeChat. Réessayez.",
       "instructions": "Scannez ce code QR avec WeChat, puis confirmez sur votre téléphone.",
+      "linkUnavailable": "Ce lien n’est pas disponible. Utilisez le compte et l’espace de travail d’origine et envoyez un autre message sur WeChat pour obtenir un nouveau lien. Vous pouvez aussi scanner un nouveau code QR.",
       "name": "WeChat",
+      "newQr": "Connecter avec un nouveau code QR",
       "reconnect": "Reconnecter",
       "reconnect_required": "Scannez à nouveau pour vous reconnecter.",
       "restart_required": "Ce compte WeChat est déjà associé. Créez un nouveau code QR pour le reconnecter.",
+      "restoreDescription": "Reconnectez WeChat au compte et à l’espace de travail ci-dessous.",
       "retry": "Créer un nouveau code QR",
+      "returnToWechat": "Revenez sur WeChat et envoyez un message pour commencer la conversation.",
       "scanned": "Code scanné. Confirmez sur votre téléphone.",
       "scope": "Seuls vos messages directs à cet agent sont connectés. Les messages texte sont pris en charge.",
       "title": "Connecter WeChat",
@@ -6783,7 +6789,8 @@
       "verification_blocked": "Trop de tentatives. Créez un nouveau code QR.",
       "verification_required": "Saisissez le code de vérification affiché dans WeChat.",
       "verify": "Vérifier",
-      "waiting": "En attente du scan…"
+      "waiting": "En attente du scan…",
+      "workspaceLabel": "Espace de travail"
     }
   }
 }
