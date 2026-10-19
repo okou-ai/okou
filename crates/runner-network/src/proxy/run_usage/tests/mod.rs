@@ -112,6 +112,49 @@ async fn reads_typed_snapshots_and_rejects_incoherent_payloads() {
 }
 
 #[tokio::test]
+async fn reads_valid_partial_snapshots_without_losing_observations() {
+    for (reason, expected_reason, outstanding_responses) in [
+        ("in_flight", CoverageReason::InFlight, 1),
+        ("history_lost", CoverageReason::HistoryLost, 0),
+    ] {
+        let directory = private_directory();
+        let listener = UnixListener::bind(directory.path().join("control.sock")).unwrap();
+        let reader = reader(directory.path());
+        let mut data = snapshot(reader.run_id);
+        data["complete"] = json!(false);
+        data["reasons"] = json!([reason]);
+        data["outstandingResponses"] = json!(outstanding_responses);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = request(&mut stream).await;
+            reply(&mut stream, &request, data).await;
+        });
+
+        let RunUsageObservation::Available(observed) = reader.snapshot().await.unwrap() else {
+            panic!("expected available partial observation for {reason}");
+        };
+        assert_eq!(observed.run_id, reader.run_id);
+        assert_eq!(observed.revision, 3);
+        assert_eq!(observed.sampled_at_ms, 1);
+        assert_eq!(observed.observed_responses, 1);
+        assert_eq!(observed.outstanding_responses, outstanding_responses);
+        assert!(!observed.complete);
+        assert_eq!(observed.reasons, vec![expected_reason]);
+        assert_eq!(
+            observed.totals,
+            TokenTotals {
+                input: 25,
+                cache_read: 10,
+                cache_creation: 15,
+                output: 20,
+                total: 70,
+            }
+        );
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn cancellation_releases_shared_bounded_admission_and_frozen_target() {
     let directory = private_directory();
     let listener = UnixListener::bind(directory.path().join("control.sock")).unwrap();
