@@ -49,7 +49,10 @@ import {
   useAccountProfile,
   useCreditBalance,
 } from "./sidebar-account.tsx";
-import { useSubscriptionLinkingEntry } from "./subscription-linking.tsx";
+import {
+  SubscriptionLinkingProviderItems,
+  useSubscriptionLinkingEntry,
+} from "./subscription-linking.tsx";
 import { AccountMenuSubscriptionsPanel } from "./sidebar-subscriptions.tsx";
 import { SidebarUpgradeCard } from "./sidebar-upgrade.tsx";
 
@@ -111,6 +114,42 @@ function MeLink({
       {trailing}
       <ChevronRight aria-hidden className="text-muted-foreground" />
     </Link>
+  );
+}
+
+/** A Me row that opens a short menu of choices instead of navigating. */
+function MeMenu({
+  icon: Icon,
+  label,
+  children,
+  onOpenChange,
+}: {
+  readonly icon: LucideIcon;
+  readonly label: string;
+  readonly children: ReactNode;
+  readonly onOpenChange?: (open: boolean) => void;
+}) {
+  return (
+    <DropdownMenu onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            size="lg"
+            iconSize="md"
+            className="w-full justify-start gap-3 px-3 text-foreground"
+          />
+        }
+      >
+        <Icon aria-hidden />
+        <span className="flex-1 text-left">{label}</span>
+        <ChevronRight aria-hidden className="text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -186,9 +225,13 @@ function MeNavigation({
   return (
     <div className={surfaceVariants({ className: "flex flex-col gap-1 p-1" })}>
       {subscriptionEntry.available && (
-        <MeAction icon={Cpu} onClick={subscriptionEntry.onClick}>
-          {subscriptionEntry.label}
-        </MeAction>
+        <MeMenu
+          icon={Cpu}
+          label={subscriptionEntry.label}
+          onOpenChange={subscriptionEntry.onOpenChange}
+        >
+          <SubscriptionLinkingProviderItems source="me_page" />
+        </MeMenu>
       )}
       <MeAction icon={Settings} onClick={actions.handleOpenSettings}>
         {t(($) => {
@@ -252,33 +295,17 @@ function MeAccounts({
   return (
     <div className={surfaceVariants({ className: "flex flex-col gap-1 p-1" })}>
       {profile.others.length > 0 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="quiet"
-                size="lg"
-                iconSize="md"
-                className="w-full justify-start gap-3 px-3 text-foreground"
-              />
-            }
-          >
-            <ArrowRightLeft aria-hidden />
-            <span className="flex-1 text-left">
-              {t(($) => {
-                return $.settings.accountMenu.switchAccount;
-              })}
-            </span>
-            <ChevronRight aria-hidden className="text-muted-foreground" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-72">
-            <AccountSessionItems
-              accounts={profile.others}
-              onSwitchSession={actions.handleSwitchSession}
-            />
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <MeMenu
+          icon={ArrowRightLeft}
+          label={t(($) => {
+            return $.settings.accountMenu.switchAccount;
+          })}
+        >
+          <AccountSessionItems
+            accounts={profile.others}
+            onSwitchSession={actions.handleSwitchSession}
+          />
+        </MeMenu>
       )}
       <MeAction icon={Plus} onClick={actions.handleAddAccount}>
         {t(($) => {

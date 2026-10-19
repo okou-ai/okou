@@ -23,6 +23,7 @@ import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { parseMarkdownTree } from "../../lib/markdown/pipeline.ts";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import type { AttachmentLightboxState } from "../okou-page/attachment-chips.ts";
+import { createTextPreviewContent } from "../text-preview.ts";
 
 interface PreviewRequest {
   readonly runId: string;
@@ -91,7 +92,9 @@ function buildPreview(
   };
   if ("text" in content) {
     const text$ = computed(() => {
-      return Promise.resolve(content.text);
+      return Promise.resolve(
+        createTextPreviewContent(content.text, content.truncated),
+      );
     });
     return content.kind === "markdown"
       ? {

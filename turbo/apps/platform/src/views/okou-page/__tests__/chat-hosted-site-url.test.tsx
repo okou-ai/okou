@@ -11,7 +11,9 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   artifactRun,
+  artifactSummary,
   buttonNamed,
+  hostedSiteArtifactDetail,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
@@ -25,20 +27,36 @@ import {
 const deploymentId = "00000000-0000-4000-8000-000000000041";
 const deploymentUrl = `https://dpl-${deploymentId}.okou.app/`;
 const siteId = "00000000-0000-4000-8000-000000000042";
+const artifactId = "00000000-0000-4000-8000-000000000043";
 
 async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
   let currentSlug = initialSlug;
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  const summary = {
+    ...artifactSummary(artifactId, "hosted-site", "launch-site.html"),
+    sourceUrl: deploymentUrl,
+    aliasUrl: `https://${initialSlug}.okou.app`,
+  };
   const run = artifactRun({
+    artifactId,
     filename: "launch-site.html",
     fileId: deploymentId,
     contentType: "text/html",
     url: deploymentUrl,
   });
   mockArtifactConversation(context, {
-    catalog: [],
+    catalog: [summary],
+    getDetail: (requestedArtifactId) => {
+      return requestedArtifactId === artifactId
+        ? hostedSiteArtifactDetail(summary, {
+            siteId,
+            slug: currentSlug,
+            url: `https://${currentSlug}.okou.app`,
+          })
+        : null;
+    },
     artifactRuns: () => {
       return [
         {
@@ -161,7 +179,7 @@ test.each([false, true])(
     const clipboard = context.mocks.browser.clipboardWriteText();
     await copyFromResources("final-site");
     await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app/");
+      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app");
     });
   },
 );

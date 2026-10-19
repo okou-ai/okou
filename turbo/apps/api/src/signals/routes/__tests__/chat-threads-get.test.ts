@@ -81,6 +81,7 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       serviceTier: null,
       pinnedAt: null,
       archived: false,
+      hidden: false,
       muted: false,
       computerUseHostId: null,
       cloudBrowserEnabled: true,

@@ -673,7 +673,7 @@ async fn no_key_unsafe_cwd_and_reserve_pressure_are_safe_nonfatal_misses() {
 }
 
 #[tokio::test]
-async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
+async fn pressured_hit_remains_owned_during_gc() {
     use std::time::Duration;
     let mut f = Fixture::new().await;
     let selected = f
@@ -683,9 +683,6 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
         .commit("other", b"other-bytes", "2026-10-09T09:00:01Z")
         .await;
     f.cache = f.cache_under_pressure();
-    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
     let mut lease = tokio::time::timeout(Duration::from_secs(10), f.lease("selected"))
         .await
         .unwrap();
@@ -698,7 +695,6 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
     let expected = tokio::fs::read(&source).await.unwrap();
     assert_eq!(&expected[4096..4110], b"selected-bytes");
     assert_eq!(f.cache.gc_root_scan_count(), 0);
-    drop(capacity);
     let cache = f.cache.clone();
     let gc = tokio::spawn(async move { cache.gc(false).await });
     assert!(
@@ -719,16 +715,13 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
 }
 
 #[tokio::test]
-async fn pressured_miss_does_not_wait_for_capacity_or_start_reclamation() {
+async fn pressured_miss_does_not_start_reclamation() {
     use std::time::Duration;
     let mut f = Fixture::new().await;
     let unrelated = f
         .commit("other", b"keep-other", "2026-10-09T09:00:00Z")
         .await;
     f.cache = f.cache_under_pressure();
-    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
     let mut lease = tokio::time::timeout(Duration::from_secs(10), f.lease("missing"))
         .await
         .unwrap();
@@ -738,13 +731,6 @@ async fn pressured_miss_does_not_wait_for_capacity_or_start_reclamation() {
     assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
     assert_eq!(f.cache.gc_root_scan_count(), 0);
     assert!(f.image("other", &unrelated).exists());
-    assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
-            .await
-            .unwrap(),
-        runner_host::lock::TryLock::Busy
-    ));
-    drop(capacity);
 }
 
 #[tokio::test]
@@ -756,9 +742,6 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
         .await;
     f.cache = f.cache_under_pressure();
     let entry = runner_host::lock::acquire(f.cache.entry_lock_path(&f.key("thread")))
-        .await
-        .unwrap();
-    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
         .await
         .unwrap();
     let gate = HomeImagePrepareLockTestGate::default();
@@ -822,5 +805,4 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
             .unwrap(),
         runner_host::lock::TryLock::Acquired(_)
     ));
-    drop(capacity);
 }

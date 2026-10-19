@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.9...runner-lifecycle-v0.15.10) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share the foreground home reclamation deadline ([#41384](https://github.com/okou-ai/okou/issues/41384)) ([b7ccae0](https://github.com/okou-ai/okou/commit/b7ccae0fad7398bdf66fbad6b994bc1602a11f2e))
+
+
+### Performance Improvements
+
+* **runner:** defer home cache allocation scans until victim selection ([#41363](https://github.com/okou-ai/okou/issues/41363)) ([8773071](https://github.com/okou-ai/okou/commit/8773071b1f117bbfe3700611f60333f3d76990fe))
+
 ## [0.15.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.8...runner-lifecycle-v0.15.9) (2026-10-19)
 
 ## [0.15.8](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.7...runner-lifecycle-v0.15.8) (2026-10-19)

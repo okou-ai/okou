@@ -1,5 +1,44 @@
 # Guarded idle terminal fixture
 
+## Actual provider claim rejection and guarded rollback
+
+`native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving`
+runs fresh and newly matching snapshot cases. An actual ApiProvider sends its
+original authenticated POST to the invocation-owned HTTP peer. Only that claim's
+response waits at an owned gate; the original Guest/full lease remains in the
+external GuardedSpeculativeAdmission capsule while an independent observer and
+acknowledged heartbeat progress under held/released pool contention.
+
+Release returns HTTP 404 through the real provider. Actual Guest preparation
+must join, claim observation must return unavailable and commit must refuse.
+Production rollback physically reparks and guarded-restores the same original.
+Current regular status and an acknowledged heartbeat must preserve its original
+reuse/history/profile metadata. A newly captured batch then joins required
+original home saving across held post-exit IO and final status publication, with
+independent progress, full lease/growth custody and positive exit/release/joins.
+The common restoration verifies all original home bytes, 64 KiB payload and
+private-runtime removal. Error paths release owned gates and join accepted work
+outside the observation timeout, retaining unresolved owners explicitly.
+
+Build exact committed Host/all canonical Guests, verify installed rootfs bytes
+and create a new actual matching snapshot. Preserve supplied policy/P1 guards,
+adding exact raw `native_claim_loss_policy_json`, `native_terminal_artifacts`
+and matching `snapshot-preparation.json` to original collector evidence:
+
+```sh
+<native-test-binary> native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/claim_loss_report.py <p1-directory>
+```
+
+Ordinary real-HTTP/consumer regressions remain separate from opt-in KVM proof.
+The peer supplies synthetic 404 only: API service/database competing-claimant
+arbitration, successful/mismatched/panicked claims, cancelled Guest preparation,
+full C/D/P4 and complete session/history matrices remain unproven. Historical
+base/bootstrap, unsigned/nonreproducible provenance and incomplete residency
+remain explicit limits. No calibrated RAM relief, OOM or production protection
+follows from this test-policy evidence.
+
 ## Same-key replacement against a captured batch
 
 `native_same_key_replacement_fences_captured_batch_and_preserves_incoming` runs

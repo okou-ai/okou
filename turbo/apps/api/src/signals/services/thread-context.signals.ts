@@ -1,3 +1,4 @@
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
@@ -125,14 +126,31 @@ export function createThreadContext(
     orgId,
     sourceFeatureSwitches$,
   );
-  const model = createThreadModelSignals(bootstrap, pickedEvent$);
+  const automationContext$ = createThreadAutomationContext(pickedEvent$);
+  const automationTarget$ = createAutomationTarget(automationContext$);
+  const modelInput$ = computed(async (get) => {
+    const [event, target] = await Promise.all([
+      get(pickedEvent$),
+      get(automationTarget$),
+    ]);
+    // Platform policy wins over an input captured before this policy shipped.
+    return event && target?.workflow.officialDefinitionName
+      ? {
+          ...event,
+          canonicalModelSelection: {
+            selectedModel: AUTO_SELECTED_MODEL,
+            codexServiceTier: null,
+            reasoningEffort: null,
+          },
+        }
+      : event;
+  });
+  const model = createThreadModelSignals(bootstrap, modelInput$);
   const discordContext$ = createDiscordThreadContext(
     pickedEvent$,
     orgId,
     model.dispatchTiming$,
   );
-  const automationContext$ = createThreadAutomationContext(pickedEvent$);
-  const automationTarget$ = createAutomationTarget(automationContext$);
   const workflowContext = createThreadWorkflowContext(
     bootstrap,
     pickedEvent$,

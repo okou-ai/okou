@@ -587,6 +587,23 @@
       "uploadSheets": "Unggah ke Google Sheets",
       "uploadSlides": "Unggah ke Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Semua item ditampilkan",
+      "arrayCount": "Item: {{formattedCount}}",
+      "collapse": "Ciutkan {{label}}",
+      "collapseAll": "Ciutkan semua",
+      "complexity": "JSON ini terlalu kompleks untuk tampilan pohon. Menampilkan sumber.",
+      "copyNode": "Salin {{label}}",
+      "copySource": "Salin sumber pratinjau",
+      "expand": "Perluas {{label}}",
+      "incomplete": "Hanya sebagian file yang dimuat. Menampilkan sumber; unduh file untuk melihat seluruh isinya.",
+      "invalid": "Ini bukan JSON yang valid. Menampilkan sumber.",
+      "limited": "Beberapa simpul disembunyikan. Beralih ke sumber untuk melihat semua teks yang dimuat.",
+      "more": "Tampilkan lebih banyak",
+      "objectCount": "Kunci: {{formattedCount}}",
+      "source": "Sumber",
+      "tree": "Pohon"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -682,9 +699,10 @@
       "illustrationPreview": "pratinjau ilustrasi {{title}}",
       "importDeck": "Impor dek Anda sendiri",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Impor dokumen Anda sendiri",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
-      "importFile": "Impor template",
       "importImage": "Impor gambar Anda sendiri",
       "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
@@ -1803,6 +1821,7 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
+      "mentionHint": "Cari agen atau obrolan…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -4864,7 +4883,7 @@
         "accountFallback": "Akun {{number}}",
         "activeAccount": "Aktif",
         "autoCredits": "Memakai kredit Okou",
-        "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
+        "autoDescription": "Hubungkan akun ChatGPT atau Claude Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
         "claudeGroup": "Paket Claude Anda",
         "claudePlans": "Pro atau Max",
@@ -5624,7 +5643,7 @@
       "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
-    "clearSearch": "Hapus pencarian",
+    "builtIn": "Bawaan",
     "custom": "Kustom",
     "delete": {
       "cancel": "Batal",
@@ -5638,14 +5657,6 @@
       "back": "Templat kustom",
       "page": "Halaman {{number}}"
     },
-    "empty": {
-      "description": "Impor dokumen, presentasi, atau gambar untuk menggunakan kembali desainnya.",
-      "document": "Belum ada dokumen",
-      "illustration": "Belum ada gambar",
-      "presentation": "Belum ada presentasi",
-      "title": "Buat sesuai gaya Anda"
-    },
-    "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
     "rename": {
       "action": "Ubah nama",

@@ -30,7 +30,14 @@ import {
   chooseVncKdcTransport$,
   chooseVncNetworkConfig$,
   editVncOriginTls$,
-  vncEditor$,
+  vncTransport$,
+  vncKdcTransport$,
+  vncNetworkConfigId$,
+  vncKdcNetworkConfigId$,
+  vncOriginTlsEnabled$,
+  vncOriginTlsServerName$,
+  vncOriginTlsTrust$,
+  vncOriginTlsCaBundle$,
 } from "../../signals/vnc.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -85,13 +92,13 @@ function VncNetworkConfig({
   const access = useLoadable(cloudflareAccessConfigs$);
   const tailscale = useLoadable(scopedTailscaleConfigs$);
   const configs = type === "cloudflare_access" ? access : tailscale;
-  const editor = useGet(vncEditor$);
+  const id = useGet(
+    role === "rfb" ? vncNetworkConfigId$ : vncKdcNetworkConfigId$,
+  );
   const choose = useSet(chooseVncNetworkConfig$);
   const retryAccess = useSet(retryCloudflareAccess$);
   const retryTailscale = useSet(retryTailscale$);
   const signal = useGet(pageSignal$);
-  const id =
-    role === "rfb" ? editor.networkConfigId : editor.kdcNetworkConfigId;
   const available = configs.state === "hasData" ? configs.data : null;
   const items =
     available?.map((config) => {
@@ -206,10 +213,9 @@ export function VncNetworkFields({
   readonly protectedRoute?: boolean;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const type = useGet(role === "rfb" ? vncTransport$ : vncKdcTransport$);
   const chooseRfb = useSet(chooseVncTransport$);
   const chooseKdc = useSet(chooseVncKdcTransport$);
-  const type = role === "rfb" ? editor.transport : editor.kdcTransport;
   const items = [
     {
       value: "direct",
@@ -290,9 +296,12 @@ function VncOriginTlsFields({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const originTlsEnabled = useGet(vncOriginTlsEnabled$);
+  const serverName = useGet(vncOriginTlsServerName$);
+  const trust = useGet(vncOriginTlsTrust$);
+  const caBundle = useGet(vncOriginTlsCaBundle$);
   const edit = useSet(editVncOriginTls$);
-  const enabled = required || editor.originTlsEnabled;
+  const enabled = required || originTlsEnabled;
   const trusts = [
     {
       value: "system",
@@ -337,7 +346,7 @@ function VncOriginTlsFields({
             <Input
               required
               maxLength={VNC_HOST_MAX_LENGTH}
-              value={editor.originTlsServerName}
+              value={serverName}
               onChange={(event) => {
                 edit({ originTlsServerName: event.currentTarget.value });
               }}
@@ -351,7 +360,7 @@ function VncOriginTlsFields({
             </label>
             <Select
               items={trusts}
-              value={editor.originTlsTrust}
+              value={trust}
               disabled={disabled}
               onValueChange={(value) => {
                 if (value === "system" || value === "custom_ca") {
@@ -373,7 +382,7 @@ function VncOriginTlsFields({
               </SelectContent>
             </Select>
           </div>
-          {editor.originTlsTrust === "custom_ca" && (
+          {trust === "custom_ca" && (
             <label className="grid gap-2 text-sm">
               <span>
                 {t(($) => {
@@ -383,7 +392,7 @@ function VncOriginTlsFields({
               <Textarea
                 required
                 maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
-                value={editor.originTlsCaBundle}
+                value={caBundle}
                 onChange={(event) => {
                   edit({ originTlsCaBundle: event.currentTarget.value });
                 }}

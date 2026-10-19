@@ -74,9 +74,15 @@ def track_zlib_decompressor(
 
 
 def track_zstd_reader(monkeypatch, max_output: int) -> dict[str, int]:
-    """Enforce a shared output budget while retaining real zstd decoding."""
+    """Track initial input and enforce an output budget while retaining real decoding."""
     real_factory = zstandard.ZstdDecompressor
-    stats = {"max_read": 0, "output_bytes": 0}
+    stats = {
+        "max_read": 0,
+        "output_bytes": 0,
+        "readers": 0,
+        "input_bytes": 0,
+        "validation_objects": 0,
+    }
 
     class BoundedReader:
         def __init__(self, wrapped):
@@ -99,8 +105,14 @@ def track_zstd_reader(monkeypatch, max_output: int) -> dict[str, int]:
             return output
 
     class TrackingDecompressor:
-        def stream_reader(self, *args, **kwargs):
-            return BoundedReader(real_factory().stream_reader(*args, **kwargs))
+        def stream_reader(self, data, *args, **kwargs):
+            stats["readers"] += 1
+            stats["input_bytes"] += len(data)
+            return BoundedReader(real_factory().stream_reader(data, *args, **kwargs))
+
+        def decompressobj(self, *args, **kwargs):
+            stats["validation_objects"] += 1
+            return real_factory().decompressobj(*args, **kwargs)
 
     monkeypatch.setattr("body_decoding.zstandard.ZstdDecompressor", TrackingDecompressor)
     return stats

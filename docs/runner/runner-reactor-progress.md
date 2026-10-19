@@ -36,7 +36,7 @@ Persistence timeouts do not bound a wait that happens before persistence starts.
 | Heartbeat                      | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller.                                   | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                                         |
 | Admission / claim / activation | Up to four independently scheduled transactions, including ordinary activation and failure recovery; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them. | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort pending remote requests; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
 | Status retry                   | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                                                              | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                                   |
-| Routine home-cache GC          | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup; capacity protects completion cadence and budget collection.                                                                             | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                   |
+| Routine home-cache GC          | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup and completion-marker cadence.                                                                                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                   |
 | Poll wakeups                   | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                                                                 | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                                                                                          |
 
 Task join failures stop the reactor through its existing lifecycle and common
@@ -190,26 +190,25 @@ establish full session/history restoration or calibrate production host limits.
 
 ## Routine GC and promotion capacity
 
-Updated runners serialize routine, manual, demand and publication-triggered
-collection with `home-image-cache-routine-gc.lock`. They only try the shared
-canonical capacity barrier and victim entry locks; contention defers collection.
-Routine maintenance checks the existing nonempty completion-file mtime, then
-holds a shared barrier during inventory and entry-local stale/temp cleanup.
-Every mutation requires that entry's nonblocking exclusive flock. No entry
-flock survives inventory. Final admission rechecks cadence and actual space;
-interrupted maintenance never advances the completion marker.
+Runners serialize routine, manual, demand and publication-triggered collection
+with `home-image-cache-routine-gc.lock`. Collector and victim entry acquisition
+are nonblocking; contention defers collection. Routine maintenance reads the
+nonempty collector-file mtime through its held lock descriptor. Only a completed,
+active routine pass writes the marker. Manual and pressure collection acquire the
+same file without changing routine completion cadence. A yielded routine turn
+rechecks cadence through its newly acquired collector descriptor. Interrupted
+maintenance never advances the marker.
 
-New publishers can overlap collection through shared capacity while exclusive
-entry flocks protect each mutation. Legacy exclusive capacity windows still
-exclude new publication growth and physical IO on the exact same inode. Victim
-operations revalidate generation, inode and last-use; cooperative continuations
-try both global owners again. Count limits and observed free-space targets are
-independent. Unlocked candidates alone never authorize eviction.
+Publishers can overlap collection while exclusive entry flocks protect each
+mutation. No entry flock survives inventory. Victim operations revalidate
+generation, inode and last-use; cooperative continuations try the collector owner
+again. Count limits and observed free-space targets are independent. Unlocked
+candidates alone never authorize eviction.
 
 Cheap pressure probes and completed invalid/temp maintenance have independent
 cadences. A probe or cooperative reclaim turn never advances the maintenance
-completion marker. Pressure discovery retains its owner while releasing capacity;
-each mutation turn tries capacity and entries again, revalidates generation,
+completion marker. Pressure discovery retains the collector owner; each bounded
+mutation turn reacquires that owner and tries entries, revalidates generation,
 inode and last-use authority, and retains its LRU continuation between turns.
 Only actual available space establishes recovery: an unlinked image can remain
 allocated while another descriptor is open.
@@ -237,21 +236,19 @@ Recovery revalidates the retained generation at its actual location and complete
 an uncertain metadata commit before retiring old data. Failed required saving
 retains its capsule while releasing physical IO admission.
 
-Publication orders entry/source, local IO slot, then shared canonical capacity.
+Publication orders entry/source, then local IO admission.
 Move and exceptional Copy share that same bounded IO admission. Copy checks
 actual destination headroom before transfer and metadata headroom before commit;
 when the observed margin cannot cover four Copy-plus-metadata peaks, Copy
 releases partial admission and atomically takes all four existing IO permits.
 This serializes pressured Copy within one Runner without another lock or
-semaphore; other Runner owners still share the canonical capacity barrier.
+semaphore. Each Runner owns its local admission independently.
 Concurrent allocation by other publishers or processes can race those observations.
-Unexpected EXDEV and pressure reclamation release IO/barrier admission before
+Unexpected EXDEV and pressure reclamation release IO admission before
 retrying with Copy demand or waiting for GC; the original 30-second pre-IO budget
 covers coalesced foreground reclaim observation and admission reentry after a
 successful result. No-progress/contention refuses safely; accepted reclamation
 remains joined by the existing pressure owner even if an observer expires.
-Legacy flock contention retains its
-250 ms observed retry budget.
 These admission deadlines never abort accepted transfer or sync. Sync runs in
 owned blocking work, while the accepted parent retains the relevant guards.
 Checkout never joins the publication queue. Proven
@@ -261,8 +258,8 @@ completes. Waiting can therefore affect same-key checkout, resource-limited blan
 refill and joined shutdown; its contention deadline does not bound filesystem I/O.
 
 Checkout protects and examines the requested entry before considering disk
-pressure, with the existing short entry wait or immediate fallback. It never
-acquires capacity or runs a whole-cache GC during cache selection. A valid Move
+pressure, with the existing short entry wait or immediate fallback. Cache
+selection never runs a whole-cache GC. A valid Move
 seed can be consumed by same-filesystem rename even below the reserve. Provider
 Fresh/Copy preparation may offer low-space demand to the cache's independently
 owned reclaimer when both use the same receiving device. Healthy preparation
@@ -294,10 +291,8 @@ against other writers or a guarantee about future guest growth. Same-filesystem
 rename still performs ordinary filesystem I/O and can fail.
 
 Successful routine completion emits `entry_count` (the inventory candidate
-count), `inventory_us`, cumulative `capacity_lock_held_us` (all held phases,
-including shared inventory but excluding acquisition waits), `budget_gc` and
-`freed_bytes`. Deferred final admission reports the inventory and initial held
-durations. These observations are not production cold-start savings or wall-clock
+count), `inventory_us`, `budget_gc` and `freed_bytes`. These observations are not
+production cold-start savings or wall-clock
 guarantees. Isolated temporary-file trials and injected filesystem budgets do
 not establish production pressure, IO or startup performance.
 

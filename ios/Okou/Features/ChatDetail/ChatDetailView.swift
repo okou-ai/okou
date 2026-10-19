@@ -45,7 +45,8 @@ struct ChatDetailView: View {
   var body: some View {
     let displayedMessages = conversation.visibleMessages
     ConversationCollectionView(
-      rows: rows, markdown: conversation.messageMarkdown, anchor: scrolling.anchor,
+      rows: rows, markdown: conversation.messageMarkdown, measurements: conversation.measurements,
+      anchor: scrolling.anchor,
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
@@ -94,8 +95,7 @@ struct ChatDetailView: View {
     .task(id: thread.id) { await conversation.refresh() }
     .overlay {
       if conversation.isLoading && conversation.history == nil {
-        ProgressView("Loading conversation…").padding(20).background(
-          .regularMaterial, in: Capsule())
+        ConversationLoadingView()
       }
     }
   }

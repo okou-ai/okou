@@ -152,19 +152,11 @@ case "$session_id" in
     printf '%s\n' "$run_id" > "$TEST_STATE_DIR/home-run-id"
     ;;
   agent-ready-home-evictor)
-    evict_count=$(increment evict-count)
     home_run_id=$(<"$TEST_STATE_DIR/home-run-id")
-    promotion=promoted
-    if [ "$TEST_SCENARIO" = persistent-contention ] \
-      || { [ "$TEST_SCENARIO" = transient-contention ] && [ "$evict_count" -eq 1 ]; }; then
-      promotion=busy
-    fi
-    printf '%s\n' "$promotion" > "$TEST_STATE_DIR/last-promotion"
-    case "$TEST_SCENARIO:$promotion" in
-      capacity-unavailable:*) outcome='home image cache promotion skipped: capacity lock unavailable' ;;
-      publication-failed:*) outcome='home image publication failed' ;;
-      publication-rejected:*) outcome='home image publication rejected because guest preparation failed' ;;
-      *:busy) outcome='home image cache promotion skipped: capacity lock busy' ;;
+    printf '%s\n' promoted > "$TEST_STATE_DIR/last-promotion"
+    case "$TEST_SCENARIO" in
+      publication-failed) outcome='home image publication failed' ;;
+      publication-rejected) outcome='home image publication rejected because guest preparation failed' ;;
       *) outcome='home image cache promoted' ;;
     esac
     printf '%s\n' "run_id=${home_run_id} $outcome" >> "$TEST_STATE_DIR/journal"
@@ -244,25 +236,12 @@ for scenario in unexpected-fresh-reuse exact-reuse-miss invalid-timing; do
   assert_value "$LAST_CASE_DIR/submit-count" 6
 done
 
-run_case transient-contention transient-contention 0 1
-assert_contains "$LAST_CASE_DIR/output" \
-  'RETRY: home-cache promotion capacity lock was busy for run run-2'
-assert_count "$LAST_CASE_DIR/output" 1 '"path":"home-cache","success":true'
-assert_value "$LAST_CASE_DIR/submit-count" 8
-
-run_case persistent-contention persistent-contention 1 1
-assert_contains "$LAST_CASE_DIR/output" \
-  'home-cache promotion capacity lock remained busy after 4 attempts'
-assert_count "$LAST_CASE_DIR/output" 3 \
-  'RETRY: home-cache promotion capacity lock was busy'
-assert_value "$LAST_CASE_DIR/submit-count" 9
-
 run_case confirmed-miss confirmed-miss 1 1
 assert_contains "$LAST_CASE_DIR/output" \
   'home-cache sample failed after confirmed promotion: expected home_reuse=Reused, observed CacheMiss'
 assert_value "$LAST_CASE_DIR/submit-count" 4
 
-for scenario in capacity-unavailable publication-failed publication-rejected; do
+for scenario in publication-failed publication-rejected; do
   run_case "$scenario" "$scenario" 1 1
   assert_contains "$LAST_CASE_DIR/output" \
     'unexpected home-cache promotion outcome for run run-2'
@@ -270,4 +249,4 @@ for scenario in capacity-unavailable publication-failed publication-rejected; do
   assert_value "$LAST_CASE_DIR/submit-count" 3
 done
 
-echo "PASS: Agent-ready paths retain outcomes, timing checks, committed promotion, and bounded contention"
+echo "PASS: Agent-ready paths retain outcomes, timing checks, and committed promotion"

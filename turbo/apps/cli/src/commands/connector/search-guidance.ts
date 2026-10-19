@@ -1,4 +1,6 @@
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
+import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
+import { memberConnectorFacts } from "./member-status";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   connectorActionUrl,
@@ -67,19 +69,26 @@ export function runConnectorSearchAction(
 export function currentConnectorSearchAction(
   connector: ConnectorDiscoveryItem,
   agentContext: ConnectorDiscoveryAgentContext | null,
+  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
 ): ConnectorSearchAction | null {
   const authorized =
     !agentContext || isConnectorDiscoveryAuthorized(connector, agentContext);
+  const facts = memberConnectorFacts(
+    connector.kind === "catalog"
+      ? connector.catalogConnector
+      : connector.customConnector,
+    summaries,
+  );
   if (connector.kind === "custom") {
-    return connector.customConnector.connected && authorized
+    return facts.memberStatus === "connected" && authorized
       ? null
       : accountSettingsAction(connector);
   }
-  if (connector.catalogConnector.connectionStatus === "reconnect-required") {
-    return accountSettingsAction(connector);
-  }
-  if (!connector.catalogConnector.connected) {
-    return connectAction(connector);
+  if (facts.memberStatus !== "connected") {
+    return facts.memberStatus === "not-connected" &&
+      connector.catalogConnector.connection === null
+      ? connectAction(connector)
+      : accountSettingsAction(connector);
   }
   return authorized
     ? null

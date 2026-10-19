@@ -11,6 +11,10 @@ import {
   stubCustomConnectors,
 } from "../../../__tests__/helpers/custom-connectors";
 import { customConnectorCommand } from "../index";
+import {
+  customAccountSummaries,
+  stubConnectorAccountSummaries,
+} from "../../../__tests__/helpers/connector-accounts";
 
 const CONNECTOR_ID = "33333333-3333-4333-8333-333333333333";
 const AGENT_ID = "44444444-4444-4444-8444-444444444444";
@@ -22,6 +26,7 @@ describe("okou connector custom readers", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    server.use(stubConnectorAccountSummaries([]));
     for (const command of customConnectorCommand.commands) {
       command.setOptionValue("agent", undefined);
       command.setOptionValue("json", false);
@@ -41,6 +46,7 @@ describe("okou connector custom readers", () => {
     const mcp = customMcpConnector();
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     server.use(
+      stubConnectorAccountSummaries(customAccountSummaries([connector, mcp])),
       stubCustomConnectors([connector, mcp]),
       http.get(`http://localhost:3000/api/agents/${AGENT_ID}`, () => {
         return HttpResponse.json({

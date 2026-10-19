@@ -11,6 +11,7 @@ use crate::host_memory_operations::{
 };
 use crate::host_memory_pressure::{HostPressureState, OptionalPressureControl};
 
+use super::outcome_accounting::ReaderAccounting;
 use super::*;
 
 pub struct GuardedPrefetchConfig {
@@ -29,6 +30,7 @@ pub struct GuardedPrefetchSnapshot {
     pub failed: usize,
     pub uncertain: usize,
     pub deferred: usize,
+    /// Total consumed bytes, including partial cancelled and failed reads.
     pub read_bytes: u64,
     pub last_error: Option<String>,
     pub finished: bool,
@@ -242,21 +244,14 @@ async fn run<F>(
                     report.uncertain += 1;
                     report.last_error = Some(error.to_string());
                 }
-                match result.outcome {
-                    PrefetchOutcome::Complete { bytes } => {
-                        report.completed += 1;
-                        report.read_bytes = report.read_bytes.saturating_add(bytes);
-                    }
-                    PrefetchOutcome::Cancelled { bytes } => {
-                        report.cancelled += 1;
-                        report.read_bytes = report.read_bytes.saturating_add(bytes);
-                    }
-                    PrefetchOutcome::OpenFailed { error }
-                    | PrefetchOutcome::ReadFailed { error, .. } => {
-                        report.failed += 1;
-                        report.last_error = Some(error.to_string());
-                    }
+                ReaderAccounting {
+                    completed: &mut report.completed,
+                    cancelled: &mut report.cancelled,
+                    failed: &mut report.failed,
+                    read_bytes: &mut report.read_bytes,
+                    last_error: &mut report.last_error,
                 }
+                .record(&result.outcome);
             }
             Ok(Err(error)) | Err(error) => {
                 report.uncertain += 1;

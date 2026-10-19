@@ -172,8 +172,8 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const auth = get(organizationAuthContext$);
   if (
-    !input.data.readOnly &&
-    (auth.tokenType !== "agent" || !auth.capabilities.includes("wallet:write"))
+    auth.tokenType !== "agent" ||
+    !auth.capabilities.includes("wallet:write")
   ) {
     return walletError(
       new LinkWalletError(
@@ -184,7 +184,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const result = await settle(
-    set(startWalletOAuth$, owner.value, input.data, signal),
+    set(startWalletOAuth$, owner.value, signal),
     signal,
   );
   signal.throwIfAborted();
@@ -304,7 +304,7 @@ const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { orgId, userId } = get(organizationAuthContext$);
   const result = await settle(
-    set(startWalletOAuth$, { orgId, userId }, input.data, signal),
+    set(startWalletOAuth$, { orgId, userId }, signal),
     signal,
   );
   signal.throwIfAborted();

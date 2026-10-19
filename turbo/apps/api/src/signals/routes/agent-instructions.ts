@@ -143,7 +143,7 @@ function instructionPublicationAdmission(
 const publishPreparedAgentInstructions$ = command(
   async (
     { set },
-    args: Omit<PublishInstructionArgs, "instructions"> & {
+    args: PublishInstructionArgs & {
       readonly volume: PreparedServerSideVolume;
     },
     signal: AbortSignal,
@@ -238,7 +238,7 @@ const publishPreparedAgentInstructions$ = command(
       }
       const [updated] = await tx
         .update(agents)
-        .set({ updatedAt: nowDate() })
+        .set({ instructions: args.instructions, updatedAt: nowDate() })
         .where(
           and(
             eq(agents.orgId, reservation.orgId),
@@ -282,7 +282,12 @@ const prepareAndPublishAgentInstructions$ = command(
     );
     return await set(
       publishPreparedAgentInstructions$,
-      { reservation, member: args.member, volume },
+      {
+        reservation,
+        member: args.member,
+        instructions: args.instructions,
+        volume,
+      },
       signal,
     );
   },

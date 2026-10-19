@@ -587,6 +587,23 @@
       "uploadSheets": "Google スプレッドシートにアップロード",
       "uploadSlides": "Google Slides にアップロード"
     },
+    "jsonPreview": {
+      "allShown": "すべての項目を表示済み",
+      "arrayCount": "項目数：{{formattedCount}}",
+      "collapse": "{{label}} を折りたたむ",
+      "collapseAll": "すべて折りたたむ",
+      "complexity": "この JSON は複雑すぎるため、ソースを表示しています。",
+      "copyNode": "{{label}} をコピー",
+      "copySource": "プレビューのソースをコピー",
+      "expand": "{{label}} を展開",
+      "incomplete": "ファイルの一部のみ読み込まれています。ソースを表示しています。全内容はファイルをダウンロードして確認してください。",
+      "invalid": "有効な JSON ではありません。ソースを表示しています。",
+      "limited": "一部のノードは非表示です。読み込んだ全文はソースで確認できます。",
+      "more": "さらに表示",
+      "objectCount": "キー数：{{formattedCount}}",
+      "source": "ソース",
+      "tree": "ツリー"
+    },
     "kinds": {
       "audio": "オーディオ",
       "avatar": "アバター",
@@ -682,9 +699,10 @@
       "illustrationPreview": "{{title}} イラストのプレビュー",
       "importDeck": "自分のデッキをインポート",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "自分のドキュメントをインポート",
+      "importDocumentHint": "（.docx、.doc）",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "テンプレートをインポート",
       "importImage": "自分の画像を取り込む",
       "importImageHint": "スタイルとして保存",
       "multiAccent": "マルチアクセント",
@@ -1803,6 +1821,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
+      "mentionHint": "エージェントやチャットを検索…",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
@@ -4864,7 +4883,7 @@
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "Okouクレジットを使用",
-        "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
+        "autoDescription": "ChatGPT または Claude アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
         "claudeGroup": "Claudeのプラン",
         "claudePlans": "Pro、Max",
@@ -5624,7 +5643,7 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
-    "clearSearch": "検索をクリア",
+    "builtIn": "組み込み",
     "custom": "カスタム",
     "delete": {
       "cancel": "キャンセル",
@@ -5638,14 +5657,6 @@
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
     },
-    "empty": {
-      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
-      "document": "ドキュメントはまだありません",
-      "illustration": "画像はまだありません",
-      "presentation": "プレゼンテーションはまだありません",
-      "title": "自分だけのテンプレートに"
-    },
-    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "rename": {
       "action": "名前の変更",

@@ -606,6 +606,23 @@
       "uploadSheets": "Subir a Google Sheets",
       "uploadSlides": "Subir a Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Todos los elementos mostrados",
+      "arrayCount": "Elementos: {{formattedCount}}",
+      "collapse": "Contraer {{label}}",
+      "collapseAll": "Contraer todo",
+      "complexity": "Este JSON es demasiado complejo para el árbol. Se muestra el código fuente.",
+      "copyNode": "Copiar {{label}}",
+      "copySource": "Copiar código fuente de la vista previa",
+      "expand": "Expandir {{label}}",
+      "incomplete": "Solo se ha cargado parte del archivo. Se muestra el código fuente; descarga el archivo para ver todo el contenido.",
+      "invalid": "No es un JSON válido. Se muestra el código fuente.",
+      "limited": "Algunos nodos están ocultos. Cambia al código fuente para ver todo el texto cargado.",
+      "more": "Mostrar más",
+      "objectCount": "Claves: {{formattedCount}}",
+      "source": "Código fuente",
+      "tree": "Árbol"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -701,10 +718,11 @@
       "illustrationPreview": "Vista previa de la ilustración {{title}}",
       "importDeck": "Importa tu propia presentación",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Importar tu propio documento",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
-      "importFile": "Importar plantilla",
       "importImage": "Importa tu propia imagen",
       "importImageHint": "Guardar como estilo",
       "multiAccent": "Multiacentos",
@@ -1835,6 +1853,7 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} diapositivas"
       },
+      "mentionHint": "Busca agentes o chats…",
       "message": "Mensaje",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Pídeme que automatice flujos de trabajo, gestione tareas...",
@@ -4947,7 +4966,7 @@
         "accountFallback": "Cuenta {{number}}",
         "activeAccount": "Activa",
         "autoCredits": "Usa créditos de Okou",
-        "autoDescription": "Conecta tu cuenta de Claude o ChatGPT para usar más modelos.",
+        "autoDescription": "Conecta tu cuenta de ChatGPT o Claude para usar más modelos.",
         "autoTitle": "Usa más modelos",
         "claudeGroup": "Tu plan de Claude",
         "claudePlans": "Pro o Max",
@@ -5720,7 +5739,7 @@
       "preview": "Vista previa de {{title}}",
       "rename": "Cambiar nombre de la plantilla"
     },
-    "clearSearch": "Borrar búsqueda",
+    "builtIn": "Integradas",
     "custom": "Personalizadas",
     "delete": {
       "cancel": "Cancelar",
@@ -5734,14 +5753,6 @@
       "back": "Plantillas personalizadas",
       "page": "Página {{number}}"
     },
-    "empty": {
-      "description": "Importa un documento, una presentación o una imagen para reutilizar su diseño.",
-      "document": "Aún no hay documentos",
-      "illustration": "Aún no hay imágenes",
-      "presentation": "Aún no hay presentaciones",
-      "title": "Hazlo tuyo"
-    },
-    "importHint": "Importa un documento, una presentación o una imagen.",
     "loadFailed": "No se pudieron cargar las plantillas.",
     "rename": {
       "action": "Renombrar",

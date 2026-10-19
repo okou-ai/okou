@@ -181,6 +181,22 @@ public actor ChatCache {
     }
   }
 
+  /// Warming needs only the durable cursor, not a replay of every cached message.
+  public func loadHistoryCursor(threadID: String, schemaVersion: Int) throws -> ChatCacheCursor? {
+    try withDatabase { database in
+      let query = try database.prepare(
+        "SELECT cursor_event_id, cursor_seq_id FROM histories WHERE thread_id = ? AND schema_version = ?"
+      )
+      try query.bind(threadID, at: 1)
+      try query.bind(schemaVersion, at: 2)
+      guard try query.step() else { return nil }
+      let cursor = ChatCacheCursor(
+        eventID: query.optionalText(at: 0), seqID: try query.integer(at: 1))
+      guard Self.validHistoryCursor(cursor) else { throw ChatCacheError.corrupt }
+      return cursor
+    }
+  }
+
   public func loadHistory(threadID: String) throws -> CachedChatHistory? {
     try withDatabase { database in
       let history = try database.prepare(

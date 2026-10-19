@@ -13,6 +13,7 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
+import { z } from "zod";
 import { and, asc, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
@@ -29,6 +30,7 @@ const OLDEST_SUPPORTED_CATALOG_SCHEMA_VERSION = 2;
 export interface AcceptedOfficialWorkflowCatalog {
   readonly releaseId: string;
   readonly payload: OfficialWorkflowCatalogReleasePayload;
+  readonly hiddenThreadDefinitionNames: readonly string[];
 }
 
 interface OfficialWorkflowRevisionRow {
@@ -82,6 +84,8 @@ export function acceptedOfficialWorkflowCatalogReadPlan() {
     columns: {
       releaseId: officialWorkflowCatalogState.acceptedReleaseId,
       payload: officialWorkflowCatalogReleases.payload,
+      hiddenThreadDefinitionNames:
+        officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
     },
     join: eq(
       officialWorkflowCatalogReleases.id,
@@ -95,7 +99,13 @@ export function acceptedOfficialWorkflowCatalogReadPlan() {
 }
 
 export function acceptedCatalogFromRow(
-  row: { readonly releaseId: string; readonly payload: unknown } | undefined,
+  row:
+    | {
+        readonly releaseId: string;
+        readonly payload: unknown;
+        readonly hiddenThreadDefinitionNames?: unknown;
+      }
+    | undefined,
 ): AcceptedOfficialWorkflowCatalog | null {
   if (!row) {
     return null;
@@ -109,6 +119,9 @@ export function acceptedCatalogFromRow(
   return {
     releaseId: row.releaseId,
     payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
+    hiddenThreadDefinitionNames: z
+      .array(z.string())
+      .parse(row.hiddenThreadDefinitionNames ?? []),
   };
 }
 

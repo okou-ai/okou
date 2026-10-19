@@ -175,6 +175,10 @@ test("Document purposes are directly selectable without losing the draft or sele
     "aria-pressed",
     "true",
   );
+  expect(within(categories).queryByText("Custom")).not.toBeInTheDocument();
+  expect(
+    within(shelf).queryByLabelText("Import your own document"),
+  ).not.toBeInTheDocument();
   expect(within(categories).queryByText("All")).not.toBeInTheDocument();
   expect(within(categories).queryByText("More")).not.toBeInTheDocument();
   expect(within(categories).queryByRole("combobox")).not.toBeInTheDocument();

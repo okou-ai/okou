@@ -16,10 +16,9 @@ export function resolveTemplatePickerCategory(
 ): string {
   switch (category) {
     case "document": {
-      return documentTemplatesEnabled ? category : "slides";
-    }
-    case "custom": {
-      return customTemplatesEnabled ? category : "slides";
+      return documentTemplatesEnabled || customTemplatesEnabled
+        ? category
+        : "slides";
     }
     case "slides":
     case "website":
@@ -28,9 +27,8 @@ export function resolveTemplatePickerCategory(
       return category;
     }
     default: {
-      // Whatever leads the nav: Custom while the switch is on, and the first
-      // format below it otherwise.
-      return customTemplatesEnabled ? "custom" : "slides";
+      // Presentation leads the content types in the picker.
+      return "slides";
     }
   }
 }
@@ -254,7 +252,7 @@ function createTemplatePickerDialogSignals() {
 
 function createTemplatePickerListSignals() {
   // Null until an entry point names a category, so the picker can open on the
-  // one the member's own switches lead the nav with.
+  // first content type.
   const internalTemplatePickerCategory$ = state<string | null>(null);
   const templatePickerCategory$ = computed((get) => {
     return get(internalTemplatePickerCategory$);

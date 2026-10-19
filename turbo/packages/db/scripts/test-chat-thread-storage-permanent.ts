@@ -21,6 +21,7 @@ export async function validatePermanentChatThreadStorage(databaseUrl: string) {
     assert.equal(created?.title, values.title);
     assert.equal(created?.muted, false);
     assert.equal(created?.archived, false);
+    assert.equal(created?.hidden, false);
     assert.deepEqual(created?.modelSettings, {});
 
     const [upserted] = await db
@@ -28,12 +29,13 @@ export async function validatePermanentChatThreadStorage(databaseUrl: string) {
       .values(values)
       .onConflictDoUpdate({
         target: chatThreads.id,
-        set: { title: "Renamed thread", muted: true },
+        set: { title: "Renamed thread", muted: true, hidden: true },
       })
       .returning();
     assert.equal(upserted?.id, id);
     assert.equal(upserted?.title, "Renamed thread");
     assert.equal(upserted?.muted, true);
+    assert.equal(upserted?.hidden, true);
     assert.equal(upserted?.createdAt.getTime(), created?.createdAt.getTime());
 
     const [selected] = await db
@@ -48,10 +50,11 @@ export async function validatePermanentChatThreadStorage(databaseUrl: string) {
 
     const [updated] = await db
       .update(chatThreads)
-      .set({ archived: true })
+      .set({ archived: true, hidden: false })
       .where(eq(chatThreads.id, id))
       .returning();
     assert.equal(updated?.archived, true);
+    assert.equal(updated?.hidden, false);
     assert.equal(updated?.muted, true);
     assert.equal(updated?.title, "Renamed thread");
     assert.equal(updated?.userId, values.userId);

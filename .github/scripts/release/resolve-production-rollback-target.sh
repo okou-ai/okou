@@ -13,6 +13,9 @@ readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067
 # Pair-free Guest telemetry can outlive Runner rollback. The receiving API must
 # retain #41242's structured-only reader during independent Runner/API rollback.
 readonly STRUCTURED_DISK_TELEMETRY_READER_COMMIT=e01702c7d762b5d2a76d557db77ccaf19c4f95c8
+# Final receiving cleanup must not restart a Runner whose embedded Guest still
+# emits the retired disk pair. Check the selected Runner tag independently.
+readonly PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT=625c4607ccdcd2d46a5c7227f61419928035e13f
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -724,6 +727,9 @@ if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$runner_ta
 fi
 if ! git merge-base --is-ancestor "$BUNDLED_ONLY_CLI_RUNNER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates bundled-only CLI startup: ${BUNDLED_ONLY_CLI_RUNNER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the pair-free disk telemetry writer: ${PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT}."
 fi
 
 runner_matrix=$("${script_dir}/../runner/runner-host-architecture-groups.sh" target-matrix)

@@ -606,6 +606,23 @@
       "uploadSheets": "Carica su Google Sheets",
       "uploadSlides": "Carica su Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Tutti gli elementi visualizzati",
+      "arrayCount": "Elementi: {{formattedCount}}",
+      "collapse": "Comprimi {{label}}",
+      "collapseAll": "Comprimi tutto",
+      "complexity": "Questo JSON è troppo complesso per l’albero. Viene mostrato il sorgente.",
+      "copyNode": "Copia {{label}}",
+      "copySource": "Copia sorgente dell’anteprima",
+      "expand": "Espandi {{label}}",
+      "incomplete": "È stata caricata solo una parte del file. Viene mostrato il sorgente; scarica il file per vedere il contenuto completo.",
+      "invalid": "Questo JSON non è valido. Viene mostrato il sorgente.",
+      "limited": "Alcuni nodi sono nascosti. Passa al sorgente per vedere tutto il testo caricato.",
+      "more": "Mostra altro",
+      "objectCount": "Chiavi: {{formattedCount}}",
+      "source": "Sorgente",
+      "tree": "Albero"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -701,10 +718,11 @@
       "illustrationPreview": "{{title}} anteprima dell'illustrazione",
       "importDeck": "Importa la tua presentazione",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Importa il tuo documento",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
-      "importFile": "Importa modello",
       "importImage": "Importa la tua immagine",
       "importImageHint": "Salva come stile",
       "multiAccent": "Multiaccento",
@@ -1835,6 +1853,7 @@
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
       },
+      "mentionHint": "Cerca agenti o chat…",
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",
@@ -4947,7 +4966,7 @@
         "accountFallback": "Account {{number}}",
         "activeAccount": "Attivo",
         "autoCredits": "Usa i crediti Okou",
-        "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
+        "autoDescription": "Collega il tuo account ChatGPT o Claude per usare più modelli.",
         "autoTitle": "Usa più modelli",
         "claudeGroup": "Il tuo piano Claude",
         "claudePlans": "Pro o Max",
@@ -5720,7 +5739,7 @@
       "preview": "Anteprima di {{title}}",
       "rename": "Rinomina modello"
     },
-    "clearSearch": "Cancella ricerca",
+    "builtIn": "Integrati",
     "custom": "Personalizzati",
     "delete": {
       "cancel": "Annulla",
@@ -5734,14 +5753,6 @@
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}"
     },
-    "empty": {
-      "description": "Importa un documento, una presentazione o un’immagine per riutilizzarne il design.",
-      "document": "Ancora nessun documento",
-      "illustration": "Ancora nessuna immagine",
-      "presentation": "Ancora nessuna presentazione",
-      "title": "Fallo tuo"
-    },
-    "importHint": "Importa un documento, una presentazione o un’immagine.",
     "loadFailed": "Impossibile caricare i modelli.",
     "rename": {
       "action": "Rinomina",

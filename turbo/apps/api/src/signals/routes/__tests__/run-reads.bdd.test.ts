@@ -2794,6 +2794,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     ]);
     expect(listed.body.filters.agents).toContain(agentOne.agentId);
     expect(listed.body.filters.agents).toContain(agentTwo.agentId);
+    expect([...listed.body.filters.agents].sort()).toStrictEqual(
+      [agentOne.agentId, agentTwo.agentId, automationCompose.agentId].sort(),
+    );
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {
@@ -2802,6 +2805,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     mustOk(pageOne, "the first log page");
     expect(pageOne.body.data).toHaveLength(1);
     expect(pageOne.body.pagination.hasMore).toBeTruthy();
+    expect(pageOne.body.pagination.totalPages).toBe(3);
     const cursor = pageOne.body.pagination.nextCursor;
     if (cursor === null) {
       throw new Error("Expected a next cursor on the first log page");
@@ -2814,6 +2818,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     mustOk(pageTwo, "the second log page");
     expect(pageTwo.body.data).toHaveLength(1);
     expect(pageTwo.body.data[0]?.id).not.toBe(pageOne.body.data[0]?.id);
+    expect(pageTwo.body.pagination.totalPages).toBe(3);
 
     const malformedCursor = await reads.requestListLogs(
       actor,
@@ -2905,6 +2910,15 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const removedAutomationSource =
       await reads.requestListLogsWithRemovedAutomationSource(actor);
     expectApiError(removedAutomationSource.body);
+
+    const sourcePage = await reads.requestListLogs(
+      actor,
+      { status: "cancelled", triggerSource: "web", limit: 1 },
+      [200],
+    );
+    mustOk(sourcePage, "the filtered first page");
+    expect(sourcePage.body.data).toHaveLength(1);
+    expect(sourcePage.body.pagination.totalPages).toBe(2);
 
     const noSourceMatch = await reads.requestListLogs(
       actor,

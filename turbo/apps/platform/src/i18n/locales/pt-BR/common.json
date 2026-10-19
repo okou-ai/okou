@@ -606,6 +606,23 @@
       "uploadSheets": "Enviar para o Google Sheets",
       "uploadSlides": "Enviar para o Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Todos os itens exibidos",
+      "arrayCount": "Itens: {{formattedCount}}",
+      "collapse": "Recolher {{label}}",
+      "collapseAll": "Recolher tudo",
+      "complexity": "Este JSON é complexo demais para a árvore. Exibindo o código-fonte.",
+      "copyNode": "Copiar {{label}}",
+      "copySource": "Copiar código-fonte da prévia",
+      "expand": "Expandir {{label}}",
+      "incomplete": "Apenas parte do arquivo foi carregada. Exibindo o código-fonte; baixe o arquivo para ver todo o conteúdo.",
+      "invalid": "Este JSON não é válido. Exibindo o código-fonte.",
+      "limited": "Alguns nós estão ocultos. Alterne para o código-fonte para ver todo o texto carregado.",
+      "more": "Mostrar mais",
+      "objectCount": "Chaves: {{formattedCount}}",
+      "source": "Código-fonte",
+      "tree": "Árvore"
+    },
     "kinds": {
       "audio": "Áudio",
       "avatar": "Avatar",
@@ -701,10 +718,11 @@
       "illustrationPreview": "Visualização da ilustração {{title}}",
       "importDeck": "Importe sua própria apresentação",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Importar seu próprio documento",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_many": "{{count}} slides",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Importar modelo",
       "importImage": "Importe sua própria imagem",
       "importImageHint": "Salvar como estilo",
       "multiAccent": "Várias cores de destaque",
@@ -1835,6 +1853,7 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
       },
+      "mentionHint": "Pesquise agentes ou conversas…",
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
@@ -4947,7 +4966,7 @@
         "accountFallback": "Conta {{number}}",
         "activeAccount": "Ativa",
         "autoCredits": "Usa créditos Okou",
-        "autoDescription": "Conecte sua conta Claude ou ChatGPT para usar mais modelos.",
+        "autoDescription": "Conecte sua conta ChatGPT ou Claude para usar mais modelos.",
         "autoTitle": "Use mais modelos",
         "claudeGroup": "Seu plano do Claude",
         "claudePlans": "Pro ou Max",
@@ -5720,7 +5739,7 @@
       "preview": "Visualizar {{title}}",
       "rename": "Renomear modelo"
     },
-    "clearSearch": "Limpar busca",
+    "builtIn": "Integrados",
     "custom": "Personalizados",
     "delete": {
       "cancel": "Cancelar",
@@ -5734,14 +5753,6 @@
       "back": "Modelos personalizados",
       "page": "Página {{number}}"
     },
-    "empty": {
-      "description": "Importe um documento, uma apresentação ou uma imagem para reutilizar seu design.",
-      "document": "Nenhum documento ainda",
-      "illustration": "Nenhuma imagem ainda",
-      "presentation": "Nenhuma apresentação ainda",
-      "title": "Deixe com a sua cara"
-    },
-    "importHint": "Importe um documento, uma apresentação ou uma imagem.",
     "loadFailed": "Não foi possível carregar os modelos.",
     "rename": {
       "action": "Renomear",

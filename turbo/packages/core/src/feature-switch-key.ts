@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  JsonTreePreview = "jsonTreePreview",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
   RemoteControlCliManagement = "remoteControlCliManagement",
@@ -68,6 +69,6 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
-  ComposerSlashHint = "composerSlashHint",
   SlashActions = "slashActions",
+  ComposerMentionHint = "composerMentionHint",
 }

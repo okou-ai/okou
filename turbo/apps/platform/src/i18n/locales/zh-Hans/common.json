@@ -587,6 +587,23 @@
       "uploadSheets": "上传到 Google 表格",
       "uploadSlides": "上传到 Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "已显示全部项目",
+      "arrayCount": "项目：{{formattedCount}}",
+      "collapse": "收起 {{label}}",
+      "collapseAll": "全部收起",
+      "complexity": "此 JSON 结构过于复杂，已显示源码。",
+      "copyNode": "复制 {{label}}",
+      "copySource": "复制预览源码",
+      "expand": "展开 {{label}}",
+      "incomplete": "仅加载了文件的一部分，已显示源码。下载文件可查看完整内容。",
+      "invalid": "此内容不是有效的 JSON，已显示源码。",
+      "limited": "部分节点已隐藏。切换到源码可查看已加载的全部文本。",
+      "more": "显示更多",
+      "objectCount": "字段：{{formattedCount}}",
+      "source": "源码",
+      "tree": "树形"
+    },
     "kinds": {
       "audio": "音频",
       "avatar": "虚拟形象",
@@ -682,9 +699,10 @@
       "illustrationPreview": "{{title}} 插画预览",
       "importDeck": "导入你自己的演示文稿",
       "importDeckHint": "（.pptx、.ppt、.pdf）",
+      "importDocument": "导入你自己的文档",
+      "importDocumentHint": "（.docx、.doc）",
       "importedSlides_one": "{{count}} 页",
       "importedSlides_other": "{{count}} 页",
-      "importFile": "导入你自己的文件",
       "importImage": "导入自己的图片",
       "importImageHint": "保存为可复用风格",
       "multiAccent": "多口音",
@@ -1803,6 +1821,7 @@
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
       },
+      "mentionHint": "搜索智能体或聊天…",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
@@ -4864,7 +4883,7 @@
         "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "消耗 Okou 积分",
-        "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
+        "autoDescription": "连接你的 ChatGPT 或 Claude 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeGroup": "你的 Claude 套餐",
         "claudePlans": "Pro 或 Max",
@@ -5624,7 +5643,7 @@
       "preview": "预览{{title}}",
       "rename": "重命名模板"
     },
-    "clearSearch": "清除搜索",
+    "builtIn": "内置",
     "custom": "自定义",
     "delete": {
       "cancel": "取消",
@@ -5638,14 +5657,6 @@
       "back": "自定义模板",
       "page": "第 {{number}} 页"
     },
-    "empty": {
-      "description": "Okou 会把你文件里的设计变成可以反复使用的模板。",
-      "document": "还没有文档",
-      "illustration": "还没有图片",
-      "presentation": "还没有演示文稿",
-      "title": "打造你自己的模板"
-    },
-    "importHint": "可以导入文档、演示文稿或图片。",
     "loadFailed": "无法加载模板。",
     "rename": {
       "action": "重命名",

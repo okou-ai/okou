@@ -70,6 +70,8 @@ export const chatThreadEvents = pgTable(
     pinOrder: text("pin_order"),
     /** Metadata-only sort_touched payload; NULL means no mute change. */
     muted: boolean("muted"),
+    /** NULL leaves visibility unchanged; sort_touched carries policy updates. */
+    hidden: boolean("hidden"),
     selectedModel: varchar("selected_model", { length: 255 }),
     /** Full map for created events. */
     modelSettings: jsonb("model_settings").$type<ModelSettings>(),

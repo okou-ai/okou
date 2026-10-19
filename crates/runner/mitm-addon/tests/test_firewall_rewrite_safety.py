@@ -491,7 +491,7 @@ class TestAuthBaseUrlRewriteSafety:
 
         log_text = await asyncio.to_thread(read_jsonl_text_after_flush, proxy_log_path)
         assert "URL rewrite forward failed" in log_text
-        assert "IncompleteRead" in log_text
+        assert "RemoteProtocolError" in log_text
         assert "Firewall URL rewrite:" not in log_text
         assert "partial-upstream-secret" not in log_text
         assert "super-secret-token" not in log_text

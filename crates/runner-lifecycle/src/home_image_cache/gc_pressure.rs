@@ -109,7 +109,7 @@ impl GcContinuation {
 }
 
 impl HomeImageCache {
-    /// Caller holds the collector singleton and shared compatibility barrier.
+    /// Caller holds the collector singleton.
     /// No entry acquisition waits, and no
     /// accepted physical operation is cancelled to enforce the soft turn.
     pub(super) async fn reclaim_gc_turn(

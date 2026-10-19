@@ -2392,22 +2392,43 @@
     {
       "idx": 1419,
       "version": "7",
-      "when": 1792403668648,
-      "tag": "1419_threadless_run_cleanup_index",
+      "when": 1792403008286,
+      "tag": "1419_official_workflow_hidden_threads",
       "breakpoints": true
     },
     {
       "idx": 1420,
       "version": "7",
-      "when": 1792403681897,
-      "tag": "1420_artifact_thread_catalog",
+      "when": 1792404888785,
+      "tag": "1420_prepare_agent_instructions",
       "breakpoints": true
     },
     {
       "idx": 1421,
       "version": "7",
-      "when": 1792403694636,
-      "tag": "1421_artifact_projection_owner_lookup",
+      "when": 1792407015724,
+      "tag": "1421_backfill_billing_run_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1422,
+      "version": "7",
+      "when": 1792409899372,
+      "tag": "1422_threadless_run_cleanup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1423,
+      "version": "7",
+      "when": 1792409930750,
+      "tag": "1423_artifact_thread_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1424,
+      "version": "7",
+      "when": 1792409948309,
+      "tag": "1424_artifact_projection_owner_lookup",
       "breakpoints": true
     }
   ]

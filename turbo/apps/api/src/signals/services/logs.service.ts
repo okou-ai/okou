@@ -26,11 +26,9 @@ import {
   type SQL,
 } from "drizzle-orm";
 
-import { db$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import { logDetailRunSelection } from "./log-detail-run-selection";
 import { runContextCliAgentType } from "./run-context-framework.service";
-
-type ServiceDb = Pick<Db, "select" | "selectDistinct">;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -102,6 +100,64 @@ interface LogsListData {
   filters: LogsFilters;
 }
 
+function logsListRunSelection() {
+  return {
+    id: agentRuns.id,
+    status: agentRuns.status,
+    prompt: agentRuns.prompt,
+    createdAt: agentRuns.createdAt,
+    startedAt: agentRuns.startedAt,
+    completedAt: agentRuns.completedAt,
+    triggerSource: agentRuns.triggerSource,
+    agentId: agents.id,
+    launchSnapshot: agentRuns.launchSnapshot,
+    displayName: agents.displayName,
+    cliAgentSessionId: agentRuns.frameworkSessionId,
+  };
+}
+
+function toLogsFilters(
+  statusRows: readonly Pick<typeof agentRuns.$inferSelect, "status">[],
+  sourceRows: readonly Pick<typeof agentRuns.$inferSelect, "triggerSource">[],
+  agentRows: readonly {
+    readonly agentId: typeof agents.$inferSelect.id | null;
+  }[],
+): LogsFilters {
+  const statuses = statusRows
+    .map((r) => {
+      return r.status;
+    })
+    .filter((s): s is LogStatus => {
+      return [
+        "queued",
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "timeout",
+        "cancelled",
+      ].includes(s as string);
+    });
+
+  const sources = sourceRows
+    .map((r) => {
+      return r.triggerSource;
+    })
+    .filter((s): s is TriggerSource => {
+      return triggerSourceSchema.safeParse(s).success;
+    });
+
+  const agentIds = agentRows
+    .map((r) => {
+      return r.agentId;
+    })
+    .filter((agentId): agentId is string => {
+      return agentId !== null;
+    });
+
+  return { statuses, sources, agents: agentIds };
+}
+
 export function logsList(
   params: LogsListParams,
 ): Computed<Promise<LogsListData>> {
@@ -138,19 +194,7 @@ export function logsList(
     // Main query, count, and filters in parallel
     const [rows, totalCount, filters] = await Promise.all([
       db
-        .select({
-          id: agentRuns.id,
-          status: agentRuns.status,
-          prompt: agentRuns.prompt,
-          createdAt: agentRuns.createdAt,
-          startedAt: agentRuns.startedAt,
-          completedAt: agentRuns.completedAt,
-          triggerSource: agentRuns.triggerSource,
-          agentId: agents.id,
-          launchSnapshot: agentRuns.launchSnapshot,
-          displayName: agents.displayName,
-          cliAgentSessionId: agentRuns.frameworkSessionId,
-        })
+        .select(logsListRunSelection())
         .from(agentRuns)
 
         .leftJoin(agents, eq(agentRuns.agentId, agents.id))
@@ -158,8 +202,58 @@ export function logsList(
         .where(whereClause)
         .orderBy(desc(agentRuns.createdAt), desc(agentRuns.id))
         .limit(limit + 1),
-      getLogsTotalCount(db, params),
-      getAvailableFilters(db, params.userId, params.orgId),
+      (async (): Promise<number> => {
+        const conditions: SQL[] = [
+          eq(agentRuns.userId, params.userId),
+          eq(agentRuns.orgId, params.orgId),
+        ];
+
+        conditions.push(...buildAgentFilterConditions(params));
+
+        if (params.since !== undefined) {
+          conditions.push(gte(agentRuns.createdAt, new Date(params.since)));
+        }
+        if (params.status) {
+          conditions.push(eq(agentRuns.status, params.status));
+        }
+        if (params.triggerSource) {
+          conditions.push(eq(agentRuns.triggerSource, params.triggerSource));
+        }
+
+        const [result] = await db
+          .select({ count: count() })
+          .from(agentRuns)
+
+          .leftJoin(agents, eq(agentRuns.agentId, agents.id))
+          .where(and(...conditions));
+
+        return result?.count ?? 0;
+      })(),
+      (async (userId: string, orgId: string): Promise<LogsFilters> => {
+        const baseConditions = [
+          eq(agentRuns.userId, userId),
+          eq(agentRuns.orgId, orgId),
+        ];
+
+        const [statusRows, sourceRows, agentRows] = await Promise.all([
+          db
+            .selectDistinct({ status: agentRuns.status })
+            .from(agentRuns)
+            .where(and(...baseConditions)),
+          db
+            .selectDistinct({ triggerSource: agentRuns.triggerSource })
+            .from(agentRuns)
+            .where(and(...baseConditions, isNotNull(agentRuns.triggerSource))),
+          db
+            .selectDistinct({ agentId: agents.id })
+            .from(agentRuns)
+
+            .leftJoin(agents, eq(agentRuns.agentId, agents.id))
+            .where(and(...baseConditions, isNotNull(agents.id))),
+        ]);
+
+        return toLogsFilters(statusRows, sourceRows, agentRows);
+      })(params.userId, params.orgId),
     ]);
 
     const totalPages = Math.max(1, Math.ceil(totalCount / limit));
@@ -196,99 +290,6 @@ export function logsList(
       filters,
     };
   });
-}
-
-async function getLogsTotalCount(
-  db: ServiceDb,
-  params: LogsListParams,
-): Promise<number> {
-  const conditions: SQL[] = [
-    eq(agentRuns.userId, params.userId),
-    eq(agentRuns.orgId, params.orgId),
-  ];
-
-  conditions.push(...buildAgentFilterConditions(params));
-
-  if (params.since !== undefined) {
-    conditions.push(gte(agentRuns.createdAt, new Date(params.since)));
-  }
-  if (params.status) {
-    conditions.push(eq(agentRuns.status, params.status));
-  }
-  if (params.triggerSource) {
-    conditions.push(eq(agentRuns.triggerSource, params.triggerSource));
-  }
-
-  const [result] = await db
-    .select({ count: count() })
-    .from(agentRuns)
-
-    .leftJoin(agents, eq(agentRuns.agentId, agents.id))
-    .where(and(...conditions));
-
-  return result?.count ?? 0;
-}
-
-async function getAvailableFilters(
-  db: ServiceDb,
-  userId: string,
-  orgId: string,
-): Promise<LogsFilters> {
-  const baseConditions = [
-    eq(agentRuns.userId, userId),
-    eq(agentRuns.orgId, orgId),
-  ];
-
-  const [statusRows, sourceRows, agentRows] = await Promise.all([
-    db
-      .selectDistinct({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(and(...baseConditions)),
-    db
-      .selectDistinct({ triggerSource: agentRuns.triggerSource })
-      .from(agentRuns)
-      .where(and(...baseConditions, isNotNull(agentRuns.triggerSource))),
-    db
-      .selectDistinct({ agentId: agents.id })
-      .from(agentRuns)
-
-      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
-      .where(and(...baseConditions, isNotNull(agents.id))),
-  ]);
-
-  const statuses = statusRows
-    .map((r) => {
-      return r.status;
-    })
-    .filter((s): s is LogStatus => {
-      return [
-        "queued",
-        "pending",
-        "running",
-        "completed",
-        "failed",
-        "timeout",
-        "cancelled",
-      ].includes(s as string);
-    });
-
-  const sources = sourceRows
-    .map((r) => {
-      return r.triggerSource;
-    })
-    .filter((s): s is TriggerSource => {
-      return triggerSourceSchema.safeParse(s).success;
-    });
-
-  const agentIds = agentRows
-    .map((r) => {
-      return r.agentId;
-    })
-    .filter((agentId): agentId is string => {
-      return agentId !== null;
-    });
-
-  return { statuses, sources, agents: agentIds };
 }
 
 interface LogDetailParams {

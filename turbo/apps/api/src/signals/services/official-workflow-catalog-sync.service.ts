@@ -48,7 +48,7 @@ import {
   definitionRevisionValues,
   definitionRevisionCondition,
   definitionRevisionMatches,
-  changedBlueprintDefinitions,
+  changedWorkflowDefinitions,
   reconciliationWorkResetValues,
   reconciliationWorkValues,
   releaseDiagnostics,
@@ -143,9 +143,20 @@ const catalogAuthorityFields: Readonly<{
 const acceptedCatalogFields: Readonly<{
   releaseId: typeof officialWorkflowCatalogState.acceptedReleaseId;
   payload: typeof officialWorkflowCatalogReleases.payload;
+  hiddenThreadDefinitionNames: typeof officialWorkflowCatalogReleases.hiddenThreadDefinitionNames;
 }> = {
   releaseId: officialWorkflowCatalogState.acceptedReleaseId,
   payload: officialWorkflowCatalogReleases.payload,
+  hiddenThreadDefinitionNames:
+    officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
+};
+const catalogReleaseFields: Readonly<{
+  payload: typeof officialWorkflowCatalogReleases.payload;
+  hiddenThreadDefinitionNames: typeof officialWorkflowCatalogReleases.hiddenThreadDefinitionNames;
+}> = {
+  payload: officialWorkflowCatalogReleases.payload,
+  hiddenThreadDefinitionNames:
+    officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
 };
 const preparedStorageFields: Readonly<{
   storageId: typeof storages.id;
@@ -384,19 +395,19 @@ const activateCandidate$ = command(
         if (plan.outcome !== "publish") {
           return plan;
         }
-        const { releaseId, payload } = plan;
+        const { releaseId, payload, hiddenThreadDefinitionNames } = plan;
         await tx
           .insert(officialWorkflowCatalogReleases)
-          .values({ id: releaseId, payload })
+          .values({ id: releaseId, payload, hiddenThreadDefinitionNames })
           .onConflictDoNothing();
         signal.throwIfAborted();
         const [stored] = await tx
-          .select({ payload: officialWorkflowCatalogReleases.payload })
+          .select(catalogReleaseFields)
           .from(officialWorkflowCatalogReleases)
           .where(eq(officialWorkflowCatalogReleases.id, releaseId))
           .limit(1);
         signal.throwIfAborted();
-        assertCatalogReleasePayload(stored, payload);
+        assertCatalogReleasePayload(stored, plan);
 
         // Claim the singleton before mutating artifact heads, including when the
         // catalog has never been published. The pointer and exact revisions only
@@ -460,7 +471,7 @@ const activateCandidate$ = command(
         }
         registeringDefinitionName = undefined;
         signal.throwIfAborted();
-        const changed = changedBlueprintDefinitions(current, payload);
+        const changed = changedWorkflowDefinitions(current, plan);
         for (const definition of retiredBlueprintDefinitions(payload)) {
           await tx
             .delete(officialWorkflowReconciliationWork)

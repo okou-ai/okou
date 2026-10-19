@@ -588,6 +588,23 @@
       "uploadSheets": "Upload to Google Sheets",
       "uploadSlides": "Upload to Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "All items shown",
+      "arrayCount": "Items: {{formattedCount}}",
+      "collapse": "Collapse {{label}}",
+      "collapseAll": "Collapse all",
+      "complexity": "This JSON is too complex for the tree. Showing the source.",
+      "copyNode": "Copy {{label}}",
+      "copySource": "Copy preview source",
+      "expand": "Expand {{label}}",
+      "incomplete": "Only part of this file is loaded. Showing the source; download the file for its full contents.",
+      "invalid": "This is not valid JSON. Showing the source.",
+      "limited": "Some nodes are hidden. Switch to source to inspect all loaded text.",
+      "more": "Show more",
+      "objectCount": "Keys: {{formattedCount}}",
+      "source": "Source",
+      "tree": "Tree"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -683,9 +700,10 @@
       "illustrationPreview": "{{title}} illustration preview",
       "importDeck": "Import your own deck",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Import your own document",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Import template",
       "importImage": "Import your own",
       "importImageHint": "Save as a style",
       "multiAccent": "Multi-accent",
@@ -1806,6 +1824,7 @@
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
+      "mentionHint": "Search agents or chats…",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
@@ -4875,7 +4894,7 @@
         "accountFallback": "Account {{number}}",
         "activeAccount": "Active",
         "autoCredits": "Uses Okou credits",
-        "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
+        "autoDescription": "Connect your ChatGPT or Claude account to use more models.",
         "autoTitle": "Use more models",
         "claudeGroup": "Your Claude plan",
         "claudePlans": "Pro or Max",
@@ -5640,7 +5659,7 @@
       "preview": "Preview {{title}}",
       "rename": "Rename template"
     },
-    "clearSearch": "Clear search",
+    "builtIn": "Built-in",
     "custom": "Custom",
     "delete": {
       "cancel": "Cancel",
@@ -5654,14 +5673,6 @@
       "back": "Custom templates",
       "page": "Page {{number}}"
     },
-    "empty": {
-      "description": "Import a document, presentation or image to reuse its design.",
-      "document": "No documents yet",
-      "illustration": "No images yet",
-      "presentation": "No presentations yet",
-      "title": "Make it yours"
-    },
-    "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "rename": {
       "action": "Rename",

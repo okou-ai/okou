@@ -7,6 +7,7 @@ mod decoded_files;
 mod download;
 mod file_scheme;
 mod gzip_integrity;
+mod inline_instructions;
 mod preparation_failure;
 mod process;
 mod scheduling;

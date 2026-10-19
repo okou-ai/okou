@@ -250,23 +250,108 @@ public actor ChatSync {
     }
   }
 
+  /// Populate unopened conversations without retaining their projections or blocking a foreground read.
+  public func warmHistories(threadIDs: [String]) async throws {
+    guard let cache else { return }
+    let ids = Array(Set(threadIDs)).sorted()
+    guard !ids.isEmpty else { return }
+    var cursors: [String: EventCursor] = [:]
+    for id in ids {
+      try Task.checkCancellation()
+      if let memory = histories[id] {
+        cursors[id] = memory.cursor
+      } else if let cursor = try await cache.loadHistoryCursor(
+        threadID: id, schemaVersion: chatEventSchemaVersion)
+      {
+        cursors[id] = EventCursor(lastEventId: cursor.eventID, lastSeqId: cursor.seqID)
+      }
+    }
+    let body = try JSONSerialization.data(
+      withJSONObject: ids.map { [$0, cursors[$0]?.lastSeqId ?? 0] as [Any] })
+    let data = try await client.data("/api/chat/events/catch-up", method: "POST", body: body).data
+    let response = try Self.decode(EventCatchUpResponse.self, from: data)
+    let missing = Set(response.notFoundThreads)
+    guard missing.count == response.notFoundThreads.count,
+      missing.isDisjoint(with: response.events.keys),
+      missing.union(response.events.keys) == Set(ids),
+      let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let rawEvents = object["events"] as? [String: [Any]]
+    else { throw ChatError.invalidContract("Chat history catch-up returned an invalid partition.") }
+    for (id, rows) in response.events {
+      try Self.validate(rows: rows, threadID: id, after: cursors[id]?.lastSeqId ?? 0)
+      guard rawEvents[id]?.count == rows.count else { throw APIClientError.incompatibleData }
+    }
+    for id in ids {
+      try Task.checkCancellation()
+      let cursor = cursors[id] ?? .start
+      var rebuilt: CachedHistory?
+      if missing.contains(id) {
+        // Network work stays outside the per-thread read lock. Opening the chat can overtake it.
+        let snapshot = try await loadSnapshot(threadID: id)
+        rebuilt = try await catchUpHistory(threadID: id, initial: snapshot)
+      } else if response.events[id]?.isEmpty == true, cursors[id] != nil {
+        continue
+      }
+      guard readingHistories.insert(id).inserted else { continue }
+      defer { finishHistoryRead(threadID: id) }
+      let current = await readCachedHistory(threadID: id)
+      try Task.checkCancellation()
+      // A foreground read may have advanced while the batch was in flight.
+      guard (current?.cursor ?? .start) == cursor else { continue }
+      var next: CachedHistory
+      if let rebuilt {
+        next = rebuilt
+      } else {
+        next =
+          current
+          ?? CachedHistory(
+            rows: [], rawRows: [], newRows: [], cursor: .start,
+            replaced: true, cursorFromServerSnapshot: false)
+        guard let rows = response.events[id], let raw = rawEvents[id] else {
+          throw APIClientError.incompatibleData
+        }
+        let entries = try zip(rows, raw).map { row, value in
+          ChatCacheEvent(
+            id: row.id, seqID: row.seqId, data: try JSONSerialization.data(withJSONObject: value))
+        }
+        next.rows.append(contentsOf: rows)
+        next.rawRows.append(contentsOf: entries)
+        next.newRows.append(contentsOf: entries)
+        if let last = rows.last {
+          next.cursor = EventCursor(lastEventId: last.id, lastSeqId: last.seqId)
+        }
+      }
+      let saved = await persistHistory(next, threadID: id)
+      if saved {
+        next.newRows = []
+        next.replaced = false
+      }
+      next.cursorFromServerSnapshot = false
+      // Only resident readers retain raw history, including their dirty-write recovery state.
+      // An unsuccessful speculative write must not fill memory with unopened conversations.
+      if histories[id] != nil { histories[id] = next }
+    }
+  }
+
   public func history(threadID: String) async throws -> ChatHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {
       await withCheckedContinuation { historyWaiters[threadID, default: []].append($0) }
     }
-    defer {
-      if var waiters = historyWaiters[threadID], !waiters.isEmpty {
-        let next = waiters.removeFirst()
-        historyWaiters[threadID] = waiters.isEmpty ? nil : waiters
-        next.resume()
-      } else {
-        readingHistories.remove(threadID)
-      }
-    }
+    defer { finishHistoryRead(threadID: threadID) }
     try Task.checkCancellation()
     return try await loadHistory(threadID: threadID)
+  }
+
+  private func finishHistoryRead(threadID: String) {
+    if var waiters = historyWaiters[threadID], !waiters.isEmpty {
+      let next = waiters.removeFirst()
+      historyWaiters[threadID] = waiters.isEmpty ? nil : waiters
+      next.resume()
+    } else {
+      readingHistories.remove(threadID)
+    }
   }
 
   private func loadHistory(threadID: String) async throws -> ChatHistory {

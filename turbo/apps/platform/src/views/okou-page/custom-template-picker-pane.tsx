@@ -1,15 +1,10 @@
+import type { ReactNode } from "react";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
   Check,
   ChevronRight,
   MoreHorizontal,
-  FileText,
   Pencil,
-  Image as ImageIcon,
-  Layers,
-  Presentation,
-  Upload,
-  Search,
   Trash2,
   User,
 } from "lucide-react";
@@ -18,7 +13,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Button,
-  buttonVariants,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,11 +28,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
-  SegmentControl,
-  SegmentControlItem,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
   cn,
 } from "@okouai/ui";
 import type {
@@ -56,6 +45,7 @@ import {
   CustomTemplatePreviewDialog,
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
+import { TemplateSourceSection } from "./template-source-section.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { normalizeTemplateTitle } from "./template-detail-layout.tsx";
 import { TEMPLATE_CARD_SHADOW, TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
@@ -63,35 +53,28 @@ import {
   cancelDeleteCustomTemplate$,
   cancelRenameCustomTemplate$,
   customTemplateActiveExample$,
-  customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
+  openCustomTemplateKind$,
   pendingCustomTemplateDeletion$,
   pendingCustomTemplateRename$,
   renameCustomTemplate$,
   requestDeleteCustomTemplate$,
   requestRenameCustomTemplate$,
-  setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
-  setCustomTemplateKindFilter$,
   showCustomTemplateExample$,
   updateCustomTemplate$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import {
-  CUSTOM_TEMPLATE_IMPORT_ACCEPT,
-  importPresentationTemplateDeck$,
-} from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 /** The tile metrics the rest of the picker's grids already use. */
 // `isolate` keeps the shared scrim's z-index inside the cover, so the Use and
 // actions controls beside it still paint over it in tree order.
 const CARD_MEDIA =
-  "relative isolate block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
+  "relative isolate block w-full overflow-hidden rounded-xl border border-border bg-muted";
 
 /**
  * One meta line: who can see it — or, for a colleague's template, whose it is,
@@ -462,7 +445,11 @@ function CustomTemplateCard({
       <div className="relative">
         <button
           type="button"
-          className={cn(CARD_MEDIA, "cursor-pointer")}
+          className={cn(
+            CARD_MEDIA,
+            "cursor-pointer",
+            template.kind === "document" ? "aspect-[4/3]" : "aspect-video",
+          )}
           aria-label={t(
             ($) => {
               return $.templates.actions.preview;
@@ -548,205 +535,6 @@ function CustomTemplateCard({
   );
 }
 
-/** The imported file decides its kind, independently of the active filter. */
-function CustomTemplateImportButton({
-  signals,
-  onImported,
-}: {
-  readonly signals: ComposerSignals;
-  readonly onImported: () => void;
-}) {
-  const { t } = useTranslation();
-  const rootSignal = useGet(rootSignal$);
-  const importDeck = useSet(importPresentationTemplateDeck$);
-  const label = t(($) => {
-    return $.artifacts.templates.importFile;
-  });
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <label
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              // A phone keeps the icon only, so the search beside it keeps
-              // room for its placeholder; the input still carries the name.
-              "max-sm:w-9 max-sm:px-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
-            )}
-          >
-            <input
-              type="file"
-              className="sr-only"
-              accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
-              aria-label={label}
-              onChange={(event) => {
-                const file = event.currentTarget.files?.[0];
-                event.currentTarget.value = "";
-                if (!file) {
-                  return;
-                }
-                onImported();
-                detach(
-                  importDeck({ signals, file }, rootSignal),
-                  Reason.DomCallback,
-                );
-              }}
-            />
-            <Upload aria-hidden />
-            <span className="max-sm:sr-only">{label}</span>
-          </label>
-        }
-      />
-      <TooltipContent>
-        {t(($) => {
-          return $.templates.importHint;
-        })}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function CustomTemplateKindFilters({
-  kind,
-}: {
-  readonly kind: UserTemplateKind;
-}) {
-  const { t } = useTranslation();
-  const setKind = useSet(setCustomTemplateKindFilter$);
-  const options = [
-    {
-      value: "document",
-      label: t(($) => {
-        return $.artifacts.kinds.document;
-      }),
-    },
-    {
-      value: "presentation",
-      label: t(($) => {
-        return $.artifacts.kinds.presentation;
-      }),
-    },
-    {
-      value: "illustration",
-      label: t(($) => {
-        return $.artifacts.kinds.image;
-      }),
-    },
-  ] as const;
-  return (
-    // Three fixed, mutually exclusive kinds are a segment control: one bounded
-    // control at the band's h-9, whose raised segment says which kind is shown.
-    // A phone gives it the full row, so its segments split the width evenly.
-    <SegmentControl<UserTemplateKind>
-      value={kind}
-      onValueChange={(value: UserTemplateKind) => {
-        setKind(value);
-      }}
-      aria-label={t(($) => {
-        return $.artifacts.templates.categories;
-      })}
-      className="max-sm:w-full"
-    >
-      {options.map(({ value, label }) => {
-        return (
-          <SegmentControlItem
-            key={value}
-            value={value}
-            className="max-sm:flex-1 max-sm:px-2 max-[374px]:text-xs"
-          >
-            {label}
-          </SegmentControlItem>
-        );
-      })}
-    </SegmentControl>
-  );
-}
-
-function CustomTemplatesEmpty({
-  kind,
-  isEmptyCatalog,
-  hasQuery,
-}: {
-  readonly kind: UserTemplateKind;
-  readonly isEmptyCatalog: boolean;
-  readonly hasQuery: boolean;
-}) {
-  const { t } = useTranslation();
-  const setQuery = useSet(setCustomTemplateSearchQuery$);
-  const titles = {
-    document: t(($) => {
-      return $.templates.empty.document;
-    }),
-    presentation: t(($) => {
-      return $.templates.empty.presentation;
-    }),
-    illustration: t(($) => {
-      return $.templates.empty.illustration;
-    }),
-  };
-  const Icon = hasQuery
-    ? Search
-    : isEmptyCatalog
-      ? Layers
-      : kind === "document"
-        ? FileText
-        : kind === "presentation"
-          ? Presentation
-          : ImageIcon;
-  return (
-    <div className="flex min-h-64 flex-1 flex-col items-center justify-center px-5 py-7 text-center">
-      <div
-        className="relative mb-6 h-16 w-20 text-muted-foreground"
-        aria-hidden
-      >
-        <span className="absolute left-2 top-1 h-14 w-11 -rotate-12 rounded-lg border border-border bg-gray-50" />
-        <span className="absolute right-2 top-0 flex h-14 w-11 rotate-6 items-center justify-center rounded-lg border border-border bg-background">
-          <Icon size={24} strokeWidth={1.5} />
-        </span>
-      </div>
-      <h2 className="text-base font-medium text-foreground">
-        {hasQuery
-          ? t(($) => {
-              return $.artifacts.templates.noMatches;
-            })
-          : isEmptyCatalog
-            ? t(($) => {
-                return $.templates.empty.title;
-              })
-            : titles[kind]}
-      </h2>
-      <p className="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">
-        {hasQuery
-          ? t(($) => {
-              return $.artifacts.templates.tryDifferentSearch;
-            })
-          : isEmptyCatalog
-            ? t(($) => {
-                return $.templates.empty.description;
-              })
-            : t(($) => {
-                return $.templates.importHint;
-              })}
-      </p>
-      {hasQuery ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="mt-6"
-          onClick={() => {
-            setQuery("");
-          }}
-        >
-          {t(($) => {
-            return $.templates.clearSearch;
-          })}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * Asks once before a template is removed, because removal cannot be undone.
  *
@@ -756,13 +544,18 @@ function CustomTemplatesEmpty({
  * shown on the next. It stays open while the delete is in flight and closes
  * only on success.
  */
-function CustomTemplateDeleteConfirmSlot() {
+function CustomTemplateDeleteConfirmSlot({
+  returnFocus,
+}: {
+  readonly returnFocus: (interactionType: string) => HTMLElement | null;
+}) {
   const pending = useGet(pendingCustomTemplateDeletion$);
   return pending ? (
     <CustomTemplateDeleteConfirm
       key={pending.id}
       templateId={pending.id}
       title={pending.title}
+      returnFocus={returnFocus}
     />
   ) : null;
 }
@@ -770,9 +563,11 @@ function CustomTemplateDeleteConfirmSlot() {
 function CustomTemplateDeleteConfirm({
   templateId,
   title,
+  returnFocus,
 }: {
   readonly templateId: string;
   readonly title: string;
+  readonly returnFocus: (interactionType: string) => HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -781,6 +576,7 @@ function CustomTemplateDeleteConfirm({
     deleteCustomTemplate$,
   );
   const deleting = deleteLoadable.state === "loading";
+  const previewKind = useGet(openCustomTemplateKind$);
   return (
     <Dialog
       open
@@ -790,7 +586,10 @@ function CustomTemplateDeleteConfirm({
         }
       }}
     >
-      <DialogContent smMaxWidth={420}>
+      <DialogContent
+        smMaxWidth={420}
+        finalFocus={previewKind === null ? returnFocus : undefined}
+      >
         <DialogHeader className="min-w-0 pr-8">
           <DialogTitle className="break-words leading-tight">
             {t(($) => {
@@ -849,13 +648,18 @@ function CustomTemplateDeleteConfirm({
  * request, keyed by the template, so one request's failure is never shown on
  * the next, and it closes only once the new name is saved.
  */
-function CustomTemplateRenameSlot() {
+function CustomTemplateRenameSlot({
+  returnFocus,
+}: {
+  readonly returnFocus: (interactionType: string) => HTMLElement | null;
+}) {
   const pending = useGet(pendingCustomTemplateRename$);
   return pending ? (
     <CustomTemplateRenameDialog
       key={pending.id}
       templateId={pending.id}
       title={pending.title}
+      returnFocus={returnFocus}
     />
   ) : null;
 }
@@ -863,9 +667,11 @@ function CustomTemplateRenameSlot() {
 function CustomTemplateRenameDialog({
   templateId,
   title,
+  returnFocus,
 }: {
   readonly templateId: string;
   readonly title: string;
+  readonly returnFocus: (interactionType: string) => HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -883,7 +689,7 @@ function CustomTemplateRenameDialog({
         }
       }}
     >
-      <DialogContent smMaxWidth={420}>
+      <DialogContent smMaxWidth={420} finalFocus={returnFocus}>
         <form
           className="grid gap-4"
           onSubmit={(event) => {
@@ -968,112 +774,77 @@ function CustomTemplateRenameDialog({
 }
 
 /** Custom templates retain their loaded cards while a catalog refresh runs. */
-export function CustomTemplatePickerPane({
+export function CustomTemplatePickerSection({
   signals,
+  kind,
+  query,
+  importCard,
   onSelect,
-  onImported,
 }: {
   readonly signals: ComposerSignals;
+  readonly kind: UserTemplateKind;
+  readonly query: string;
+  readonly importCard: ReactNode;
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
-  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
-  const query = useGet(customTemplateSearchQuery$);
-  const setQuery = useSet(setCustomTemplateSearchQuery$);
   const catalog = useLastLoadable(customTemplateCatalog$);
   const projectPicker = useGet(projectCustomTemplatePicker$);
-  const view = catalog.state === "hasData" ? projectPicker(catalog.data) : null;
-  const hasQuery = query.trim().length > 0;
-  // A non-empty catalog always shows its search and kind filters, including
-  // when the selected kind is empty, so neither moves while a member switches
-  // kinds and an empty kind can be left from here.
-  const showFilters = view !== null && !view.isEmptyCatalog;
-
+  // A menu item disappears when it opens a dialog. Restore the current type
+  // instead of letting the focus fallback activate the first category.
+  const returnFocus = useSet(signals.template.templatePickerInitialFocus$);
+  const templates =
+    catalog.state === "hasData"
+      ? projectPicker(catalog.data, kind, query)
+      : null;
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      {/* The 68px band the workflow search uses, so the band keeps the same
-          height and axis in both categories and the import clears the
-          dialog's close button. The kind comes first because it scopes what
-          the search looks through; the search and the import are the tools
-          on the right. The band renders before the catalog resolves, so it
-          never collapses while a request is pending. Below lg the tools take
-          a second row instead of overflowing the dialog. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 py-4 sm:pr-14 lg:h-[68px] lg:flex-nowrap lg:py-0">
-        {showFilters ? <CustomTemplateKindFilters kind={view.kind} /> : null}
-        <div className="flex w-full min-w-0 items-center gap-3 lg:ml-auto lg:w-auto">
-          {showFilters ? (
-            <div className="relative min-w-0 flex-1 lg:w-56 lg:flex-none">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                aria-label={t(($) => {
-                  return $.artifacts.templates.searchConnectors;
-                })}
-                placeholder={t(($) => {
-                  return $.artifacts.templates.searchConnector;
-                })}
-                className="h-9 pl-9 text-sm"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                }}
-              />
-            </div>
-          ) : null}
-          <div className="ml-auto shrink-0">
-            <CustomTemplateImportButton
-              signals={signals}
-              onImported={onImported}
-            />
-          </div>
-        </div>
-      </div>
-      <div
-        role="region"
-        aria-label={t(($) => {
-          return $.templates.detail.back;
-        })}
-        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6"
-      >
-        {catalog.state === "hasError" ? (
-          <CustomTemplatesLoadError />
-        ) : view === null ? null : view.templates.length === 0 ? (
-          <CustomTemplatesEmpty
-            kind={view.kind}
-            isEmptyCatalog={view.isEmptyCatalog}
-            hasQuery={hasQuery}
-          />
-        ) : (
+    <>
+      <TemplateSourceSection source="custom" count={templates?.length}>
+        {catalog.state === "hasError" ? <CustomTemplatesLoadError /> : null}
+        <div
+          className={
+            kind === "illustration"
+              ? "columns-[244px] gap-4"
+              : "grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3"
+          }
+        >
           <div
             className={
-              view.kind === "illustration"
-                ? "columns-[244px] gap-5"
-                : "grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3"
+              kind === "illustration" ? "mb-6 break-inside-avoid" : undefined
             }
           >
-            {view.templates.map((template) => {
-              return template.kind === "illustration" ? (
-                <CustomTemplateIllustrationCard
-                  key={template.id}
-                  template={template}
-                  onSelect={onSelect}
-                />
-              ) : (
-                <CustomTemplateCard
-                  key={template.id}
-                  template={template}
-                  onSelect={onSelect}
-                />
-              );
-            })}
+            {importCard}
           </div>
-        )}
-      </div>
-      <CustomTemplatePreviewDialog onSelect={onSelect} />
-      <CustomTemplateDeleteConfirmSlot />
-      <CustomTemplateRenameSlot />
-    </div>
+          {templates?.map((template) => {
+            return template.kind === "illustration" ? (
+              <CustomTemplateIllustrationCard
+                key={template.id}
+                template={template}
+                onSelect={onSelect}
+              />
+            ) : (
+              <CustomTemplateCard
+                key={template.id}
+                template={template}
+                onSelect={onSelect}
+              />
+            );
+          })}
+        </div>
+        {templates?.length === 0 && query.trim().length > 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.templates.noMatches;
+            })}
+          </p>
+        ) : null}
+      </TemplateSourceSection>
+      <CustomTemplatePreviewDialog
+        onSelect={onSelect}
+        returnFocus={returnFocus}
+      />
+      <CustomTemplateDeleteConfirmSlot returnFocus={returnFocus} />
+      <CustomTemplateRenameSlot returnFocus={returnFocus} />
+    </>
   );
 }

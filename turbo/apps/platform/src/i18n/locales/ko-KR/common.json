@@ -587,6 +587,23 @@
       "uploadSheets": "Google Sheets에 업로드",
       "uploadSlides": "Google Slides에 업로드"
     },
+    "jsonPreview": {
+      "allShown": "모든 항목 표시됨",
+      "arrayCount": "항목: {{formattedCount}}",
+      "collapse": "{{label}} 접기",
+      "collapseAll": "모두 접기",
+      "complexity": "JSON이 너무 복잡하여 소스를 표시합니다.",
+      "copyNode": "{{label}} 복사",
+      "copySource": "미리보기 소스 복사",
+      "expand": "{{label}} 펼치기",
+      "incomplete": "파일의 일부만 불러왔습니다. 소스를 표시합니다. 전체 내용은 파일을 다운로드하여 확인하세요.",
+      "invalid": "유효한 JSON이 아닙니다. 소스를 표시합니다.",
+      "limited": "일부 노드가 숨겨져 있습니다. 소스로 전환하면 불러온 텍스트 전체를 볼 수 있습니다.",
+      "more": "더 보기",
+      "objectCount": "키: {{formattedCount}}",
+      "source": "소스",
+      "tree": "트리"
+    },
     "kinds": {
       "audio": "오디오",
       "avatar": "아바타",
@@ -682,9 +699,10 @@
       "illustrationPreview": "{{title}} 일러스트레이션 미리보기",
       "importDeck": "내 덱 가져오기",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "내 문서 가져오기",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
-      "importFile": "템플릿 가져오기",
       "importImage": "내 이미지 가져오기",
       "importImageHint": "스타일로 저장",
       "multiAccent": "다중 악센트",
@@ -1803,6 +1821,7 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
+      "mentionHint": "에이전트 또는 채팅 검색…",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
@@ -4864,7 +4883,7 @@
         "accountFallback": "계정 {{number}}",
         "activeAccount": "활성",
         "autoCredits": "Okou 크레딧 사용",
-        "autoDescription": "Claude 또는 ChatGPT 계정을 연결하여 더 많은 모델을 사용하세요.",
+        "autoDescription": "ChatGPT 또는 Claude 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
         "claudeGroup": "내 Claude 요금제",
         "claudePlans": "Pro 또는 Max",
@@ -5624,7 +5643,7 @@
       "preview": "{{title}} 미리보기",
       "rename": "템플릿 이름 바꾸기"
     },
-    "clearSearch": "검색 지우기",
+    "builtIn": "기본 제공",
     "custom": "커스텀",
     "delete": {
       "cancel": "취소",
@@ -5638,14 +5657,6 @@
       "back": "커스텀 템플릿",
       "page": "{{number}}페이지"
     },
-    "empty": {
-      "description": "문서, 프레젠테이션 또는 이미지를 가져와 디자인을 재사용하세요.",
-      "document": "아직 문서가 없어요",
-      "illustration": "아직 이미지가 없어요",
-      "presentation": "아직 프레젠테이션이 없어요",
-      "title": "나만의 템플릿 만들기"
-    },
-    "importHint": "문서, 프레젠테이션 또는 이미지를 가져오세요.",
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "rename": {
       "action": "이름 변경",

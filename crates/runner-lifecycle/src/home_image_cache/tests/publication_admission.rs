@@ -31,7 +31,7 @@ async fn publication_burst(real_hold: bool) -> usize {
     f.cache = f.cache.with_telemetry(recorded.handle());
     let held = Arc::new(Notify::new());
     let release = Arc::new(Semaphore::new(0));
-    f.cache.publication_capacity_held_test_gate = Some((Arc::clone(&held), Arc::clone(&release)));
+    f.cache.publication_io_held_test_gate = Some((Arc::clone(&held), Arc::clone(&release)));
     let mut contexts = Vec::new();
     let mut originals = Vec::new();
     for index in 0..COUNT {
@@ -52,8 +52,8 @@ async fn publication_burst(real_hold: bool) -> usize {
                 .unwrap(),
         ));
         contexts.push(context);
-        // Only the first clone pauses after acquiring the real capacity flock.
-        f.cache.publication_capacity_held_test_gate = None;
+        // Only the first clone pauses after acquiring the real IO permit.
+        f.cache.publication_io_held_test_gate = None;
     }
     let tracker = TaskTracker::new();
     let published = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -72,7 +72,7 @@ async fn publication_burst(real_hold: bool) -> usize {
         if index == 0 {
             tokio::time::timeout(Duration::from_secs(5), held.notified())
                 .await
-                .expect("first publisher must own capacity");
+                .expect("first publisher must own IO admission");
         }
     }
     wait_for_admission(&f.cache, COUNT).await;
@@ -111,10 +111,6 @@ async fn publication_burst(real_hold: bool) -> usize {
             .count(),
         committed
     );
-    let capacity_busy = publications
-        .iter()
-        .filter(|event| event.reason.as_deref() == Some("capacity_lock_busy"))
-        .count();
     let admission_timeout = publications
         .iter()
         .filter(|event| event.reason.as_deref() == Some("publication_admission_timeout"))
@@ -135,14 +131,14 @@ async fn publication_burst(real_hold: bool) -> usize {
     }
     assert_eq!(readable, committed);
     println!(
-        "publication burst: candidates={COUNT} committed={committed} readable={readable} capacity_busy={capacity_busy} admission_timeout={admission_timeout} refused={}",
+        "publication burst: candidates={COUNT} committed={committed} readable={readable} admission_timeout={admission_timeout} refused={}",
         COUNT as usize - committed
     );
     readable
 }
 
 #[tokio::test]
-async fn stopped_publication_burst_survives_capacity_hold_and_joins_after_observer_loss() {
+async fn stopped_publication_burst_survives_io_hold_and_joins_after_observer_loss() {
     assert_eq!(publication_burst(false).await, 24);
 }
 

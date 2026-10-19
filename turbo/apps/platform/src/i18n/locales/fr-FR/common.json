@@ -606,6 +606,23 @@
       "uploadSheets": "Importer dans Google Sheets",
       "uploadSlides": "Téléverser sur Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Tous les éléments sont affichés",
+      "arrayCount": "Éléments : {{formattedCount}}",
+      "collapse": "Replier {{label}}",
+      "collapseAll": "Tout replier",
+      "complexity": "Ce JSON est trop complexe pour l’arborescence. Le texte source est affiché.",
+      "copyNode": "Copier {{label}}",
+      "copySource": "Copier le texte source de l’aperçu",
+      "expand": "Déplier {{label}}",
+      "incomplete": "Seule une partie du fichier est chargée. Le texte source est affiché ; téléchargez le fichier pour consulter tout son contenu.",
+      "invalid": "Ce JSON n’est pas valide. Le texte source est affiché.",
+      "limited": "Certains nœuds sont masqués. Passez au texte source pour consulter tout le texte chargé.",
+      "more": "Afficher plus",
+      "objectCount": "Clés : {{formattedCount}}",
+      "source": "Source",
+      "tree": "Arborescence"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -701,10 +718,11 @@
       "illustrationPreview": "Aperçu de l'illustration {{title}}",
       "importDeck": "Importer votre propre présentation",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Importer votre propre document",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} diapositive",
       "importedSlides_many": "{{count}} diapositives",
       "importedSlides_other": "{{count}} diapositives",
-      "importFile": "Importer un modèle",
       "importImage": "Importer votre image",
       "importImageHint": "Enregistrer comme style",
       "multiAccent": "Multi-accents",
@@ -1835,6 +1853,7 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
+      "mentionHint": "Rechercher des agents ou des discussions…",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
@@ -4947,7 +4966,7 @@
         "accountFallback": "Compte {{number}}",
         "activeAccount": "Actif",
         "autoCredits": "Utilise des crédits Okou",
-        "autoDescription": "Connectez votre compte Claude ou ChatGPT pour utiliser plus de modèles.",
+        "autoDescription": "Connectez votre compte ChatGPT ou Claude pour utiliser plus de modèles.",
         "autoTitle": "Utilisez plus de modèles",
         "claudeGroup": "Votre forfait Claude",
         "claudePlans": "Pro ou Max",
@@ -5720,7 +5739,7 @@
       "preview": "Aperçu de {{title}}",
       "rename": "Renommer le modèle"
     },
-    "clearSearch": "Effacer la recherche",
+    "builtIn": "Intégrés",
     "custom": "Personnalisés",
     "delete": {
       "cancel": "Annuler",
@@ -5734,14 +5753,6 @@
       "back": "Modèles personnalisés",
       "page": "Page {{number}}"
     },
-    "empty": {
-      "description": "Importez un document, une présentation ou une image pour réutiliser sa mise en page.",
-      "document": "Aucun document pour le moment",
-      "illustration": "Aucune image pour le moment",
-      "presentation": "Aucune présentation pour le moment",
-      "title": "Créez votre style"
-    },
-    "importHint": "Importez un document, une présentation ou une image.",
     "loadFailed": "Impossible de charger les modèles.",
     "rename": {
       "action": "Renommer",

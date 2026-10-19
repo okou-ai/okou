@@ -23,6 +23,48 @@ use runner_types::types::ExecutionContext;
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
+pub(super) async fn apply_agent_instructions(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+) -> RunnerResult<()> {
+    let Some(content) = context.agent_instructions.as_deref() else {
+        return Ok(());
+    };
+    let runtime_dir = super::guest_runtime_dir(context.run_id)?;
+    let source = format!("{runtime_dir}/agent-instructions");
+    sandbox
+        .write_private_files(&[sandbox::WriteFileEntry {
+            path: &source,
+            content: content.as_bytes(),
+        }])
+        .await?;
+    let framework = super::cli_framework::normalized_cli_agent_type(&context.cli_agent_type);
+    // All arguments are framework constants or the UUID-derived private run path.
+    let command = format!("{STORAGE_APPLY_PATH} --instructions {framework} {source}");
+    let run_id = context.run_id.to_string();
+    let env = guest_storage_apply_env(&run_id, &runtime_dir);
+    let result = sandbox
+        .exec_with_diagnostic_label(
+            &ExecRequest {
+                cmd: &command,
+                timeout: DEFAULT_EXEC_TIMEOUT,
+                env: &env,
+                sudo: false,
+                expected_exit_codes: &[],
+                stdin_bytes: None,
+                output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
+            },
+            "agent-instructions",
+        )
+        .await?;
+    if !helper_exec_succeeded(&result) {
+        return Err(RunnerError::Internal(
+            "required Agent instruction write failed".into(),
+        ));
+    }
+    Ok(())
+}
+
 // Runner-local INFO only. Keep API keys when cache delivery uses file://;
 // this source list does not claim every source was downloaded in this batch.
 fn r2_storage_sources(

@@ -22,7 +22,7 @@
 //! - home-cache watcher work is pinned across reactor turns so async
 //!   metadata classification cannot lose already-drained kernel events;
 //! - routine home-cache GC is independently scheduled and single-flight, and
-//!   its host-global cadence is coordinated through the capacity lock;
+//!   its host-global completion marker is coordinated through the collector lock;
 //! - the first routine heartbeat tick is deferred;
 //! - teardown drains heartbeat work and drops discovery before provider
 //!   shutdown.
@@ -420,6 +420,7 @@ enum StartLoopEvent {
     HomeCacheChangeObserved,
     HomeCacheGcTickConsumed,
     HomeCachePressureTickConsumed,
+    ClaimsDrainEntered,
     MaintenanceDrainEntered,
     HomeInventoryDrainEntered,
     RunningJobsDrainEntered,
@@ -1723,6 +1724,10 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     teardown.event("drop_discover_fut");
     home_cache_observation.stop_watching();
     let phase = teardown.phase_start("claims_drain");
+    #[cfg(test)]
+    test_hooks
+        .test_observer
+        .record(StartLoopEvent::ClaimsDrainEntered);
     while let Some(result) = claim_tasks.next().await {
         if let Err(failure) = claim_tasks.consume(result, &mut jobs) {
             let (reason, error) = failure.into_stopping_failure();
