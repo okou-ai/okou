@@ -1,6 +1,5 @@
 import { command, computed } from "ccstate";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   connectorCatalog,
@@ -30,7 +29,7 @@ import {
   connectorCatalogSlugJoin,
 } from "../services/connector-catalog-slug-source.service";
 import { listComputerUseHosts$ } from "../services/computer-use.service";
-import { customConnectorList } from "../services/custom-connector-list.service";
+import { customConnectorOverview } from "../services/custom-connector-overview.service";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { userPreferences } from "../services/user-data.service";
 import { settle } from "../utils";
@@ -44,7 +43,7 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [summaries, customConnectors, preferences, hosts, overrides] =
     await Promise.all([
       get(accountSummaries$),
-      get(customConnectorList(owner)),
+      get(customConnectorOverview(owner)),
       get(userPreferences(owner)),
       set(listComputerUseHosts$, owner, signal),
       get(userFeatureSwitchOverrides(auth.orgId, auth.userId)),
@@ -91,11 +90,8 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
     throw catalog.error;
   }
-  const connectedCustom = customConnectors.filter((connector) => {
-    return connector.connected;
-  });
   const connectedCustomIds = new Set(
-    connectedCustom.map((connector) => {
+    customConnectors.map((connector) => {
       return connector.id;
     }),
   );
@@ -108,15 +104,7 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       builtinConnectors: [...catalog.value],
-      customConnectors: connectedCustom.map((connector) => {
-        return {
-          id: connector.id,
-          slug: connector.slug,
-          displayName: connector.displayName,
-          permissionBundleRef: connector.permissionBundleRef ?? null,
-          integrationManaged: isIntegrationManagedCustomConnector(connector),
-        };
-      }),
+      customConnectors,
       accountSummaries: summaries
         .filter((summary) => {
           return summary.target.kind === "builtin"

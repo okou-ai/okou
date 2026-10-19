@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
@@ -664,6 +664,10 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const survivorAgent = await bdd.createAgent(owner, {
       displayName: "Surviving search projection agent",
     });
+    await chat.createThread(owner, {
+      agentId: survivorAgent.agentId,
+      model: null,
+    });
     const markers = [
       { agentId: deletedAgent.agentId, text: `orphaned-${randomUUID()}` },
       { agentId: survivorAgent.agentId, text: `survivor-${randomUUID()}` },
@@ -696,8 +700,19 @@ describe("GET /api/cron/project-chat-event-search", () => {
     mockEnv("CRON_SECRET", CRON_SECRET);
     const operator = app(cronProjectChatEventSearchContract);
     const headers = { authorization: `Bearer ${CRON_SECRET}` };
+    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "1");
+    const partial = await accept(operator.project({ headers }), [200]);
+    expect(partial.body.convergence).toStrictEqual({
+      eligibleThreads: threads.length,
+      durableCaughtUpThreads: 1,
+    });
+    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "500");
     const projected = await accept(operator.project({ headers }), [200]);
     expect(projected.body.orphanedThreads).toBe(0);
+    expect(projected.body.convergence).toStrictEqual({
+      eligibleThreads: threads.length,
+      durableCaughtUpThreads: threads.length,
+    });
     for (const [index, marker] of markers.entries()) {
       const search = await chat.searchChat(owner, marker.text);
       expect(search.results).toContainEqual(
@@ -711,6 +726,10 @@ describe("GET /api/cron/project-chat-event-search", () => {
     await bdd.deleteAgent(owner, deletedAgent.agentId);
     const cleaned = await accept(operator.project({ headers }), [200]);
     expect(cleaned.body.orphanedThreads).toBe(1);
+    expect(cleaned.body.convergence).toStrictEqual({
+      eligibleThreads: threads.length - 1,
+      durableCaughtUpThreads: threads.length - 1,
+    });
     // Public search filters missing canonical owners, so this observation is
     // visibility evidence; the paired SQL establishes physical cleanup scope.
     expect(
@@ -726,5 +745,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     );
     const repeated = await accept(operator.project({ headers }), [200]);
     expect(repeated.body.orphanedThreads).toBe(0);
+    expect(repeated.body.convergence).toStrictEqual(cleaned.body.convergence);
   }, 60_000);
 });

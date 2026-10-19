@@ -14,6 +14,8 @@ import {
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { createBddApi } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
@@ -451,4 +453,80 @@ test("a saved custom connector proposal invalidates the Agent access snapshot", 
     "composerAgentConnectorsChanged",
     { agentId: agent.body.agentId },
   );
+});
+
+test("manual overview connections require the current user's configured member fields", async () => {
+  const mocks = createRouteMocks(context);
+  const actor = createBddApi(context).user({ orgRole: "org:admin" });
+  const connectors = createConnectorBddApi(context);
+  const connector = await connectors.createCustomConnector(actor, {
+    displayName: "Manual overview connector",
+    prefixTemplates: ["https://manual-overview.example.test/"],
+    authMode: "manual",
+    fields: [
+      { key: "token", label: "Token", kind: "secret", required: true },
+      {
+        key: "workspace",
+        label: "Workspace",
+        kind: "variable",
+        required: true,
+      },
+    ],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{secrets.token}}" },
+    ],
+    queryInjections: [
+      { name: "workspace", valueTemplate: "{{variables.workspace}}" },
+    ],
+  });
+  await trackCleanup(
+    Promise.resolve(async () => {
+      await connectors.deleteCustomConnector(actor, connector.id);
+    }),
+  );
+  const client = setupApp({ context, routes: connectorOverviewRoutes })(
+    connectorOverviewContract,
+  );
+  const headers = { authorization: "Bearer clerk-session" };
+  const before = await accept(client.overview({ headers }), [200]);
+  expect(before.body.customConnectors).toStrictEqual([]);
+
+  const connected = await connectors.setCustomConnectorValues(
+    actor,
+    connector.id,
+    [
+      { kind: "secret", key: "token", value: "manual-token" },
+      { kind: "variable", key: "workspace", value: "workspace-one" },
+    ],
+    { intent: "add" },
+  );
+  expect(connected.connected).toBeTruthy();
+  const overview = await accept(client.overview({ headers }), [200]);
+  expect(overview.body.customConnectors).toStrictEqual([
+    {
+      id: connector.id,
+      slug: connector.slug,
+      displayName: connector.displayName,
+      permissionBundleRef: null,
+      integrationManaged: false,
+    },
+  ]);
+
+  mocks.clerk.session(`user_${randomUUID()}`, actor.orgId, "org:member");
+  const otherUser = await accept(client.overview({ headers }), [200]);
+  expect(otherUser.body.customConnectors).toStrictEqual([]);
+  expect(otherUser.body.accountSummaries).toStrictEqual([]);
+
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  if (!connected.connectedAccountId) {
+    throw new Error("Expected a connected account");
+  }
+  await connectors.deleteCustomConnectorAccount(
+    actor,
+    connector.id,
+    connected.connectedAccountId,
+  );
+  const disconnected = await accept(client.overview({ headers }), [200]);
+  expect(disconnected.body.customConnectors).toStrictEqual([]);
+  expect(disconnected.body.accountSummaries).toStrictEqual([]);
 });

@@ -1,4 +1,6 @@
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectorOverviewRoutes } from "../connector-overview";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
@@ -3360,6 +3362,25 @@ export function registerFeishuIntegrationTests(
             connected: true,
           },
         ]);
+        const managedOverviewClient = setupApp({
+          context,
+          routes: connectorOverviewRoutes,
+        })(connectorOverviewContract);
+        const managedOverview = await own(() => {
+          return accept(
+            managedOverviewClient.overview({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(managedOverview.body.customConnectors).toContainEqual({
+          id: managedConnector.id,
+          slug: managedConnector.slug,
+          displayName: managedConnector.displayName,
+          permissionBundleRef: "builtin:feishu@1",
+          integrationManaged: true,
+        });
         const welcome = fixtureState.outboundMessages.find((message) => {
           return (
             message.kind === "send" &&
@@ -3394,6 +3415,17 @@ export function registerFeishuIntegrationTests(
             connected: false,
           },
         ]);
+        const disconnectedOverview = await own(() => {
+          return accept(
+            managedOverviewClient.overview({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(disconnectedOverview.body.customConnectors).not.toContainEqual(
+          expect.objectContaining({ id: managedConnector.id }),
+        );
         const disconnectedMemberStatus = await own(() => {
           return accept(
             client.getStatus({
