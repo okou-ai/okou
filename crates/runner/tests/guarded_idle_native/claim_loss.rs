@@ -135,11 +135,22 @@ async fn observe_claim(
     outcome.map_err(io::Error::other)??;
     prepared.map_err(io::Error::other)?;
     let joined_ns = evidence::clocks()?.0;
-    if admission.preparation_error().is_some()
-        || admission.commit().is_ok()
-        || admission.take_claim_response()?.is_some()
-        || !context.pool.lock().await.is_empty()
-    {
+    if admission.preparation_error().is_some() {
+        return Err(io::Error::other("native claim Guest preparation failed").into());
+    }
+    if let Ok(transferred) = admission.commit() {
+        proof.retain(transferred);
+        return Err(
+            io::Error::other("provider404 unexpectedly committed its actual owners").into(),
+        );
+    }
+    if let Some(claimed) = admission.take_claim_response()? {
+        proof.retain(claimed);
+        return Err(
+            io::Error::other("provider404 unexpectedly returned a successful claim").into(),
+        );
+    }
+    if !context.pool.lock().await.is_empty() {
         return Err(io::Error::other("provider404 transferred a claim or original Guest").into());
     }
     live(context, proof, backing).await?;
