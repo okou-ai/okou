@@ -1549,13 +1549,17 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
-      "continueChat": "Continue chat",
       "dismiss": "Dismiss",
       "label": "Suggestions",
-      "newChat": "New chat",
       "next": "Next suggestion",
       "position": "{{current}} of {{total}}",
-      "previous": "Previous suggestion"
+      "previous": "Previous suggestion",
+      "recoveryHint": "Check the chat before sending again. You can restore the suggestion to your draft.",
+      "restoreDraft": "Restore draft",
+      "runFailed": "Could not start the suggestion",
+      "runInChat": "Run in this chat",
+      "runNewChat": "Run in a new chat",
+      "starting": "Starting…"
     },
     "attachments": {
       "attach": "Attach",

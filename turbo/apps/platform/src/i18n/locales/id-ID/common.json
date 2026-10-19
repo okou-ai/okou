@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "continueChat": "Lanjutkan chat",
       "dismiss": "Abaikan",
       "label": "Saran",
-      "newChat": "Chat baru",
       "next": "Saran berikutnya",
       "position": "{{current}} dari {{total}}",
-      "previous": "Saran sebelumnya"
+      "previous": "Saran sebelumnya",
+      "recoveryHint": "Periksa chat sebelum mengirim lagi. Anda dapat memulihkan saran ke draf.",
+      "restoreDraft": "Pulihkan draf",
+      "runFailed": "Tidak dapat memulai saran",
+      "runInChat": "Jalankan di chat ini",
+      "runNewChat": "Jalankan di chat baru",
+      "starting": "Memulai…"
     },
     "attachments": {
       "attach": "Lampirkan",

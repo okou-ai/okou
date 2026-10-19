@@ -1549,13 +1549,17 @@
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
     "agentSuggestions": {
-      "continueChat": "चैट जारी रखें",
       "dismiss": "खारिज करें",
       "label": "सुझाव",
-      "newChat": "नई चैट",
       "next": "अगला सुझाव",
       "position": "{{total}} में से {{current}}",
-      "previous": "पिछला सुझाव"
+      "previous": "पिछला सुझाव",
+      "recoveryHint": "दोबारा भेजने से पहले चैट देखें। आप सुझाव को ड्राफ़्ट में वापस ला सकते हैं।",
+      "restoreDraft": "ड्राफ़्ट वापस लाएँ",
+      "runFailed": "सुझाव शुरू नहीं किया जा सका",
+      "runInChat": "इस चैट में चलाएँ",
+      "runNewChat": "नई चैट में चलाएँ",
+      "starting": "शुरू हो रहा है…"
     },
     "attachments": {
       "attach": "अटैच करें",

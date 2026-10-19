@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
-      "continueChat": "채팅 계속하기",
       "dismiss": "무시",
       "label": "제안",
-      "newChat": "새 채팅",
       "next": "다음 제안",
       "position": "{{current}} / {{total}}",
-      "previous": "이전 제안"
+      "previous": "이전 제안",
+      "recoveryHint": "다시 보내기 전에 채팅을 확인하세요. 제안을 초안으로 복원할 수 있습니다.",
+      "restoreDraft": "초안 복원",
+      "runFailed": "제안을 시작할 수 없습니다",
+      "runInChat": "이 채팅에서 실행",
+      "runNewChat": "새 채팅에서 실행",
+      "starting": "시작 중…"
     },
     "attachments": {
       "attach": "첨부",
