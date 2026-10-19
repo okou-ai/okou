@@ -1028,5 +1028,4 @@ test("Private network starts with one neutral provider selector and both guides 
   await screen.findByRole("heading", { name: "No private networks yet" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-
 });

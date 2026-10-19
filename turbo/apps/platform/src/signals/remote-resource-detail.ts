@@ -10,7 +10,11 @@ import {
   selectedRemoteNetworkProvider$,
   setRemoteNetworkPicker$,
 } from "./remote-control-setup.ts";
-import { closeTailscaleDialog$, saveTailscale$, tailscaleDialog$ } from "./tailscale.ts";
+import {
+  closeTailscaleDialog$,
+  saveTailscale$,
+  tailscaleDialog$,
+} from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
   saveCloudflareAccess$,
