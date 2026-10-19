@@ -296,13 +296,13 @@ function claimableIngress(currentTime: Date) {
   );
 }
 
-async function claimIngress(db: Db, ingressId: string) {
+function discordIngressClaimWritePlan(ingressId: string) {
   const currentTime = nowDate();
   const claimToken = randomUUID();
-  const [claimed] = await db
-    .update(discordChatIngress)
-    .set({
-      status: "processing",
+  return {
+    claimToken,
+    values: {
+      status: "processing" as const,
       claimToken,
       claimedAt: currentTime,
       processingAttemptCount: sql`${discordChatIngress.processingAttemptCount} + 1`,
@@ -310,12 +310,12 @@ async function claimIngress(db: Db, ingressId: string) {
       lastErrorClass: null,
       lastError: null,
       updatedAt: currentTime,
-    })
-    .where(
-      and(eq(discordChatIngress.id, ingressId), claimableIngress(currentTime)),
-    )
-    .returning({ attemptCount: discordChatIngress.processingAttemptCount });
-  return claimed ? { ...claimed, claimToken } : null;
+    },
+    condition: and(
+      eq(discordChatIngress.id, ingressId),
+      claimableIngress(currentTime),
+    ),
+  };
 }
 
 type ClaimedIngress = Pick<
@@ -1283,7 +1283,15 @@ export const processCanonicalDiscordIngress$ = command(
       return false;
     }
     const db = set(writeDb$);
-    const claim = await claimIngress(db, args.ingressId);
+    const claim = await (async () => {
+      const plan = discordIngressClaimWritePlan(args.ingressId);
+      const [claimed] = await db
+        .update(discordChatIngress)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({ attemptCount: discordChatIngress.processingAttemptCount });
+      return claimed ? { ...claimed, claimToken: plan.claimToken } : null;
+    })();
     signal.throwIfAborted();
     if (!claim) {
       return false;
