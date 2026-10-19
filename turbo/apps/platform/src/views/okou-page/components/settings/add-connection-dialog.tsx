@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Input } from "@okouai/ui/components/ui/input";
@@ -22,6 +22,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { FormEvent, ReactElement } from "react";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
@@ -61,6 +62,10 @@ import {
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import {
+  connectorAccountSummaryByTarget$,
+  connectorAccountTargetKey,
+} from "../../../../signals/okou-page/connector-accounts.ts";
 import { ConnectorIcon } from "./connector-icons.tsx";
 import { detach, onDomEventFn, Reason } from "../../../../signals/utils.ts";
 import { ConnectorHelpText } from "./connector-help-text.tsx";
@@ -80,7 +85,10 @@ import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 // Connected status text helper
 // ---------------------------------------------------------------------------
 
-function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
+function connectedStatusText(
+  item: PlatformConnectorCatalogStatusItem,
+  account: ConnectorAccountConnection | null | undefined,
+): string {
   const connectionStatus = builtinConnectorCurrentConnectionStatus(item);
   if (
     item.connection?.reconnectReason ||
@@ -93,6 +101,16 @@ function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
   if (connectionStatus === "scope-mismatch") {
     return i18n.t(($) => {
       return $.connectors.card.updatePermissions;
+    });
+  }
+  if (account?.setupStatus === undefined) {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupUnavailable;
+    });
+  }
+  if (account.setupStatus !== "complete") {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupIncomplete;
     });
   }
   const expiryText = builtinConnectorExpiryCountdownText(item);
@@ -1559,6 +1577,16 @@ export function ConnectModal({
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const connectionAttempt = useGet(connectorConnectionAttempt$);
+  const summaries = useLastLoadable(connectorAccountSummaryByTarget$);
+  const account =
+    summaries.state === "hasData"
+      ? summaries.data.get(
+          connectorAccountTargetKey({
+            kind: "builtin",
+            connectorSlug: item.slug,
+          }),
+        )?.defaultConnection
+      : undefined;
 
   const selectedConnectorSlug = item.slug;
 
@@ -1616,7 +1644,7 @@ export function ConnectModal({
 
         {item.connection && !accountMode && (
           <p className="wrap-anywhere text-sm text-muted-foreground">
-            {connectedStatusText(item)}
+            {connectedStatusText(item, account)}
           </p>
         )}
 

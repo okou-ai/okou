@@ -1308,6 +1308,86 @@ test("Complete OpenID and continue the originating chat", async () => {
   });
 });
 
+test.each(["incomplete", "invalid"] as const)(
+  "Show the saved builtin account's %s setup in the connect dialog",
+  async (setupStatus) => {
+    const account: ConnectorAccountConnection = {
+      id: crypto.randomUUID(),
+      target: { kind: "builtin", connectorSlug: "github" },
+      authMethod: "api-token",
+      displayName: null,
+      isDefault: true,
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+      oauthScopes: null,
+      connectionStatus: "connected",
+      reconnectReason: null,
+      setupStatus,
+      missingRequiredFields: ["apiToken"],
+      configuredFieldKeys: [],
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+      return respond(200, {
+        summaries: [
+          {
+            target: account.target,
+            accountCount: 1,
+            attentionCount: 1,
+            defaultConnection: account,
+          },
+        ],
+      });
+    });
+    const connector = publicManualTokenConnectorStatus({
+      slug: "github",
+      label: "Public GitHub",
+      placeholder: "github-token",
+    });
+    mockPublicConnectorStatus({
+      ...connector,
+      authMethods: [
+        ...connector.authMethods,
+        {
+          id: "oauth",
+          label: "Public OAuth",
+          description: null,
+          grantKind: "auth-code",
+          manualFields: [],
+          startOptions: [],
+        },
+      ],
+      connected: true,
+      connectionStatus: "connected",
+      connection: {
+        id: account.id,
+        authMethod: account.authMethod,
+        externalUsername: null,
+        externalEmail: null,
+        reconnectReason: null,
+      },
+    });
+
+    await setupPage({
+      context,
+      path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+    });
+    await expect(
+      screen.findByText("Okou needs Public GitHub to proceed"),
+    ).resolves.toBeInTheDocument();
+    click(getButtonByText("Connect"));
+    const dialog = await screen.findByRole("dialog", { name: "Public GitHub" });
+    expect(within(dialog).getByText("Setup incomplete")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Connected")).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByPlaceholderText("github-token"),
+    ).toBeInTheDocument();
+  },
+);
+
 test("Reconnect the expired public OAuth account shown on the page", async () => {
   const connectionId = crypto.randomUUID();
   context.mocks.data.connectors([
