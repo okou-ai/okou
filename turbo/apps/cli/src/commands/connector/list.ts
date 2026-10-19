@@ -2,6 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import {
   listConnectorCatalogStatus,
+  listConnectorAccountSummaries,
   listCustomConnectors,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -80,6 +81,8 @@ Scope:
   Agent; the flag does not select another Agent's run or accounts.
   Outside a run, lists the builtin catalog and org custom definitions with the
   current member's connection status and optional --agent authorization.
+  JSON accountSummary and memberStatus describe saved accounts and local status;
+  connected retains its existing catalog/definition meaning. Authorization is separate.
 
 Examples:
   okou connector list --json
@@ -92,11 +95,13 @@ Examples:
         await printRunConnectorList(options.json ?? false);
         return;
       }
-      const [{ connectors }, customConnectors, agentCtx] = await Promise.all([
-        listConnectorCatalogStatus(),
-        listCustomConnectors(),
-        resolveConnectorDiscoveryAgentContext(agentId),
-      ]);
+      const [{ connectors }, customConnectors, agentCtx, summaries] =
+        await Promise.all([
+          listConnectorCatalogStatus(),
+          listCustomConnectors(),
+          resolveConnectorDiscoveryAgentContext(agentId),
+          listConnectorAccountSummaries(),
+        ]);
       const discoveredConnectors = connectorDiscoveryItems(
         connectors,
         customConnectors,
@@ -114,7 +119,7 @@ Examples:
                   }
                 : null,
               connectors: discoveredConnectors.map((connector) => {
-                return connectorDiscoveryJson(connector, agentCtx);
+                return connectorDiscoveryJson(connector, agentCtx, summaries);
               }),
             },
             null,
@@ -137,7 +142,7 @@ Examples:
 
       const connectedAsHeader = "CONNECTED AS";
       const connectedCells = discoveredConnectors.map((connector) => {
-        return renderConnectorDiscoveryConnectedAsCell(connector);
+        return renderConnectorDiscoveryConnectedAsCell(connector, summaries);
       });
       const connectedAsWidth = Math.max(
         connectedAsHeader.length,

@@ -1,6 +1,9 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { listConnectorCatalogStatus } from "../../lib/api/domains/connectors";
+import {
+  listConnectorAccountSummaries,
+  listConnectorCatalogStatus,
+} from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "./connector-selector";
 import { resolveAgentContext, resolveConnectorAgentId } from "./agent-context";
@@ -20,6 +23,12 @@ import {
   runConnectorAccountUnavailableMessage,
   type RunConnectorAccountEntry,
 } from "./run-account-context";
+import {
+  memberConnectorAccountText,
+  memberConnectorFacts,
+  memberConnectorStatusText,
+  type MemberConnectorFacts,
+} from "./member-status";
 
 const LABEL_WIDTH = 16;
 
@@ -27,55 +36,46 @@ type AgentContext = NonNullable<
   Awaited<ReturnType<typeof resolveAgentContext>>
 >;
 
-function printConnectorDetails(connector: PublicConnectorStatus): void {
-  if (connector.connectionStatus === "not-connected") {
-    console.log(
-      `${"Status:".padEnd(LABEL_WIDTH)}${chalk.dim("not connected")}`,
-    );
-    return;
-  }
-
+function printConnectorDetails(
+  connector: PublicConnectorStatus,
+  facts: MemberConnectorFacts,
+): void {
   console.log(
     `${"Status:".padEnd(LABEL_WIDTH)}${
-      connector.connectionStatus === "reconnect-required"
-        ? chalk.yellow("reconnect needed")
-        : chalk.green("connected")
+      facts.memberStatus === "connected"
+        ? chalk.green(memberConnectorStatusText(connector, facts))
+        : chalk.yellow(memberConnectorStatusText(connector, facts))
     }`,
   );
-  if (connector.connection?.externalUsername) {
-    console.log(
-      `${"Account:".padEnd(LABEL_WIDTH)}@${connector.connection.externalUsername}`,
-    );
-  } else if (connector.connection?.externalEmail) {
-    console.log(
-      `${"Account:".padEnd(LABEL_WIDTH)}${connector.connection.externalEmail}`,
-    );
-  }
-  if (connector.connection?.authMethod) {
-    console.log(
-      `${"Auth Method:".padEnd(LABEL_WIDTH)}${connector.connection.authMethod}`,
-    );
+  console.log(
+    `${"Account:".padEnd(LABEL_WIDTH)}${memberConnectorAccountText(connector, facts)}`,
+  );
+  const account = facts.accountSummary?.defaultConnection;
+  if (account) {
+    console.log(`${"Connection ID:".padEnd(LABEL_WIDTH)}${account.id}`);
+    console.log(`${"Auth Method:".padEnd(LABEL_WIDTH)}${account.authMethod}`);
   }
   if (connector.scopeMismatch) {
     console.log(
       `${"Permissions:".padEnd(LABEL_WIDTH)}${chalk.yellow("update available")}`,
     );
   }
-  if (connector.tokenExpiresAt) {
+  if (account?.tokenExpiresAt) {
     console.log(
-      `${"Token Expires:".padEnd(LABEL_WIDTH)}${connector.tokenExpiresAt}`,
+      `${"Token Expires:".padEnd(LABEL_WIDTH)}${account.tokenExpiresAt}`,
     );
   }
 }
 
 async function printAgentAction(
   connector: PublicConnectorStatus,
+  facts: MemberConnectorFacts,
   agentCtx: AgentContext,
 ): Promise<void> {
   const connectorSlug = connector.slug;
   const authorized = agentCtx.authorizedConnectorSlugs.has(connectorSlug);
-  const isConnected = connector.connected;
-  const needsReconnect = connector.connectionStatus === "reconnect-required";
+  const isConnected = facts.memberStatus === "connected";
+  const needsReconnect = facts.memberStatus === "reconnect-required";
   const agentLabel =
     agentCtx.displayName === agentCtx.agentId
       ? agentCtx.agentId
@@ -86,14 +86,29 @@ async function printAgentAction(
     const origin = await getPlatformOrigin();
     const url = connectorActionUrl({
       origin,
-      path: `/connectors/${connectorSlug}/connect`,
+      path: "/connectors",
       agentId: agentCtx.agentId,
     });
     console.log(
       `The ${connectorSlug} connector is connected but needs to be reconnected before agent ${agentLabel} can use it.`,
     );
     console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
-    printCallbackActionUrlExample(url, agentCtx.agentId);
+  } else if (
+    !isConnected &&
+    (facts.memberStatus !== "not-connected" || connector.connection !== null)
+  ) {
+    const origin = await getPlatformOrigin();
+    const url = connectorActionUrl({
+      origin,
+      path: "/connectors",
+      agentId: agentCtx.agentId,
+    });
+    console.log(
+      `Review the ${connectorSlug} accounts before authorizing agent ${agentLabel}.`,
+    );
+    console.log(
+      `Manage accounts at: [Manage ${connectorSlug} accounts](${url})`,
+    );
   } else if (authorized && !isConnected) {
     const origin = await getPlatformOrigin();
     const url = connectorActionUrl({
@@ -141,23 +156,28 @@ async function printAgentAction(
 
 async function printStandaloneAction(
   connector: PublicConnectorStatus,
+  facts: MemberConnectorFacts,
 ): Promise<void> {
   const connectorSlug = connector.slug;
-  if (
-    connector.connectionStatus === "connected" ||
-    connector.connectionStatus === "scope-mismatch"
-  ) {
+  if (facts.memberStatus === "connected") {
     return;
   }
 
   const origin = await getPlatformOrigin();
   console.log();
-  if (connector.connectionStatus === "reconnect-required") {
+  if (facts.memberStatus === "reconnect-required") {
     const url = `${origin}/connectors`;
     console.log(
       `The ${connectorSlug} connector is connected but needs to be reconnected.`,
     );
     console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
+  } else if (
+    facts.memberStatus !== "not-connected" ||
+    connector.connection !== null
+  ) {
+    console.log(
+      `Review the ${connectorSlug} accounts: [Manage ${connectorSlug} accounts](${origin}/connectors)`,
+    );
   } else {
     const url = `${origin}/connectors/${connectorSlug}/connect`;
     console.log(`Connect it at: [Connect ${connectorSlug}](${url})`);
@@ -300,6 +320,8 @@ Scope:
   and shows the current member's connection plus optional --agent authorization.
   Qualify a selector with builtin: or custom: within the supported connector types.
   For org custom definition/member status, use connector custom status <selector>.
+  Current-member JSON accountSummary/memberStatus describe saved account facts;
+  connected retains catalog metadata semantics and authorization is separate.
   To choose another account, run connector account list <selector> --json and
   use only an exact returned connectionId. Never invent or reuse an ID from a
   different connector. A switch applies to future runs in this chat; it cannot
@@ -324,9 +346,10 @@ Examples:
           await printRunConnectorStatus(connectorSlug, options.json ?? false);
           return;
         }
-        const [catalog, agentCtx] = await Promise.all([
+        const [catalog, agentCtx, summaries] = await Promise.all([
           listConnectorCatalogStatus(),
           resolveAgentContext(agentId),
+          listConnectorAccountSummaries(),
         ]);
         const connector = findConnectorStatusItem(
           catalog.connectors,
@@ -343,6 +366,7 @@ Examples:
           );
         }
 
+        const facts = memberConnectorFacts(connector, summaries);
         if (options.json) {
           console.log(
             JSON.stringify(
@@ -350,6 +374,7 @@ Examples:
                 context: "current",
                 connector: {
                   ...connector,
+                  ...facts,
                   target: { kind: "builtin", connectorSlug: connector.slug },
                   connectorType: "builtin",
                 },
@@ -373,12 +398,12 @@ Examples:
         console.log(`Connector: ${chalk.cyan(connector.slug)}`);
         console.log();
 
-        printConnectorDetails(connector);
+        printConnectorDetails(connector, facts);
 
         if (agentCtx) {
-          await printAgentAction(connector, agentCtx);
+          await printAgentAction(connector, facts, agentCtx);
         } else {
-          await printStandaloneAction(connector);
+          await printStandaloneAction(connector, facts);
         }
       },
     ),

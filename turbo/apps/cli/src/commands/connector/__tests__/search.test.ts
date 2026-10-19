@@ -17,6 +17,11 @@ import { server } from "../../../mocks/server";
 import { searchCommand } from "../search";
 import chalk from "chalk";
 import {
+  catalogAccountSummaries,
+  customAccountSummaries,
+  stubConnectorAccountSummaries,
+} from "../../__tests__/helpers/connector-accounts";
+import {
   authCodeMethod,
   catalogItem,
   catalogStatusItem,
@@ -87,6 +92,11 @@ function stubConnectors(connectors: Array<Record<string, unknown>>) {
     "mercury",
     ...connectedBySlug.keys(),
   ]);
+  server.use(
+    stubConnectorAccountSummaries(
+      catalogAccountSummaries([...connectedBySlug.values()]),
+    ),
+  );
   return stubConnectorCatalogStatus(
     [...visibleConnectorSlugs].map((connectorSlug) => {
       return (
@@ -126,6 +136,7 @@ function stubUserConnectors(id: string, enabledConnectorSlugs: string[]) {
 }
 
 function stubAvailableConnectors(connectorSlugs: string[]) {
+  server.use(stubConnectorAccountSummaries([]));
   return stubConnectorCatalogStatus(
     connectorSlugs.map((connectorSlug) => {
       return catalogStatusItem({
@@ -174,7 +185,11 @@ describe("okou connector search command", () => {
     searchCommand.setOptionValue("limit", undefined);
     searchCommand.setOptionValue("callbackPrompt", undefined);
     searchCommand.setOptionValue("json", false);
-    server.use(stubCustomConnectors([]), stubAgentCustomConnectors([]));
+    server.use(
+      stubCustomConnectors([]),
+      stubAgentCustomConnectors([]),
+      stubConnectorAccountSummaries([]),
+    );
   });
 
   afterEach(() => {
@@ -190,6 +205,7 @@ describe("okou connector search command", () => {
       const custom = customConnector({ connectedAccountId: RUN_CONNECTION_ID });
       const mcp = customMcpConnector();
       server.use(
+        stubConnectorAccountSummaries(customAccountSummaries([custom])),
         stubConnectorCatalogStatus([
           catalogStatusItem({ connectorSlug: "acme", label: "Acme Builtin" }),
         ]),
@@ -525,10 +541,14 @@ describe("okou connector search command", () => {
     it("finds a custom connector by display name", async () => {
       const connector = customConnector({
         connected: true,
+        connectedAccountId: "55555555-5555-4555-8555-555555555555",
         missingRequiredFields: [],
-        configuredFieldKeys: ["secret:apiKey"],
+        configuredFieldKeys: ["apiKey"],
       });
-      server.use(stubCustomConnectors([connector]));
+      server.use(
+        stubCustomConnectors([connector]),
+        stubConnectorAccountSummaries(customAccountSummaries([connector])),
+      );
 
       await searchCommand.parseAsync(["node", "cli", "Acme Search"]);
 
@@ -536,7 +556,8 @@ describe("okou connector search command", () => {
       const customRow = findDataRows(lines).find((line) => {
         return line.startsWith(connector.slug);
       });
-      expect(customRow).toContain("connected");
+      expect(customRow).toContain("Account #55555555");
+      expect(customRow).not.toContain("not connected");
     });
 
     it("finds org connectors with the custom keyword", async () => {

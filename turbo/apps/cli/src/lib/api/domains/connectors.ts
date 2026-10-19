@@ -6,6 +6,8 @@ import type {
 import {
   CONNECTOR_ACCOUNT_LIST_MAX_LIMIT,
   connectorAccountsContract,
+  connectorAccountTargetKey,
+  type ConnectorAccountSummary,
   type ConnectorAccountMutationIntent,
   type ConnectorAccountConnection,
   type ConnectorAccountInspectionResult,
@@ -85,6 +87,25 @@ export type BuiltinConnectorManualGrantAccountMutation = Extract<
   ConnectorAccountMutationIntent,
   { intent: "add" | "reconnect" }
 >;
+
+export async function listConnectorAccountSummaries(): Promise<
+  ReadonlyMap<string, ConnectorAccountSummary>
+> {
+  const config = await getClientConfig();
+  const client = initClient(connectorAccountsContract, {
+    ...config,
+    validateResponse: true,
+  });
+  const result = await client.summaries({ headers: {} });
+  if (result.status !== 200) {
+    handleError(result, "Failed to read connector account summaries");
+  }
+  return new Map(
+    result.body.summaries.map((summary) => {
+      return [connectorAccountTargetKey(summary.target), summary] as const;
+    }),
+  );
+}
 
 export async function listConnectorAccountConnections(
   target: ConnectorAccountTarget,
