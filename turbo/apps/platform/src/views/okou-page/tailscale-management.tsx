@@ -1,4 +1,8 @@
 import {
+  RemoteNetworkScopeField,
+  RemoteNetworkScopeConfirmation,
+} from "./remote-network-scope.tsx";
+import {
   RemoteNetworkSummary,
   RemoteNetworkFooter,
 } from "./remote-network-summary.tsx";
@@ -9,9 +13,10 @@ import {
 } from "../../signals/remote-control-setup.ts";
 import {
   RemoteEditorFrame,
+  useRemoteNetworkEditorVisible,
   REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -64,6 +69,7 @@ import { PrivateNetworkAffectedMembers } from "./private-network-impact.tsx";
 
 function useOperationCopy(kind: TailscaleOperation | undefined) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   switch (kind) {
     case "edit": {
       return {
@@ -106,9 +112,13 @@ function useOperationCopy(kind: TailscaleOperation | undefined) {
     default: {
       return {
         title: t(($) => {
-          return $.tailscale.add;
+          return guided ? $.remoteNetworkScope.addTailscale : $.tailscale.add;
         }),
-        description: undefined,
+        description: guided
+          ? t(($) => {
+              return $.remoteNetworkScope.scopeDescription;
+            })
+          : undefined,
       };
     }
   }
@@ -442,15 +452,29 @@ function TailscaleFormFields({
   readonly disabled: boolean;
 }) {
   const admin = useLoadable(isOrgAdmin$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   const edit = dialog.kind === "create" || dialog.kind === "edit";
   return (
     <>
-      {dialog.kind === "create" && admin.state === "hasData" && admin.data && (
-        <TailscaleScope disabled={disabled} />
-      )}
+      {!guided &&
+        dialog.kind === "create" &&
+        admin.state === "hasData" &&
+        admin.data && <TailscaleScope disabled={disabled} />}
       {edit ? (
         <fieldset disabled={disabled} className="grid min-w-0 gap-4">
-          <TailscaleFields config={dialog.config} disabled={disabled} />
+          <TailscaleFields
+            config={dialog.config}
+            disabled={disabled}
+            scopeField={
+              guided ? (
+                <RemoteNetworkScopeField
+                  provider="tailscale"
+                  config={dialog.config}
+                  disabled={disabled}
+                />
+              ) : undefined
+            }
+          />
         </fieldset>
       ) : (
         dialog.config && (
@@ -561,8 +585,7 @@ export function TailscaleDialog({
   readonly saveAction?: typeof saveTailscale$;
 } = {}) {
   const { t } = useTranslation();
-  const state = useLoadable(tailscaleDialog$);
-  const dialog = state.state === "hasData" ? state.data : null;
+  const dialog = useLastResolved(tailscaleDialog$);
   const uncertain = useGet(tailscaleSaveUncertain$);
   const close = useSet(closeTailscaleDialog$);
   const mount = useSet(mountTailscaleForm$);
@@ -572,7 +595,8 @@ export function TailscaleDialog({
   const setup = useGet(remoteSetup$);
   const wizard = inline && setup?.step === "oauth";
   const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
-  if (!dialog) {
+  const visible = useRemoteNetworkEditorVisible(inline, dialog);
+  if (!dialog || !visible) {
     return null;
   }
   const busy = saving.state === "loading";
@@ -599,6 +623,7 @@ export function TailscaleDialog({
       onClose={close}
     >
       <form
+        id="remote-network-tailscale"
         ref={mount}
         autoComplete="off"
         className="flex min-h-0 min-w-0 flex-col gap-4"
@@ -622,6 +647,10 @@ export function TailscaleDialog({
           destructive={dialog.kind === "delete"}
           edit={edit}
           title={title}
+        />
+        <RemoteNetworkScopeConfirmation
+          provider="tailscale"
+          configId={dialog.config?.id}
         />
       </form>
     </RemoteEditorFrame>
@@ -680,7 +709,7 @@ function TailscaleConfigCard({
               return $.tailscale.edit;
             })}
           </Button>
-          {admin && (
+          {admin && !compact && (
             <Button
               type="button"
               variant={compact ? "quiet" : "outline"}

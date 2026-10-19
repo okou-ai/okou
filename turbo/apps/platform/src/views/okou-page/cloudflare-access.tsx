@@ -1,3 +1,8 @@
+import type { ReactNode, ClipboardEvent } from "react";
+import {
+  RemoteNetworkScopeField,
+  RemoteNetworkScopeConfirmation,
+} from "./remote-network-scope.tsx";
 import {
   RemoteNetworkSummary,
   RemoteNetworkFooter,
@@ -12,12 +17,12 @@ import {
 } from "../../signals/remote-control-setup.ts";
 import {
   RemoteEditorFrame,
+  useRemoteNetworkEditorVisible,
   REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
-import type { ClipboardEvent } from "react";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
@@ -289,8 +294,10 @@ function pasteAccessCredentials(event: ClipboardEvent<HTMLInputElement>) {
 
 export function AccessFields({
   config,
+  scopeField,
 }: {
   readonly config: CloudflareAccessConfig | null;
+  readonly scopeField?: ReactNode;
 }) {
   const { t } = useTranslation();
   const replace = useGet(cloudflareAccessReplaceToken$);
@@ -300,7 +307,9 @@ export function AccessFields({
     <>
       <label className="grid gap-2">
         {t(($) => {
-          return $.cloudflareAccess.name;
+          return guided
+            ? $.remoteNetworkScope.networkName
+            : $.cloudflareAccess.name;
         })}
         <Input
           name="accessName"
@@ -313,6 +322,7 @@ export function AccessFields({
           defaultValue={config?.name}
         />
       </label>
+      {scopeField}
       {config && (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
@@ -387,13 +397,20 @@ function useCloudflareAccessDialogCopy(
   kind: CloudflareAccessDialogState["kind"] | undefined,
 ) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   switch (kind) {
     case "create": {
       return {
         title: t(($) => {
-          return $.cloudflareAccess.add;
+          return guided
+            ? $.remoteNetworkScope.addCloudflare
+            : $.cloudflareAccess.add;
         }),
-        description: null,
+        description: guided
+          ? t(($) => {
+              return $.remoteNetworkScope.scopeDescription;
+            })
+          : null,
       };
     }
     case "edit": {
@@ -599,6 +616,46 @@ function CloudflareDialogScope({
   );
 }
 
+function CloudflareAccessEditorFields({
+  dialog,
+  disabled,
+}: {
+  readonly dialog: CloudflareAccessDialogState;
+  readonly disabled: boolean;
+}) {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const createScope = useGet(cloudflareAccessCreateScope$);
+  const scope = dialog.kind === "create" ? createScope : dialog.scope;
+  return (
+    <>
+      {!guided && (
+        <CloudflareDialogScope
+          creating={dialog.kind === "create"}
+          scope={scope}
+          disabled={disabled}
+        />
+      )}
+      {dialog.kind !== "delete" && (
+        <fieldset disabled={disabled} className="grid min-w-0 gap-4">
+          <AccessFields
+            config={dialog.config}
+            scopeField={
+              guided ? (
+                <RemoteNetworkScopeField
+                  provider="cloudflare"
+                  config={dialog.config}
+                  disabled={disabled}
+                />
+              ) : undefined
+            }
+          />
+        </fieldset>
+      )}
+      {dialog.config && <AccessImpact config={dialog.config} />}
+    </>
+  );
+}
+
 export function CloudflareAccessDialog({
   inline = false,
   saveAction = saveCloudflareAccess$,
@@ -607,24 +664,22 @@ export function CloudflareAccessDialog({
   readonly saveAction?: typeof saveCloudflareAccess$;
 } = {}) {
   const { t } = useTranslation();
-  const data = useLoadable(cloudflareAccessDialog$);
+  const dialog = useLastResolved(cloudflareAccessDialog$);
   const close = useSet(closeCloudflareAccessDialog$);
   const [saving, save] = useLoadableSet(saveAction);
   const mount = useSet(mountCloudflareAccessForm$);
   const signal = useGet(pageSignal$);
   const conflict = useGet(cloudflareAccessConflict$);
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
-  const createScope = useGet(cloudflareAccessCreateScope$);
-  const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useCloudflareAccessDialogCopy(dialog?.kind);
   const setup = useGet(remoteSetup$);
   const wizard = inline && setup?.step === "cf-access";
   const isSaving = saving.state === "loading";
-  if (!dialog) {
+  const visible = useRemoteNetworkEditorVisible(inline, dialog);
+  if (!dialog || !visible) {
     return null;
   }
   const destructive = dialog.kind === "delete";
-  const scope = dialog.kind === "create" ? createScope : dialog.scope;
   return (
     <RemoteEditorFrame
       key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
@@ -641,6 +696,7 @@ export function CloudflareAccessDialog({
       onClose={close}
     >
       <form
+        id="remote-network-cloudflare"
         ref={mount}
         className="flex min-h-0 min-w-0 flex-col gap-4"
         autoComplete="off"
@@ -653,20 +709,10 @@ export function CloudflareAccessDialog({
         }}
       >
         <DialogBody className="grid gap-4">
-          <CloudflareDialogScope
-            creating={dialog.kind === "create"}
-            scope={scope}
+          <CloudflareAccessEditorFields
+            dialog={dialog}
             disabled={isSaving || uncertain}
           />
-          {!destructive && (
-            <fieldset
-              disabled={isSaving || uncertain}
-              className="grid min-w-0 gap-4"
-            >
-              <AccessFields config={dialog.config} />
-            </fieldset>
-          )}
-          {dialog.config && <AccessImpact config={dialog.config} />}
           <CloudflareAccessConflictReview />
           <CloudflareAccessSaveNotice isSaving={isSaving} />
         </DialogBody>
@@ -676,6 +722,10 @@ export function CloudflareAccessDialog({
           blocked={isSaving || !!conflict}
           destructive={destructive}
           title={title}
+        />
+        <RemoteNetworkScopeConfirmation
+          provider="cloudflare"
+          configId={dialog.config?.id}
         />
       </form>
     </RemoteEditorFrame>
@@ -1159,7 +1209,7 @@ function CloudflareConfigCard({
               return $.cloudflareAccess.edit;
             })}
           </Button>
-          {scope === "personal" && canPromote && (
+          {scope === "personal" && canPromote && !compact && (
             <Button
               variant={compact ? "quiet" : "outline"}
               onClick={() => {
@@ -1174,7 +1224,7 @@ function CloudflareConfigCard({
               })}
             </Button>
           )}
-          {scope === "organization" && (
+          {scope === "organization" && !compact && (
             <Button
               variant={compact ? "quiet" : "outline"}
               onClick={() => {

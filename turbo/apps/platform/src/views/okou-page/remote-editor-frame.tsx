@@ -1,3 +1,5 @@
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import { searchParams$ } from "../../signals/route.ts";
 import type { ReactNode } from "react";
 import {
   Button,
@@ -99,5 +101,26 @@ export function RemoteUsernameHelp() {
         </p>
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function useRemoteNetworkEditorVisible(
+  inline: boolean,
+  dialog:
+    | { readonly sessionKey: string | null; readonly kind: string }
+    | null
+    | undefined,
+) {
+  const sessionKey = useGet(authenticatedSessionKey$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const params = useGet(searchParams$);
+  if (!dialog || dialog.sessionKey !== sessionKey) {
+    return false;
+  }
+  return (
+    inline ||
+    !guided ||
+    params.get("scope") !== "private-network" ||
+    (dialog.kind !== "edit" && dialog.kind !== "create")
   );
 }

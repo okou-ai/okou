@@ -1,3 +1,4 @@
+import { RemoteNetworkAccessSummary } from "./remote-network-scope.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Laptop, ChevronRight, Plus } from "lucide-react";
@@ -50,6 +51,7 @@ export function RemoteNetworkSummary({
           })}
         </span>
       </header>
+      <RemoteNetworkAccessSummary scope={config.scope} />
       <dl className="grid grid-cols-[7.25rem_minmax(0,1fr)] gap-x-6 gap-y-4 text-sm">
         <dt className="text-muted-foreground">
           {t(($) => {
@@ -71,18 +73,6 @@ export function RemoteNetworkSummary({
             <dd className="break-all">{tags.join(", ")}</dd>
           </>
         )}
-        <dt className="text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.scope;
-          })}
-        </dt>
-        <dd>
-          {t(($) => {
-            return config.scope === "personal"
-              ? $.cloudflareAccess.personal
-              : $.cloudflareAccess.organization;
-          })}
-        </dd>
       </dl>
       <section className="grid gap-3 border-y border-divider py-5">
         <h3 className="text-base font-semibold">

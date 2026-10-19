@@ -1,3 +1,8 @@
+import {
+  applyRemoteNetworkScope$,
+  remoteNetworkScopeStatus$,
+  resetRemoteNetworkScope$,
+} from "./remote-network-scope.ts";
 import type {
   InitClientArgs,
   InitClientReturn,
@@ -15,7 +20,12 @@ import { z } from "zod";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
-import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
+import {
+  authenticatedSessionKey$,
+  clerk$,
+  currentOrgInfo$,
+  user$,
+} from "./auth.ts";
 import { isOrgAdmin$ } from "./org.ts";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
 import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
@@ -140,6 +150,7 @@ export const subscribeCloudflareAccessChanged$ = command(
 );
 
 export interface CloudflareAccessDialogState {
+  readonly sessionKey: string | null;
   readonly identity: string;
   readonly kind: "create" | "edit" | "delete";
   readonly config: ScopedCloudflareAccessConfig | null;
@@ -255,6 +266,7 @@ export const openCloudflareAccessDialog$ = command(
     set(createScope$, "personal");
     set(dialog$, {
       identity,
+      sessionKey: get(authenticatedSessionKey$),
       kind,
       config,
       scope: config?.scope ?? "personal",
@@ -263,6 +275,7 @@ export const openCloudflareAccessDialog$ = command(
 );
 
 export const closeCloudflareAccessDialog$ = command(({ set }) => {
+  set(resetRemoteNetworkScope$);
   set(abandonCloudflareAccessSave$);
   set(conflict$, null);
   set(replaceToken$, false);
@@ -377,8 +390,11 @@ const finishCloudflareAccessCreate$ = command(
 
 export const saveCloudflareAccess$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    if (get(remoteNetworkScopeStatus$).busy) {
+      return;
+    }
     const signal = set(resetFormSave$, parentSignal);
-    const dialog = await get(cloudflareAccessDialog$);
+    let dialog = await get(cloudflareAccessDialog$);
     signal.throwIfAborted();
     if (!dialog) {
       return;
@@ -387,6 +403,28 @@ export const saveCloudflareAccess$ = command(
     signal.throwIfAborted();
     if (clients.identity !== dialog.identity) {
       return;
+    }
+    if (dialog.kind === "edit" && dialog.config) {
+      const config = await set(
+        applyRemoteNetworkScope$,
+        "cloudflare",
+        dialog.config,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!config) {
+        set(invalidateCloudflareAccess$);
+        return;
+      }
+      if (get(dialog$) !== dialog) {
+        return;
+      }
+      if (config !== dialog.config) {
+        dialog = { ...dialog, config, scope: config.scope };
+        set(dialog$, dialog);
+        set(reviewedRevision$, null);
+        set(invalidateCloudflareAccess$);
+      }
     }
     const retrying = get(cloudflareAccessSaveUncertain$);
     let conflict: string | null = null;

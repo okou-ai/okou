@@ -54,6 +54,18 @@ const network: TailscaleConfig = Object.freeze({
   updatedAt: timestamp,
 });
 
+const cloudflareNetwork = Object.freeze({
+  id: network.id,
+  name: network.name,
+  scope: network.scope,
+  revision: network.revision,
+  generation: network.generation,
+  sshHosts: network.sshHosts,
+  vncHosts: network.vncHosts,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
 beforeEach(() => {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, []);
@@ -88,10 +100,32 @@ beforeEach(() => {
     return respond(200, { configs: [] });
   });
 });
-async function page(path = "/connectors?scope=remote-control", enabled = true) {
+async function page(
+  path = "/connectors?scope=remote-control",
+  enabled = true,
+  role?: "admin" | "member",
+) {
+  if (role) {
+    context.mocks.data.org({
+      id: "org_network_scope",
+      name: "Engineering",
+      role,
+    });
+  }
   await setupPage({
     context,
     path,
+    ...(role
+      ? {
+          auth: {
+            user: { id: "network-owner", fullName: "Network Owner" },
+            organization: {
+              activeOrg: { id: "org_network_scope", name: "Engineering" },
+              memberships: [{ id: "org_network_scope" }],
+            },
+          },
+        }
+      : {}),
     featureSwitches: {
       [FeatureSwitchKey.RemoteControlGuidedSetup]: enabled,
       [FeatureSwitchKey.VncAccess]: true,
@@ -889,7 +923,7 @@ async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
         : "Cloudflare connection setup",
   });
   click(getAction("button", "Already have credentials? Enter them directly"));
-  return await screen.findByRole("textbox", { name: "Name" });
+  return await screen.findByRole("textbox", { name: "Network name" });
 }
 test("Cloudflare four-step guide preserves the draft and resumes after returning", async () => {
   const name = await openNetworkForm("Cloudflare Access");
@@ -987,7 +1021,7 @@ test("Private network starts with one neutral provider selector and both guides 
   ).toBeInTheDocument();
   for (const provider of ["Tailscale", "Cloudflare Access"]) {
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
     click(screen.getByText(provider, { exact: true }));
     await screen.findByRole("dialog", {
       name:
@@ -1016,7 +1050,7 @@ test("Private network starts with one neutral provider selector and both guides 
   click(screen.getByText("Cloudflare Access", { exact: true }));
   await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
   click(getAction("button", "Already have credentials? Enter them directly"));
-  const name = await screen.findByRole("textbox", { name: "Name" });
+  const name = await screen.findByRole("textbox", { name: "Network name" });
   const form = name.closest("form");
   if (!form) {
     throw new Error("Missing network form");
@@ -1027,5 +1061,338 @@ test("Private network starts with one neutral provider selector and both guides 
   click(getAction("button", "Save network"));
   await screen.findByRole("heading", { name: "No private networks yet" });
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
 });
+
+test("Members see personal and organization networks together, with separate management rights", async () => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [network] });
+  });
+  const shared = {
+    ...cloudflareNetwork,
+    id: "b0000000-0000-4000-8000-000000000001",
+    name: "Team gateway",
+    scope: "organization" as const,
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  await page("/connectors?scope=private-network", true, "member");
+  const personal = await screen.findByRole("region", {
+    name: "Personal networks",
+  });
+  const organization = screen.getByRole("region", {
+    name: "Organization networks",
+  });
+  expect(within(personal).getByText(network.name)).toBeInTheDocument();
+  expect(
+    within(personal).getByText("Can use · Can manage"),
+  ).toBeInTheDocument();
+  expect(
+    within(organization).getByText(
+      "Engineering · Organization members can use these networks",
+    ),
+  ).toBeInTheDocument();
+  await expect(
+    within(organization).findByText("Can use · Administrators manage"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(organization).getByText(shared.name).closest("a"),
+  ).toHaveAttribute(
+    "href",
+    expect.stringContaining(`remoteResource=cloudflare%3A${shared.id}`),
+  );
+});
+
+test("Organization network details let members use the network without management actions", async () => {
+  const shared = {
+    ...cloudflareNetwork,
+    name: "Team gateway",
+    scope: "organization" as const,
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  await page(
+    `/connectors?scope=private-network&remoteResource=cloudflare:${shared.id}`,
+    true,
+    "member",
+  );
+  await screen.findByRole("heading", { name: shared.name });
+  expect(
+    screen.getByText(
+      "You can use this network; organization administrators manage it",
+    ),
+  ).toBeInTheDocument();
+  expect(queryAction("button", "Edit Cloudflare Access")).toBeNull();
+  expect(queryAction("button", "Delete Cloudflare Access")).toBeNull();
+});
+
+test.each(["Tailscale", "Cloudflare Access"] as const)(
+  "%s creation defaults to personal and explains the unavailable organization option for members",
+  async (provider) => {
+    await page("/connectors?scope=private-network", true, "member");
+    await screen.findByRole("heading", { name: "No private networks yet" });
+    click(getAction("button", "Add private network"));
+    await screen.findByRole("heading", { name: "Add a private network" });
+    click(screen.getByText(provider, { exact: true }));
+    await screen.findByRole("dialog");
+    click(getAction("button", "Already have credentials? Enter them directly"));
+    await screen.findByLabelText("Network name");
+    const personal = screen.getByLabelText(/Only me/u, { selector: "input" });
+    const organization = screen.getByLabelText(/Organization members/u, {
+      selector: "input",
+    });
+    expect(personal).toBeChecked();
+    expect(organization).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Members of Engineering can select this network when adding a device.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Organization networks are created and managed by organization administrators.",
+      ),
+    ).toBeInTheDocument();
+  },
+);
+
+test("Sharing Tailscale requires confirmation, keeps the draft on cancel, and preserves connection references", async () => {
+  let saved = {
+    ...network,
+    sshHosts: [
+      {
+        id: "c0000000-0000-4000-8000-000000000001",
+        displayName: "Owner computer",
+      },
+    ],
+  };
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [saved] });
+  });
+  context.mocks.api(
+    tailscaleContract.convertToOrganization,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({ expectedRevision: 1 });
+      saved = { ...saved, scope: "organization", revision: 2 };
+      return respond(200, saved);
+    },
+  );
+  context.mocks.api(tailscaleContract.update, ({ body, respond }) => {
+    expect(body.expectedRevision).toBe(2);
+    saved = { ...saved, name: body.name ?? saved.name, revision: 3 };
+    return respond(200, saved);
+  });
+  await page(
+    `/connectors?scope=private-network&remoteResource=tailscale:${network.id}`,
+    true,
+    "admin",
+  );
+  await screen.findByRole("heading", { name: network.name });
+  click(getAction("button", "Edit Tailscale"));
+  const name = await screen.findByLabelText("Network name");
+  await fill(name, "Shared office draft");
+  click(screen.getByText("Organization members", { exact: true }));
+  click(getAction("button", "Save network"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Allow organization members to use this network?",
+  });
+  expect(saved.scope).toBe("personal");
+  expect(saved.name).toBe(network.name);
+  expect(within(confirmation).getByText("Owner computer")).toBeInTheDocument();
+  expect(
+    within(confirmation).getByText(
+      "Sharing network settings does not share your device connections.",
+    ),
+  ).toBeInTheDocument();
+  click(getAction("button", "Continue editing", confirmation));
+  expect(name).toHaveValue("Shared office draft");
+  expect(saved.scope).toBe("personal");
+  click(getAction("button", "Save network"));
+  const confirmAgain = await screen.findByRole("dialog", {
+    name: "Allow organization members to use this network?",
+  });
+  click(getAction("button", "Confirm sharing", confirmAgain));
+  await screen.findByRole("heading", { name: "Shared office draft" });
+  expect(saved.scope).toBe("organization");
+  expect(saved.sshHosts).toStrictEqual([
+    {
+      id: "c0000000-0000-4000-8000-000000000001",
+      displayName: "Owner computer",
+    },
+  ]);
+});
+
+test("Restricting Cloudflare requires the current impact acknowledgement and retains saved connections", async () => {
+  let saved = {
+    ...cloudflareNetwork,
+    name: "Team gateway",
+    scope: "organization" as "personal" | "organization",
+    sshHosts: [
+      {
+        id: "c0000000-0000-4000-8000-000000000001",
+        displayName: "Owner computer",
+      },
+    ],
+  };
+  const impactSnapshot = "a".repeat(64);
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [saved] });
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 1,
+      otherHostCount: 2,
+      affectedOwners: [{ userId: "another-member", displayName: "Alex" }],
+      impactSnapshot,
+    });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.convertToPersonal,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({ expectedRevision: 1, impactSnapshot });
+      saved = { ...saved, scope: "personal", revision: 2 };
+      return respond(200, saved);
+    },
+  );
+  context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
+    expect(body.expectedRevision).toBe(2);
+    saved = { ...saved, name: body.name ?? saved.name, revision: 3 };
+    return respond(200, saved);
+  });
+  await page(
+    `/connectors?scope=private-network&remoteResource=cloudflare:${network.id}`,
+    true,
+    "admin",
+  );
+  await screen.findByRole("heading", { name: saved.name });
+  click(getAction("button", "Edit Cloudflare Access"));
+  await screen.findByLabelText("Network name");
+  click(screen.getByText("Only me", { exact: true }));
+  click(getAction("button", "Save network"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Make this network personal?",
+  });
+  await within(confirmation).findByText("Alex");
+  expect(
+    getAction("button", "Confirm personal scope", confirmation),
+  ).toBeDisabled();
+  expect(saved.scope).toBe("organization");
+  click(
+    within(confirmation).getByText(
+      "I understand that affected members must select another network for their saved connections.",
+    ),
+  );
+  click(getAction("button", "Confirm personal scope", confirmation));
+  await screen.findByText("You can use and manage this network");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Make this network personal?" }),
+    ).toBeNull();
+  });
+  expect(saved.scope).toBe("personal");
+  expect(saved.sshHosts).toStrictEqual([
+    {
+      id: "c0000000-0000-4000-8000-000000000001",
+      displayName: "Owner computer",
+    },
+  ]);
+});
+
+test("A scope revision conflict keeps the edit draft and prevents another unreviewed submission", async () => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [network] });
+  });
+  context.mocks.api(tailscaleContract.convertToOrganization, ({ respond }) => {
+    return respond(409, {
+      error: { code: "TAILSCALE_REVISION_CONFLICT", message: "Changed" },
+    });
+  });
+  await page(
+    `/connectors?scope=private-network&remoteResource=tailscale:${network.id}`,
+    true,
+    "admin",
+  );
+  await screen.findByRole("heading", { name: network.name });
+  click(getAction("button", "Edit Tailscale"));
+  const name = await screen.findByLabelText("Network name");
+  await fill(name, "Retained after conflict");
+  click(screen.getByText("Organization members", { exact: true }));
+  click(getAction("button", "Save network"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Allow organization members to use this network?",
+  });
+  click(getAction("button", "Confirm sharing", confirmation));
+  await within(confirmation).findByText(
+    /This network or its references changed/u,
+  );
+  expect(getAction("button", "Confirm sharing", confirmation)).toBeDisabled();
+  click(getAction("button", "Continue editing", confirmation));
+  expect(name).toHaveValue("Retained after conflict");
+});
+
+test.each(["Tailscale", "Cloudflare Access"] as const)(
+  "%s saves its explicitly selected organization scope without changing other networks",
+  async (provider) => {
+    let savedTs: TailscaleConfig[] = [network];
+    let savedCf = [cloudflareNetwork];
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, { configs: savedTs });
+    });
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, { configs: savedCf });
+    });
+    context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
+      expect(body.scope).toBe("organization");
+      const created = {
+        ...network,
+        id: body.id,
+        name: body.name,
+        scope: "organization" as const,
+      };
+      savedTs = [...savedTs, created];
+      return respond(201, created);
+    });
+    context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
+      expect(body.scope).toBe("organization");
+      const created = {
+        ...cloudflareNetwork,
+        id: body.id,
+        name: body.name,
+        scope: "organization" as const,
+      };
+      savedCf = [...savedCf, created];
+      return respond(201, created);
+    });
+    await page("/connectors?scope=private-network", true, "admin");
+    await screen.findByRole("region", { name: "Personal networks" });
+    click(getAction("button", "Add private network"));
+    await screen.findByRole("heading", { name: "Add a private network" });
+    click(screen.getByText(provider, { exact: true }));
+    await screen.findByRole("dialog");
+    click(getAction("button", "Already have credentials? Enter them directly"));
+    const name = await screen.findByLabelText("Network name");
+    const form = name.closest("form")!;
+    await fill(name, "New team network");
+    click(screen.getByText("Organization members", { exact: true }));
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/Organization members/u, { selector: "input" }),
+      ).toBeChecked();
+    });
+    await fill(within(form).getByLabelText("Client ID"), "test-only-id");
+    await fill(
+      within(form).getByLabelText("Client Secret"),
+      "test-only-secret",
+    );
+    click(getAction("button", "Save network"));
+    const organization = await screen.findByRole("region", {
+      name: "Organization networks",
+    });
+    await within(organization).findByText("New team network");
+    const personal = screen.getByRole("region", { name: "Personal networks" });
+    expect(within(personal).getAllByText(network.name)).toHaveLength(2);
+  },
+);

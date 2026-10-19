@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { RemoteNetworkCredentialHelp } from "./remote-network-help.tsx";
 import { useGet, useSet } from "ccstate-react";
@@ -90,9 +91,11 @@ function TailscaleTags({
 export function TailscaleFields({
   config,
   disabled,
+  scopeField,
 }: {
   readonly config: TailscaleConfig | null;
   readonly disabled: boolean;
+  readonly scopeField?: ReactNode;
 }) {
   const { t } = useTranslation();
   const replace = useGet(tailscaleReplaceCredentials$);
@@ -103,7 +106,9 @@ export function TailscaleFields({
       <div className="contents">
         <label className="grid gap-2">
           {t(($) => {
-            return $.cloudflareAccess.name;
+            return guided
+              ? $.remoteNetworkScope.networkName
+              : $.cloudflareAccess.name;
           })}
           <Input
             name="tailscaleName"
@@ -116,6 +121,7 @@ export function TailscaleFields({
             defaultValue={config?.name}
           />
         </label>
+        {scopeField}
         {config === null && !guided && <TailscaleSetupGuide />}
 
         {!guided && <TailscaleTags config={config} guided={false} />}

@@ -220,7 +220,7 @@ export function RemoteResourcePage() {
 }
 export function RemoteNetworkPage() {
   const { t } = useTranslation();
-  const page = useLoadable(remoteNetworkPage$);
+  const page = useLastResolved(remoteNetworkPage$);
   const close = useSet(closeRemoteNetworkPage$);
   return (
     <RemoteDetailPage
@@ -237,13 +237,11 @@ export function RemoteNetworkPage() {
             return $.remoteControlSetup.back;
           })}
         </Button>
-        {page.state === "hasData" && page.data === "provider" && (
-          <NetworkProviderPicker inline />
-        )}
-        <div hidden={page.state !== "hasData" || page.data !== "tailscale"}>
+        {page === "provider" && <NetworkProviderPicker inline />}
+        <div hidden={page !== "tailscale"}>
           <TailscaleDialog inline saveAction={saveRemoteTailscale$} />
         </div>
-        <div hidden={page.state !== "hasData" || page.data !== "cloudflare"}>
+        <div hidden={page !== "cloudflare"}>
           <CloudflareAccessDialog inline saveAction={saveRemoteCloudflare$} />
         </div>
       </div>

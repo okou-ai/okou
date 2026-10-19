@@ -1,3 +1,5 @@
+import { isOrgAdmin$ } from "../../signals/org.ts";
+import { useRemoteNetworkOrganization } from "./remote-network-scope.tsx";
 import { searchParams$ } from "../../signals/route.ts";
 import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
@@ -11,6 +13,7 @@ import {
   Laptop,
   LockKeyhole,
   Network,
+  Cloud,
   Plus,
   Terminal,
   Monitor,
@@ -324,7 +327,7 @@ export function GuidedRemoteControlPanel({
     </div>
   );
 }
-function PrivateNetworkRows({
+function PrivateNetworkGroupRows({
   ts,
   cf,
 }: {
@@ -332,6 +335,7 @@ function PrivateNetworkRows({
   readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
 }) {
   const { t } = useTranslation();
+  const admin = useLoadable(isOrgAdmin$);
   const params = useGet(searchParams$);
   const rows = [
     ...(ts ?? []).map((config) => {
@@ -358,12 +362,16 @@ function PrivateNetworkRows({
       {rows.map(({ config, kind, label }) => {
         return (
           <a
-            key={config.id}
+            key={`${kind}:${config.id}`}
             href={remoteResourceHref(params, kind, config.id)}
             className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5"
           >
             <span className="rounded-lg bg-gray-50 p-2">
-              <Network size={20} aria-hidden />
+              {kind === "cloudflare" ? (
+                <Cloud size={20} aria-hidden />
+              ) : (
+                <Network size={20} aria-hidden />
+              )}
             </span>
             <span className="grid min-w-0 flex-1 gap-1">
               <strong className="truncate text-sm font-medium">
@@ -371,20 +379,27 @@ function PrivateNetworkRows({
               </strong>
               <span className="text-xs text-muted-foreground">
                 {label} ·{" "}
-                {t(($) => {
-                  return config.scope === "personal"
-                    ? $.cloudflareAccess.personal
-                    : $.cloudflareAccess.organization;
-                })}
+                {privateNetworkHostCount(config) > 0
+                  ? t(
+                      ($) => {
+                        return $.remoteNetworkScope.connectionCount;
+                      },
+                      { count: privateNetworkHostCount(config) },
+                    )
+                  : t(($) => {
+                      return $.remoteNetworkScope.unused;
+                    })}
               </span>
             </span>
             <span className="text-right text-xs text-muted-foreground">
-              {t(
-                ($) => {
-                  return $.cloudflareAccess.usedBy;
-                },
-                { count: privateNetworkHostCount(config) },
-              )}
+              <span>
+                {t(($) => {
+                  return config.scope === "personal" ||
+                    (admin.state === "hasData" && admin.data)
+                    ? $.remoteNetworkScope.manageBadge
+                    : $.remoteNetworkScope.useBadge;
+                })}
+              </span>
             </span>
             <ChevronRight
               size={16}
@@ -392,6 +407,79 @@ function PrivateNetworkRows({
               aria-hidden
             />
           </a>
+        );
+      })}
+    </div>
+  );
+}
+function PrivateNetworkRows({
+  ts,
+  cf,
+}: {
+  readonly ts: readonly TailscaleConfig[] | null;
+  readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
+}) {
+  const { t } = useTranslation();
+  const organization = useRemoteNetworkOrganization();
+  if ((ts?.length ?? 0) + (cf?.length ?? 0) === 0) {
+    return null;
+  }
+  return (
+    <div className="grid gap-7">
+      {(["personal", "organization"] as const).map((scope) => {
+        const tailscale =
+          ts?.filter((config) => {
+            return config.scope === scope;
+          }) ?? [];
+        const cloudflare =
+          cf?.filter((config) => {
+            return config.scope === scope;
+          }) ?? [];
+        const count = tailscale.length + cloudflare.length;
+        return (
+          <section
+            key={scope}
+            className="grid gap-3"
+            aria-label={t(($) => {
+              return scope === "personal"
+                ? $.remoteNetworkScope.personalGroup
+                : $.remoteNetworkScope.organizationGroup;
+            })}
+          >
+            <header className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold">
+                {t(($) => {
+                  return scope === "personal"
+                    ? $.remoteNetworkScope.personalGroup
+                    : $.remoteNetworkScope.organizationGroup;
+                })}
+              </h3>
+              <span className="rounded-md bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
+                {count}
+              </span>
+            </header>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                ($) => {
+                  return scope === "personal"
+                    ? $.remoteNetworkScope.personalGroupHelp
+                    : $.remoteNetworkScope.organizationGroupHelp;
+                },
+                { organization },
+              )}
+            </p>
+            {count > 0 ? (
+              <PrivateNetworkGroupRows ts={tailscale} cf={cloudflare} />
+            ) : (
+              <p className="rounded-xl border border-dashed border-divider p-4 text-sm text-muted-foreground">
+                {t(($) => {
+                  return scope === "personal"
+                    ? $.remoteNetworkScope.noPersonal
+                    : $.remoteNetworkScope.noOrganization;
+                })}
+              </p>
+            )}
+          </section>
         );
       })}
     </div>
