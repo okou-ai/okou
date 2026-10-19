@@ -1,8 +1,9 @@
 import type { FormEvent } from "react";
 
-import type {
-  CustomConnectorResponse,
-  CustomConnectorValueInput,
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+  type CustomConnectorValueInput,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   Button,
@@ -342,18 +343,49 @@ function useCustomConnectorAccountSetup(
   return { setupAvailable, missingRequiredFields, configuredFieldKeys };
 }
 
-export function CustomConnectorConnectDialog({
+function OrdinaryCustomConnectorConnectDialog(
+  props: CustomConnectorConnectDialogProps,
+) {
+  const setup = useCustomConnectorAccountSetup(
+    props.connector,
+    props.accountMode,
+  );
+  return <CustomConnectorConnectDialogContent {...props} {...setup} />;
+}
+
+export function CustomConnectorConnectDialog(
+  props: CustomConnectorConnectDialogProps,
+) {
+  const { connector } = props;
+  return isIntegrationManagedCustomConnector(connector) ? (
+    <CustomConnectorConnectDialogContent
+      {...props}
+      setupAvailable
+      missingRequiredFields={connector.missingRequiredFields}
+      configuredFieldKeys={connector.configuredFieldKeys}
+    />
+  ) : (
+    <OrdinaryCustomConnectorConnectDialog {...props} />
+  );
+}
+
+function CustomConnectorConnectDialogContent({
   connector,
   agentId,
   onClose,
   onSuccess,
   accountOptions,
   accountMode,
-}: CustomConnectorConnectDialogProps) {
+  setupAvailable,
+  missingRequiredFields,
+  configuredFieldKeys,
+}: CustomConnectorConnectDialogProps & {
+  readonly setupAvailable: boolean;
+  readonly missingRequiredFields: readonly string[];
+  readonly configuredFieldKeys: readonly string[];
+}) {
   const { t } = useTranslation();
   const form = useGet(customConnectorConnectForm$);
-  const { setupAvailable, missingRequiredFields, configuredFieldKeys } =
-    useCustomConnectorAccountSetup(connector, accountMode);
   const setField = useSet(setCustomConnectorConnectField$);
   const close = useCloseCustomConnectorDialog(onClose);
   const [connectionLoadable, submit] = useLoadableSet(

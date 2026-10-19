@@ -12,6 +12,7 @@ import {
   customConnectorsContract,
   customConnectorListResponseSchema,
   customConnectorResponseSchema,
+  isIntegrationManagedCustomConnector,
   setCustomConnectorValuesResponseSchema,
   type CreateCustomConnectorBody,
   type CustomConnectorResponse,
@@ -26,7 +27,7 @@ import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { IN_VITEST } from "../../../env.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
-import { apiClient$ } from "../../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
 import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
 import {
@@ -297,6 +298,25 @@ interface CustomConnectorConnectionResult {
   readonly connectionId: string | null;
 }
 
+async function readCustomConnectorCompletion(
+  createClient: ApiClientFactory,
+  connector: CustomConnectorResponse | undefined,
+  customConnectorId: string,
+  connectionId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  signal.throwIfAborted();
+  if (connector && isIntegrationManagedCustomConnector(connector)) {
+    return connector.connected;
+  }
+  return await readConnectorAccountCompletion(
+    createClient,
+    { kind: "custom", customConnectorId },
+    connectionId,
+    signal,
+  );
+}
+
 export const createCustomConnector$ = command(
   async (
     { get, set },
@@ -430,9 +450,10 @@ const setCustomConnectorValuesForTarget$ = command(
     ) {
       throw new Error("Connector account response identity mismatch.");
     }
-    const connected = await readConnectorAccountCompletion(
+    const connected = await readCustomConnectorCompletion(
       createClient,
-      { kind: "custom", customConnectorId: args.id },
+      connector,
+      args.id,
       connectionId,
       signal,
     );
@@ -701,9 +722,10 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         startResult,
         account,
       );
-      const connected = await readConnectorAccountCompletion(
+      const connected = await readCustomConnectorCompletion(
         get(apiClient$),
-        { kind: "custom", customConnectorId: args.id },
+        startResult.connector,
+        args.id,
         connectionId,
         signal,
       );
@@ -749,9 +771,10 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         connectionId: null,
       };
     }
-    const connected = await readConnectorAccountCompletion(
+    const connected = await readCustomConnectorCompletion(
       get(apiClient$),
-      { kind: "custom", customConnectorId: args.id },
+      connector,
+      args.id,
       connectionId,
       signal,
     );
