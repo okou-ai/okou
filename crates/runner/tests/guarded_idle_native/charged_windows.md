@@ -11,7 +11,8 @@ original interpretation.
 
 `ChargeWindows` creates a new `okou-charge-<invocation>` subtree under an explicit
 canonical cgroup-v2 parent. The supplied parent must already enable memory;
-the tool never changes that parent's controllers or counters. Each one-use named
+the tool never writes to that parent's controls or resets its counters. The new
+workload still contributes to shared ancestors' accounting. Each one-use named
 window owns a different ancestor cgroup and retains its original `memory.peak`
 FD through reset and final read. The last new leaf holds only newly launched work
 and its inherited descendants. Window operations and cleanup belong to the
