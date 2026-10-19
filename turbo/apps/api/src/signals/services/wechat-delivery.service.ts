@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { sendArchivedWechatText$ } from "./wechat-message-send.service";
+import { sendPreparedWechatText$ } from "./wechat-message-send.service";
+import { requireWechatSendAccess$ } from "./wechat-access.service";
+import { recordWechatDeliveryPhase } from "./wechat-delivery-timing.service";
+import { monotonicNow } from "../../lib/time";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import {
@@ -13,7 +16,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { wechatEnabled$ } from "./wechat-config";
 import type { WechatDeliveryTarget } from "./wechat-chat-callback-payload";
 import {
   resolveIntegrationAdmissionFailurePresentation,
@@ -28,14 +30,24 @@ export interface WechatReplyRequest {
 }
 export const sendWechatChatReply$ = command(
   async ({ set }, args: WechatReplyRequest, signal: AbortSignal) => {
-    if (!(await set(wechatEnabled$, args.orgId, args.userId, signal))) {
+    const prepareStartedAt = monotonicNow();
+    const owner = {
+      orgId: args.orgId,
+      userId: args.userId,
+      channelId: args.target.connectionId,
+      generation: args.target.generation,
+      contextId: args.target.contextId,
+    };
+    const initialAccess = await set(requireWechatSendAccess$, owner, signal);
+    if (initialAccess.kind === "denied") {
       return;
     }
     const db = set(writeDb$);
-    const [binding] = await db
+    const [reply] = await db
       .select({
-        id: wechatConnections.id,
         agentId: agents.id,
+        content: canonicalChatEventContent(),
+        runId: chatEvents.runId,
       })
       .from(wechatConnections)
       .innerJoin(
@@ -50,6 +62,19 @@ export const sendWechatChatReply$ = command(
         eq(chatThreads.id, wechatChatThreadRoutes.chatThreadId),
       )
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        chatEvents,
+        and(
+          eq(chatEvents.id, args.chatEventId),
+          eq(chatEvents.chatThreadId, chatThreads.id),
+          chatEventTypeIn([
+            "output.message",
+            "output.error",
+            "run.failed",
+            "run.cancelled",
+          ]),
+        ),
+      )
       .innerJoin(
         chatWechatContext,
         and(
@@ -74,63 +99,54 @@ export const sendWechatChatReply$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!binding) {
-      return;
-    }
-    const [event] = await db
-      .select({
-        content: canonicalChatEventContent(),
-        runId: chatEvents.runId,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.chatEventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          chatEventTypeIn([
-            "output.message",
-            "output.error",
-            "run.failed",
-            "run.cancelled",
-          ]),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!event?.content) {
+    if (!reply?.content) {
       return;
     }
     const presentationArgs = {
       db,
       orgId: args.orgId,
-      agentId: binding.agentId,
+      agentId: reply.agentId,
     };
     const presentation =
-      event.runId === null
+      reply.runId === null
         ? await resolveIntegrationAdmissionFailurePresentation(
             presentationArgs,
             signal,
           )
         : await resolveIntegrationAgentResponsePresentation(
-            { ...presentationArgs, runId: event.runId },
+            { ...presentationArgs, runId: reply.runId },
             signal,
           );
     signal.throwIfAborted();
     const content = presentation.footerText
-      ? `${event.content}\n\n${presentation.footerText}`
-      : event.content;
+      ? `${reply.content}\n\n${presentation.footerText}`
+      : reply.content;
     const points = Array.from(content);
     const requestHash = createHash("sha256").update(content).digest("hex");
+    recordWechatDeliveryPhase({
+      phase: "reply_prepare",
+      inputEventId: args.target.contextId,
+      chatThreadId: args.chatThreadId,
+      operationId: args.chatEventId,
+      runId: reply.runId ?? undefined,
+      durationMs: monotonicNow() - prepareStartedAt,
+      success: true,
+    });
     for (let offset = 0; offset < points.length; offset += 2000) {
+      // A prior provider request is an authorization boundary for the next chunk.
+      const access =
+        offset === 0
+          ? initialAccess
+          : await set(requireWechatSendAccess$, owner, signal);
+      if (access.kind === "denied") {
+        throw new Error(access.response.body.error.message);
+      }
       const result = await set(
-        sendArchivedWechatText$,
+        sendPreparedWechatText$,
+        access,
         {
-          orgId: args.orgId,
-          userId: args.userId,
-          channelId: args.target.connectionId,
-          generation: args.target.generation,
-          contextId: args.target.contextId,
           operationId: args.chatEventId,
+          runId: reply.runId,
           index: offset / 2000,
           text: points.slice(offset, offset + 2000).join(""),
           requestHash,

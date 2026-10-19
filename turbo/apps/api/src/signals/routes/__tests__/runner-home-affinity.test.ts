@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
-import { createBddApi } from "./helpers/api-bdd";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
 
 const context = testContext();
@@ -13,25 +14,17 @@ async function setup() {
   const clock = now();
   mockNow(clock);
   onTestFinished(clearMockNow);
-  const bdd = createBddApi(context);
   const api = createRunsApi(context);
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  const group = api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
+  const owned = await publicChatActor(context, {
+    isolatePg: true,
+    clockTime: now,
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Home affinity protocol",
-    description: "Reader preparation",
-    visibility: "private",
-  });
-  const run = await api.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Keep captured execution intact",
+  const { actor, agentId, runnerGroup: group } = owned;
+  const run = await owned.run(() => {
+    return api.createThreadRun(actor, {
+      agentId,
+      prompt: "Keep captured execution intact",
+    });
   });
   const runnerId = randomUUID();
   const reuseKey = `thread:${run.threadId}`;
@@ -50,8 +43,10 @@ async function setup() {
     runnerId,
     reuseKey,
     heldHomeStates,
-    agentId: agent.agentId,
+    agentId,
     clock,
+    own: owned.run,
+    claim: owned.claimRunnerRun,
   };
 }
 
@@ -60,37 +55,47 @@ async function heartbeat(
   f: Fixture,
   args: Parameters<Fixture["api"]["requestHeartbeatRunner"]>[2] = {},
 ) {
-  await f.api.requestHeartbeatRunner(true, [200], {
-    runnerId: f.runnerId,
-    group: f.group,
-    snapshotGeneration: 7,
-    snapshotSequence: 1,
-    heldHomeStates: f.heldHomeStates,
-    ...args,
+  await f.own(() => {
+    return f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotGeneration: 7,
+      snapshotSequence: 1,
+      heldHomeStates: f.heldHomeStates,
+      ...args,
+    });
   });
 }
 async function poll(f: Fixture, runnerId = f.runnerId) {
-  const response = await f.api.requestPollRunner(
-    true,
-    {
-      runnerId,
-      group: f.group,
-      supportedProfiles: ["vm0/default"],
-    },
-    [200],
-  );
-  if (response.status !== 200) {
-    throw new Error("Expected authenticated poll");
-  }
-  expect(response.body.job?.runId).toBe(f.run.runId);
-  return response.body.job;
+  return await f.own(async () => {
+    const response = await f.api.requestPollRunner(
+      true,
+      {
+        runnerId,
+        group: f.group,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (response.status !== 200) {
+      throw new Error("Expected authenticated poll");
+    }
+    expect(response.body.job?.runId).toBe(f.run.runId);
+    return response.body.job;
+  });
 }
 async function cancel(f: Fixture) {
-  await f.api.requestCancelRun(f.actor, f.run.runId, [200]);
+  await f.own(async () => {
+    await f.api.requestCancelRun(f.actor, f.run.runId, [200]);
+    // Finish terminal callbacks before advancing time or sending another Run.
+    await flushWaitUntilForTest();
+  });
 }
 
 // Construction and observations use normal chat, provider auth and official
 // Runner heartbeat/poll/claim. No DB schemas, private services or fixture routes.
+// Case-owned PGlite isolates all resources; concurrent requests below do not
+// establish native PostgreSQL multi-session scheduling or race guarantees.
 describe("canonical API home affinity", () => {
   it("keeps home affinity advisory when another canonical runner claims the job", async () => {
     const f = await setup();
@@ -108,23 +113,22 @@ describe("canonical API home affinity", () => {
     });
     const otherPoll = await poll(f, otherRunnerId);
     expect(otherPoll?.runnerPreference).toMatchObject({ tier: "homeCache" });
-    const claim = await f.api.requestClaimRunnerJob(true, f.run.runId, [200], {
+    const claim = await f.claim(f.run.runId, {
       runnerIdentity: { runnerId: otherRunnerId, heartbeatGeneration: 7 },
       telemetry: { runnerPreference: job?.runnerPreference },
     });
-    if (claim.status !== 200) {
-      throw new Error("Expected compatible queued execution");
-    }
-    expect(claim.body).toMatchObject({
+    expect(claim).toMatchObject({
       runId: f.run.runId,
       prompt: "Keep captured execution intact",
     });
-    expect(claim.body).not.toHaveProperty("runnerPreference");
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      { runId: f.run.runId, exitCode: 0 },
-      { authorization: `Bearer ${claim.body.sandboxToken}` },
-      [200],
-    );
+    expect(claim).not.toHaveProperty("runnerPreference");
+    await f.own(() => {
+      return createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: f.run.runId, exitCode: 0 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+    });
   });
 
   it("finds another holder and clears its preference after an accepted empty state", async () => {
@@ -141,7 +145,6 @@ describe("canonical API home affinity", () => {
     expect((await poll(f, reader))?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
-    await cancel(f);
   });
 
   it.each(["wrong-group", "draining", "wrong-profile"] as const)(
@@ -167,7 +170,6 @@ describe("canonical API home affinity", () => {
       });
       const job = await poll(f);
       expect(job?.runnerPreference).toMatchObject({ kind: "noPreference" });
-      await cancel(f);
     },
   );
 
@@ -204,7 +206,6 @@ describe("canonical API home affinity", () => {
     expect((await poll(f))?.runnerPreference).toMatchObject({
       tier: "homeCache",
     });
-    await cancel(f);
   });
 
   it("rejects an over-bound snapshot without replacing the accepted home observation", async () => {
@@ -218,28 +219,29 @@ describe("canonical API home affinity", () => {
         },
       ],
     });
-    await f.api.requestHeartbeatRunner(true, [400], {
-      runnerId: f.runnerId,
-      group: f.group,
-      snapshotGeneration: 7,
-      snapshotSequence: 2,
-      heldHomeStates: Array.from({ length: 129 }, (_, index) => {
-        return {
-          reuseKey: `thread:${index}`,
-          lastCompletedAt: nowDate().toISOString(),
-          homeCaches: Array.from({ length: 8 }, () => {
-            return {
-              profile: "vm0/default",
-              homeAffinityVersion: 1 as const,
-            };
-          }),
-        };
-      }),
+    await f.own(() => {
+      return f.api.requestHeartbeatRunner(true, [400], {
+        runnerId: f.runnerId,
+        group: f.group,
+        snapshotGeneration: 7,
+        snapshotSequence: 2,
+        heldHomeStates: Array.from({ length: 129 }, (_, index) => {
+          return {
+            reuseKey: `thread:${index}`,
+            lastCompletedAt: nowDate().toISOString(),
+            homeCaches: Array.from({ length: 8 }, () => {
+              return {
+                profile: "vm0/default",
+                homeAffinityVersion: 1 as const,
+              };
+            }),
+          };
+        }),
+      });
     });
     expect((await poll(f))?.runnerPreference).toMatchObject({
       tier: "homeCache",
     });
-    await cancel(f);
   });
 
   it("publishes the same canonical home preference through Ably and poll", async () => {
@@ -247,10 +249,12 @@ describe("canonical API home affinity", () => {
     await heartbeat(f);
     await cancel(f);
     context.mocks.ably.publish.mockClear();
-    const run = await f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
-      threadId: f.run.threadId,
-      prompt: "Broadcast carries canonical home affinity",
+    const run = await f.own(() => {
+      return f.api.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        threadId: f.run.threadId,
+        prompt: "Broadcast carries canonical home affinity",
+      });
     });
     const next = { ...f, run };
     mockNow(f.clock + 750);
@@ -266,7 +270,6 @@ describe("canonical API home affinity", () => {
         runnerPreference: preference,
       }),
     );
-    await cancel(next);
   });
 
   it("keeps the discovery deadline across concurrent polls and later holder updates", async () => {
@@ -302,7 +305,6 @@ describe("canonical API home affinity", () => {
         reason: "expired",
       });
     }
-    await cancel(f);
   });
 
   it("keeps poll recovery and the fixed deadline when Ably publication fails", async () => {
@@ -315,10 +317,12 @@ describe("canonical API home affinity", () => {
       }
       return Promise.resolve();
     });
-    const run = await f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
-      threadId: f.run.threadId,
-      prompt: "Recover a committed job through poll",
+    const run = await f.own(() => {
+      return f.api.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        threadId: f.run.threadId,
+        prompt: "Recover a committed job through poll",
+      });
     });
     const next = { ...f, run };
     const expectedPreference = {
@@ -343,29 +347,22 @@ describe("canonical API home affinity", () => {
       kind: "noPreference",
       reason: "expired",
     });
-    await cancel(next);
   });
 
   it("ends exact-generation protection before the shared generic deadline", async () => {
     const f = await setup();
     await heartbeat(f);
-    const claimed = await f.api.requestClaimRunnerJob(
-      true,
-      f.run.runId,
-      [200],
-      {
-        runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-      },
-    );
-    if (claimed.status !== 200) {
-      throw new Error("Expected native Run claim");
-    }
-    await completePublicClaudeRun(
-      context,
-      f.run,
-      { authorization: `Bearer ${claimed.body.sandboxToken}` },
-      "Preserve a completed native generation",
-    );
+    const claimed = await f.claim(f.run.runId, {
+      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+    });
+    await f.own(() => {
+      return completePublicClaudeRun(
+        context,
+        f.run,
+        { authorization: `Bearer ${claimed.sandboxToken}` },
+        "Preserve a completed native generation",
+      );
+    });
     await heartbeat(f, {
       snapshotSequence: 2,
       heldSandboxStates: [
@@ -379,10 +376,12 @@ describe("canonical API home affinity", () => {
         },
       ],
     });
-    const run = await f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
-      threadId: f.run.threadId,
-      prompt: "Continue the saved native generation",
+    const run = await f.own(() => {
+      return f.api.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        threadId: f.run.threadId,
+        prompt: "Continue the saved native generation",
+      });
     });
     const next = { ...f, run };
     expect((await poll(next))?.runnerPreference).toMatchObject({
@@ -404,7 +403,6 @@ describe("canonical API home affinity", () => {
       kind: "noPreference",
       reason: "expired",
     });
-    await cancel(next);
   });
 
   it("ranks a real reusable sandbox ahead of a home image", async () => {
@@ -421,7 +419,6 @@ describe("canonical API home affinity", () => {
     expect((await poll(f))?.runnerPreference).toMatchObject({
       tier: "reusableSandbox",
     });
-    await cancel(f);
   });
 
   it("expires home preference without withholding the job", async () => {
@@ -432,7 +429,6 @@ describe("canonical API home affinity", () => {
       kind: "noPreference",
       reason: "expired",
     });
-    await cancel(f);
   });
 
   it("does not use a stale holder for a newly queued job", async () => {
@@ -440,30 +436,34 @@ describe("canonical API home affinity", () => {
     await heartbeat(f);
     await cancel(f);
     mockNow(f.clock + 31_000);
-    const run = await f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
-      threadId: f.run.threadId,
-      prompt: "Fresh queue, stale heartbeat",
+    const run = await f.own(() => {
+      return f.api.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        threadId: f.run.threadId,
+        prompt: "Fresh queue, stale heartbeat",
+      });
     });
     const next = { ...f, run };
     expect((await poll(next))?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
-    await cancel(next);
   });
 
   it("does not accept official home inventory from a PAT heartbeat", async () => {
     const f = await setup();
-    const pat = await f.api.createCliToken(f.actor);
-    await f.api.requestHeartbeatRunnerAs(`Bearer ${pat.token}`, [200], {
-      runnerId: f.runnerId,
-      group: f.group,
-      snapshotGeneration: 7,
-      heldHomeStates: f.heldHomeStates,
+    const pat = await f.own(() => {
+      return f.api.createCliToken(f.actor);
+    });
+    await f.own(() => {
+      return f.api.requestHeartbeatRunnerAs(`Bearer ${pat.token}`, [200], {
+        runnerId: f.runnerId,
+        group: f.group,
+        snapshotGeneration: 7,
+        heldHomeStates: f.heldHomeStates,
+      });
     });
     expect((await poll(f))?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
-    await cancel(f);
   });
 });

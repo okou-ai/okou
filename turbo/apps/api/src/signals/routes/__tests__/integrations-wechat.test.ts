@@ -273,6 +273,7 @@ async function responseFixture() {
   await flushWaitUntilForTest();
   return {
     ...connected,
+    connectionId,
     runs,
     webhooks,
     sentTexts,
@@ -359,6 +360,153 @@ async function responseFixture() {
 }
 
 describe("WeChat reply presentation and processing status", () => {
+  it.each(["membership", "feature"] as const)(
+    "stops a multi-part reply when %s access is revoked after the first part",
+    async (revoked) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Return a long reply");
+      const run = await fixture.claim();
+      await flushWaitUntilForTest();
+      const text = "🌿".repeat(2050);
+      server.use(
+        http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+          const body = z
+            .object({
+              msg: z.object({
+                item_list: z.array(
+                  z.object({ text_item: z.object({ text: z.string() }) }),
+                ),
+              }),
+            })
+            .parse(await request.json());
+          fixture.sentTexts.push(
+            ...body.msg.item_list.map((item) => {
+              return item.text_item.text;
+            }),
+          );
+          if (revoked === "membership") {
+            context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+              { data: [], totalCount: 0 },
+            );
+          } else {
+            await updateFeatureSwitchesForUser(context, fixture.actor, {
+              [FeatureSwitchKey.WechatIntegration]: false,
+            });
+          }
+          return HttpResponse.json({ ret: 0, message_id: "first-part" });
+        }),
+      );
+      const finished = await settleIncludingAbort(async () => {
+        await fixture.finish(run, text, 0, 500);
+        await flushWaitUntilForTest();
+        expect(fixture.sentTexts).toStrictEqual([
+          expect.stringContaining("You're connected"),
+          "🌿".repeat(2000),
+        ]);
+      });
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              publicUserData: { userId: fixture.actor.userId },
+              organization: { id: fixture.actor.orgId },
+              role: "org:admin",
+            },
+          ],
+          totalCount: 1,
+        },
+      );
+      await updateFeatureSwitchesForUser(context, fixture.actor, {
+        [FeatureSwitchKey.WechatIntegration]: true,
+      });
+      if (!finished.ok) {
+        throw finished.error;
+      }
+      const messages = setupApp({
+        context,
+        routes: integrationsWechatMessagesRoutes,
+      })(integrationsWechatMessagesContract);
+      const history = await accept(
+        messages.history({
+          headers,
+          query: { channelId: fixture.connectionId, limit: 50 },
+        }),
+        [200],
+      );
+      expect(
+        history.body.messages.filter((message) => {
+          return message.direction === "outbound";
+        }),
+      ).toMatchObject([
+        { status: "sent", providerMessageId: "first-part" },
+        {
+          status: "sent",
+          content: expect.stringContaining("You're connected"),
+        },
+      ]);
+    },
+  );
+
+  it.each(["disconnect", "reconnect"] as const)(
+    "rejects a send when a %s happens during credential decryption",
+    async (change) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Hello");
+      await fixture.claim();
+      await flushWaitUntilForTest();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let holdNextDecrypt = true;
+      server.use(
+        http.post(
+          "https://kms.us-west-2.amazonaws.com/",
+          async ({ request }) => {
+            if (
+              holdNextDecrypt &&
+              request.headers.get("x-amz-target") === "TrentService.Decrypt"
+            ) {
+              holdNextDecrypt = false;
+              entered.resolve();
+              await release.promise;
+            }
+            // Let the shared KMS HTTP fixture perform the actual decrypt.
+          },
+        ),
+      );
+      const messages = setupApp({
+        context,
+        routes: integrationsWechatMessagesRoutes,
+      })(integrationsWechatMessagesContract);
+      const sending = messages.sendMessage({
+        headers,
+        body: {
+          channelId: fixture.connectionId,
+          operationId: randomUUID(),
+          text: "Do not send with obsolete credentials",
+        },
+      });
+      await (async () => {
+        await entered.promise;
+        if (change === "disconnect") {
+          await accept(client().disconnect({ headers }), [204]);
+        } else {
+          const attempt = await accept(client().connect({ headers }), [200]);
+          fixture.confirm();
+          await accept(
+            client().poll({ headers, body: { id: attempt.body.id } }),
+            [200],
+          );
+        }
+      })().finally(() => {
+        release.resolve();
+      });
+      await accept(sending, [404]);
+      expect(fixture.sentTexts).toStrictEqual([
+        expect.stringContaining("You're connected"),
+      ]);
+    },
+  );
+
   it("adds one model footer across long Unicode replies and keeps typing for queued follow-ups", async () => {
     const fixture = await responseFixture();
     await fixture.receive("First task");

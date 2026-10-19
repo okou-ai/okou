@@ -29,7 +29,8 @@ import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import type { WechatMessage } from "../external/wechat-client";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
+import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
@@ -338,18 +339,14 @@ export const receiveWechatMessage$ = command(
   ) => {
     const { connection, message } = args;
     // Only the verified scanner's direct messages can become an Okou input.
-    if (
-      connection.status !== "active" ||
-      !isWechatOwnerMessage(connection, message)
-    ) {
-      return;
-    }
     // A provider can redeliver an old long-poll batch after reconnection. Only
     // messages demonstrably created after consent belong to this new binding.
     if (
-      connection.resumedAt &&
-      (message.create_time_ms === undefined ||
-        message.create_time_ms <= connection.resumedAt.getTime())
+      connection.status !== "active" ||
+      !isWechatOwnerMessage(connection, message) ||
+      (connection.resumedAt !== null &&
+        (message.create_time_ms === undefined ||
+          message.create_time_ms <= connection.resumedAt.getTime()))
     ) {
       return;
     }
@@ -358,6 +355,8 @@ export const receiveWechatMessage$ = command(
       connection.generation,
       message.message_id,
     );
+    const receivedAt = nowDate().toISOString();
+    const receivedStartedAt = monotonicNow();
     const { context, attachments, mediaCiphertext } =
       await wechatMessageMaterial(connection, message, message.context_token);
     signal.throwIfAborted();
@@ -419,6 +418,7 @@ export const receiveWechatMessage$ = command(
     );
     signal.throwIfAborted();
     if (inserted.length > 0) {
+      recordWechatMessageReceived(id, threadId, receivedAt, receivedStartedAt);
       waitUntil(
         set(
           reconcileWechatThreadTyping$,

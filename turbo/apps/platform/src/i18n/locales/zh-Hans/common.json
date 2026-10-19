@@ -5177,7 +5177,6 @@
       "description": "让智能体发起购买请求并查看 Link 交易。每笔购买均由你批准。",
       "disconnect": "断开连接",
       "loadError": "无法加载钱包。",
-      "permissionsUnknown": "请重新连接 Link，查看并确认当前授权权限。",
       "retry": "重试",
       "scope": "让 Okou 代你购买并查看 Link 交易。",
       "title": "钱包",
@@ -5207,8 +5206,7 @@
         "statusLabel": "状态",
         "title": "Link 交易记录",
         "unknownStatus": "状态不可用"
-      },
-      "workspaceScopeChanged": "你的 Link 钱包现在可供此工作区内你的所有 Agent 使用。请重新连接以确认此变更。"
+      }
     },
     "workspace": {
       "danger": {

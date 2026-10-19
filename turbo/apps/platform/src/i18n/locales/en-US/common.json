@@ -5189,7 +5189,6 @@
       "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
       "loadError": "Couldn’t load your wallet.",
-      "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
       "retry": "Retry",
       "scope": "Let Okou make purchases and view your Link activity.",
       "title": "Wallet",
@@ -5219,8 +5218,7 @@
         "statusLabel": "Status",
         "title": "Link transactions",
         "unknownStatus": "Status unavailable"
-      },
-      "workspaceScopeChanged": "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change."
+      }
     },
     "workspace": {
       "danger": {

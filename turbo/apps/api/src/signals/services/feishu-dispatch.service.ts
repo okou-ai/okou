@@ -550,49 +550,19 @@ export function buildFeishuSystemPrompt(args: {
     .join("\n\n");
 }
 
-export async function markFeishuMessageReceived(
-  args: {
-    readonly db: Db;
-    readonly installation: FeishuDispatchInstallation;
-    readonly message: FeishuInboundMessage;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.installation.messageReceivedAt) {
-    return;
-  }
-  const [markedAsReceived] = await args.db
-    .update(feishuOrgInstallations)
-    .set({
-      feishuTenantKey: args.message.tenantKey,
-      messageReceivedAt: nowDate(),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(feishuOrgInstallations.id, args.message.installationId),
-        isNull(feishuOrgInstallations.messageReceivedAt),
-      ),
-    )
-    .returning({ id: feishuOrgInstallations.id });
-  signal.throwIfAborted();
-  if (markedAsReceived) {
-    await (async () => {
-      const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
-      const admins = await args.db
-        .select(plan.columns)
-        .from(orgMembersCache)
-        .where(plan.condition);
-      const userIds = feishuOrgChangedUserIds(
-        admins,
-        args.installation.ownerUserId,
-      );
-      if (userIds.length === 0) {
-        return;
-      }
-      await publishUserSignal(userIds, "feishu:changed");
-    })();
-  }
+export function feishuMessageReceivedValues(tenantKey: string) {
+  return {
+    feishuTenantKey: tenantKey,
+    messageReceivedAt: nowDate(),
+    updatedAt: nowDate(),
+  };
+}
+
+export function feishuMessageReceivedCondition(installationId: string) {
+  return and(
+    eq(feishuOrgInstallations.id, installationId),
+    isNull(feishuOrgInstallations.messageReceivedAt),
+  );
 }
 
 async function handleDisconnectCommand(
