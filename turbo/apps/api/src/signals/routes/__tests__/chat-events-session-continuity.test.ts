@@ -251,9 +251,13 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-sonnet-5-5",
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
-    expect(secondClaim.claim.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${first.runId}`,
-    );
+    expect(secondClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: `bdd-cli-${first.runId}`,
+      generationRunId: first.runId,
+      recoveryPrompt: expect.stringContaining(
+        "okou chat messages --output-dir threads",
+      ),
+    });
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
       "claude-sonnet-5-5",
     );
@@ -443,6 +447,11 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-fable-5-1",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    });
     await failChatRun(
       first.runId,
       firstClaim.sandboxHeaders,
@@ -464,7 +473,13 @@ describe("CHAT-02: run-level model overrides", () => {
 
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.cliAgentType).toBe(firstClaim.claim.cliAgentType);
-    expect(secondClaim.claim.nativeContinuation?.sessionId).toBeNull();
+    expect(secondClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: expect.stringContaining(
+        "okou chat messages --output-dir threads",
+      ),
+    });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
   }, 90_000);

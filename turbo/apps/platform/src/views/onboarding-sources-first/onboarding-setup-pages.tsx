@@ -512,7 +512,7 @@ function SubscriptionConnectLabel({
 }
 
 /**
- * The connect for the chosen plan. Connected is what `/api/me/model-providers`
+ * The connect for the chosen plan. Connected is what `/api/me/3rd-party-subscriptions`
  * answers, so an attempt that failed or was called off says so and leaves the
  * step passable either way.
  */

@@ -2,7 +2,6 @@
 
 use std::os::unix::fs::MetadataExt;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use tokio::sync::watch;
 use tokio_util::task::TaskTracker;
@@ -13,8 +12,6 @@ use super::gc_pressure::{
 };
 use super::{FsStats, HomeCachePressureThresholds, HomeImageCache};
 use crate::error::{LifecycleError, LifecycleResult};
-
-const DEMAND_OBSERVATION: Duration = Duration::from_millis(250);
 
 type ReclaimResult = Result<HomeCacheReclaimOutcome, String>;
 
@@ -82,9 +79,18 @@ impl PressureReclamation {
 struct CachePressurePolicy(HomeImageCache);
 
 impl sandbox::HomeDrivePressurePolicy for CachePressurePolicy {
-    fn reclaim(&self, device: u64, required: u64) -> sandbox::HomeDrivePressureFuture<'_> {
+    fn reclaim(
+        &self,
+        device: u64,
+        required: u64,
+        deadline: tokio::time::Instant,
+    ) -> sandbox::HomeDrivePressureFuture<'_> {
         Box::pin(async move {
-            if let Err(error) = self.0.reclaim_home_image_headroom(device, required).await {
+            if let Err(error) = self
+                .0
+                .reclaim_home_image_headroom(device, required, deadline)
+                .await
+            {
                 tracing::warn!(%error, "home image demand reclamation failed; destination must recheck space");
             }
         })
@@ -129,14 +135,14 @@ impl HomeImageCache {
         self
     }
 
-    /// Observe reclamation for one absolute budget; accepted work survives a
+    /// Observe reclamation until the caller's deadline; accepted work survives a
     /// timeout or cancellation, and only the destination's reread grants growth.
     pub async fn reclaim_home_image_headroom(
         &self,
         destination_device: u64,
         required: u64,
+        deadline: tokio::time::Instant,
     ) -> LifecycleResult<HomeCacheReclaimOutcome> {
-        let deadline = tokio::time::Instant::now() + DEMAND_OBSERVATION;
         match tokio::time::timeout_at(deadline, async {
             let path = self.home_image_cache_fs_stats_path();
             let device = tokio::fs::metadata(path).await?.dev();

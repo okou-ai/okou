@@ -329,6 +329,29 @@ test("A rejected native configuration can be replaced without discarding the dra
   });
 });
 
+test("Mac Cloudflare setup requires origin TLS and keeps its protective controls", async () => {
+  mockSettings({ connections: [] });
+  mockNativeNetworks();
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
+  await choose(dialog, "Connection route", "Cloudflare Access");
+  const origin = within(dialog).getByRole("checkbox", { name: "Origin TLS" });
+  expect(origin).toBeChecked();
+  expect(origin).toHaveAttribute("aria-disabled", "true");
+  click(origin);
+  expect(origin).toBeChecked();
+  expect(
+    within(dialog).getByLabelText("Origin TLS server name"),
+  ).toBeRequired();
+  expect(
+    within(dialog).queryByLabelText("TLS certificate identity"),
+  ).toBeNull();
+  expect(
+    within(dialog).getByText(/other clients from reaching/u),
+  ).toBeVisible();
+});
+
 test("Mac Cloudflare setup requires independently named origin TLS and keeps the RFB authentication profile", async () => {
   const data = mockSettings({ connections: [] });
   const selected = mockNativeNetworks();
@@ -356,23 +379,9 @@ test("Mac Cloudflare setup requires independently named origin TLS and keeps the
   });
   await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
   await choose(dialog, "Connection route", "Cloudflare Access");
+  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
   await choose(dialog, "Network configuration", selected.name);
-  const origin = within(dialog).getByRole("checkbox", { name: "Origin TLS" });
-  expect(origin).toBeChecked();
-  expect(origin).toHaveAttribute("aria-disabled", "true");
-  await userEvent.click(origin);
-  expect(origin).toBeChecked();
-  expect(
-    within(dialog).getByLabelText("Origin TLS server name"),
-  ).toBeRequired();
-  expect(
-    within(dialog).queryByLabelText("TLS certificate identity"),
-  ).toBeNull();
-  expect(
-    within(dialog).getByText(/other clients from reaching/u),
-  ).toBeVisible();
   await fill(
     within(dialog).getByLabelText("Origin TLS server name"),
     "mac-origin.example.com",

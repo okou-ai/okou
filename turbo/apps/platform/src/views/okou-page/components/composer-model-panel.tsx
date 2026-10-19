@@ -21,7 +21,7 @@ import {
   useLastResolved,
   useSet,
 } from "ccstate-react";
-import { ChevronDown, Settings, Zap } from "lucide-react";
+import { ChevronDown, Loader2, Settings, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -30,8 +30,9 @@ import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import { isRunModelFastModeAvailable } from "../../../signals/okou-page/model-default-selection.ts";
 import {
   openSubscriptionLinkingSettings$,
-  subscriptionPlanStatuses$,
-  type SubscriptionPlanStatus,
+  SUBSCRIPTION_PROVIDERS,
+  subscriptionLinkingEnabled$,
+  subscriptionPlanUsage$,
 } from "../../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
@@ -85,7 +86,7 @@ function ComposerModelPanelBody({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const planStatuses = useLastResolved(subscriptionPlanStatuses$) ?? null;
+  const subscriptionLinkingEnabled = useGet(subscriptionLinkingEnabled$);
   const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
   const modelsResponse = useLastResolved(availableRunModels$);
@@ -166,12 +167,12 @@ function ComposerModelPanelBody({
               <ComposerModelRadioRows
                 models={state.models}
                 selectedModel={state.selection?.selectedModel}
-                planStatuses={planStatuses}
+                showPlans={subscriptionLinkingEnabled}
               />
             </RadioGroup>
-            {planStatuses !== null && (
+            {subscriptionLinkingEnabled && (
               <ComposerModelPlanActions
-                planStatuses={planStatuses}
+                models={state.models}
                 onClose={onClose}
               />
             )}
@@ -195,33 +196,30 @@ function ComposerModelPanelBody({
   );
 }
 
-/** The radio rows, grouped under their plans once plans are shown. */
+/** Model routes determine the groups without waiting for subscription usage. */
 function ComposerModelRadioRows({
   models,
   selectedModel,
-  planStatuses,
+  showPlans,
 }: {
   models: readonly AvailableRunModel[];
   selectedModel: string | null | undefined;
-  planStatuses: readonly SubscriptionPlanStatus[] | null;
+  showPlans: boolean;
 }) {
   const { t } = useTranslation();
-  const groups =
-    planStatuses === null
-      ? [{ status: null, models }]
-      : groupModelsByPlan(models, planStatuses);
-  // Once plans are listed, Auto says what it is paid with too.
-  const autoDetail =
-    planStatuses === null
-      ? undefined
-      : t(($) => {
-          return $.settings.models.personal.autoCredits;
-        });
+  const groups = showPlans
+    ? groupModelsByProvider(models)
+    : [{ providerType: null, models }];
+  const autoDetail = showPlans
+    ? t(($) => {
+        return $.settings.models.personal.autoCredits;
+      })
+    : undefined;
   return groups.map((group) => {
     return (
       <ComposerModelPlanGroup
-        key={group.status?.type ?? "auto"}
-        status={group.status}
+        key={group.providerType ?? "auto"}
+        providerType={group.providerType}
       >
         {group.models.map((runModel) => {
           return (
@@ -270,44 +268,30 @@ function ComposerModelRow({
 
 interface ComposerModelPlanGroupData {
   /** Null for Auto, which runs on Okou credits rather than a plan. */
-  readonly status: SubscriptionPlanStatus | null;
+  readonly providerType: PersonalSubscriptionProviderType | null;
   readonly models: readonly AvailableRunModel[];
 }
 
-/**
- * Auto first, then each linked plan's models under that plan, so the list says
- * what every run is paid with. Models no linked plan claims stay with Auto
- * rather than disappearing.
- */
-function groupModelsByPlan(
+function groupModelsByProvider(
   models: readonly AvailableRunModel[],
-  planStatuses: readonly SubscriptionPlanStatus[],
 ): ComposerModelPlanGroupData[] {
-  const linked = planStatuses.filter((status) => {
-    return status.linked;
-  });
-  const planModels = (type: PersonalSubscriptionProviderType) => {
-    return models.filter((runModel) => {
-      return (
-        runModel.model !== null &&
-        runModel.memberEffective.providerType === type
-      );
-    });
-  };
-  const claimed = new Set(
-    linked.flatMap((status) => {
-      return planModels(status.type);
-    }),
-  );
   return [
     {
-      status: null,
+      providerType: null,
       models: models.filter((runModel) => {
-        return !claimed.has(runModel);
+        return runModel.model === null;
       }),
     },
-    ...linked.map((status) => {
-      return { status, models: planModels(status.type) };
+    ...SUBSCRIPTION_PROVIDERS.map((providerType) => {
+      return {
+        providerType,
+        models: models.filter((runModel) => {
+          return (
+            runModel.model !== null &&
+            runModel.memberEffective.providerType === providerType
+          );
+        }),
+      };
     }),
   ].filter((group) => {
     return group.models.length > 0;
@@ -327,21 +311,32 @@ function usePlanGroupTitle() {
   };
 }
 
-function ComposerModelPlanCaption({
-  status,
+function ComposerPlanRemainingUsage({
+  providerType,
 }: {
-  status: SubscriptionPlanStatus;
+  providerType: PersonalSubscriptionProviderType;
 }) {
   const { t } = useTranslation();
-  const groupTitle = usePlanGroupTitle();
+  const usageLoadable = useLastLoadable(subscriptionPlanUsage$);
+  const usages = useLastResolved(subscriptionPlanUsage$);
+  const usage = usages?.find((entry) => {
+    return entry.type === providerType;
+  });
   return (
-    <p className="flex items-center justify-between gap-2 px-2 pb-1 pt-2 text-xs text-muted-foreground">
-      <span className="truncate">{groupTitle(status.type)}</span>
-      {status.linked && status.remainingPercent !== null && (
-        <span className="shrink-0 tabular-nums">
-          {status.limitingWindow !== null &&
+    <span className="flex h-4 w-28 shrink-0 items-center justify-end whitespace-nowrap tabular-nums">
+      {usages === undefined && usageLoadable.state === "loading" ? (
+        <Loader2
+          size={12}
+          className="animate-spin motion-reduce:animate-none"
+          aria-label={t(($) => {
+            return $.settings.shared.loading;
+          })}
+        />
+      ) : usage !== undefined && usage.remainingPercent !== null ? (
+        <span>
+          {usage.limitingWindow !== null &&
             `${
-              status.limitingWindow === "week"
+              usage.limitingWindow === "week"
                 ? t(($) => {
                     return $.settings.models.personal.status.week;
                   })
@@ -355,26 +350,44 @@ function ComposerModelPlanCaption({
                 return $.settings.models.personal.status.left;
               },
               {
-                percent: `${String(Math.round(status.remainingPercent))}%`,
+                percent: `${String(Math.round(usage.remainingPercent))}%`,
               },
             )}
           </span>
         </span>
-      )}
+      ) : null}
+    </span>
+  );
+}
+
+function ComposerModelPlanCaption({
+  providerType,
+  showUsage = false,
+}: {
+  providerType: PersonalSubscriptionProviderType;
+  showUsage?: boolean;
+}) {
+  const groupTitle = usePlanGroupTitle();
+  return (
+    <p className="flex items-center justify-between gap-2 px-2 pb-1 pt-2 text-xs text-muted-foreground">
+      <span className="truncate">{groupTitle(providerType)}</span>
+      {showUsage && <ComposerPlanRemainingUsage providerType={providerType} />}
     </p>
   );
 }
 
 function ComposerModelPlanGroup({
-  status,
+  providerType,
   children,
 }: {
-  status: SubscriptionPlanStatus | null;
+  providerType: PersonalSubscriptionProviderType | null;
   children: ReactNode;
 }) {
   return (
     <>
-      {status !== null && <ComposerModelPlanCaption status={status} />}
+      {providerType !== null && (
+        <ComposerModelPlanCaption providerType={providerType} showUsage />
+      )}
       {children}
     </>
   );
@@ -391,10 +404,10 @@ const PLAN_ACTION_ROW_CLASS = cn(
  * Settings > Models for accounts and usage.
  */
 function ComposerModelPlanActions({
-  planStatuses,
+  models,
   onClose,
 }: {
-  planStatuses: readonly SubscriptionPlanStatus[];
+  models: readonly AvailableRunModel[];
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -403,40 +416,40 @@ function ComposerModelPlanActions({
   const pageSignal = useGet(pageSignal$);
   return (
     <div className="flex flex-col gap-0.5 pb-1">
-      {planStatuses
-        .filter((status) => {
-          return !status.linked;
-        })
-        .map((status) => {
-          const detailId = `composer-model-panel-${status.type}-plans`;
-          return (
-            <div key={status.type} className="flex flex-col gap-0.5">
-              <ComposerModelPlanCaption status={status} />
-              <button
-                type="button"
-                aria-label={title(status.type)}
-                aria-describedby={detailId}
-                className={PLAN_ACTION_ROW_CLASS}
-                onClick={() => {
-                  onClose();
-                  connect(status.type);
-                }}
-              >
-                <ProviderIcon type={status.type} size={16} />
-                <SubscriptionPlanRowText
-                  title={title(status.type)}
-                  detail={plans(status.type)}
-                  detailId={detailId}
-                />
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.settings.models.personal.connect;
-                  })}
-                </span>
-              </button>
-            </div>
-          );
-        })}
+      {SUBSCRIPTION_PROVIDERS.filter((providerType) => {
+        return !models.some((runModel) => {
+          return runModel.memberEffective.providerType === providerType;
+        });
+      }).map((providerType) => {
+        const detailId = `composer-model-panel-${providerType}-plans`;
+        return (
+          <div key={providerType} className="flex flex-col gap-0.5">
+            <ComposerModelPlanCaption providerType={providerType} />
+            <button
+              type="button"
+              aria-label={title(providerType)}
+              aria-describedby={detailId}
+              className={PLAN_ACTION_ROW_CLASS}
+              onClick={() => {
+                onClose();
+                connect(providerType);
+              }}
+            >
+              <ProviderIcon type={providerType} size={16} />
+              <SubscriptionPlanRowText
+                title={title(providerType)}
+                detail={plans(providerType)}
+                detailId={detailId}
+              />
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.settings.models.personal.connect;
+                })}
+              </span>
+            </button>
+          </div>
+        );
+      })}
       <button
         type="button"
         className={cn(PLAN_ACTION_ROW_CLASS, "text-muted-foreground")}

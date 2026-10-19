@@ -1,53 +1,12 @@
 import {
   personalModelProviderAccountsByIdContract,
   personalModelProvidersByTypeContract,
-  personalModelProvidersMainContract,
   type ResetPersonalModelProviderSubscriptionUsageResponse,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 import { accept } from "../../lib/accept.ts";
-import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { invalidateAvailableRunModels$ } from "./run-models.ts";
-
-/**
- * Reload trigger for personal model provider signals.
- * Increment to force recomputation of personalModelProviders$.
- */
-const internalReloadPersonalModelProviders$ = state(0);
-
-/** Account reads outside the shared list share its mutation invalidation. */
-export const personalModelProviderAccountRevision$ = computed((get) => {
-  return get(internalReloadPersonalModelProviders$);
-});
-
-/**
- * Listing personal providers makes the API read every connected subscription's
- * usage upstream, so opportunistic callers reuse a recent read instead of
- * paying for it again. Mutations bypass this window entirely.
- */
-const PERSONAL_MODEL_PROVIDERS_STALE_MS = 60_000;
-
-const internalPersonalModelProvidersRefreshedAt$ = state<number | null>(null);
-
-const forcePersonalModelProvidersReload$ = command(({ set }) => {
-  set(invalidateAvailableRunModels$);
-  set(internalPersonalModelProvidersRefreshedAt$, now());
-  set(internalReloadPersonalModelProviders$, (x) => {
-    return x + 1;
-  });
-});
-
-/**
- * Personal (user-level) model providers for the requesting user.
- */
-export const personalModelProviders$ = computed(async (get) => {
-  get(internalReloadPersonalModelProviders$);
-  const createClient = get(apiClient$);
-  const client = createClient(personalModelProvidersMainContract);
-  const result = await accept(client.list(), [200]);
-  return result.body;
-});
+import { reloadThirdPartySubscriptions$ } from "./third-party-subscriptions.ts";
 
 export const activatePersonalModelProviderAccount$ = command(
   async ({ get, set }, id: string, signal: AbortSignal) => {
@@ -62,7 +21,7 @@ export const activatePersonalModelProviderAccount$ = command(
       [200],
     );
     signal.throwIfAborted();
-    set(forcePersonalModelProvidersReload$);
+    set(reloadThirdPartySubscriptions$);
     return result.body;
   },
 );
@@ -79,7 +38,7 @@ export const deletePersonalModelProviderAccount$ = command(
       [204],
     );
     signal.throwIfAborted();
-    set(forcePersonalModelProvidersReload$);
+    set(reloadThirdPartySubscriptions$);
   },
 );
 
@@ -113,7 +72,7 @@ export const resetPersonalCodexAccountSubscriptionUsage$ = command(
           [200],
         );
     signal.throwIfAborted();
-    set(forcePersonalModelProvidersReload$);
+    set(reloadThirdPartySubscriptions$);
     return result.body;
   },
 );
@@ -138,33 +97,8 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
     );
     signal.throwIfAborted();
 
-    set(forcePersonalModelProvidersReload$);
+    set(reloadThirdPartySubscriptions$);
 
     return result.body;
   },
 );
-
-/**
- * Force-refresh `personalModelProviders$` after a successful higher-level
- * provider mutation, such as Codex device login. Mirrors
- * Only personal subscription accounts are managed here.
- */
-export const reloadPersonalModelProviders$ = command(({ set }) => {
-  set(forcePersonalModelProvidersReload$);
-});
-
-/**
- * Refresh only when the last read has aged out. For callers that refresh on a
- * recurring UI event rather than after a change, such as opening the account
- * menu, where a slightly stale usage reading costs nothing.
- */
-export const refreshPersonalModelProvidersIfStale$ = command(({ get, set }) => {
-  const refreshedAt = get(internalPersonalModelProvidersRefreshedAt$);
-  if (
-    refreshedAt !== null &&
-    now() - refreshedAt < PERSONAL_MODEL_PROVIDERS_STALE_MS
-  ) {
-    return;
-  }
-  set(forcePersonalModelProvidersReload$);
-});

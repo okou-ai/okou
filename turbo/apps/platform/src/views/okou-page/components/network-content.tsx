@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import {
-  Button,
+  IconButton,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,
@@ -688,9 +688,52 @@ function NetworkLogRow({
 
   return (
     <>
-      <TableRow>
+      <TableRow
+        className="cursor-pointer"
+        onClick={(event) => {
+          if (
+            event.defaultPrevented ||
+            (event.target instanceof Element &&
+              event.target.closest(
+                "button, a, input, select, textarea, [contenteditable]",
+              ))
+          ) {
+            return;
+          }
+
+          const selection = event.currentTarget.ownerDocument.getSelection();
+          if (
+            selection &&
+            !selection.isCollapsed &&
+            selection.rangeCount > 0 &&
+            selection.getRangeAt(0).intersectsNode(event.currentTarget)
+          ) {
+            return;
+          }
+
+          toggleExpanded(rowKey);
+        }}
+      >
         <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-          {formatTime(entry.timestamp)}
+          <div className="flex items-center gap-2">
+            <IconButton
+              type="button"
+              className="size-6 shrink-0 text-muted-foreground"
+              aria-label={target}
+              aria-expanded={expanded}
+              aria-controls={detailsId}
+              onClick={() => {
+                toggleExpanded(rowKey);
+              }}
+            >
+              <ChevronRight
+                size={14}
+                aria-hidden="true"
+                className={expanded ? "rotate-90" : undefined}
+              />
+            </IconButton>
+            {formatTime(entry.timestamp)}
+          </div>
         </TableCell>
         <TableCell>
           <TypeBadge type={type} action={entry.action} />
@@ -698,24 +741,8 @@ function NetworkLogRow({
         <TableCell className="font-mono text-xs whitespace-nowrap">
           {isHttp ? (entry.method ?? "—") : "—"}
         </TableCell>
-        <TableCell className="max-w-[400px] py-2.5">
-          <Button
-            type="button"
-            variant="quiet"
-            size="xs"
-            className="w-full justify-start px-0 font-mono text-xs font-normal text-foreground"
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            onClick={() => {
-              toggleExpanded(rowKey);
-            }}
-          >
-            <ChevronRight
-              aria-hidden="true"
-              className={expanded ? "rotate-90" : undefined}
-            />
-            <span className="truncate">{target}</span>
-          </Button>
+        <TableCell className="max-w-[400px] cursor-text truncate font-mono text-xs select-text">
+          {target}
         </TableCell>
         <TableCell
           className={`font-mono text-xs whitespace-nowrap ${statusColor(entry.status)}`}
@@ -791,7 +818,7 @@ export function NetworkContent({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[100px]">
+            <TableHead className="w-[160px]">
               {t(($) => {
                 return $.activity.network.headers.time;
               })}

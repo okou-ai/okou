@@ -22,7 +22,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
+    if [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_RUN_STORAGE_OUTPUT_READER_FLOOR_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
       [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
@@ -223,6 +229,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/run-storage-output-reader" ]; then
+      [ "${MOCK_RUN_STORAGE_OUTPUT_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_RUN_STORAGE_OUTPUT_READER_COMMIT-c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de}"
+      exit 0
+    fi
     printf '[package]\nversion = "1.2.3"\n'
     ;;
   rev-list)
@@ -384,6 +395,29 @@ grep -Fq 'e01702c7d762b5d2a76d557db77ccaf19c4f95c8' "${tmp_dir}/failure.err" || 
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "required-pair API must fail before artifact or host access"
 fi
+
+for storage_reader_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Missing or invalid Run Storage-output reader rollback floor" \
+    run_resolver "${tmp_dir}/storage-reader-policy.output" "MOCK_RUN_STORAGE_OUTPUT_READER_COMMIT=${storage_reader_commit}"
+  [ ! -s "${tmp_dir}/storage-reader-policy.output" ] || fail "invalid Storage reader policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Storage reader policy must fail before artifact or host access"
+  fi
+done
+
+for storage_reader_case in \
+  "MOCK_RUN_STORAGE_OUTPUT_READER_AVAILABLE=0|Cannot read the Run Storage-output reader rollback floor from main" \
+  "MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN=0|Run Storage-output reader rollback floor is not on main" \
+  "MOCK_RUN_STORAGE_OUTPUT_READER_FLOOR_VALID=0|Rollback target predates the Run Storage-output log reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${storage_reader_case#*|}" \
+    run_resolver "${tmp_dir}/storage-reader-floor.output" "${storage_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/storage-reader-floor.output" ] || fail "unsupported Storage reader must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "unsupported Storage reader must fail before artifact or host access"
+  fi
+done
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates the versioned Pi OpenRouter writer" \

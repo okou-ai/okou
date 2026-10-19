@@ -1,7 +1,7 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -142,13 +142,13 @@ test("Show a connected account in its provider section only after authorization 
   const release = context.mocks.deferred<void>();
   let completed = false;
   context.mocks.api(
-    personalModelProvidersMainContract.list,
+    thirdPartySubscriptionsMainContract.list,
     async ({ respond }) => {
       if (completed) {
         refreshStarted.resolve();
         await release.promise;
       }
-      return respond(200, { modelProviders: completed ? [connected] : [] });
+      return respond(200, { subscriptions: completed ? [connected] : [] });
     },
   );
   context.mocks.api(claudeCodeDeviceAuthContract.complete, ({ respond }) => {
@@ -283,11 +283,11 @@ test("Show loading rather than a connect prompt before the first account read co
   const started = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   context.mocks.api(
-    personalModelProvidersMainContract.list,
+    thirdPartySubscriptionsMainContract.list,
     async ({ respond }) => {
       started.resolve();
       await release.promise;
-      return respond(200, { modelProviders: [] });
+      return respond(200, { subscriptions: [] });
     },
   );
   const page = await startPage({ context, path: "/agents?settings=model" });
@@ -310,7 +310,7 @@ test("Show loading rather than a connect prompt before the first account read co
 test("Show a retryable account read error instead of claiming there are no connected accounts", async () => {
   mockAutoMode();
   let failed = true;
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
+  context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
     return failed
       ? respond(500, {
           error: {
@@ -318,7 +318,7 @@ test("Show a retryable account read error instead of claiming there are no conne
             code: "INTERNAL_SERVER_ERROR",
           },
         })
-      : respond(200, { modelProviders: [] });
+      : respond(200, { subscriptions: [] });
   });
   const settings = await openSettings();
   await within(settings).findByText("Couldn’t load your accounts.");

@@ -855,6 +855,38 @@ for wechat_environment in preview production; do
   done
 done
 
+link_approval_vars_json='{"LINK_APPROVAL_WORKER_URL":"https://link-approval-gateway.example.test"}'
+link_approval_secrets_json='{"LINK_APPROVAL_WORKER_SECRET":"link_approval-hmac-fixture","LINK_APPROVAL_CONTROL_SECRET":"link_approval-control-fixture"}'
+for link_approval_environment in preview production; do
+  for link_approval_app in api web; do
+    link_approval_dir="$(mktemp -d)"
+    TEMP_DIRS+=("$link_approval_dir")
+    link_approval_output="$(
+      run_action \
+        "$(build_doppler_secrets_json)" \
+        "$link_approval_dir" \
+        "$link_approval_app" \
+        "$link_approval_environment" \
+        canonical \
+        "$link_approval_vars_json" \
+        "$link_approval_secrets_json" \
+        2>&1
+    )"
+    link_approval_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${link_approval_dir}/github-output")"
+    assert_not_contains "$link_approval_output" "link_approval-hmac-fixture"
+    assert_not_contains "$link_approval_output" "link_approval-control-fixture"
+    if [[ "$link_approval_app" == "api" ]]; then
+      assert_env_value "$link_approval_env_file" LINK_APPROVAL_WORKER_URL "https://link-approval-gateway.example.test"
+      assert_env_value "$link_approval_env_file" LINK_APPROVAL_WORKER_SECRET "link_approval-hmac-fixture"
+      assert_env_value "$link_approval_env_file" LINK_APPROVAL_CONTROL_SECRET "link_approval-control-fixture"
+    else
+      assert_env_key_absent "$link_approval_env_file" LINK_APPROVAL_WORKER_URL
+      assert_env_key_absent "$link_approval_env_file" LINK_APPROVAL_WORKER_SECRET
+      assert_env_key_absent "$link_approval_env_file" LINK_APPROVAL_CONTROL_SECRET
+    fi
+  done
+done
+
 discord_vars_json='{"DISCORD_APPLICATION_ID":"123456789012345678","DISCORD_PUBLIC_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
 discord_secrets_json='{"DISCORD_BOT_TOKEN":"github-discord-bot-token","DISCORD_GATEWAY_SECRET":"github-discord-hmac-secret-1234567890","DISCORD_OAUTH_CLIENT_SECRET":"github-discord-legacy-oauth-secret","DISCORD_GATEWAY_CONTROL_SECRET":"github-discord-control-secret"}'
 discord_doppler_json="$(

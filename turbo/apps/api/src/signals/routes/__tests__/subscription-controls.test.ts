@@ -3,6 +3,7 @@ import {
   personalModelProvidersMainContract,
   personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
@@ -11,7 +12,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
-import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { meThirdPartySubscriptionsListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -26,7 +27,7 @@ const context = testContext();
 const credentials = createClaimedRunCredentials(context);
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
-  ...meModelProvidersListRoutes,
+  ...meThirdPartySubscriptionsListRoutes,
   ...meModelProvidersUpsertRoutes,
   ...meModelProviderAccountRoutes,
 ]);
@@ -97,21 +98,39 @@ function human(actor: ApiTestUser) {
   return humanHeaders;
 }
 
+test("subscription listing requires an authenticated organization session", async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  const unauthenticated = await accept(
+    app()(thirdPartySubscriptionsMainContract).list({ headers: {} }),
+    [401],
+  );
+  expect(unauthenticated.status).toBe(401);
+
+  mocks.clerk.session(`user_${randomUUID()}`, null);
+  const noOrganization = await accept(
+    app()(thirdPartySubscriptionsMainContract).list({ headers: humanHeaders }),
+    [401],
+  );
+  expect(noOrganization.status).toBe(401);
+});
+
 test("agents read all subscriptions and single-account live usage without a failed run", async () => {
   const { actor, accountIds } = await fixture();
   const headers = await agentHeaders(actor);
   const listed = await accept(
-    app()(personalModelProvidersMainContract).list({ headers }),
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
   );
   expect(
-    listed.body.modelProviders
+    listed.body.subscriptions
       .map((account) => {
         return account.id;
       })
       .sort(),
   ).toStrictEqual([...accountIds].sort());
-  for (const account of listed.body.modelProviders) {
+  for (const account of listed.body.subscriptions) {
     expect(account).not.toHaveProperty("secrets");
     expect(account).not.toHaveProperty("externalAccountId");
     expect(account).not.toHaveProperty("orgId");
@@ -139,7 +158,7 @@ test("agents read all subscriptions and single-account live usage without a fail
   });
   expect(detail.body).not.toHaveProperty("secrets");
   expect(detail.body.modelProviderId).toStrictEqual(expect.any(String));
-  expect(listed.body.modelProviders).toContainEqual(
+  expect(listed.body.subscriptions).toContainEqual(
     expect.objectContaining({
       id: detail.body.id,
       modelProviderId: detail.body.modelProviderId,
@@ -193,21 +212,21 @@ test("cLI account activation reuses the existing switch behavior", async () => {
   expect(switched.body).not.toHaveProperty("orgId");
   expect(switched.body).not.toHaveProperty("userId");
   const listed = await accept(
-    app()(personalModelProvidersMainContract).list({ headers }),
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
   );
   expect(
-    listed.body.modelProviders.map((account) => {
+    listed.body.subscriptions.map((account) => {
       return account.id;
     }),
   ).toStrictEqual([accountIds[1], accountIds[0]]);
   expect(
-    listed.body.modelProviders.find((account) => {
+    listed.body.subscriptions.find((account) => {
       return account.id === accountIds[0];
     })?.isActive,
   ).toBeFalsy();
   expect(
-    listed.body.modelProviders.find((account) => {
+    listed.body.subscriptions.find((account) => {
       return account.id === accountIds[1];
     })?.isActive,
   ).toBeTruthy();
@@ -225,11 +244,11 @@ test("cLI account activation reuses the existing switch behavior", async () => {
     isActive: true,
   });
   const afterRepeat = await accept(
-    app()(personalModelProvidersMainContract).list({ headers }),
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
   );
   expect(
-    afterRepeat.body.modelProviders
+    afterRepeat.body.subscriptions
       .filter((account) => {
         return account.isActive;
       })
@@ -238,7 +257,7 @@ test("cLI account activation reuses the existing switch behavior", async () => {
       }),
   ).toStrictEqual([accountIds[1]]);
   expect(
-    afterRepeat.body.modelProviders.map((account) => {
+    afterRepeat.body.subscriptions.map((account) => {
       return account.id;
     }),
   ).toStrictEqual([accountIds[1], accountIds[0]]);
@@ -267,11 +286,11 @@ test("a claimed agent cannot execute a subscription reset", async () => {
   );
   expect(denied.status).toBe(403);
   const listed = await accept(
-    app()(personalModelProvidersMainContract).list({ headers }),
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
   );
   expect(
-    listed.body.modelProviders.find((account) => {
+    listed.body.subscriptions.find((account) => {
       return account.id === accountIds[0];
     })?.subscriptionResetCredits,
   ).toBe(3);
@@ -340,10 +359,10 @@ test("foreign users and organizations cannot read or activate the linked account
   ]) {
     const headers = human(other);
     const listed = await accept(
-      app()(personalModelProvidersMainContract).list({ headers }),
+      app()(thirdPartySubscriptionsMainContract).list({ headers }),
       [200],
     );
-    expect(listed.body.modelProviders).toStrictEqual([]);
+    expect(listed.body.subscriptions).toStrictEqual([]);
     const existing = await accept(
       app()(personalSubscriptionsContract).get({
         headers,
@@ -428,10 +447,10 @@ test("reset rejects foreign, logical-provider and disconnected IDs without chang
   }
 
   const remaining = await accept(
-    app()(personalModelProvidersMainContract).list({ headers: human(actor) }),
+    app()(thirdPartySubscriptionsMainContract).list({ headers: human(actor) }),
     [200],
   );
-  expect(remaining.body.modelProviders).toStrictEqual([
+  expect(remaining.body.subscriptions).toStrictEqual([
     expect.objectContaining({
       id: accountIds[0],
       modelProviderId: logicalProviderId,
@@ -524,16 +543,19 @@ test("mixed subscriptions keep provider usage separate when Claude usage becomes
     }),
     [201],
   );
-  const listed = await accept(client.list({ headers }), [200]);
+  const listed = await accept(
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
+    [200],
+  );
   expect(
-    listed.body.modelProviders
+    listed.body.subscriptions
       .map((provider) => {
         return provider.id;
       })
       .sort(),
   ).toStrictEqual([...accountIds, connected.body.provider.id].sort());
   for (const id of accountIds) {
-    expect(listed.body.modelProviders).toContainEqual(
+    expect(listed.body.subscriptions).toContainEqual(
       expect.objectContaining({
         id,
         type: "codex-oauth-token",
@@ -544,7 +566,7 @@ test("mixed subscriptions keep provider usage separate when Claude usage becomes
       }),
     );
   }
-  expect(listed.body.modelProviders).toContainEqual(
+  expect(listed.body.subscriptions).toContainEqual(
     expect.objectContaining({
       id: connected.body.provider.id,
       type: "claude-code-oauth-token",
@@ -560,23 +582,26 @@ test("mixed subscriptions keep provider usage separate when Claude usage becomes
       return HttpResponse.json({ error: "unavailable" }, { status: 503 });
     }),
   );
-  const degraded = await accept(client.list({ headers }), [200]);
+  const degraded = await accept(
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
+    [200],
+  );
   expect(
-    degraded.body.modelProviders.map((provider) => {
+    degraded.body.subscriptions.map((provider) => {
       return provider.id;
     }),
   ).toStrictEqual(
-    listed.body.modelProviders.map((provider) => {
+    listed.body.subscriptions.map((provider) => {
       return provider.id;
     }),
   );
   for (const id of accountIds) {
-    const before = listed.body.modelProviders.find((provider) => {
+    const before = listed.body.subscriptions.find((provider) => {
       return provider.id === id;
     });
-    expect(degraded.body.modelProviders).toContainEqual(before);
+    expect(degraded.body.subscriptions).toContainEqual(before);
   }
-  const claude = degraded.body.modelProviders.find((provider) => {
+  const claude = degraded.body.subscriptions.find((provider) => {
     return provider.id === connected.body.provider.id;
   });
   expect(claude).toMatchObject({

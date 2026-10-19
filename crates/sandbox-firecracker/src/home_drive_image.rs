@@ -377,12 +377,12 @@ async fn ensure_home_image_headroom(
     if !observed.infeasible
         && let Some(pressure) = pressure
     {
-        let deadline = tokio::time::Instant::now() + Duration::from_millis(250);
+        let deadline = tokio::time::Instant::now() + sandbox::HOME_DRIVE_RECLAIM_OBSERVATION;
         // Only the observer expires. The policy owns accepted physical work and
         // the provider never treats a callback result as an allocation grant.
         let _ = tokio::time::timeout_at(
             deadline,
-            pressure.reclaim(observed.device, observed.required),
+            pressure.reclaim(observed.device, observed.required, deadline),
         )
         .await;
         observed = observe_home_image_headroom(target, logical_peak, reserve, copy_source).await?;

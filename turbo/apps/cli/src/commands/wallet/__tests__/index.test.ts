@@ -219,6 +219,20 @@ describe("okou wallet", () => {
       expect.stringContaining("user must approve personally"),
     );
   });
+  it("announces a bounded backend approval watch without polling from the CLI", async () => {
+    let reads = 0;
+    server.use(
+      http.get(`${origin}/api/wallet/spend/${id}`, () => {
+        reads++;
+        return HttpResponse.json({ ...spend, autoContinue: true });
+      }),
+    );
+    await run(["spend", "get", id]);
+    expect(reads).toBe(1);
+    expect(output).toHaveBeenCalledWith(
+      `Okou will continue this chat after approval until ${spend.expiresAt}. You can also continue manually. Approved is not paid.`,
+    );
+  });
   it("does not describe an approved request as a paid purchase", async () => {
     server.use(
       http.get(`${origin}/api/wallet/spend/${id}`, () => {

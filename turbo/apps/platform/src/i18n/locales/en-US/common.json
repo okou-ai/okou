@@ -2943,6 +2943,11 @@
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
     "walletAction": {
+      "approvalApproved": "Approved; waiting to continue",
+      "approvalContinued": "Purchase request continued",
+      "approvalRecorded": "Status recorded",
+      "approvalStopped": "Automatic waiting ended; you can continue manually",
+      "approvalWaiting": "Waiting for purchase approval",
       "approveButton": "Review",
       "approveTitle": "Review purchase",
       "authorized": "Authorized",

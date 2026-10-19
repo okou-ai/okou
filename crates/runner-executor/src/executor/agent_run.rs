@@ -48,6 +48,7 @@ use crate::storage_plan::{StoragePlan, build_storage_plan};
 use crate::telemetry::JobTelemetry;
 use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
+use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, HomeReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
@@ -1302,6 +1303,28 @@ async fn prepare_guest_storage(
     result
 }
 
+fn pre_spawn_cancelled(
+    run_id: RunId,
+    pre_spawn_started: Instant,
+    telemetry: &mut JobTelemetry,
+) -> AgentExecutionResult {
+    info!(
+        run_id = %run_id,
+        "cancel received before guest process started"
+    );
+    let result = AgentExecutionResult::cancelled();
+    telemetry.record(
+        "agent_execute",
+        pre_spawn_started.elapsed(),
+        false,
+        result
+            .failure
+            .as_ref()
+            .map(|failure| failure.error.as_str()),
+    );
+    result
+}
+
 #[cfg(test)]
 pub(super) async fn run_in_sandbox(
     sandbox: &dyn Sandbox,
@@ -1414,20 +1437,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let result = match error {
                 Some(error) => Err(error),
                 None => {
-                    info!(
-                        run_id = %context.run_id,
-                        "cancel received before guest process started"
-                    );
-                    let result = AgentExecutionResult::cancelled();
-                    telemetry.record(
-                        "agent_execute",
-                        pre_spawn_started.elapsed(),
-                        false,
-                        result
-                            .failure
-                            .as_ref()
-                            .map(|failure| failure.error.as_str()),
-                    );
+                    let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
                     Ok(result)
                 }
             };
@@ -1470,20 +1480,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 let result = match error {
                     Some(error) => Err(error),
                     None => {
-                        info!(
-                            run_id = %context.run_id,
-                            "cancel received before guest process started"
-                        );
-                        let result = AgentExecutionResult::cancelled();
-                        telemetry.record(
-                            "agent_execute",
-                            pre_spawn_started.elapsed(),
-                            false,
-                            result
-                                .failure
-                                .as_ref()
-                                .map(|failure| failure.error.as_str()),
-                        );
+                        let result =
+                            pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
                         Ok(result)
                     }
                 };
@@ -1755,20 +1753,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         model_catalog_prefetch.finish(telemetry).await;
         match preparation_error {
             Some(RunnerError::Cancelled) | None => {
-                info!(
-                    run_id = %context.run_id,
-                    "cancel received before guest process started"
-                );
-                let result = AgentExecutionResult::cancelled();
-                telemetry.record(
-                    "agent_execute",
-                    pre_spawn_started.elapsed(),
-                    false,
-                    result
-                        .failure
-                        .as_ref()
-                        .map(|failure| failure.error.as_str()),
-                );
+                let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
                 return Ok(result);
             }
             Some(error) => return Err(error),

@@ -161,6 +161,9 @@ const SCHEMA = {
     .string()
     .regex(/^[a-fA-F0-9]{64}$/)
     .optional(),
+  LINK_APPROVAL_WORKER_URL: z.string().url().optional(),
+  LINK_APPROVAL_WORKER_SECRET: z.string().optional(),
+  LINK_APPROVAL_CONTROL_SECRET: z.string().optional(),
   WECHAT_GATEWAY_URL: z.string().url().optional(),
   WECHAT_GATEWAY_SECRET: z.string().optional(),
   WECHAT_GATEWAY_CONTROL_SECRET: z.string().optional(),

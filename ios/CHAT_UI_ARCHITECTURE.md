@@ -127,13 +127,18 @@ background Markdown parsing does not make all rendering asynchronous.
 The PWA transcript in `create-chat-thread.ts` starts with ten render groups and
 expands its suffix ten groups at a time. It does not maintain a constant-size
 viewport window. The iOS transcript follows that presentation policy while
-retaining native UICollectionView cell reuse. Its presentation groups are consecutive
-messages with the same role; grouping determines boundaries without combining
-message rows or changing assistant-avatar spacing.
+retaining native UICollectionView cell reuse. Its presentation groups follow role
+changes and work-section boundaries. Work controls and individual messages have
+separate stable row identities, so expanding a section preserves native cell
+reuse and does not combine its messages into one large hosting view.
 
 ConversationRenderWindow is a pure presentation helper. ConversationStore keeps
-the complete projected history and pending inputs, derives visibleMessages only
-when messages or the window change, and owns one expansion task. Expansion
+the complete projected history and pending inputs, owns local work-section
+expansion state, derives visibleItems when the projection or window changes,
+and owns one history-expansion task. Section expansion changes only disposable
+presentation rows; cached events and synchronization cursors remain unchanged.
+The scroll coordinator anchors an explicit section toggle to its stable control
+row before the collection inserts or removes the individual message rows. Expansion
 prepares only the four rows immediately preceding the current boundary through
 the existing bounded Markdown cache. After preparation it expands the current
 projection, so concurrent refreshes and sends cannot be overwritten by a stale

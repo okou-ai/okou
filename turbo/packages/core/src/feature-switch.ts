@@ -51,6 +51,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Website URL editing",
     description: "Customize a published website address from its Share menu.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerSlashHint]: {
     maintainer: "bingjie@okou.ai",
@@ -299,6 +300,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
     enabled: true,
+  },
+  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
+    enabled: false,
   },
   [FeatureSwitchKey.WalletSettings]: {
     maintainer: "yuma@okou.ai",

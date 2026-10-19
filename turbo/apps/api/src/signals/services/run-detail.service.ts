@@ -11,7 +11,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { db$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import { getDatasetName, queryAxiom } from "../external/axiom";
 import { escapeAplString } from "../../lib/axiom-apl";
 import {
@@ -32,29 +32,7 @@ import {
   publicBuiltInBalanceNetworkLog,
 } from "./run-balance-presentation";
 
-type ServiceDb = Pick<Db, "select">;
-
 const RUN_CONTEXT_QUERY_PADDING_MS = 60 * 60 * 1000;
-
-async function verifyRunOwnership(
-  db: ServiceDb,
-  runId: string,
-  userId: string,
-  orgId: string,
-): Promise<boolean> {
-  const [run] = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, runId),
-        eq(agentRuns.userId, userId),
-        eq(agentRuns.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  return run !== undefined;
-}
 
 interface NetworkLogsParams {
   runId: string;
@@ -80,7 +58,20 @@ export function runContext(
   return computed(async (get): Promise<RunContextResult> => {
     const db = get(db$);
 
-    const owned = await verifyRunOwnership(db, runId, userId, orgId);
+    const owned = await (async () => {
+      const [run] = await db
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, runId),
+            eq(agentRuns.userId, userId),
+            eq(agentRuns.orgId, orgId),
+          ),
+        )
+        .limit(1);
+      return run !== undefined;
+    })();
     if (!owned) {
       return { kind: "not-found" };
     }

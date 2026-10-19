@@ -1,3 +1,4 @@
+import { recoverLinkApprovalWorkflows$ } from "../services/link-approval-workflow.service";
 import { command } from "ccstate";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import type { RouteEntry } from "../route-entry";
@@ -22,11 +23,13 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   // Each kind owns a disjoint queue, so a long export cannot keep a fresh
   // onboarding result from using the same durable wakeup.
-  const [exports, recommendations, storageCleanup] = await Promise.all([
-    set(executeDurableUserExportWork$, {}, workSignal),
-    set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
-    set(executeStorageObjectCleanupWork$, {}, workSignal),
-  ]);
+  const [exports, recommendations, storageCleanup, approvals] =
+    await Promise.all([
+      set(executeDurableUserExportWork$, {}, workSignal),
+      set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
+      set(executeStorageObjectCleanupWork$, {}, workSignal),
+      set(recoverLinkApprovalWorkflows$, workSignal),
+    ]);
   signal.throwIfAborted();
   return {
     status: 200 as const,
@@ -34,7 +37,8 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
       processed:
         exports.processed +
         recommendations.processed +
-        storageCleanup.processed,
+        storageCleanup.processed +
+        approvals,
       cleaned: cleanedExports.processed + cleanedRecommendations.processed,
     },
   };
