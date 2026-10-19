@@ -4880,7 +4880,7 @@
         "accountFallback": "Akun {{number}}",
         "activeAccount": "Aktif",
         "autoCredits": "Memakai kredit Okou",
-        "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
+        "autoDescription": "Hubungkan akun ChatGPT atau Claude Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
         "claudeGroup": "Paket Claude Anda",
         "claudePlans": "Pro atau Max",

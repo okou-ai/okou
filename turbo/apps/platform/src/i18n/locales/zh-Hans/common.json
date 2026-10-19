@@ -4880,7 +4880,7 @@
         "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "消耗 Okou 积分",
-        "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
+        "autoDescription": "连接你的 ChatGPT 或 Claude 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeGroup": "你的 Claude 套餐",
         "claudePlans": "Pro 或 Max",

@@ -4899,7 +4899,7 @@
         "accountFallback": "खाता {{number}}",
         "activeAccount": "सक्रिय",
         "autoCredits": "Okou क्रेडिट इस्तेमाल करता है",
-        "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
+        "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना ChatGPT या Claude खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",
         "claudeGroup": "आपका Claude प्लान",
         "claudePlans": "Pro या Max",

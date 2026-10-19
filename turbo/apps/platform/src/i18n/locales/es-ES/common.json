@@ -4963,7 +4963,7 @@
         "accountFallback": "Cuenta {{number}}",
         "activeAccount": "Activa",
         "autoCredits": "Usa créditos de Okou",
-        "autoDescription": "Conecta tu cuenta de Claude o ChatGPT para usar más modelos.",
+        "autoDescription": "Conecta tu cuenta de ChatGPT o Claude para usar más modelos.",
         "autoTitle": "Usa más modelos",
         "claudeGroup": "Tu plan de Claude",
         "claudePlans": "Pro o Max",
