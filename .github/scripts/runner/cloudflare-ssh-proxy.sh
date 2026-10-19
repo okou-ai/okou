@@ -51,9 +51,9 @@ proxy_event() {
     read -r uptime _ < /proc/uptime || uptime=unavailable
   fi
   utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) || utc=unavailable
-  printf 'event=%s utc=%s epoch=%s uptime_seconds=%s transport=%s proxy_pid=%s parent_pid=%s child_pid=%s status=%s signal=%s host=%s\n' \
+  printf 'event=%s utc=%s epoch=%s uptime_seconds=%s transport=%s proxy_pid=%s parent_pid=%s child_pid=%s sampler_pid=%s status=%s signal=%s host=%s\n' \
     "$event" "$utc" "${EPOCHREALTIME:-unavailable}" "$uptime" "${PROXY_DIR##*/}" \
-    "$$" "$PPID" "${cloudflared_pid:-none}" "$status" "$signal" "$safe_host" \
+    "$$" "$PPID" "${cloudflared_pid:-none}" "${tcp_sampler_pid:-none}" "$status" "$signal" "$safe_host" \
     >> "$EVENTS_FILE" || true
 }
 
@@ -150,6 +150,15 @@ emit_interrupted_marker() {
 }
 
 cloudflared_pid=""
+tcp_sampler_pid=""
+
+stop_tcp_sampler() {
+  if [ -n "$tcp_sampler_pid" ]; then
+    kill -TERM "$tcp_sampler_pid" 2>/dev/null || true
+    wait "$tcp_sampler_pid" 2>/dev/null || true
+    tcp_sampler_pid=""
+  fi
+}
 
 terminate_cloudflared() {
   if [ -n "$cloudflared_pid" ]; then
@@ -166,6 +175,7 @@ cleanup() {
   local status="$1"
   trap - EXIT
   terminate_cloudflared
+  stop_tcp_sampler
   proxy_event proxy-exit "$status"
   if [ "$RETAIN_DIAGNOSTICS" = "false" ] && [ -n "$PROXY_DIR" ]; then
     rm -rf -- "$PROXY_DIR"
@@ -230,9 +240,16 @@ TUNNEL_SERVICE_TOKEN_ID="$CF_ACCESS_CLIENT_ID" \
   <&0 2> "$LOG_FILE" &
 cloudflared_pid=$!
 proxy_event child-start
+# This observer neither holds the SSH stream open nor makes a new connection.
+# Its last passive sample remains available even after cloudflared exits 0.
+python3 "$SCRIPT_DIR/cloudflare-ssh-tcp.py" "$cloudflared_pid" "$PROXY_DIR/tcp.log" \
+  </dev/null >/dev/null 2>/dev/null &
+tcp_sampler_pid=$!
+proxy_event tcp-sampler-start
 wait "$cloudflared_pid" || status=$?
 proxy_event child-exit "$status"
 cloudflared_pid=""
+stop_tcp_sampler
 
 if [ "$status" -ne 0 ]; then
   emit_failure_marker "$status" || true

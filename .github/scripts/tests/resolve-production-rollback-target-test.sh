@@ -24,6 +24,8 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
+      [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
@@ -139,7 +141,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
+    if [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
+      printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
+    elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
     elif [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
       printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
@@ -890,6 +894,26 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "VNC floor must fail before artifact or host access"
 fi
+
+# WeChat retirement rejects incompatible artifacts before provider or host access.
+for producer_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged WeChat Workflows-only receiver" \
+    run_resolver "${tmp_dir}/wechat-history.output" "MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT=${producer_commit}"
+  [ ! -s "${tmp_dir}/wechat-history.output" ] || fail "invalid WeChat history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "WeChat history must be validated before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the WeChat Workflows-only receiver" \
+  run_resolver "${tmp_dir}/wechat-floor.output" MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/wechat-floor.output" ] || fail "legacy WeChat API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "WeChat floor must fail before artifact or host access"
+fi
+run_resolver "${tmp_dir}/wechat-exact.output" "MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT=${target_commit}" >"${tmp_dir}/wechat-exact.log"
+[ -s "${tmp_dir}/wechat-exact.output" ] || fail "exact WeChat cutover artifact must remain eligible"
 
 # A native producer excludes Session-dependent rollback artifacts before any
 # deployment/artifact side effects are attempted.

@@ -1,6 +1,6 @@
 {
-  "id": "8356a1a4-6a30-4876-9c17-f4bf28752dfc",
-  "prevId": "c74cca86-53a8-43fb-baea-c5e20bb49052",
+  "id": "7a5b1ea4-88d0-4078-8e7b-457fcb91587c",
+  "prevId": "9f282c14-1e46-462e-95e2-ba4014221e5c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2338,36 +2338,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "display_kind": {
-          "name": "display_kind",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "alias_url": {
-          "name": "alias_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "video_source_url": {
-          "name": "video_source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "projection_file_id": {
           "name": "projection_file_id",
           "type": "uuid",
@@ -2456,46 +2426,6 @@
           "method": "btree",
           "with": {}
         },
-        "artifacts_thread_author_created_idx": {
-          "name": "artifacts_thread_author_created_idx",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "author_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"chat_thread_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "artifacts_author_created_idx": {
           "name": "artifacts_author_created_idx",
           "columns": [
@@ -2569,21 +2499,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "artifacts_chat_thread_id_chat_threads_id_fk": {
-          "name": "artifacts_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "artifacts",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -34959,13 +34875,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "workflow_receiver": {
-          "name": "workflow_receiver",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",

@@ -28,6 +28,7 @@ mkdir -p "$tmp/installed" "$tmp/bin" "$tmp/state" "$tmp/logs"
 install -m 755 "$OWNER/cloudflare-ssh-proxy.sh" "$tmp/installed/cf-proxy.sh"
 install -m 644 "$OWNER/cloudflare-ssh-diagnostics.sh" "$tmp/installed/cloudflare-ssh-diagnostics.sh"
 install -m 644 "$OWNER/cloudflare-ssh-log.py" "$tmp/installed/cloudflare-ssh-log.py"
+install -m 644 "$OWNER/cloudflare-ssh-tcp.py" "$tmp/installed/cloudflare-ssh-tcp.py"
 ln -s "$OWNER/cloudflare-ssh-command.sh" "$tmp/bin/scp"
 mkfifo "$tmp/started" "$tmp/trigger" "$tmp/finished"
 cat > "$tmp/access.env" <<'EOF'
@@ -135,6 +136,8 @@ first_status=0
 "$tmp/bin/scp" /tmp/source ubuntu@dev-11.gcp.vm3.ai:/tmp/target > "$tmp/first.out" 2> "$tmp/first.err" || first_status=$?
 if [[ "$NATIVE_DIAGNOSTIC_CASE" = failed-recovery || "$NATIVE_DIAGNOSTIC_CASE" = failed-preconnect ]]; then
   test "$first_status" -eq 255
+  grep -Fq 'event=recovery-start' "$tmp/first.err"
+  grep -Fq 'event=recovery-result' "$tmp/first.err"
   test ! -e "$tmp/first-call"
   test "$(< "$tmp/proxy.status")" -eq 0
   if ! grep -Fq 'close 1006' "$tmp/first.err"; then

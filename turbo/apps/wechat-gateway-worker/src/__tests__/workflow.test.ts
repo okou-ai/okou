@@ -53,7 +53,6 @@ function fixture(handler: (request: Request) => Promise<Response>) {
       },
       bindings: {
         WECHAT_GATEWAY_ENABLED: "true",
-        WECHAT_WORKFLOWS_ENABLED: "true",
         WECHAT_GATEWAY_SECRET: secret,
         WECHAT_RECEIVER_ENCRYPTION_KEY: randomUUID(),
         WECHAT_GATEWAY_CONTROL_SECRET: control,

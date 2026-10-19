@@ -1,16 +1,44 @@
 #!/usr/bin/env python3
 """Render bounded, sanitized local SSH/proxy evidence; never perform network IO."""
 
+import hashlib
+import ipaddress
 import json
 import os
 import re
 import stat
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 MAX_BYTES = 64 * 1024
-MAX_LINES = 100
+MAX_LINES = 384
 MAX_PROXIES = 4
+TCP_NUMBERS = {
+    "monotonic_ns",
+    "pid",
+    "start_ticks",
+    "inode",
+    "family",
+    "state",
+    "local_port",
+    "peer_port",
+    "receive_queue",
+    "send_queue",
+    "unacked",
+    "rto_us",
+    "last_data_sent_ms",
+    "last_data_received_ms",
+    "rtt_us",
+    "rttvar_us",
+    "total_retrans",
+    "bytes_acked",
+    "bytes_received",
+    "bytes_sent",
+    "bytes_retrans",
+    "send_window",
+}
+TCP_EVENTS = {"tcp-sample", "tcp-no-socket-observed", "tcp-unavailable"}
 HEADER = re.compile(
     r"(?im)\b(?:cf-access-client-(?:id|secret)|cf-access-token|"
     r"cf-access-jwt-assertion|authorization|proxy-authorization|cookie|set-cookie)"
@@ -36,6 +64,31 @@ def sanitize(line):
             return "[omitted malformed structured diagnostic]"
         if not isinstance(record, dict):
             return "[omitted non-event structured diagnostic]"
+        extra = {}
+        if isinstance(record.get("event"), str) and record["event"] in TCP_EVENTS:
+            extra["event"] = record["event"]
+            for key in TCP_NUMBERS:
+                value = record.get(key)
+                if type(value) is int and value >= 0:
+                    extra[key] = value
+            for key in ("local_ip", "peer_ip"):
+                try:
+                    if isinstance(record.get(key), str):
+                        extra[key] = str(ipaddress.ip_address(record[key]))
+                except ValueError:
+                    # Invalid optional address metadata is omitted at publication.
+                    pass
+            reason = record.get("reason")
+            if isinstance(reason, str) and re.fullmatch(r"[A-Z_]{1,32}", reason):
+                extra["reason"] = reason
+        if isinstance(record.get("originURL"), str):
+            try:
+                host = urlsplit(record["originURL"]).hostname
+                if host and re.fullmatch(r"[A-Za-z0-9._:-]{1,253}", host):
+                    extra["origin_host"] = host
+            except ValueError:
+                # Malformed optional URLs cannot contribute a safe origin hostname.
+                pass
         record = {
             key: value
             for key, value in record.items()
@@ -46,6 +99,7 @@ def sanitize(line):
             record["message"] = "[request dump omitted]"
         # Decode embedded newlines before redacting header values.
         record = {key: redact(str(value)) for key, value in record.items()}
+        record.update(extra)
         return json.dumps(record, ensure_ascii=True, separators=(",", ":"))
     if "Websocket request:" in line:
         return "[request dump omitted]"
@@ -104,9 +158,33 @@ def directories(path):
         return []
 
 
+def bounded(lines, byte_limit, line_limit):
+    """Reserve each source's own budget, retaining its newest sanitized evidence."""
+    result = []
+    used = 0
+    omitted = len(lines) > line_limit
+    for line in reversed(lines[-line_limit:]):
+        encoded = line.encode("utf-8")
+        if len(encoded) > byte_limit - 128:
+            encoded = encoded[-(byte_limit - 128) :]
+            line = "[record truncated] " + encoded.decode("utf-8", "ignore")
+        size = len(line.encode("utf-8")) + 1
+        if used + size > byte_limit - 80:
+            omitted = True
+            break
+        result.append(line)
+        used += size
+    if omitted:
+        result.append("[earlier source evidence omitted: section budget]")
+    return list(reversed(result))
+
+
 def proxy_evidence(directory):
     result = [f"----- Cloudflare proxy {directory.name} (source event times) -----"]
-    result += ["lifecycle: " + line for line in tail(directory / "events.log", 12)]
+    result += bounded(
+        ["lifecycle: " + line for line in tail(directory / "events.log", 12)], 2048, 14
+    )
+    application_lines = []
     application = directory / "application"
     try:
         if application.is_symlink():
@@ -116,15 +194,21 @@ def proxy_evidence(directory):
             key=lambda p: p.stat().st_mtime_ns,
             reverse=True,
         )
-        for path in files[:2]:
-            result += ["application: " + line for line in tail(path, 12)]
+        for path in reversed(files[:2]):
+            application_lines += ["application: " + line for line in tail(path, 12)]
         if not files:
-            result.append("application: [native log unavailable]")
+            application_lines.append("application: [native log unavailable]")
         if len(files) > 2:
-            result.append("application: [older rotated files omitted]")
+            application_lines.insert(0, "application: [older rotated files omitted]")
     except OSError:
-        result.append("application: [native log unavailable or unsafe path]")
-    result += ["stderr: " + line for line in tail(directory / "stderr.log", 8)]
+        application_lines.append("application: [native log unavailable or unsafe path]")
+    result += bounded(application_lines, 4096, 28)
+    result += bounded(
+        ["tcp: " + line for line in tail(directory / "tcp.log", 16)], 4096, 18
+    )
+    result += bounded(
+        ["stderr: " + line for line in tail(directory / "stderr.log", 8)], 1024, 10
+    )
     if not any("event=proxy-exit " in line for line in result):
         result.append("lifecycle: [no final proxy status observed in this snapshot]")
     return result
@@ -139,7 +223,7 @@ def publish(lines):
         truncated = True
     text = encoded.decode("utf-8", errors="ignore")
     if truncated:
-        text += "\n[diagnostic output truncated: 100 lines / 64 KiB limit]"
+        text += "\n[diagnostic output truncated: 384 lines / 64 KiB limit]"
     print(text)
 
 
@@ -160,6 +244,7 @@ def main():
     if mode != "master":
         raise ValueError("expected sanitize, proxy, or master")
     master = Path(argument)
+    master_id = hashlib.sha256(argument.encode()).hexdigest()[:24]
     proxies = directories(Path(argument + ".proxies"))
     lines = []
     for directory in proxies[:MAX_PROXIES]:
@@ -169,9 +254,9 @@ def main():
     if not proxies:
         lines.append("Cloudflare proxy evidence unavailable for this master.")
     lines.append(
-        "----- SSH master stderr (including probes; bounded redacted tail) -----"
+        f"----- SSH master stderr (master={master_id}; including probes; bounded redacted tail) -----"
     )
-    lines += tail(master, 45)
+    lines += bounded(tail(master, 45), 12288, 47)
     publish(lines)
 
 

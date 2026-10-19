@@ -1,5 +1,5 @@
 {
-  "id": "c74cca86-53a8-43fb-baea-c5e20bb49052",
+  "id": "9f282c14-1e46-462e-95e2-ba4014221e5c",
   "prevId": "ca838b6c-7fb8-47b9-ae10-d11f37e2b36f",
   "version": "7",
   "dialect": "postgresql",
@@ -920,28 +920,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_runs_threadless_created_id": {
-          "name": "idx_agent_runs_threadless_created_id",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"agent_runs\".\"trigger_source\" IS NOT NULL AND \"agent_runs\".\"chat_thread_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -34875,13 +34853,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "workflow_receiver": {
-          "name": "workflow_receiver",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",

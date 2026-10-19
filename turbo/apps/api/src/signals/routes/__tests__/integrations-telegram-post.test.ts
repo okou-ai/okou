@@ -1,4 +1,8 @@
-import { publicRunOwner } from "./helpers/public-run-owner";
+import {
+  createPublicRunLifecycle,
+  publicRunOwner,
+} from "./helpers/public-run-owner";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
@@ -11,7 +15,15 @@ import {
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { HttpResponse, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -20,7 +32,11 @@ import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import {
+  createDeferredPromise,
+  onRejection,
+  settleIncludingAbort,
+} from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import {
@@ -411,8 +427,8 @@ afterEach(() => {
   clearMockedEnv();
 });
 
-function telegramClient() {
-  return setupApp({ context, routes: integrationsTelegramRoutes })(
+function telegramClient(signal?: AbortSignal) {
+  return setupApp({ context, routes: integrationsTelegramRoutes, signal })(
     integrationsTelegramContract,
   );
 }
@@ -422,9 +438,10 @@ async function postWebhook(args: {
   readonly secret: string;
   readonly body: unknown;
   readonly apiOrigin?: string;
+  readonly signal?: AbortSignal;
 }): Promise<Response> {
   return await createApp({
-    signal: context.signal,
+    signal: args.signal ?? context.signal,
     routes: TEST_APP_ROUTES,
   }).request(
     `${args.apiOrigin?.replace(/\/$/u, "") ?? ""}/api/telegram/webhook/${args.telegramBotId}`,
@@ -462,6 +479,7 @@ async function completeCanonicalChatRun(args: {
   readonly runId: string;
   readonly sandboxToken: string;
   readonly cliAgentType?: "claude-code" | "codex";
+  readonly signal?: AbortSignal;
 }): Promise<string> {
   const cliAgentSessionId = `bdd-telegram-cli-${args.runId}`;
 
@@ -478,6 +496,7 @@ async function completeCanonicalChatRun(args: {
     },
     headers,
     [200],
+    args.signal,
   );
   await flushWaitUntilForTest();
   return cliAgentSessionId;
@@ -1090,176 +1109,320 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
   });
 
-  async function prepareTelegramDm() {
+  function createTelegramDmOwner(actor: ApiTestUser) {
+    const controller = new AbortController();
+    const foreground = {
+      ...context,
+      signal: AbortSignal.any([context.signal, controller.signal]),
+    };
+    function captureExternalState() {
+      return captureConnectorExternalState(context, [
+        "TELEGRAM_OFFICIAL_BOT_TOKEN",
+        "TELEGRAM_OFFICIAL_BOT_USERNAME",
+        "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      ]);
+    }
+    let accepted = captureExternalState();
+    let restoreWebhook: (() => void) | undefined;
+    const owner = createPublicRunLifecycle(context, actor, {
+      captureBaseline: captureExternalState,
+      restoreEnvironment() {
+        accepted();
+        restoreWebhook?.();
+      },
+      async afterSuccessfulCleanup(receipt) {
+        const listed = await runReadsApi.requestListLogs(
+          actor,
+          { limit: 100 },
+          [200],
+        );
+        expect(listed.body.pagination).toMatchObject({ hasMore: false });
+        expect(
+          listed.body.data
+            .map((run) => {
+              return run.id;
+            })
+            .sort(),
+        ).toStrictEqual(
+          receipt
+            .map((run) => {
+              return run.id;
+            })
+            .sort(),
+        );
+        for (const run of listed.body.data) {
+          expect(["queued", "pending", "running"]).not.toContain(run.status);
+        }
+      },
+    });
+    function run<T>(operation: () => Promise<T>): Promise<T> {
+      return owner.run(async () => {
+        foreground.signal.throwIfAborted();
+        const pending = settleIncludingAbort(operation);
+        accepted = captureExternalState();
+        const result = await pending;
+        if (!result.ok) {
+          throw result.error;
+        }
+        foreground.signal.throwIfAborted();
+        accepted = captureExternalState();
+        return result.value;
+      });
+    }
+    function finish() {
+      controller.abort(
+        new DOMException("Telegram DM fixture finished", "AbortError"),
+      );
+      return owner.finish();
+    }
+    onTestFinished(finish);
+    return {
+      context: foreground,
+      run,
+      finish,
+      claim(runId: string) {
+        return run(() => {
+          return owner.claim(runId);
+        });
+      },
+      retainWebhook(restore: () => void) {
+        restoreWebhook = restore;
+      },
+    };
+  }
+
+  async function closeTelegramDm<T>(
+    work: Promise<T> | (() => T),
+    finish: () => Promise<void>,
+  ): Promise<T> {
+    const result = await settleIncludingAbort(work);
+    const closed = await settleIncludingAbort(finish);
+    if (!result.ok) {
+      if (!closed.ok) {
+        throw new AggregateError(
+          [result.error, closed.error],
+          "Telegram DM work and cleanup failed",
+        );
+      }
+      throw result.error;
+    }
+    if (!closed.ok) {
+      throw closed.error;
+    }
+    return result.value;
+  }
+
+  async function prepareTelegramDm(
+    options: { readonly isolatePg?: true } = {},
+  ) {
     const runnerGroup = configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
     if (!actor.orgId) {
       throw new Error("Expected an organization for Telegram onboarding");
     }
-    await runsApi.grantProEntitlement(actor);
-    await authOrgApi.completeOnboarding(actor);
-    const ownedRuns = publicRunOwner(context, actor);
-    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
-      actor,
-    );
-    const telegram = telegramApiMocks(OFFICIAL_BOT_TOKEN);
-    const botId = "official";
-    const secret = OFFICIAL_WEBHOOK_SECRET;
-    const headers = authOrgApi.authenticate(actor);
-    const fromId = Number(newTelegramBotId());
-    const telegramAuth = {
-      id: fromId,
-      auth_date: Math.floor(nowDate().getTime() / 1000),
-      first_name: "Alice",
-    };
-    const authData = Object.entries(telegramAuth)
-      .sort(([left], [right]) => {
-        return left.localeCompare(right);
-      })
-      .map(([key, value]) => {
-        return `${key}=${value}`;
-      })
-      .join("\n");
-    const secretKey = createHash("sha256").update(OFFICIAL_BOT_TOKEN).digest();
-    await accept(
-      telegramClient().link({
-        headers,
-        body: {
-          telegramBotId: botId,
-          telegramAuth: {
-            ...telegramAuth,
-            hash: createHmac("sha256", secretKey)
-              .update(authData)
-              .digest("hex"),
-          },
-        },
-      }),
-      [200],
-    );
-    const chatId = 78_501;
-
-    async function sendDm(text: string, messageId: number, replyTo?: number) {
-      const response = await postWebhook({
-        telegramBotId: botId,
-        secret,
-        body: {
-          update_id: messageId,
-          message: {
-            message_id: messageId,
-            chat: { id: chatId, type: "private" },
-            from: { id: fromId, first_name: "Alice" },
-            text,
-            ...(replyTo === undefined
-              ? {}
-              : {
-                  reply_to_message: {
-                    message_id: replyTo,
-                    text: "Earlier DM message",
-                  },
-                }),
-          },
-        },
+    const ownedRuns = createTelegramDmOwner(actor);
+    const foreground = ownedRuns.context;
+    const authOrg = createAuthOrgAgentsBddApi(foreground);
+    const runs = createRunsApi(foreground);
+    const reads = createRunReadsApi(foreground);
+    const chat = createChatFilesBddApi(foreground);
+    const webhooks = createWebhookCallbackApi(foreground);
+    const { run, finish } = ownedRuns;
+    const prepared = run(async () => {
+      await runs.grantProEntitlement(actor, {
+        ...options,
+        run,
+        onExternalStateReady: ownedRuns.retainWebhook,
       });
-      expect(response.status).toBe(200);
-      await flushWaitUntilForTest();
-    }
-
-    async function completeDm(
-      text: string,
-      messageId: number,
-      replyTo?: number,
-      assistantText?: string,
-    ) {
-      await sendDm(text, messageId, replyTo);
-      const response = await runReadsApi.requestListLogs(
-        actor,
-        { limit: 20 },
+      await authOrg.completeOnboarding(actor);
+      await createBddIntegrationApi(
+        foreground,
+      ).configureNativeSubscriptionModels(actor);
+      const telegram = telegramApiMocks(OFFICIAL_BOT_TOKEN);
+      const botId = "official";
+      const secret = OFFICIAL_WEBHOOK_SECRET;
+      const headers = authOrg.authenticate(actor);
+      const fromId = Number(newTelegramBotId());
+      const telegramAuth = {
+        id: fromId,
+        auth_date: Math.floor(nowDate().getTime() / 1000),
+        first_name: "Alice",
+      };
+      const authData = Object.entries(telegramAuth)
+        .sort(([left], [right]) => {
+          return left.localeCompare(right);
+        })
+        .map(([key, value]) => {
+          return `${key}=${value}`;
+        })
+        .join("\n");
+      const secretKey = createHash("sha256")
+        .update(OFFICIAL_BOT_TOKEN)
+        .digest();
+      await accept(
+        telegramClient(foreground.signal).link({
+          headers,
+          body: {
+            telegramBotId: botId,
+            telegramAuth: {
+              ...telegramAuth,
+              hash: createHmac("sha256", secretKey)
+                .update(authData)
+                .digest("hex"),
+            },
+          },
+        }),
         [200],
       );
-      expect(response.body.pagination).toMatchObject({ hasMore: false });
-      const run = response.body.data
-        .filter((item) => {
-          return item.status === "pending" || item.status === "running";
-        })
-        .find((item) => {
-          return item.prompt?.includes(text);
-        });
-      if (!run) {
-        throw new Error("Expected a Telegram DM run");
-      }
-      await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await ownedRuns.claim(run.id);
-      if (
-        claim.cliAgentType !== "claude-code" &&
-        claim.cliAgentType !== "codex"
-      ) {
-        throw new Error(
-          `Expected a native Telegram DM claim, got ${claim.cliAgentType}`,
-        );
-      }
-      const replyCount = telegram.sentMessageIds.length;
-      if (assistantText !== undefined) {
-        await webhooksApi.requestAgentEvents(
-          {
-            runId: run.id,
-            events: [
-              {
-                type: "assistant",
-                sequenceNumber: 0,
-                message: {
-                  id: `msg_telegram_dm_${run.id}`,
-                  content: [{ type: "text", text: assistantText }],
-                },
+      const chatId = 78_501;
+
+      function sendDm(text: string, messageId: number, replyTo?: number) {
+        return run(async () => {
+          const response = await postWebhook({
+            telegramBotId: botId,
+            secret,
+            signal: foreground.signal,
+            body: {
+              update_id: messageId,
+              message: {
+                message_id: messageId,
+                chat: { id: chatId, type: "private" },
+                from: { id: fromId, first_name: "Alice" },
+                text,
+                ...(replyTo === undefined
+                  ? {}
+                  : {
+                      reply_to_message: {
+                        message_id: replyTo,
+                        text: "Earlier DM message",
+                      },
+                    }),
               },
-            ],
-          },
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          [200],
-        );
+            },
+          });
+          expect(response.status).toBe(200);
+          await flushWaitUntilForTest();
+        });
       }
-      const sessionId = await completeCanonicalChatRun({
-        runId: run.id,
-        sandboxToken: claim.sandboxToken,
-        cliAgentType: claim.cliAgentType,
-      });
-      expect(telegram.sentMessages.at(-1)?.reply_parameters).toStrictEqual({
-        message_id: messageId,
-      });
-      const botReplyId = telegram.sentMessageIds.at(-1);
-      if (botReplyId === undefined) {
-        throw new Error("Expected a Telegram DM reply");
+
+      function completeDm(
+        text: string,
+        messageId: number,
+        replyTo?: number,
+        assistantText?: string,
+      ) {
+        return run(async () => {
+          await sendDm(text, messageId, replyTo);
+          const response = await reads.requestListLogs(
+            actor,
+            { limit: 20 },
+            [200],
+          );
+          expect(response.body.pagination).toMatchObject({ hasMore: false });
+          const run = response.body.data
+            .filter((item) => {
+              return item.status === "pending" || item.status === "running";
+            })
+            .find((item) => {
+              return item.prompt?.includes(text);
+            });
+          if (!run) {
+            throw new Error("Expected a Telegram DM run");
+          }
+          await runs.heartbeatRunner(runnerGroup);
+          const claim = await ownedRuns.claim(run.id);
+          if (
+            claim.cliAgentType !== "claude-code" &&
+            claim.cliAgentType !== "codex"
+          ) {
+            throw new Error(
+              `Expected a native Telegram DM claim, got ${claim.cliAgentType}`,
+            );
+          }
+          const replyCount = telegram.sentMessageIds.length;
+          if (assistantText !== undefined) {
+            await webhooks.requestAgentEvents(
+              {
+                runId: run.id,
+                events: [
+                  {
+                    type: "assistant",
+                    sequenceNumber: 0,
+                    message: {
+                      id: `msg_telegram_dm_${run.id}`,
+                      content: [{ type: "text", text: assistantText }],
+                    },
+                  },
+                ],
+              },
+              { authorization: `Bearer ${claim.sandboxToken}` },
+              [200],
+            );
+          }
+          const sessionId = await completeCanonicalChatRun({
+            runId: run.id,
+            sandboxToken: claim.sandboxToken,
+            cliAgentType: claim.cliAgentType,
+            signal: foreground.signal,
+          });
+          expect(telegram.sentMessages.at(-1)?.reply_parameters).toStrictEqual({
+            message_id: messageId,
+          });
+          const botReplyId = telegram.sentMessageIds.at(-1);
+          if (botReplyId === undefined) {
+            throw new Error("Expected a Telegram DM reply");
+          }
+          const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+          if (lifecycle.status !== 200) {
+            throw new Error("Expected the Telegram thread event stream");
+          }
+          const threads = replayChatThreadEvents([], lifecycle.body.events);
+          let chatThread: (typeof threads)[number] | undefined;
+          for (const thread of threads) {
+            const { events } = await chat.listThreadEvents(actor, thread.id);
+            if (
+              events.some((event) => {
+                return (
+                  event.eventType === "input.prompt" && event.runId === run.id
+                );
+              })
+            ) {
+              chatThread = thread;
+              break;
+            }
+          }
+          if (!chatThread) {
+            throw new Error(
+              "Expected the Telegram input in its canonical thread",
+            );
+          }
+          return {
+            claim,
+            sessionId,
+            botReplyId,
+            chatThread,
+            replyCount: telegram.sentMessageIds.length - replyCount,
+          };
+        });
       }
-      const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected the Telegram thread event stream");
-      }
-      const threads = replayChatThreadEvents([], lifecycle.body.events);
-      let chatThread: (typeof threads)[number] | undefined;
-      for (const thread of threads) {
-        const { events } = await chatApi.listThreadEvents(actor, thread.id);
-        if (
-          events.some((event) => {
-            return event.eventType === "input.prompt" && event.runId === run.id;
-          })
-        ) {
-          chatThread = thread;
-          break;
-        }
-      }
-      if (!chatThread) {
-        throw new Error("Expected the Telegram input in its canonical thread");
-      }
+      const main = await completeDm("start the main DM", 3501);
       return {
-        claim,
-        sessionId,
-        botReplyId,
-        chatThread,
-        replyCount: telegram.sentMessageIds.length - replyCount,
+        actor,
+        sendDm,
+        completeDm,
+        main,
+        telegram,
+        run,
+        finish,
+        context: foreground,
       };
-    }
-    const main = await completeDm("start the main DM", 3501);
-    return { actor, sendDm, completeDm, main, telegram };
+    });
+    return await onRejection(prepared, (error) => {
+      return closeTelegramDm(() => {
+        throw error;
+      }, finish);
+    });
   }
 
   describe.each([
@@ -1325,62 +1488,84 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         return timer.promise;
       });
-      dm = await prepareTelegramDm();
-      await prepareReplyChain();
+      dm = await prepareTelegramDm(
+        scenario === "models" ? { isolatePg: true } : {},
+      );
+      await onRejection(dm.run(prepareReplyChain), (error) => {
+        return closeTelegramDm(() => {
+          throw error;
+        }, dm.finish);
+      });
     });
 
     it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
-      const { completeDm, main } = dm;
+      return await closeTelegramDm(
+        dm.run(async () => {
+          const { completeDm, main } = dm;
 
-      if (scenario !== "models") {
-        if (!replyChain) {
-          throw new Error("Expected a completed Telegram reply chain");
-        }
-        const { branch, followUp: branchFollowUp } = replyChain;
-        if (scenario === "reply-anchors") {
-          const earlierReply = await completeDm(
-            "reply to the earlier user message",
-            3505,
-            3503,
-          );
-          expect(earlierReply.claim.nativeContinuation?.sessionId).toBe(
-            branchFollowUp.sessionId,
-          );
-          return;
-        }
-        await createBddIntegrationApi(context).updateUserModelPreference(
-          dm.actor,
-          "gpt-6-astra",
-        );
-        const pinnedReply = await completeDm(
-          "keep the reply chain model",
-          3508,
-          branch.botReplyId,
-        );
-        // Existing conversations keep their model when the member default changes.
-        expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
-        expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
-        expect(pinnedReply.chatThread.selectedModel).toBe("claude-fable-5-1");
-        expect(pinnedReply.claim.nativeContinuation?.sessionId).toBe(
-          branchFollowUp.sessionId,
-        );
-        return;
-      }
+          if (scenario !== "models") {
+            if (!replyChain) {
+              throw new Error("Expected a completed Telegram reply chain");
+            }
+            const { branch, followUp: branchFollowUp } = replyChain;
+            if (scenario === "reply-anchors") {
+              const earlierReply = await completeDm(
+                "reply to the earlier user message",
+                3505,
+                3503,
+              );
+              expect(earlierReply.claim.nativeContinuation?.sessionId).toBe(
+                branchFollowUp.sessionId,
+              );
+              return;
+            }
+            await createBddIntegrationApi(dm.context).updateUserModelPreference(
+              dm.actor,
+              "gpt-6-astra",
+            );
+            const pinnedReply = await completeDm(
+              "keep the reply chain model",
+              3508,
+              branch.botReplyId,
+            );
+            // Existing conversations keep their model when the member default changes.
+            expect(pinnedReply.claim.modelUsageProvider).toBe(
+              "claude-fable-5-1",
+            );
+            expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
+            expect(pinnedReply.chatThread.selectedModel).toBe(
+              "claude-fable-5-1",
+            );
+            expect(pinnedReply.claim.nativeContinuation?.sessionId).toBe(
+              branchFollowUp.sessionId,
+            );
+            return;
+          }
 
-      const followUp = await completeDm("continue the main DM", 3502);
-      expect(followUp.claim.nativeContinuation?.sessionId).toBe(main.sessionId);
-      expect(followUp.chatThread.id).toBe(main.chatThread.id);
-      expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
-      expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
-        "<i>Claude Fable 5.1</i>",
+          const followUp = await completeDm("continue the main DM", 3502);
+          expect(followUp.claim.nativeContinuation?.sessionId).toBe(
+            main.sessionId,
+          );
+          expect(followUp.chatThread.id).toBe(main.chatThread.id);
+          expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
+          expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
+            "<i>Claude Fable 5.1</i>",
+          );
+        }),
+        dm.finish,
       );
     });
   });
 
   it("forwards unrecognized Telegram DM slash inputs to the agent", async () => {
     const dm = await prepareTelegramDm();
-    const forwarded = await dm.completeDm("/unrecognized_command", 3511);
-    expect(forwarded.chatThread.id).toBe(dm.main.chatThread.id);
+    await closeTelegramDm(
+      dm.run(async () => {
+        const forwarded = await dm.completeDm("/unrecognized_command", 3511);
+        expect(forwarded.chatThread.id).toBe(dm.main.chatThread.id);
+      }),
+      dm.finish,
+    );
   });
 
   async function runCanonicalTelegramForumScenario(

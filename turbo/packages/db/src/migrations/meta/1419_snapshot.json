@@ -1,6 +1,6 @@
 {
-  "id": "2fd2d5ef-7ac6-41d9-bbc8-ab86a4719bd4",
-  "prevId": "8356a1a4-6a30-4876-9c17-f4bf28752dfc",
+  "id": "11b32217-619c-472d-a868-de6bcc7c6a63",
+  "prevId": "7a5b1ea4-88d0-4078-8e7b-457fcb91587c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2452,28 +2452,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "artifacts_projection_file_org_idx": {
-          "name": "artifacts_projection_file_org_idx",
-          "columns": [
-            {
-              "expression": "projection_file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -34981,13 +34959,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "workflow_receiver": {
-          "name": "workflow_receiver",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",
