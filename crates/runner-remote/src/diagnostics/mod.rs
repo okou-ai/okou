@@ -458,7 +458,7 @@ impl Handle {
             identity,
             cause,
             dependency,
-            native,
+            mut native,
             ssh,
             vnc,
         } = record;
@@ -477,9 +477,11 @@ impl Handle {
             .and_then(|source| source.evidence.layers().snapshot())
             .map(Box::new);
         let native_connection = native
-            .as_ref()
-            .and_then(|source| source.connection.as_ref())
-            .and_then(crate::tailscale::evidence::Trace::snapshot)
+            .as_mut()
+            // Reports keep the frozen capture, not the live connection link
+            // whose regional trace can hold private peer-key correlation state.
+            .and_then(|source| source.connection.take())
+            .and_then(|connection| connection.snapshot())
             .map(Box::new);
         let mut report = Report {
             run_id: self.store.run,

@@ -290,3 +290,42 @@ fn snapshots_drop_private_correlation_keys_and_bound_the_live_control_history() 
     assert!(serialized.contains("disconnected"));
     assert!(!serialized.contains(&target.to_string()) && !serialized.contains(&other.to_string()));
 }
+
+#[test]
+fn retained_reports_do_not_extend_the_live_connection_trace_lifetime() {
+    let handle = Handle::new(RunId::new_v4(), true);
+    let connection = Trace::new(true);
+    let live = Arc::downgrade(connection.state.as_ref().unwrap());
+    let id = connection.id().unwrap();
+    let evidence = Arc::new(NativeEvidence::new());
+    let report = handle
+        .record(Record {
+            protocol: Protocol::Ssh,
+            connection: uuid::Uuid::new_v4(),
+            operation: Operation::Exec,
+            identity: Identity::default(),
+            cause: Some(Cause::Ssh(crate::ssh::FailureReason::TimedOut)),
+            dependency: None,
+            native: Some(NativeSource {
+                configuration_id: uuid::Uuid::new_v4(),
+                generation: 1,
+                resource_id: evidence.resource_id,
+                evidence,
+                connection: Some(connection),
+            }),
+            ssh: None,
+            vnc: None,
+        })
+        .unwrap();
+    assert!(
+        live.upgrade().is_none(),
+        "history must not retain private live correlation state"
+    );
+    assert_eq!(
+        report.evidence().unwrap()["native_connection"]["attempt_id"],
+        id.to_string()
+    );
+    let text = report.message().unwrap();
+    assert!(text.contains(&id.to_string()));
+    assert!(text.len() <= 8192);
+}
