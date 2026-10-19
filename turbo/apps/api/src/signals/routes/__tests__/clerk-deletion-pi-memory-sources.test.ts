@@ -7,6 +7,7 @@ import {
 } from "./helpers/clerk-deletion-pi-memory-fixture";
 
 const context = testContext();
+// Billing is outside this source-isolation contract; use normal onboarding.
 const {
   publish,
   completeMaintenance,
@@ -17,7 +18,7 @@ const {
   expectBlocked,
   deleteOwner,
   extractIndependentOwnerAfterDeletion,
-} = createClerkDeletionPiMemoryFixture(context);
+} = createClerkDeletionPiMemoryFixture(context, "limited-free");
 
 // Extraction/consolidation use real CRON_SECRET auth and case-owned DB.
 // Sources come from ordinary chat/native history; deletion uses Clerk ingress.
