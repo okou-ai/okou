@@ -497,6 +497,7 @@ mod tests {
     async fn memory_prefetch_tasks_bound_active_blocking_work() {
         let (started_tx, mut started_rx) = mpsc::unbounded_channel();
         let gate = Arc::new(BlockingGate::new(started_tx));
+        let _release = ReleaseBlockingGate(Arc::clone(&gate));
         let task_gate = Arc::clone(&gate);
         let mut tasks = MemoryPrefetchTasks::spawn_with(
             [
@@ -530,6 +531,7 @@ mod tests {
         let first_path = PathBuf::from("/snapshots/first/memory.bin");
         let (started_tx, mut started_rx) = mpsc::unbounded_channel();
         let gate = Arc::new(BlockingGate::new(started_tx));
+        let _release = ReleaseBlockingGate(Arc::clone(&gate));
         let task_gate = Arc::clone(&gate);
         let mut tasks = MemoryPrefetchTasks::spawn_with(
             [
@@ -607,6 +609,15 @@ mod tests {
         MemoryPrefetchCandidate {
             path: path.into(),
             memory_mb,
+        }
+    }
+
+    // Workers retain the gate, so a separate test-scoped owner must release it on unwind.
+    struct ReleaseBlockingGate(Arc<BlockingGate>);
+
+    impl Drop for ReleaseBlockingGate {
+        fn drop(&mut self) {
+            self.0.release_all();
         }
     }
 
