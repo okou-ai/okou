@@ -565,7 +565,7 @@
       "agentLoading": "エージェントを読み込み中",
       "connect": "Google Drive を接続します",
       "connectTooltip": "Google Drive を接続してアーティファクトをアップロードする",
-      "conversionNotice": "編集可能なコピーを作成",
+      "conversionNotice": "編集可能なコピーを作成します。書式が変わる場合があります。",
       "conversionUnconfirmed": "Google での変換結果を確認できませんでした。再試行する前にドライブを確認してください。",
       "noArtifacts": "同期するアーティファクトがありません",
       "openDocs": "Google ドキュメントで開く",

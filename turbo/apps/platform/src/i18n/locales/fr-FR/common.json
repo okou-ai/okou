@@ -581,7 +581,7 @@
       "agentLoading": "L'agent est encore en cours de chargement",
       "connect": "Connecter Google Drive",
       "connectTooltip": "Connecter Google Drive pour télécharger des artéfacts",
-      "conversionNotice": "Créer une copie modifiable",
+      "conversionNotice": "Crée une copie modifiable ; la mise en forme peut varier.",
       "conversionUnconfirmed": "La conversion Google n’a pas pu être confirmée. Vérifiez Drive avant de réessayer.",
       "noArtifacts": "Aucun artéfact à synchroniser",
       "openDocs": "Ouvrir dans Google Docs",
