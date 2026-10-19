@@ -492,6 +492,12 @@ test.each([
       fields: [
         { key: "apiKey", label: "API key", kind: "secret", required: true },
       ],
+      headerInjections: [
+        {
+          name: "Authorization",
+          valueTemplate: "Bearer {{secrets.apiKey}}",
+        },
+      ],
       missingRequiredFields: definitionReady ? [] : ["apiKey"],
       configuredFieldKeys: definitionReady ? ["apiKey"] : [],
       permissionBundleRef: "builtin:acme-search@1",
@@ -555,6 +561,63 @@ test("An agent can grant access through a healthy configured default while a sib
       agentId: RESEARCH_AGENT_ID,
       grants: [{ customConnectorId: connector.id, permissionNames: [] }],
       operation: "add",
+    },
+  ]);
+});
+
+test("An open permission drawer cannot apply access after its saved default expires", async () => {
+  const connector = acmeConnectorFixture({
+    permissionBundleRef: "builtin:acme-search@1",
+  });
+  const saves: unknown[] = [];
+  mockConnectorSurface(context, {
+    customConnectors: [connector],
+    initialCustomByAgent: {
+      [RESEARCH_AGENT_ID]: [
+        { customConnectorId: connector.id, permissionNames: [] },
+      ],
+    },
+    onCustomSave: (args) => {
+      saves.push(args);
+    },
+  });
+  context.mocks.api(customConnectorByIdContract.permissions, ({ respond }) => {
+    return respond(200, {
+      ref: "builtin:acme-search@1",
+      permissions: [{ name: "search:run", description: "Run a search" }],
+      defaultPolicies: { "search:run": "deny" },
+    });
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("Acme Search");
+  click(await screen.findByLabelText("Manage Acme Search permissions"));
+  await screen.findByRole("heading", { name: /Acme Search permissions/i });
+  const permission = await screen.findByText("search:run");
+  const row = permission.closest("div.flex.items-center.gap-3");
+  expect(row).not.toBeNull();
+  click(within(row as HTMLElement).getByText("Allow"));
+  expect(exactButton("Apply")).toBeEnabled();
+
+  mockConnectorOverview(context, [], {
+    customConnectors: [connector],
+    accountSummaries: [savedCustomSummary(connector, true)],
+  });
+  context.mocks.ably.trigger("customConnectorListChanged");
+  await screen.findByText("1/2 need attention");
+  expect(
+    screen.queryByRole("heading", { name: /Acme Search permissions/i }),
+  ).toBeNull();
+  expect(screen.queryByLabelText("Manage Acme Search permissions")).toBeNull();
+  expect(saves).toStrictEqual([]);
+  const revoke = connectorAccessSwitch("Revoke Acme Search access");
+  expect(revoke).not.toHaveAttribute("aria-disabled", "true");
+  click(revoke);
+  await screen.findByText("Custom connectors saved");
+  expect(saves).toStrictEqual([
+    {
+      agentId: RESEARCH_AGENT_ID,
+      grants: [{ customConnectorId: connector.id, permissionNames: [] }],
+      operation: "remove",
     },
   ]);
 });
