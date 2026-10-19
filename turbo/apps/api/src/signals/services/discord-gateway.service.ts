@@ -25,7 +25,7 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { safeJsonParse, tapError } from "../utils";
 import { processCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import {
@@ -51,64 +51,38 @@ function ignored(reason: string): Response {
   return Response.json({ ok: true, outcome: "ignored", reason });
 }
 
-async function existingMessageResponse(
-  db: Db,
-  applicationId: string,
+function previousMessageResponse(
+  previous: Pick<typeof discordChatIngress.$inferSelect, "payload">,
   message: DiscordMessageCreate,
-  signal: AbortSignal,
-): Promise<Response | undefined> {
-  const messageId = message.id;
-  const [previous] = await db
-    .select({ id: discordChatIngress.id, payload: discordChatIngress.payload })
-    .from(discordChatIngress)
-    .where(eq(discordChatIngress.messageId, messageId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (previous) {
-    const acceptedEnvelope = discordGatewayEnvelopeSchema.parse(
-      JSON.parse(previous.payload),
-    );
-    const acceptedMessage = discordMessageCreateSchema.parse(
-      acceptedEnvelope.payload,
-    );
-    if (
-      acceptedMessage.author.id !== message.author.id ||
-      acceptedMessage.channel_id !== message.channel_id ||
-      acceptedMessage.guild_id !== message.guild_id
-    ) {
-      return gatewayError("BAD_REQUEST", "Message identity changed");
-    }
-    // The persisted sender/connection remains authoritative across retries,
-    // even when the sender changes their selected DM organization meanwhile.
-    return Response.json({ ok: true, outcome: "duplicate" });
+): Response {
+  const acceptedEnvelope = discordGatewayEnvelopeSchema.parse(
+    JSON.parse(previous.payload),
+  );
+  const acceptedMessage = discordMessageCreateSchema.parse(
+    acceptedEnvelope.payload,
+  );
+  if (
+    acceptedMessage.author.id !== message.author.id ||
+    acceptedMessage.channel_id !== message.channel_id ||
+    acceptedMessage.guild_id !== message.guild_id
+  ) {
+    return gatewayError("BAD_REQUEST", "Message identity changed");
   }
-  const receiptMessageId = message.id;
-  const [receipt] = await db
-    .select({ eventDigest: discordGatewayReceipts.eventDigest })
-    .from(discordGatewayReceipts)
-    .where(
-      eq(
-        discordGatewayReceipts.eventDigest,
-        discordMessageReceiptDigest(applicationId, receiptMessageId),
-      ),
-    )
-    .limit(1);
-  const hasReceipt = Boolean(receipt);
-  if (hasReceipt) {
-    signal.throwIfAborted();
-    return Response.json({ ok: true, outcome: "duplicate" });
-  }
-  return undefined;
+  // The persisted sender/connection remains authoritative across retries,
+  // even when the sender changes their selected DM organization meanwhile.
+  return Response.json({ ok: true, outcome: "duplicate" });
+}
+
+interface DiscordMessageArgs {
+  readonly envelope: DiscordGatewayEnvelope;
+  readonly body: string;
+  readonly botToken: string;
 }
 
 const handleDiscordMessage$ = command(
   async (
     { get, set },
-    args: {
-      readonly envelope: DiscordGatewayEnvelope;
-      readonly body: string;
-      readonly botToken: string;
-    },
+    args: DiscordMessageArgs,
     signal: AbortSignal,
   ): Promise<Response> => {
     const { envelope, body, botToken } = args;
@@ -122,12 +96,40 @@ const handleDiscordMessage$ = command(
     if (!isDiscordUserMessage(message)) {
       return ignored("unsupported-message");
     }
-    const previousResponse = await existingMessageResponse(
-      set(writeDb$),
-      envelope.applicationId,
-      message,
-      signal,
-    );
+    const db = set(writeDb$);
+    const applicationId = envelope.applicationId;
+    const previousResponse = await (async (duplicateSignal: AbortSignal) => {
+      const messageId = message.id;
+      const [previous] = await db
+        .select({
+          id: discordChatIngress.id,
+          payload: discordChatIngress.payload,
+        })
+        .from(discordChatIngress)
+        .where(eq(discordChatIngress.messageId, messageId))
+        .limit(1);
+      duplicateSignal.throwIfAborted();
+      if (previous) {
+        return previousMessageResponse(previous, message);
+      }
+      const receiptMessageId = message.id;
+      const [receipt] = await db
+        .select({ eventDigest: discordGatewayReceipts.eventDigest })
+        .from(discordGatewayReceipts)
+        .where(
+          eq(
+            discordGatewayReceipts.eventDigest,
+            discordMessageReceiptDigest(applicationId, receiptMessageId),
+          ),
+        )
+        .limit(1);
+      const hasReceipt = Boolean(receipt);
+      if (hasReceipt) {
+        duplicateSignal.throwIfAborted();
+        return Response.json({ ok: true, outcome: "duplicate" });
+      }
+      return undefined;
+    })(signal);
     if (previousResponse) {
       return previousResponse;
     }

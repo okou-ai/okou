@@ -9,8 +9,11 @@ import { createPiMemoryMaintenanceFixture } from "./pi-memory-maintenance-fixtur
 
 export type Deletion = "user.deleted" | "organization.deleted";
 
-export function createClerkDeletionPiMemoryFixture(context: TestContext) {
-  const fixture = createPiMemoryMaintenanceFixture(context);
+export function createClerkDeletionPiMemoryFixture(
+  context: TestContext,
+  onboarding: "paid" | "limited-free" = "paid",
+) {
+  const fixture = createPiMemoryMaintenanceFixture(context, onboarding);
   const { webhooks, cronHeaders, prepareSources, prepareMaintenance } = fixture;
 
   type Sources = Awaited<ReturnType<typeof prepareSources>>;

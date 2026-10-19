@@ -1,6 +1,6 @@
 {
-  "id": "9277b2c6-9c45-4fd7-8855-d16be4b9023b",
-  "prevId": "6d9f01e9-4241-441e-9e94-58b9b9bc8e94",
+  "id": "65b2fbbe-92ea-40e5-91f0-9ab6d5c5c81e",
+  "prevId": "4379c177-ec4a-44fa-be7d-c45c39df54f7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1528,6 +1528,90 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.agentphone_contact_card_deliveries": {
+      "name": "agentphone_contact_card_deliveries",
+      "schema": "",
+      "columns": {
+        "user_link_id": {
+          "name": "user_link_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempt_message_id": {
+          "name": "attempt_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempted_at": {
+          "name": "attempted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_message_id": {
+          "name": "provider_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "agentphone_contact_card_user_link_fk": {
+          "name": "agentphone_contact_card_user_link_fk",
+          "tableFrom": "agentphone_contact_card_deliveries",
+          "tableTo": "agentphone_user_links",
+          "columnsFrom": [
+            "user_link_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "agentphone_contact_card_status": {
+          "name": "agentphone_contact_card_status",
+          "value": "\"agentphone_contact_card_deliveries\".\"status\" IN ('pending', 'unknown', 'sent', 'failed')"
+        },
+        "agentphone_contact_card_attempt": {
+          "name": "agentphone_contact_card_attempt",
+          "value": "\"agentphone_contact_card_deliveries\".\"status\" = 'pending' OR (\"agentphone_contact_card_deliveries\".\"conversation_id\" IS NOT NULL AND \"agentphone_contact_card_deliveries\".\"attempt_message_id\" IS NOT NULL AND \"agentphone_contact_card_deliveries\".\"attempted_at\" IS NOT NULL)"
+        },
+        "agentphone_contact_card_receipt": {
+          "name": "agentphone_contact_card_receipt",
+          "value": "(\"agentphone_contact_card_deliveries\".\"status\" = 'sent') = (\"agentphone_contact_card_deliveries\".\"provider_message_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.agentphone_group_message_receipts": {
       "name": "agentphone_group_message_receipts",
       "schema": "",
@@ -2458,28 +2542,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "artifacts_projection_file_org_idx": {
-          "name": "artifacts_projection_file_org_idx",
-          "columns": [
-            {
-              "expression": "projection_file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
