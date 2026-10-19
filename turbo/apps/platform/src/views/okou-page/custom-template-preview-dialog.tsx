@@ -253,8 +253,10 @@ function CustomTemplatePreviewBody({
  */
 export function CustomTemplatePreviewDialog({
   onSelect,
+  returnFocus,
 }: {
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+  readonly returnFocus: (interactionType: string) => HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const openKind = useGet(openCustomTemplateKind$);
@@ -278,6 +280,7 @@ export function CustomTemplatePreviewDialog({
       }}
     >
       <DialogContent
+        finalFocus={returnFocus}
         aria-describedby={undefined}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;

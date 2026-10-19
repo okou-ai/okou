@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { FileText } from "lucide-react";
@@ -6,6 +8,8 @@ import {
   DOCUMENT_TEMPLATE_CATEGORIES,
   type DocumentTemplateItem,
 } from "@okouai/core/document-template-items";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { TemplateSourceSection } from "./template-source-section.tsx";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
@@ -20,61 +24,89 @@ import {
 type Props = {
   readonly signals: ComposerSignals;
   readonly onSelect: (item: DocumentTemplateItem) => void;
+  readonly customTemplates?: ReactNode;
 };
 
-export function DocumentTemplatePickerPane({ signals, onSelect }: Props) {
+export function DocumentTemplatePickerPane({
+  signals,
+  onSelect,
+  customTemplates,
+}: Props) {
   const { t } = useTranslation();
   const category = useGet(signals.template.documentCategory$);
   const items = useGet(signals.template.documentItems$);
+  const search = useGet(signals.template.templatePickerSearch$);
+  const features = useGet(featureSwitch$);
+  const filteredItems = customTemplates
+    ? items.filter((item) => {
+        return item.title.toLowerCase().includes(search.trim().toLowerCase());
+      })
+    : items;
   const setCategory = useSet(signals.template.setDocumentCategory$);
   const saveScroll = useSet(signals.template.saveDocumentScroll$);
   const restoreScroll = useSet(signals.template.restoreDocumentScroll$);
+  const filters = (
+    <TemplateFilterPillRow
+      className={customTemplates ? "mb-4" : "shrink-0 px-6 py-5 pr-14"}
+      active={category}
+      label={t(($) => {
+        return $.documentTemplates.filter;
+      })}
+      pills={DOCUMENT_TEMPLATE_CATEGORIES.map((id) => {
+        return {
+          id,
+          label: t(($) => {
+            return $.documentTemplates.categories[id];
+          }),
+        };
+      })}
+      onSelect={(id) => {
+        const found = DOCUMENT_TEMPLATE_CATEGORIES.find((entry) => {
+          return entry === id;
+        });
+        if (found) {
+          setCategory(found);
+        }
+      }}
+    />
+  );
+  const cards = (
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {filteredItems.map((item) => {
+        return (
+          <DocumentTemplateCard
+            key={item.id}
+            signals={signals}
+            item={item}
+            onSelect={onSelect}
+          />
+        );
+      })}
+    </div>
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <TemplateFilterPillRow
-        className="shrink-0 px-6 py-5 pr-14"
-        active={category}
-        label={t(($) => {
-          return $.documentTemplates.filter;
-        })}
-        pills={DOCUMENT_TEMPLATE_CATEGORIES.map((id) => {
-          return {
-            id,
-            label: t(($) => {
-              return $.documentTemplates.categories[id];
-            }),
-          };
-        })}
-        onSelect={(id) => {
-          const found = DOCUMENT_TEMPLATE_CATEGORIES.find((entry) => {
-            return entry === id;
-          });
-          if (found) {
-            setCategory(found);
-          }
-        }}
-      />
+      {customTemplates ? null : filters}
       <div
-        key={category}
+        key={customTemplates ? undefined : category}
         ref={restoreScroll}
         onScroll={(event) => {
-          saveScroll(event.currentTarget.scrollTop);
+          return saveScroll(event.currentTarget.scrollTop);
         }}
         className="min-h-0 flex-1 overflow-y-auto px-6 pb-6"
         data-document-template-grid-scroll=""
       >
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => {
-            return (
-              <DocumentTemplateCard
-                key={item.id}
-                signals={signals}
-                item={item}
-                onSelect={onSelect}
-              />
-            );
-          })}
-        </div>
+        {customTemplates}
+        {customTemplates ? (
+          features[FeatureSwitchKey.BuiltinDocumentTemplates] === true ? (
+            <TemplateSourceSection source="builtIn">
+              {filters}
+              {cards}
+            </TemplateSourceSection>
+          ) : null
+        ) : (
+          cards
+        )}
       </div>
     </div>
   );

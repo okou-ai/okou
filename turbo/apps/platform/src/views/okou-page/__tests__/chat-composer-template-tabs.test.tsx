@@ -130,25 +130,19 @@ test("Category arrows select the matching panel and keep focus on the selected t
     queryAllByRoleFast("tab", list).map((tab) => {
       return tab.textContent;
     }),
-  ).toStrictEqual([
-    "Custom",
-    "Presentation",
-    "Website",
-    "Illustration",
-    "Workflow",
-  ]);
-  selectedPanel(dialog, "Custom");
+  ).toStrictEqual(["Presentation", "Document", "Website", "Image", "Workflow"]);
+  selectedPanel(dialog, "Presentation");
   await waitFor(() => {
-    expect(tabNamed(dialog, "Custom")).toHaveFocus();
+    expect(tabNamed(dialog, "Presentation")).toHaveFocus();
   });
 
-  await user.click(tabNamed(dialog, "Custom"));
+  await user.click(tabNamed(dialog, "Presentation"));
   await user.keyboard("{ArrowDown}");
+  selectedPanel(dialog, "Document");
+  expect(tabNamed(dialog, "Document")).toHaveFocus();
+  await user.keyboard("{ArrowUp}");
   selectedPanel(dialog, "Presentation");
   expect(tabNamed(dialog, "Presentation")).toHaveFocus();
-  await user.keyboard("{ArrowUp}");
-  selectedPanel(dialog, "Custom");
-  expect(tabNamed(dialog, "Custom")).toHaveFocus();
 });
 
 test("Mobile category selection selects the matching panel", async () => {
@@ -156,7 +150,7 @@ test("Mobile category selection selects the matching panel", async () => {
   const category = within(dialog).getByRole("combobox", {
     name: "Template category",
   });
-  expect(category).toHaveTextContent("Custom");
+  expect(category).toHaveTextContent("Presentation");
   await waitFor(() => {
     expect(category).toHaveFocus();
   });
@@ -170,7 +164,7 @@ test("Mobile category selection selects the matching panel", async () => {
 test("Reopening the template picker focuses its current category control", async () => {
   const { user, dialog } = await openPicker();
   await waitFor(() => {
-    expect(tabNamed(dialog, "Custom")).toHaveFocus();
+    expect(tabNamed(dialog, "Presentation")).toHaveFocus();
   });
   await user.keyboard("{Escape}");
   await waitFor(() => {
@@ -179,7 +173,7 @@ test("Reopening the template picker focuses its current category control", async
   const reopened = await openTemplatePicker(user);
   expect(reopened).not.toBe(dialog);
   await waitFor(() => {
-    expect(tabNamed(reopened, "Custom")).toHaveFocus();
+    expect(tabNamed(reopened, "Presentation")).toHaveFocus();
   });
 });
 

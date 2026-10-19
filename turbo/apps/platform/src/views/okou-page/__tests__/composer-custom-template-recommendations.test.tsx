@@ -229,11 +229,17 @@ test.each([
     const menu = await screen.findByTestId("slash-workflow-menu");
     click(button(entry, menu));
     const customTab = await waitFor(() => {
-      return tabByText("Custom");
+      return tabByText(
+        kind === "presentation"
+          ? "Presentation"
+          : kind === "document"
+            ? "Document"
+            : "Image",
+      );
     });
     const dialog = customTab.closest('[role="dialog"]');
     if (!(dialog instanceof HTMLElement)) {
-      throw new Error("Expected the Custom tab in a template dialog");
+      throw new Error("Expected the content type tab in a template dialog");
     }
     click(customTab);
     await within(dialog).findByText(own.title);

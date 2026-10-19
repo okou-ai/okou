@@ -342,7 +342,7 @@ function ComposerTemplateShelf({
                     {
                       type: "custom",
                       title: template.title,
-                      category: "custom",
+                      category: "illustration",
                       ...(template.coverUrl === null
                         ? {}
                         : { previewImageUrl: template.coverUrl }),
