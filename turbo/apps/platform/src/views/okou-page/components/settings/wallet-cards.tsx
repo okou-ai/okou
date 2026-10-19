@@ -118,7 +118,7 @@ export function WalletCards() {
           })}
         </ul>
       )}
-      <div className="flex justify-end border-t border-t-gray-400 bg-gray-50 px-5 py-4">
+      <div className="flex justify-end border-t border-t-gray-400 px-5 py-4">
         <a
           href="https://app.link.com/wallet"
           target="_blank"
