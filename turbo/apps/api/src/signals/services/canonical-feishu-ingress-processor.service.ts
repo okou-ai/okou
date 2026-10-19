@@ -132,35 +132,27 @@ interface CanonicalFeishuInboundMessage extends FeishuInboundMessage {
   readonly platform: FeishuPlatform;
 }
 
-async function claimIngress(
-  db: Db,
-  ingressId: string,
-  currentTime: Date,
-): Promise<boolean> {
+function feishuIngressClaimWritePlan(ingressId: string, currentTime: Date) {
   const staleBefore = new Date(
     currentTime.getTime() - PROCESSING_STALE_AFTER_MS,
   );
-  const [claimed] = await db
-    .update(feishuChatIngress)
-    .set({
-      status: "processing",
+  return {
+    values: {
+      status: "processing" as const,
       lastError: null,
       updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        or(
-          inArray(feishuChatIngress.status, ["pending", "failed"]),
-          and(
-            eq(feishuChatIngress.status, "processing"),
-            lt(feishuChatIngress.updatedAt, staleBefore),
-          ),
+    },
+    condition: and(
+      eq(feishuChatIngress.id, ingressId),
+      or(
+        inArray(feishuChatIngress.status, ["pending", "failed"]),
+        and(
+          eq(feishuChatIngress.status, "processing"),
+          lt(feishuChatIngress.updatedAt, staleBefore),
         ),
       ),
-    )
-    .returning({ id: feishuChatIngress.id });
-  return claimed !== undefined;
+    ),
+  };
 }
 
 async function loadClaimedIngress(db: Db, ingressId: string) {
@@ -1053,7 +1045,17 @@ export const processCanonicalFeishuIngress$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const claimed = await claimIngress(db, args.ingressId, nowDate());
+    const claimIngressId = args.ingressId;
+    const claimTime = nowDate();
+    const claimed = await (async () => {
+      const plan = feishuIngressClaimWritePlan(claimIngressId, claimTime);
+      const [updated] = await db
+        .update(feishuChatIngress)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({ id: feishuChatIngress.id });
+      return updated !== undefined;
+    })();
     signal.throwIfAborted();
     if (!claimed) {
       return false;
