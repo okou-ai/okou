@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.751.5](https://github.com/okou-ai/okou/compare/api-v1.751.4...api-v1.751.5) (2026-10-19)
+
+
+### Bug Fixes
+
+* gate chat relationships with chat resources ([#41222](https://github.com/okou-ai/okou/issues/41222)) ([70fb95a](https://github.com/okou-ai/okou/commit/70fb95a14daf3ba4ce7995ab188f9a57e616a01d))
+* send wechat welcome on connection and add reconnect page ([#41211](https://github.com/okou-ai/okou/issues/41211)) ([14f9545](https://github.com/okou-ai/okou/commit/14f95457d99c5b3dfa98918de4e888f94095217a))
+
+
+### Refactoring
+
+* **runtime:** remove retired session conversation code ([#41218](https://github.com/okou-ai/okou/issues/41218)) ([b88a27d](https://github.com/okou-ai/okou/commit/b88a27dd3bc4df3a11e4e8953547d9170421e804))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.3
+    * @okouai/core bumped to 8.769.0
+    * @okouai/db bumped to 1.345.9
+    * @okouai/pi-agent-runtime bumped to 1.50.22
+
 ## [1.751.4](https://github.com/okou-ai/okou/compare/api-v1.751.3...api-v1.751.4) (2026-10-19)
 
 

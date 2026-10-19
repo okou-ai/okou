@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.234.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.12...runner-rs-v0.234.13) (2026-10-19)
+
+
+### Bug Fixes
+
+* **runner:** preserve codex subscription reconnect outcomes ([#41201](https://github.com/okou-ai/okou/issues/41201)) ([f359e10](https://github.com/okou-ai/okou/commit/f359e10a52ad666904a28c2c0641fba175a22631))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.11...runner-rs-v0.234.12) (2026-10-19)
 
 ### Release Dependencies
