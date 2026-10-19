@@ -1,11 +1,14 @@
 import { Toolbar } from "@base-ui/react/toolbar";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet, type LoadableState } from "ccstate-react";
 import { registerConnectorConnectionDialog$ } from "../../signals/connector-connection-progress.ts";
 import { useConnectorConnectionDialogClose } from "../components/connector-connection-progress.tsx";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   Dialog,
@@ -18,9 +21,13 @@ import {
   SegmentControl,
   SegmentControlItem,
 } from "@okouai/ui/components/ui/segment-control";
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, LoadErrorRow } from "@okouai/ui";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
+import {
+  connectorAccountSummaryByTarget$,
+  reloadConnectorAccountSummaries$,
+} from "../../signals/okou-page/connector-accounts.ts";
+import { retryCustomConnectors$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
@@ -39,6 +46,7 @@ import type {
 import type { ConnectorCategorySection } from "../../signals/okou-page/settings/connector-categories.ts";
 import {
   ConnectorCard,
+  ConnectorAccountSummaryText,
   DIRECTORY_HAIRLINE,
   DIRECTORY_SURFACE,
 } from "./components/settings/connector-card.tsx";
@@ -50,11 +58,11 @@ import { SshLoadError } from "./ssh-load-error.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
 import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
-import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { ConnectorDetailPanel } from "./connector-directory-detail.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import {
   buildConnectorDirectoryModel,
+  currentDirectoryAccountSummaries,
   type ConnectorDirectoryModel,
 } from "./connector-directory-model.ts";
 
@@ -222,9 +230,11 @@ function DirectoryNoResults({
 
 function CustomConnectorDirectoryCard({
   connector,
+  summary,
   onConnect,
 }: {
   readonly connector: CustomConnectorResponse;
+  readonly summary: ConnectorAccountSummary | undefined;
   readonly onConnect: () => void;
 }) {
   const { t } = useTranslation();
@@ -296,6 +306,21 @@ function CustomConnectorDirectoryCard({
           {customConnectorTarget(connector)}
         </span>
       </span>
+      {!isIntegrationManagedCustomConnector(connector) && (
+        <span className="flex flex-col gap-1 border-t border-border/50 px-4 py-2.5 text-xs">
+          <ConnectorAccountSummaryText summary={summary} status="ready" />
+          {summary &&
+            summary.accountCount > 0 &&
+            summary.attentionCount === 0 &&
+            !connector.connected && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {t(($) => {
+                  return $.connectors.accounts.reconnectRequired;
+                })}
+              </span>
+            )}
+        </span>
+      )}
     </button>
   );
 }
@@ -656,13 +681,18 @@ function DirectoryDiscoverPanel({
 
 function DirectoryCustomPanel({
   connectors,
+  attention,
+  accountSummaries,
   onConnectCustom,
 }: {
   readonly connectors: readonly CustomConnectorResponse[];
+  readonly attention: readonly CustomConnectorResponse[];
+  readonly accountSummaries:
+    ReadonlyMap<string, ConnectorAccountSummary> | undefined;
   readonly onConnectCustom: (connector: CustomConnectorResponse) => void;
 }) {
   const { t } = useTranslation();
-  if (connectors.length === 0) {
+  if (connectors.length === 0 && attention.length === 0) {
     return (
       <DirectoryEmptyState
         icon={<Plus size={24} aria-hidden="true" />}
@@ -675,24 +705,67 @@ function DirectoryCustomPanel({
       />
     );
   }
+  const renderCard = (connector: CustomConnectorResponse) => {
+    return (
+      <CustomConnectorDirectoryCard
+        key={connector.id}
+        connector={connector}
+        summary={accountSummaries?.get(`custom:${connector.id}`)}
+        onConnect={() => {
+          onConnectCustom(connector);
+        }}
+      />
+    );
+  };
   return (
-    <DirectorySection
-      title={t(($) => {
-        return $.chat.connectors.directory.tabCustom;
+    <>
+      {attention.length > 0 && (
+        <DirectorySection
+          tone="warning"
+          title={t(($) => {
+            return $.chat.connectors.directory.needsAttention;
+          })}
+        >
+          {attention.map(renderCard)}
+        </DirectorySection>
+      )}
+      {connectors.length > 0 && (
+        <DirectorySection
+          title={t(($) => {
+            return $.chat.connectors.directory.tabCustom;
+          })}
+        >
+          {connectors.map(renderCard)}
+        </DirectorySection>
+      )}
+    </>
+  );
+}
+
+function DirectorySourceStatus({
+  state,
+  message,
+  retry,
+}: {
+  readonly state: LoadableState;
+  readonly message: string;
+  readonly retry: () => void;
+}) {
+  const { t } = useTranslation();
+  return state === "hasError" ? (
+    <LoadErrorRow
+      message={message}
+      retryLabel={t(($) => {
+        return $.connectors.catalog.directory.retry;
       })}
-    >
-      {connectors.map((connector) => {
-        return (
-          <CustomConnectorDirectoryCard
-            key={connector.id}
-            connector={connector}
-            onConnect={() => {
-              onConnectCustom(connector);
-            }}
-          />
-        );
+      onRetry={retry}
+    />
+  ) : (
+    <p role="status" className="py-4 text-sm text-muted-foreground">
+      {t(($) => {
+        return $.connectors.catalog.directory.loading;
       })}
-    </DirectorySection>
+    </p>
   );
 }
 
@@ -769,6 +842,9 @@ function DirectoryBody({
   sshStatus,
   vncStatus,
   loading,
+  accountStatus,
+  customStatus,
+  accountSummaries,
   model,
   renderCard,
   search,
@@ -782,6 +858,10 @@ function DirectoryBody({
   readonly sshStatus: React.ReactNode;
   readonly vncStatus: React.ReactNode;
   readonly loading: boolean;
+  readonly accountStatus: React.ReactNode;
+  readonly customStatus: React.ReactNode;
+  readonly accountSummaries:
+    ReadonlyMap<string, ConnectorAccountSummary> | undefined;
   readonly model: ConnectorDirectoryModel;
   readonly renderCard: RenderConnectorCard;
   readonly search: string;
@@ -793,6 +873,15 @@ function DirectoryBody({
     return <DirectorySkeleton />;
   }
   if (tab === "discover") {
+    if (accountStatus) {
+      return (
+        <>
+          {accountStatus}
+          <DirectoryRemoteStatuses ssh={sshStatus} vnc={vncStatus} />
+          <DirectoryRemoteCards showSsh={showSsh} showVnc={showVnc} />
+        </>
+      );
+    }
     return (
       <DirectoryDiscoverPanel
         model={model}
@@ -812,11 +901,21 @@ function DirectoryBody({
       />
     );
   }
+  if (customStatus) {
+    return customStatus;
+  }
   return (
-    <DirectoryCustomPanel
-      connectors={model.custom}
-      onConnectCustom={onConnectCustom}
-    />
+    <>
+      {accountStatus}
+      {(!accountStatus || model.custom.length > 0) && (
+        <DirectoryCustomPanel
+          connectors={model.custom}
+          attention={model.customAttention}
+          accountSummaries={accountSummaries}
+          onConnectCustom={onConnectCustom}
+        />
+      )}
+    </>
   );
 }
 
@@ -881,6 +980,9 @@ function DirectoryBrowseView({
   category,
   categoryCounts,
   loading,
+  accountStatus,
+  customStatus,
+  accountSummaries,
   model,
   renderCard,
   onUpdateState,
@@ -891,6 +993,10 @@ function DirectoryBrowseView({
   readonly category: string | null;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly loading: boolean;
+  readonly accountStatus: React.ReactNode;
+  readonly customStatus: React.ReactNode;
+  readonly accountSummaries:
+    ReadonlyMap<string, ConnectorAccountSummary> | undefined;
   readonly model: ConnectorDirectoryModel;
   readonly renderCard: RenderConnectorCard;
   readonly onUpdateState: UpdateDirectoryState;
@@ -971,6 +1077,9 @@ function DirectoryBrowseView({
           sshStatus={sshStatus}
           vncStatus={vncStatus}
           loading={loading}
+          accountStatus={accountStatus}
+          customStatus={customStatus}
+          accountSummaries={accountSummaries}
           model={model}
           renderCard={renderCard}
           search={search}
@@ -989,7 +1098,6 @@ function DirectoryConnectorCardSlot({
   busy,
   blocked,
   summary,
-  accountLabelOf,
   connect,
   onOpenDetail,
 }: {
@@ -998,9 +1106,6 @@ function DirectoryConnectorCardSlot({
   readonly busy: boolean;
   readonly blocked: boolean;
   readonly summary: ConnectorAccountSummary | undefined;
-  readonly accountLabelOf: (
-    account: NonNullable<ConnectorAccountSummary["defaultConnection"]>,
-  ) => string;
   readonly connect: ConnectorConnectHandlers;
   readonly onOpenDetail: () => void;
 }) {
@@ -1011,12 +1116,7 @@ function DirectoryConnectorCardSlot({
       busy={busy}
       blocked={blocked}
       connected={connected}
-      accountCount={summary?.accountCount ?? (connected ? 1 : 0)}
-      accountLabel={
-        summary?.defaultConnection
-          ? accountLabelOf(summary.defaultConnection)
-          : (connector.connection?.externalUsername ?? undefined)
-      }
+      summary={summary}
       connect={connect}
       onOpenDetail={onOpenDetail}
     />
@@ -1067,10 +1167,9 @@ interface ConnectorDirectoryDialogProps {
   readonly loading: boolean;
   /** Every connector the browse response carried, for the chip row. */
   readonly chipCatalog: readonly PlatformConnectorCatalogStatusItem[];
-  readonly connected: readonly PlatformConnectorCatalogStatusItem[];
-  readonly unconnected: readonly PlatformConnectorCatalogStatusItem[];
-  readonly connectedCustom: readonly CustomConnectorResponse[];
-  readonly unconnectedCustom: readonly CustomConnectorResponse[];
+  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
+  readonly customConnectors: readonly CustomConnectorResponse[];
+  readonly customConnectorState: LoadableState;
   readonly connecting: boolean;
   readonly isConnectorConnecting: (connectorSlug: ConnectorSlug) => boolean;
   readonly connectHandlers: (
@@ -1087,10 +1186,9 @@ export function ConnectorDirectoryDialog({
   categoryCounts,
   loading,
   chipCatalog,
-  connected,
-  unconnected,
-  connectedCustom,
-  unconnectedCustom,
+  connectors,
+  customConnectors,
+  customConnectorState,
   connecting,
   isConnectorConnecting,
   connectHandlers,
@@ -1099,22 +1197,42 @@ export function ConnectorDirectoryDialog({
   onClose,
 }: ConnectorDirectoryDialogProps) {
   const { t } = useTranslation();
-  const accountLabelOf = useConnectorAccountLabel();
-  const accountsLoadable = useLastLoadable(connectorAccountSummaryByTarget$);
-  const accountSummaries: ReadonlyMap<string, ConnectorAccountSummary> =
-    accountsLoadable.state === "hasData"
-      ? accountsLoadable.data
-      : new Map<string, ConnectorAccountSummary>();
+  const accountsLoadable = useLoadable(connectorAccountSummaryByTarget$);
+  const retryAccounts = useSet(reloadConnectorAccountSummaries$);
+  const retryCustom = useSet(retryCustomConnectors$);
+  const accountSummaries = currentDirectoryAccountSummaries(
+    connectors,
+    accountsLoadable.state === "hasData" ? accountsLoadable.data : undefined,
+  );
+  const accountStatus =
+    accountsLoadable.state === "hasData" ? null : (
+      <DirectorySourceStatus
+        state={accountsLoadable.state}
+        message={t(($) => {
+          return $.connectors.accounts.accountsUnavailable;
+        })}
+        retry={retryAccounts}
+      />
+    );
+  const customStatus =
+    customConnectorState === "hasData" ? null : (
+      <DirectorySourceStatus
+        state={customConnectorState}
+        message={t(($) => {
+          return $.connectors.catalog.directory.customLoadFailed;
+        })}
+        retry={retryCustom}
+      />
+    );
 
   const search = state.addDialogSearch;
   const tab = state.directoryTab;
   const category = state.directoryCategory;
   const model = buildConnectorDirectoryModel({
-    connected,
-    unconnected,
+    connectors,
+    customConnectors,
+    accountSummaries,
     chipCatalog,
-    connectedCustom,
-    unconnectedCustom,
     search,
     category,
     otherCategoryLabel: t(($) => {
@@ -1137,8 +1255,7 @@ export function ConnectorDirectoryDialog({
         connected={isConnected}
         busy={isConnectorConnecting(connector.slug)}
         blocked={connecting}
-        summary={accountSummaries.get(`builtin:${connector.slug}`)}
-        accountLabelOf={accountLabelOf}
+        summary={accountSummaries?.get(`builtin:${connector.slug}`)}
         connect={connectHandlers(connector)}
         onOpenDetail={() => {
           onUpdateState({ directoryDetailSlug: connector.slug });
@@ -1165,7 +1282,7 @@ export function ConnectorDirectoryDialog({
         {detailConnector ? (
           <DirectoryDetailSlot
             connector={detailConnector}
-            accountSummary={accountSummaries.get(
+            accountSummary={accountSummaries?.get(
               `builtin:${detailConnector.slug}`,
             )}
             model={model}
@@ -1181,6 +1298,9 @@ export function ConnectorDirectoryDialog({
             category={category}
             categoryCounts={categoryCounts}
             loading={loading}
+            accountStatus={accountStatus}
+            customStatus={customStatus}
+            accountSummaries={accountSummaries}
             model={model}
             renderCard={renderCard}
             onUpdateState={onUpdateState}

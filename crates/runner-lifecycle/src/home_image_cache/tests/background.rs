@@ -193,7 +193,7 @@ async fn merged_foreground_demand_does_not_inherit_a_drained_background_watermar
     let foreground_cache = f.cache.clone();
     let foreground = tokio::spawn(async move {
         foreground_cache
-            .reclaim_home_image_headroom(device, 51 * GIB)
+            .reclaim_home_image_headroom(device, 51 * GIB, reclamation_deadline())
             .await
     });
     tokio::time::timeout(
@@ -250,7 +250,7 @@ async fn foreground_accepted_while_background_retires_is_not_lost() {
     let foreground_cache = f.cache.clone();
     let foreground = tokio::spawn(async move {
         foreground_cache
-            .reclaim_home_image_headroom(device, 60 * GIB)
+            .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
             .await
     });
     tokio::time::timeout(
@@ -288,7 +288,7 @@ async fn draining_does_not_disable_foreground_reclamation_on_a_bound_clone() {
         .unwrap()
         .dev();
     cache
-        .reclaim_home_image_headroom(device, 60 * GIB)
+        .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
         .await
         .unwrap();
     cache.drain_pressure_reclamation().await;
@@ -331,7 +331,7 @@ async fn foreground_arriving_during_interrupted_discovery_restarts_the_complete_
     let foreground_cache = f.cache.clone();
     let foreground = tokio::spawn(async move {
         foreground_cache
-            .reclaim_home_image_headroom(device, 60 * GIB)
+            .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
             .await
     });
     tokio::time::timeout(

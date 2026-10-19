@@ -2932,6 +2932,11 @@
       "transcriptionFailed": "語音轉寫失敗，請重試。"
     },
     "walletAction": {
+      "approvalApproved": "審批已通過，等待接續",
+      "approvalContinued": "已接續此購買請求",
+      "approvalRecorded": "狀態已更新",
+      "approvalStopped": "自動等待已結束，可手動繼續",
+      "approvalWaiting": "等待購買審批",
       "approveButton": "審核",
       "approveTitle": "審核購買",
       "authorized": "已授權",

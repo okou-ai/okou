@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "okou-link-approval-unconfigured",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "LINK_APPROVAL_ENABLED": "false",
+  },
+  "env": {
+    "test": {
+      "name": "okou-link-approval-test",
+      "workers_dev": true,
+      "vars": {
+        "LINK_APPROVAL_ENABLED": "false",
+      },
+      "workflows": [
+        {
+          "name": "okou-link-approval-test",
+          "binding": "LINK_APPROVAL_WORKFLOW",
+          "class_name": "LinkApprovalWorkflow",
+          "default_retention": {
+            "success_retention": "1 day",
+            "error_retention": "7 days",
+          },
+        },
+      ],
+    },
+    "production": {
+      "name": "okou-link-approval-production",
+      "workers_dev": true,
+      "vars": {
+        "LINK_APPROVAL_ENABLED": "false",
+      },
+      "workflows": [
+        {
+          "name": "okou-link-approval-production",
+          "binding": "LINK_APPROVAL_WORKFLOW",
+          "class_name": "LinkApprovalWorkflow",
+          "default_retention": {
+            "success_retention": "1 day",
+            "error_retention": "7 days",
+          },
+        },
+      ],
+    },
+  },
+}

@@ -2943,6 +2943,11 @@
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
     "walletAction": {
+      "approvalApproved": "Genehmigt; wartet auf Fortsetzung",
+      "approvalContinued": "Kaufanfrage fortgesetzt",
+      "approvalRecorded": "Status aktualisiert",
+      "approvalStopped": "Automatisches Warten beendet; du kannst manuell fortfahren",
+      "approvalWaiting": "Warten auf die Kaufgenehmigung",
       "approveButton": "Prüfen",
       "approveTitle": "Kauf prüfen",
       "authorized": "Autorisiert",
