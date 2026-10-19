@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1040.0](https://github.com/okou-ai/okou/compare/app-v0.1039.0...app-v0.1040.0) (2026-10-19)
+
+
+### Features
+
+* **app:** slash second levels beside a fixed first level, searchable actions ([#40754](https://github.com/okou-ai/okou/issues/40754)) ([5d0e985](https://github.com/okou-ai/okou/commit/5d0e98538be4ea7652b45f60736af1068b984530))
+
+
+### Bug Fixes
+
+* **app:** simplify resource disclosure and sizing ([#41209](https://github.com/okou-ai/okou/issues/41209)) ([5e4b2f5](https://github.com/okou-ai/okou/commit/5e4b2f55adfd07fe1996f0ec4585c255903c9ad7))
+* preserve saved connector accounts when defaults need reconnect ([#41254](https://github.com/okou-ai/okou/issues/41254)) ([24a1ff5](https://github.com/okou-ai/okou/commit/24a1ff50b8b8bff3a8baeae1ebc55de5caf1eab6))
+* **wechat:** recover dm replies and improve conversation tools ([#41215](https://github.com/okou-ai/okou/issues/41215)) ([654e918](https://github.com/okou-ai/okou/commit/654e918b1962876fb33696475f836e5a9842cb27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.4
+    * @okouai/connectors bumped to 3.16.10
+    * @okouai/core bumped to 8.769.1
+
 ## [0.1039.0](https://github.com/okou-ai/okou/compare/app-v0.1038.1...app-v0.1039.0) (2026-10-19)
 
 

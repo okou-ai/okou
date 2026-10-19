@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.401.4](https://github.com/okou-ai/okou/compare/cli-v9.401.3...cli-v9.401.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* **wechat:** recover dm replies and improve conversation tools ([#41215](https://github.com/okou-ai/okou/issues/41215)) ([654e918](https://github.com/okou-ai/okou/commit/654e918b1962876fb33696475f836e5a9842cb27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.4
+    * @okouai/connectors bumped to 3.16.10
+    * @okouai/core bumped to 8.769.1
+    * @okouai/pi-agent-runtime bumped to 1.50.23
+
 ## [9.401.3](https://github.com/okou-ai/okou/compare/cli-v9.401.2...cli-v9.401.3) (2026-10-19)
 
 
