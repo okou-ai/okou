@@ -9,6 +9,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.753.0](https://github.com/okou-ai/okou/compare/api-v1.752.0...api-v1.753.0) (2026-10-19)
+
+
+### Features
+
+* **wallet:** show saved cards with link management ([#41337](https://github.com/okou-ai/okou/issues/41337)) ([ad98740](https://github.com/okou-ai/okou/commit/ad98740b5d40ad6589f4b0ba03e3606ef08a8450))
+
+
+### Refactoring
+
+* **api:** capture billing run lifecycle facts ([#41321](https://github.com/okou-ai/okou/issues/41321)) ([94a4167](https://github.com/okou-ai/okou/commit/94a41674408cac9a8e27e02e10f513dd410ac686))
+* **api:** localize agentphone typing read ownership ([#41096](https://github.com/okou-ai/okou/issues/41096)) ([7d27b85](https://github.com/okou-ai/okou/commit/7d27b85be3b16f2b05ce427914e90fb098bdf4da))
+* **api:** localize official telegram default-agent read ([#41302](https://github.com/okou-ai/okou/issues/41302)) ([fca3e26](https://github.com/okou-ai/okou/commit/fca3e26fcdfe1a9b4047640e5902ce9e829c0e24))
+* **api:** localize runtime catalog payload read ([#41130](https://github.com/okou-ai/okou/issues/41130)) ([069d1fe](https://github.com/okou-ai/okou/commit/069d1fefbc89a7490577cd5be23646ed537b78e7)) [#41129](https://github.com/okou-ai/okou/issues/41129)
+* **api:** localize slack workspace-agent reads ([#41299](https://github.com/okou-ai/okou/issues/41299)) ([84259fa](https://github.com/okou-ai/okou/commit/84259faefece62cf37f56a607dffb5b386a9b882))
+* **api:** own chat search matches read in existing computed ([#41200](https://github.com/okou-ai/okou/issues/41200)) ([e28449f](https://github.com/okou-ai/okou/commit/e28449f23ce7b4da1d167a21b392989564f43f9f))
+* **api:** own slack reconciliation failure writes ([#41325](https://github.com/okou-ai/okou/issues/41325)) ([58b15d8](https://github.com/okou-ai/okou/commit/58b15d894ee09bd67f8a08e19bb68305eec0baa8)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** remove local catalog wakeup db carriers ([#41250](https://github.com/okou-ai/okou/issues/41250)) ([5f80d74](https://github.com/okou-ai/okou/commit/5f80d74e50b03f31eec571b52f691d4f6b8a4612))
+* **api:** simplify run storage outputs and retire volume projections ([#41333](https://github.com/okou-ai/okou/issues/41333)) ([d43d7bf](https://github.com/okou-ai/okou/commit/d43d7bf9c153795627ef7f0e9d401f0d064a8f9d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.575.0
+    * @okouai/core bumped to 8.769.3
+    * @okouai/db bumped to 1.346.1
+    * @okouai/pi-agent-runtime bumped to 1.50.25
+
 ## [1.752.0](https://github.com/okou-ai/okou/compare/api-v1.751.6...api-v1.752.0) (2026-10-19)
 
 

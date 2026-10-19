@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.234.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.15...runner-rs-v0.234.16) (2026-10-19)
+
+
+### Performance Improvements
+
+* **python:** yield during http model json inspection ([#41323](https://github.com/okou-ai/okou/issues/41323)) ([ef44637](https://github.com/okou-ai/okou/commit/ef446371ca94b3fe230b544234534e90aa8f95ac))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.14...runner-rs-v0.234.15) (2026-10-19)
 
 ### Release Dependencies
