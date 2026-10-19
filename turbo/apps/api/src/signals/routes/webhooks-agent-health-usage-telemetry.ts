@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
+import { AGENT_TELEMETRY_INGEST_TIMEOUT_MS } from "@okouai/api-contracts/contracts/runners";
 import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
@@ -62,7 +63,6 @@ import { XResourceUsageError } from "../services/x-resource-usage-values";
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
 const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
-const TELEMETRY_INGEST_TIMEOUT_MS = 10_000;
 const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
@@ -614,7 +614,7 @@ async function ingestTelemetryBatch(
     ingestAxiomDirect(
       batch.dataset,
       batch.events,
-      TELEMETRY_INGEST_TIMEOUT_MS,
+      AGENT_TELEMETRY_INGEST_TIMEOUT_MS,
       signal,
     ),
   );
@@ -655,8 +655,12 @@ function telemetryMetricEvent(
       : { scheduled_lag_ms: metric.scheduled_lag_ms }),
     mem_used: metric.mem_used,
     mem_total: metric.mem_total,
-    disk_used: metric.disk_used,
-    disk_total: metric.disk_total,
+    // Preserve supplied old Guest dimensions until #41244's producer/replay,
+    // rollback and retained-history gates pass; absent observations stay absent.
+    ...(metric.disk_used === undefined ? {} : { disk_used: metric.disk_used }),
+    ...(metric.disk_total === undefined
+      ? {}
+      : { disk_total: metric.disk_total }),
     ...(metric.rootfs === undefined
       ? {}
       : {

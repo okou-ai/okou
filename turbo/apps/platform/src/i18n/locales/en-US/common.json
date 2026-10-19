@@ -5152,6 +5152,15 @@
         "retryMessage": "Morning Brief settings could not be loaded or updated. Retry to continue.",
         "title": "Morning brief"
       },
+      "proactiveSuggestions": {
+        "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
+        "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
+        "preparationFailed": "Proactive Suggestions setup could not finish. Retry to continue.",
+        "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
+        "retry": "Retry",
+        "retryMessage": "Proactive Suggestions settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive Suggestions"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Press ⌘/Ctrl+Enter to send, Enter for new line",

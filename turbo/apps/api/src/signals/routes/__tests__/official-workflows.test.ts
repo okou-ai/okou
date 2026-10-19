@@ -63,6 +63,16 @@ import {
 } from "../cron-official-workflow-catalog";
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { proactiveSuggestionsRoutes } from "../proactive-suggestions";
+import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
+import { suggestionsRoutes } from "../suggestions";
+import {
+  chatThreadsContract,
+  chatThreadMetadataContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadGetRoutes } from "../chat-threads-get";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -93,6 +103,21 @@ const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
+function createCatalogPublicationFixture() {
+  let published = false;
+  return {
+    reset() {
+      published = false;
+    },
+    hasProactiveDefinition() {
+      return published;
+    },
+    recordPublished(outcome: string) {
+      published = outcome !== "rejected";
+    },
+  };
+}
+const catalogPublication = createCatalogPublicationFixture();
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
   { readonly lifecycle: "active" }
@@ -116,7 +141,20 @@ function catalog(
 ): OfficialWorkflowSourceCatalog {
   return {
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-    definitions,
+    definitions:
+      catalogPublication.hasProactiveDefinition() &&
+      !definitions.some((definition) => {
+        return definition.name === "agent-suggestions";
+      })
+        ? [
+            ...definitions,
+            {
+              name: "agent-suggestions",
+              lifecycle: "retired",
+              presentation: { category: "productivity" },
+            },
+          ]
+        : definitions,
   };
 }
 
@@ -179,12 +217,14 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
-  return await accept(
+  const result = await accept(
     setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
       cronOfficialWorkflowCatalogContract,
     ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
+  catalogPublication.recordPublished(result.body.outcome);
+  return result;
 }
 
 async function syncMorningBriefCatalog() {
@@ -574,7 +614,335 @@ async function ordinaryDelegationScenario() {
 }
 
 beforeEach(() => {
+  catalogPublication.reset();
   mockEnv("CRON_SECRET", CRON_SECRET);
+});
+
+describe("Proactive Suggestions preference", () => {
+  it("repairs feature availability at the same hourly minute used by its schedule", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const owner = { ...actor, orgId: actor.orgId };
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    await accept(
+      setupApp({ context, routes: proactiveSuggestionsRoutes })(
+        proactiveSuggestionsContract,
+      ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const installation = listed.body.find((item) => {
+      return item.official?.definitionName === "agent-suggestions";
+    });
+    if (!installation) {
+      throw new Error("Expected Proactive Suggestions installation");
+    }
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: installation.id },
+      }),
+      [200],
+    );
+    const schedule = detail.body.automations[0];
+    if (!schedule?.nextRunAt) {
+      throw new Error("Expected hourly schedule");
+    }
+    const firstTick = new Date(schedule.nextRunAt).getTime();
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
+    await withMockNowForTest(firstTick, executeAutomationCron);
+    const paused = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: schedule.id },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, nextRunAt: null });
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    await withMockNowForTest(firstTick + 3_600_000, executeAutomationCron);
+    const repaired = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: schedule.id },
+      }),
+      [200],
+    );
+    expect(repaired.body).toMatchObject({
+      enabled: true,
+      nextRunAt: new Date(firstTick + 7_200_000).toISOString(),
+    });
+  });
+
+  it("runs the hourly Official workflow without Morning Brief and blocks curation and mail after opt-out", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const client = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const installation = listed.body.find((item) => {
+      return item.official?.definitionName === "agent-suggestions";
+    });
+    if (!installation) {
+      throw new Error("Expected Proactive Suggestions installation");
+    }
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: installation.id },
+      }),
+      [200],
+    );
+    const automation = detail.body.automations[0];
+    if (!automation) {
+      throw new Error("Expected hourly automation");
+    }
+    expect(automation).toMatchObject({
+      enabled: true,
+      kind: "schedule",
+      schedule: { type: "cron", timezone: "UTC" },
+    });
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
+    const { runId } = await fireOfficialSchedule(actor, automation);
+    const claim = await runs.claimRunnerJob(runId);
+    onTestFinished(async () => {
+      await webhooks.requestAgentComplete(
+        { runId, exitCode: 1, error: "Proactive Suggestions fixture cleanup" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    expect(claim.prompt).toMatch(/^\/agent-suggestions\n/u);
+    expect(
+      capturedOfficialSkill(claim.storageManifest, "agent-suggestions"),
+    ).toContain("Never send email");
+    const token = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };
+    const suggestionId = randomUUID();
+    const suggestions = setupApp({ context, routes: suggestionsRoutes })(
+      suggestionsContract,
+    );
+    await accept(
+      suggestions.create({
+        headers: token,
+        body: {
+          id: suggestionId,
+          title: "Review the pending decision",
+          rationale: "A response is needed",
+          priority: 1,
+          threadId: null,
+          draft: {
+            draftUserMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Review the verified pending decision." },
+              ],
+            },
+            draftAttachments: null,
+          },
+        },
+      }),
+      [200],
+    );
+    const homepage = await accept(
+      suggestions.list({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(
+      homepage.body.suggestions.map((item) => {
+        return item.id;
+      }),
+    ).toContain(suggestionId);
+    const indicators = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).indicators({ headers: authHeaders(actor) }),
+      [200],
+    );
+    const currentAutomation = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    if (!currentAutomation.body.chatThreadId) {
+      throw new Error("Expected diagnostic thread");
+    }
+    expect(
+      indicators.body.threads[currentAutomation.body.chatThreadId],
+    ).toBeUndefined();
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      ).get({
+        headers: authHeaders(actor),
+        params: { id: currentAutomation.body.chatThreadId },
+      }),
+      [200],
+    );
+    expect(thread.body).toMatchObject({ archived: true, muted: true });
+    await accept(
+      setupApp({ context, routes: notificationsRoutes })(
+        notificationsContract,
+      ).mail({
+        headers: token,
+        body: {
+          kind: "notification",
+          to: "me",
+          subject: "Should not send",
+          text: "Background checks only update suggestions.",
+          idempotencyKey: "proactive-mail",
+        },
+      }),
+      [403],
+    );
+    await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    await accept(
+      setupApp({ context, routes: suggestionsRoutes })(
+        suggestionsContract,
+      ).list({ headers: token }),
+      [403],
+    );
+    const paused = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, nextRunAt: null });
+    const retained = await accept(
+      suggestions.list({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(
+      retained.body.suggestions.map((item) => {
+        return item.id;
+      }),
+    ).toContain(suggestionId);
+    expect((await readBriefPreference(actor)).body.enabled).toBeFalsy();
+  });
+  it("defaults off and gates the preference without coupling it to Morning Brief", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    const client = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    const headers = authHeaders(actor);
+    await accept(client.get({ headers }), [403]);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const initial = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({ enabled: false, status: "paused" });
+    const enabled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    const morning = await readBriefPreference(actor);
+    expect(morning.body.enabled).toBeFalsy();
+    const disabled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: false },
+    );
+    await accept(client.get({ headers: authHeaders(actor) }), [403]);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const restored = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(restored.body.enabled).toBeFalsy();
+  });
+
+  it("keeps the explicit choice while the catalog is unavailable", async () => {
+    const { actor } = await prepareBriefMember({ catalogAvailable: false });
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const client = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    const pending = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    expect(pending.body).toMatchObject({ enabled: true, status: "preparing" });
+    const saved = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(saved.body.enabled).toBeTruthy();
+    const cancelled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    expect(cancelled.body).toMatchObject({ enabled: false, status: "paused" });
+  });
 });
 
 describe("Morning Brief preference", () => {
@@ -976,6 +1344,14 @@ describe("Morning Brief explicit installation", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: suggestion },
         );
+        if (suggestion) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
@@ -1270,6 +1646,14 @@ describe("Morning Brief catalog reconciliation", () => {
           definitionName === "internal-test-morning-brief",
       },
     );
+    if (definitionName === "internal-test-morning-brief") {
+      await accept(
+        setupApp({ context, routes: proactiveSuggestionsRoutes })(
+          proactiveSuggestionsContract,
+        ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+        [200],
+      );
+    }
     await connectBriefSourceForAgent(actor, defaultAgentId);
     await accept(
       morningBriefPreferenceClient().update({
@@ -1650,6 +2034,14 @@ describe("Morning Brief suggestion instruction rollout", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: enabled },
         );
+        if (enabled) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
@@ -1699,7 +2091,7 @@ describe("Morning Brief suggestion instruction rollout", () => {
         );
         if (expected) {
           expect(mountedSkill).toContain(
-            "Before completing the briefing or making its email decision",
+            "Match existing active suggestions before creating another.",
           );
           expect(mountedSkill).toContain(
             "There may be zero to ten active suggestions",
@@ -1761,6 +2153,14 @@ describe("Debug Morning Brief", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: enabled },
         );
+        if (enabled) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         const runnerGroup = runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         await runs.heartbeatRunner(runnerGroup);
@@ -2203,6 +2603,14 @@ describe("Morning Brief workflow selection", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: enabled },
         );
+        if (enabled) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         const [schedule] = await readMorningBriefAutomations(
           actor,
           installation.id,
@@ -2248,6 +2656,15 @@ describe("Morning Brief workflow selection", () => {
             context,
             { ...actor, orgId: actor.orgId },
             { [FeatureSwitchKey.AgentSuggestion]: true },
+          );
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
+            [200],
           );
           await withMockNowForTest(
             new Date(schedule.nextRunAt),
@@ -2311,6 +2728,12 @@ describe("Morning Brief workflow selection", () => {
         { ...actor, orgId: actor.orgId },
         { [FeatureSwitchKey.AgentSuggestion]: true },
       );
+      await accept(
+        setupApp({ context, routes: proactiveSuggestionsRoutes })(
+          proactiveSuggestionsContract,
+        ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+        [200],
+      );
       await executeAutomationCron();
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: false,
@@ -2357,9 +2780,16 @@ describe("Morning Brief workflow selection", () => {
       if (!onboarding.defaultAgentId) {
         throw new Error("Expected Okou");
       }
-      await expect(
-        listAgentRunLogIds(actor, onboarding.defaultAgentId),
-      ).resolves.toStrictEqual([runId]);
+      const briefEvents = await allThreadEventRows(actor, running.chatThreadId);
+      expect(
+        briefEvents
+          .filter((event) => {
+            return event.eventType === "input.prompt" && event.runId;
+          })
+          .map((event) => {
+            return event.runId;
+          }),
+      ).toStrictEqual([runId]);
       const claim = await withMockNowForTest(
         new Date(schedule.nextRunAt),
         () => {
@@ -3390,6 +3820,14 @@ describe("Morning Brief dormant partial bindings", () => {
               definitionName === "internal-test-morning-brief",
           },
         );
+        if (definitionName === "internal-test-morning-brief") {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         await connectBriefSourceForAgent(actor, defaultAgentId);
         await accept(
           morningBriefPreferenceClient().update({

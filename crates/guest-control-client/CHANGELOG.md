@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.27](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.26...guest-control-client-v0.23.27) (2026-10-19)
+
+
+### Bug Fixes
+
+* **guest-control-client:** reject expired queued requests before writing ([#41255](https://github.com/okou-ai/okou/issues/41255)) ([0eb3ec4](https://github.com/okou-ai/okou/commit/0eb3ec4d972caa3ab6c956904e9f7272330baf32))
+
 ## [0.23.26](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.25...guest-control-client-v0.23.26) (2026-10-19)
 
 ## [0.23.25](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.24...guest-control-client-v0.23.25) (2026-10-17)

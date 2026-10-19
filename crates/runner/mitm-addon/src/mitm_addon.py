@@ -82,6 +82,7 @@ import upstream_admission
 import upstream_destination_binding
 import usage
 import websocket_framing
+import websocket_inspection
 import websocket_retention
 from auth import (
     FirewallAuthHandlingResult,
@@ -1861,31 +1862,9 @@ def responseheaders(flow: http.HTTPFlow) -> None:
     codex_model_catalog_cache.wrap_response_stream(flow)
 
 
-def websocket_message(flow: http.HTTPFlow) -> None:
+def websocket_message(flow: http.HTTPFlow) -> Awaitable[None] | None:
     """Bound WebSocket history and observe model-provider protocol events."""
-    if not flow.websocket or not flow.websocket.messages:
-        return
-
-    message = flow.websocket.messages[-1]
-    websocket_retention.schedule_message_trim(flow)
-    if not flow_metadata.run_id(flow.metadata):
-        return
-    if getattr(message, "from_client", False):
-        if not model_websocket_usage.should_observe_client_event(flow):
-            return
-        body = message.content.encode() if isinstance(message.content, str) else message.content
-        event = usage.inspect_openai_responses_client_event_json(body)
-        model_websocket_usage.observe_client_event(flow, event)
-        return
-    if not model_websocket_usage.is_enabled(flow):
-        return
-    body = message.content.encode() if isinstance(message.content, str) else message.content
-    event = usage.inspect_openai_responses_event_json(body)
-    inspection = usage.inspect_openai_responses_server_event(
-        event,
-        include_lifecycle=model_websocket_usage.should_inspect_server_lifecycle(flow, event),
-    )
-    model_websocket_usage.feed_usage(flow, inspection)
+    return websocket_inspection.inspect_message(flow)
 
 
 def _response_size(flow: http.HTTPFlow) -> int:
@@ -1919,6 +1898,7 @@ def _release_terminal_flow_state(
     release_aws_sigv4_body_admission: bool = True,
 ) -> None:
     if release_tracking:
+        websocket_inspection.release(flow)
         websocket_framing.log_limit_violation(flow)
         websocket_retention.release_terminal_messages(flow)
         terminal_usage.release_model_websocket_terminal_state(flow)
@@ -1944,6 +1924,7 @@ def _release_terminal_flow_state(
 def websocket_end(flow: http.HTTPFlow) -> None:
     """Settle model-provider usage for a WebSocket-upgraded response."""
     try:
+        websocket_inspection.release(flow)
         run_id = flow_metadata.run_id(flow.metadata)
         if run_id:
             terminal_usage.report_model_provider_usage_once(flow, run_id)
@@ -2149,6 +2130,7 @@ def _finish_response_handling(
 
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
+    websocket_inspection.release(flow)
     if response_streaming.has_pending_response_inspection(flow):
         return _complete_error_after_inspection(flow)
     try:

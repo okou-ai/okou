@@ -2357,8 +2357,15 @@
     {
       "idx": 1414,
       "version": "7",
-      "when": 1792388030258,
-      "tag": "1414_hosted_site_address_lookup",
+      "when": 1792389668875,
+      "tag": "1414_proactive_suggestions_preference",
+      "breakpoints": true
+    },
+    {
+      "idx": 1415,
+      "version": "7",
+      "when": 1792391992624,
+      "tag": "1415_hosted_site_address_lookup",
       "breakpoints": true
     }
   ]

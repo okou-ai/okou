@@ -1875,6 +1875,93 @@ async fn late_finalizing_successor_can_take_over_the_running_predecessor() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn finalizing_successor_reuses_after_a_normal_telemetry_close_tail() {
+    let wait_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
+    overrides.push_final_exec_park_handoff_point(
+        sandbox::SandboxFinalExecParkHandoffPoint::BeforeBalloon,
+    );
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 4, 8192, 2, Arc::clone(&overrides));
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+
+    let reuse_key = "thread:telemetry-close-tail";
+    let predecessor_run_id = RunId::new_v4();
+    push_job(
+        &env,
+        predecessor_run_id,
+        "vm0/default",
+        Some(context_with_reuse_key(predecessor_run_id, reuse_key)),
+    );
+    wait_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("predecessor must retain ownership until Guest exit");
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+
+    let successor_run_id = RunId::new_v4();
+    env.provider.set_claim_result(
+        successor_run_id,
+        Some(context_with_reuse_key(successor_run_id, reuse_key)),
+    );
+    let preference_deadline = tokio::time::Instant::now().into_std()
+        + Duration::from_millis(
+            api_contracts::generated::constants::runners::RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+        );
+    env.handle
+        .discover_tx
+        .send(finalizing_candidate_until(
+            successor_run_id,
+            reuse_key,
+            predecessor_run_id,
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+            preference_deadline,
+        ))
+        .unwrap();
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    assert!(
+        env.handle
+            .claim_candidates()
+            .iter()
+            .any(|candidate| candidate.run_id() == successor_run_id)
+    );
+
+    // Spare capacity makes premature fresh fallback observable. A completed
+    // Guest can legitimately spend several seconds flushing final telemetry.
+    tokio::time::advance(Duration::from_millis(4600)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(
+        wait_gate.entered_count(),
+        1,
+        "successor should still await the predecessor"
+    );
+    wait_gate.release_one();
+    wait_gate
+        .wait_entered(2, Duration::from_secs(5))
+        .await
+        .expect("successor should take the exact predecessor handoff");
+    assert_eq!(overrides.unpark_call_count(), 1);
+    assert_eq!(overrides.park_call_count(), 0);
+    wait_gate.release_one();
+    let predecessor = env
+        .handle
+        .wait_completion(predecessor_run_id, Duration::from_secs(5))
+        .await
+        .expect("predecessor should complete its handoff");
+    let successor = env
+        .handle
+        .wait_completion(successor_run_id, Duration::from_secs(5))
+        .await
+        .expect("successor should complete with reused ownership");
+    assert_eq!(successor.exit_code, 0);
+    assert_eq!(successor.sandbox_id, predecessor.sandbox_id);
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn pre_finalization_wait_ends_at_preference_deadline() {
     let wait_gate = sandbox_mock::MockLifecycleGate::new();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());

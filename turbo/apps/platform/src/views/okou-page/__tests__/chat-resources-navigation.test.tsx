@@ -103,10 +103,10 @@ test.each(["messages", "artifacts"])(
       threads: [first, second],
     });
     context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-      return respond(200, { items: [], nextCursor: null });
+      return respond(200, { items: [] });
     });
     context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
-      return respond(200, { items: [], nextCursor: null });
+      return respond(200, { items: [] });
     });
     context.mocks.api(
       chatThreadEventsContract.rows,

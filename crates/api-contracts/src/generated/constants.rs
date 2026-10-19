@@ -100,6 +100,18 @@ pub mod runners {
     /// The runner enforces this deadline and the API includes it in the agent-facing system prompt.
     pub const AGENT_EXECUTION_TIMEOUT_SECONDS: u64 = 7200;
 
+    /// Aggregate final telemetry budget: in-flight and final HTTP/incident delivery plus local settling.
+    pub const AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS: u64 = 39000;
+
+    /// Ordinary telemetry HTTP budget including downstream ingest and API/transport headroom.
+    pub const AGENT_TELEMETRY_HTTP_TIMEOUT_MS: u64 = 15000;
+
+    /// Maximum best-effort attempts for each changed emergency incident set.
+    pub const AGENT_TELEMETRY_INCIDENT_ATTEMPTS: u64 = 2;
+
+    /// Per-attempt emergency incident budget backed by local evidence and independent host recovery.
+    pub const AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS: u64 = 2000;
+
     /// Schema version written to builtin firewall catalog cache files and accepted by the mitm addon.
     /// This value is generated for both Rust and Python consumers so cache compatibility cannot drift between them.
     pub const BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION: u32 = 1;
@@ -118,6 +130,21 @@ pub mod runners {
     /// Maximum connector runtime targets accepted by the sync endpoint.
     /// Rust runners use this shared contract value to split target batches before calling the API.
     pub const CONNECTOR_RUNTIME_SYNC_TARGETS_MAX: u64 = 256;
+
+    /// Maximum Guest stdout/stderr drain time after child exit.
+    pub const GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS: u64 = 5000;
+
+    /// Maximum wait for a contained Guest cgroup to become empty after kill.
+    pub const GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS: u64 = 1000;
+
+    /// Maximum retry window for removing an empty Guest exec cgroup.
+    pub const GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS: u64 = 250;
+
+    /// Grace after signaling contained Guest descendants with SIGTERM.
+    pub const GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS: u64 = 500;
+
+    /// Guest terminal cleanup: TERM grace plus kill, removal, and output drain.
+    pub const GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS: u64 = 6750;
 
     /// Official token kind; the API still authenticates the secret and winning claim.
     pub const OFFICIAL_RUNNER_TOKEN_PREFIX: &str = "vm0_official_";
@@ -142,9 +169,21 @@ pub mod runners {
     /// Maximum Pi model configuration generations advertised by one Runner claim.
     pub const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX: u64 = 8;
 
+    /// Handoff acceptance grace after both predecessor finalization and successor waiting begin.
+    pub const RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS: u64 = 1500;
+
+    /// Active completed predecessor preference: final telemetry plus guest terminal cleanup and host observation grace.
+    pub const RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS: u64 = 49000;
+
     /// Maximum configured runner hostname length accepted by the runner-facing API.
     /// Rust runners use JavaScript UTF-16 string length semantics when enforcing this shared boundary.
     pub const RUNNER_HOSTNAME_MAX_LENGTH: u64 = 255;
+
+    /// Terminal observation grace, compile-time checked against Guest cleanup plus executor host slack.
+    pub const RUNNER_JOB_TERMINAL_GRACE_MS: u64 = 10000;
+
+    /// Host scheduling, observation, and terminal proof delivery allowance.
+    pub const RUNNER_JOB_TERMINAL_HOST_SLACK_MS: u64 = 3250;
 
     /// Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.
     /// Rust runners use this shared contract value to bound local cooldown state and poll request size.

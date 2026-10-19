@@ -1,5 +1,5 @@
 {
-  "id": "3ad068a4-1031-45cc-a081-4de40c4bcfd7",
+  "id": "7b0f7bd3-9580-49f7-829e-66a71e9a578f",
   "prevId": "4940020e-cfa3-4c20-bcaa-d2f0dc92bfd2",
   "version": "7",
   "dialect": "postgresql",
@@ -16450,27 +16450,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_hosted_deployments_public_slug": {
-          "name": "idx_hosted_deployments_public_slug",
-          "columns": [
-            {
-              "expression": "(\"manifest\"->>'publicSlug')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "site_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_hosted_deployments_site_manifest_version": {
           "name": "idx_hosted_deployments_site_manifest_version",
           "columns": [
@@ -16652,21 +16631,6 @@
           "columns": [
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_hosted_sites_slug": {
-          "name": "idx_hosted_sites_slug",
-          "columns": [
-            {
-              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21118,6 +21082,12 @@
         "timezone": {
           "name": "timezone",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proactive_suggestions_enabled": {
+          "name": "proactive_suggestions_enabled",
+          "type": "boolean",
           "primaryKey": false,
           "notNull": false
         },

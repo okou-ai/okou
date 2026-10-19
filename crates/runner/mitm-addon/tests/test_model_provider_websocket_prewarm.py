@@ -64,7 +64,7 @@ class TestModelProviderWebSocketPrewarmUsage:
         self._usage_webhook_api = usage_webhook_api
 
     @pytest.mark.parametrize("terminal_event", sorted(openai_responses_events.TERMINAL_EVENTS))
-    def test_model_websocket_dense_terminal_uses_one_full_body_parse(
+    async def test_model_websocket_dense_terminal_uses_one_full_body_parse(
         self,
         tmp_path,
         real_flow,
@@ -92,11 +92,14 @@ class TestModelProviderWebSocketPrewarmUsage:
                 _openai_websocket_created_frame("dense-prewarm"),
             )
             full_body_feeds.clear()
-            feed_websocket_server_message(flow, dense_terminal)
+            completion = feed_websocket_server_message(flow, dense_terminal)
+            assert completion is not None
+            await completion
             mitm_addon.websocket_end(flow)
             usage.flush_usage_events(trigger="test")
 
-        assert full_body_feeds.count(dense_terminal) == 1
+        assert b"".join(full_body_feeds) == dense_terminal
+        assert max(map(len, full_body_feeds)) <= 4096
         assert webhook.usage_events() == []
         [ignored_entry] = [
             entry
@@ -713,7 +716,7 @@ class TestModelProviderWebSocketPrewarmUsage:
         [correlation_entry] = _correlation_entries(flow)
         assert correlation_entry["reason"] == "server_error"
 
-    def test_model_websocket_correlation_cap_stays_bounded_and_fails_open(
+    async def test_model_websocket_correlation_cap_stays_bounded_and_fails_open(
         self,
         tmp_path,
         real_flow,
@@ -727,7 +730,9 @@ class TestModelProviderWebSocketPrewarmUsage:
                 flow,
                 json.dumps({"type": "response.create", "generate": False}).encode(),
             )
-            feed_websocket_server_message(flow, over_budget_error)
+            completion = feed_websocket_server_message(flow, over_budget_error)
+            assert completion is not None
+            await completion
             feed_websocket_server_message(flow, _openai_websocket_created_frame("cap-1"))
             feed_websocket_server_message(
                 flow,
@@ -745,7 +750,7 @@ class TestModelProviderWebSocketPrewarmUsage:
         assert len(correlation_entries) == 1
         assert correlation_entries[0]["reason"] == "correlation_cap"
 
-    def test_model_websocket_client_correlation_cap_fails_open(self, tmp_path, real_flow):
+    async def test_model_websocket_client_correlation_cap_fails_open(self, tmp_path, real_flow):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
         over_budget_request = (
@@ -755,7 +760,9 @@ class TestModelProviderWebSocketPrewarmUsage:
         )
 
         with self._usage_webhook_api() as webhook:
-            feed_websocket_client_message(flow, over_budget_request)
+            completion = feed_websocket_client_message(flow, over_budget_request)
+            assert completion is not None
+            await completion
             feed_websocket_server_message(flow, _openai_websocket_created_frame("client-cap-1"))
             feed_websocket_server_message(
                 flow,

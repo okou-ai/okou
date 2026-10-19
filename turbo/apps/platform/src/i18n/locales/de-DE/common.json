@@ -5160,6 +5160,15 @@
         "retryMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden. Versuchen Sie es erneut.",
         "title": "Morgenbrief"
       },
+      "proactiveSuggestions": {
+        "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
+        "missingDefaultAgent": "Wähle einen verfügbaren Standard-Agent für proaktive Vorschläge.",
+        "preparationFailed": "Die Einrichtung konnte nicht abgeschlossen werden. Versuche es erneut.",
+        "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",
+        "retry": "Erneut versuchen",
+        "retryMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden. Versuche es erneut.",
+        "title": "Proaktive Vorschläge"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Drücken Sie zum Senden ⌘/Strg+Eingabetaste und für eine neue Zeile die Eingabetaste",
