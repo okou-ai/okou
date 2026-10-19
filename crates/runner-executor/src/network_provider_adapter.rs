@@ -1,8 +1,7 @@
 use runner_network::NetworkError;
 use runner_network::proxy::{
     ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication,
-    ConnectorRuntimeRegistryTransaction, ConnectorRuntimeRegistryUpdate,
-    CustomConnectorRuntimeRegistryState, ProxyRegistryHandle, RegistryPublication,
+    ConnectorRuntimeRegistryTransaction, ProxyRegistryHandle, RegistryPublication,
 };
 use runner_types::types::ConnectorRuntimeTarget;
 
@@ -17,51 +16,6 @@ fn provider_registry_error(error: NetworkError) -> runner_provider::ProviderErro
         NetworkError::Config(message) => runner_provider::ProviderError::Config(message),
         NetworkError::Internal(message) => runner_provider::ProviderError::Internal(message),
         NetworkError::Io(error) => runner_provider::ProviderError::Io(error),
-    }
-}
-
-fn provider_registry_state_to_internal(
-    state: &runner_provider::CustomConnectorRuntimeRegistryState,
-) -> CustomConnectorRuntimeRegistryState {
-    match state {
-        runner_provider::CustomConnectorRuntimeRegistryState::Available {
-            firewall,
-            network_policy,
-            routing_variables,
-        } => CustomConnectorRuntimeRegistryState::Available {
-            firewall: firewall.clone(),
-            network_policy: network_policy.clone(),
-            routing_variables: routing_variables.clone(),
-        },
-        runner_provider::CustomConnectorRuntimeRegistryState::Absent => {
-            CustomConnectorRuntimeRegistryState::Absent
-        }
-    }
-}
-
-fn provider_registry_update_to_internal(
-    update: &runner_provider::ConnectorRuntimeRegistryUpdate,
-) -> ConnectorRuntimeRegistryUpdate {
-    match update {
-        runner_provider::ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
-            connector_slug,
-            network_policy,
-        } => ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
-            connector_slug: connector_slug.clone(),
-            network_policy: network_policy.clone(),
-        },
-        runner_provider::ConnectorRuntimeRegistryUpdate::BuiltinAbsent { connector_slug } => {
-            ConnectorRuntimeRegistryUpdate::BuiltinAbsent {
-                connector_slug: connector_slug.clone(),
-            }
-        }
-        runner_provider::ConnectorRuntimeRegistryUpdate::Custom {
-            custom_connector_id,
-            state,
-        } => ConnectorRuntimeRegistryUpdate::Custom {
-            custom_connector_id: custom_connector_id.clone(),
-            state: provider_registry_state_to_internal(state),
-        },
     }
 }
 
@@ -111,12 +65,8 @@ impl runner_provider::ConnectorRuntimeRegistryTransaction for ProviderTransactio
         updates: &[runner_provider::ConnectorRuntimeRegistryUpdate],
     ) -> runner_provider::ProviderResult<Option<runner_provider::ConnectorRuntimePublication<bool>>>
     {
-        let updates = updates
-            .iter()
-            .map(provider_registry_update_to_internal)
-            .collect::<Vec<_>>();
         self.0
-            .apply_updates_if_run_matches(source_ip, run_id, &updates)
+            .apply_updates_if_run_matches(source_ip, run_id, updates)
             .await
             .map(|publication| publication.map(provider_registry_publication))
             .map_err(provider_registry_error)
