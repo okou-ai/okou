@@ -428,6 +428,7 @@
     "src/signals/services/agent-run-metadata-write.service.ts",
     "src/signals/services/agent-tools-prompt.service.ts",
     "src/signals/services/agentphone-chat-callback-payload.ts",
+    "src/signals/services/agentphone-contact-card.service.ts",
     "src/signals/services/agentphone-prompt.ts",
     "src/signals/services/agentphone-queued-launch-context.service.ts",
     "src/signals/services/agentphone-shared.service.ts",

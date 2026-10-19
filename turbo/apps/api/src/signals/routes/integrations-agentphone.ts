@@ -1,4 +1,5 @@
 import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
+import { prepareAgentPhoneContactCard$ } from "../services/agentphone-contact-card.service";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
@@ -534,12 +535,8 @@ function connectConflict(reason: LinkConflictReason) {
   return conflict(agentPhoneLinkConflictMessage(reason));
 }
 
-const AGENTPHONE_CONTACT_CARD_URL =
-  "https://static.vm0.io/agentphone-contact/a0a9471cbcf783bd04620f1be71dd8efaf0f49c6a23eb77e3cb4584e731fd685/okou.vcf";
-
 interface AgentPhoneConnectedMessage {
   readonly body: string;
-  readonly mediaUrls?: readonly string[];
 }
 
 function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
@@ -549,10 +546,6 @@ function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
       body: `Your phone number is now connected to ${brandName}.
 
 You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.`,
-    },
-    {
-      body: `Save ${brandName} to your contacts so you can find this chat anytime.`,
-      mediaUrls: [AGENTPHONE_CONTACT_CARD_URL],
     },
     {
       body: "It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.",
@@ -574,32 +567,36 @@ What would you like to start with?`,
   ];
 }
 
-async function sendAgentPhoneConnectedMessages(
-  target: {
-    readonly agentphoneAgentId: string;
-    readonly toNumber: string;
-    readonly replyToMessageId?: string;
+const sendAgentPhoneConnectedMessages$ = command(
+  async (
+    { set },
+    target: {
+      readonly userLinkId: string;
+      readonly agentphoneAgentId: string;
+      readonly toNumber: string;
+      readonly replyToMessageId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    // Send sequentially so the provider receives the messages in reading order;
+    // only the first message threads onto the inbound connection code.
+    for (const [index, message] of agentPhoneConnectedMessages().entries()) {
+      await sendAgentPhoneMessage(
+        {
+          agentphoneAgentId: target.agentphoneAgentId,
+          toNumber: target.toNumber,
+          ...(index === 0 && target.replyToMessageId
+            ? { replyToMessageId: target.replyToMessageId }
+            : {}),
+          body: message.body,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    await set(prepareAgentPhoneContactCard$, target.userLinkId, signal);
   },
-  signal: AbortSignal,
-): Promise<void> {
-  // Send sequentially so the provider receives the messages in reading order;
-  // only the first message threads onto the inbound connection code.
-  for (const [index, message] of agentPhoneConnectedMessages().entries()) {
-    await sendAgentPhoneMessage(
-      {
-        agentphoneAgentId: target.agentphoneAgentId,
-        toNumber: target.toNumber,
-        ...(index === 0 && target.replyToMessageId
-          ? { replyToMessageId: target.replyToMessageId }
-          : {}),
-        body: message.body,
-        ...(message.mediaUrls ? { mediaUrls: message.mediaUrls } : {}),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-  }
-}
+);
 
 const connectAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -655,8 +652,10 @@ const connectAgentPhone$ = command(
     signal.throwIfAborted();
 
     await tapError(
-      sendAgentPhoneConnectedMessages(
+      set(
+        sendAgentPhoneConnectedMessages$,
         {
+          userLinkId: result.userLink.id,
           agentphoneAgentId: body.agentphoneAgentId,
           toNumber: phoneHandle,
         },
@@ -1310,8 +1309,10 @@ const handleAgentPhoneConnectionCode$ = command(
 
     await tapError(
       result.kind === "linked"
-        ? sendAgentPhoneConnectedMessages(
+        ? set(
+            sendAgentPhoneConnectedMessages$,
             {
+              userLinkId: result.userLinkId,
               agentphoneAgentId: event.agentphoneAgentId,
               toNumber: event.fromNumber,
               ...(event.channel === "imessage"

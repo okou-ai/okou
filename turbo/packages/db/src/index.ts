@@ -60,6 +60,7 @@ import * as telegramOfficialUserLinkSchema from "./schema/telegram-official-user
 import * as telegramChatThreadRouteSchema from "./schema/telegram-chat-thread-route";
 import * as telegramMessageSchema from "./schema/telegram-message";
 import * as agentphoneUserLinkSchema from "./schema/agentphone-user-link";
+import * as agentphoneContactCardDeliverySchema from "./schema/agentphone-contact-card-delivery";
 import * as agentphoneChatThreadRouteSchema from "./schema/agentphone-chat-thread-route";
 import * as agentphoneMessageSchema from "./schema/agentphone-message";
 import * as agentphoneMessageVisibilitySchema from "./schema/agentphone-message-visibility";
@@ -244,6 +245,7 @@ export const schema = {
   ...telegramChatThreadRouteSchema,
   ...telegramMessageSchema,
   ...agentphoneUserLinkSchema,
+  ...agentphoneContactCardDeliverySchema,
   ...agentphoneChatThreadRouteSchema,
   ...agentphoneMessageSchema,
   ...agentphoneMessageVisibilitySchema,

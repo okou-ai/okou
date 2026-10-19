@@ -1,5 +1,7 @@
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { z } from "zod";
+import { safeJsonParse } from "../utils";
 
 const log = logger("api:agentphone");
 
@@ -15,6 +17,7 @@ interface AgentPhoneApiError extends Error {
   readonly name: "AgentPhoneApiError";
   readonly status: number;
   readonly body: string;
+  readonly code: string | null;
 }
 
 function agentPhoneApiBase(): string {
@@ -37,10 +40,12 @@ function makeAgentPhoneApiError(
   status: number,
   body: string,
 ): AgentPhoneApiError {
+  const details = valueObject(valueObject(safeJsonParse(body)).error);
   return Object.assign(new Error(`Phone provider error: ${status}`), {
     name: "AgentPhoneApiError" as const,
     status,
     body,
+    code: typeof details.code === "string" ? details.code : null,
   });
 }
 
@@ -86,11 +91,17 @@ export async function sendAgentPhoneMessage(
 
   if (!response.ok) {
     const text = await response.text();
-    log.error("AgentPhone send message failed", {
-      status: response.status,
-      body: text,
-    });
-    throw makeAgentPhoneApiError(response.status, text);
+    const error = makeAgentPhoneApiError(response.status, text);
+    if (
+      error.status !== 422 ||
+      error.code !== "CONVERSATION_CONTENT_RESTRICTED"
+    ) {
+      log.error("AgentPhone send message failed", {
+        status: response.status,
+        body: text,
+      });
+    }
+    throw error;
   }
 
   const result = valueObject(await response.json());
@@ -113,6 +124,71 @@ export async function sendAgentPhoneMessage(
       typeof result.to_number === "string" ? result.to_number : opts.toNumber,
     mediaUrls,
   };
+}
+
+const conversationMediaCapabilitiesSchema = z.object({
+  capabilities: z
+    .object({ canSendMessages: z.boolean(), media: z.boolean() })
+    .nullish(),
+});
+
+export async function canSendAgentPhoneConversationMedia(
+  conversationId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const response = await fetch(
+    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(conversationId)}`,
+    { headers: { Authorization: `Bearer ${agentPhoneApiKey()}` }, signal },
+  );
+  if (response.status === 404) {
+    return false;
+  }
+  if (!response.ok) {
+    throw makeAgentPhoneApiError(response.status, await response.text());
+  }
+  const { capabilities } = conversationMediaCapabilitiesSchema.parse(
+    await response.json(),
+  );
+  return capabilities?.canSendMessages === true && capabilities.media;
+}
+
+const conversationMessagesSchema = z.object({
+  data: z.array(
+    z.object({
+      id: z.string().min(1),
+      body: z.string(),
+      fromNumber: z.string(),
+      toNumber: z.string(),
+      direction: z.string(),
+      status: z.string().nullish(),
+      mediaUrl: z.string().nullish(),
+      mediaUrls: z.array(z.string()).default([]),
+      receivedAt: z.iso.datetime({ offset: true }),
+    }),
+  ),
+  hasMore: z.boolean(),
+});
+
+export async function getAgentPhoneMessagesAfter(
+  conversationId: string,
+  after: Date,
+  signal: AbortSignal,
+): Promise<z.infer<typeof conversationMessagesSchema> | null> {
+  const query = new URLSearchParams({
+    after: after.toISOString(),
+    limit: "200",
+  });
+  const response = await fetch(
+    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
+    { headers: { Authorization: `Bearer ${agentPhoneApiKey()}` }, signal },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw makeAgentPhoneApiError(response.status, await response.text());
+  }
+  return conversationMessagesSchema.parse(await response.json());
 }
 
 export async function getAgentPhoneConversationParticipants(
