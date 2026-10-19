@@ -6,7 +6,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { buildFeishuWelcomeMessage } from "../../lib/feishu-message-card";
-import { sendFeishuMessage } from "../external/feishu-client";
+import { deliverFeishuMessage$ } from "./feishu-message-delivery.service";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
@@ -55,9 +55,10 @@ export const notifyFeishuConnect$ = command(
     if (!installation) {
       throw new Error("Feishu installation not found");
     }
-    await sendFeishuMessage(
+    await set(
+      deliverFeishuMessage$,
       {
-        db,
+        kind: "send",
         installationId: args.installationId,
         receiveIdType: "open_id",
         receiveId: args.openId,
