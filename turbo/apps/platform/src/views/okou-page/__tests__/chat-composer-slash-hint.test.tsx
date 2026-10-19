@@ -1,5 +1,4 @@
 import { workflowsCollectionContract } from "@okouai/api-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -24,7 +23,6 @@ function slashHint(editor: HTMLElement): HTMLElement | null {
 }
 
 async function openComposer(
-  enabled = true,
   path = `/agents/${AGENT_ID}/chat`,
   sentPrompts: string[] = [],
 ): Promise<HTMLElement> {
@@ -44,7 +42,6 @@ async function openComposer(
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.ComposerSlashHint]: enabled },
   });
   return await findComposerEditor();
 }
@@ -70,19 +67,11 @@ function selectText(editor: HTMLElement, from: number, to = from): void {
   fireEvent(document, new Event("selectionchange"));
 }
 
-test("Keep slash suggestions without the inline hint when the switch is off", async () => {
-  const editor = await openComposer(false);
-  await fill(editor, "Draft /");
-  await screen.findByTestId("slash-workflow-menu");
-  expect(slashHint(editor)).toBeNull();
-  expect(editor.textContent).toBe("Draft /");
-});
-
 test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
   "Show the hint after a bare slash and dismiss it with the menu at %s",
   async (path) => {
     const user = userEvent.setup({ delay: null });
-    const editor = await openComposer(true, path);
+    const editor = await openComposer(path);
     await fill(editor, "Draft /");
     await waitFor(() => {
       expect(slashHint(editor)).toBeInTheDocument();
@@ -117,7 +106,7 @@ test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
   "Show the hint immediately after a bare slash before existing text at %s",
   async (path) => {
     const user = userEvent.setup({ delay: null });
-    const editor = await openComposer(true, path);
+    const editor = await openComposer(path);
     await fill(editor, "/ 131");
     selectText(editor, 1);
     await waitFor(() => {
@@ -145,11 +134,7 @@ test.each([
   async (draft, caret) => {
     const user = userEvent.setup({ delay: null });
     const sentPrompts: string[] = [];
-    const editor = await openComposer(
-      true,
-      `/agents/${AGENT_ID}/chat`,
-      sentPrompts,
-    );
+    const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
     await fill(editor, draft);
     selectText(editor, caret);
     await waitFor(() => {
@@ -183,11 +168,7 @@ test.each([
   async (draft, caret) => {
     const user = userEvent.setup({ delay: null });
     const sentPrompts: string[] = [];
-    const editor = await openComposer(
-      true,
-      `/agents/${AGENT_ID}/chat`,
-      sentPrompts,
-    );
+    const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
     await fill(editor, draft);
     selectText(editor, caret);
     await waitFor(() => {
