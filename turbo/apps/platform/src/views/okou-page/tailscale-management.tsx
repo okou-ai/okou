@@ -1,4 +1,13 @@
 import {
+  RemoteNetworkSummary,
+  RemoteNetworkFooter,
+} from "./remote-network-summary.tsx";
+import { useRemoteNetworkSaveLabel } from "./remote-network-help.tsx";
+import {
+  remoteControlGuidedEnabled$,
+  remoteSetup$,
+} from "../../signals/remote-control-setup.ts";
+import {
   RemoteEditorFrame,
   REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
@@ -461,13 +470,17 @@ function TailscaleSubmitLabel({
   uncertain,
   edit,
   title,
+  destructive,
 }: {
   readonly busy: boolean;
   readonly uncertain: boolean;
   readonly edit: boolean;
   readonly title: string;
+  readonly destructive: boolean;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const saveLabel = useRemoteNetworkSaveLabel();
   if (busy) {
     return t(($) => {
       return $.connectors.actions.saving;
@@ -478,11 +491,66 @@ function TailscaleSubmitLabel({
       return $.cloudflareAccess.retry;
     });
   }
+  if (guided && !destructive) {
+    return saveLabel;
+  }
   return edit
     ? t(($) => {
         return $.cloudflareAccess.save;
       })
     : title;
+}
+
+function TailscaleFormActions({
+  inline,
+  busy,
+  uncertain,
+  blocked,
+  destructive,
+  edit,
+  title,
+}: {
+  readonly inline: boolean;
+  readonly busy: boolean;
+  readonly uncertain: boolean;
+  readonly blocked: boolean;
+  readonly destructive: boolean;
+  readonly edit: boolean;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  const close = useSet(closeTailscaleDialog$);
+  return (
+    <div
+      className={
+        inline
+          ? "mt-2 flex shrink-0 justify-end gap-2 border-t border-divider pt-5"
+          : "flex shrink-0 justify-end gap-2"
+      }
+    >
+      {!inline && (
+        <Button type="button" variant="outline" disabled={busy} onClick={close}>
+          {t(($) => {
+            return $.cloudflareAccess.cancel;
+          })}
+        </Button>
+      )}
+      <Button
+        type="submit"
+        className={inline ? REMOTE_PAGE_ACTION : undefined}
+        disabled={busy || (!uncertain && blocked)}
+        variant={destructive ? "destructive" : "default"}
+      >
+        <TailscaleSubmitLabel
+          destructive={destructive}
+          busy={busy}
+          uncertain={uncertain}
+          edit={edit}
+          title={title}
+        />
+      </Button>
+    </div>
+  );
 }
 
 export function TailscaleDialog({
@@ -501,6 +569,8 @@ export function TailscaleDialog({
   const [saving, save] = useLoadableSet(saveAction);
   const signal = useGet(pageSignal$);
   const { title, description } = useOperationCopy(dialog?.kind);
+  const setup = useGet(remoteSetup$);
+  const wizard = inline && setup?.step === "oauth";
   const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
   if (!dialog) {
     return null;
@@ -511,8 +581,20 @@ export function TailscaleDialog({
     <RemoteEditorFrame
       key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
       inline={inline}
-      title={title}
-      description={description}
+      title={
+        wizard
+          ? t(($) => {
+              return $.remoteControlSetup.oauthTitle;
+            })
+          : title
+      }
+      description={
+        wizard
+          ? t(($) => {
+              return $.remoteControlSetup.oauthDescription;
+            })
+          : description
+      }
       busy={busy}
       onClose={close}
     >
@@ -532,33 +614,119 @@ export function TailscaleDialog({
           <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
           <TailscaleReview dialog={dialog} isSaving={busy} />
         </DialogBody>
-        <div className="flex shrink-0 justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={close}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.cancel;
-            })}
-          </Button>
-          <Button
-            type="submit"
-            className={inline ? REMOTE_PAGE_ACTION : undefined}
-            disabled={busy || (!uncertain && blocked)}
-            variant={dialog.kind === "delete" ? "destructive" : "default"}
-          >
-            <TailscaleSubmitLabel
-              busy={busy}
-              uncertain={uncertain}
-              edit={edit}
-              title={title}
-            />
-          </Button>
-        </div>
+        <TailscaleFormActions
+          inline={inline}
+          busy={busy}
+          uncertain={uncertain}
+          blocked={blocked}
+          destructive={dialog.kind === "delete"}
+          edit={edit}
+          title={title}
+        />
       </form>
     </RemoteEditorFrame>
+  );
+}
+
+function TailscaleConfigCard({
+  config,
+  compact,
+  scope,
+  canManage,
+  admin,
+}: {
+  readonly config: TailscaleConfig;
+  readonly compact: boolean;
+  readonly scope: "personal" | "organization";
+  readonly canManage: boolean;
+  readonly admin: boolean;
+}) {
+  const { t } = useTranslation();
+  const open = useSet(openTailscaleDialog$);
+  const signal = useGet(pageSignal$);
+  return (
+    <article
+      className={
+        compact
+          ? "grid gap-5"
+          : surfaceVariants({ className: "grid gap-3 p-5" })
+      }
+    >
+      {compact ? (
+        <RemoteNetworkSummary
+          config={config}
+          kind="tailscale"
+          tags={config.tags}
+        />
+      ) : (
+        <>
+          <h4 className="font-semibold">{config.name}</h4>
+          <p className="text-sm text-muted-foreground">
+            {config.tags.join(", ")}
+          </p>
+          <TailscaleHostReferences config={config} />
+        </>
+      )}
+      {canManage && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={compact ? "quiet" : "outline"}
+            onClick={() => {
+              return detach(open("edit", config, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.tailscale.edit;
+            })}
+          </Button>
+          {admin && (
+            <Button
+              type="button"
+              variant={compact ? "quiet" : "outline"}
+              onClick={() => {
+                return detach(
+                  open(
+                    scope === "personal" ? "promote" : "adopt",
+                    config,
+                    signal,
+                  ),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              {scope === "personal"
+                ? t(($) => {
+                    return $.cloudflareAccess.promote;
+                  })
+                : t(($) => {
+                    return $.cloudflareAccess.convert;
+                  })}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant={compact ? "quiet" : "outline"}
+            disabled={privateNetworkHostCount(config) > 0}
+            onClick={() => {
+              return detach(open("delete", config, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.tailscale.delete;
+            })}
+          </Button>
+        </div>
+      )}
+      {canManage && privateNetworkHostCount(config) > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.native.inUse;
+          })}
+        </p>
+      )}
+      {compact && <RemoteNetworkFooter id={config.id} kind="tailscale" />}
+    </article>
   );
 }
 
@@ -574,8 +742,6 @@ export function TailscaleSection({
   readonly admin: boolean;
 }) {
   const { t } = useTranslation();
-  const open = useSet(openTailscaleDialog$);
-  const signal = useGet(pageSignal$);
   const canManage = scope === "personal" || admin;
   return (
     <section
@@ -610,80 +776,14 @@ export function TailscaleSection({
       )}
       {configs.map((config) => {
         return (
-          <article
+          <TailscaleConfigCard
             key={config.id}
-            className={surfaceVariants({ className: "grid gap-3 p-5" })}
-          >
-            <h4 className="font-semibold">{config.name}</h4>
-            <p className="text-sm text-muted-foreground">
-              {config.tags.join(", ")}
-            </p>
-            <TailscaleHostReferences config={config} />
-            {canManage && (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    return detach(
-                      open("edit", config, signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                >
-                  {t(($) => {
-                    return $.tailscale.edit;
-                  })}
-                </Button>
-                {admin && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      return detach(
-                        open(
-                          scope === "personal" ? "promote" : "adopt",
-                          config,
-                          signal,
-                        ),
-                        Reason.DomCallback,
-                      );
-                    }}
-                  >
-                    {scope === "personal"
-                      ? t(($) => {
-                          return $.cloudflareAccess.promote;
-                        })
-                      : t(($) => {
-                          return $.cloudflareAccess.convert;
-                        })}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={privateNetworkHostCount(config) > 0}
-                  onClick={() => {
-                    return detach(
-                      open("delete", config, signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                >
-                  {t(($) => {
-                    return $.tailscale.delete;
-                  })}
-                </Button>
-              </div>
-            )}
-            {canManage && privateNetworkHostCount(config) > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.vnc.native.inUse;
-                })}
-              </p>
-            )}
-          </article>
+            config={config}
+            compact={compact}
+            scope={scope}
+            canManage={canManage}
+            admin={admin}
+          />
         );
       })}
     </section>

@@ -1,3 +1,5 @@
+import { Cloud, Network, ChevronRight } from "lucide-react";
+import { RemoteEditorFrame } from "./remote-editor-frame.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -16,13 +18,93 @@ import {
 import { tailscaleSettingsEnabled$ } from "../../signals/tailscale.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-export function NetworkProviderPicker() {
+export function NetworkProviderPicker({
+  inline = false,
+}: { readonly inline?: boolean } = {}) {
   const { t } = useTranslation();
   const open = useGet(remoteNetworkPicker$);
   const setOpen = useSet(setRemoteNetworkPicker$);
   const tailscale = useGet(tailscaleSettingsEnabled$);
   const [choosing, choose] = useLoadableSet(chooseRemoteNetworkProvider$);
   const signal = useGet(pageSignal$);
+  const choices = (
+    <div className="grid gap-3">
+      {tailscale && (
+        <Button
+          variant="outline"
+          className="h-auto min-h-16 justify-start whitespace-normal p-4 text-left"
+          disabled={choosing.state === "loading"}
+          onClick={() => {
+            detach(choose("tailscale", signal), Reason.DomCallback);
+          }}
+        >
+          <Network size={20} aria-hidden />
+          <span className="grid flex-1 gap-1">
+            <span>
+              {t(($) => {
+                return $.tailscale.title;
+              })}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.networkTailscaleHelp;
+              })}
+            </span>
+          </span>
+          <ChevronRight size={16} aria-hidden />
+        </Button>
+      )}
+      <Button
+        variant="outline"
+        className="h-auto min-h-16 justify-start whitespace-normal p-4 text-left"
+        disabled={choosing.state === "loading"}
+        onClick={() => {
+          detach(choose("cloudflare_access", signal), Reason.DomCallback);
+        }}
+      >
+        <Cloud size={20} aria-hidden />
+        <span className="grid flex-1 gap-1">
+          <span>
+            {t(($) => {
+              return $.cloudflareAccess.title;
+            })}
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.cloudflareHelp;
+            })}
+          </span>
+        </span>
+        <ChevronRight size={16} aria-hidden />
+      </Button>
+      {choosing.state === "hasError" && (
+        <p role="alert">
+          {t(($) => {
+            return $.remoteControlSetup.failedLoad;
+          })}
+        </p>
+      )}
+    </div>
+  );
+  if (inline) {
+    return (
+      <RemoteEditorFrame
+        inline
+        title={t(($) => {
+          return $.remoteControlSetup.addNetworkInline;
+        })}
+        description={t(($) => {
+          return $.remoteControlSetup.networkProviderHelp;
+        })}
+        busy={choosing.state === "loading"}
+        onClose={() => {
+          setOpen(false);
+        }}
+      >
+        {choices}
+      </RemoteEditorFrame>
+    );
+  }
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
@@ -33,39 +115,7 @@ export function NetworkProviderPicker() {
             })}
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
-          {tailscale && (
-            <Button
-              variant="outline"
-              disabled={choosing.state === "loading"}
-              onClick={() => {
-                detach(choose("tailscale", signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.tailscale.title;
-              })}
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            disabled={choosing.state === "loading"}
-            onClick={() => {
-              detach(choose("cloudflare_access", signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.title;
-            })}
-          </Button>
-          {choosing.state === "hasError" && (
-            <p role="alert">
-              {t(($) => {
-                return $.remoteControlSetup.failedLoad;
-              })}
-            </p>
-          )}
-        </div>
+        {choices}
       </DialogContent>
     </Dialog>
   );

@@ -1,3 +1,6 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "./external/feature-switch.ts";
+import { resetRemoteLogin$ } from "./remote-login.ts";
 import type {
   InitClientReturn,
   InitClientArgs,
@@ -69,7 +72,7 @@ export const mountSshForm$ = onRef(
     const mounted = get(dialog$);
     signal.addEventListener("abort", () => {
       form.reset();
-      if (get(dialog$) === mounted) {
+      if (get(dialog$)?.instanceId === mounted?.instanceId) {
         set(resetFormSave$);
         set(abandonSshSave$);
         set(cancelSshPrivateKeyFile$);
@@ -177,6 +180,7 @@ const sshClients$ = computed(async (get) => {
   };
 });
 export interface SshDialogState {
+  readonly instanceId: string;
   readonly identity: string;
   readonly sessionKey: string | null;
   readonly kind:
@@ -188,6 +192,8 @@ export interface SshDialogState {
     | "edit-credential"
     | "delete-credential";
   readonly credential: SshCredentialResponse | null;
+  readonly loginCredential?: SshCredentialResponse;
+  readonly connectionSaved?: boolean;
   readonly connection: SshConnectionResponse | null;
 }
 const dialog$ = state<SshDialogState | null>(null);
@@ -254,7 +260,9 @@ const finishSshSave$ = command(
         !(
           dialog.kind === "edit" &&
           result.status === 409 &&
-          result.body.error.code === SSH_ERROR_CODES.GENERATION_CONFLICT
+          (result.body.error.code === SSH_ERROR_CODES.GENERATION_CONFLICT ||
+            result.body.error.code ===
+              SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT)
         ))
     ) {
       return false;
@@ -441,6 +449,7 @@ export const sshSummary$ = computed(async (get) => {
   return result.status === 200 ? result.body : null;
 });
 export const closeSshDialog$ = command(({ set }) => {
+  set(resetRemoteLogin$);
   set(resetFormSave$);
   set(abandonSshSave$);
   set(cancelSshPrivateKeyFile$);
@@ -566,6 +575,36 @@ export function usesTailscaleNetwork(
   );
 }
 
+function initialSshConnectionMode(connection: SshConnectionResponse | null): {
+  mode: SshConnectionMode;
+  configId: string | null;
+  tailscaleConfigId: string | null;
+} {
+  return {
+    mode:
+      connection && "transport" in connection
+        ? connection.transport.type
+        : "direct",
+    configId:
+      connection &&
+      "transport" in connection &&
+      connection.transport.type === "cloudflare_access"
+        ? "configId" in connection.transport
+          ? connection.transport.configId
+          : ""
+        : null,
+    tailscaleConfigId:
+      connection &&
+      "transport" in connection &&
+      (connection.transport.type === "tailscale" ||
+        connection.transport.type === "tailscale_ssh")
+        ? "configId" in connection.transport
+          ? connection.transport.configId
+          : ""
+        : null,
+  };
+}
+
 export const openSshDialog$ = command(
   async (
     { get, set },
@@ -585,6 +624,21 @@ export const openSshDialog$ = command(
     if (!identity) {
       return;
     }
+    const loginCredential =
+      kind === "edit" &&
+      connection &&
+      "credentialId" in connection &&
+      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+        ? (await get(sshCredentials$))?.find((credential) => {
+            return credential.id === connection.credentialId;
+          })
+        : undefined;
+    signal.throwIfAborted();
+    if (identity !== (await get(sshIdentity$))) {
+      return;
+    }
+    signal.throwIfAborted();
+    set(resetRemoteLogin$);
     set(conflict$, null);
     set(reviewedVersion$, null);
     set(cancelSshPrivateKeyFile$);
@@ -593,38 +647,18 @@ export const openSshDialog$ = command(
         connection && "credentialId" in connection
           ? connection.credentialId
           : null,
-      method: "private_key",
+      method: loginCredential?.authMethod ?? "private_key",
       replace: false,
     });
-    set(connectionModeEditor$, {
-      mode:
-        connection && "transport" in connection
-          ? connection.transport.type
-          : "direct",
-      configId:
-        connection &&
-        "transport" in connection &&
-        connection.transport.type === "cloudflare_access"
-          ? "configId" in connection.transport
-            ? connection.transport.configId
-            : ""
-          : null,
-      tailscaleConfigId:
-        connection &&
-        "transport" in connection &&
-        (connection.transport.type === "tailscale" ||
-          connection.transport.type === "tailscale_ssh")
-          ? "configId" in connection.transport
-            ? connection.transport.configId
-            : ""
-          : null,
-    });
+    set(connectionModeEditor$, initialSshConnectionMode(connection));
     set(dialog$, {
+      instanceId: crypto.randomUUID(),
       identity,
       sessionKey: get(authenticatedSessionKey$),
       kind,
       connection,
       credential: null,
+      ...(loginCredential ? { loginCredential } : {}),
     });
     // Render immediately; an optional Access list must not hold up page entry.
     detach(
@@ -647,6 +681,7 @@ export const openSshCredentialDialog$ = command(
     if (!identity) {
       return;
     }
+    set(resetRemoteLogin$);
     set(conflict$, null);
     set(reviewedVersion$, null);
     set(cancelSshPrivateKeyFile$);
@@ -656,6 +691,7 @@ export const openSshCredentialDialog$ = command(
       replace: false,
     });
     set(dialog$, {
+      instanceId: crypto.randomUUID(),
       identity,
       sessionKey: get(authenticatedSessionKey$),
       kind,
@@ -686,6 +722,15 @@ export const sshConflictReview$ = computed(async (get) => {
       conflict !== SSH_ERROR_CODES.CREDENTIAL_IN_USE)
   ) {
     return null;
+  }
+  if (
+    dialog.loginCredential &&
+    conflict === SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
+  ) {
+    const credential = (await get(sshCredentials$))?.find((value) => {
+      return value.id === dialog.loginCredential?.id;
+    });
+    return credential ? { ...dialog, dialog, credential } : null;
   }
   if (dialog.credential) {
     const credential = (await get(sshCredentials$))?.find((value) => {
@@ -724,6 +769,11 @@ export const acceptSshConflictReview$ = command(
     ) {
       return;
     }
+    if (current.loginCredential && reviewed.credential) {
+      set(dialog$, { ...current, loginCredential: reviewed.credential });
+      set(conflict$, null);
+      return;
+    }
     set(
       reviewedVersion$,
       reviewed.credential?.revision ?? reviewed.connection?.generation ?? null,
@@ -755,6 +805,29 @@ function authenticationFromForm(
         passphrase: textField(form, "passphrase") || null,
       };
 }
+export function sshLoginPatch(
+  form: HTMLFormElement,
+  credential: SshCredentialResponse,
+  method: string,
+) {
+  const username = textField(form, "username").trim();
+  const material = textField(
+    form,
+    method === "password" ? "password" : "privateKey",
+  );
+  const replace = method !== credential.authMethod || material.length > 0;
+  if (!replace && username === credential.username) {
+    return null;
+  }
+  return updateSshCredentialRequestSchema.safeParse({
+    expectedRevision: credential.revision,
+    ...(username !== credential.username ? { username } : {}),
+    ...(replace
+      ? { authentication: authenticationFromForm(form, { method }) }
+      : {}),
+  });
+}
+
 function credentialFromForm(
   form: HTMLFormElement,
   editor: { readonly method: string },
@@ -923,6 +996,18 @@ const deleteSshHost$ = command(
   },
 );
 
+function unavailableSshNetwork(
+  kind: SshDialogState["kind"],
+  mode: SshConnectionMode,
+  enabled: boolean,
+) {
+  return (
+    (kind === "create" || kind === "edit") &&
+    (mode === "tailscale" || mode === "tailscale_ssh") &&
+    !enabled
+  );
+}
+
 const saveSshHost$ = command(
   async (
     { get, set },
@@ -945,13 +1030,15 @@ const saveSshHost$ = command(
     const client = clients.connections;
     const connectionEditor = get(connectionModeEditor$);
     if (
-      (dialog.kind === "create" || dialog.kind === "edit") &&
-      (connectionEditor.mode === "tailscale" ||
-        connectionEditor.mode === "tailscale_ssh") &&
-      !get(tailscaleEnabled$)
+      unavailableSshNetwork(
+        dialog.kind,
+        connectionEditor.mode,
+        get(tailscaleEnabled$),
+      )
     ) {
       return false;
     }
+
     const fields = hostFieldsFromForm(dialog, form, editor, connectionEditor);
     if (dialog.kind === "create") {
       const id = set(getSshCreationId$);
@@ -1014,6 +1101,9 @@ const saveSshHost$ = command(
         if (!set(finishSshSave$, dialog, result, retrying)) {
           return false;
         }
+        if (result.status === 200) {
+          return result.body;
+        }
       }
     }
 
@@ -1021,9 +1111,8 @@ const saveSshHost$ = command(
   },
 );
 
-export const saveSsh$ = command(
-  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
-    const signal = set(resetFormSave$, parentSignal);
+const prepareSshFormSave$ = command(
+  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
     const dialog = await get(sshDialog$);
     signal.throwIfAborted();
     if (!dialog) {
@@ -1036,6 +1125,45 @@ export const saveSsh$ = command(
     }
     const retrying = get(sshSaveUncertain$);
     const editor = get(credentialEditor$);
+    if (
+      (dialog.kind === "create" || dialog.kind === "edit") &&
+      editor.selection === "new" &&
+      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+    ) {
+      const name = form.elements.namedItem("credentialName");
+      if (name instanceof HTMLInputElement) {
+        name.value = textField(form, "displayName").trim();
+      }
+    }
+    const savedConnectionId =
+      dialog.kind === "create" ? set(getSshCreationId$) : dialog.connection?.id;
+    const login =
+      dialog.kind === "edit" &&
+      dialog.loginCredential &&
+      get(connectionModeEditor$).mode !== "tailscale_ssh" &&
+      editor.selection === dialog.loginCredential.id &&
+      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+        ? sshLoginPatch(form, dialog.loginCredential, editor.method)
+        : null;
+    if (login && !login.success) {
+      set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
+      return;
+    }
+    return { dialog, clients, retrying, editor, savedConnectionId, login };
+  },
+);
+
+export const saveSsh$ = command(
+  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    const signal = set(resetFormSave$, parentSignal);
+    const prepared = await set(prepareSshFormSave$, form, signal);
+    signal.throwIfAborted();
+    if (!prepared) {
+      return;
+    }
+    const { dialog, clients, retrying, editor, savedConnectionId, login } =
+      prepared;
+    let activeDialog = dialog;
     let conflicted: string | null = null;
     if (dialog.kind === "create-credential") {
       const id = set(getSshCreationId$);
@@ -1062,14 +1190,40 @@ export const saveSsh$ = command(
       if (result === false) {
         return;
       }
-      conflicted = result;
+      if (typeof result === "object" && result !== null) {
+        if (login?.success && dialog.loginCredential) {
+          activeDialog = {
+            ...dialog,
+            connection: result,
+            connectionSaved: true,
+          };
+          set(dialog$, activeDialog);
+          set(reviewedVersion$, null);
+          set(beginSshSave$, activeDialog, null);
+          const savedLogin = await accept(
+            clients.credentials.update({
+              params: { credentialId: dialog.loginCredential.id },
+              body: login.data,
+              fetchOptions: { signal },
+            }),
+            [200, 400, 404, 409, 500],
+            signal,
+          );
+          signal.throwIfAborted();
+          if (!set(finishSshSave$, activeDialog, savedLogin, retrying)) {
+            return;
+          }
+        }
+      } else {
+        conflicted = result;
+      }
     }
     signal.throwIfAborted();
     if (dialog.identity !== (await get(sshIdentity$))) {
       return;
     }
     signal.throwIfAborted();
-    if (get(dialog$) !== dialog) {
+    if (get(dialog$) !== activeDialog) {
       return;
     }
     if (dialog.kind === "delete" && conflicted) {
@@ -1080,5 +1234,6 @@ export const saveSsh$ = command(
     }
     set(conflict$, conflicted);
     set(invalidateAfterSshSave$, dialog.kind);
+    return conflicted ? undefined : savedConnectionId;
   },
 );

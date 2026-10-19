@@ -1,5 +1,5 @@
+import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
 import { searchParams$ } from "../../signals/route.ts";
-import { RemoteTailscaleCredentialHelp } from "./remote-network-help.tsx";
 import { NetworkProviderPicker } from "./remote-network-picker.tsx";
 import type { ReactNode } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -7,6 +7,10 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
+  Check,
+  ChevronRight,
+  LockKeyhole,
+  Laptop,
   ArrowRight,
   ExternalLink,
   Monitor,
@@ -23,6 +27,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Radio,
+  RadioGroup,
   SegmentControl,
   SegmentControlItem,
 } from "@okouai/ui";
@@ -83,14 +89,23 @@ function ExternalGuide({
 }
 function StepCard({
   title,
+  description,
   children,
 }: {
   readonly title: string;
+  readonly description?: string;
   readonly children: ReactNode;
 }) {
   return (
-    <Card surface="composer" className="grid gap-6 p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <Card surface="composer" className="grid gap-6 p-5 sm:p-6">
+      <header className="grid gap-1.5">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        {description && (
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        )}
+      </header>
       {children}
     </Card>
   );
@@ -134,24 +149,26 @@ function OperationError({ failed }: { readonly failed: boolean }) {
 }
 function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
-  if (setup.step === "entry" || setup.step === "existing") {
+  if (
+    setup.step === "entry" ||
+    setup.step === "existing" ||
+    setup.step === "saved" ||
+    (setup.route === "direct" && setup.protocol === "ssh")
+  ) {
     return null;
   }
   const vnc = setup.protocol === "vnc";
-  const active =
-    setup.step === "saved"
+  const active = vnc
+    ? setup.step === "os" || setup.step === "service"
+      ? 1
+      : setup.vncStep === "profile" || setup.vncStep === "connection"
+        ? 2
+        : 3
+    : setup.step === "login" || setup.step === "prepare"
       ? 3
-      : vnc
-        ? setup.step === "os" || setup.step === "service"
-          ? 1
-          : setup.vncStep === "profile" || setup.vncStep === "connection"
-            ? 2
-            : 3
-        : setup.step === "login"
-          ? 3
-          : setup.step === "prepare"
-            ? 2
-            : 1;
+      : ["tag", "rule", "oauth", "cf-access"].includes(setup.step)
+        ? 2
+        : 1;
   const labels = [
     t(($) => {
       return vnc
@@ -161,14 +178,14 @@ function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
     t(($) => {
       return vnc
         ? $.remoteControlSetup.connectionProgress
-        : $.remoteControlSetup.prepareProgress;
+        : $.remoteControlSetup.accessProgress;
     }),
     t(($) => {
       return $.remoteControlSetup.loginProgress;
     }),
   ];
   return (
-    <ol className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+    <ol className="order-3 flex w-full items-center justify-center gap-2 text-xs text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
       {labels.map((label, index) => {
         return (
           <li
@@ -176,19 +193,97 @@ function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
             aria-current={active === index + 1 ? "step" : undefined}
             className="flex items-center gap-2"
           >
+            {index > 0 && (
+              <span className="mr-1 h-px w-3 bg-divider sm:w-5" aria-hidden />
+            )}
             <span
               className={cn(
-                "flex size-6 items-center justify-center rounded-full border border-divider",
-                active === index + 1 && "bg-foreground text-background",
+                "flex size-[22px] shrink-0 items-center justify-center rounded-full border border-divider",
+                active === index + 1 &&
+                  "border-foreground bg-foreground text-background",
               )}
             >
-              {index + 1}
+              {active > index + 1 ? <Check size={12} aria-hidden /> : index + 1}
             </span>
-            {label}
+            <span className={cn(active === index + 1 && "text-foreground")}>
+              {label}
+            </span>
           </li>
         );
       })}
     </ol>
+  );
+}
+function ProtocolChoice({
+  setup,
+  vncEnabled,
+}: {
+  readonly setup: RemoteSetup;
+  readonly vncEnabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const choose = useSet(enterRemoteSetup$);
+  const options = [
+    {
+      value: "ssh",
+      label: t(($) => {
+        return $.ssh.label;
+      }),
+      description: t(($) => {
+        return $.remoteControlSetup.sshDescription;
+      }),
+      icon: <Terminal size={20} aria-hidden />,
+    },
+    ...(vncEnabled
+      ? [
+          {
+            value: "vnc",
+            label: t(($) => {
+              return $.vnc.label;
+            }),
+            description: t(($) => {
+              return $.remoteControlSetup.vncDescription;
+            }),
+            icon: <Monitor size={20} aria-hidden />,
+          },
+        ]
+      : []),
+  ];
+  return (
+    <RadioGroup
+      value={setup.protocol}
+      onValueChange={(value) => {
+        choose(value === "vnc" && vncEnabled ? "vnc" : "ssh");
+      }}
+      aria-label={t(($) => {
+        return $.remoteControlSetup.entryTitle;
+      })}
+      className={cn("grid gap-3", vncEnabled && "sm:grid-cols-2")}
+    >
+      {options.map((option) => {
+        return (
+          <label
+            key={option.value}
+            className="flex min-h-[84px] cursor-pointer items-center gap-3 rounded-xl border border-input bg-background p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center">
+              {option.icon}
+            </span>
+            <span className="grid min-w-0 flex-1 gap-1 text-left">
+              <span className="text-sm font-medium">{option.label}</span>
+              <span className="text-[13px] leading-5 text-muted-foreground">
+                {option.description}
+              </span>
+            </span>
+            <Radio
+              aria-label={option.label}
+              value={option.value}
+              className="data-checked:border-foreground data-checked:bg-foreground"
+            />
+          </label>
+        );
+      })}
+    </RadioGroup>
   );
 }
 function SetupEntry({
@@ -200,93 +295,80 @@ function SetupEntry({
 }) {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
-  const chooseProtocol = useSet(enterRemoteSetup$);
+  const leave = useSet(leaveRemoteSetup$);
   const [starting, start] = useLoadableSet(beginRemoteGuide$);
   const signal = useGet(pageSignal$);
   return (
-    <div className="grid gap-6">
-      <h2 className="text-lg font-semibold">
-        {t(($) => {
-          return $.remoteControlSetup.entryTitle;
-        })}
-      </h2>
-      <SegmentControl
-        value={setup.protocol}
-        onValueChange={(value) => {
-          chooseProtocol(value === "vnc" && vncEnabled ? "vnc" : "ssh");
-        }}
-        aria-label={t(($) => {
-          return $.remoteControlSetup.entryTitle;
-        })}
-      >
-        <SegmentControlItem value="ssh" className="flex-1">
-          <Terminal size={18} aria-hidden />
-          <span className="grid gap-1 text-left">
-            <strong>
-              {t(($) => {
-                return $.ssh.label;
-              })}
-            </strong>
-            <span className="font-normal">
-              {t(($) => {
-                return $.remoteControlSetup.sshDescription;
-              })}
-            </span>
-          </span>
-        </SegmentControlItem>
-        {vncEnabled && (
-          <SegmentControlItem value="vnc" className="flex-1">
-            <Monitor size={18} aria-hidden />
-            <span className="grid gap-1 text-left">
-              <strong>
-                {t(($) => {
-                  return $.vnc.label;
-                })}
-              </strong>
-              <span className="font-normal">
-                {t(($) => {
-                  return $.remoteControlSetup.vncDescription;
-                })}
-              </span>
-            </span>
-          </SegmentControlItem>
-        )}
-      </SegmentControl>
-      <StepCard
-        title={t(($) => {
-          return $.remoteControlSetup.setupTitle;
-        })}
-      >
+    <div>
+      <header className="mb-6 grid gap-1">
+        <h2 className="text-lg font-semibold tracking-tight">
+          {t(($) => {
+            return $.remoteControlSetup.entryTitle;
+          })}
+        </h2>
         <p className="text-sm text-muted-foreground">
           {t(($) => {
-            return $.remoteControlSetup.setupDescription;
+            return $.remoteControlSetup.entryDescription;
           })}
         </p>
-        <Button
-          className={cn(REMOTE_PAGE_ACTION, "w-fit")}
-          disabled={starting.state === "loading"}
-          onClick={() => {
-            detach(start(signal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.remoteControlSetup.start;
-          })}
-          <ArrowRight size={16} aria-hidden />
-        </Button>
-        <OperationError failed={starting.state === "hasError"} />
-      </StepCard>
-      <Button
-        variant="quiet"
-        className="justify-self-start"
-        onClick={() => {
-          update({ step: setup.protocol === "vnc" ? "os" : "existing" });
-        }}
+      </header>
+      <ProtocolChoice setup={setup} vncEnabled={vncEnabled} />
+      <Card
+        surface="composer"
+        className="mt-4 flex min-h-[188px] flex-col justify-between gap-7 p-5 sm:p-6"
       >
-        {t(($) => {
-          return $.remoteControlSetup.existing;
-        })}
-      </Button>
+        <div className="grid gap-1">
+          <h2 className="text-lg font-semibold tracking-tight">
+            {t(($) => {
+              return $.remoteControlSetup.setupTitle;
+            })}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.setupDescription;
+            })}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+          <Button
+            className={REMOTE_PAGE_ACTION}
+            disabled={starting.state === "loading"}
+            onClick={() => {
+              detach(start(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.remoteControlSetup.start;
+            })}
+          </Button>
+          <Button
+            variant="quiet"
+            className="h-auto whitespace-normal px-0 text-left text-[13px]"
+            onClick={() => {
+              update({ step: setup.protocol === "vnc" ? "os" : "existing" });
+            }}
+          >
+            {t(($) => {
+              return $.remoteControlSetup.existing;
+            })}
+            <ChevronRight size={14} aria-hidden />
+          </Button>
+        </div>
+        <OperationError failed={starting.state === "hasError"} />
+      </Card>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <LockKeyhole size={14} aria-hidden />
+          {t(($) => {
+            return $.remoteControlSetup.entryPermission;
+          })}
+        </span>
+        <Button variant="quiet" size="sm" onClick={leave}>
+          {t(($) => {
+            return $.remoteControlSetup.viewConnections;
+          })}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -387,12 +469,27 @@ function InstallStep({ setup }: { readonly setup: RemoteSetup }) {
       title={t(($) => {
         return $.remoteControlSetup.installTitle;
       })}
+      description={t(($) => {
+        return $.remoteControlSetup.installDescription;
+      })}
     >
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.remoteControlSetup.installHelp;
-        })}
-      </p>
+      <div className="flex items-center gap-4 rounded-xl border border-divider bg-gray-50 p-5">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-divider bg-background">
+          <Laptop size={24} aria-hidden />
+        </span>
+        <div className="grid gap-1.5">
+          <h3 className="text-sm font-medium">
+            {t(($) => {
+              return $.remoteControlSetup.installTarget;
+            })}
+          </h3>
+          <p className="text-[13px] leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.installHelp;
+            })}
+          </p>
+        </div>
+      </div>
       <ExternalGuide href="https://tailscale.com/download">
         {t(($) => {
           return $.remoteControlSetup.download;
@@ -435,6 +532,11 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
           ? $.remoteControlSetup.cfAddressTitle
           : $.remoteControlSetup.addressTitle;
       })}
+      description={t(($) => {
+        return cloudflare
+          ? $.remoteControlSetup.cfAddressHelp
+          : $.remoteControlSetup.addressHelp;
+      })}
     >
       <form
         className="grid gap-6"
@@ -467,19 +569,31 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
             }
           />
         </label>
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return cloudflare
-              ? $.remoteControlSetup.cfAddressHelp
-              : $.remoteControlSetup.addressHelp;
-          })}
-        </p>
         {!cloudflare && (
-          <ExternalGuide href="https://console.tailscale.com/admin/machines">
-            {t(($) => {
-              return $.remoteControlSetup.machines;
-            })}
-          </ExternalGuide>
+          <details className="border-t border-divider pt-4">
+            <summary className="cursor-pointer text-[13px] text-muted-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.addressWhere;
+              })}
+            </summary>
+            <div className="grid gap-4 pt-4">
+              <OsChoice setup={setup} />
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return setup.os === "mac"
+                    ? $.remoteControlSetup.addressMac
+                    : setup.os === "windows"
+                      ? $.remoteControlSetup.addressWindows
+                      : $.remoteControlSetup.addressLinux;
+                })}
+              </p>
+              <ExternalGuide href="https://console.tailscale.com/admin/machines">
+                {t(($) => {
+                  return $.remoteControlSetup.machines;
+                })}
+              </ExternalGuide>
+            </div>
+          </details>
         )}
         <div className="flex justify-end border-t border-divider pt-5">
           <Button type="submit" className={REMOTE_PAGE_ACTION}>
@@ -502,7 +616,7 @@ function CopyValue({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-3 border-b border-divider p-4 last:border-b-0">
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3 border-b border-divider p-4 last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="break-all font-mono">{value}</dd>
       <CopyButton
@@ -514,6 +628,30 @@ function CopyValue({
     </div>
   );
 }
+function InstructionStep({
+  number,
+  title,
+  action,
+  children,
+}: {
+  readonly number: number;
+  readonly title: string;
+  readonly action?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="grid gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-divider bg-gray-50 text-xs">
+          {number}
+        </span>
+        <h3 className="flex-1 text-sm font-semibold">{title}</h3>
+        {action}
+      </div>
+      <div className="grid gap-3 sm:ml-9">{children}</div>
+    </section>
+  );
+}
 function TagStep() {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
@@ -522,70 +660,79 @@ function TagStep() {
       title={t(($) => {
         return $.remoteControlSetup.tagTitle;
       })}
+      description={t(($) => {
+        return $.remoteControlSetup.tagDescription;
+      })}
     >
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.remoteControlSetup.tagDescription;
-        })}
-      </p>
-      <h3 className="font-medium">
-        {t(($) => {
+      <InstructionStep
+        number={1}
+        title={t(($) => {
           return $.remoteControlSetup.openTags;
         })}
-      </h3>
-      <ExternalGuide href="https://console.tailscale.com/admin/acls">
-        {t(($) => {
-          return $.remoteControlSetup.openTailscale;
-        })}
-      </ExternalGuide>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.remoteControlSetup.tagPath;
-        })}
-      </p>
-      <h3 className="font-medium">
-        {t(($) => {
+        action={
+          <ExternalGuide href="https://console.tailscale.com/admin/acls">
+            {t(($) => {
+              return $.remoteControlSetup.openTailscale;
+            })}
+          </ExternalGuide>
+        }
+      >
+        <p className="text-[13px] text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.tagPath;
+          })}
+        </p>
+      </InstructionStep>
+      <InstructionStep
+        number={2}
+        title={t(($) => {
           return $.remoteControlSetup.fillTag;
         })}
-      </h3>
-      <dl className="rounded-xl border border-divider bg-gray-50 text-sm">
-        <CopyValue
-          label={t(($) => {
-            return $.remoteControlSetup.tagName;
+      >
+        <dl className="overflow-hidden rounded-lg border border-divider bg-gray-50 text-sm">
+          <CopyValue
+            label={t(($) => {
+              return $.remoteControlSetup.tagName;
+            })}
+            value="okou"
+          />
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 p-4">
+            <dt className="text-muted-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.tagOwner;
+              })}
+            </dt>
+            <dd>
+              {t(($) => {
+                return $.remoteControlSetup.tagOwnerValue;
+              })}
+            </dd>
+          </div>
+        </dl>
+        <p className="text-xs text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.tagValueHelp;
           })}
-          value="okou"
-        />
-        <div className="grid grid-cols-2 gap-3 p-4">
-          <dt>
-            {t(($) => {
-              return $.remoteControlSetup.tagOwner;
-            })}
-          </dt>
-          <dd>
-            {t(($) => {
-              return $.remoteControlSetup.tagOwnerValue;
-            })}
-          </dd>
-        </div>
-      </dl>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.remoteControlSetup.tagValueHelp;
-        })}
-      </p>
+        </p>
+        <p className="text-[13px] text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.tagSave;
+          })}
+        </p>
+      </InstructionStep>
       <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
+        <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
           {t(($) => {
             return $.remoteControlSetup.details;
           })}
         </summary>
-        <p className="p-2 text-sm text-muted-foreground">
+        <p className="pt-3 text-sm text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.tagDetails;
           })}
         </p>
       </details>
-      <p className="text-sm">
+      <p className="-mt-2 text-[13px] text-muted-foreground">
         {t(($) => {
           return $.remoteControlSetup.tagTarget;
         })}
@@ -621,43 +768,57 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
       title={t(($) => {
         return $.remoteControlSetup.ruleTitle;
       })}
+      description={t(($) => {
+        return $.remoteControlSetup.ruleDescription;
+      })}
     >
-      <h3 className="font-medium">
-        {t(($) => {
+      <InstructionStep
+        number={1}
+        title={t(($) => {
           return $.remoteControlSetup.openRules;
         })}
-      </h3>
-      <ExternalGuide href="https://console.tailscale.com/admin/acls">
-        {t(($) => {
-          return $.remoteControlSetup.openTailscale;
-        })}
-      </ExternalGuide>
-      <h3 className="font-medium">
-        {t(($) => {
+        action={
+          <ExternalGuide href="https://console.tailscale.com/admin/acls">
+            {t(($) => {
+              return $.remoteControlSetup.openTailscale;
+            })}
+          </ExternalGuide>
+        }
+      >
+        <p className="text-[13px] text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.rulePath;
+          })}
+        </p>
+      </InstructionStep>
+      <InstructionStep
+        number={2}
+        title={t(($) => {
           return $.remoteControlSetup.fillRules;
         })}
-      </h3>
-      <dl className="rounded-xl border border-divider bg-gray-50 text-sm">
-        <CopyValue
-          label={t(($) => {
-            return $.remoteControlSetup.source;
-          })}
-          value="tag:okou"
-        />
-        <CopyValue
-          label={t(($) => {
-            return $.remoteControlSetup.destination;
-          })}
-          value={setup.address}
-        />
-        <CopyValue
-          label={t(($) => {
-            return $.remoteControlSetup.protocolPort;
-          })}
-          value={`tcp:${setup.port}`}
-        />
-      </dl>
-      <details>
+      >
+        <dl className="rounded-xl border border-divider bg-gray-50 text-sm">
+          <CopyValue
+            label={t(($) => {
+              return $.remoteControlSetup.source;
+            })}
+            value="tag:okou"
+          />
+          <CopyValue
+            label={t(($) => {
+              return $.remoteControlSetup.destination;
+            })}
+            value={setup.address}
+          />
+          <CopyValue
+            label={t(($) => {
+              return $.remoteControlSetup.protocolPort;
+            })}
+            value={`tcp:${setup.port}`}
+          />
+        </dl>
+      </InstructionStep>
+      <details className="border-t border-divider pt-4">
         <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
           {t(($) => {
             return $.remoteControlSetup.customPort;
@@ -738,40 +899,62 @@ function OsChoice({ setup }: { readonly setup: RemoteSetup }) {
       }),
     },
   ];
-  return (
-    <div className="grid gap-2">
-      <label htmlFor="remote-setup-os">
-        {t(($) => {
+  if (setup.step === "os") {
+    return (
+      <RadioGroup
+        value={setup.os}
+        onValueChange={(value) => {
+          if (value === "mac" || value === "windows" || value === "linux") {
+            update({ os: value });
+          }
+        }}
+        aria-label={t(($) => {
           return $.remoteControlSetup.os;
         })}
-      </label>
-      <Select
-        items={items}
-        value={setup.os}
-        onValueChange={(value, details) => {
-          if (value !== "mac" && value !== "windows" && value !== "linux") {
-            details.cancel();
-            return;
-          }
-          update({ os: value });
-        }}
+        className="grid gap-3"
       >
-        <SelectTrigger id="remote-setup-os">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {items.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-    </div>
+        {items.map((item) => {
+          return (
+            <label
+              key={item.value}
+              className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border border-input p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50"
+            >
+              <Laptop size={20} aria-hidden />
+              <span className="flex-1 text-sm">{item.label}</span>
+              <Radio
+                value={item.value}
+                className="data-checked:border-foreground data-checked:bg-foreground"
+              />
+            </label>
+          );
+        })}
+      </RadioGroup>
+    );
+  }
+  return (
+    <SegmentControl
+      className="w-fit"
+      value={setup.os}
+      onValueChange={(value) => {
+        if (value === "mac" || value === "windows" || value === "linux") {
+          update({ os: value });
+        }
+      }}
+      aria-label={t(($) => {
+        return $.remoteControlSetup.os;
+      })}
+    >
+      {items.map((item) => {
+        return (
+          <SegmentControlItem key={item.value} value={item.value}>
+            {item.label}
+          </SegmentControlItem>
+        );
+      })}
+    </SegmentControl>
   );
 }
+
 const SSH_INSTRUCTIONS: Readonly<Record<RemoteSetupOs, string>> = {
   mac: "https://support.apple.com/guide/mac-help/allow-a-remote-computer-to-access-your-mac-mchlp1066/mac",
   windows:
@@ -956,6 +1139,9 @@ function CloudflareStep({ setup }: { readonly setup: RemoteSetup }) {
   const [loggingIn, login] = useLoadableSet(openRemoteLogin$);
   const signal = useGet(pageSignal$);
   const dialog = useLoadable(cloudflareAccessDialog$);
+  if (dialog.state === "hasData" && dialog.data) {
+    return null;
+  }
   return (
     <div className="grid gap-5">
       <StepCard
@@ -1060,55 +1246,44 @@ function RemoteSetupForms({ setup }: { readonly setup: RemoteSetup }) {
 }
 function RemoteSetupSaved({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
-  const returnThread = useGet(searchParams$).get("returnThread");
+  const params = useGet(searchParams$);
   const leave = useSet(leaveRemoteSetup$);
   return (
-    <StepCard
-      title={t(($) => {
-        return $.remoteControlSetup.saved;
-      })}
-    >
+    <div className="mx-auto grid w-full max-w-xl justify-items-center gap-5 py-12 text-center">
+      <span className="rounded-full bg-gray-50 p-3">
+        <Check size={24} aria-hidden />
+      </span>
+      <h2 className="text-lg font-semibold">
+        {t(($) => {
+          return $.remoteControlSetup.saved;
+        })}
+      </h2>
       <p className="font-medium">{setup.savedName}</p>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
           return $.remoteControlSetup.savedHelp;
         })}
       </p>
-      <a
-        href={
-          returnThread &&
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
-            returnThread,
-          )
-            ? `/chats/${returnThread}`
-            : `/?${new URLSearchParams({
-                prompt: t(
-                  ($) => {
-                    return $.remoteControlSetup.checkPrompt;
-                  },
-                  {
-                    name: setup.savedName,
-                    protocol: setup.protocol.toUpperCase(),
-                  },
-                ),
-              }).toString()}`
-        }
-        className={cn(
-          buttonVariants(),
-          REMOTE_PAGE_ACTION,
-          "justify-self-start",
-        )}
-      >
-        {t(($) => {
-          return $.remoteControlSetup.openChat;
-        })}
-      </a>
-      <Button variant="quiet" className="justify-self-start" onClick={leave}>
+      {setup.savedId && (
+        <a
+          href={remoteResourceHref(params, setup.protocol, setup.savedId)}
+          className={cn(
+            buttonVariants(),
+            REMOTE_PAGE_ACTION,
+            "justify-self-center",
+          )}
+        >
+          {t(($) => {
+            return $.remoteControlSetup.viewConnection;
+          })}
+        </a>
+      )}
+      <Button variant="quiet" className="justify-self-center" onClick={leave}>
         {t(($) => {
           return $.remoteControlSetup.cancel;
         })}
       </Button>
-    </StepCard>
+    </div>
   );
 }
 function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
@@ -1116,7 +1291,7 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
   const leave = useSet(leaveRemoteSetup$);
   const update = useSet(updateRemoteSetup$);
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
       <Button
         variant="quiet"
         onClick={() => {
@@ -1158,15 +1333,24 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
           return $.remoteControlSetup.back;
         })}
       </Button>
-      <span className="text-sm text-muted-foreground">
-        {setup.protocol === "ssh"
-          ? t(($) => {
-              return $.ssh.label;
-            })
-          : t(($) => {
-              return $.vnc.label;
-            })}
-      </span>
+      <SetupProgress setup={setup} />
+      {setup.protocol === "ssh" &&
+        setup.route === "tailscale" &&
+        setup.step !== "entry" &&
+        setup.step !== "saved" && (
+          <span className="text-xs text-muted-foreground">
+            {[
+              "install",
+              "address",
+              "tag",
+              "rule",
+              "oauth",
+              "prepare",
+              "login",
+            ].indexOf(setup.step) + 1}{" "}
+            / 7
+          </span>
+        )}
     </div>
   );
 }
@@ -1184,9 +1368,13 @@ export function RemoteConnectionSetup({
     return null;
   }
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-6 pb-8">
+    <div
+      className={cn(
+        "mx-auto grid w-full gap-6",
+        setup.step !== "entry" && "max-w-[760px]",
+      )}
+    >
       <RemoteSetupHeader setup={setup} />
-      <SetupProgress setup={setup} />
       {setup.step === "entry" && (
         <SetupEntry setup={setup} vncEnabled={vncEnabled} />
       )}
@@ -1197,29 +1385,29 @@ export function RemoteConnectionSetup({
       )}
       {setup.step === "tag" && <TagStep />}
       {setup.step === "rule" && <RuleStep setup={setup} />}
-      {setup.step === "oauth" && (
-        <StepCard
-          title={t(($) => {
-            return $.remoteControlSetup.oauthTitle;
-          })}
-        >
-          <RemoteTailscaleCredentialHelp />
-          {networkDialog.state === "hasData" && !networkDialog.data && (
-            <Button
-              className={cn(REMOTE_PAGE_ACTION, "justify-self-start")}
-              onClick={() => {
-                detach(openNetwork("tailscale", signal), Reason.DomCallback);
-              }}
-              disabled={opening.state === "loading"}
-            >
-              {t(($) => {
-                return $.remoteControlSetup.createNetwork;
-              })}
-            </Button>
-          )}
-          <OperationError failed={opening.state === "hasError"} />
-        </StepCard>
-      )}
+      {setup.step === "oauth" &&
+        !(networkDialog.state === "hasData" && networkDialog.data) && (
+          <StepCard
+            title={t(($) => {
+              return $.remoteControlSetup.oauthTitle;
+            })}
+          >
+            {networkDialog.state === "hasData" && !networkDialog.data && (
+              <Button
+                className={cn(REMOTE_PAGE_ACTION, "justify-self-start")}
+                onClick={() => {
+                  detach(openNetwork("tailscale", signal), Reason.DomCallback);
+                }}
+                disabled={opening.state === "loading"}
+              >
+                {t(($) => {
+                  return $.remoteControlSetup.createNetwork;
+                })}
+              </Button>
+            )}
+            <OperationError failed={opening.state === "hasError"} />
+          </StepCard>
+        )}
       {(setup.step === "prepare" ||
         setup.step === "os" ||
         setup.step === "service") && <ServiceStep setup={setup} />}

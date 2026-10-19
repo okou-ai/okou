@@ -1,14 +1,18 @@
-import { RemoteVncDependencies } from "./remote-vnc-dependencies.tsx";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import {
+  remoteControlGuidedEnabled$,
   remoteSetup$,
   updateRemoteSetup$,
   type RemoteVncStep,
 } from "../../signals/remote-control-setup.ts";
+import { requestRemoteLoginSave$ } from "../../signals/remote-login.ts";
+import { RemoteLoginConfirmation } from "./remote-login-controls.tsx";
+import { RemoteVncDependencies } from "./remote-vnc-dependencies.tsx";
 import {
   RemoteEditorFrame,
   REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
 import { KerberosConnectionFields } from "./vnc-kerberos-fields.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -18,6 +22,7 @@ import {
   closeVncDialog$,
   mountVncForm$,
   saveVnc$,
+  vncLoginChanged,
   vncConflict$,
   vncCredentials$,
   vncDialog$,
@@ -232,6 +237,35 @@ function useSaveBlocked(dialog: VncDialogState) {
   );
 }
 
+function VncSaveLabel({
+  saving,
+  uncertain,
+  destructive,
+  title,
+  hostEditor,
+}: {
+  readonly saving: boolean;
+  readonly uncertain: boolean;
+  readonly destructive: boolean;
+  readonly title: string;
+  readonly hostEditor: boolean;
+}) {
+  const { t } = useTranslation();
+  return saving
+    ? t(($) => {
+        return $.vnc.saving;
+      })
+    : uncertain
+      ? t(($) => {
+          return $.vnc.retry;
+        })
+      : destructive
+        ? title
+        : t(($) => {
+            return hostEditor ? $.remoteControlSetup.saveOnly : $.vnc.save;
+          });
+}
+
 function VncFormActions({
   saving,
   blocked,
@@ -250,45 +284,68 @@ function VncFormActions({
   const { t } = useTranslation();
   const close = useSet(closeVncDialog$);
   const uncertain = useGet(vncSaveUncertain$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const dialog = useLastResolved(vncDialog$);
   const conflict = useGet(vncConflict$);
+  const hostEditor =
+    guided && (dialog?.kind === "create" || dialog?.kind === "edit");
   return (
-    <div className="flex shrink-0 justify-end gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        disabled={saving}
-        onClick={() => {
-          (onCancel ?? close)();
-        }}
-      >
-        {conflict
-          ? t(($) => {
-              return $.vnc.close;
-            })
-          : t(($) => {
-              return $.vnc.cancel;
-            })}
-      </Button>
+    <div
+      className={
+        inline
+          ? "mt-2 flex shrink-0 justify-end gap-2 border-t border-divider pt-5"
+          : "flex shrink-0 justify-end gap-2"
+      }
+    >
+      {(!inline || dialog?.kind === "edit") && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={saving}
+          onClick={() => {
+            (onCancel ?? close)();
+          }}
+        >
+          {conflict
+            ? t(($) => {
+                return $.vnc.close;
+              })
+            : t(($) => {
+                return $.vnc.cancel;
+              })}
+        </Button>
+      )}
       <Button
         type="submit"
-        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
-        variant={destructive ? "destructive" : "default"}
+        className={
+          inline && !destructive && !hostEditor ? REMOTE_PAGE_ACTION : undefined
+        }
+        variant={
+          destructive ? "destructive" : hostEditor ? "outline" : "default"
+        }
         disabled={saving || conflict || (!uncertain && blocked)}
       >
-        {saving
-          ? t(($) => {
-              return $.vnc.saving;
-            })
-          : uncertain
-            ? t(($) => {
-                return $.vnc.retry;
-              })
-            : destructive
-              ? title
-              : t(($) => {
-                  return $.vnc.save;
-                })}
+        <VncSaveLabel
+          saving={saving}
+          uncertain={uncertain}
+          destructive={destructive}
+          title={title}
+          hostEditor={hostEditor}
+        />
       </Button>
+      {hostEditor && (
+        <Button
+          disabled
+          className={inline ? REMOTE_PAGE_ACTION : undefined}
+          title={t(($) => {
+            return $.remoteControlSetup.checkUnavailableHelp;
+          })}
+        >
+          {t(($) => {
+            return $.remoteControlSetup.saveAndCheck;
+          })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -296,7 +353,10 @@ function VncFormActions({
 interface VncFormProps {
   readonly dialog: VncDialogState;
   readonly saving: boolean;
-  readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
+  readonly save: (
+    form: HTMLFormElement,
+    signal: AbortSignal,
+  ) => Promise<unknown>;
   readonly inline?: boolean;
   readonly onCancel?: () => void;
 }
@@ -382,6 +442,9 @@ function VncFormBoundary({
   inline,
   onCancel,
 }: VncFormProps & { readonly children: ReactNode }) {
+  const enabled = useGet(remoteControlGuidedEnabled$);
+  const editor = useGet(vncEditor$);
+  const confirmLogin = useSet(requestRemoteLoginSave$);
   const uncertain = useGet(vncSaveUncertain$);
   const conflict = useGet(vncConflict$);
   const mount = useSet(mountVncForm$);
@@ -397,6 +460,7 @@ function VncFormBoundary({
   return (
     <form
       ref={mount}
+      id={enabled ? "remote-vnc-edit-form" : undefined}
       autoComplete="off"
       noValidate={guided}
       aria-busy={saving}
@@ -424,6 +488,20 @@ function VncFormBoundary({
         ) {
           return;
         }
+        if (
+          enabled &&
+          dialog.kind === "edit" &&
+          dialog.loginCredential &&
+          editor.selection === dialog.loginCredential.id &&
+          vncCredentialMatchesProfile(dialog.loginCredential, editor.profile) &&
+          !confirmLogin(
+            "vnc",
+            dialog.loginCredential.hosts,
+            vncLoginChanged(event.currentTarget, dialog.loginCredential),
+          )
+        ) {
+          return;
+        }
         if (!saving && !conflict && (uncertain || !blocked)) {
           detach(save(event.currentTarget, signal), Reason.DomCallback);
         }
@@ -446,6 +524,7 @@ function VncFormBoundary({
           onCancel={onCancel}
         />
       )}
+      {enabled && <RemoteLoginConfirmation protocol="vnc" />}
     </form>
   );
 }
@@ -459,12 +538,46 @@ function VncHostFields({
   readonly inline?: boolean;
   readonly disabled: boolean;
 }) {
+  const enabled = useGet(remoteControlGuidedEnabled$);
   const profile = useGet(vncProfile$);
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
   const guided =
     inline && dialog.kind === "create" && setup?.protocol === "vnc";
   const step = setup?.vncStep;
+  if (enabled && dialog.kind === "edit") {
+    return (
+      <div className="grid gap-5">
+        <VncDisplayNameField connection={dialog.connection} />
+        <details className="border-t border-divider pt-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            {t(($) => {
+              return $.remoteControlSetup.connectionSettings;
+            })}
+          </summary>
+          <div className="mt-4 grid gap-5">
+            <VncSecurityProfileField profile={profile} disabled={disabled} />
+            <VncTransportFields disabled={disabled} />
+            <RemoteVncDependencies disabled={disabled} />
+            <VncEndpointFields connection={dialog.connection} />
+            <KerberosConnectionFields
+              connection={dialog.connection}
+              disabled={disabled}
+            />
+            <VncTlsFields disabled={disabled} />
+          </div>
+        </details>
+        <h2 className="text-base font-medium">
+          {t(($) => {
+            return $.remoteControlSetup.loginHeading;
+          })}
+        </h2>
+        {profile !== "x509_none" && (
+          <VncCredentialSelection disabled={disabled} />
+        )}
+      </div>
+    );
+  }
   return (
     <>
       <fieldset className="grid min-w-0 gap-4">
@@ -521,6 +634,7 @@ function VncHostFields({
   );
 }
 function VncForm({ dialog, saving, save, inline, onCancel }: VncFormProps) {
+  const { t } = useTranslation();
   const uncertain = useGet(vncSaveUncertain$);
   const conflict = useGet(vncConflict$);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
@@ -562,6 +676,13 @@ function VncForm({ dialog, saving, save, inline, onCancel }: VncFormProps) {
           <VncCredentialImpact credential={dialog.credential} />
         )}
         <VncSaveNotice saving={saving} dialog={dialog} />
+        {dialog.connectionSaved && (
+          <p role="alert" className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.partialLoginSave;
+            })}
+          </p>
+        )}
         <VncConflictReview dialog={dialog} />
       </DialogBody>
     </VncFormBoundary>
@@ -577,10 +698,11 @@ export function VncDialog({
   readonly saveAction?: typeof saveVnc$;
   readonly onCancel?: () => void;
 } = {}) {
-  const data = useLoadable(vncDialog$);
+  const lastDialog = useLastResolved(vncDialog$);
+  const sessionKey = useGet(authenticatedSessionKey$);
   const close = useSet(closeVncDialog$);
   const [saving, save] = useLoadableSet(saveAction);
-  const dialog = data.state === "hasData" ? data.data : null;
+  const dialog = lastDialog?.sessionKey === sessionKey ? lastDialog : null;
   const { title, description } = useDialogCopy(dialog?.kind);
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
@@ -603,8 +725,22 @@ export function VncDialog({
     <RemoteEditorFrame
       key={dialog.creationId}
       inline={inline}
-      title={guided ? guidedTitle : title}
-      description={description}
+      title={
+        guided
+          ? guidedTitle
+          : inline && dialog.kind === "edit"
+            ? t(($) => {
+                return $.remoteControlSetup.editConnection;
+              })
+            : title
+      }
+      description={
+        inline && dialog.kind === "edit"
+          ? `${dialog.connection?.displayName ?? ""} · ${t(($) => {
+              return $.vnc.label;
+            })}`
+          : description
+      }
       busy={busy}
       onClose={onCancel ?? close}
     >

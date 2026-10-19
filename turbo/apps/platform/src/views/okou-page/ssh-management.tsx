@@ -1,10 +1,53 @@
-import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import {
+  RemoteConnectionSummary,
+  RemoteConnectionCheckUnavailable,
+} from "./remote-connection-summary.tsx";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
+import {
+  RemoteLoginPicker,
+  RemoteSelectedLogin,
+  RemoteLoginConfirmation,
+} from "./remote-login-controls.tsx";
+import { requestRemoteLoginSave$ } from "../../signals/remote-login.ts";
+import {
+  sshLoginPatch,
+  type SshDialogState,
+  type SshConflictReviewState,
+  sshCredentials$,
+  sshCredentialEditor$,
+  chooseSshCredential$,
+  chooseSshAuthMethod$,
+  replaceSshAuthentication$,
+  openSshCredentialDialog$,
+  sshConnections$,
+  sshConflict$,
+  sshConflictReview$,
+  acceptSshConflictReview$,
+  sshDialog$,
+  openSshDialog$,
+  closeSshDialog$,
+  saveSsh$,
+  sshSaveUncertain$,
+  sshSaveMessage$,
+  cancelSshPrivateKeyFile$,
+  importSshPrivateKeyFile$,
+  mountSshPrivateKey$,
+  mountSshForm$,
+  sshPrivateKeyFileResult$,
+  sshConnectionModeEditor$,
+  chooseSshConnectionMode$,
+  usesTailscaleNetwork,
+} from "../../signals/ssh.ts";
+import {
+  remoteSetup$,
+  remoteControlGuidedEnabled$,
+} from "../../signals/remote-control-setup.ts";
 import {
   RemoteEditorFrame,
   RemoteUsernameHelp,
   REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
@@ -35,34 +78,6 @@ import {
   type SshConnectionMode,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
-import {
-  type SshDialogState,
-  type SshConflictReviewState,
-  sshCredentials$,
-  sshCredentialEditor$,
-  chooseSshCredential$,
-  chooseSshAuthMethod$,
-  replaceSshAuthentication$,
-  openSshCredentialDialog$,
-  sshConnections$,
-  sshConflict$,
-  sshConflictReview$,
-  acceptSshConflictReview$,
-  sshDialog$,
-  openSshDialog$,
-  closeSshDialog$,
-  saveSsh$,
-  sshSaveUncertain$,
-  sshSaveMessage$,
-  cancelSshPrivateKeyFile$,
-  importSshPrivateKeyFile$,
-  mountSshPrivateKey$,
-  mountSshForm$,
-  sshPrivateKeyFileResult$,
-  sshConnectionModeEditor$,
-  chooseSshConnectionMode$,
-  usesTailscaleNetwork,
-} from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { AccessSelection } from "./ssh-cloudflare-access.tsx";
 import { TailscaleSelection } from "./ssh-tailscale.tsx";
@@ -187,17 +202,11 @@ function SshConnectionName({
 
 function GuidedSshEndpointFields({
   initialHost,
-  initialPort,
-  disabled,
 }: {
   readonly initialHost?: string;
-  readonly initialPort?: string;
-  readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
-  const fixedPort =
-    editor.mode === "cloudflare_access" || editor.mode === "tailscale_ssh";
   return (
     <div className="grid gap-4">
       <label className="grid gap-2">
@@ -219,31 +228,46 @@ function GuidedSshEndpointFields({
           })}
         </p>
       )}
-      <details className="border-t border-divider pt-3">
-        <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
-          {t(($) => {
-            return $.remoteControlSetup.more;
-          })}
-        </summary>
-        <div className="mt-4 grid gap-4">
-          <SshConnectionType disabled={disabled} />
-          <label className="grid gap-2">
-            {t(($) => {
-              return $.ssh.port;
-            })}
-            <Input
-              name="port"
-              type="number"
-              min={1}
-              max={65_535}
-              required
-              disabled={fixedPort}
-              defaultValue={initialPort ?? "22"}
-            />
-          </label>
-        </div>
-      </details>
     </div>
+  );
+}
+
+function GuidedSshAdvancedFields({
+  initialPort,
+  disabled,
+}: {
+  readonly initialPort?: string;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshConnectionModeEditor$);
+  const fixedPort =
+    editor.mode === "cloudflare_access" || editor.mode === "tailscale_ssh";
+  return (
+    <details className="border-t border-divider pt-3">
+      <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
+        {t(($) => {
+          return $.remoteControlSetup.more;
+        })}
+      </summary>
+      <div className="mt-4 grid gap-4">
+        <SshConnectionType disabled={disabled} />
+        <label className="grid gap-2">
+          {t(($) => {
+            return $.ssh.port;
+          })}
+          <Input
+            name="port"
+            type="number"
+            min={1}
+            max={65_535}
+            required
+            disabled={fixedPort}
+            defaultValue={initialPort ?? "22"}
+          />
+        </label>
+      </div>
+    </details>
   );
 }
 
@@ -252,23 +276,25 @@ function EndpointFields({
   disabled,
   initialHost,
   initialPort,
+  hideName = false,
 }: {
   readonly connection: SshConnectionResponse | null;
   readonly disabled: boolean;
   readonly initialHost?: string;
   readonly initialPort?: string;
+  readonly hideName?: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
   const protectedHost = editor.mode === "cloudflare_access";
   return (
     <fieldset className="grid min-w-0 gap-4">
-      <legend className="mb-3 text-sm font-semibold">
+      <legend hidden={hideName} className="mb-3 text-sm font-semibold">
         {t(($) => {
           return $.ssh.hostSection;
         })}
       </legend>
-      <SshConnectionName connection={connection} />
+      {!hideName && <SshConnectionName connection={connection} />}
       <SshConnectionType disabled={disabled} />
       <div
         className={
@@ -337,7 +363,9 @@ function EndpointFields({
   );
 }
 
-function PrivateKeyFields() {
+function PrivateKeyFields({
+  optional = false,
+}: { readonly optional?: boolean } = {}) {
   const { t } = useTranslation();
   const importFile = useSet(importSshPrivateKeyFile$);
   const cancelRead = useSet(cancelSshPrivateKeyFile$);
@@ -390,7 +418,7 @@ function PrivateKeyFields() {
           placeholder={t(($) => {
             return $.ssh.placeholders.privateKey;
           })}
-          required
+          required={!optional}
           maxLength={SSH_PRIVATE_KEY_MAX_LENGTH}
           autoComplete="off"
           spellCheck={false}
@@ -435,34 +463,145 @@ function PrivateKeyFields() {
   );
 }
 
-function CredentialFields({
+function SshAuthenticationFields({
   credential,
   disabled,
+  connectionLogin,
+  guided,
 }: {
   readonly credential: SshCredentialResponse | null;
   readonly disabled: boolean;
+  readonly connectionLogin: boolean;
+  readonly guided: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshCredentialEditor$);
   const chooseMethod = useSet(chooseSshAuthMethod$);
+  return (
+    <>
+      <div hidden={guided} className="grid gap-2">
+        <span id="ssh-auth-method-label">
+          {t(($) => {
+            return $.ssh.credential.authentication;
+          })}
+        </span>
+        <SegmentControl
+          className="justify-self-start"
+          disabled={disabled}
+          aria-labelledby="ssh-auth-method-label"
+          value={editor.method}
+          onValueChange={chooseMethod}
+        >
+          <SegmentControlItem value="private_key">
+            {t(($) => {
+              return $.ssh.privateKey;
+            })}
+          </SegmentControlItem>
+          <SegmentControlItem value="password">
+            {t(($) => {
+              return $.ssh.credential.password;
+            })}
+          </SegmentControlItem>
+        </SegmentControl>
+      </div>
+      {editor.method === "password" ? (
+        <label key="password" className="grid gap-2">
+          {t(($) => {
+            return $.ssh.credential.password;
+          })}
+          <Input
+            name="password"
+            placeholder={
+              connectionLogin && credential
+                ? t(($) => {
+                    return $.remoteControlSetup.keepSavedSecret;
+                  })
+                : t(($) => {
+                    return $.ssh.placeholders.password;
+                  })
+            }
+            type="password"
+            required={
+              !credential ||
+              !connectionLogin ||
+              editor.method !== credential.authMethod
+            }
+            maxLength={SSH_PASSWORD_MAX_LENGTH}
+            autoComplete="new-password"
+          />
+        </label>
+      ) : (
+        <PrivateKeyFields
+          key="private-key"
+          optional={
+            !!credential &&
+            connectionLogin &&
+            editor.method === credential.authMethod
+          }
+        />
+      )}
+      {guided && (
+        <Button
+          type="button"
+          variant="quiet"
+          className="h-auto justify-self-start px-0 text-xs"
+          disabled={disabled}
+          onClick={() => {
+            chooseMethod(
+              editor.method === "password" ? "private_key" : "password",
+            );
+          }}
+        >
+          {t(($) => {
+            return editor.method === "password"
+              ? $.remoteControlSetup.useSshKey
+              : $.remoteControlSetup.usePassword;
+          })}
+        </Button>
+      )}
+    </>
+  );
+}
+
+function CredentialFields({
+  credential,
+  disabled,
+  connectionLogin = false,
+}: {
+  readonly credential: SshCredentialResponse | null;
+  readonly disabled: boolean;
+  readonly connectionLogin?: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshCredentialEditor$);
+  const setup = useGet(remoteSetup$);
+  const guided = connectionLogin || setup !== null;
   const replace = useSet(replaceSshAuthentication$);
   return (
     <>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.credential.name;
-        })}
-        <Input
+      {guided ? (
+        <input
+          type="hidden"
           name="credentialName"
-          placeholder={t(($) => {
-            return $.ssh.placeholders.credentialName;
-          })}
-          required
-          pattern=".*\S.*"
-          maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
-          defaultValue={credential?.name}
+          defaultValue={credential?.name ?? ""}
         />
-      </label>
+      ) : (
+        <label className="grid gap-2">
+          {t(($) => {
+            return $.ssh.credential.name;
+          })}
+          <Input
+            name="credentialName"
+            placeholder={t(($) => {
+              return $.ssh.placeholders.credentialName;
+            })}
+            required
+            pattern=".*\S.*"
+            maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
+            defaultValue={credential?.name}
+          />
+        </label>
+      )}
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-2">
           <label htmlFor="ssh-login-username">
@@ -484,7 +623,7 @@ function CredentialFields({
           defaultValue={credential?.username}
         />
       </div>
-      {credential && (
+      {credential && !connectionLogin && (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             disabled={disabled}
@@ -498,62 +637,32 @@ function CredentialFields({
           })}
         </label>
       )}
-      {(!credential || editor.replace) && (
-        <>
-          <div className="grid gap-2">
-            <span id="ssh-auth-method-label">
-              {t(($) => {
-                return $.ssh.credential.authentication;
-              })}
-            </span>
-            <SegmentControl
-              className="justify-self-start"
-              disabled={disabled}
-              aria-labelledby="ssh-auth-method-label"
-              value={editor.method}
-              onValueChange={chooseMethod}
-            >
-              <SegmentControlItem value="private_key">
-                {t(($) => {
-                  return $.ssh.privateKey;
-                })}
-              </SegmentControlItem>
-              <SegmentControlItem value="password">
-                {t(($) => {
-                  return $.ssh.credential.password;
-                })}
-              </SegmentControlItem>
-            </SegmentControl>
-          </div>
-          {editor.method === "password" ? (
-            <label key="password" className="grid gap-2">
-              {t(($) => {
-                return $.ssh.credential.password;
-              })}
-              <Input
-                name="password"
-                placeholder={t(($) => {
-                  return $.ssh.placeholders.password;
-                })}
-                type="password"
-                required
-                maxLength={SSH_PASSWORD_MAX_LENGTH}
-                autoComplete="new-password"
-              />
-            </label>
-          ) : (
-            <PrivateKeyFields key="private-key" />
-          )}
-        </>
+      {(!credential || editor.replace || connectionLogin) && (
+        <SshAuthenticationFields
+          credential={credential}
+          disabled={disabled}
+          connectionLogin={connectionLogin}
+          guided={guided}
+        />
       )}
     </>
   );
 }
 
-function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
+function useSshCredentialSelection() {
   const { t } = useTranslation();
   const credentials = useLoadable(sshCredentials$);
   const editor = useGet(sshCredentialEditor$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const dialog = useLastResolved(sshDialog$);
+  const sessionKey = useGet(authenticatedSessionKey$);
+  const login =
+    guided &&
+    dialog?.sessionKey === sessionKey &&
+    dialog?.kind === "edit" &&
+    dialog.loginCredential?.id === editor.selection
+      ? dialog.loginCredential
+      : null;
   const choose = useSet(chooseSshCredential$);
   const credentialItems = [
     ...(credentials.state === "hasData" && credentials.data
@@ -571,16 +680,80 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
       }),
     },
   ];
+  return { credentials, editor, guided, login, choose, credentialItems };
+}
+
+function SshSavedLoginPicker({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const credentials = useLoadable(sshCredentials$);
+  const choose = useSet(chooseSshCredential$);
+  return (
+    <RemoteLoginPicker
+      protocol="ssh"
+      disabled={disabled}
+      choose={(value) => {
+        choose(value);
+      }}
+      items={(credentials.state === "hasData"
+        ? (credentials.data ?? [])
+        : []
+      ).map((credential) => {
+        return {
+          value: credential.id,
+          label:
+            credential.hosts
+              .map((host) => {
+                return host.displayName;
+              })
+              .join(", ") || credential.name,
+          description: `${credential.username} · ${t(($) => {
+            return credential.authMethod === "password"
+              ? $.ssh.credential.password
+              : $.ssh.privateKey;
+          })}`,
+        };
+      })}
+    />
+  );
+}
+
+function missingSshCredential({
+  credentials,
+  editor,
+}: Pick<
+  ReturnType<typeof useSshCredentialSelection>,
+  "credentials" | "editor"
+>) {
+  return (
+    credentials.state === "hasData" &&
+    credentials.data &&
+    editor.selection &&
+    editor.selection !== "new" &&
+    !credentials.data.some((credential) => {
+      return credential.id === editor.selection;
+    })
+  );
+}
+
+function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const { credentials, editor, guided, login, choose, credentialItems } =
+    useSshCredentialSelection();
   return (
     <fieldset className="grid min-w-0 gap-4">
-      <legend className="mb-3 text-sm font-semibold">
+      <legend hidden={guided} className="mb-3 text-sm font-semibold">
         <label htmlFor="ssh-selected-credential">
           {t(($) => {
             return $.ssh.credential.label;
           })}
         </label>
       </legend>
-      <div className="grid gap-2">
+      <div
+        hidden={
+          guided && credentials.state === "hasData" && credentials.data !== null
+        }
+        className="grid gap-2"
+      >
         {credentials.state === "hasError" ? (
           <SshLoadError />
         ) : credentials.state === "loading" ? (
@@ -627,24 +800,49 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
           </Select>
         )}
       </div>
-      {credentials.state === "hasData" &&
-        credentials.data &&
-        editor.selection &&
-        editor.selection !== "new" &&
-        !credentials.data.some((credential) => {
-          return credential.id === editor.selection;
-        }) && (
-          <p role="alert">
-            {t(($) => {
-              return $.ssh.errors.credentialUnavailable;
-            })}
-          </p>
-        )}
+      {missingSshCredential({ credentials, editor }) && (
+        <p role="alert">
+          {t(($) => {
+            return $.ssh.errors.credentialUnavailable;
+          })}
+        </p>
+      )}
+      {guided && login && (
+        <CredentialFields
+          credential={login}
+          disabled={disabled}
+          connectionLogin
+        />
+      )}
+      {guided && editor.selection && editor.selection !== "new" && !login && (
+        <RemoteSelectedLogin
+          disabled={disabled}
+          label={
+            credentialItems.find((item) => {
+              return item.value === editor.selection;
+            })?.label
+          }
+          chooseNew={() => {
+            choose("new");
+          }}
+        />
+      )}
       {editor.selection === "new" && (
-        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
-          <CredentialFields credential={null} disabled={disabled} />
+        <div
+          className={
+            guided
+              ? "grid gap-4"
+              : "grid gap-4 rounded-lg border bg-muted/30 p-4"
+          }
+        >
+          <CredentialFields
+            credential={null}
+            disabled={disabled}
+            connectionLogin={guided}
+          />
         </div>
       )}
+      {guided && <SshSavedLoginPicker disabled={disabled} />}
     </fieldset>
   );
 }
@@ -918,7 +1116,10 @@ function useDialogCopy(dialog: SshDialogState | null) {
 interface SshFormProps {
   readonly dialog: SshDialogState;
   readonly isSaving: boolean;
-  readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
+  readonly save: (
+    form: HTMLFormElement,
+    signal: AbortSignal,
+  ) => Promise<unknown>;
   readonly inline?: boolean;
   readonly onCancel?: () => void;
   readonly initialHost?: string;
@@ -946,6 +1147,35 @@ function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
   );
 }
 
+function SshSaveLabel({
+  isSaving,
+  uncertain,
+  destructive,
+  title,
+  hostEditor,
+}: {
+  readonly isSaving: boolean;
+  readonly uncertain: boolean;
+  readonly destructive: boolean;
+  readonly title: string;
+  readonly hostEditor: boolean;
+}) {
+  const { t } = useTranslation();
+  return isSaving
+    ? t(($) => {
+        return $.connectors.actions.saving;
+      })
+    : uncertain
+      ? t(($) => {
+          return $.ssh.retry;
+        })
+      : destructive
+        ? title
+        : t(($) => {
+            return hostEditor ? $.remoteControlSetup.saveOnly : $.ssh.save;
+          });
+}
+
 function SshFormActions({
   isSaving,
   blocked,
@@ -964,38 +1194,61 @@ function SshFormActions({
   const { t } = useTranslation();
   const close = useSet(closeSshDialog$);
   const uncertain = useGet(sshSaveUncertain$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const dialog = useLastResolved(sshDialog$);
+  const hostEditor =
+    guided && (dialog?.kind === "create" || dialog?.kind === "edit");
   return (
-    <div className="flex shrink-0 justify-end gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        disabled={isSaving}
-        onClick={onCancel ?? close}
-      >
-        {t(($) => {
-          return $.ssh.cancel;
-        })}
-      </Button>
+    <div
+      className={
+        inline
+          ? "mt-2 flex shrink-0 justify-end gap-2 border-t border-divider pt-5"
+          : "flex shrink-0 justify-end gap-2"
+      }
+    >
+      {(!inline || dialog?.kind === "edit") && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isSaving}
+          onClick={onCancel ?? close}
+        >
+          {t(($) => {
+            return $.ssh.cancel;
+          })}
+        </Button>
+      )}
       <Button
         type="submit"
-        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
+        className={
+          inline && !destructive && !hostEditor ? REMOTE_PAGE_ACTION : undefined
+        }
         disabled={isSaving || (!uncertain && blocked)}
-        variant={destructive ? "destructive" : "default"}
+        variant={
+          destructive ? "destructive" : hostEditor ? "outline" : "default"
+        }
       >
-        {isSaving
-          ? t(($) => {
-              return $.connectors.actions.saving;
-            })
-          : uncertain
-            ? t(($) => {
-                return $.ssh.retry;
-              })
-            : destructive
-              ? title
-              : t(($) => {
-                  return $.ssh.save;
-                })}
+        <SshSaveLabel
+          isSaving={isSaving}
+          uncertain={uncertain}
+          destructive={destructive}
+          title={title}
+          hostEditor={hostEditor}
+        />
       </Button>
+      {hostEditor && (
+        <Button
+          disabled
+          className={inline ? REMOTE_PAGE_ACTION : undefined}
+          title={t(($) => {
+            return $.remoteControlSetup.checkUnavailableHelp;
+          })}
+        >
+          {t(($) => {
+            return $.remoteControlSetup.saveAndCheck;
+          })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -1152,6 +1405,105 @@ function SshRebindNotice({
     </>
   );
 }
+function SshHostFields({
+  dialog,
+  inline,
+  initialHost,
+  initialPort,
+  fieldsDisabled,
+}: {
+  readonly dialog: SshDialogState;
+  readonly inline: boolean;
+  readonly initialHost?: string;
+  readonly initialPort?: string;
+  readonly fieldsDisabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const connectionEditor = useGet(sshConnectionModeEditor$);
+  return (
+    <>
+      <SshRebindNotice connection={dialog.connection} />
+      {guided && dialog.kind === "edit" ? (
+        <>
+          <SshConnectionName connection={dialog.connection} />
+          <details className="border-t border-divider pt-4">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t(($) => {
+                return $.remoteControlSetup.connectionSettings;
+              })}
+            </summary>
+            <div className="mt-4 grid gap-4">
+              <EndpointFields
+                connection={dialog.connection}
+                disabled={fieldsDisabled}
+                hideName
+              />
+              {connectionEditor.mode === "cloudflare_access" && (
+                <AccessSelection disabled={fieldsDisabled} />
+              )}
+              {(connectionEditor.mode === "tailscale" ||
+                connectionEditor.mode === "tailscale_ssh") && (
+                <TailscaleSelection disabled={fieldsDisabled} />
+              )}
+            </div>
+          </details>
+          <h2 className="text-base font-medium">
+            {t(($) => {
+              return $.remoteControlSetup.loginHeading;
+            })}
+          </h2>
+        </>
+      ) : (
+        <>
+          {inline && dialog.kind === "create" ? (
+            <GuidedSshEndpointFields initialHost={initialHost} />
+          ) : (
+            <EndpointFields
+              connection={dialog.connection}
+              disabled={fieldsDisabled}
+            />
+          )}
+          {connectionEditor.mode === "cloudflare_access" && (
+            <AccessSelection disabled={fieldsDisabled} />
+          )}
+          {(connectionEditor.mode === "tailscale" ||
+            connectionEditor.mode === "tailscale_ssh") && (
+            <TailscaleSelection disabled={fieldsDisabled} />
+          )}
+        </>
+      )}
+      <TailscaleSshLogin
+        connection={dialog.connection}
+        active={connectionEditor.mode === "tailscale_ssh"}
+        disabled={fieldsDisabled}
+      />
+      <fieldset
+        hidden={connectionEditor.mode === "tailscale_ssh"}
+        disabled={connectionEditor.mode === "tailscale_ssh"}
+        className={
+          connectionEditor.mode === "tailscale_ssh"
+            ? "hidden"
+            : "grid min-w-0 gap-4"
+        }
+      >
+        <CredentialSelection
+          disabled={fieldsDisabled || connectionEditor.mode === "tailscale_ssh"}
+        />
+      </fieldset>
+      {inline && dialog.kind === "create" && (
+        <>
+          <SshConnectionName connection={null} />
+          <GuidedSshAdvancedFields
+            initialPort={initialPort}
+            disabled={fieldsDisabled}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
 function SshHostForm({
   dialog,
   isSaving,
@@ -1161,7 +1513,11 @@ function SshHostForm({
   initialHost,
   initialPort,
 }: SshFormProps) {
+  const { t } = useTranslation();
   const uncertain = useGet(sshSaveUncertain$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const credentialEditor = useGet(sshCredentialEditor$);
+  const confirmLogin = useSet(requestRemoteLoginSave$);
   const fieldsDisabled = isSaving || uncertain;
   const connectionEditor = useGet(sshConnectionModeEditor$);
   const mountForm = useSet(mountSshForm$);
@@ -1175,12 +1531,31 @@ function SshHostForm({
   return (
     <form
       ref={mountForm}
+      id={guided ? "remote-ssh-edit-form" : undefined}
       className="flex min-h-0 min-w-0 flex-col gap-4"
       autoComplete="off"
       aria-busy={isSaving}
       onSubmit={(event) => {
         event.preventDefault();
         if (isSaving || (!uncertain && blocked)) {
+          return;
+        }
+        if (
+          guided &&
+          dialog.kind === "edit" &&
+          dialog.loginCredential &&
+          credentialEditor.selection === dialog.loginCredential.id &&
+          connectionEditor.mode !== "tailscale_ssh" &&
+          !confirmLogin(
+            "ssh",
+            dialog.loginCredential.hosts,
+            sshLoginPatch(
+              event.currentTarget,
+              dialog.loginCredential,
+              credentialEditor.method,
+            ) !== null,
+          )
+        ) {
           return;
         }
         // Keep retryable input only in this form, never in ccstate or caches.
@@ -1194,52 +1569,13 @@ function SshHostForm({
             className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-4"}
           >
             {hostEditor ? (
-              <>
-                <SshRebindNotice connection={dialog.connection} />
-                {inline && dialog.kind === "create" ? (
-                  <GuidedSshEndpointFields
-                    initialHost={initialHost}
-                    initialPort={initialPort}
-                    disabled={fieldsDisabled}
-                  />
-                ) : (
-                  <EndpointFields
-                    connection={dialog.connection}
-                    disabled={fieldsDisabled}
-                  />
-                )}
-                {connectionEditor.mode === "cloudflare_access" && (
-                  <AccessSelection disabled={fieldsDisabled} />
-                )}
-                {(connectionEditor.mode === "tailscale" ||
-                  connectionEditor.mode === "tailscale_ssh") && (
-                  <TailscaleSelection disabled={fieldsDisabled} />
-                )}
-                <TailscaleSshLogin
-                  connection={dialog.connection}
-                  active={connectionEditor.mode === "tailscale_ssh"}
-                  disabled={fieldsDisabled}
-                />
-                <fieldset
-                  hidden={connectionEditor.mode === "tailscale_ssh"}
-                  disabled={connectionEditor.mode === "tailscale_ssh"}
-                  className={
-                    connectionEditor.mode === "tailscale_ssh"
-                      ? "hidden"
-                      : "grid min-w-0 gap-4"
-                  }
-                >
-                  <CredentialSelection
-                    disabled={
-                      fieldsDisabled ||
-                      connectionEditor.mode === "tailscale_ssh"
-                    }
-                  />
-                </fieldset>
-                {inline && dialog.kind === "create" && (
-                  <SshConnectionName connection={null} />
-                )}
-              </>
+              <SshHostFields
+                dialog={dialog}
+                inline={inline}
+                initialHost={initialHost}
+                initialPort={initialPort}
+                fieldsDisabled={fieldsDisabled}
+              />
             ) : (
               <CredentialFields
                 credential={dialog.credential}
@@ -1253,6 +1589,13 @@ function SshHostForm({
         )}
         <SshConflictReview dialog={dialog} />
         <SshSaveNotice isSaving={isSaving} />
+        {dialog.connectionSaved && (
+          <p role="alert" className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.partialLoginSave;
+            })}
+          </p>
+        )}
       </DialogBody>
       <SshFormActions
         isSaving={isSaving}
@@ -1262,6 +1605,7 @@ function SshHostForm({
         inline={inline}
         onCancel={onCancel}
       />
+      {guided && <RemoteLoginConfirmation protocol="ssh" />}
     </form>
   );
 }
@@ -1279,12 +1623,14 @@ export function SshDialog({
   readonly initialHost?: string;
   readonly initialPort?: string;
 } = {}) {
-  const data = useLoadable(sshDialog$);
+  const { t } = useTranslation();
+  const lastDialog = useLastResolved(sshDialog$);
+  const sessionKey = useGet(authenticatedSessionKey$);
   const editor = useGet(sshConnectionModeEditor$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveAction);
-  const dialog = data.state === "hasData" ? data.data : null;
+  const dialog = lastDialog?.sessionKey === sessionKey ? lastDialog : null;
   const { title, description } = useDialogCopy(dialog);
   const isSaving = saving.state === "loading";
   if (
@@ -1297,10 +1643,22 @@ export function SshDialog({
   }
   return (
     <RemoteEditorFrame
-      key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
+      key={dialog.instanceId}
       inline={inline}
-      title={title}
-      description={description}
+      title={
+        inline && dialog.kind === "edit"
+          ? t(($) => {
+              return $.remoteControlSetup.editConnection;
+            })
+          : title
+      }
+      description={
+        inline && dialog.kind === "edit"
+          ? `${dialog.connection?.displayName ?? ""} · ${t(($) => {
+              return $.ssh.label;
+            })}`
+          : description
+      }
       busy={isSaving}
       onClose={onCancel ?? close}
     >
@@ -1379,14 +1737,7 @@ function TailscaleHostLabel({
   );
 }
 
-export function SshHostCard({
-  connection,
-}: {
-  readonly connection: SshConnectionResponse;
-}) {
-  const { t } = useTranslation();
-  const open = useSet(openSshDialog$);
-  const signal = useGet(pageSignal$);
+function useSshHostDetails(connection: SshConnectionResponse) {
   const configs = useLoadable(cloudflareAccessConfigs$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
   const transport = "transport" in connection ? connection.transport : null;
@@ -1402,9 +1753,63 @@ export function SshHostCard({
           return value.id === configId;
         })
       : null;
+  return {
+    transport,
+    tailscale,
+    tailscaleEnabled,
+    configId,
+    needsRebind,
+    unavailable,
+    config,
+  };
+}
+function SshHostOverview({
+  connection,
+  detail,
+}: {
+  readonly connection: SshConnectionResponse;
+  readonly detail: boolean;
+}) {
+  const { t } = useTranslation();
+  const {
+    transport,
+    tailscale,
+    tailscaleEnabled,
+    configId,
+    needsRebind,
+    unavailable,
+    config,
+  } = useSshHostDetails(connection);
   return (
-    <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
-      <h2 className="font-semibold">{connection.displayName}</h2>
+    <>
+      {" "}
+      {detail ? (
+        <RemoteConnectionSummary
+          connection={connection}
+          protocol="ssh"
+          account={connection.username}
+          route={
+            tailscale ? (
+              <TailscaleHostLabel
+                configId={
+                  transport && "configId" in transport
+                    ? transport.configId
+                    : null
+                }
+              />
+            ) : (
+              (config?.name ??
+              t(($) => {
+                return configId
+                  ? $.cloudflareAccess.title
+                  : $.remoteControlSetup.direct;
+              }))
+            )
+          }
+        />
+      ) : (
+        <h2 className="font-semibold">{connection.displayName}</h2>
+      )}
       {needsRebind ? (
         <p
           role="alert"
@@ -1426,46 +1831,95 @@ export function SshHostCard({
           tailscaleSsh={transport?.type === "tailscale_ssh"}
         />
       )}
-      <p className="text-sm text-muted-foreground">
-        {"credentialName" in connection
-          ? connection.credentialName
-          : t(($) => {
-              return $.ssh.tailscale.sshTitle;
-            })}
-      </p>
-      <p className="break-all text-sm">
-        {connection.username}@{connection.host}:{connection.port}
-      </p>
-      {tailscale && (
-        <TailscaleHostLabel
-          configId={
-            transport && "configId" in transport ? transport.configId : null
-          }
-        />
-      )}
-      {configId && (
-        <p className="text-sm text-muted-foreground">
-          {unavailable
-            ? t(($) => {
-                return $.ssh.cloudflare.unavailable;
-              })
-            : config
-              ? t(
-                  ($) => {
-                    return $.ssh.cloudflare.protectedHost;
-                  },
-                  { name: config.name },
-                )
+      {!detail && (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {"credentialName" in connection
+              ? connection.credentialName
               : t(($) => {
-                  return $.ssh.cloudflare.title;
+                  return $.ssh.tailscale.sshTitle;
                 })}
-        </p>
+          </p>
+          <p className="break-all text-sm">
+            {connection.username}@{connection.host}:{connection.port}
+          </p>
+          {tailscale && (
+            <TailscaleHostLabel
+              configId={
+                transport && "configId" in transport ? transport.configId : null
+              }
+            />
+          )}
+          {configId && (
+            <p className="text-sm text-muted-foreground">
+              {unavailable
+                ? t(($) => {
+                    return $.ssh.cloudflare.unavailable;
+                  })
+                : config
+                  ? t(
+                      ($) => {
+                        return $.ssh.cloudflare.protectedHost;
+                      },
+                      { name: config.name },
+                    )
+                  : t(($) => {
+                      return $.ssh.cloudflare.title;
+                    })}
+            </p>
+          )}
+        </>
       )}
-      <HostKeyIdentity connection={connection} />
-      <RemoteHostDefaultToggle protocol="ssh" connectionId={connection.id} />
+    </>
+  );
+}
+
+export function SshHostCard({
+  connection,
+  detail = false,
+}: {
+  readonly connection: SshConnectionResponse;
+  readonly detail?: boolean;
+}) {
+  const { t } = useTranslation();
+  const open = useSet(openSshDialog$);
+  const signal = useGet(pageSignal$);
+  const { unavailable, tailscale, tailscaleEnabled } =
+    useSshHostDetails(connection);
+  return (
+    <article
+      className={
+        detail ? "grid gap-4" : surfaceVariants({ className: "grid gap-3 p-5" })
+      }
+    >
+      <SshHostOverview connection={connection} detail={detail} />
+      {detail ? (
+        <details className="border-t border-divider pt-4">
+          <summary className="cursor-pointer text-sm text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.securityAndPermissions;
+            })}
+          </summary>
+          <div className="mt-3 grid gap-3">
+            <HostKeyIdentity connection={connection} />
+            <RemoteHostDefaultToggle
+              protocol="ssh"
+              connectionId={connection.id}
+            />
+          </div>
+        </details>
+      ) : (
+        <>
+          <HostKeyIdentity connection={connection} />
+          <RemoteHostDefaultToggle
+            protocol="ssh"
+            connectionId={connection.id}
+          />
+        </>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button
-          variant="outline"
+          variant={detail ? "quiet" : "outline"}
           disabled={unavailable || (tailscale && !tailscaleEnabled)}
           onClick={() => {
             return detach(open("edit", connection, signal), Reason.DomCallback);
@@ -1476,7 +1930,7 @@ export function SshHostCard({
           })}
         </Button>
         <Button
-          variant="outline"
+          variant={detail ? "quiet" : "outline"}
           disabled={unavailable || !connection.learnedHostKey}
           onClick={() => {
             return detach(
@@ -1490,7 +1944,7 @@ export function SshHostCard({
           })}
         </Button>
         <Button
-          variant="outline"
+          variant={detail ? "quiet" : "outline"}
           disabled={unavailable}
           onClick={() => {
             return detach(
@@ -1504,6 +1958,7 @@ export function SshHostCard({
           })}
         </Button>
       </div>
+      {detail && <RemoteConnectionCheckUnavailable />}
     </article>
   );
 }

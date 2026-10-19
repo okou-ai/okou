@@ -71,6 +71,7 @@ export interface RemoteSetup {
   readonly networkId: string;
   readonly formStarted: boolean;
   readonly savedName: string;
+  readonly savedId: string;
   readonly vncStep: RemoteVncStep;
 }
 
@@ -99,6 +100,7 @@ function initialSetup(
     networkId: "",
     formStarted: false,
     savedName: "",
+    savedId: "",
     vncStep: "profile",
   };
 }
@@ -360,6 +362,13 @@ function connectionName(form: HTMLFormElement) {
   return field.value.trim();
 }
 
+function nameRemoteCredential(form: HTMLFormElement, name: string) {
+  const field = form.elements.namedItem("credentialName");
+  if (field instanceof HTMLInputElement && field.type === "hidden") {
+    field.value = name;
+  }
+}
+
 export const saveRemoteSsh$ = command(
   async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
     const current = get(remoteSetup$);
@@ -367,7 +376,8 @@ export const saveRemoteSsh$ = command(
       return;
     }
     const name = connectionName(form);
-    await set(saveSsh$, form, signal);
+    nameRemoteCredential(form, name);
+    const savedId = await set(saveSsh$, form, signal);
     signal.throwIfAborted();
     if (
       !(await get(sshDialog$)) &&
@@ -378,8 +388,10 @@ export const saveRemoteSsh$ = command(
         step: "saved",
         formStarted: false,
         savedName: name,
+        savedId: savedId ?? "",
       });
     }
+    return savedId;
   },
 );
 export const saveRemoteVnc$ = command(
@@ -389,7 +401,8 @@ export const saveRemoteVnc$ = command(
       return;
     }
     const name = connectionName(form);
-    await set(saveVnc$, form, signal);
+    nameRemoteCredential(form, name);
+    const savedId = await set(saveVnc$, form, signal);
     signal.throwIfAborted();
     if (
       !(await get(vncDialog$)) &&
@@ -400,8 +413,10 @@ export const saveRemoteVnc$ = command(
         step: "saved",
         formStarted: false,
         savedName: name,
+        savedId: savedId ?? "",
       });
     }
+    return savedId;
   },
 );
 

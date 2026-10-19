@@ -1,3 +1,17 @@
+import {
+  remoteResource$,
+  remoteNetworkPage$,
+} from "../../signals/remote-resource-detail.ts";
+import {
+  RemoteResourcePage,
+  RemoteNetworkPage,
+} from "./remote-resource-page.tsx";
+import {
+  remoteSetup$,
+  leaveRemoteSetup$,
+} from "../../signals/remote-control-setup.ts";
+import { RemoteDetailPage } from "./remote-detail-page.tsx";
+import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -1332,6 +1346,10 @@ function ManagedConnectorAccessDialog() {
 
 export function ConnectorsPage() {
   const { t } = useTranslation();
+  const remoteSetup = useGet(remoteSetup$);
+  const remoteResource = useGet(remoteResource$);
+  const networkPage = useLastResolved(remoteNetworkPage$);
+  const leaveSetup = useSet(leaveRemoteSetup$);
   const vncEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
   const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
@@ -1552,6 +1570,26 @@ export function ConnectorsPage() {
       fallback={builtinList}
     />
   );
+  if (networkPage) {
+    return <RemoteNetworkPage />;
+  }
+  if (remoteResource && !remoteSetup) {
+    return <RemoteResourcePage />;
+  }
+  if (remoteSetup && remoteSetup.step !== "entry") {
+    return (
+      <RemoteDetailPage
+        title={t(($) => {
+          return remoteSetup.protocol === "ssh"
+            ? $.remoteControlSetup.sshSetup
+            : $.remoteControlSetup.vncSetup;
+        })}
+        onBack={leaveSetup}
+      >
+        <RemoteConnectionSetup vncEnabled={vncEnabled} />
+      </RemoteDetailPage>
+    );
+  }
   return (
     <div
       data-testid="connectors-scroll-viewport"

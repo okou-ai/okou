@@ -1,36 +1,27 @@
+import { searchParams$ } from "../../signals/route.ts";
+import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
+import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
 import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { NetworkProviderPicker } from "./remote-network-picker.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Laptop,
+  LockKeyhole,
   Network,
   Plus,
   Terminal,
   Monitor,
   ChevronRight,
 } from "lucide-react";
-import {
-  Button,
-  Card,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  LoadErrorRow,
-} from "@okouai/ui";
+import { Button, Card, LoadErrorRow } from "@okouai/ui";
 import {
   enterRemoteSetup$,
   remoteSetup$,
   setRemoteNetworkPicker$,
 } from "../../signals/remote-control-setup.ts";
-import {
-  remoteControlView$,
-  setRemoteControlView$,
-} from "../../signals/okou-page/settings/remote-control-directory.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
 import { vncConnections$ } from "../../signals/vnc.ts";
 import {
@@ -39,10 +30,8 @@ import {
   retryTailscale$,
 } from "../../signals/tailscale.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
-import { isOrgAdmin$ } from "../../signals/org.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { SshCredentials, SshDialog, SshHostCard } from "./ssh-management.tsx";
-import { VncCredentials, VncHostCard } from "./vnc-management.tsx";
+import { SshDialog } from "./ssh-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 import { SshLastCheck } from "./ssh-connection-status.tsx";
 import { VncLastCheck } from "./vnc-connection-status.tsx";
@@ -50,9 +39,8 @@ import { SshLoadError } from "./ssh-load-error.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
-import { TailscaleDialog, TailscaleSection } from "./tailscale-management.tsx";
+import { TailscaleDialog } from "./tailscale-management.tsx";
 import {
-  CloudflareAccessSection,
   CloudflareAccessDialog,
   CloudflareAccessLoadError,
   CloudflareAccessConversionDialog,
@@ -70,13 +58,18 @@ function RemoteConnectionRows({
   readonly networkLabel: (type: string, id: string | undefined) => string;
 }) {
   const { t } = useTranslation();
+  const params = useGet(searchParams$);
   return (
-    <div className="overflow-hidden rounded-3xl border-divider bg-card has-[details]:border divide-y divide-divider">
+    <div className="overflow-hidden rounded-3xl border-divider bg-card has-[a]:border divide-y divide-divider">
       {sshRows?.map((connection) => {
         return (
-          <details key={connection.id} className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-4 p-5 hover:bg-gray-50">
-              <span className="rounded-lg bg-gray-50 p-3">
+          <a
+            key={connection.id}
+            href={remoteResourceHref(params, "ssh", connection.id)}
+            className="block"
+          >
+            <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
+              <span className="rounded-lg bg-gray-50 p-2">
                 <Terminal size={20} aria-hidden />
               </span>
               <span className="grid min-w-0 flex-1 gap-1">
@@ -108,20 +101,21 @@ function RemoteConnectionRows({
               <ChevronRight
                 size={18}
                 aria-hidden
-                className="text-muted-foreground group-open:rotate-90"
+                className="shrink-0 text-muted-foreground"
               />
-            </summary>
-            <div className="border-t border-divider p-4">
-              <SshHostCard connection={connection} />
             </div>
-          </details>
+          </a>
         );
       })}
       {vncRows?.map((connection) => {
         return (
-          <details key={connection.id} className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-4 p-5 hover:bg-gray-50">
-              <span className="rounded-lg bg-gray-50 p-3">
+          <a
+            key={connection.id}
+            href={remoteResourceHref(params, "vnc", connection.id)}
+            className="block"
+          >
+            <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
+              <span className="rounded-lg bg-gray-50 p-2">
                 <Monitor size={20} aria-hidden />
               </span>
               <span className="grid min-w-0 flex-1 gap-1">
@@ -165,13 +159,10 @@ function RemoteConnectionRows({
               <ChevronRight
                 size={18}
                 aria-hidden
-                className="text-muted-foreground group-open:rotate-90"
+                className="shrink-0 text-muted-foreground"
               />
-            </summary>
-            <div className="border-t border-divider p-4">
-              <VncHostCard connection={connection} />
             </div>
-          </details>
+          </a>
         );
       })}
     </div>
@@ -194,6 +185,11 @@ function RemoteConnectionList({
     ssh.state === "loading" || (vncEnabled && vnc.state === "loading");
   const empty = sshRows?.length === 0 && (!vncEnabled || vncRows?.length === 0);
   const networkLabel = (type: string, id: string | undefined) => {
+    if (type === "direct") {
+      return t(($) => {
+        return $.remoteControlSetup.direct;
+      });
+    }
     const configs = type === "cloudflare_access" ? access : tailscale;
     const name =
       configs.state === "hasData"
@@ -240,7 +236,7 @@ function RemoteConnectionList({
       {empty && (
         <Card
           surface="composer"
-          className="grid justify-items-center gap-4 p-8 text-center"
+          className="grid justify-items-center gap-4 px-6 py-8 text-center"
         >
           <span className="rounded-xl bg-gray-50 p-3">
             <Laptop size={24} aria-hidden />
@@ -283,16 +279,14 @@ export function GuidedRemoteControlPanel({
 }) {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
-  const view = useGet(remoteControlView$);
-  const setView = useSet(setRemoteControlView$);
   const start = useSet(enterRemoteSetup$);
   if (setup) {
     return <RemoteConnectionSetup vncEnabled={vncEnabled} />;
   }
   return (
     <div className="grid gap-6">
-      <header className="flex items-center justify-between gap-4">
-        <div className="grid gap-2">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="grid gap-1">
           <h2 className="text-lg font-semibold">
             {t(($) => {
               return $.remoteControlSetup.title;
@@ -316,42 +310,15 @@ export function GuidedRemoteControlPanel({
           })}
         </Button>
       </header>
-      <Tabs
-        value={view}
-        onValueChange={(value) => {
-          setView(value === "credentials" ? "credentials" : "connections");
-        }}
-        className="grid gap-6"
-      >
-        <TabsList className="h-10 justify-start rounded-none border-b border-divider bg-transparent p-0">
-          <TabsTrigger
-            value="connections"
-            className="rounded-none border-b-2 border-transparent px-0 mr-6 data-active:border-foreground data-active:bg-transparent data-active:shadow-none"
-          >
-            {t(($) => {
-              return $.remoteControlSetup.connections;
-            })}
-          </TabsTrigger>
-          <TabsTrigger
-            value="credentials"
-            className="rounded-none border-b-2 border-transparent px-0 data-active:border-foreground data-active:bg-transparent data-active:shadow-none"
-          >
-            {t(($) => {
-              return $.remoteControlSetup.credentials;
-            })}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="connections">
-          <RemoteConnectionList vncEnabled={vncEnabled} />
-        </TabsContent>
-        <TabsContent value="credentials" className="grid gap-6">
-          <SshCredentials />
-          {vncEnabled && <VncCredentials />}
-        </TabsContent>
-      </Tabs>
+      <RemoteConnectionList vncEnabled={vncEnabled} />
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <LockKeyhole size={14} aria-hidden />
+        {t(($) => {
+          return $.remoteControlSetup.entryPermission;
+        })}
+      </p>
       <SshDialog />
       {vncEnabled && <VncDialog />}
-      <NetworkProviderPicker />
       <TailscaleDialog />
       <CloudflareAccessDialog />
     </div>
@@ -360,71 +327,71 @@ export function GuidedRemoteControlPanel({
 function PrivateNetworkRows({
   ts,
   cf,
-  canManageOrg,
 }: {
   readonly ts: readonly TailscaleConfig[] | null;
   readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
-  readonly canManageOrg: boolean;
 }) {
   const { t } = useTranslation();
+  const params = useGet(searchParams$);
+  const rows = [
+    ...(ts ?? []).map((config) => {
+      return {
+        config,
+        kind: "tailscale" as const,
+        label: t(($) => {
+          return $.tailscale.title;
+        }),
+      };
+    }),
+    ...(cf ?? []).map((config) => {
+      return {
+        config,
+        kind: "cloudflare" as const,
+        label: t(($) => {
+          return $.cloudflareAccess.title;
+        }),
+      };
+    }),
+  ];
   return (
-    <div className="grid gap-3">
-      {ts?.map((config) => {
+    <div className="overflow-hidden rounded-3xl border-divider bg-card divide-y divide-divider has-[a]:border">
+      {rows.map(({ config, kind, label }) => {
         return (
-          <details
+          <a
             key={config.id}
-            className="rounded-2xl border border-divider bg-card"
+            href={remoteResourceHref(params, kind, config.id)}
+            className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5"
           >
-            <summary className="flex cursor-pointer items-center gap-4 rounded-2xl p-5 hover:bg-gray-50">
+            <span className="rounded-lg bg-gray-50 p-2">
               <Network size={20} aria-hidden />
-              <span className="grid gap-1">
-                <strong className="text-sm">{config.name}</strong>
-                <span className="text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.tailscale.title;
-                  })}{" "}
-                  · {config.tags.join(", ")}
-                </span>
+            </span>
+            <span className="grid min-w-0 flex-1 gap-1">
+              <strong className="truncate text-sm font-medium">
+                {config.name}
+              </strong>
+              <span className="text-xs text-muted-foreground">
+                {label} ·{" "}
+                {t(($) => {
+                  return config.scope === "personal"
+                    ? $.cloudflareAccess.personal
+                    : $.cloudflareAccess.organization;
+                })}
               </span>
-            </summary>
-            <div className="border-t border-divider p-4">
-              <TailscaleSection
-                compact
-                scope={config.scope}
-                configs={[config]}
-                admin={canManageOrg}
-              />
-            </div>
-          </details>
-        );
-      })}
-      {cf?.map((config) => {
-        return (
-          <details
-            key={config.id}
-            className="rounded-2xl border border-divider bg-card"
-          >
-            <summary className="flex cursor-pointer items-center gap-4 rounded-2xl p-5 hover:bg-gray-50">
-              <Network size={20} aria-hidden />
-              <span className="grid gap-1">
-                <strong className="text-sm">{config.name}</strong>
-                <span className="text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.cloudflareAccess.title;
-                  })}
-                </span>
-              </span>
-            </summary>
-            <div className="border-t border-divider p-4">
-              <CloudflareAccessSection
-                compact
-                scope={config.scope}
-                configs={[config]}
-                canManage={config.scope === "personal" || canManageOrg}
-                canPromote={canManageOrg}
-              />
-            </div>
-          </details>
+            </span>
+            <span className="text-right text-xs text-muted-foreground">
+              {t(
+                ($) => {
+                  return $.cloudflareAccess.usedBy;
+                },
+                { count: privateNetworkHostCount(config) },
+              )}
+            </span>
+            <ChevronRight
+              size={16}
+              className="shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+          </a>
         );
       })}
     </div>
@@ -435,19 +402,17 @@ export function GuidedPrivateNetworkPanel() {
   const tailscale = useLoadable(tailscaleConfigs$);
   const access = useLoadable(cloudflareAccessConfigs$);
   const tailscaleEnabled = useGet(tailscaleSettingsEnabled$);
-  const admin = useLoadable(isOrgAdmin$);
   const open = useSet(setRemoteNetworkPicker$);
   const retry = useSet(retryTailscale$);
   const signal = useGet(pageSignal$);
-  const canManageOrg = admin.state === "hasData" && admin.data;
   const ts =
     tailscaleEnabled && tailscale.state === "hasData" ? tailscale.data : null;
   const cf = access.state === "hasData" ? access.data : null;
   const empty = cf?.length === 0 && (!tailscaleEnabled || ts?.length === 0);
   return (
     <div className="grid gap-6">
-      <header className="flex items-center justify-between gap-4">
-        <div className="grid gap-2">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="grid gap-1">
           <h2 className="text-lg font-semibold">
             {t(($) => {
               return $.remoteControlSetup.networkTitle;
@@ -496,7 +461,7 @@ export function GuidedPrivateNetworkPanel() {
       {empty && (
         <Card
           surface="composer"
-          className="grid justify-items-center gap-4 p-8 text-center"
+          className="grid justify-items-center gap-4 px-6 py-8 text-center"
         >
           <span className="rounded-xl bg-gray-50 p-3">
             <Network size={24} aria-hidden />
@@ -523,8 +488,7 @@ export function GuidedPrivateNetworkPanel() {
           </Button>
         </Card>
       )}
-      <PrivateNetworkRows ts={ts} cf={cf} canManageOrg={canManageOrg} />
-      <NetworkProviderPicker />
+      <PrivateNetworkRows ts={ts} cf={cf} />
       <TailscaleDialog />
       <CloudflareAccessDialog />
       <CloudflareAccessConversionDialog />

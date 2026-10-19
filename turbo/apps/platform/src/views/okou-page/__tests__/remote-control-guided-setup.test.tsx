@@ -1,7 +1,19 @@
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
+import {
+  type SshConnectionResponse,
+  sshConnectionsContract,
+} from "@okouai/api-contracts/contracts/ssh-connections";
+import {
+  type SshCredentialResponse,
+  sshCredentialsContract,
+} from "@okouai/api-contracts/contracts/ssh-credentials";
+import {
+  type VncConnectionResponse,
+  vncConnectionsContract,
+} from "@okouai/api-contracts/contracts/vnc-connections";
+import {
+  type VncCredentialResponse,
+  vncCredentialsContract,
+} from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   tailscaleContract,
   type TailscaleConfig,
@@ -11,7 +23,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -105,16 +122,14 @@ test("The new deep link keeps the existing experience when the switch is off", a
   ).toBeNull();
   expect(queryAction("button", "Add connection")).toBeNull();
 });
-test("Remote control opens management before setup, with a separate login tab", async () => {
+test("Remote control opens management before setup, without standalone credential navigation", async () => {
   await page();
   await screen.findByRole("heading", { name: "No devices added yet" });
   expect(
     screen.queryByRole("heading", { name: "Set up a connection" }),
   ).toBeNull();
-  click(getAction("tab", "Login information"));
-  await screen.findByText(
-    "No SSH credentials yet. Add a private key or password to reuse across hosts.",
-  );
+  expect(queryAllByRoleFast("tab")).toHaveLength(0);
+  expect(queryAction("button", "Add credential")).toBeNull();
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Set up a connection" });
   expect(screen.getByText("Operate through commands.")).toBeInTheDocument();
@@ -146,7 +161,7 @@ test("Direct SSH requires a name, retains input through username help and saves 
   expect(name).toBeRequired();
   await fill(screen.getByLabelText("Computer address"), "server.example.com");
   await fill(username, "operator");
-  await fill(screen.getByLabelText("Credential name"), "Office login");
+  expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
   await fill(name, "Office computer");
   click(getAction("button", "Where can I find my username?"));
@@ -161,7 +176,8 @@ test("Direct SSH requires a name, retains input through username help and saves 
       },
     ),
   ).toStrictEqual([]);
-  click(getAction("button", "Save"));
+  expect(getAction("button", "Save and check")).toBeDisabled();
+  click(getAction("button", "Save only"));
   await waitFor(() => {
     return expect(requests).toHaveLength(1);
   });
@@ -174,8 +190,9 @@ test("Direct SSH requires a name, retains input through username help and saves 
     }),
   ]);
   expect(screen.getByText(/Saved, but not checked yet/u)).toBeInTheDocument();
-  expect(getAction("link", "Open chat").getAttribute("href")).toContain(
-    "prompt=",
+  expect(queryAction("link", "Open chat")).toBeNull();
+  expect(getAction("link", "View connection").getAttribute("href")).toContain(
+    "remoteResource=ssh%3A",
   );
 });
 test("Tailscale setup adds a narrow grant with the selected port and leaves the target untagged", async () => {
@@ -208,13 +225,23 @@ test("Tailscale setup adds a narrow grant with the selected port and leaves the 
   ).toBeInTheDocument();
   click(getAction("button", "Rule saved, continue"));
   await screen.findByRole("heading", {
-    name: "Create and enter network credentials",
+    name: "Create and enter connection credentials",
   });
-  await screen.findByLabelText("OAuth client secret");
-  expect(screen.getByLabelText("OAuth client secret")).toHaveAttribute(
+  await screen.findByLabelText("Client Secret");
+  expect(screen.getByLabelText("Client Secret")).toHaveAttribute(
     "type",
     "password",
   );
+  expect(getAction("button", "Save and continue")).toBeInTheDocument();
+  click(getAction("button", "Where do I get these details?"));
+  await screen.findByRole("dialog", { name: "Tailscale connection setup" });
+  for (let index = 0; index < 3; index++) {
+    click(getAction("button", "Next"));
+  }
+  expect(
+    screen.getByText(/Click Save and continue after copying/u),
+  ).toBeInTheDocument();
+  click(getAction("button", "Return to form"));
 });
 test("A single saved network is explicitly selected and can be changed", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
@@ -285,9 +312,8 @@ test("Private network dependencies block deletion of a referenced network", asyn
       ],
     });
   });
-  await page("/connectors?scope=private-network");
-  click(
-    await screen.findByText("Office network", { selector: "summary strong" }),
+  await page(
+    `/connectors?scope=private-network&remoteResource=tailscale:${network.id}`,
   );
   await screen.findByText("Office computer");
   expect(getAction("button", "Delete Tailscale")).toBeDisabled();
@@ -295,7 +321,11 @@ test("Private network dependencies block deletion of a referenced network", asyn
 test("Changing category abandons setup and returns to management", async () => {
   const username = await directForm();
   await fill(username, "operator");
-  click(screen.getByTestId("connectors-scope-private-network"));
+  const directory = queryAction("button", "Connectors");
+  if (directory) {
+    click(directory);
+  }
+  click(await screen.findByTestId("connectors-scope-private-network"));
   await screen.findByRole("heading", { name: "Private networks" });
   click(screen.getByTestId("connectors-scope-remote-control"));
   await screen.findByRole("heading", { name: "Remote connections" });
@@ -311,17 +341,17 @@ test("A rejected SSH save retains the entered name and does not show a success s
   const username = await directForm();
   await fill(screen.getByLabelText("Computer address"), "invalid.example.com");
   await fill(username, "operator");
-  await fill(screen.getByLabelText("Credential name"), "Office login");
+  expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
   const name = screen.getByLabelText(/Connection name/u);
   await fill(name, "Office computer");
-  click(getAction("button", "Save"));
+  click(getAction("button", "Save only"));
   await screen.findByRole("alert");
   expect(name).toHaveValue("Office computer");
   expect(
     screen.queryByRole("heading", { name: "Connection added" }),
   ).toBeNull();
-  expect(getAction("button", "Save")).toBeEnabled();
+  expect(getAction("button", "Save only")).toBeEnabled();
 });
 
 test("VNC saves only after the separate login and server-identity steps", async () => {
@@ -379,7 +409,7 @@ test("VNC saves only after the separate login and server-identity steps", async 
   expect(screen.getByLabelText("Server certificate trust")).toHaveTextContent(
     "System certificate authorities",
   );
-  click(getAction("button", "Save"));
+  click(getAction("button", "Save only"));
   await screen.findByRole("heading", { name: "Connection added" });
   expect(requests).toStrictEqual([
     expect.objectContaining({
@@ -400,7 +430,7 @@ test("Switching protocols starts the matching editor instead of retaining the pr
   });
   click(getAction("button", "Back"));
   await screen.findByRole("heading", { name: "Set up a connection" });
-  click(screen.getByText("VNC", { selector: "strong" }));
+  click(getAction("radio", "VNC"));
   click(getAction("button", "Start setup"));
   await screen.findByRole("heading", { name: "Target operating system" });
   click(getAction("button", "Continue"));
@@ -429,7 +459,11 @@ test("Leaving setup cancels an editor that is still loading credentials", async 
     name: "Use existing connection settings",
   });
   click(screen.getByText("Direct connection"));
-  click(screen.getByTestId("connectors-scope-private-network"));
+  const directory = queryAction("button", "Connectors");
+  if (directory) {
+    click(directory);
+  }
+  click(await screen.findByTestId("connectors-scope-private-network"));
   await screen.findByRole("heading", { name: "Private networks" });
   await act(async () => {
     gate.resolve();
@@ -459,11 +493,11 @@ test("An idempotent retry keeps the connection name from the locked draft", asyn
   const username = await directForm();
   await fill(screen.getByLabelText("Computer address"), "retry.example.com");
   await fill(username, "operator");
-  await fill(screen.getByLabelText("Credential name"), "Office login");
+  expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
   const name = screen.getByLabelText(/Connection name/u);
   await fill(name, "Office retry");
-  click(getAction("button", "Save"));
+  click(getAction("button", "Save only"));
   await screen.findByText(
     /We couldn't confirm whether your changes were saved/u,
   );
@@ -473,4 +507,440 @@ test("An idempotent retry keeps the connection name from the locked draft", asyn
   expect(screen.getByText("Office retry")).toBeInTheDocument();
   expect(requests).toHaveLength(2);
   expect(requests[1]).toStrictEqual(requests[0]);
+});
+
+const sshHost: SshConnectionResponse = Object.freeze({
+  id: "b0000000-0000-4000-8000-000000000001",
+  displayName: "Office computer",
+  host: "ssh.example.com",
+  port: 22,
+  username: "operator",
+  credentialId: "d0000000-0000-4000-8000-000000000001",
+  credentialName: "Old internal name",
+  generation: 1,
+  learnedHostKey: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+const sshLogin: SshCredentialResponse = Object.freeze({
+  id: "d0000000-0000-4000-8000-000000000001",
+  name: "Old internal name",
+  username: "operator",
+  authMethod: "password",
+  revision: 3,
+  hosts: [
+    { id: sshHost.id, displayName: sshHost.displayName },
+    {
+      id: "b0000000-0000-4000-8000-000000000002",
+      displayName: "Backup computer",
+    },
+  ],
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+const vncHost = Object.freeze<VncConnectionResponse>({
+  id: "b0000000-0000-4000-8000-000000000003",
+  displayName: "Office screen",
+  host: "screen.example.com",
+  port: 5900,
+  credentialId: "d0000000-0000-4000-8000-000000000003",
+  credentialName: "Old screen login",
+  security: { type: "x509_vnc", trust: { mode: "system" } },
+  generation: 2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+const vncLogin: VncCredentialResponse = Object.freeze({
+  id: "d0000000-0000-4000-8000-000000000003",
+  name: "Old screen login",
+  authMethod: "vnc_password",
+  revision: 4,
+  hosts: [
+    { id: vncHost.id, displayName: vncHost.displayName },
+    {
+      id: "b0000000-0000-4000-8000-000000000004",
+      displayName: "Backup screen",
+    },
+  ],
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+function mockSavedConnections() {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [sshHost] });
+  });
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [sshLogin] });
+  });
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [vncHost] });
+  });
+  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [vncLogin] });
+  });
+}
+async function editConnection(protocol: "ssh" | "vnc") {
+  await page(
+    `/connectors?scope=remote-control&remoteResource=${protocol}:${protocol === "ssh" ? sshHost.id : vncHost.id}`,
+  );
+  await screen.findByRole("heading", {
+    name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
+  });
+  click(getAction("button", "Edit host"));
+  await screen.findByRole("heading", { name: "Edit connection" });
+  return await screen.findByLabelText(
+    protocol === "ssh" ? "Password" : "VNC password",
+  );
+}
+
+test.each(["ssh", "vnc"] as const)(
+  "%s editing leaves saved secrets blank and renaming keeps the existing credential",
+  async (protocol) => {
+    mockSavedConnections();
+    const writes: unknown[] = [];
+    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+      writes.push(body);
+      return respond(200, {
+        ...sshHost,
+        displayName: body.displayName ?? sshHost.displayName,
+        generation: 2,
+      });
+    });
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      writes.push(body);
+      return respond(200, {
+        ...vncHost,
+        displayName: body.displayName ?? vncHost.displayName,
+        generation: 3,
+      });
+    });
+    const secret = await editConnection(protocol);
+    expect(secret).toHaveValue("");
+    expect(secret).not.toBeRequired();
+    expect(screen.queryByLabelText("Credential name")).toBeNull();
+    expect(screen.queryByLabelText("VNC credential name")).toBeNull();
+    click(screen.getByText("Connection settings", { selector: "summary" }));
+    expect(
+      screen.getByLabelText(
+        protocol === "ssh" ? "Port" : "RFB destination port",
+      ),
+    ).toHaveValue(protocol === "ssh" ? 22 : 5900);
+    await fill(screen.getByLabelText(/Connection name/u), "Renamed device");
+    click(getAction("button", "Save only"));
+    await screen.findByRole("heading", {
+      name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
+    });
+    expect(writes).toStrictEqual([
+      expect.objectContaining({
+        displayName: "Renamed device",
+        credential: { id: protocol === "ssh" ? sshLogin.id : vncLogin.id },
+      }),
+    ]);
+  },
+);
+
+test.each(["ssh", "vnc"] as const)(
+  "%s shared login requires confirmation; cancelling retains the draft without writing",
+  async (protocol) => {
+    mockSavedConnections();
+    const writes: unknown[] = [];
+    const loginWrites: unknown[] = [];
+    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+      writes.push(body);
+      return respond(200, { ...sshHost, generation: 2 });
+    });
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      writes.push(body);
+      return respond(200, { ...vncHost, generation: 3 });
+    });
+    context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
+      loginWrites.push(body);
+      return respond(200, { ...sshLogin, revision: 4 });
+    });
+    context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+      loginWrites.push(body);
+      return respond(200, { ...vncLogin, revision: 5 });
+    });
+    const secret = await editConnection(protocol);
+    await fill(secret, "newpass");
+    click(getAction("button", "Save only"));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Update shared login information?",
+    });
+    expect(confirmation).toHaveTextContent(
+      protocol === "ssh" ? "Backup computer" : "Backup screen",
+    );
+    expect(confirmation).toHaveTextContent("2 connections");
+    expect(writes).toHaveLength(0);
+    expect(loginWrites).toHaveLength(0);
+    click(getAction("button", "Continue editing", confirmation));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(secret).toHaveValue("newpass");
+    expect(writes).toHaveLength(0);
+    click(getAction("button", "Save only"));
+    const confirmAgain = await screen.findByRole("dialog", {
+      name: "Update shared login information?",
+    });
+    click(getAction("button", "Confirm update", confirmAgain));
+    await screen.findByRole("heading", {
+      name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
+    });
+    expect(writes).toHaveLength(1);
+    expect(loginWrites).toStrictEqual([
+      expect.objectContaining({
+        expectedRevision: protocol === "ssh" ? 3 : 4,
+        authentication: {
+          method: protocol === "ssh" ? "password" : "vnc_password",
+          password: "newpass",
+        },
+      }),
+    ]);
+  },
+);
+
+test("VNC reuse offers only login information matching the configured authentication profile", async () => {
+  mockSavedConnections();
+  await editConnection("vnc");
+  click(getAction("button", "Use saved login information"));
+  const picker = await screen.findByRole("dialog", {
+    name: "Use saved login information",
+  });
+  expect(picker).toHaveTextContent("Office screen");
+  expect(picker).not.toHaveTextContent("Office computer");
+  await userEvent.keyboard("{Escape}");
+  click(screen.getByText("Connection settings", { selector: "summary" }));
+  click(screen.getByLabelText("Security profile"));
+  click(
+    await screen.findByRole("option", {
+      name: "Encrypted without a VNC password (X509None)",
+    }),
+  );
+  expect(queryAction("button", "Use saved login information")).toBeNull();
+  expect(screen.queryByLabelText("VNC password")).toBeNull();
+});
+
+test("A resource deep link cannot expose the new editor when the switch is off", async () => {
+  mockSavedConnections();
+  await page(
+    `/connectors?scope=remote-control&remoteResource=ssh:${sshHost.id}`,
+    false,
+  );
+  await screen.findByRole("heading", { name: sshHost.displayName });
+  expect(
+    screen.queryByRole("heading", { name: "Connection details" }),
+  ).toBeNull();
+  expect(queryAction("button", "Add host")).not.toBeNull();
+});
+
+test.each(["ssh", "vnc"] as const)(
+  "%s revision conflicts retain the login draft and require review of the new shared impact",
+  async (protocol) => {
+    mockSavedConnections();
+    let savedSsh = sshHost;
+    let savedVnc = vncHost;
+    const revisions: number[] = [];
+    const generations: number[] = [];
+    const addedHost = {
+      id: "b0000000-0000-4000-8000-000000000005",
+      displayName: "Another shared computer",
+    };
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [savedSsh] });
+    });
+    context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [savedVnc] });
+    });
+    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+      return respond(200, {
+        credentials: [
+          revisions.length
+            ? {
+                ...sshLogin,
+                revision: 4,
+                hosts: [...sshLogin.hosts, addedHost],
+              }
+            : sshLogin,
+        ],
+      });
+    });
+    context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
+      return respond(200, {
+        credentials: [
+          revisions.length
+            ? {
+                ...vncLogin,
+                revision: 5,
+                hosts: [...vncLogin.hosts, addedHost],
+              }
+            : vncLogin,
+        ],
+      });
+    });
+    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+      generations.push(body.expectedGeneration);
+      savedSsh = { ...savedSsh, generation: savedSsh.generation + 1 };
+      return respond(200, savedSsh);
+    });
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      generations.push(body.expectedGeneration);
+      savedVnc = { ...savedVnc, generation: savedVnc.generation + 1 };
+      return respond(200, savedVnc);
+    });
+    context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
+      revisions.push(body.expectedRevision);
+      return revisions.length === 1
+        ? respond(409, {
+            error: {
+              code: "SSH_CREDENTIAL_REVISION_CONFLICT",
+              message: "Changed",
+            },
+          })
+        : respond(200, { ...sshLogin, revision: 5 });
+    });
+    context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+      revisions.push(body.expectedRevision);
+      return revisions.length === 1
+        ? respond(409, {
+            error: {
+              code: "VNC_CREDENTIAL_REVISION_CONFLICT",
+              message: "Changed",
+            },
+          })
+        : respond(200, { ...vncLogin, revision: 6 });
+    });
+    const secret = await editConnection(protocol);
+    await fill(secret, "newpass");
+    click(getAction("button", "Save only"));
+    const impact = await screen.findByRole("dialog", {
+      name: "Update shared login information?",
+    });
+    click(getAction("button", "Confirm update", impact));
+    const keep = await waitFor(() => {
+      return getAction("button", "Keep my changes with this version");
+    });
+    expect(secret).toHaveValue("newpass");
+    expect(
+      screen.getByText(
+        "Connection settings were saved. Review the login information update before leaving.",
+      ),
+    ).toBeInTheDocument();
+    click(keep);
+    await waitFor(() => {
+      return expect(getAction("button", "Save only")).toBeEnabled();
+    });
+    expect(secret).toHaveValue("newpass");
+    click(getAction("button", "Save only"));
+    const latestImpact = await screen.findByRole("dialog", {
+      name: "Update shared login information?",
+    });
+    expect(latestImpact).toHaveTextContent("3 connections");
+    expect(latestImpact).toHaveTextContent(addedHost.displayName);
+    click(getAction("button", "Confirm update", latestImpact));
+    await screen.findByRole("heading", {
+      name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
+    });
+    expect(generations).toStrictEqual(protocol === "ssh" ? [1, 2] : [2, 3]);
+    expect(revisions).toStrictEqual(protocol === "ssh" ? [3, 4] : [4, 5]);
+  },
+);
+
+test.each(["ssh", "vnc"] as const)(
+  "%s details never grant chat access or suggest a check ran while the settings service is unavailable",
+  async (protocol) => {
+    mockSavedConnections();
+    const host = protocol === "ssh" ? sshHost : vncHost;
+    await page(
+      `/connectors?scope=remote-control&remoteResource=${protocol}:${host.id}`,
+    );
+    await screen.findByRole("heading", { name: host.displayName });
+    expect(
+      screen.getByRole("heading", {
+        name: "Connection checks are unavailable",
+      }),
+    ).toBeInTheDocument();
+    expect(getAction("button", "Check connection")).toBeDisabled();
+    expect(queryAction("link", "Check in chat")).toBeNull();
+    expect(queryAction("link", "Open chat")).toBeNull();
+    expect(screen.getByText("Not checked yet")).toBeInTheDocument();
+  },
+);
+
+async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
+  await page("/connectors?scope=private-network");
+  await waitFor(() => {
+    expect(getAction("button", "Add network")).toBeInTheDocument();
+  });
+  click(getAction("button", "Add network"));
+  await screen.findByRole("heading", { name: "Add a private network" });
+  click(screen.getByText(provider, { exact: true }));
+  return await screen.findByLabelText("Name");
+}
+test("Cloudflare four-step guide preserves the draft and resumes after returning", async () => {
+  const name = await openNetworkForm("Cloudflare Access");
+  await fill(name, "Cloudflare draft");
+  click(getAction("button", "Where do I get these details?"));
+  await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
+  expect(getAction("link", "Open Cloudflare dashboard")).toHaveAttribute(
+    "target",
+    "_blank",
+  );
+  click(getAction("button", "Next"));
+  expect(screen.getByText("2 / 4")).toBeInTheDocument();
+  click(getAction("button", "Return to form"));
+  expect(name).toHaveValue("Cloudflare draft");
+  click(getAction("button", "Where do I get these details?"));
+  expect(screen.getByText("2 / 4")).toBeInTheDocument();
+  click(getAction("button", "Previous"));
+  expect(screen.getByText("1 / 4")).toBeInTheDocument();
+  click(getAction("button", "Next"));
+  click(getAction("button", "Next"));
+  expect(screen.getByText(/Action: Service Auth/u)).toBeInTheDocument();
+  expect(screen.getByText(/Keep all existing rules/u)).toBeInTheDocument();
+  click(getAction("button", "Next"));
+  expect(
+    screen.getByText("Return to the form and click Save network."),
+  ).toBeInTheDocument();
+  click(getAction("button", "Return to form"));
+  expect(name).toHaveValue("Cloudflare draft");
+  expect(getAction("button", "Save network")).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").find((button) => {
+      return /copy.*admin/iu.test(button.textContent ?? "");
+    }),
+  ).toBeUndefined();
+});
+test("Tailscale guide uses current form tags and keeps secret inputs mounted through close", async () => {
+  const name = await openNetworkForm("Tailscale");
+  await fill(name, "Tailnet draft");
+  click(screen.getByText("Registration tags", { selector: "summary" }));
+  await fill(
+    screen.getByLabelText("Registration tags"),
+    "tag:office, tag:review",
+  );
+  const secret = screen.getByLabelText("Client Secret");
+  await fill(secret, "test-only-draft-secret");
+  click(getAction("button", "Where do I get these details?"));
+  await screen.findByRole("dialog", { name: "Tailscale connection setup" });
+  click(getAction("button", "Next"));
+  click(getAction("button", "Next"));
+  expect(
+    screen.getByText(/tag:office, tag:review from the current Okou form/u),
+  ).toBeInTheDocument();
+  click(screen.getByText("Tag missing?"));
+  expect(
+    screen.getByText(/Enter office, review as Tag name/u),
+  ).toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  expect(name).toHaveValue("Tailnet draft");
+  expect(secret).toHaveValue("test-only-draft-secret");
+  click(getAction("button", "Where do I get these details?"));
+  expect(screen.getByText("3 / 4")).toBeInTheDocument();
+  click(getAction("button", "Next"));
+  expect(
+    screen.getByText(/Click Save network after copying/u),
+  ).toBeInTheDocument();
+  click(getAction("button", "Return to form"));
+  expect(getAction("button", "Save network")).toBeInTheDocument();
 });
