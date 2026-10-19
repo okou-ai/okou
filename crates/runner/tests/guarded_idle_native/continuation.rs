@@ -57,6 +57,13 @@ pub struct Prepared {
     pub history: Vec<u8>,
     pub storage: StorageFingerprints,
     pub exit_code: i32,
+    pub preparation: Preparation,
+}
+
+pub struct Preparation {
+    pub operation_id: String,
+    pub grant_started_ns: u64,
+    pub grant_finished_ns: u64,
 }
 
 pub struct Fixture {
@@ -65,6 +72,7 @@ pub struct Fixture {
     rootfs_hash: String,
     case: Arc<evidence::Case>,
     nonzero: bool,
+    workspace_artifact: Option<ArtifactEntry>,
 }
 
 pub struct Execution<'a> {
@@ -92,12 +100,55 @@ pub struct Saving<'a> {
 }
 
 impl Fixture {
+    pub(super) fn session(&self) -> TestResult<(String, String)> {
+        self.api.session(None)
+    }
+
     pub async fn new(
         paths: &RunnerPaths,
         cache: HomeImageCache,
         rootfs_hash: String,
         case: Arc<evidence::Case>,
         nonzero: bool,
+    ) -> TestResult<Arc<Self>> {
+        Self::new_with_workspace(
+            paths,
+            cache,
+            rootfs_hash,
+            case,
+            nonzero,
+            Some(ArtifactEntry {
+                mount_path: "/home/user/workspace".into(),
+                vas_storage_name: "workspace".into(),
+                vas_storage_id: "native-workspace".into(),
+                vas_version_id: "native-empty-version".into(),
+                archive_url: None,
+                archive_size: None,
+                empty: Some(true),
+                missing_root_policy: None,
+            }),
+        )
+        .await
+    }
+
+    /// Keep the ordinary workspace directory under the required home owner.
+    pub(super) async fn new_with_home_workspace(
+        paths: &RunnerPaths,
+        cache: HomeImageCache,
+        rootfs_hash: String,
+        case: Arc<evidence::Case>,
+        nonzero: bool,
+    ) -> TestResult<Arc<Self>> {
+        Self::new_with_workspace(paths, cache, rootfs_hash, case, nonzero, None).await
+    }
+
+    async fn new_with_workspace(
+        paths: &RunnerPaths,
+        cache: HomeImageCache,
+        rootfs_hash: String,
+        case: Arc<evidence::Case>,
+        nonzero: bool,
+        workspace_artifact: Option<ArtifactEntry>,
     ) -> TestResult<Arc<Self>> {
         if std::env::var("USE_MOCK_CODEX").as_deref() != Ok("true") {
             return Err(io::Error::other(
@@ -143,6 +194,7 @@ impl Fixture {
             rootfs_hash,
             case,
             nonzero,
+            workspace_artifact,
         }))
     }
 
@@ -192,16 +244,7 @@ impl Fixture {
         });
         context.storage_manifest = Some(StorageManifest {
             storages: Vec::new(),
-            artifacts: vec![ArtifactEntry {
-                mount_path: "/home/user/workspace".into(),
-                vas_storage_name: "workspace".into(),
-                vas_storage_id: "native-workspace".into(),
-                vas_version_id: "native-empty-version".into(),
-                archive_url: None,
-                archive_size: None,
-                empty: Some(true),
-                missing_root_policy: None,
-            }],
+            artifacts: self.workspace_artifact.iter().cloned().collect(),
         });
         let observation = format!("/home/user/native-continuation-{run}.json");
         let source = format!(
@@ -223,6 +266,22 @@ impl Fixture {
     }
 
     pub async fn execute(self: &Arc<Self>, request: Execution<'_>) -> TestResult<Prepared> {
+        self.execute_dispatch(request, None).await
+    }
+
+    pub async fn execute_reused(
+        self: &Arc<Self>,
+        request: Execution<'_>,
+        idle: Box<runner_lifecycle::idle_pool::ReusableIdleSandbox>,
+    ) -> TestResult<Prepared> {
+        self.execute_dispatch(request, Some(idle)).await
+    }
+
+    async fn execute_dispatch(
+        self: &Arc<Self>,
+        request: Execution<'_>,
+        idle: Option<Box<runner_lifecycle::idle_pool::ReusableIdleSandbox>>,
+    ) -> TestResult<Prepared> {
         let Execution {
             factory,
             operations,
@@ -234,8 +293,25 @@ impl Fixture {
             original,
             continued,
         } = request;
+        let reused = idle.is_some();
+        // Admission or task registration may refuse before invoking the work.
+        // Keep the already live reused Guest owned across either refusal.
+        let custody = Arc::new(std::sync::Mutex::new(idle));
+        if reused {
+            self.case.retain(custody.clone());
+        }
+        let grant_started_ns = evidence::clocks()?.0;
         let mut request = operations.request(inputs.replacement_plan()?)?;
         let permit = request.try_grant().await?;
+        let preparation = Preparation {
+            operation_id: permit
+                .id()
+                .ok_or_else(|| io::Error::other("native preparation permit missing"))?
+                .generation()
+                .to_string(),
+            grant_started_ns,
+            grant_finished_ns: evidence::clocks()?.0,
+        };
         let context = self.context(run, &key, &history, original, continued)?;
         let previous_generation = context
             .native_continuation
@@ -256,15 +332,27 @@ impl Fixture {
         );
         let this = self.clone();
         let work = permit.spawn(move |mut operation| async move {
+            let idle = custody.lock().map_err(|_| io::Error::other("native reused custody poisoned"))?.take();
             let params = JobParams { profile_name: fixture::PROFILE.into(), vcpu: 2, memory_mb: 4096, home_disk_mb: 16384, rootfs_hash: this.rootfs_hash.clone(), restore_guest_state: true, device_rate_limits: None, home_image_prepare_lock_policy: Default::default() };
-            let (mut outcome, _telemetry) = executor::execute_job_with_prepared_notifier(
+            let (mut outcome, _telemetry) = if let Some(idle) = idle {
+                executor::execute_job_reuse_with_hooks(
+                    executor::ReusedSandboxDispatch {
+                        factory: &**factory, idle_sandbox: *idle,
+                        reuse_result: SandboxReuseResult::Reused,
+                    }, context, &this.config, &params,
+                    runner_provider::RunCancellationSignals::from_hard_token(CancellationToken::new()),
+                    executor::ExecutionHooks {
+                        sandbox_prepared: None, active_input_source: None, pre_spawn_timing: None,
+                    },
+                ).await
+            } else { executor::execute_job_with_prepared_notifier(
                 &**factory, context, NewSandboxDispatch { id, reuse_result: SandboxReuseResult::PoolMiss },
                 &this.config, &params,
                 runner_provider::RunCancellationSignals::from_hard_token(CancellationToken::new()),
                 executor::ExecutionHooks {
                     sandbox_prepared: None, active_input_source: None, pre_spawn_timing: None,
                 },
-            ).await;
+            ).await };
             let checked: TestResult<(Vec<u8>, Option<RestoredSessionIdentity>)> = async {
                 let expected_exit = if !continued && this.nonzero {1} else {0};
                 if outcome.exit_code()!=expected_exit || !outcome.sandbox_reuse_disposition.is_eligible() {
@@ -321,7 +409,7 @@ impl Fixture {
                 this.case.retain(outcome);
                 return Err(io::Error::other("native home lease disappeared").into());
             };
-            if continued {
+            if continued && !reused {
                 // Acknowledged nonzero execution can finalize local history too.
                 // Executor still withholds its reusable identity, while terminal
                 // preparation independently verifies those bytes for the cache.
@@ -338,7 +426,12 @@ impl Fixture {
                     return Err(io::Error::other("native continuation did not use verified saved home/history").into());
                 }
             }
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Prepared { sandbox, home, identity, history, storage, exit_code })
+            if reused && (!matches!(home.result(), runner_lifecycle::home_image_cache::HomeCacheCheckoutResult::Miss)
+                || home.is_cache_hit()) {
+                this.case.retain(sandbox); this.case.retain(home);
+                return Err(io::Error::other("native reused continuation did not acquire its active entry lease").into());
+            }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Prepared { sandbox, home, identity, history, storage, exit_code, preparation })
         })?;
         work.join().await?
     }
@@ -419,7 +512,7 @@ impl Fixture {
         Ok(())
     }
 
-    async fn save_prepared(
+    pub(super) async fn save_prepared(
         &self,
         request: &Saving<'_>,
         run: RunId,

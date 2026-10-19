@@ -49,6 +49,7 @@ pub async fn exercise(
     proof: &Arc<evidence::Case>,
     directory: &Path,
     original: Arc<dyn sandbox::SandboxBackingProcess>,
+    mut histories: Option<&mut dual_history::Histories>,
 ) -> TestResult<()> {
     let initial = context.pool.lock().await.status_snapshot();
     let [entry] = initial.idle_sandboxes.as_slice() else {
@@ -75,7 +76,11 @@ pub async fn exercise(
     )
     .await?;
     // Preparation and its full owner are never inside the scenario's timeout.
-    let prepared = match transitions::prepare_observed_incoming(&context, inputs, false).await {
+    let preparation = match histories.as_deref_mut() {
+        Some(histories) => histories.prepare_incoming(&context, inputs).await,
+        None => transitions::prepare_observed_incoming(&context, inputs, false).await,
+    };
+    let prepared = match preparation {
         Ok(prepared) => prepared,
         Err(error) => {
             probe.finish().await?;
@@ -299,8 +304,21 @@ pub async fn exercise(
         Ok(())
     }
     .await;
+    // Required histories remain with live owners until real Executor reuse can
+    // acquire the entry. Never put these accepted continuations in the race's
+    // observation timeout or use the tenant-free recovery path on a failure.
+    let histories_ready = if let Some(histories) = histories.as_deref_mut() {
+        if replacement.is_ok() {
+            histories.before_incoming_retirement(&context, inputs).await
+        } else {
+            Err(io::Error::other("dual history original saving failed").into())
+        }
+    } else {
+        Ok(())
+    };
     let final_started_ns = evidence::clocks();
     let cleanup: TestResult<()> = async {
+        histories_ready?;
         let mut batch = start(&context,inputs).await?;
         let report = batch.join().await?;
         if !report.is_complete() || report.selected != 1 || report.completed != 1
@@ -322,6 +340,15 @@ pub async fn exercise(
         }
         Ok(())
     }.await;
+    let restoration = if cleanup.is_ok() {
+        if let Some(histories) = histories {
+            histories.after_incoming_retirement(&context, inputs).await
+        } else {
+            Ok(())
+        }
+    } else {
+        Ok(())
+    };
     context.tracker.close_and_wait().await;
     let operations = context.operations.close_and_wait().await;
     let reporting = probe.finish().await;
@@ -329,6 +356,7 @@ pub async fn exercise(
     old_result?;
     replacement?;
     cleanup?;
+    restoration?;
     reporting?;
     outcome.map_err(io::Error::other)??;
     let operations = operations?;

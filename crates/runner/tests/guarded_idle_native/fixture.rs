@@ -175,7 +175,7 @@ pub async fn sandbox_config(id: SandboxId, home: &mut HomeImageLease) -> TestRes
     })
 }
 
-fn runtime_dir(run_id: RunId) -> TestResult<String> {
+pub(super) fn runtime_dir(run_id: RunId) -> TestResult<String> {
     Ok(
         guest_contracts::runtime_paths::run_dir_for_home(HOME, &run_id.to_string())?
             .to_string_lossy()
@@ -277,7 +277,11 @@ pub async fn exec(sandbox: &dyn Sandbox, cmd: &str) -> TestResult<Vec<u8>> {
         || result.stdout_truncated
         || result.stderr_truncated
     {
-        return Err(std::io::Error::other("native guest fixture command failed").into());
+        return Err(std::io::Error::other(format!(
+            "native guest fixture command failed: {cmd}; termination={:?}; stdout_truncated={}; stderr_truncated={}; stderr={}",
+            result.termination, result.stdout_truncated, result.stderr_truncated,
+            String::from_utf8_lossy(&result.stderr),
+        )).into());
     }
     Ok(result.stdout)
 }
