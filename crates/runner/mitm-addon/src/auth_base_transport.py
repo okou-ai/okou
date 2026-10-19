@@ -415,7 +415,7 @@ def _filter_response_headers(headers: list[tuple[str, str]]) -> http.Headers:
     The response body is fully read, so headers like transfer-encoding must
     not be forwarded. Headers named by Connection are hop-by-hop too.
 
-    ``HTTPResponse.getheaders()`` exposes raw field octets through a one-to-one
+    ``http.client.parse_headers()`` exposes raw field octets through a one-to-one
     ISO-8859-1 decode. Encode with the same codec to restore those octets for
     mitmproxy's byte-backed header container.
     """
