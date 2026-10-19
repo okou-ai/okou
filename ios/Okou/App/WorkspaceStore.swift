@@ -1,6 +1,7 @@
 import ChatData
 import ChatDomain
 import Foundation
+import OSLog
 import Observation
 
 /// One immutable network/cache scope, with independently observed feature state.
@@ -35,6 +36,8 @@ final class WorkspaceStore {
   private var creationTask: Task<Void, Never>?
   private var pruneTask: Task<Void, Never>?
   private var pruneAgain = false
+  private var warmingTask: Task<Void, Never>?
+  private var warmAgain = false
   private var closed = false
   private var isForeground = false
   private var startupGeneration = UUID()
@@ -118,6 +121,7 @@ final class WorkspaceStore {
     refreshTask?.cancel()
     creationTask?.cancel()
     pruneTask?.cancel()
+    warmingTask?.cancel()
     list.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
@@ -174,6 +178,38 @@ final class WorkspaceStore {
       }
     }
     await trimConversations(limit: conversationLimit)
+    requestHistoryWarming()
+  }
+
+  private func requestHistoryWarming() {
+    guard !closed, !needsUpgrade else { return }
+    warmAgain = true
+    guard warmingTask == nil else { return }
+    warmingTask = Task(priority: .utility) { [weak self] in
+      guard let self else { return }
+      defer { warmingTask = nil }
+      repeat {
+        // Coalesce startup, indicator updates and bursts of realtime messages.
+        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        warmAgain = false
+        let recent = list.threads.sorted {
+          $0.sortAt == $1.sortAt ? $0.id > $1.id : $0.sortAt > $1.sortAt
+        }.prefix(100)
+        let candidates = Set(
+          recent.map(\.id) + list.threads.filter { $0.indicator != nil }.map(\.id))
+        let ids = candidates.filter { conversations[$0] == nil }.sorted()
+        do {
+          try await sync.warmHistories(threadIDs: ids)
+        } catch is CancellationError {
+          return
+        } catch {
+          guard !closed, !Task.isCancelled else { return }
+          handle(error)
+          Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+            .error("Cannot warm chat history: \(error.localizedDescription, privacy: .public)")
+        }
+      } while warmAgain && !closed && !needsUpgrade && !Task.isCancelled
+    }
   }
 
   func selectChat(_ id: String) {
@@ -232,7 +268,10 @@ final class WorkspaceStore {
   }
 
   func reduceMemory() async {
+    warmingTask?.cancel()
+    warmAgain = false
     messageMarkdown.clear()
+    for conversation in conversations.values { conversation.measurements.clear() }
     await trimConversations(limit: 0)
   }
 

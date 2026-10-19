@@ -131,6 +131,11 @@ struct EventRowsPage: Decodable, Sendable {
   let hasMore: Bool
 }
 
+struct EventCatchUpResponse: Decodable, Sendable {
+  let events: [String: [ChatEventRow]]
+  let notFoundThreads: [String]
+}
+
 struct ChatEventRow: Decodable, Sendable {
   let id: String
   let chatThreadId: String
