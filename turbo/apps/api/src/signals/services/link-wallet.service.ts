@@ -39,6 +39,11 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
+import { linkApprovalEnabled$ } from "./link-approval-config.service";
+import {
+  requireApprovalThread,
+  takeOverWalletApproval$,
+} from "./link-wallet-continuation.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -83,6 +88,8 @@ export interface WalletOwner {
 }
 interface WalletRunOwner extends WalletOwner {
   readonly agentId: string;
+  readonly runId?: string;
+  readonly chatThreadId?: string | null;
 }
 type Connection = typeof linkWalletConnections.$inferSelect;
 type Spend = typeof linkWalletSpends.$inferSelect;
@@ -120,6 +127,7 @@ export const walletRunOwner$ = computed(
       .select({
         agentId: agentRuns.agentId,
         triggerSource: agentRuns.triggerSource,
+        chatThreadId: agentRuns.chatThreadId,
         status: agentRuns.status,
       })
       .from(agentRuns)
@@ -143,7 +151,13 @@ export const walletRunOwner$ = computed(
         "Wallet access is limited to a running, user-initiated web chat; automations cannot use it",
       );
     }
-    return { orgId: auth.orgId, userId: auth.userId, agentId: run.agentId };
+    return {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      agentId: run.agentId,
+      runId: auth.runId,
+      chatThreadId: run.chatThreadId,
+    };
   },
 );
 
@@ -852,6 +866,38 @@ function validateSpend(row: Spend, remote: LinkSpend): void {
   }
 }
 
+function spendNextAction(
+  state: string,
+  resolution: string | null | undefined,
+): WalletSpend["nextAction"] {
+  switch (state) {
+    case "approved": {
+      return "retrieve_credentials";
+    }
+    case "succeeded": {
+      return "verify_order";
+    }
+    case "submitted": {
+      return "payment_pending";
+    }
+    case "pending_approval": {
+      return "wait_for_user";
+    }
+    case "creating":
+    case "created": {
+      return "check_status";
+    }
+    case "requires_action": {
+      return resolution === "auto_resume"
+        ? "wait_for_user"
+        : "new_approval_required";
+    }
+    default: {
+      return "stop";
+    }
+  }
+}
+
 function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
   const state = remote?.status ?? row.status;
   const next = remote?.status_details?.requires_action?.next_action;
@@ -862,22 +908,10 @@ function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
         url: next.action_url ? linkActionUrl(next.action_url) : null,
       }
     : null;
-  const nextAction =
-    state === "approved"
-      ? "retrieve_credentials"
-      : state === "succeeded"
-        ? "verify_order"
-        : state === "submitted"
-          ? "payment_pending"
-          : state === "pending_approval"
-            ? "wait_for_user"
-            : state === "creating" || state === "created"
-              ? "check_status"
-              : state === "requires_action"
-                ? action?.resolution === "auto_resume"
-                  ? "wait_for_user"
-                  : "new_approval_required"
-                : "stop";
+  const nextAction = spendNextAction(
+    state,
+    action?.resolution ?? row.actionResolution,
+  );
   return walletSpendSchema.parse({
     id: row.id,
     intentId: row.intentId,
@@ -890,6 +924,12 @@ function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
     test: row.test,
     approvalUrl: state === "pending_approval" ? row.approvalUrl : null,
     expiresAt: row.expiresAt.toISOString(),
+    autoContinue:
+      Boolean(row.approvalThreadId) &&
+      row.expiresAt.getTime() > now() &&
+      ["check_status", "wait_for_user", "retrieve_credentials"].includes(
+        nextAction,
+      ),
     createdAt: row.createdAt.toISOString(),
     payment: remote?.payment_status_details,
     paymentHistory: remote?.payment_history,
@@ -907,7 +947,14 @@ const saveProviderSpend$ = command(
     const db = set(writeDb$);
     const [saved] = await db
       .update(linkWalletSpends)
-      .set({ providerSpendId: remote.id, status: remote.status, approvalUrl })
+      .set({
+        providerSpendId: remote.id,
+        status: remote.status,
+        approvalUrl,
+        actionResolution:
+          remote.status_details?.requires_action?.next_action.resolution ??
+          null,
+      })
       .where(eq(linkWalletSpends.id, row.id))
       .returning();
     if (!saved) {
@@ -918,9 +965,43 @@ const saveProviderSpend$ = command(
       );
     }
     recordWalletSpendUsage(saved, "spend_status_observed", remote.status);
+    if (
+      saved.approvalThreadId &&
+      (saved.status !== row.status ||
+        saved.actionResolution !== row.actionResolution)
+    ) {
+      await publishUserSignal([saved.userId], "wallet:changed", {
+        orgId: saved.orgId,
+      } satisfies WalletChangedPayload);
+    }
     return saved;
   },
 );
+
+function validateSpendIntent(
+  existing: Spend | undefined,
+  input: WalletCreateSpend,
+  owner: WalletRunOwner,
+  authorizationId: string,
+): asserts existing is Spend {
+  if (
+    !existing ||
+    existing.authorizationId !== authorizationId ||
+    existing.amount !== input.amount ||
+    existing.currency !== input.currency ||
+    existing.merchantName !== input.merchantName ||
+    existing.merchantUrl !== input.merchantUrl ||
+    existing.context !== input.context ||
+    existing.test !== input.test
+  ) {
+    throw new LinkWalletError(
+      409,
+      "WALLET_INTENT_CONFLICT",
+      "This purchase intent is bound to different approval details; do not change or blindly replace it",
+    );
+  }
+  requireApprovalThread(existing, owner);
+}
 
 export const createWalletSpend$ = command(
   async (
@@ -931,12 +1012,20 @@ export const createWalletSpend$ = command(
   ): Promise<WalletSpend> => {
     const access = await set(walletAccess$, owner, "payments", signal);
     signal.throwIfAborted();
+    const autoContinue =
+      Boolean(owner.runId && owner.chatThreadId) &&
+      (await set(linkApprovalEnabled$, owner, signal));
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const [created] = await db
       .insert(linkWalletSpends)
       .values({
-        ...owner,
+        orgId: owner.orgId,
+        userId: owner.userId,
+        agentId: owner.agentId,
         ...input,
+        approvalThreadId: autoContinue ? owner.chatThreadId : null,
+        approvalRunId: autoContinue ? owner.runId : null,
         connectionId: access.connection.id,
         authorizationId: access.connection.authorizationId,
         expiresAt: new Date(now() + 30 * 60_000),
@@ -967,30 +1056,21 @@ export const createWalletSpend$ = command(
           )
           .limit(1);
     signal.throwIfAborted();
-    if (
-      !existing ||
-      existing.authorizationId !== access.connection.authorizationId ||
-      existing.amount !== input.amount ||
-      existing.currency !== input.currency ||
-      existing.merchantName !== input.merchantName ||
-      existing.merchantUrl !== input.merchantUrl ||
-      existing.context !== input.context ||
-      existing.test !== input.test
-    ) {
-      throw new LinkWalletError(
-        409,
-        "WALLET_INTENT_CONFLICT",
-        "This purchase intent is bound to different approval details; do not change or blindly replace it",
-      );
-    }
+    validateSpendIntent(
+      existing,
+      input,
+      owner,
+      access.connection.authorizationId,
+    );
     if (existing.providerSpendId) {
-      return await set(
+      const spend = await set(
         readProviderSpend$,
         existing,
         access,
         "resume_approval",
         signal,
       );
+      return { ...spend, autoContinue: spend.autoContinue && autoContinue };
     }
     if (existing.expiresAt.getTime() <= now()) {
       return publicSpend({ ...existing, status: "expired" });
@@ -1036,13 +1116,14 @@ export const createWalletSpend$ = command(
       });
       signal.throwIfAborted();
     }
-    return publicSpend(saved, {
+    const spend = publicSpend(saved, {
       ...remote,
       status:
         saved.status === "pending_approval"
           ? "pending_approval"
           : remote.status,
     });
+    return { ...spend, autoContinue: spend.autoContinue && autoContinue };
   },
 );
 
@@ -1085,6 +1166,9 @@ export const getWalletSpend$ = command(
   ): Promise<WalletSpend> => {
     const { row, access } = await set(walletSpendAccess$, owner, id, signal);
     signal.throwIfAborted();
+    if (cancel) {
+      requireApprovalThread(row, owner);
+    }
     const result = await set(
       readProviderSpend$,
       row,
@@ -1100,7 +1184,21 @@ export const getWalletSpend$ = command(
       "payments",
       signal,
     );
-    return result;
+    if (result.status === "approved" || cancel) {
+      await set(takeOverWalletApproval$, row, owner, signal);
+      signal.throwIfAborted();
+    }
+    if (!owner.runId) {
+      return result;
+    }
+    const autoContinue =
+      Boolean(
+        result.autoContinue &&
+        result.status !== "approved" &&
+        row.approvalThreadId === owner.chatThreadId,
+      ) && (await set(linkApprovalEnabled$, owner, signal));
+    signal.throwIfAborted();
+    return { ...result, autoContinue };
   },
 );
 
@@ -1131,6 +1229,8 @@ export const getWalletSpendCredentials$ = command(
     await set(saveProviderSpend$, row, approved);
     signal.throwIfAborted();
     requireApproved(approved);
+    await set(takeOverWalletApproval$, row, owner, signal);
+    signal.throwIfAborted();
 
     const result = await retrieveLinkSpendCredentials(
       access.token,
@@ -1178,7 +1278,7 @@ export const getWalletSpendCredentials$ = command(
       );
     }
     const credentials = walletSpendCredentialsSchema.parse({
-      spend: publicSpend(saved, result.spend),
+      spend: { ...publicSpend(saved, result.spend), autoContinue: false },
       card: result.card,
     });
     recordWalletSpendUsage(

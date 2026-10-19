@@ -2991,6 +2991,11 @@
       "transcriptionFailed": "Falha na transcrição de voz. Tente novamente."
     },
     "walletAction": {
+      "approvalApproved": "Aprovado; aguardando para continuar",
+      "approvalContinued": "Solicitação de compra retomada",
+      "approvalRecorded": "Status atualizado",
+      "approvalStopped": "A espera automática terminou; você pode continuar manualmente",
+      "approvalWaiting": "Aguardando aprovação da compra",
       "approveButton": "Revisar",
       "approveTitle": "Revisar compra",
       "authorized": "Autorizado",
