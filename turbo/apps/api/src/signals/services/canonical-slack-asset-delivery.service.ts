@@ -271,16 +271,38 @@ async function completeExistingSlackFile(
   return await markDeliveryDelivered(db, row, permalinkResult.permalink);
 }
 
+interface PrepareCanonicalSlackDeliveryArgs {
+  readonly assetId: string;
+  readonly operationId: string;
+  readonly runId: string;
+  readonly userId: string;
+  readonly client: SlackClient;
+}
+
+function slackDeliveryReadCondition(
+  args: Readonly<
+    Pick<
+      PrepareCanonicalSlackDeliveryArgs,
+      "assetId" | "runId" | "userId" | "operationId"
+    >
+  >,
+): SQL | undefined {
+  return and(
+    eq(runUploadedFiles.id, args.assetId),
+    eq(runUploadedFiles.runId, args.runId),
+    eq(runUploadedFiles.userId, args.userId),
+    eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+    eq(runUploadedFiles.classification, "published-output"),
+    eq(runUploadedFiles.materializationStatus, "ready"),
+    eq(canonicalAssetDeliveries.provider, "slack"),
+    eq(canonicalAssetDeliveries.operationId, args.operationId),
+  );
+}
+
 export const prepareCanonicalSlackDelivery$ = command(
   async (
     { set },
-    args: {
-      readonly assetId: string;
-      readonly operationId: string;
-      readonly runId: string;
-      readonly userId: string;
-      readonly client: SlackClient;
-    },
+    args: PrepareCanonicalSlackDeliveryArgs,
     signal: AbortSignal,
   ): Promise<CanonicalSlackDeliveryResult | null> => {
     const db = set(writeDb$);
@@ -294,18 +316,7 @@ export const prepareCanonicalSlackDelivery$ = command(
           runUploadedFiles,
           eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
         )
-        .where(
-          and(
-            eq(runUploadedFiles.id, args.assetId),
-            eq(runUploadedFiles.runId, args.runId),
-            eq(runUploadedFiles.userId, args.userId),
-            eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-            eq(runUploadedFiles.classification, "published-output"),
-            eq(runUploadedFiles.materializationStatus, "ready"),
-            eq(canonicalAssetDeliveries.provider, "slack"),
-            eq(canonicalAssetDeliveries.operationId, args.operationId),
-          ),
-        )
+        .where(slackDeliveryReadCondition(args))
         .limit(1);
       if (!row) {
         return undefined;
@@ -324,13 +335,30 @@ export const prepareCanonicalSlackDelivery$ = command(
       return deliveredResult(row);
     }
 
+    const recordPreparationFailure = async (
+      error: CanonicalSlackDeliveryFailure,
+    ): Promise<CanonicalSlackDeliveryResult> => {
+      const [failed] = await db
+        .update(canonicalAssetDeliveries)
+        .set({
+          status: "failed",
+          lastError: error,
+          updatedAt: sql`now()`,
+        })
+        .where(deliveryTransitionCondition(row))
+        .returning({ id: canonicalAssetDeliveries.id });
+      return failed
+        ? failedResult(error)
+        : await deliveryResultAfterTransitionConflict(db, row);
+    };
+
     const reconciliation = await settle(
       completeExistingSlackFile(db, args.client, row),
       signal,
     );
     signal.throwIfAborted();
     if (!reconciliation.ok) {
-      return await markDeliveryFailed(db, row, {
+      return await recordPreparationFailure({
         code: "slack-request-failed",
         message: providerFailureMessage(reconciliation.error),
         retryable: true,
@@ -341,7 +369,7 @@ export const prepareCanonicalSlackDelivery$ = command(
       return reconciled;
     }
     if (!row.filename || row.sizeBytes === null) {
-      return await markDeliveryFailed(db, row, {
+      return await recordPreparationFailure({
         code: "asset-metadata-missing",
         message: "Canonical asset metadata is incomplete",
         retryable: false,
@@ -357,7 +385,7 @@ export const prepareCanonicalSlackDelivery$ = command(
     );
     signal.throwIfAborted();
     if (!preparation.ok) {
-      return await markDeliveryFailed(db, row, {
+      return await recordPreparationFailure({
         code: "slack-request-failed",
         message: providerFailureMessage(preparation.error),
         retryable: true,
@@ -365,7 +393,7 @@ export const prepareCanonicalSlackDelivery$ = command(
     }
     const prepared = preparation.value;
     if (prepared.kind === "slack_error") {
-      return await markDeliveryFailed(db, row, {
+      return await recordPreparationFailure({
         code: prepared.error,
         message: `Slack delivery failed: ${prepared.error}`,
         retryable: true,
