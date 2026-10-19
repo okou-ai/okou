@@ -1535,6 +1535,19 @@ describe("CHAT-02: generation templates and attachments", () => {
         id: "document-template:department-newsletter",
         source:
           "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/template/main.typ",
+        supportingSources: [
+          "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/lib.typ",
+          "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/typst.toml",
+        ],
+      },
+      {
+        id: "document-template:sidebar-report",
+        source:
+          "RelaxedJS/ReLaXed-examples/378a2d4f34ffe8ffd61e956e02a50b15564fc9f6/examples/report/report.pug",
+        supportingSources: [
+          "RelaxedJS/ReLaXed-examples/378a2d4f34ffe8ffd61e956e02a50b15564fc9f6/examples/report/report.scss",
+          "RelaxedJS/ReLaXed-examples/378a2d4f34ffe8ffd61e956e02a50b15564fc9f6/examples/report/report.pdf",
+        ],
       },
     ];
     const prompt = "Prepare these documents";
@@ -1584,9 +1597,18 @@ describe("CHAT-02: generation templates and attachments", () => {
           "",
           `Selected document template: ${item.title}`,
           `- Public upstream original (fixed commit/path): https://raw.githubusercontent.com/${reference.source}`,
+          ...(reference.supportingSources
+            ? [
+                `- Supporting upstream files (same fixed commit): ${reference.supportingSources
+                  .map((source) => {
+                    return `https://raw.githubusercontent.com/${source}`;
+                  })
+                  .join(", ")}`,
+              ]
+            : []),
           `- Layout previews: ${item.previewPages.join(", ")}`,
-          "- Read the original file and its references at that fixed commit. Use the source for content and structure, and the previews for layout.",
-          "- Replace sample content with the user's facts; leave missing business details as placeholders.",
+          "- Read the complete upstream template, including its supporting files and referenced content, styles, fonts, and assets at their pinned versions. Preserve its content organization and visual design together: typography, color, columns, tables, charts, and callouts. Use the previews to check fidelity to the original.",
+          "- Replace sample content, branding, and payment links with the user's facts; leave missing details as placeholders. Recalculate totals and keep dates, units, identifiers, and repeated values consistent.",
         ].join("\n");
       }),
     );

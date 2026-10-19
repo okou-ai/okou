@@ -84,7 +84,7 @@ test("Document category and scroll survive preview", async () => {
   ]);
   click(control(dialog, "tab", "Document"));
   expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(45);
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
   click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const grid = dialog.querySelector<HTMLElement>(
@@ -122,19 +122,19 @@ test("Document category and scroll survive preview", async () => {
 
 test("Using a document template preserves the draft until the user sends it", async () => {
   const { user, capture } = await setup();
-  await fill(await findComposerEditor(), "Prepare the invoice for my client.");
+  await fill(await findComposerEditor(), "Explain this proposal to my client.");
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
-  click(control(dialog, "button", "Use Simple invoice"));
+  click(control(dialog, "button", "Use Sidebar report"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   const preservedEditor = await findComposerEditor();
   expect(preservedEditor).toHaveTextContent(
-    "Prepare the invoice for my client.",
+    "Explain this proposal to my client.",
   );
   expect(composerInlineTemplates()).toHaveLength(1);
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Simple invoice");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Sidebar report");
   expect(
     control(document.body, "button", "Remove Document"),
   ).toBeInTheDocument();
@@ -146,10 +146,10 @@ test("Using a document template preserves the draft until the user sends it", as
   });
   expect(capture.sentMessages[0]?.parts).toContainEqual({
     type: "template",
-    titleSnapshot: "Simple invoice",
+    titleSnapshot: "Sidebar report",
     template: {
       type: "document",
-      selection: { documentTemplateId: "document-template:simple-invoice" },
+      selection: { documentTemplateId: "document-template:sidebar-report" },
     },
   });
 });
@@ -191,7 +191,7 @@ test("Document purposes are directly selectable without losing the draft or sele
   click(control(shelf, "button", "Use template Itemized invoice"));
   expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
   click(control(categories, "button", "Reports"));
-  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(5);
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(6);
   expect(
     control(shelf, "button", "Use template Two-column report"),
   ).toBeInTheDocument();
@@ -204,7 +204,7 @@ test("Document purposes are directly selectable without losing the draft or sele
     "aria-pressed",
     "true",
   );
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(5);
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(6);
   await user.keyboard("{Escape}");
   click(control(document.body, "button", "Remove Document"));
   await screen.findByRole("group", { name: "Choose a task" });
