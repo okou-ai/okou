@@ -38,6 +38,7 @@ const SESSION_ID = "mcp-session-test";
 type ProtocolEra = "modern" | "legacy";
 
 interface SeenMcpRequest {
+  readonly url: string;
   readonly httpMethod: string;
   readonly method?: string;
   readonly params?: RequestParams;
@@ -92,7 +93,7 @@ function stubMcpServer(options: McpServerOptions): SeenMcpRequest[] {
     http.all(MCP_ENDPOINT, async ({ request }) => {
       const intent = request.headers.get("x-okou-connector-intent");
       if (request.method === "DELETE") {
-        seen.push({ httpMethod: request.method, intent });
+        seen.push({ url: request.url, httpMethod: request.method, intent });
         if (options.deleteResponse) {
           return options.deleteResponse(request);
         }
@@ -102,6 +103,7 @@ function stubMcpServer(options: McpServerOptions): SeenMcpRequest[] {
       const message: unknown = await request.json();
       if (isJSONRPCNotification(message)) {
         seen.push({
+          url: request.url,
           httpMethod: request.method,
           method: message.method,
           params: message.params,
@@ -121,6 +123,7 @@ function stubMcpServer(options: McpServerOptions): SeenMcpRequest[] {
       }
 
       seen.push({
+        url: request.url,
         httpMethod: request.method,
         method: message.method,
         params: message.params,
@@ -384,6 +387,55 @@ describe("okou mcp command", () => {
           return request.intent === CONNECTOR_ID;
         }),
       ).toBe(true);
+    },
+  );
+
+  it.each(["modern", "legacy"] as const)(
+    "preserves the selected connector's endpoint query and intent with %s MCP",
+    async (era) => {
+      const otherId = "55555555-5555-4555-8555-555555555555";
+      const endpoint = `${MCP_ENDPOINT}?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f`;
+      server.use(
+        stubRunMcpConnectors([
+          runMcpConnector({
+            endpoint: `${MCP_ENDPOINT}?hl=de`,
+            slug: "_query-a",
+          }),
+          runMcpConnector({
+            endpoint,
+            slug: "_query-b",
+            target: { kind: "custom", customConnectorId: otherId },
+          }),
+        ]),
+      );
+      const seen = stubMcpServer({ era });
+
+      await mcpCommand.parseAsync([
+        "node",
+        "okou",
+        "list-tools",
+        "_query-b",
+        "--json",
+      ]);
+
+      expect(consoleLog).toHaveBeenCalledWith(
+        JSON.stringify({ connectorSlug: "_query-b", tools: [] }),
+      );
+      expect(seen.length).toBeGreaterThan(0);
+      expect(
+        new Set(
+          seen.map((request) => {
+            return request.url;
+          }),
+        ),
+      ).toStrictEqual(new Set([endpoint]));
+      expect(
+        new Set(
+          seen.map((request) => {
+            return request.intent;
+          }),
+        ),
+      ).toStrictEqual(new Set([otherId]));
     },
   );
 
