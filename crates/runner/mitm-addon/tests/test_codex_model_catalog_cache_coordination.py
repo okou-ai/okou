@@ -165,10 +165,11 @@ async def test_stream_overflow_releases_singleflight_owner_before_response_end(r
 
     overflow_chunk = b'{"models":[],"padding":"' + b"x" * catalog_cache.MAX_ENTRY_BYTES
     assert stream(overflow_chunk) == overflow_chunk
-    assert stream(b'"}') == b'"}'
 
     assert await asyncio.wait_for(replacement_prepare, timeout=0.1)
     assert replacement.response is None
+    await mitm_addon.responseinspection(owner)
+    assert stream(b'"}') == b'"}'
     owner_telemetry: dict[str, object] = {}
     catalog_cache.add_network_log_fields(owner, owner_telemetry)
     validation_latency = owner_telemetry.pop("model_catalog_cache_validation_latency_ms")

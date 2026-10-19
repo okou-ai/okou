@@ -1,6 +1,6 @@
 """Shared cross-provider model JSON response usage inspection."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from typing import Literal, NamedTuple, assert_never
 
@@ -15,6 +15,7 @@ ModelUsageProtocol = Literal[
 ]
 
 ModelJsonUsageResult = tuple[dict | None, str | None]
+_JSON_INSPECTION_STEP_BYTES = 4096
 
 
 class _ModelJsonUsageRegistration(NamedTuple):
@@ -69,7 +70,8 @@ class ModelJsonResponseInspector:
 
     Feed chunks from one response with :meth:`feed`, use :meth:`accepts_more_input` to determine
     whether the parser can accept another chunk, and call :meth:`finish` exactly once after all
-    input has been supplied.
+    input has been supplied. Cooperative owners can exhaust :meth:`feed_steps` instead of
+    synchronously feeding a whole chunk.
     """
 
     def __init__(self, protocol: ModelUsageProtocol) -> None:
@@ -89,6 +91,18 @@ class ModelJsonResponseInspector:
         permanent parse or configured-bound error and later chunks cannot recover it.
         """
         self._extractor.feed(chunk)
+
+    def feed_steps(self, chunk: bytes) -> Generator[None, None, None]:
+        """Inspect bounded input slices without resetting this document's budget.
+
+        Exhaust the iterator before feeding another chunk or finishing the document.
+        Each step consumes at most 4 KiB, including escaped or discarded text.
+        """
+        for offset in range(0, len(chunk), _JSON_INSPECTION_STEP_BYTES):
+            if not self.accepts_more_input():
+                return
+            self.feed(chunk[offset : offset + _JSON_INSPECTION_STEP_BYTES])
+            yield
 
     def accepts_more_input(self) -> bool:
         """Return whether the bounded parser can accept another response chunk.
