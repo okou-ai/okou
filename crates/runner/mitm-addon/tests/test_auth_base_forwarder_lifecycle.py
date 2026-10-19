@@ -674,7 +674,7 @@ class TestForwardRequestAsyncWrapper:
                     if stop == "caller-cancel":
                         task.cancel()
                         with pytest.raises(asyncio.CancelledError):
-                            await task
+                            await asyncio.wait_for(task, timeout=2)
                         assert forwarder.forward_request_admission_state_for_tests() == (1, 2)
                     else:
                         with pytest.raises(forwarder.AuthBaseForwardingDeadlineExceededError):
