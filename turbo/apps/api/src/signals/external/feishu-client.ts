@@ -569,56 +569,11 @@ export const downloadFeishuMessageResource$ = command(
   },
 );
 
-export async function uploadFeishuFile(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly filename: string;
-    readonly contentType: string;
-    readonly content: Buffer;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const uploadContextArgs = args;
-  const uploadContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await uploadContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, uploadContextArgs.installationId))
-      .limit(1);
-    uploadContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await uploadContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      uploadContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await uploadContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(eq(feishuOrgInstallations.id, uploadContextArgs.installationId));
-      uploadContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
+export function feishuFileUploadForm(args: {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly content: Buffer;
+}): FormData {
   const form = new FormData();
   form.set("file_type", "stream");
   form.set("file_name", args.filename);
@@ -627,15 +582,14 @@ export async function uploadFeishuFile(
     new Blob([Uint8Array.from(args.content)], { type: args.contentType }),
     args.filename,
   );
-  const response = await fetch(`${apiOrigin}/open-apis/im/v1/files`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    body: form,
-    signal,
-  });
-  const parsed = feishuFileResponseSchema.parse(
-    await readJson(response, providerName),
-  );
+  return form;
+}
+
+export function parseFeishuFileUploadResponse(
+  value: unknown,
+  providerName: string,
+): string {
+  const parsed = feishuFileResponseSchema.parse(value);
   if (parsed.code !== 0) {
     throw new FeishuApiError(
       parsed.msg ?? `${providerName} file upload failed`,
