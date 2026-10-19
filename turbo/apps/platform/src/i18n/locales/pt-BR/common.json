@@ -5272,6 +5272,16 @@
     },
     "wallet": {
       "actionError": "Não foi possível concluir a ação. Verifique sua conexão, permita pop-ups e tente novamente.",
+      "cards": {
+        "default": "Padrão",
+        "description": "Adicione um cartão ou altere o padrão na sua carteira Link.",
+        "empty": "Ainda não há cartões na sua carteira Link",
+        "expires": "Validade {{date}}",
+        "loadError": "Não foi possível carregar seus cartões. Tente novamente.",
+        "loading": "Carregando cartões",
+        "manage": "Gerenciar cartões",
+        "title": "Seus cartões no Link"
+      },
       "connect": "Conectar",
       "description": "Seus agentes podem solicitar compras e consultar transações do Link. Você aprova cada compra.",
       "disconnect": "Desconectar",

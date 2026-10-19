@@ -5185,6 +5185,16 @@
     },
     "wallet": {
       "actionError": "操作未完成。请检查网络、允许弹出窗口后重试。",
+      "cards": {
+        "default": "默认",
+        "description": "在 Link 钱包中添加卡片或更改默认卡片。",
+        "empty": "你的 Link 钱包中暂无卡片",
+        "expires": "有效期至 {{date}}",
+        "loadError": "无法加载卡片，请重试。",
+        "loading": "正在加载卡片",
+        "manage": "管理卡片",
+        "title": "你的 Link 卡片"
+      },
       "connect": "连接",
       "description": "让智能体发起购买请求并查看 Link 交易。每笔购买均由你批准。",
       "disconnect": "断开连接",

@@ -496,8 +496,7 @@ function SettingsDialog({
               className={cn(
                 "flex-1 overflow-y-auto px-4 sm:px-10 pt-4 sm:pt-6 pb-10 [scrollbar-gutter:stable]",
                 resolvedSection === "model" && "pt-6 sm:pt-8",
-                (resolvedSection === "wallet" ||
-                  resolvedSection === "invoices" ||
+                (resolvedSection === "invoices" ||
                   resolvedSection === "people") &&
                   "flex min-h-0 flex-col overflow-hidden",
               )}

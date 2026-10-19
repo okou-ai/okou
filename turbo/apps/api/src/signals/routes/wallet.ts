@@ -238,6 +238,36 @@ const userActivity$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: walletUserContract.activity.responses[200].parse(result.value),
   };
 });
+const userPaymentMethods$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const enabled = await settle(get(walletEnabled$), signal);
+    signal.throwIfAborted();
+    if (!enabled.ok) {
+      return walletError(enabled.error);
+    }
+    const { orgId, userId } = get(organizationAuthContext$);
+    const result = await settle(
+      set(
+        readWallet$,
+        { orgId, userId },
+        { operation: "payment_methods_read" },
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      return walletError(result.error);
+    }
+    return {
+      status: 200 as const,
+      body: walletUserContract.paymentMethods.responses[200].parse(
+        result.value,
+      ),
+    };
+  },
+);
 const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const enabled = await settle(get(walletEnabled$), signal);
   signal.throwIfAborted();
@@ -512,6 +542,10 @@ const userAuth = {
 } as const;
 
 export const walletRoutes: readonly RouteEntry[] = [
+  {
+    route: walletUserContract.paymentMethods,
+    handler: authRoute(userAuth, userPaymentMethods$),
+  },
   {
     route: walletUserContract.activity,
     handler: authRoute(userAuth, userActivity$),

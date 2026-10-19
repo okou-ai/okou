@@ -10,7 +10,7 @@ import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { generateRouterPath } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
-import { withCleanup } from "../../utils.ts";
+import { onRef, withCleanup } from "../../utils.ts";
 
 export const walletSettingsEnabled$ = computed((get) => {
   const features = get(featureSwitch$);
@@ -21,6 +21,48 @@ export const walletSettingsEnabled$ = computed((get) => {
 });
 
 const version$ = state(0);
+const cardsVersion$ = state(0);
+export const walletCards$ = computed(async (get) => {
+  get(cardsVersion$);
+  if (!get(walletSettingsEnabled$)) {
+    return [];
+  }
+  const connection = await get(walletConnection$);
+  if (
+    !connection.connected ||
+    connection.revocationPending ||
+    !connection.authorization?.capabilities.paymentMethods
+  ) {
+    return [];
+  }
+  const result = await accept(
+    get(apiClient$)(walletUserContract).paymentMethods({ query: {} }),
+    [200],
+  );
+  return result.body.data
+    .filter((method) => {
+      return method.type === "card";
+    })
+    .sort((a, b) => {
+      return Number(b.isDefault) - Number(a.isDefault);
+    });
+});
+export const refreshWalletCards$ = command(({ set }) => {
+  set(cardsVersion$, (version) => {
+    return version + 1;
+  });
+});
+export const observeWalletCards$ = onRef(
+  command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        set(refreshWalletCards$);
+      }
+    };
+    window.addEventListener("focus", refresh, { signal });
+    document.addEventListener("visibilitychange", refresh, { signal });
+  }),
+);
 const transactionsVersion$ = state(0);
 export const walletTransactions$ = computed(async (get) => {
   get(transactionsVersion$);

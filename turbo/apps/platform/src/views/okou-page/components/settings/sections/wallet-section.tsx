@@ -23,6 +23,7 @@ import { detach, Reason } from "../../../../../signals/utils.ts";
 import { ConnectedIndicator } from "../../connected-indicator.tsx";
 import { ConnectorEntryStatus } from "../connector-entry-card.tsx";
 import { WalletTransactions } from "../wallet-transactions.tsx";
+import { WalletCards } from "../wallet-cards.tsx";
 
 function WalletConnectionNotice({
   status,
@@ -173,7 +174,7 @@ export function WalletSection() {
     }
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <Card
         role="region"
         aria-label={t(($) => {
@@ -254,6 +255,9 @@ export function WalletSection() {
           </p>
         ) : null}
       </Card>
+      {status?.connected &&
+        !status.revocationPending &&
+        status.authorization?.capabilities.paymentMethods && <WalletCards />}
       <WalletTransactions />
     </div>
   );

@@ -5197,6 +5197,16 @@
     },
     "wallet": {
       "actionError": "Couldn’t complete the action. Check your connection, allow pop-ups, and try again.",
+      "cards": {
+        "default": "Default",
+        "description": "Add a card or change your default in your Link wallet.",
+        "empty": "No cards in your Link wallet yet",
+        "expires": "Expires {{date}}",
+        "loadError": "Couldn’t load your cards. Try again.",
+        "loading": "Loading cards",
+        "manage": "Manage cards",
+        "title": "Your cards in Link"
+      },
       "connect": "Connect",
       "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
