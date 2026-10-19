@@ -127,7 +127,7 @@ function RelationList<T>({
 }
 
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   return enabled ? <Origin signals={thread.relations} /> : null;
 }
 
@@ -518,7 +518,7 @@ export function ChatRelationships({
 }: {
   readonly thread: ChatPanelSignals;
 }) {
-  return useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations] ? (
+  return useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] ? (
     <RelationshipsInner thread={thread} />
   ) : null;
 }
