@@ -129,7 +129,7 @@ import {
   type DiscordReplyRequest,
 } from "./internal-discord-chat-run-callback.service";
 import {
-  clearCanonicalFeishuThinkingReaction,
+  clearCanonicalFeishuThinkingReaction$,
   deliverFeishuChatAdmissionFailure,
   dispatchFeishuChatDeliveryOnce,
 } from "./internal-feishu-chat-run-callback.service";
@@ -2614,11 +2614,7 @@ const deliverQueuedAdmissionFailureToChannel$ = command(
       return;
     }
     await tapError(
-      clearCanonicalFeishuThinkingReaction(
-        set(writeDb$),
-        channel.target,
-        signal,
-      ),
+      set(clearCanonicalFeishuThinkingReaction$, channel.target, signal),
       (error) => {
         log.warn(
           `Failed to clear ${channel.kind} admission thinking reaction`,
@@ -2936,27 +2932,29 @@ const clearSlackThreadStatusAfterTerminalCallback$ = command(
   },
 );
 
-async function clearFeishuThinkingAfterTerminalCallback(
-  args: {
-    readonly db: Db;
-    readonly feishuDelivery: FeishuDeliveryTarget | undefined;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.feishuDelivery) {
-    return;
-  }
-  await tapError(
-    clearCanonicalFeishuThinkingReaction(args.db, args.feishuDelivery, signal),
-    (error) => {
-      log.warn("Failed to clear canonical Feishu thinking reaction", {
-        messageId: args.feishuDelivery?.messageId,
-        error,
-      });
+const clearFeishuThinkingAfterTerminalCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly feishuDelivery: FeishuDeliveryTarget | undefined;
     },
-  );
-  signal.throwIfAborted();
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!args.feishuDelivery) {
+      return;
+    }
+    await tapError(
+      set(clearCanonicalFeishuThinkingReaction$, args.feishuDelivery, signal),
+      (error) => {
+        log.warn("Failed to clear canonical Feishu thinking reaction", {
+          messageId: args.feishuDelivery?.messageId,
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
+  },
+);
 
 const tryClearTerminalIntegrationStatus$ = command(
   async (
@@ -3185,7 +3183,6 @@ const clearTerminalIntegrationStatus$ = command(
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     if (args.payload.wechatDelivery) {
       await set(
         reconcileWechatThreadTyping$,
@@ -3201,9 +3198,9 @@ const clearTerminalIntegrationStatus$ = command(
       },
       signal,
     );
-    await clearFeishuThinkingAfterTerminalCallback(
+    await set(
+      clearFeishuThinkingAfterTerminalCallback$,
       {
-        db,
         feishuDelivery: args.payload.feishuDelivery,
       },
       signal,
