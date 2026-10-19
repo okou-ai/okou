@@ -18,6 +18,8 @@ use runner_provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
 
+mod terminal_reuse;
+
 const NON_SELECTED_RUNNER_ID: u128 = 1;
 const FINALIZING_TEST_PREFERENCE_LIFETIME: Duration = Duration::from_secs(30);
 
@@ -2744,7 +2746,11 @@ async fn cancelled_finalizing_activation_restores_exact_over_refilled_blank() {
 
 #[tokio::test]
 async fn competing_finalizing_successors_reserve_exact_generation_once() {
-    let (config, env) = mock_run_config(test_profiles(), 4, 8192, 2);
+    let running = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(running.clone());
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 8, 8192, 2, Arc::clone(&overrides));
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:competing-finalizing-successors";
     let history_generation_run_id = RunId::new_v4();
@@ -2775,18 +2781,36 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
         wait_discover_entered(&env, Duration::from_secs(5)).await;
     }
 
-    let exact_sandbox_id = seed_idle_pool_with_history_generation(
+    let exact_sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,
         &budget,
-        reuse_key,
-        "vm0/default",
-        2,
-        4096,
-        history_generation_run_id,
+        &overrides,
+        SpeculativeIdleSeedSpec {
+            reuse_key,
+            profile_name: "vm0/default",
+            vcpu: 2,
+            memory_mb: 4096,
+            history_generation_run_id,
+            guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
+            timing: None,
+        },
     )
     .await;
+    assert!(
+        budget.can_afford(2, 4096),
+        "both successors must be able to run concurrently"
+    );
     assert!(predecessor_reuse.publish_exact_sandbox());
 
+    // Hold both executions open so the first cannot republish its sandbox
+    // as a new generic generation before the competing claim selects a resource.
+    running
+        .wait_entered(2, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(overrides.create_configs().len(), 2);
+    running.release_one();
+    running.release_one();
     let first = env
         .handle
         .wait_completion(first_run_id, Duration::from_secs(5))

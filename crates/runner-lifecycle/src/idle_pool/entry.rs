@@ -1090,6 +1090,10 @@ impl ReservedIdleSandbox {
         &self.metadata().guest_timezone_intent
     }
 
+    pub fn history_generation_run_id(&self) -> Option<RunId> {
+        self.metadata().history_generation_run_id
+    }
+
     pub fn validate_home_promotion_identity(
         &self,
         cache: &HomeImageCache,

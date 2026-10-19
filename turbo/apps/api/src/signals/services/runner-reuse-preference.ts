@@ -13,6 +13,7 @@ import {
   eq,
   exists,
   gt,
+  inArray,
   isNotNull,
   isNull,
   or,
@@ -32,7 +33,7 @@ const RUNNER_EXACT_HISTORY_PROTECTION_MS = Math.min(
   1000,
   RUNNER_REUSE_PROTECTION_MS,
 );
-// A short bridge covers a completed source before active-producer inventory
+// A short bridge covers a terminal source before active-producer inventory
 // arrives. Only current producer proof earns the longer telemetry-close budget.
 const RUNNER_FINALIZING_COMPLETION_BRIDGE_MS = 1500;
 const RUNNER_REUSE_HOLDER_FRESH_MS = 30_000;
@@ -130,7 +131,7 @@ function finalizingPredecessorCondition(args: {
   // process is still finalizing. Poll and Ably recipients enforce static
   // profile support before admitting the advisory preference.
   return and(
-    eq(finalizingSourceRun.status, "completed"),
+    inArray(finalizingSourceRun.status, ["completed", "cancelled", "failed"]),
     or(
       gt(finalizingSourceRun.completedAt, args.completedAfter),
       args.activeProducer,
