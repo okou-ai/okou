@@ -179,9 +179,10 @@ function StepOptions({
         type="button"
         disabled={disabled}
         className={cn(
-          "flex size-14 shrink-0 items-center justify-center rounded-full transition-all hover:scale-110 disabled:opacity-30 disabled:hover:scale-100",
+          "relative flex size-14 shrink-0 items-center justify-center rounded-full outline-hidden transition-colors hover:bg-state-hover disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-ring",
+          "after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border-(length:--border-width-emphasis) after:transition-colors",
           "motion-safe:animate-avatar-option-appear",
-          isPicked && "scale-110 ring-2 ring-[#ed4e01] ring-offset-2",
+          isPicked ? "after:border-primary" : "after:border-transparent",
         )}
         style={{ animationDelay: `${index * 0.05}s` }}
         onClick={() => {
@@ -410,7 +411,7 @@ function AvatarMakerDialogBody({
           <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
         </div>
         <StepNavigator />
-        <div className="h-48 w-full overflow-y-auto px-1 py-1">
+        <div className="h-48 w-full overflow-y-auto p-2">
           <div className="flex min-h-full flex-wrap content-center justify-center gap-3">
             <StepOptions
               step={step}

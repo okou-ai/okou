@@ -98,7 +98,15 @@ export function AvatarSvgPreview({
         {behind.map(layer)}
         <div
           {...AVATAR_HEAD_SLOT}
-          className="absolute inset-0"
+          // The final head layer is the expression artwork. A fine light edge
+          // separates its ink from darker skin without recoloring the face,
+          // hair, blush, or teeth. Keep the artwork color stable in both themes.
+          className={cn(
+            "absolute inset-0",
+            !isLegacyAvatarSvgConfig(config) &&
+              (config.skin === "brown" || config.skin === "deep") &&
+              "[&>img:last-child]:drop-shadow-[0_0_0.5px_#f8f5f3]",
+          )}
           style={{
             transform: `translateY(${headOffsetY}%)`,
           }}
