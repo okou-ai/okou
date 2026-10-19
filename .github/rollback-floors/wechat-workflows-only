@@ -1,0 +1,6 @@
+The first-parent main commit adding this marker is the minimum API rollback
+target for the Workflows-only WeChat receiver. Earlier APIs read the retired
+workflow_receiver column and may expose the legacy SQL-cursor poller. Receiver
+cursors and replay batches belong to the existing encrypted Durable Objects.
+Recover with a compatible artifact or roll forward; do not clear receiver state
+or restore a legacy gateway artifact. Gateway deployments use current main.

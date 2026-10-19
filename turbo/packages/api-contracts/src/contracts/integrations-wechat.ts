@@ -97,23 +97,9 @@ export const integrationsWechatContract = c.router({
     summary: "Disconnect WeChat",
   },
 });
-export const wechatGatewayContract = c.router({
-  poll: {
-    method: "POST",
-    path: "/api/internal/wechat/poll",
-    headers: z.object({
-      "x-wechat-timestamp": z.string(),
-      "x-wechat-signature": z.string(),
-    }),
-    body: z.object({ connectionId: z.uuid() }),
-    responses: {
-      200: z.object({ active: z.boolean() }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Receive WeChat messages from the authenticated poller",
-  },
+const receiverHeadersSchema = z.object({
+  "x-wechat-timestamp": z.string(),
+  "x-wechat-signature": z.string(),
 });
 export type WechatStatus = z.infer<typeof wechatStatusSchema>;
 export type WechatAttempt = z.infer<typeof wechatAttemptSchema>;
@@ -124,7 +110,7 @@ export const wechatReceiverContract = c.router({
   bootstrap: {
     method: "POST",
     path: "/api/internal/wechat/receiver",
-    headers: wechatGatewayContract.poll.headers,
+    headers: receiverHeadersSchema,
     body: z.object({ connectionId: z.uuid(), generation: z.uuid().optional() }),
     responses: {
       200: z.discriminatedUnion("active", [
@@ -145,12 +131,12 @@ export const wechatReceiverContract = c.router({
       ]),
       ...errors,
     },
-    summary: "Transfer and renew a WeChat receiver binding",
+    summary: "Bootstrap and renew a WeChat receiver binding",
   },
   deliver: {
     method: "POST",
     path: "/api/internal/wechat/deliver",
-    headers: wechatGatewayContract.poll.headers,
+    headers: receiverHeadersSchema,
     body: z.object({
       connectionId: z.uuid(),
       generation: z.uuid(),
@@ -169,7 +155,7 @@ export const wechatReceiverContract = c.router({
   expire: {
     method: "POST",
     path: "/api/internal/wechat/expire",
-    headers: wechatGatewayContract.poll.headers,
+    headers: receiverHeadersSchema,
     body: z.object({ connectionId: z.uuid(), generation: z.uuid() }),
     responses: {
       200: z.object({ active: z.boolean(), refresh: z.boolean().optional() }),

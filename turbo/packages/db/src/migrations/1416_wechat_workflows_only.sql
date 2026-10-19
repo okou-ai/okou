@@ -1,0 +1,1 @@
+ALTER TABLE "wechat_connections" DROP COLUMN "workflow_receiver";

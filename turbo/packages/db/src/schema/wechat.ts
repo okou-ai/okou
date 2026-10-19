@@ -1,6 +1,5 @@
 import {
   bigserial,
-  boolean,
   check,
   index,
   jsonb,
@@ -30,7 +29,6 @@ export const wechatConnections = pgTable(
       .$type<"active" | "reconnect_required" | "disconnected">()
       .notNull()
       .default("active"),
-    workflowReceiver: boolean("workflow_receiver").notNull().default(false),
     updatesCursor: text("updates_cursor").notNull().default(""),
     // A fetched batch and its cursor are saved together before dispatch. A retry
     // finishes this encrypted batch before fetching more messages.

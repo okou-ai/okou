@@ -5,7 +5,6 @@ export interface Env {
   readonly WECHAT_RECEIVER: DurableObjectNamespace<WechatReceiver>;
   readonly WECHAT_POLL_WORKFLOW: Workflow<ReceiverParams>;
   readonly WECHAT_GATEWAY_ENABLED: string;
-  readonly WECHAT_WORKFLOWS_ENABLED: string;
   readonly WECHAT_GATEWAY_CONTROL_SECRET: string;
   readonly WECHAT_GATEWAY_SECRET: string;
   readonly WECHAT_RECEIVER_ENCRYPTION_KEY: string;
