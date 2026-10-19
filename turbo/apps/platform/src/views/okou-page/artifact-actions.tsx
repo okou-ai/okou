@@ -653,12 +653,17 @@ function GoogleDriveMenuItem({
   }
 
   const imported = availability.googleImport;
-  const completed: GoogleDriveCompletedAction | null =
-    target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]
-      ? imported.webViewLink
-        ? { kind: "open", target, url: imported.webViewLink }
-        : { kind: "synced" }
-      : googleDriveCompletedAction(syncTarget, target);
+  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
+    if (!imported.webViewLink) {
+      throw new Error("Converted Google file is missing its editor URL");
+    }
+    return (
+      <GoogleDriveCompletedMenuItem
+        action={{ kind: "open", target, url: imported.webViewLink }}
+      />
+    );
+  }
+  const completed = googleDriveCompletedAction(syncTarget, target);
   if (completed) {
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
