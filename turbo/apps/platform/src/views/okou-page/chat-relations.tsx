@@ -28,7 +28,6 @@ import {
   ChatResourceSectionToggle,
   RESOURCE_PREVIEW_LIMIT,
 } from "./chat-resource-section.tsx";
-import { ChatResourcePagination } from "./chat-resource-pagination.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
@@ -308,25 +307,17 @@ function Messages({
           </Button>
         </div>
       ) : (
-        <>
-          <ul className="m-0 list-none p-0">
-            {data.data.items.map((message) => {
-              return (
-                <MessageRow
-                  key={message.id}
-                  message={message}
-                  unavailable={unavailable}
-                />
-              );
-            })}
-          </ul>
-          {data.data.nextCursor && (
-            <ChatResourcePagination
-              key={data.data.nextCursor.id}
-              pagination={list.pagination}
-            />
-          )}
-        </>
+        <ul className="m-0 list-none p-0">
+          {data.data.items.map((message) => {
+            return (
+              <MessageRow
+                key={message.id}
+                message={message}
+                unavailable={unavailable}
+              />
+            );
+          })}
+        </ul>
       )}
     </div>
   );
@@ -391,15 +382,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
                 );
               })}
           </ul>
-          {expanded && data.hasMore && (
-            <ChatResourcePagination
-              key={data.pageKey}
-              pagination={signals.chats.pagination}
-            />
-          )}
-          {(expanded ||
-            data.items.length > RESOURCE_PREVIEW_LIMIT ||
-            data.hasMore) && (
+          {data.items.length > RESOURCE_PREVIEW_LIMIT && (
             <ChatResourceSectionToggle
               expanded={expanded}
               controls={chatsId}

@@ -7,7 +7,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, lt, max, or, sql, sum } from "drizzle-orm";
+import { and, desc, eq, inArray, max, or, sql, sum } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 
@@ -15,37 +15,14 @@ interface RelationOwner {
   readonly orgId: string;
   readonly userId: string;
 }
-interface RelationPage extends RelationOwner {
+interface RelationQuery extends RelationOwner {
   readonly threadId: string;
-  readonly limit: number;
-  readonly before?: string;
-  readonly beforeId?: string;
 }
 function ownedRelations(owner: RelationOwner) {
   return and(
     eq(chatRelations.orgId, owner.orgId),
     eq(chatRelations.userId, owner.userId),
   );
-}
-function relationCursor(page: RelationPage) {
-  return page.before !== undefined && page.beforeId !== undefined
-    ? or(
-        lt(chatRelations.createdAt, new Date(page.before)),
-        and(
-          eq(chatRelations.createdAt, new Date(page.before)),
-          lt(chatRelations.id, page.beforeId),
-        ),
-      )
-    : undefined;
-}
-function nextCursor(
-  rows: readonly { readonly id: string; readonly createdAt: Date }[],
-  limit: number,
-) {
-  const last = rows[limit - 1];
-  return rows.length > limit && last
-    ? { id: last.id, createdAt: last.createdAt.toISOString() }
-    : null;
 }
 const relatedChats$ = command(
   async (
@@ -115,32 +92,29 @@ function relatedChat(
   );
 }
 export const createdChatRelations$ = command(
-  async ({ get, set }, page: RelationPage, signal: AbortSignal) => {
+  async ({ get, set }, query: RelationQuery, signal: AbortSignal) => {
     const rows = await get(db$)
       .select()
       .from(chatRelations)
       .where(
         and(
-          ownedRelations(page),
+          ownedRelations(query),
           eq(chatRelations.type, "created"),
-          eq(chatRelations.sourceChatThreadId, page.threadId),
-          relationCursor(page),
+          eq(chatRelations.sourceChatThreadId, query.threadId),
         ),
       )
-      .orderBy(desc(chatRelations.createdAt), desc(chatRelations.id))
-      .limit(page.limit + 1);
+      .orderBy(desc(chatRelations.createdAt), desc(chatRelations.id));
     signal.throwIfAborted();
-    const items = rows.slice(0, page.limit);
     const chats = await set(
       relatedChats$,
-      page,
-      items.map((row) => {
+      query,
+      rows.map((row) => {
         return row.targetChatThreadId;
       }),
       signal,
     );
     return {
-      items: items.map((row) => {
+      items: rows.map((row) => {
         return {
           ...relatedChat(chats, row.targetChatThreadId),
           id: row.id,
@@ -148,12 +122,11 @@ export const createdChatRelations$ = command(
           createdAt: row.createdAt.toISOString(),
         };
       }),
-      nextCursor: nextCursor(rows, page.limit),
     };
   },
 );
 export const chatCommunications$ = command(
-  async ({ get, set }, page: RelationPage, signal: AbortSignal) => {
+  async ({ get, set }, query: RelationQuery, signal: AbortSignal) => {
     const db = get(db$);
     // Each direction uses its owner/thread index; aggregate only this chat's message facts.
     const outgoing = db
@@ -166,9 +139,9 @@ export const chatCommunications$ = command(
       .from(chatRelations)
       .where(
         and(
-          ownedRelations(page),
+          ownedRelations(query),
           eq(chatRelations.type, "message"),
-          eq(chatRelations.sourceChatThreadId, page.threadId),
+          eq(chatRelations.sourceChatThreadId, query.threadId),
         ),
       );
     const incoming = db
@@ -181,9 +154,9 @@ export const chatCommunications$ = command(
       .from(chatRelations)
       .where(
         and(
-          ownedRelations(page),
+          ownedRelations(query),
           eq(chatRelations.type, "message"),
-          eq(chatRelations.targetChatThreadId, page.threadId),
+          eq(chatRelations.targetChatThreadId, query.threadId),
         ),
       );
     const messages = outgoing.unionAll(incoming).as("messages");
@@ -203,34 +176,21 @@ export const chatCommunications$ = command(
       .from(messages)
       .groupBy(messages.peerId)
       .as("peers");
-    const cursor =
-      page.before !== undefined && page.beforeId !== undefined
-        ? or(
-            lt(peers.createdAt, new Date(page.before)),
-            and(
-              eq(peers.createdAt, new Date(page.before)),
-              lt(peers.peerId, page.beforeId),
-            ),
-          )
-        : undefined;
     const rows = await db
       .select()
       .from(peers)
-      .where(cursor)
-      .orderBy(desc(peers.createdAt), desc(peers.peerId))
-      .limit(page.limit + 1);
+      .orderBy(desc(peers.createdAt), desc(peers.peerId));
     signal.throwIfAborted();
-    const items = rows.slice(0, page.limit);
     const chats = await set(
       relatedChats$,
-      page,
-      items.map((row) => {
+      query,
+      rows.map((row) => {
         return row.peerId;
       }),
       signal,
     );
     return {
-      items: items.map((row) => {
+      items: rows.map((row) => {
         return {
           ...relatedChat(chats, row.peerId),
           sentCount: row.sentCount,
@@ -238,17 +198,16 @@ export const chatCommunications$ = command(
           lastMessageAt: row.createdAt.toISOString(),
         };
       }),
-      nextCursor: nextCursor(
-        rows.map((row) => {
-          return { id: row.peerId, createdAt: row.createdAt };
-        }),
-        page.limit,
-      ),
     };
   },
 );
 export const chatRelationMessages$ = command(
-  async ({ get }, page: RelationPage, peerId: string, signal: AbortSignal) => {
+  async (
+    { get },
+    query: RelationQuery,
+    peerId: string,
+    signal: AbortSignal,
+  ) => {
     const rows = await get(db$)
       .select({ relation: chatRelations, payload: chatEvents.payload })
       .from(chatRelations)
@@ -261,33 +220,31 @@ export const chatRelationMessages$ = command(
       )
       .where(
         and(
-          ownedRelations(page),
+          ownedRelations(query),
           eq(chatRelations.type, "message"),
-          relationCursor(page),
           or(
             and(
-              eq(chatRelations.sourceChatThreadId, page.threadId),
+              eq(chatRelations.sourceChatThreadId, query.threadId),
               eq(chatRelations.targetChatThreadId, peerId),
             ),
             and(
-              eq(chatRelations.targetChatThreadId, page.threadId),
+              eq(chatRelations.targetChatThreadId, query.threadId),
               eq(chatRelations.sourceChatThreadId, peerId),
             ),
           ),
         ),
       )
-      .orderBy(desc(chatRelations.createdAt), desc(chatRelations.id))
-      .limit(page.limit + 1);
+      .orderBy(desc(chatRelations.createdAt), desc(chatRelations.id));
     signal.throwIfAborted();
     return {
-      items: rows.slice(0, page.limit).map(({ relation, payload }) => {
+      items: rows.map(({ relation, payload }) => {
         if (relation.messageEventId === null) {
           throw new Error("Message relation is missing its accepted event");
         }
         return {
           id: relation.id,
           direction:
-            relation.sourceChatThreadId === page.threadId
+            relation.sourceChatThreadId === query.threadId
               ? ("sent" as const)
               : ("received" as const),
           sourceChatThreadId: relation.sourceChatThreadId,
@@ -299,12 +256,6 @@ export const chatRelationMessages$ = command(
           userMessage: payload?.userMessage ?? null,
         };
       }),
-      nextCursor: nextCursor(
-        rows.map((row) => {
-          return row.relation;
-        }),
-        page.limit,
-      ),
     };
   },
 );

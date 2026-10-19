@@ -341,11 +341,11 @@ export const apiAgentsHandlers = [
   }),
 
   mockApi(chatRelationsContract.children, ({ respond }) => {
-    return respond(200, { items: [], nextCursor: null });
+    return respond(200, { items: [] });
   }),
 
   mockApi(chatRelationsContract.communications, ({ respond }) => {
-    return respond(200, { items: [], nextCursor: null });
+    return respond(200, { items: [] });
   }),
 
   // GET /api/chat-threads/:id (thread detail)
