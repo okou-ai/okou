@@ -270,7 +270,7 @@ struct State {
     reports: VecDeque<Report>,
     latest_ssh: Option<Report>,
     latest_vnc: Option<Report>,
-    last_check: Option<Report>,
+    checks: VecDeque<check::Receipt>,
     evicted: u64,
 }
 
@@ -379,9 +379,24 @@ impl NativeWatch {
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub(crate) struct Selector {
+    #[serde(default)]
+    pub(crate) checks: bool,
     pub(crate) connection_id: Option<Uuid>,
     pub(crate) attempt_id: Option<Uuid>,
     pub(crate) session_id: Option<Uuid>,
+}
+
+impl Selector {
+    fn matches(&self, protocol: Protocol, report: &Report) -> bool {
+        report.protocol == protocol
+            && self
+                .connection_id
+                .is_none_or(|id| report.connection_id == id)
+            && self.attempt_id.is_none_or(|id| report.attempt_id == id)
+            && self
+                .session_id
+                .is_none_or(|id| report.session_id == Some(id))
+    }
 }
 
 impl Handle {
@@ -595,22 +610,12 @@ impl Handle {
         {
             return latest.clone();
         }
-        let matches = |r: &&Report| {
-            r.protocol == protocol
-                && selector
-                    .connection_id
-                    .is_none_or(|id| r.connection_id == id)
-                && selector.attempt_id.is_none_or(|id| r.attempt_id == id)
-                && selector
-                    .session_id
-                    .is_none_or(|id| r.session_id == Some(id))
-        };
         state
             .reports
             .iter()
             .rev()
             .chain(latest.iter())
-            .find(matches)
+            .find(|report| selector.matches(protocol, report))
             .cloned()
     }
 }

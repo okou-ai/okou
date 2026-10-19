@@ -118,7 +118,20 @@ and `okou vnc diagnose`, including `--attempt-id`, `--session-id` and `--json`.
 One passive request returns `status` and a bounded Runner-authored `message`.
 These non-GA query formats do not retain old report-format decoders.
 
-`found` explains one matching failure. `no_failure` means none was recorded
+`--checks` explicitly selects completed active-check receipts instead of failures
+(RPC: optional boolean `checks`, default false). The same protocol and intersecting
+connection/attempt/session selectors apply. Without an exact Attempt ID, selection
+returns the latest matching completed check and cannot establish that it was the
+original attempt whose response was lost. Exact missing/evicted attempts never
+fall back to another receipt. Empty check history returns `not_retained`.
+Found receipts preserve the original check time, passed/failed/blocked outcome,
+fresh/reused stages and check-owned cleanup explanation within 8 KiB. Their
+Runner observations do not confirm helper delivery, present connectivity or
+unobserved cleanup. Retrieval only reads metadata inventories and retained memory;
+it never opens a target, resolves credentials, acquires tickets or replays work.
+
+`found` explains one matching failure or explicitly selected check receipt.
+`no_failure` means no operational failure was recorded
 in this Run, not successful connectivity. `not_retained` never substitutes
 an unrelated incident. `authority_unavailable` discloses no retained details.
 Its opaque explanation distinguishes an authority API read denial (401/403),
@@ -184,14 +197,19 @@ Unconfirmed cleanup stays unknown; shared native resources remain Run-owned.
 
 Check-local evidence, including nested SSH/KDC/native failures, is isolated from
 operational pins, the operational detail ring and qualifying observation API
-writes. Only the latest check receipt is retained separately. Passing and failing
+writes. The latest 64 completed check receipts across SSH/VNC are retained in a
+separate completion-ordered ring, with no check pins. Messages are frozen before
+helper delivery, so a lost or rejected response can still have retained evidence.
+Unfinished checks may have no receipt; eviction, missing evidence or unavailable
+authority never proves connectivity or cleanup. Passing and failing
 checks cannot explain or erase a previous operational failure. No discovery,
 version fallback, automatic retry or business replay is performed.
 
 ## Source ownership and bounds
 
-The exact Run registration owns 64 detailed reports plus separately pinned
-latest SSH/VNC failures. Later successes do not clear pins. Removed sessions
+The exact Run registration owns 64 operational detailed reports, separately
+pinned latest SSH/VNC failures, and 64 completed check receipts. Later successes
+do not clear pins. Removed sessions
 and nodes do not remove history. Assignment UUIDs fence stale producers.
 No cross-Run archive exists.
 

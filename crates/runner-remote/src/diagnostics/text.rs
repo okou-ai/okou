@@ -238,7 +238,7 @@ impl Report {
             )?;
         }
         let boundary = if self.operation == super::Operation::ActiveCheck {
-            "This active check verifies only newly passed connection stages at the recorded time. SSH authentication or VNC initialization does not establish later command, framebuffer or input health."
+            "Passed stages verify check-time setup only, not later command/framebuffer/input health. Helper delivery is unconfirmed. Without an exact Attempt, latest history may identify another check."
         } else {
             "These facts were captured with the operation; no additional connectivity check was performed."
         };
