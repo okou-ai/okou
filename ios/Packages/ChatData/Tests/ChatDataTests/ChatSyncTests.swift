@@ -1,4 +1,5 @@
 import ChatDataTestSupport
+import ChatDomain
 import Foundation
 import Synchronization
 import XCTest
@@ -191,6 +192,120 @@ final class ChatSyncTests: XCTestCase {
       client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Latest answer"])
+  }
+  func testWarmingPersistsUnopenedHistoryAndContinuesItsCursor() async throws {
+    let directory = try syncDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cursors = Mutex<[Int]>([])
+    let fixture = ChatHTTPFixture { request in
+      guard request.url?.path == "/api/chat/events/catch-up" else {
+        throw URLError(.unsupportedURL)
+      }
+      let body = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [[Any]])
+      let sequence = try XCTUnwrap(body.first?.last as? Int)
+      cursors.withLock { $0.append(sequence) }
+      return ChatHTTPResponse(
+        body: """
+          {"events":{"\(syncThreadID)":[\(sequence == 0 ? [syncRow(1, text: "Prepared answer"), syncRow(2)].joined(separator: ",") : "")]},"notFoundThreads":[]}
+          """)
+    }
+    let scope = syncScope(fixture)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    try await service.warmHistories(threadIDs: [syncThreadID, syncThreadID])
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let restored = await restarted.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(restored?.messages.map(\.text), ["Prepared answer"])
+    XCTAssertEqual(restored?.executionState, .completed)
+    try await restarted.warmHistories(threadIDs: [syncThreadID])
+    XCTAssertEqual(cursors.withLock { $0 }, [0, 2])
+  }
+
+  func testOpeningAChatOvertakesWarmingAndKeepsTheNewerHistory() async throws {
+    let directory = try syncDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let warmingStarted = expectation(description: "Batch warming is in flight")
+    let releaseWarming = SyncResponseGate()
+    defer { releaseWarming.open() }
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat/events/catch-up":
+        warmingStarted.fulfill()
+        await releaseWarming.wait()
+        return ChatHTTPResponse(
+          body:
+            "{\"events\":{\"\(syncThreadID)\":[\(syncRow(1, text: "Earlier answer"))]},\"notFoundThreads\":[]}"
+        )
+      case syncPath + "/event-snapshot": return syncMissingSnapshot()
+      case syncPath + "/event-rows":
+        return syncSequence(request) == 0
+          ? syncPage([syncRow(1, text: "Earlier answer"), syncRow(2)], cursor: 2)
+          : syncPage([], cursor: 2)
+      case syncPath:
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = syncScope(fixture)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let warming = Task { try await service.warmHistories(threadIDs: [syncThreadID]) }
+    await fulfillment(of: [warmingStarted], timeout: 2)
+    let opened = try await service.history(threadID: syncThreadID)
+    XCTAssertEqual(opened.executionState, .completed)
+    releaseWarming.open()
+    try await warming.value
+    let restarted = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let restored = await restarted.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(restored?.executionState, .completed)
+    XCTAssertEqual(restored?.persistedEventIDs, Set([syncEventID(1), syncEventID(2)]))
+  }
+
+  func testWarmingRebuildsASnapshotWhenTheBatchCursorCannotContinue() async throws {
+    let directory = try syncDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat/events/catch-up":
+        return ChatHTTPResponse(body: "{\"events\":{},\"notFoundThreads\":[\"\(syncThreadID)\"]}")
+      case syncPath + "/event-snapshot":
+        return ChatHTTPResponse(
+          body:
+            "{\"url\":\"https://\(request.url!.host!)/snapshot\",\"lastEventId\":\"\(syncEventID(1))\",\"lastSeqId\":1}"
+        )
+      case "/snapshot": return ChatHTTPResponse(body: syncRow(1, text: "Snapshot answer") + "\n")
+      case syncPath + "/event-rows":
+        return syncSequence(request) == 1
+          ? syncPage([syncRow(2)], cursor: 2) : syncPage([], cursor: 2)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = syncScope(fixture)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    try await service.warmHistories(threadIDs: [syncThreadID])
+    let restored = await service.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(restored?.messages.map(\.text), ["Snapshot answer"])
+    XCTAssertEqual(restored?.executionState, .completed)
+  }
+
+  func testWarmingRejectsAnIncompleteBatchWithoutPublishingHistory() async throws {
+    let directory = try syncDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fixture = ChatHTTPFixture { _ in
+      ChatHTTPResponse(body: "{\"events\":{},\"notFoundThreads\":[]}")
+    }
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: syncScope(fixture), directory: directory))
+    do {
+      try await service.warmHistories(threadIDs: [syncThreadID])
+      XCTFail("An incomplete response must not become an empty cached conversation")
+    } catch is ChatError {}
+    let restored = await service.cachedHistory(threadID: syncThreadID)
+    XCTAssertNil(restored)
   }
 }
 
