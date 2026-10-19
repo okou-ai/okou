@@ -13,6 +13,11 @@ import { server } from "../../../mocks/server";
 import { listCommand } from "../list";
 import chalk from "chalk";
 import {
+  catalogAccountSummaries,
+  customAccountSummaries,
+  stubConnectorAccountSummaries,
+} from "../../__tests__/helpers/connector-accounts";
+import {
   authCodeMethod,
   catalogStatusItem,
   stubConnectorCatalogStatus,
@@ -67,6 +72,11 @@ function stubConnectors(connectors: Array<Record<string, unknown>>) {
     "mercury",
     ...connectedBySlug.keys(),
   ]);
+  server.use(
+    stubConnectorAccountSummaries(
+      catalogAccountSummaries([...connectedBySlug.values()]),
+    ),
+  );
   return stubConnectorCatalogStatus(
     [...visibleConnectorSlugs].map((connectorSlug) => {
       return (
@@ -105,6 +115,7 @@ function stubUserConnectors(id: string, enabledConnectorSlugs: string[]) {
 }
 
 function stubAvailableConnectors(connectorSlugs: string[]) {
+  server.use(stubConnectorAccountSummaries([]));
   return stubConnectorCatalogStatus(
     connectorSlugs.map((connectorSlug) => {
       return catalogStatusItem({
@@ -131,7 +142,11 @@ describe("okou connector list command", () => {
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     listCommand.setOptionValue("agent", undefined);
     listCommand.setOptionValue("json", false);
-    server.use(stubCustomConnectors([]), stubAgentCustomConnectors([]));
+    server.use(
+      stubCustomConnectors([]),
+      stubAgentCustomConnectors([]),
+      stubConnectorAccountSummaries([]),
+    );
   });
 
   afterEach(() => {
@@ -182,20 +197,23 @@ describe("okou connector list command", () => {
     });
 
     it("renders custom connectors with their connection status", async () => {
+      const connectedCustom = customConnector({
+        connected: true,
+        connectedAccountId: "55555555-5555-4555-8555-555555555555",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["apiKey"],
+      });
+      const missingCustom = customConnector({
+        id: "44444444-4444-4444-8444-444444444444",
+        slug: "_weather-api",
+        displayName: "Weather API",
+      });
       server.use(
         stubAvailableConnectors(["github"]),
-        stubCustomConnectors([
-          customConnector({
-            connected: true,
-            missingRequiredFields: [],
-            configuredFieldKeys: ["secret:apiKey"],
-          }),
-          customConnector({
-            id: "44444444-4444-4444-8444-444444444444",
-            slug: "_weather-api",
-            displayName: "Weather API",
-          }),
-        ]),
+        stubCustomConnectors([connectedCustom, missingCustom]),
+        stubConnectorAccountSummaries(
+          customAccountSummaries([connectedCustom, missingCustom]),
+        ),
       );
 
       await listCommand.parseAsync(["node", "cli"]);
@@ -207,7 +225,8 @@ describe("okou connector list command", () => {
       const missingRow = lines.find((line) => {
         return line.startsWith("_weather-api");
       });
-      expect(connectedRow).toContain("connected");
+      expect(connectedRow).toContain("Account #55555555");
+      expect(connectedRow).not.toContain("not connected");
       expect(missingRow).toContain("missing apiKey");
     });
 

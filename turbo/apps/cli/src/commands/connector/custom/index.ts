@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   getAgent,
   getAgentCustomConnectorGrants,
@@ -8,6 +9,7 @@ import {
 import {
   getCustomConnector,
   listCustomConnectors,
+  listConnectorAccountSummaries,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { resolveConnectorAgentId } from "../agent-context";
@@ -16,6 +18,11 @@ import { createCustomConnectorCommand } from "./create";
 import { updateCustomConnectorCommand } from "./update";
 import { connectorInspectionType } from "../inspection";
 import { customConnectorMetadata } from "../management";
+import {
+  memberConnectorAccountText,
+  memberConnectorFacts,
+  memberConnectorStatusText,
+} from "../member-status";
 import {
   showCustomConnectorCommand,
   deleteCustomConnectorCommand,
@@ -26,28 +33,16 @@ const LABEL_WIDTH = 18;
 function customConnectorJson(
   connector: CustomConnectorResponse,
   agent: Awaited<ReturnType<typeof resolveCustomAgentContext>>,
+  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
 ) {
   const target = { kind: "custom", customConnectorId: connector.id } as const;
   return {
     ...customConnectorMetadata(connector),
     target,
     connectorType: connectorInspectionType(target, connector),
-    connectionId: connector.connectedAccountId ?? null,
+    ...memberConnectorFacts(connector, summaries),
     authorized: agent ? agent.authorizedIds.has(connector.id) : null,
   };
-}
-
-function renderConnected(connector: {
-  readonly connected: boolean;
-  readonly missingRequiredFields: readonly string[];
-}): string {
-  if (connector.connected) {
-    return chalk.green("connected");
-  }
-  if (connector.missingRequiredFields.length === 0) {
-    return chalk.dim("not connected");
-  }
-  return chalk.yellow(`missing ${connector.missingRequiredFields.join(", ")}`);
 }
 
 async function resolveCustomAgentContext(agentId: string | undefined): Promise<{
@@ -96,9 +91,10 @@ Omit --agent inside a run to inspect the current Agent's access.`,
   .action(
     withErrorHandler(async (options: { agent?: string; json?: boolean }) => {
       const agentId = resolveConnectorAgentId(options.agent);
-      const [connectors, agentCtx] = await Promise.all([
+      const [connectors, agentCtx, summaries] = await Promise.all([
         listCustomConnectors(),
         resolveCustomAgentContext(agentId),
+        listConnectorAccountSummaries(),
       ]);
       if (options.json) {
         console.log(
@@ -112,7 +108,7 @@ Omit --agent inside a run to inspect the current Agent's access.`,
                   }
                 : null,
               connectors: connectors.map((connector) => {
-                return customConnectorJson(connector, agentCtx);
+                return customConnectorJson(connector, agentCtx, summaries);
               }),
             },
             null,
@@ -156,7 +152,10 @@ Omit --agent inside a run to inspect the current Agent's access.`,
           connector.slug.padEnd(slugWidth),
           connector.displayName.padEnd(nameWidth),
           connector.kind,
-          renderConnected(connector),
+          memberConnectorAccountText(
+            connector,
+            memberConnectorFacts(connector, summaries),
+          ),
         ];
         if (agentCtx) {
           row.push(
@@ -199,9 +198,10 @@ Omit --agent inside a run to inspect the current Agent's access.`,
       ) => {
         const agentId = resolveConnectorAgentId(options.agent);
         const connectorId = await resolveCustomConnectorId(connectorSelector);
-        const [connector, agentCtx] = await Promise.all([
+        const [connector, agentCtx, summaries] = await Promise.all([
           getCustomConnector(connectorId),
           resolveCustomAgentContext(agentId),
+          listConnectorAccountSummaries(),
         ]);
         if (options.json) {
           console.log(
@@ -219,7 +219,7 @@ Omit --agent inside a run to inspect the current Agent's access.`,
                 connector:
                   connector === null
                     ? null
-                    : customConnectorJson(connector, agentCtx),
+                    : customConnectorJson(connector, agentCtx, summaries),
               },
               null,
               2,
@@ -240,9 +240,17 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         console.log(`${"ID:".padEnd(LABEL_WIDTH)}${connector.id}`);
         console.log(`${"Slug:".padEnd(LABEL_WIDTH)}${connector.slug}`);
         console.log(`${"Kind:".padEnd(LABEL_WIDTH)}${connector.kind}`);
+        const facts = memberConnectorFacts(connector, summaries);
         console.log(
-          `${"Status:".padEnd(LABEL_WIDTH)}${renderConnected(connector)}`,
+          `${"Status:".padEnd(LABEL_WIDTH)}${memberConnectorStatusText(connector, facts)}`,
         );
+        console.log(
+          `${"Account:".padEnd(LABEL_WIDTH)}${memberConnectorAccountText(connector, facts)}`,
+        );
+        if (facts.connectionId)
+          console.log(
+            `${"Connection ID:".padEnd(LABEL_WIDTH)}${facts.connectionId}`,
+          );
         if (connector.kind === "mcp") {
           console.log(
             `${"Transport:".padEnd(LABEL_WIDTH)}${connector.transport}`,
@@ -313,6 +321,8 @@ Types and authentication:
 
 Definitions and access:
   create/update manage org definitions; list/status show current-member metadata.
+  JSON accountSummary/memberStatus report saved accounts and local status separately
+  from existing connected/configuration metadata and Agent authorization.
   Creating a definition is separate from connecting a member account, granting
   Agent access, and selecting any fine-grained permissions. This also applies
   to none/automatic definitions. Members finish connection in the web flow.
