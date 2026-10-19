@@ -1,3 +1,9 @@
+import {
+  workflows,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
+import { badRequestMessage } from "../../lib/error";
 import { z } from "zod";
 import {
   parseRawRows,
@@ -356,6 +362,35 @@ const commitMetadata$ = command(
     signal.throwIfAborted();
     if (!current?.agentId) {
       return { kind: "not_found" };
+    }
+    if (
+      hasModel(args.patch) &&
+      args.patch.model !== null &&
+      args.patch.model !== AUTO_SELECTED_MODEL
+    ) {
+      const [official] = await readDb
+        .select({ id: workflows.id })
+        .from(workflowUserAutomationThreads)
+        .innerJoin(
+          workflows,
+          eq(workflows.id, workflowUserAutomationThreads.workflowId),
+        )
+        .where(
+          and(
+            eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
+            eq(workflowUserAutomationThreads.userId, args.principal.userId),
+            eq(workflowUserAutomationThreads.orgId, args.principal.orgId),
+            isNotNull(workflows.officialDefinitionName),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (official) {
+        return {
+          kind: "response",
+          response: badRequestMessage("Official Workflow threads use Auto"),
+        };
+      }
     }
     const { catalog, pin } = proposal.value;
     if (catalog === null) {

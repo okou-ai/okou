@@ -51,6 +51,7 @@ interface ChatThreadEventAppend {
   readonly title?: string | null;
   readonly pinOrder?: string | null;
   readonly muted?: boolean;
+  readonly hidden?: boolean;
   readonly selectedModel?: string | null;
   readonly modelSettings?: ModelSettings;
   readonly modelSettingsPatch?: ModelSettingsPatch;
@@ -144,14 +145,14 @@ export function chatThreadEventInsertSql(
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
       id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       reassigned_agent_id, title,
-      pin_order, muted, selected_model, model_settings, model_settings_patch,
+      pin_order, muted, hidden, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
       ${event.id},
       ${args.userId}, ${orgId}, ${event.sequence},
       ${chatThreadId}::uuid, ${event.kind},
       ${agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
-      ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null},
+      ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null}, ${args.hidden ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
       ${args.modelSettingsPatch === undefined ? null : JSON.stringify(args.modelSettingsPatch)}::jsonb,
@@ -224,6 +225,7 @@ type ChatThreadEventRow = {
   readonly title: string | null;
   readonly pinOrder: string | null;
   readonly muted: boolean | null;
+  readonly hidden: boolean | null;
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings | null;
   readonly modelSettingsPatch: ModelSettingsPatch | null;
@@ -243,6 +245,7 @@ const chatThreadEventSelection = Object.freeze({
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   muted: chatThreadEvents.muted,
+  hidden: chatThreadEvents.hidden,
   selectedModel: chatThreadEvents.selectedModel,
   modelSettings: chatThreadEvents.modelSettings,
   modelSettingsPatch: chatThreadEvents.modelSettingsPatch,
@@ -262,6 +265,7 @@ const pageChatThreadEventSelection = Object.freeze({
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   muted: pageChatThreadEvent.muted,
+  hidden: pageChatThreadEvent.hidden,
   selectedModel: pageChatThreadEvent.selectedModel,
   modelSettings: pageChatThreadEvent.modelSettings,
   modelSettingsPatch: pageChatThreadEvent.modelSettingsPatch,
@@ -298,6 +302,7 @@ function toApiChatThreadEvent(
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),
+    ...(row.hidden === null ? {} : { hidden: row.hidden }),
     selectedModel: row.selectedModel,
     ...(row.modelSettings === null
       ? {}

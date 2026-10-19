@@ -83,6 +83,8 @@ export function chatThreadColumns() {
      * the default sidebar list; archiving never changes the title.
      */
     archived: boolean("archived").default(false).notNull(),
+    /** System-controlled visibility in ordinary Chat surfaces. */
+    hidden: boolean("hidden").default(false).notNull(),
     /** Suppress unread indicators and user push notifications, not execution. */
     muted: boolean("muted").default(false).notNull(),
     /**

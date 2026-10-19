@@ -53,6 +53,22 @@ type ChatSearchInput = {
   readonly since?: number;
 };
 
+function chatSearchScope(
+  args: Pick<ChatSearchInput, "userId" | "orgId" | "agentId"> & {
+    readonly since?: Date;
+  },
+) {
+  return and(
+    eq(chatEventSearchMessages.userId, args.userId),
+    eq(chatEventSearchMessages.orgId, args.orgId),
+    eq(chatThreads.hidden, false),
+    args.agentId
+      ? eq(chatEventSearchMessages.agentId, args.agentId)
+      : undefined,
+    args.since ? gte(chatEventSearchMessages.createdAt, args.since) : undefined,
+  );
+}
+
 export function chatSearch(
   input: ChatSearchInput | Computed<ChatSearchInput>,
 ): Computed<
@@ -80,8 +96,8 @@ export function chatSearch(
     const matches = await (async (): Promise<ChatSearchMatchRow[]> => {
       /**
        * Take up to 500 scoped keyword hits without ordering them, then sort only
-       * those candidates by time. This intentionally does not find the newest hits
-       * across all history; missing or deleted threads are not backfilled.
+       * those visible-thread candidates by time. This intentionally does not
+       * find the newest hits across all history; missing Agents are not backfilled.
        */
       const tsquery = chatSearchBigramTsquery(searchArgs.keyword);
       if (tsquery === null) {
@@ -95,16 +111,13 @@ export function chatSearch(
           createdAt: chatEventSearchMessages.createdAt,
         })
         .from(chatEventSearchMessages)
+        .innerJoin(
+          chatThreads,
+          eq(chatThreads.id, chatEventSearchMessages.chatThreadId),
+        )
         .where(
           and(
-            eq(chatEventSearchMessages.userId, searchArgs.userId),
-            eq(chatEventSearchMessages.orgId, searchArgs.orgId),
-            searchArgs.agentId
-              ? eq(chatEventSearchMessages.agentId, searchArgs.agentId)
-              : undefined,
-            searchArgs.since
-              ? gte(chatEventSearchMessages.createdAt, searchArgs.since)
-              : undefined,
+            chatSearchScope(searchArgs),
             sql`${chatEventSearchMessages.tsv} @@ to_tsquery('simple', ${tsquery})`,
           ),
         )

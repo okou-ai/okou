@@ -16,6 +16,7 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
   public var computerUseHostId: String? = nil
   public var cloudBrowserEnabled = false
   public var isArchived = false
+  public var isHidden = false
   public var indicator: ChatIndicator?
 
   public init(
@@ -34,6 +35,7 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     computerUseHostId: String? = nil,
     cloudBrowserEnabled: Bool = false,
     isArchived: Bool = false,
+    isHidden: Bool = false,
     indicator: ChatIndicator? = nil
   ) {
     self.id = id
@@ -51,6 +53,7 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     self.computerUseHostId = computerUseHostId
     self.cloudBrowserEnabled = cloudBrowserEnabled
     self.isArchived = isArchived
+    self.isHidden = isHidden
     self.indicator = indicator
   }
 
