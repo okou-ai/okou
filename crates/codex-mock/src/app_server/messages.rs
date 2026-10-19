@@ -138,6 +138,34 @@ pub(super) fn large_server_notification() -> Value {
     })
 }
 
+// Regression payload above the former 64 MiB Okou framing cap. Stream the
+// repeated bytes so the mock does not retain an extra full-size allocation.
+pub(super) fn write_large_stdout_text<W: Write>(output: &mut W) -> io::Result<()> {
+    const CHUNK_BYTES: usize = 8 * 1024;
+    const PAYLOAD_BYTES: usize = 65 * 1024 * 1024;
+    output.write_all(b"large-head-")?;
+    let chunk = [b'x'; CHUNK_BYTES];
+    for _ in 0..PAYLOAD_BYTES / CHUNK_BYTES {
+        output.write_all(&chunk)?;
+    }
+    output.write_all(b"-large-tail")
+}
+
+pub(super) fn write_large_stdout_notification<W: Write>(
+    output: &mut W,
+    thread_id: &str,
+    turn_id: &str,
+) -> io::Result<()> {
+    output.write_all(b"{\"method\":\"item/completed\",\"params\":{\"threadId\":")?;
+    serde_json::to_writer(&mut *output, thread_id).map_err(io::Error::other)?;
+    output.write_all(b",\"turnId\":")?;
+    serde_json::to_writer(&mut *output, turn_id).map_err(io::Error::other)?;
+    output.write_all(b",\"completedAtMs\":1700000000123,\"item\":{\"type\":\"commandExecution\",\"id\":\"large-command\",\"command\":\"printf large-output\",\"status\":\"completed\",\"exitCode\":0,\"aggregatedOutput\":\"")?;
+    write_large_stdout_text(output)?;
+    output.write_all(b"\"}}}\n")?;
+    output.flush()
+}
+
 pub(super) fn thread_started_notification(thread_id: &str) -> Value {
     json!({
         "method": "thread/started",

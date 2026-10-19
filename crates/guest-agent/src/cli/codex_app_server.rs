@@ -16,12 +16,11 @@ use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
-use guest_contracts::stdout_framing::CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES;
 use guest_telemetry::log_warn;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tokio::io::{AsyncBufRead, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -33,7 +32,7 @@ use super::{
     child_exit_notifier::{
         ChildExitNotifier, child_exited_without_reaping, wait_for_child_exit_without_reaping,
     },
-    diagnostics, exec_boundary, line_reader,
+    diagnostics, exec_boundary,
     process_group::ChildProcessGroup,
 };
 
@@ -1145,38 +1144,28 @@ async fn read_stdout_line<R>(
 where
     R: AsyncBufRead + Unpin,
 {
-    match line_reader::read_bounded_utf8_line(
-        stdout_reader,
-        partial_line,
-        CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES,
-    )
-    .await
-    {
-        Ok(line) => Ok(line),
-        Err(line_reader::BoundedLineError::Io(error)) => Err(CodexAppServerError::Io(error)),
-        Err(line_reader::BoundedLineError::TooLong) => Err(stdout_line_too_large_error()),
-        Err(line_reader::BoundedLineError::InvalidUtf8 {
-            valid_up_to,
-            error_len,
-            line_bytes,
-        }) => {
-            let utf8_error = match error_len {
-                Some(error_len) => {
-                    format!("invalid utf-8 sequence of {error_len} bytes from index {valid_up_to}")
-                }
-                None => format!("incomplete utf-8 byte sequence from index {valid_up_to}"),
-            };
-            Err(CodexAppServerError::Protocol(format!(
-                "app-server stdout line is not UTF-8: {utf8_error}; line_bytes={line_bytes}"
-            )))
+    // Codex stdio emits newline-delimited JSON without a record-size cap.
+    // read_until is cancellation-safe: already-read bytes stay in the
+    // client-owned buffer when a competing control drops this future.
+    let read = stdout_reader.read_until(b'\n', partial_line).await?;
+    if read == 0 && partial_line.is_empty() {
+        return Ok(None);
+    }
+    if partial_line.last() == Some(&b'\n') {
+        partial_line.pop();
+        if partial_line.last() == Some(&b'\r') {
+            partial_line.pop();
         }
     }
-}
-
-fn stdout_line_too_large_error() -> CodexAppServerError {
-    CodexAppServerError::Protocol(format!(
-        "app-server stdout line exceeded {CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES} bytes"
-    ))
+    let line_bytes = partial_line.len();
+    String::from_utf8(std::mem::take(partial_line))
+        .map(Some)
+        .map_err(|error| {
+            CodexAppServerError::Protocol(format!(
+                "app-server stdout line is not UTF-8: {}; line_bytes={line_bytes}",
+                error.utf8_error(),
+            ))
+        })
 }
 
 fn parse_incoming_message(line: &str) -> Result<IncomingMessage, CodexAppServerError> {
