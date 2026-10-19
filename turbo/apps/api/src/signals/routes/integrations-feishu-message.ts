@@ -14,11 +14,11 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import {
   FeishuApiError,
-  replyWithFeishuMessage,
-  sendFeishuMessage,
   type FeishuOutboundMessage,
+  type FeishuSentMessage,
 } from "../external/feishu-client";
 import { writeDb$ } from "../external/db";
+import { deliverFeishuMessage$ } from "../services/feishu-message-delivery.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
@@ -105,11 +105,12 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     ? { msgType: "interactive", content: body.card }
     : { msgType: "text", content: { text: body.text } };
   const receiveId = userOpenId ?? body.chat;
-  let delivery: ReturnType<typeof sendFeishuMessage>;
+  let delivery: Promise<FeishuSentMessage>;
   if (body.replyToMessageId) {
-    delivery = replyWithFeishuMessage(
+    delivery = set(
+      deliverFeishuMessage$,
       {
-        db,
+        kind: "reply",
         installationId: installation.id,
         messageId: body.replyToMessageId,
         message,
@@ -118,9 +119,10 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   } else if (receiveId) {
-    delivery = sendFeishuMessage(
+    delivery = set(
+      deliverFeishuMessage$,
       {
-        db,
+        kind: "send",
         installationId: installation.id,
         receiveIdType: userOpenId ? "open_id" : "chat_id",
         receiveId,

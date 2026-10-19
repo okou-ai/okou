@@ -142,7 +142,7 @@ export interface FeishuOutboundMessage {
   readonly content: Readonly<Record<string, unknown>>;
 }
 
-interface FeishuSentMessage {
+export interface FeishuSentMessage {
   readonly messageId: string;
   readonly chatId: string | null;
 }
@@ -635,6 +635,11 @@ function parseSentMessage(
     chatId: parsed.data.chat_id ?? null,
   };
 }
+
+export {
+  messagePayload as feishuMessagePayload,
+  parseSentMessage as parseFeishuSentMessage,
+};
 
 export async function sendFeishuMessage(
   args: {

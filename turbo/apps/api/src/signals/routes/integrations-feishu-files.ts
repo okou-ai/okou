@@ -35,12 +35,14 @@ import {
   feishuTokenUpdateValues,
   parseFeishuFileUploadResponse,
   readFeishuResponseJson,
-  replyWithFeishuMessage,
   resolveFeishuRequestCredentials,
-  sendFeishuMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
+import {
+  deliverFeishuMessage$,
+  type FeishuMessageDelivery,
+} from "../services/feishu-message-delivery.service";
 import {
   downloadS3Buffer,
   generatePresignedPutUrl,
@@ -308,46 +310,36 @@ const resolveUserOpenId$ = command(
   },
 );
 
-function deliverUploadedFile(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly body: FeishuUploadCompleteBody;
-    readonly userOpenId: string | undefined;
-    readonly fileKey: string;
-  },
-  signal: AbortSignal,
-): ReturnType<typeof sendFeishuMessage> | null {
+function uploadedFileDelivery(args: {
+  readonly installationId: string;
+  readonly body: FeishuUploadCompleteBody;
+  readonly userOpenId: string | undefined;
+  readonly fileKey: string;
+}): FeishuMessageDelivery | null {
   const message: FeishuOutboundMessage = {
     msgType: "file",
     content: { file_key: args.fileKey },
   };
   if (args.body.replyToMessageId) {
-    return replyWithFeishuMessage(
-      {
-        db: args.db,
-        installationId: args.installationId,
-        messageId: args.body.replyToMessageId,
-        message,
-        replyInThread: args.body.replyInThread,
-      },
-      signal,
-    );
+    return {
+      kind: "reply",
+      installationId: args.installationId,
+      messageId: args.body.replyToMessageId,
+      message,
+      replyInThread: args.body.replyInThread,
+    };
   }
   const receiveId = args.userOpenId ?? args.body.chat;
   if (!receiveId) {
     return null;
   }
-  return sendFeishuMessage(
-    {
-      db: args.db,
-      installationId: args.installationId,
-      receiveIdType: args.userOpenId ? "open_id" : "chat_id",
-      receiveId,
-      message,
-    },
-    signal,
-  );
+  return {
+    kind: "send",
+    installationId: args.installationId,
+    receiveIdType: args.userOpenId ? "open_id" : "chat_id",
+    receiveId,
+    message,
+  };
 }
 
 const download$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -588,7 +580,6 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
-  const db = set(writeDb$);
   const installation = await set(
     resolveInstallation$,
     {
@@ -653,14 +644,15 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     return feishuApiError(uploaded.error, get(feishuRequestPlatform$));
   }
 
-  const deliveryInput = {
-    db,
+  const deliveryInput = uploadedFileDelivery({
     installationId: installation.id,
     body,
     userOpenId: user.openId,
     fileKey: uploaded.value,
-  };
-  const delivery = deliverUploadedFile(deliveryInput, signal);
+  });
+  const delivery = deliveryInput
+    ? set(deliverFeishuMessage$, deliveryInput, signal)
+    : null;
   if (!delivery) {
     return apiError(
       400,
