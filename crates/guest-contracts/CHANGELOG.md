@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.26.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.0...guest-contracts-v0.26.1) (2026-10-19)
+
 ## [0.26.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.5...guest-contracts-v0.26.0) (2026-10-17)
 
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.769.0](https://github.com/okou-ai/okou/compare/core-v8.768.0...core-v8.769.0) (2026-10-19)
+
+
+### Features
+
+* enable document templates for staff and polish picker ([#41210](https://github.com/okou-ai/okou/issues/41210)) ([8a7aa72](https://github.com/okou-ai/okou/commit/8a7aa72fbb7542083fb2358f09e1e8e32b3da10b))
+
+
+### Bug Fixes
+
+* gate chat relationships with chat resources ([#41222](https://github.com/okou-ai/okou/issues/41222)) ([70fb95a](https://github.com/okou-ai/okou/commit/70fb95a14daf3ba4ce7995ab188f9a57e616a01d))
+* send wechat welcome on connection and add reconnect page ([#41211](https://github.com/okou-ai/okou/issues/41211)) ([14f9545](https://github.com/okou-ai/okou/commit/14f95457d99c5b3dfa98918de4e888f94095217a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.3
+
 ## [8.768.0](https://github.com/okou-ai/okou/compare/core-v8.767.1...core-v8.768.0) (2026-10-19)
 
 
