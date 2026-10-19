@@ -566,7 +566,7 @@
       "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
       "connectTooltip": "Connect Google Drive to upload artifacts",
-      "conversionNotice": "Creates an editable copy; formatting may vary.",
+      "conversionNotice": "Creates an editable copy. Some formatting may change.",
       "conversionUnconfirmed": "Google conversion could not be confirmed. Check Drive before retrying.",
       "noArtifacts": "No artifacts to sync",
       "openDocs": "Open in Google Docs",
