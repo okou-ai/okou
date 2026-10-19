@@ -283,6 +283,7 @@ async fn rejects_ambiguous_unsupported_oversized_and_truncated_requests() {
         vec![b'x'; 16 * 1024 + 1],
         b"PATCH /vm HTTP/1.1\r\nContent-Length: 36\r\n\r\n{\"state\":\"Paused\",\"state\":\"Resumed\"}".to_vec(),
         b"PATCH /vm HTTP/1.1\r\nContent-Length: 29\r\n\r\n{\"state\":\"Resumed\",\"extra\":1}".to_vec(),
+        b"PATCH /vm HTTP/1.1\rignored\r\nContent-Length: 19\r\n\r\n{\"state\":\"Resumed\"}".to_vec(),
     ] {
         let mut fixture = Fixture::new(Transition::Resume).unwrap();
         let mut client = UnixStream::connect(&fixture.front).await.unwrap();
@@ -307,6 +308,7 @@ async fn malformed_or_truncated_backend_response_is_uncertainty_not_completion()
         &b"HTTP/1.1 200 OK\r\nContent-Length: 65537\r\n\r\n"[..],
         &b"HTTP/1.1 204 No Content\r\nContent-Length: 1\r\n\r\nx"[..],
         &b"HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n"[..],
+        &b"HTTP/1.1 200 OK\rignored\r\nContent-Length: 0\r\n\r\n"[..],
     ] {
         let mut fixture = Fixture::new(Transition::Resume).unwrap();
         let client = fixture.call(Transition::Resume).unwrap();

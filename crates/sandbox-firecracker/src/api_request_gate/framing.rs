@@ -12,6 +12,16 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+fn first_line(bytes: &[u8]) -> io::Result<&[u8]> {
+    let end = bytes
+        .windows(2)
+        .position(|value| value == b"\r\n")
+        .ok_or_else(|| invalid("missing HTTP start-line terminator"))?;
+    bytes
+        .get(..end)
+        .ok_or_else(|| invalid("invalid HTTP start-line bound"))
+}
+
 pub(super) async fn read_frame(stream: &mut UnixStream, response: bool) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut chunk = [0; 1024];
@@ -128,7 +138,7 @@ pub(super) fn validate_request(bytes: &[u8], transition: Transition) -> io::Resu
         .position(|value| value == b"\r\n\r\n")
         .ok_or_else(|| invalid("missing request headers"))?
         + 4;
-    if bytes.split(|byte| *byte == b'\r').next() != Some(b"PATCH /vm HTTP/1.1") {
+    if first_line(bytes)? != b"PATCH /vm HTTP/1.1" {
         return Err(invalid("request is not the expected PATCH /vm"));
     }
     #[derive(serde::Deserialize)]
@@ -153,10 +163,7 @@ pub(super) fn validate_request(bytes: &[u8], transition: Transition) -> io::Resu
 }
 
 pub(super) fn response_status(bytes: &[u8]) -> io::Result<u16> {
-    let line = bytes
-        .split(|byte| *byte == b'\r')
-        .next()
-        .ok_or_else(|| invalid("missing HTTP status"))?;
+    let line = first_line(bytes)?;
     let text = std::str::from_utf8(line).map_err(|_| invalid("invalid HTTP status"))?;
     let mut parts = text.splitn(3, ' ');
     if parts.next() != Some("HTTP/1.1") {
