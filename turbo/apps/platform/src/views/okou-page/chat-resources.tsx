@@ -29,6 +29,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -214,7 +215,7 @@ function ResourceOutputRow({
           size="sm"
           className="shrink-0"
         />
-        <span className="truncate">{artifact.title}</span>
+        <HoverScrollTitle title={artifact.title} />
       </Button>
       <CopyResourceLink
         artifactId={artifact.id}

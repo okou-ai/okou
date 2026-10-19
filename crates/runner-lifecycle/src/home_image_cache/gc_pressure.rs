@@ -164,15 +164,25 @@ impl HomeImageCache {
                 authority_changed = true;
                 continue;
             }
-            // Entry acquisition and identity observation can yield across drain
-            // or a changed pressure target. Recheck before accepting removal.
+            // Discovery needs only identity and LRU order. Measure allocation
+            // once a selected image is revalidated under its entry guard.
+            let Ok(allocated_bytes) = super::fs::measured_entry_bytes(
+                &self.home_image_cache_entry_dir(&current.cache_key),
+            )
+            .await
+            else {
+                authority_changed = true;
+                continue;
+            };
+            // Entry acquisition, identity observation and measurement can yield
+            // across drain or a changed target. Recheck before accepting removal.
             if let Some(status) = continuation.stop_status(target(), available, stats.total_bytes) {
                 outcome.status = status;
                 return Ok(outcome);
             }
             // Previewed cleanup is still physically present. Count it once,
             // including when this whole entry becomes a subsequent victim.
-            let victim_bytes = current.allocated_bytes.saturating_sub(if dry_run {
+            let victim_bytes = allocated_bytes.saturating_sub(if dry_run {
                 candidate.prospective_cleanup_bytes
             } else {
                 0
@@ -190,7 +200,7 @@ impl HomeImageCache {
                     self.observe_removal(
                         &current.cache_key,
                         Some(&current.image_generation),
-                        current.allocated_bytes,
+                        allocated_bytes,
                         HomeObservationOutcome::Failed,
                         reason,
                     );
@@ -199,7 +209,7 @@ impl HomeImageCache {
                 self.observe_removal(
                     &current.cache_key,
                     Some(&current.image_generation),
-                    current.allocated_bytes,
+                    allocated_bytes,
                     HomeObservationOutcome::Deleted,
                     reason,
                 );

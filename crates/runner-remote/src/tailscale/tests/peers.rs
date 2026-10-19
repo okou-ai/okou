@@ -3,6 +3,7 @@
 pub(in crate::tailscale::tests) mod relay;
 mod retirement;
 pub(in crate::tailscale::tests) mod shared_derp;
+mod status;
 pub(super) mod wire;
 
 use super::fixture::bounded;

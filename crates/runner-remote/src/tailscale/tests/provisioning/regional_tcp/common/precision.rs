@@ -7,6 +7,7 @@ use futures_util::{SinkExt, StreamExt};
 #[derive(Clone, Copy)]
 enum Scenario {
     SilentPeer,
+    OfflinePeer,
     ControlsOnly,
     TargetGone,
     UnrelatedGone,
@@ -43,6 +44,11 @@ async fn native_same_peer_concurrency_shares_transport_but_never_private_tcp_rep
 #[tokio::test]
 async fn native_timeout_keeps_flushed_peer_silence_distinct_from_unobserved_tcp() {
     exercise(Scenario::SilentPeer).await;
+}
+
+#[tokio::test]
+async fn native_offline_map_hint_prioritizes_target_tailscale_without_claiming_device_state() {
+    exercise(Scenario::OfflinePeer).await;
 }
 
 #[tokio::test]
@@ -104,7 +110,7 @@ async fn exercise(scenario: Scenario) {
     let mut value: Value = serde_json::from_slice(&map(&home)).unwrap();
     let mut peer = node(2, "peer.synthetic.ts.net.", 2, &key);
     peer["HomeDERP"] = if other.is_some() { 2.into() } else { 1.into() };
-    if matches!(scenario, Scenario::TargetGone) {
+    if matches!(scenario, Scenario::TargetGone | Scenario::OfflinePeer) {
         peer["Online"] = false.into();
         peer["LastSeen"] = "2026-10-18T03:20:00Z".into();
     } else if matches!(scenario, Scenario::SilentPeer | Scenario::UnrelatedGone) {
@@ -183,11 +189,12 @@ async fn exercise(scenario: Scenario) {
         .await;
         match scenario {
             Scenario::SilentPeer
+            | Scenario::OfflinePeer
             | Scenario::ControlsOnly
             | Scenario::TargetGone
             | Scenario::UnrelatedGone => {
                 // Consume actual DERP output but withhold all external peer replies.
-                let mut injected = matches!(scenario, Scenario::SilentPeer);
+                let mut injected = matches!(scenario, Scenario::SilentPeer | Scenario::OfflinePeer);
                 let result = loop {
                     tokio::select! {
                         result = &mut operation => break result,
@@ -360,6 +367,12 @@ async fn exercise(scenario: Scenario) {
     assert!(h.observed.commands.lock().unwrap().is_empty());
     let text = diagnostic_text(result);
     assert!(
+        text.contains("Runner-observed command effects: not started."),
+        "{text}"
+    );
+    assert!(text.find("Native path summary:").unwrap() < text.find("Actual path:").unwrap());
+    assert!(text.find("Next step:").unwrap() < text.find("Actual path:").unwrap());
+    assert!(
         text.contains("Actual path: embedded Tailscale over DERP"),
         "{text}"
     );
@@ -370,6 +383,7 @@ async fn exercise(scenario: Scenario) {
     );
     match scenario {
         Scenario::SilentPeer
+        | Scenario::OfflinePeer
         | Scenario::ControlsOnly
         | Scenario::TargetGone
         | Scenario::UnrelatedGone => {
@@ -412,7 +426,7 @@ async fn exercise(scenario: Scenario) {
             assert!(text.contains("authentication: not reached."), "{text}");
             assert!(text.contains("Background wait for peer data;"), "{text}");
             let status = match scenario {
-                Scenario::TargetGone => "offline",
+                Scenario::TargetGone | Scenario::OfflinePeer => "offline",
                 Scenario::ControlsOnly => "online",
                 _ => "unknown",
             };
@@ -420,7 +434,7 @@ async fn exercise(scenario: Scenario) {
                 text.contains(&format!("Selected peer control-plane status: {status};")),
                 "{text}"
             );
-            if !matches!(scenario, Scenario::SilentPeer) {
+            if !matches!(scenario, Scenario::SilentPeer | Scenario::OfflinePeer) {
                 assert_eq!(
                     observed(text, "Shared selected relay KeepAlive"),
                     1,
@@ -429,6 +443,10 @@ async fn exercise(scenario: Scenario) {
                 assert_eq!(observed(text, "Shared selected relay Ping"), 1, "{text}");
             }
             if matches!(scenario, Scenario::TargetGone) {
+                assert!(
+                    text.contains("Next step: The selected relay recorded PeerGone"),
+                    "{text}"
+                );
                 assert!(
                     text.contains("Selected peer PeerGone: disconnected;"),
                     "{text}"
@@ -466,6 +484,20 @@ async fn exercise(scenario: Scenario) {
             } else {
                 assert!(
                     !text.contains("Selected peer PeerGone: disconnected;"),
+                    "{text}"
+                );
+            }
+            if matches!(scenario, Scenario::OfflinePeer) {
+                assert!(
+                    text.contains("Next step: The control map marks the target offline."),
+                    "{text}"
+                );
+                assert!(
+                    text.contains("does not establish device power state or firewall denial"),
+                    "{text}"
+                );
+                assert!(
+                    text.contains("shared-peer initiation output without observed peer input"),
                     "{text}"
                 );
             }

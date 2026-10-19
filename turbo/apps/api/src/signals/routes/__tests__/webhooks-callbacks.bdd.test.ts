@@ -54,6 +54,10 @@ import {
 } from "./helpers/api-bdd-runs";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createPublicBillingScenario,
+  retainBillingSequence,
+} from "./helpers/public-billing-scenario";
 
 const context = testContext();
 const TERMINAL_RUN_STATUSES = ["completed", "failed", "cancelled"] as const;
@@ -5621,334 +5625,394 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
   });
 
   it("restores and schedules cancellations through setup checkouts and schedule webhooks", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    const billing = createBillingMediaApi(context);
-    const actor = bdd.user();
-    const orgId = orgOf(actor);
-    const granted = await runs.grantProEntitlement(actor);
-    const suffix = randomUUID().slice(0, 8);
-    const periodEnd = epochSeconds(30);
+    const scenario = createPublicBillingScenario(context);
+    await scenario.run(async () => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const billing = createBillingMediaApi(context);
+      const actor = bdd.user();
+      const orgId = orgOf(actor);
+      const readBillingStatus = () => {
+        return scenario.run(() => {
+          return billing.readBillingStatus(actor);
+        });
+      };
+      const granted = await runs.grantProEntitlement(actor, {
+        isolatePg: true,
+        run: scenario.run,
+        onExternalStateReady(restoreWebhook) {
+          restoreWebhook();
+          scenario.captureExternalState();
+        },
+      });
+      const suffix = randomUUID().slice(0, 8);
+      const periodEnd = epochSeconds(30);
 
-    // The subscription is scheduled for cancellation in Stripe.
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: granted.subscriptionId,
-          status: "active",
-          cancel_at_period_end: true,
-          metadata: {},
-          items: {
-            data: [
-              {
-                price: { id: "price_bdd_pro" },
-                current_period_end: periodEnd,
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-    const scheduled = await billing.readBillingStatus(actor);
-    expect(scheduled.cancelAtPeriodEnd).toBeTruthy();
-    expect(scheduled.scheduledChange).toStrictEqual({
-      type: "cancel",
-      targetTier: "limited-free-1",
-      effectiveDate: isoOf(periodEnd),
-    });
-
-    // Mismatched setup checkouts change nothing.
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "checkout.session.completed",
-        object: {
-          id: `cs_bdd_wrong_mode_${suffix}`,
-          mode: "payment",
-          subscription: null,
-          customer: granted.customerId,
-          metadata: {
-            purpose: "billing_restore",
-            orgId,
-            subscriptionId: granted.subscriptionId,
-          },
-        },
-      }),
-      [200],
-    );
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "checkout.session.completed",
-        object: {
-          id: `cs_bdd_no_customer_${suffix}`,
-          mode: "setup",
-          subscription: null,
-          customer: null,
-          metadata: {
-            purpose: "billing_restore",
-            orgId,
-            subscriptionId: granted.subscriptionId,
-          },
-        },
-      }),
-      [200],
-    );
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "checkout.session.completed",
-        object: {
-          id: `cs_bdd_wrong_sub_${suffix}`,
-          mode: "setup",
-          subscription: null,
-          customer: granted.customerId,
-          setup_intent: { id: `seti_bdd_${suffix}`, payment_method: "pm_bdd" },
-          metadata: {
-            purpose: "billing_restore",
-            orgId,
-            subscriptionId: `sub_bdd_other_${suffix}`,
-          },
-        },
-      }),
-      [200],
-    );
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "checkout.session.completed",
-        object: {
-          id: `cs_bdd_bad_tier_${suffix}`,
-          mode: "setup",
-          subscription: null,
-          customer: granted.customerId,
-          metadata: {
-            purpose: "billing_downgrade",
-            orgId,
-            subscriptionId: granted.subscriptionId,
-            targetTier: "team",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(
-      (await billing.readBillingStatus(actor)).cancelAtPeriodEnd,
-    ).toBeTruthy();
-
-    // A restore-purpose setup checkout sets the payment method and restores.
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "checkout.session.completed",
-        object: {
-          id: `cs_bdd_restore_${suffix}`,
-          mode: "setup",
-          subscription: null,
-          customer: granted.customerId,
-          setup_intent: {
-            id: `seti_bdd_restore_${suffix}`,
-            payment_method: "pm_bdd_restore",
-          },
-          metadata: {
-            purpose: "billing_restore",
-            orgId,
-            subscriptionId: granted.subscriptionId,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(context.mocks.stripe.customers.update).toHaveBeenCalledWith(
-      granted.customerId,
-      { invoice_settings: { default_payment_method: "pm_bdd_restore" } },
-    );
-    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
-      granted.subscriptionId,
-      { cancel_at_period_end: false },
-    );
-    const restored = await billing.readBillingStatus(actor);
-    expect(restored.cancelAtPeriodEnd).toBeFalsy();
-    expect(restored.scheduledChange).toBeNull();
-
-    // A setup Checkout Session created by the previous App can still finish
-    // after rollout. Its retired target is normalized before cancellation.
-    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
-      id: `cs_bdd_downgrade_${suffix}`,
-      setup_intent: { payment_method: "pm_bdd_downgrade" },
-    });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
-      id: granted.subscriptionId,
-      status: "active",
-      customer: granted.customerId,
-      cancel_at: null,
-      cancel_at_period_end: false,
-      schedule: null,
-      trial_end: null,
-      metadata: {},
-      items: {
-        data: [
-          {
-            id: `si_bdd_${suffix}`,
-            current_period_start: epochSeconds(0),
-            current_period_end: periodEnd,
-            quantity: 1,
-            price: {
-              id: "price_bdd_pro",
-              recurring: { interval: "month", interval_count: 1 },
+      // The subscription is scheduled for cancellation in Stripe.
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "customer.subscription.updated",
+          object: {
+            id: granted.subscriptionId,
+            status: "active",
+            cancel_at_period_end: true,
+            metadata: {},
+            items: {
+              data: [
+                {
+                  price: { id: "price_bdd_pro" },
+                  current_period_end: periodEnd,
+                },
+              ],
             },
           },
-        ],
-      },
-    });
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "checkout.session.completed",
-        object: {
-          id: `cs_bdd_downgrade_${suffix}`,
-          mode: "setup",
-          subscription: null,
-          customer: granted.customerId,
-          setup_intent: `seti_bdd_downgrade_${suffix}`,
-          metadata: {
-            purpose: "billing_downgrade",
-            orgId,
-            subscriptionId: granted.subscriptionId,
-            targetTier: "limited-free-1",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(context.mocks.stripe.customers.update).toHaveBeenCalledWith(
-      granted.customerId,
-      { invoice_settings: { default_payment_method: "pm_bdd_downgrade" } },
-    );
-    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
-      granted.subscriptionId,
-      { cancel_at_period_end: true },
-    );
-    const downgraded = await billing.readBillingStatus(actor);
-    expect(downgraded.cancelAtPeriodEnd).toBeTruthy();
-    expect(downgraded.scheduledChange).toStrictEqual(
-      expect.objectContaining({
+        }),
+        [200],
+        scenario.run,
+      );
+      const scheduled = await readBillingStatus();
+      expect(scheduled.cancelAtPeriodEnd).toBeTruthy();
+      expect(scheduled.scheduledChange).toStrictEqual({
         type: "cancel",
         targetTier: "limited-free-1",
-      }),
-    );
+        effectiveDate: isoOf(periodEnd),
+      });
 
-    // A schedule-managed cancellation syncs the final schedule end.
-    const scheduleId = `sched_bdd_${suffix}`;
-    const finalEnd = epochSeconds(60);
-    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValueOnce({
-      id: scheduleId,
-      end_behavior: "cancel",
-      current_phase: { start_date: epochSeconds(0), end_date: periodEnd },
-      phases: [
-        { start_date: epochSeconds(0), end_date: periodEnd },
-        { start_date: periodEnd, end_date: finalEnd },
-      ],
-    });
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: granted.subscriptionId,
-          status: "active",
-          schedule: scheduleId,
-          cancel_at_period_end: false,
-          metadata: {},
-          items: {
-            data: [
-              {
-                price: { id: "price_bdd_pro" },
-                current_period_end: periodEnd,
-              },
-            ],
+      // Mismatched setup checkouts change nothing.
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_bdd_wrong_mode_${suffix}`,
+            mode: "payment",
+            subscription: null,
+            customer: granted.customerId,
+            metadata: {
+              purpose: "billing_restore",
+              orgId,
+              subscriptionId: granted.subscriptionId,
+            },
           },
-        },
-      }),
-      [200],
-    );
-    const scheduleManaged = await billing.readBillingStatus(actor);
-    expect(scheduleManaged.currentPeriodEnd).toBe(isoOf(finalEnd));
-    expect(scheduleManaged.scheduledChange).toStrictEqual({
-      type: "cancel",
-      targetTier: "limited-free-1",
-      effectiveDate: isoOf(finalEnd),
-    });
-
-    // Releasing the schedule clears the pending change entirely.
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "subscription_schedule.released",
-        object: { id: scheduleId },
-      }),
-      [200],
-    );
-    const released = await billing.readBillingStatus(actor);
-    expect(released.cancelAtPeriodEnd).toBeFalsy();
-    expect(released.scheduledChange).toBeNull();
-
-    // A canceled schedule clears the pending schedule but keeps the
-    // cancellation flag visible until Stripe uncancels the subscription.
-    const secondScheduleId = `sched_bdd_second_${suffix}`;
-    const secondFinalEnd = epochSeconds(90);
-    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValueOnce({
-      id: secondScheduleId,
-      end_behavior: "cancel",
-      current_phase: { start_date: epochSeconds(0), end_date: periodEnd },
-      phases: [{ start_date: periodEnd, end_date: secondFinalEnd }],
-    });
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: granted.subscriptionId,
-          status: "active",
-          schedule: secondScheduleId,
-          cancel_at_period_end: false,
-          metadata: {},
-          items: {
-            data: [
-              {
-                price: { id: "price_bdd_pro" },
-                current_period_end: periodEnd,
-              },
-            ],
+        }),
+        [200],
+        scenario.run,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_bdd_no_customer_${suffix}`,
+            mode: "setup",
+            subscription: null,
+            customer: null,
+            metadata: {
+              purpose: "billing_restore",
+              orgId,
+              subscriptionId: granted.subscriptionId,
+            },
           },
-        },
-      }),
-      [200],
-    );
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "subscription_schedule.canceled",
-        object: { id: secondScheduleId },
-      }),
-      [200],
-    );
-    const scheduleCanceled = await billing.readBillingStatus(actor);
-    expect(scheduleCanceled.scheduledChange?.type).toBe("cancel");
-    expect(scheduleCanceled.scheduledChange?.effectiveDate).toBe(
-      isoOf(secondFinalEnd),
-    );
+        }),
+        [200],
+        scenario.run,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_bdd_wrong_sub_${suffix}`,
+            mode: "setup",
+            subscription: null,
+            customer: granted.customerId,
+            setup_intent: {
+              id: `seti_bdd_${suffix}`,
+              payment_method: "pm_bdd",
+            },
+            metadata: {
+              purpose: "billing_restore",
+              orgId,
+              subscriptionId: `sub_bdd_other_${suffix}`,
+            },
+          },
+        }),
+        [200],
+        scenario.run,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_bdd_bad_tier_${suffix}`,
+            mode: "setup",
+            subscription: null,
+            customer: granted.customerId,
+            metadata: {
+              purpose: "billing_downgrade",
+              orgId,
+              subscriptionId: granted.subscriptionId,
+              targetTier: "team",
+            },
+          },
+        }),
+        [200],
+        scenario.run,
+      );
+      expect((await readBillingStatus()).cancelAtPeriodEnd).toBeTruthy();
 
-    // Uncancelling in Stripe clears the remaining cancellation flag.
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: granted.subscriptionId,
-          status: "active",
-          cancel_at_period_end: false,
-          metadata: {},
-          items: { data: [{ price: { id: "price_bdd_pro" } }] },
+      // A restore-purpose setup checkout sets the payment method and restores.
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_bdd_restore_${suffix}`,
+            mode: "setup",
+            subscription: null,
+            customer: granted.customerId,
+            setup_intent: {
+              id: `seti_bdd_restore_${suffix}`,
+              payment_method: "pm_bdd_restore",
+            },
+            metadata: {
+              purpose: "billing_restore",
+              orgId,
+              subscriptionId: granted.subscriptionId,
+            },
+          },
+        }),
+        [200],
+        scenario.run,
+      );
+      expect(context.mocks.stripe.customers.update).toHaveBeenCalledWith(
+        granted.customerId,
+        { invoice_settings: { default_payment_method: "pm_bdd_restore" } },
+      );
+      expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
+        granted.subscriptionId,
+        { cancel_at_period_end: false },
+      );
+      const restored = await readBillingStatus();
+      expect(restored.cancelAtPeriodEnd).toBeFalsy();
+      expect(restored.scheduledChange).toBeNull();
+
+      // A setup Checkout Session created by the previous App can still finish
+      // after rollout. Its retired target is normalized before cancellation.
+      const downgradeCheckout = {
+        id: `cs_bdd_downgrade_${suffix}`,
+        setup_intent: { payment_method: "pm_bdd_downgrade" },
+      };
+      retainBillingSequence(context.mocks.stripe.checkout.sessions.retrieve, [
+        () => {
+          return Promise.resolve(downgradeCheckout);
         },
-        previousAttributes: { cancel_at_period_end: true },
-      }),
-      [200],
-    );
-    const uncancelled = await billing.readBillingStatus(actor);
-    expect(uncancelled.cancelAtPeriodEnd).toBeFalsy();
-    expect(uncancelled.scheduledChange).toBeNull();
+      ]);
+      const downgradeSubscription = {
+        id: granted.subscriptionId,
+        status: "active",
+        customer: granted.customerId,
+        cancel_at: null,
+        cancel_at_period_end: false,
+        schedule: null,
+        trial_end: null,
+        metadata: {},
+        items: {
+          data: [
+            {
+              id: `si_bdd_${suffix}`,
+              current_period_start: epochSeconds(0),
+              current_period_end: periodEnd,
+              quantity: 1,
+              price: {
+                id: "price_bdd_pro",
+                recurring: { interval: "month", interval_count: 1 },
+              },
+            },
+          ],
+        },
+      };
+      retainBillingSequence(context.mocks.stripe.subscriptions.retrieve, [
+        () => {
+          return Promise.resolve(downgradeSubscription);
+        },
+      ]);
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_bdd_downgrade_${suffix}`,
+            mode: "setup",
+            subscription: null,
+            customer: granted.customerId,
+            setup_intent: `seti_bdd_downgrade_${suffix}`,
+            metadata: {
+              purpose: "billing_downgrade",
+              orgId,
+              subscriptionId: granted.subscriptionId,
+              targetTier: "limited-free-1",
+            },
+          },
+        }),
+        [200],
+        scenario.run,
+      );
+      expect(context.mocks.stripe.customers.update).toHaveBeenCalledWith(
+        granted.customerId,
+        { invoice_settings: { default_payment_method: "pm_bdd_downgrade" } },
+      );
+      expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
+        granted.subscriptionId,
+        { cancel_at_period_end: true },
+      );
+      const downgraded = await readBillingStatus();
+      expect(downgraded.cancelAtPeriodEnd).toBeTruthy();
+      expect(downgraded.scheduledChange).toStrictEqual(
+        expect.objectContaining({
+          type: "cancel",
+          targetTier: "limited-free-1",
+        }),
+      );
+
+      // A schedule-managed cancellation syncs the final schedule end.
+      const scheduleId = `sched_bdd_${suffix}`;
+      const finalEnd = epochSeconds(60);
+      const cancellationSchedule = {
+        id: scheduleId,
+        end_behavior: "cancel",
+        current_phase: {
+          start_date: epochSeconds(0),
+          end_date: periodEnd,
+        },
+        phases: [
+          { start_date: epochSeconds(0), end_date: periodEnd },
+          { start_date: periodEnd, end_date: finalEnd },
+        ],
+      };
+      retainBillingSequence(
+        context.mocks.stripe.subscriptionSchedules.retrieve,
+        [
+          () => {
+            return Promise.resolve(cancellationSchedule);
+          },
+        ],
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "customer.subscription.updated",
+          object: {
+            id: granted.subscriptionId,
+            status: "active",
+            schedule: scheduleId,
+            cancel_at_period_end: false,
+            metadata: {},
+            items: {
+              data: [
+                {
+                  price: { id: "price_bdd_pro" },
+                  current_period_end: periodEnd,
+                },
+              ],
+            },
+          },
+        }),
+        [200],
+        scenario.run,
+      );
+      const scheduleManaged = await readBillingStatus();
+      expect(scheduleManaged.currentPeriodEnd).toBe(isoOf(finalEnd));
+      expect(scheduleManaged.scheduledChange).toStrictEqual({
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: isoOf(finalEnd),
+      });
+
+      // Releasing the schedule clears the pending change entirely.
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "subscription_schedule.released",
+          object: { id: scheduleId },
+        }),
+        [200],
+        scenario.run,
+      );
+      const released = await readBillingStatus();
+      expect(released.cancelAtPeriodEnd).toBeFalsy();
+      expect(released.scheduledChange).toBeNull();
+
+      // A canceled schedule clears the pending schedule but keeps the
+      // cancellation flag visible until Stripe uncancels the subscription.
+      const secondScheduleId = `sched_bdd_second_${suffix}`;
+      const secondFinalEnd = epochSeconds(90);
+      const secondCancellationSchedule = {
+        id: secondScheduleId,
+        end_behavior: "cancel",
+        current_phase: {
+          start_date: epochSeconds(0),
+          end_date: periodEnd,
+        },
+        phases: [{ start_date: periodEnd, end_date: secondFinalEnd }],
+      };
+      retainBillingSequence(
+        context.mocks.stripe.subscriptionSchedules.retrieve,
+        [
+          () => {
+            return Promise.resolve(secondCancellationSchedule);
+          },
+        ],
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "customer.subscription.updated",
+          object: {
+            id: granted.subscriptionId,
+            status: "active",
+            schedule: secondScheduleId,
+            cancel_at_period_end: false,
+            metadata: {},
+            items: {
+              data: [
+                {
+                  price: { id: "price_bdd_pro" },
+                  current_period_end: periodEnd,
+                },
+              ],
+            },
+          },
+        }),
+        [200],
+        scenario.run,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "subscription_schedule.canceled",
+          object: { id: secondScheduleId },
+        }),
+        [200],
+        scenario.run,
+      );
+      const scheduleCanceled = await readBillingStatus();
+      expect(scheduleCanceled.scheduledChange?.type).toBe("cancel");
+      expect(scheduleCanceled.scheduledChange?.effectiveDate).toBe(
+        isoOf(secondFinalEnd),
+      );
+
+      // Uncancelling in Stripe clears the remaining cancellation flag.
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "customer.subscription.updated",
+          object: {
+            id: granted.subscriptionId,
+            status: "active",
+            cancel_at_period_end: false,
+            metadata: {},
+            items: { data: [{ price: { id: "price_bdd_pro" } }] },
+          },
+          previousAttributes: { cancel_at_period_end: true },
+        }),
+        [200],
+        scenario.run,
+      );
+      const uncancelled = await readBillingStatus();
+      expect(uncancelled.cancelAtPeriodEnd).toBeFalsy();
+      expect(uncancelled.scheduledChange).toBeNull();
+    });
   });
 
   it("processes preview Stripe events only for the matching job ref", async () => {

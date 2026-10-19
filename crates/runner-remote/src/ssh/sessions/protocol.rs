@@ -90,13 +90,7 @@ impl SignalName {
     }
 }
 
-#[derive(Clone, Copy, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum Effects {
-    NotStarted,
-    Unknown,
-    Completed,
-}
+pub(super) use crate::diagnostics::Effects;
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

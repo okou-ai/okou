@@ -2,6 +2,7 @@ use super::*;
 
 fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
     let _ = handle.record(Record {
+        effects: None,
         protocol,
         connection,
         operation: Operation::Exec,

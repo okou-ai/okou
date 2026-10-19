@@ -8,6 +8,7 @@ mod metadata;
 mod observations;
 mod parallel_publication;
 mod pressure;
+mod pressure_discovery;
 mod promotion;
 mod publication_admission;
 mod publication_budget;
