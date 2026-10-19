@@ -11,9 +11,16 @@ use crate::executor::{ExecutionFailure, ExecutionFailureKind};
 const MAX_NETWORK_LOG_TAIL_BYTES: u64 = 128 * 1024;
 
 #[derive(Deserialize)]
+#[serde(tag = "type")]
+enum NetworkLogEntry {
+    #[serde(rename = "http")]
+    Http(NetworkHttpEntry),
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
 struct NetworkHttpEntry {
-    #[serde(rename = "type")]
-    kind: String,
     method: String,
     url: String,
     status: u16,
@@ -22,15 +29,12 @@ struct NetworkHttpEntry {
 }
 
 impl NetworkHttpEntry {
-    fn is_codex_workspace_discovery(&self) -> bool {
-        self.kind == "http"
-            && self.method == "GET"
-            && url::Url::parse(&self.url).is_ok_and(|url| {
-                url.scheme() == "https"
-                    && url.host_str() == Some("chatgpt.com")
-                    && url.port_or_known_default() == Some(443)
-                    && url.path() == "/backend-api/wham/accounts/check"
-            })
+    fn is_codex_workspace_discovery(&self, url: &url::Url) -> bool {
+        self.method == "GET"
+            && url.scheme() == "https"
+            && url.host_str() == Some("chatgpt.com")
+            && url.port_or_known_default() == Some(443)
+            && url.path() == "/backend-api/wham/accounts/check"
     }
 
     fn requires_codex_reconnect(&self) -> bool {
@@ -88,13 +92,26 @@ async fn read_codex_workspace_reconnect(path: &Path) -> std::io::Result<bool> {
     // A bounded suffix may start inside a row. Only complete JSONL rows written
     // by the proxy can supply evidence; an unfinished suffix cannot establish
     // the latest outcome, and captured bodies are never interpreted.
-    Ok(bytes
+    let mut reconnect_required = false;
+    for line in bytes
         .split_inclusive(|byte| *byte == b'\n')
         .skip(usize::from(start != 0))
-        .filter_map(|line| serde_json::from_slice::<NetworkHttpEntry>(line).ok())
-        .filter(NetworkHttpEntry::is_codex_workspace_discovery)
-        // A later successful or differently failed discovery supersedes an
-        // earlier reconnect response from this Run.
-        .last()
-        .is_some_and(|entry| entry.requires_codex_reconnect()))
+    {
+        match serde_json::from_slice::<NetworkLogEntry>(line) {
+            Ok(NetworkLogEntry::Http(entry)) => {
+                let Ok(url) = url::Url::parse(&entry.url) else {
+                    reconnect_required = false;
+                    continue;
+                };
+                if entry.is_codex_workspace_discovery(&url) {
+                    reconnect_required = entry.requires_codex_reconnect();
+                }
+            }
+            Ok(NetworkLogEntry::Other) => {}
+            // A damaged row can be a later discovery response. It breaks the
+            // earlier evidence until a new confirmed discovery row arrives.
+            Err(_) => reconnect_required = false,
+        }
+    }
+    Ok(reconnect_required)
 }

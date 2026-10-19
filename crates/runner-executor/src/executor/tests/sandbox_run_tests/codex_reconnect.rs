@@ -220,6 +220,60 @@ async fn codex_reconnect_does_not_reuse_evidence_superseded_by_later_discovery()
 }
 
 #[tokio::test]
+async fn codex_reconnect_discards_evidence_before_an_unreadable_later_row() {
+    // An append failure can leave a partial row. The proxy writer terminates
+    // that row before its next batch, so a newline alone does not prove JSON.
+    let mut wrong_status = reconnect_entry();
+    wrong_status["status"] = json!("unreadable");
+    let mut unreadable_url = reconnect_entry();
+    unreadable_url["url"] = json!("[truncated]");
+    for later_row in [
+        b"{\"type\":\"http\",\"status\":200\n".to_vec(),
+        jsonl(&wrong_status),
+        jsonl(&unreadable_url),
+    ] {
+        let mut bytes = jsonl(&reconnect_entry());
+        bytes.extend_from_slice(&later_row);
+        let failure = run_discovery_failure(
+            Some(&bytes),
+            AgentFramework::Codex,
+            None,
+            "workspace routing discovery failed",
+        )
+        .await;
+        assert_eq!(failure.diagnostic.unwrap().failure_reason, None);
+    }
+}
+
+#[tokio::test]
+async fn codex_reconnect_accepts_new_evidence_after_a_log_gap_and_unrelated_rows() {
+    let mut bytes = b"{\"type\":\"http\",\"status\":200\n".to_vec();
+    bytes.extend_from_slice(&jsonl(&reconnect_entry()));
+    bytes.extend_from_slice(&jsonl(&json!({
+        "type": "dns",
+        "host": "example.com",
+        "answers": [],
+    })));
+    bytes.extend_from_slice(&jsonl(&json!({
+        "type": "http",
+        "method": "GET",
+        "url": "https://example.com/",
+        "status": 200,
+    })));
+    let failure = run_discovery_failure(
+        Some(&bytes),
+        AgentFramework::Codex,
+        None,
+        "workspace routing discovery failed",
+    )
+    .await;
+    assert_eq!(
+        failure.diagnostic.unwrap().failure_reason,
+        Some(FailureReason::ReconnectRequired)
+    );
+}
+
+#[tokio::test]
 async fn codex_reconnect_only_uses_complete_rows_in_a_bounded_log_suffix() {
     let row = jsonl(&reconnect_entry());
     let mut bytes = vec![b'x'; 128 * 1024];
