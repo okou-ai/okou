@@ -143,11 +143,9 @@ fn is_debootstrap_temp_tarball_name(name: &str) -> bool {
         return false;
     };
 
-    // Older builders used host PIDs; PID namespaces require mktemp identities.
-    (!identity.is_empty() && identity.bytes().all(|byte| byte.is_ascii_digit()))
-        || identity.strip_prefix("mktemp.").is_some_and(|random| {
-            random.len() == 6 && random.bytes().all(|byte| byte.is_ascii_alphanumeric())
-        })
+    identity.strip_prefix("mktemp.").is_some_and(|random| {
+        random.len() == 6 && random.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    })
 }
 
 #[cfg(test)]
@@ -304,7 +302,7 @@ mod tests {
         let debootstrap_dir = home.debootstrap_dir();
         std::fs::create_dir_all(&debootstrap_dir).unwrap();
         let stable_tar = debootstrap_dir.join("noble-amd64.tar");
-        let temp_tar = debootstrap_dir.join("noble-amd64.tmp.123.tar");
+        let temp_tar = debootstrap_dir.join("noble-amd64.tmp.mktemp.a9Bc2D.tar");
         std::fs::write(&stable_tar, b"stable cache").unwrap();
         std::fs::write(&temp_tar, b"partial cache").unwrap();
         let expected_bytes = std::fs::metadata(&stable_tar).unwrap().len()
@@ -335,8 +333,8 @@ mod tests {
         let home = test_home(dir.path());
         let debootstrap_dir = home.debootstrap_dir();
         std::fs::create_dir_all(&debootstrap_dir).unwrap();
-        let stale_tmp = debootstrap_dir.join("noble-amd64.tmp.123.tar");
-        let recent_tmp = debootstrap_dir.join("noble-amd64.tmp.456.tar");
+        let stale_tmp = debootstrap_dir.join("noble-amd64.tmp.mktemp.a9Bc2D.tar");
+        let recent_tmp = debootstrap_dir.join("noble-amd64.tmp.mktemp.e3Fg4H.tar");
         std::fs::write(&stale_tmp, b"stale partial").unwrap();
         std::fs::write(&recent_tmp, b"recent partial").unwrap();
         let stale_size = std::fs::metadata(&stale_tmp).unwrap().len();
@@ -369,13 +367,13 @@ mod tests {
         let debootstrap_dir = home.debootstrap_dir();
         std::fs::create_dir_all(&debootstrap_dir).unwrap();
         let stable_tar = debootstrap_dir.join("noble-amd64.tar");
-        let newer_tmp = debootstrap_dir.join("noble-amd64.tmp.789.tar");
-        let random_tmp = debootstrap_dir.join("noble-amd64.tmp.mktemp.a9Bc2D.tar");
+        let newer_tmp = debootstrap_dir.join("noble-amd64.tmp.mktemp.a9Bc2D.tar");
+        let other_tmp = debootstrap_dir.join("noble-amd64.tmp.mktemp.e3Fg4H.tar");
         std::fs::write(&stable_tar, b"stable").unwrap();
         std::fs::write(&newer_tmp, b"newer partial").unwrap();
-        std::fs::write(&random_tmp, b"namespace partial").unwrap();
+        std::fs::write(&other_tmp, b"other partial").unwrap();
         let temp_size = std::fs::metadata(&newer_tmp).unwrap().len()
-            + std::fs::metadata(&random_tmp).unwrap().len();
+            + std::fs::metadata(&other_tmp).unwrap().len();
         let old_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
         let newer_time = old_time + Duration::from_secs(60);
         std::fs::File::open(&stable_tar)
@@ -386,7 +384,7 @@ mod tests {
             .unwrap()
             .set_times(FileTimes::new().set_modified(newer_time))
             .unwrap();
-        std::fs::File::open(&random_tmp)
+        std::fs::File::open(&other_tmp)
             .unwrap()
             .set_times(FileTimes::new().set_modified(newer_time))
             .unwrap();
@@ -403,11 +401,11 @@ mod tests {
             !newer_tmp.exists(),
             "stale temp tarballs must not consume keep_latest slots"
         );
-        assert!(!random_tmp.exists());
+        assert!(!other_tmp.exists());
     }
 
     #[tokio::test]
-    async fn gc_debootstrap_non_pid_tmp_tarball_name_is_stable() {
+    async fn gc_debootstrap_unmarked_tmp_tarball_name_is_stable() {
         use std::fs::FileTimes;
 
         let dir = tempfile::tempdir().unwrap();
@@ -415,7 +413,7 @@ mod tests {
         let debootstrap_dir = home.debootstrap_dir();
         std::fs::create_dir_all(&debootstrap_dir).unwrap();
         let stable_tar = debootstrap_dir.join("noble-amd64.tmp.release.tar");
-        let temp_tar = debootstrap_dir.join("noble-amd64.tmp.789.tar");
+        let temp_tar = debootstrap_dir.join("noble-amd64.tmp.mktemp.a9Bc2D.tar");
         std::fs::write(&stable_tar, b"stable").unwrap();
         std::fs::write(&temp_tar, b"temp").unwrap();
         let temp_size = std::fs::metadata(&temp_tar).unwrap().len();
@@ -436,11 +434,11 @@ mod tests {
         assert_eq!(report.activity_count, 1);
         assert!(
             stable_tar.exists(),
-            "non-pid .tmp. tarball names should remain stable debootstrap cache tarballs"
+            "unmarked .tmp. tarball names should remain stable debootstrap cache tarballs"
         );
         assert!(
             !temp_tar.exists(),
-            "pid-suffixed debootstrap temp tarball should be removed"
+            "mktemp debootstrap temp tarball should be removed"
         );
     }
 }
