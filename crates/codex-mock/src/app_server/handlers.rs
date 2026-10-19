@@ -6,7 +6,8 @@ use super::messages::{
     server_request, thread_response, thread_started_notification, turn,
     turn_completed_notification, turn_error_notification, turn_failed_notification,
     turn_interrupted_notification, turn_started_notification, warning_notification, write_error,
-    write_error_with_data, write_json_line, write_malformed_thread_item_notification,
+    write_error_with_data, write_json_line, write_large_stdout_notification,
+    write_large_stdout_text, write_malformed_thread_item_notification,
     write_oversized_delivery_notifications, write_resumed_turn_notifications,
     write_split_json_line_prefix, write_success, write_thread_item_notifications,
     write_turn_completion_notifications, write_turn_notifications, write_turn_start_notifications,
@@ -15,7 +16,6 @@ use super::messages::{
 use super::persistence::{InputEventContext, persist_input_events, session_rollout_timestamp};
 use super::scenario::{Scenario, TurnStartRpcError};
 use super::{AppServerState, INVALID_REQUEST, PendingResponse, ServerAction, spawn_stderr_holder};
-use guest_contracts::stdout_framing::CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES;
 use serde_json::{Value, json};
 use std::io::{self, Write};
 use std::os::unix::net::UnixListener;
@@ -39,7 +39,6 @@ const EVENT_DELIVERY_LARGE_RELEASE_SOCKET: &str = ".codex-mock-event-delivery-la
 const TURN_INTERRUPT_READY_FILE: &str = ".codex-mock-turn-interrupt-ready";
 const TURN_INTERRUPT_READY_EVENT: &str = "codex_mock_turn_interrupt_ready";
 const NOTIFICATION_OVERFLOW_COUNT: usize = 129;
-const STDOUT_STREAM_CHUNK_BYTES: usize = 8 * 1024;
 const EVENT_DELIVERY_FLOOD_COUNT: usize = 640;
 // One in-flight payload plus fifteen queued payloads crosses the shared 32 MiB budget.
 const EVENT_DELIVERY_LARGE_EVENT_COUNT: usize = 16;
@@ -82,12 +81,8 @@ impl AppServerState {
             output.flush()?;
             return Ok(ServerAction::Stop);
         }
-        if self.scenario == Scenario::OversizedStdout {
-            let chunk = [b'x'; STDOUT_STREAM_CHUNK_BYTES];
-            for _ in 0..CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES / STDOUT_STREAM_CHUNK_BYTES {
-                output.write_all(&chunk)?;
-            }
-            output.write_all(b"x\n")?;
+        if self.scenario == Scenario::InvalidUtf8Stdout {
+            output.write_all(b"do-not-expose-invalid-utf8-\xff\n")?;
             output.flush()?;
             return Ok(ServerAction::Stop);
         }
@@ -102,7 +97,21 @@ impl AppServerState {
             return Ok(ServerAction::Continue);
         }
         self.initialized = true;
-        write_success(output, id, initialize_response())?;
+        if matches!(self.scenario, Scenario::CrLfStdout | Scenario::EofStdout) {
+            serde_json::to_writer(
+                &mut *output,
+                &json!({"id": id, "result": initialize_response()}),
+            )
+            .map_err(io::Error::other)?;
+            if self.scenario == Scenario::EofStdout {
+                output.flush()?;
+                return Ok(ServerAction::Stop);
+            }
+            output.write_all(b"\r\n")?;
+            output.flush()?;
+        } else {
+            write_success(output, id, initialize_response())?;
+        }
         if self.scenario == Scenario::HangAfterInitializeResponse {
             loop {
                 thread::park();
@@ -179,6 +188,12 @@ impl AppServerState {
             Scenario::LargeNotificationBeforeResponse => {
                 write_json_line(output, &large_server_notification())?;
                 write_success(output, id, result)?;
+            }
+            Scenario::LargeStdoutResponse => {
+                write!(output, "{{\"id\":{id},\"result\":{{\"padding\":\"")?;
+                write_large_stdout_text(output)?;
+                output.write_all(b"\"}}\n")?;
+                output.flush()?;
             }
             Scenario::ServerRequestBeforeResponse | Scenario::NullIdServerRequestBeforeResponse => {
                 let request_id = if self.scenario == Scenario::NullIdServerRequestBeforeResponse {
@@ -552,6 +567,12 @@ impl AppServerState {
         if self.scenario == Scenario::RuntimeOversizedDelivery {
             write_json_line(output, &turn_started_notification(&thread_id, &turn_id))?;
             write_oversized_delivery_notifications(output, &thread_id, &turn_id)?;
+            write_json_line(output, &turn_completed_notification(&thread_id, &turn_id))?;
+        }
+        if self.scenario == Scenario::RuntimeLargeStdout {
+            write_json_line(output, &turn_started_notification(&thread_id, &turn_id))?;
+            write_large_stdout_notification(output, &thread_id, &turn_id)?;
+            write_json_line(output, &warning_notification(&thread_id, 0))?;
             write_json_line(output, &turn_completed_notification(&thread_id, &turn_id))?;
         }
         Ok(ServerAction::Continue)

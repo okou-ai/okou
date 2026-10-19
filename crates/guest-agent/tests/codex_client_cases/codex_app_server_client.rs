@@ -11,7 +11,6 @@ use std::time::Duration;
 use guest_agent::cli::codex_app_server::{
     CodexAppServerClient, CodexAppServerConfig, CodexAppServerError, InitializeResponse,
 };
-use guest_contracts::stdout_framing::CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -414,25 +413,73 @@ async fn codex_app_server_malformed_stdout_fails_without_hanging() -> Result<(),
 }
 
 #[tokio::test]
-async fn codex_app_server_oversized_stdout_line_is_rejected() -> Result<(), String> {
-    let mut client = spawn_client(Some("oversized-stdout"))?;
+async fn codex_app_server_accepts_response_above_former_stdout_limit() -> Result<(), String> {
+    let mut client = spawn_client(Some("large-stdout-response"))?;
+    wait_result(client.initialize(), "initialize").await?;
+
+    let response = wait_result(
+        client.request_value("thread/start", json!({})),
+        "large thread/start response",
+    )
+    .await?;
+    let padding = response["padding"]
+        .as_str()
+        .ok_or("large response omitted padding")?;
+    assert_eq!(padding.len(), 65 * 1024 * 1024 + 22);
+    assert!(padding.starts_with("large-head-"));
+    assert!(padding.ends_with("-large-tail"));
+    assert!(
+        padding[11..padding.len() - 11]
+            .bytes()
+            .all(|byte| byte == b'x')
+    );
+    drop(response);
+
+    let state = wait_result(client.request_value("mock/state", json!({})), "mock/state").await?;
+    assert_eq!(state["initializedNotificationReceived"], true);
+    wait_result(client.shutdown(), "shutdown").await
+}
+
+#[tokio::test]
+async fn codex_app_server_invalid_utf8_fails_without_raw_payload() -> Result<(), String> {
+    let mut client = spawn_client(Some("invalid-utf8-stdout"))?;
 
     let result = wait_result_allow_error(client.initialize(), "initialize").await;
     match result {
         Err(CodexAppServerError::Protocol(message)) => {
-            let expected_error = format!(
-                "app-server stdout line exceeded {CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES} bytes"
-            );
-            assert!(message.contains(&expected_error));
-            assert!(!message.contains("xxx"));
+            assert!(message.contains("app-server stdout line is not UTF-8"));
+            assert!(!message.contains("do-not-expose"));
         }
         other => {
-            return Err(format!(
-                "expected oversized stdout protocol error, got {other:?}"
-            ));
+            return Err(format!("expected UTF-8 protocol error, got {other:?}"));
         }
     }
 
+    wait_result(client.shutdown(), "shutdown").await
+}
+
+#[tokio::test]
+async fn codex_app_server_accepts_crlf_response_and_continues() -> Result<(), String> {
+    let mut client = spawn_client(Some("crlf-stdout"))?;
+    wait_result(client.initialize(), "initialize with CRLF").await?;
+    let state = wait_result(client.request_value("mock/state", json!({})), "mock/state").await?;
+    assert_eq!(state["initializedNotificationReceived"], true);
+    wait_result(client.shutdown(), "shutdown").await
+}
+
+#[tokio::test]
+async fn codex_app_server_accepts_eof_terminated_response() -> Result<(), String> {
+    let mut client = spawn_client(Some("eof-stdout"))?;
+    let response = wait_result(
+        client.request_value("initialize", initialize_params()),
+        "EOF-terminated initialize response",
+    )
+    .await?;
+    assert!(
+        response["userAgent"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("codex-mock"))
+    );
     wait_result(client.shutdown(), "shutdown").await
 }
 

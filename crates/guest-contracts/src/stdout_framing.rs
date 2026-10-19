@@ -9,9 +9,3 @@
 /// LF is excluded. A preceding CR counts before CRLF normalization, and an
 /// EOF-terminated final record is measured without an implicit terminator.
 pub const ORDINARY_CLI_STDOUT_MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
-
-/// Maximum retained bytes for one Codex app-server stdout record before parsing.
-///
-/// LF is excluded. A preceding CR counts before CRLF normalization, and an
-/// EOF-terminated final record is measured without an implicit terminator.
-pub const CODEX_APP_SERVER_STDOUT_MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
