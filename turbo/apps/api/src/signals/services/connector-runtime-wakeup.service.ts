@@ -40,12 +40,42 @@ export async function commitConnectorRuntimeMutation<T>(
   const result = await commit;
   const wakeup = wakeupForResult(result);
   if (wakeup) {
-    await publishConnectorRuntimeSyncWakeups(wakeup);
+    await (async () => {
+      const result = await settle(
+        (async () => {
+          const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+          if (targets.length === 0) {
+            return;
+          }
+
+          const rows = await wakeup.db
+            .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
+            .from(agentRuns)
+
+            .where(connectorRuntimeWakeupCondition(wakeup.scope));
+
+          await publishConnectorRuntimeWakeupRows({
+            scope: wakeup.scope,
+            targets,
+            rows,
+          });
+        })(),
+      );
+      if (!result.ok) {
+        reportConnectorRuntimeWakeupDiscoveryFailure({
+          orgId: wakeup.scope.orgId,
+          scopedToUser: wakeup.scope.userId !== undefined,
+          scopedToAgent: wakeup.scope.agentId !== undefined,
+          targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+          error: result.error,
+        });
+      }
+    })();
   }
   return result;
 }
 
-function uniqueConnectorRuntimeTargets(
+export function uniqueConnectorRuntimeTargets(
   targets: readonly ConnectorRuntimeTarget[],
 ): readonly ConnectorRuntimeTarget[] {
   const targetsByKey = new Map<string, ConnectorRuntimeTarget>();
@@ -55,12 +85,14 @@ function uniqueConnectorRuntimeTargets(
   return [...targetsByKey.values()];
 }
 
-interface ConnectorRuntimeWakeupBusinessArgs {
+export interface ConnectorRuntimeWakeupBusinessArgs {
   readonly scope: ConnectorRuntimeWakeupScope;
   readonly targets: readonly ConnectorRuntimeTarget[];
 }
 
-function connectorRuntimeWakeupCondition(scope: ConnectorRuntimeWakeupScope) {
+export function connectorRuntimeWakeupCondition(
+  scope: ConnectorRuntimeWakeupScope,
+) {
   const conditions: SQL[] = [
     eq(agentRuns.orgId, scope.orgId),
     eq(agentRuns.status, "running"),
@@ -75,27 +107,7 @@ function connectorRuntimeWakeupCondition(scope: ConnectorRuntimeWakeupScope) {
   return and(...conditions);
 }
 
-async function publishConnectorRuntimeSyncWakeupsInner(
-  args: ConnectorRuntimeWakeupArgs,
-): Promise<void> {
-  const targets = uniqueConnectorRuntimeTargets(args.targets);
-  if (targets.length === 0) {
-    return;
-  }
-
-  const rows = await args.db
-    .select({
-      runId: agentRuns.id,
-      runnerGroup: agentRuns.runnerGroup,
-    })
-    .from(agentRuns)
-
-    .where(connectorRuntimeWakeupCondition(args.scope));
-
-  await publishConnectorRuntimeWakeupRows({ scope: args.scope, targets, rows });
-}
-
-async function publishConnectorRuntimeWakeupRows(
+export async function publishConnectorRuntimeWakeupRows(
   args: ConnectorRuntimeWakeupBusinessArgs & {
     readonly rows: readonly {
       readonly runId: string;
@@ -183,23 +195,14 @@ async function publishConnectorRuntimeWakeupRows(
   });
 }
 
-/**
- * Best-effort post-commit notification. Once a runtime mutation commits,
- * callers must invoke this before observing request cancellation.
- */
-export async function publishConnectorRuntimeSyncWakeups(
-  args: ConnectorRuntimeWakeupArgs,
-): Promise<void> {
-  const result = await settle(publishConnectorRuntimeSyncWakeupsInner(args));
-  if (!result.ok) {
-    L.warn("Failed to discover connector runtime sync wakeups", {
-      orgId: args.scope.orgId,
-      scopedToUser: args.scope.userId !== undefined,
-      scopedToAgent: args.scope.agentId !== undefined,
-      targetCount: uniqueConnectorRuntimeTargets(args.targets).length,
-      error: result.error,
-    });
-  }
+export function reportConnectorRuntimeWakeupDiscoveryFailure(args: {
+  readonly orgId: string;
+  readonly scopedToUser: boolean;
+  readonly scopedToAgent: boolean;
+  readonly targetCount: number;
+  readonly error: unknown;
+}): void {
+  L.warn("Failed to discover connector runtime sync wakeups", args);
 }
 
 /** Post-commit notification owns its read and never receives a database handle. */
