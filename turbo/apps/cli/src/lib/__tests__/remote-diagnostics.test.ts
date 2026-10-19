@@ -145,6 +145,89 @@ it.each(["ssh", "vnc"] as const)(
     expect(process.exitCode).toBe(0);
   },
 );
+it.each(["ssh", "vnc"] as const)(
+  "explains exact-attempt attribution in %s diagnose help without reading history",
+  async (protocol) => {
+    const command = protocol === "ssh" ? sshCommand : createVncCommand();
+    const diagnose = command.commands.find((child) => {
+      return child.name() === "diagnose";
+    });
+    if (!diagnose) throw new Error("Expected the registered diagnose command");
+    const previousOutput = diagnose.configureOutput();
+    let help = "";
+    diagnose.configureOutput({
+      writeOut: (text) => {
+        help += text;
+      },
+    });
+    try {
+      await expect(
+        command.parseAsync(["diagnose", "--help"], { from: "user" }),
+      ).rejects.toThrow("CLI exit");
+    } finally {
+      diagnose.configureOutput(previousOutput);
+    }
+    expect(help).toContain("actual failed operation's Attempt ID");
+    expect(help).toContain(
+      `okou ${protocol} diagnose <connection-id> --attempt-id <attempt-id> --json`,
+    );
+    expect(help).toContain("Add --session-id <id> when known");
+    expect(help).toContain("all supplied selectors must match");
+    expect(help).toContain(
+      "Without --attempt-id, this returns the latest matching retained failure",
+    );
+    expect(help).toContain(
+      "Verify its operation, connection, session, and time",
+    );
+    expect(help).toContain(
+      "If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure",
+    );
+    expect(help).toContain("Passive history only, within this Run");
+    expect(help).toContain("Missing evidence is not a connectivity result");
+    expect(help).toContain(
+      "Never automatically replay uncertain commands, input, or checks",
+    );
+    expect(spawn).not.toHaveBeenCalled();
+  },
+);
+it.each(["ssh", "vnc"] as const)(
+  "keeps a missing exact %s attempt unavailable without querying a latest substitute",
+  async (protocol) => {
+    const missing = {
+      status: "not_retained",
+      message:
+        "The exact attempt is no longer retained; its evidence is unavailable.",
+    };
+    response(missing);
+    await invoke(
+      protocol,
+      connection,
+      "--attempt-id",
+      attempt,
+      "--session-id",
+      session,
+      "--json",
+    );
+    expect(result()).toEqual(missing);
+    expect(
+      helper.requests.map((raw) => {
+        return JSON.parse(raw);
+      }),
+    ).toEqual([
+      {
+        version: 1,
+        method: `${protocol}.diagnose`,
+        params: {
+          connectionId: connection,
+          attemptId: attempt,
+          sessionId: session,
+        },
+      },
+    ]);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(1);
+  },
+);
 it("passes arbitrary Runner wording unchanged in human output", async () => {
   response(found("vnc"));
   await invoke("vnc");

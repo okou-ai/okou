@@ -63,6 +63,101 @@ fn pinned_failures_survive_other_protocol_pressure_and_exact_queries_never_subst
 }
 
 #[test]
+fn exact_attempts_distinguish_failures_sharing_a_connection_and_session_without_substitution() {
+    for protocol in [Protocol::Ssh, Protocol::Vnc] {
+        let handle = Handle::new(RunId::new_v4(), true);
+        let connection = Uuid::new_v4();
+        let session = Uuid::new_v4();
+        let record = || {
+            handle
+                .record(Record {
+                    effects: None,
+                    protocol,
+                    connection,
+                    operation: match protocol {
+                        Protocol::Ssh => Operation::Session,
+                        Protocol::Vnc => Operation::Input,
+                    },
+                    identity: Identity {
+                        session: Some(session),
+                        ..Identity::default()
+                    },
+                    cause: Some(match protocol {
+                        Protocol::Ssh => Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch),
+                        Protocol::Vnc => Cause::Vnc(crate::vnc::Failure::AuthenticationFailed),
+                    }),
+                    dependency: None,
+                    native: None,
+                    ssh: None,
+                    vnc: None,
+                })
+                .unwrap()
+        };
+        let first = record();
+        let second = record();
+        assert_ne!(first.attempt_id, second.attempt_id);
+        let latest = || Selector {
+            connection_id: Some(connection),
+            session_id: Some(session),
+            ..Selector::default()
+        };
+        for broad in [
+            latest(),
+            Selector {
+                connection_id: Some(connection),
+                ..Selector::default()
+            },
+            Selector {
+                session_id: Some(session),
+                ..Selector::default()
+            },
+        ] {
+            assert_eq!(
+                handle.select(protocol, &broad).unwrap().attempt_id,
+                second.attempt_id
+            );
+        }
+        for original in [&first, &second] {
+            let exact = || Selector {
+                attempt_id: Some(original.attempt_id),
+                ..latest()
+            };
+            let selected = handle.select(protocol, &exact()).unwrap();
+            assert_eq!(selected.attempt_id, original.attempt_id);
+            assert_eq!(selected.connection_id, connection);
+            assert_eq!(selected.session_id, Some(session));
+            for conflicting in [
+                Selector {
+                    connection_id: Some(Uuid::new_v4()),
+                    ..exact()
+                },
+                Selector {
+                    session_id: Some(Uuid::new_v4()),
+                    ..exact()
+                },
+            ] {
+                assert!(handle.select(protocol, &conflicting).is_none());
+            }
+        }
+        for _ in 0..CAPACITY {
+            record();
+        }
+        assert!(handle.select(protocol, &latest()).is_some());
+        assert!(
+            handle
+                .select(
+                    protocol,
+                    &Selector {
+                        attempt_id: Some(first.attempt_id),
+                        ..latest()
+                    },
+                )
+                .is_none()
+        );
+    }
+}
+
+#[test]
 fn replacement_preserves_history_but_fences_stale_producers_and_other_runs() {
     let old = Handle::new(RunId::new_v4(), true);
     let connection = Uuid::new_v4();
