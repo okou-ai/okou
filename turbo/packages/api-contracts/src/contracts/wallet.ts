@@ -42,16 +42,6 @@ export const walletCreateSpendSchema = z.object({
   test: z.boolean().default(false),
 });
 
-// Retain explicit modes for captured older CLI builds until their Runner and
-// rollback artifacts are retired (#40206). Current clients use unified consent.
-export const walletConnectSchema = z
-  .object({
-    readOnly: z.boolean().optional(),
-    transactions: z.boolean().optional(),
-  })
-  .strict();
-export type WalletConnect = z.infer<typeof walletConnectSchema>;
-
 export const walletAuthorizationDetailsSchema = z.array(
   z.object({
     type: z.string(),
@@ -323,7 +313,7 @@ export const walletContract = c.router({
     method: "POST",
     path: "/api/wallet/connect",
     headers: authHeadersSchema,
-    body: walletConnectSchema,
+    body: z.object({}).strict(),
     responses: {
       200: z.object({ url: z.url(), expiresAt: z.iso.datetime() }),
       400: apiErrorSchema,
