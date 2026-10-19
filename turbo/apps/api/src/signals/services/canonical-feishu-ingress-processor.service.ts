@@ -24,6 +24,9 @@ import { writeDb$, type Db } from "../external/db";
 import {
   FeishuApiError,
   feishuReactionCreationUrl,
+  feishuMessageHistoryUrl,
+  parseFeishuMessageHistoryResponse,
+  type FeishuHistoryMessage,
   feishuTokenUpdateValues,
   parseFeishuReactionCreationResponse,
   readFeishuResponseJson,
@@ -66,7 +69,7 @@ import {
 } from "./feishu-custom-connector.service";
 import {
   dispatchConnectedFeishuCommand$,
-  loadFeishuConversationHistory,
+  formatFeishuConversationHistory,
   feishuMessageReceivedValues,
   feishuMessageReceivedCondition,
   replyFeishuAgentUnavailable,
@@ -95,7 +98,7 @@ import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 
 const L = logger("CanonicalFeishuIngressProcessor");
-const thinkingReactionL = logger("FeishuDispatch");
+const feishuDispatchL = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
 const SWEEP_LIMIT = 20;
@@ -790,7 +793,7 @@ const addFeishuThinkingReaction$ = command(
         );
       })(),
       (error) => {
-        thinkingReactionL.warn("Failed to set Feishu thinking indicator", {
+        feishuDispatchL.warn("Failed to set Feishu thinking indicator", {
           error,
           messageId: message.messageId,
         });
@@ -798,6 +801,126 @@ const addFeishuThinkingReaction$ = command(
     );
     signal.throwIfAborted();
     return createdReactionId;
+  },
+);
+
+const loadFeishuHistory$ = command(
+  async (
+    { set },
+    args: {
+      readonly installationId: string;
+      readonly containerType: "chat" | "thread";
+      readonly containerId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly FeishuHistoryMessage[]> => {
+    const history = await tapError(
+      (async () => {
+        const historyContextArgs = { db: set(writeDb$), ...args };
+        const historyContextSignal = signal;
+        const { token, apiOrigin, providerName } = await (async () => {
+          const [installation] = await historyContextArgs.db
+            .select()
+            .from(feishuOrgInstallations)
+            .where(
+              eq(feishuOrgInstallations.id, historyContextArgs.installationId),
+            )
+            .limit(1);
+          historyContextSignal.throwIfAborted();
+          if (!installation) {
+            throw new Error("Bot installation not found");
+          }
+          if (
+            !(await (async () => {
+              const plan = feishuInstallationAvailabilityReadPlan(installation);
+              if (plan.kind === "resolved") {
+                return plan.enabled;
+              }
+              const rows = await historyContextArgs.db
+                .select(plan.columns)
+                .from(userFeatureSwitches)
+                .where(plan.condition);
+              return feishuInstallationEnabledFromRows(plan.scope, rows);
+            })())
+          ) {
+            throw new FeishuApiError("Lark integration is not enabled", 403);
+          }
+          const credentials = await resolveFeishuRequestCredentials(
+            installation,
+            historyContextSignal,
+          );
+          if (credentials.refreshedToken) {
+            await historyContextArgs.db
+              .update(feishuOrgInstallations)
+              .set(feishuTokenUpdateValues(credentials.refreshedToken))
+              .where(
+                eq(
+                  feishuOrgInstallations.id,
+                  historyContextArgs.installationId,
+                ),
+              );
+            historyContextSignal.throwIfAborted();
+          }
+          return credentials.context;
+        })();
+        const url = feishuMessageHistoryUrl(apiOrigin, args);
+        const response = await fetch(url, {
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json; charset=utf-8",
+          },
+          signal,
+        });
+        return parseFeishuMessageHistoryResponse(
+          await readFeishuResponseJson(response, providerName),
+          providerName,
+        );
+      })(),
+      (error) => {
+        feishuDispatchL.warn("Failed to load Feishu conversation history", {
+          error,
+          installationId: args.installationId,
+          containerType: args.containerType,
+          containerId: args.containerId,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    return history ?? [];
+  },
+);
+
+const loadFeishuConversationHistory$ = command(
+  async (
+    { set },
+    args: { readonly message: FeishuInboundMessage },
+    signal: AbortSignal,
+  ) => {
+    const { message } = args;
+    const [history, threadHistory] = await Promise.all([
+      set(
+        loadFeishuHistory$,
+        {
+          installationId: message.installationId,
+          containerType: "chat",
+          containerId: message.chatId,
+        },
+        signal,
+      ),
+      message.chatType !== "p2p" && message.threadId
+        ? set(
+            loadFeishuHistory$,
+            {
+              installationId: message.installationId,
+              containerType: "thread",
+              containerId: message.threadId,
+            },
+            signal,
+          )
+        : Promise.resolve([]),
+    ]);
+    signal.throwIfAborted();
+    return formatFeishuConversationHistory(history, message, threadHistory);
   },
 );
 
@@ -896,7 +1019,7 @@ const processClaimedIngress$ = command(
     const history = await loadOptionalChatEnrichment(
       "feishu",
       () => {
-        return loadFeishuConversationHistory({ db: args.db, message }, signal);
+        return set(loadFeishuConversationHistory$, { message }, signal);
       },
       () => {
         return { text: "", files: [] };
