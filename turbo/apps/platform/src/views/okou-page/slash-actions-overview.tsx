@@ -17,6 +17,7 @@ import {
 import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import type { SlashMenuSide } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import type {
   ComposerSlashWorkflow,
   ComposerSlashWorkflowMatch,
@@ -173,6 +174,15 @@ export interface SlashActionsOverview {
   readonly open: (entry: number) => void;
   /** Returns from a second level to the entry that opened it. */
   readonly back: () => void;
+  /**
+   * The composer edge the first level hugs on desktop: the half the `/` was
+   * typed in. At the end edge the second level opens on the left.
+   */
+  readonly side: SlashMenuSide;
+  /** A ref for the panel, which measures `side` once it mounts. */
+  readonly measureSide: (
+    element: HTMLElement | null,
+  ) => (() => void) | undefined;
 }
 
 /** The DOM option an index names, for scrolling it into view. */
@@ -227,6 +237,13 @@ function useSlashActionsOverview({
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
   );
+  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+  const measuredSide = useGet(composer.suggestion.slashMenuSide$);
+  const measureSide = useSet(composer.suggestion.measureSlashMenuSide$);
+  // Narrow screens open second levels in place of the first, at full width.
+  const side = isDesktop ? measuredSide : "start";
+  // The arrow that points at the second level enters it; the other leaves.
+  const enterDirection = side === "end" ? -1 : 1;
   const layout = slashActionsLayout(actions, workflows.length);
   const entry = secondLevelEntry(layout, actions, selectedIndex);
   const opened = entry === null ? null : secondLevelRange(layout, entry);
@@ -300,7 +317,7 @@ function useSlashActionsOverview({
     },
     scrollTarget,
     cross(direction) {
-      if (direction < 0) {
+      if (direction !== enterDirection) {
         if (inSecondLevel) {
           back();
           return true;
@@ -320,6 +337,8 @@ function useSlashActionsOverview({
     },
     open,
     back,
+    side,
+    measureSide,
   };
 }
 
@@ -375,7 +394,8 @@ function SlashEntryRow({
       </span>
       <ChevronRight
         size={16}
-        className="shrink-0 text-muted-foreground/50"
+        // Points at the second level, which opens on the left at the end edge.
+        className="shrink-0 text-muted-foreground/50 group-data-[side=end]/slash-panel:-scale-x-100"
         aria-hidden
       />
     </button>
@@ -588,8 +608,9 @@ const FIRST_LEVEL_CARD = cn(
 
 // A second level's card fills the column beside the first level and takes its
 // height, so whatever it lists scrolls inside rather than growing the menu.
+// Its 6px gap faces the first level, on whichever side that is.
 const PANE = cn(
-  "absolute inset-y-0 right-0 left-1.5 overflow-hidden",
+  "absolute inset-y-0 right-0 left-1.5 overflow-hidden group-data-[side=end]/slash-panel:right-1.5 group-data-[side=end]/slash-panel:left-0",
   SLASH_CARD,
 );
 
@@ -989,12 +1010,17 @@ export function SlashActionsPanel({
     onManageWorkflows,
   };
   const panelProps = {
+    ref: overview.measureSide,
     // On desktop the cards cast their own shadows past the panel's edges.
+    // With the `/` in the composer's right half, the first level hugs the
+    // right edge and its second level opens on the left.
     className: cn(
       "group/slash-panel flex min-h-0 w-full",
       isDesktop ? "overflow-visible" : "overflow-hidden",
+      overview.side === "end" && "flex-row-reverse",
     ),
     "data-slot": "slash-panel",
+    "data-side": overview.side,
     onMouseLeave: () => {
       onPreview(null);
     },
