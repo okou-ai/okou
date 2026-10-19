@@ -36,7 +36,7 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
 import type {
   ConnectorAccountConnectMode,
-  ConnectorAccountMutationOptions,
+  CustomConnectorAccountMutationOptions,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
 
 function formValue(
@@ -226,7 +226,7 @@ interface CustomConnectorConnectDialogProps {
     connectionId: string | null,
     signal: AbortSignal,
   ) => void | Promise<void>;
-  readonly accountOptions: ConnectorAccountMutationOptions;
+  readonly accountOptions: CustomConnectorAccountMutationOptions;
   readonly accountMode?: ConnectorAccountConnectMode;
 }
 
