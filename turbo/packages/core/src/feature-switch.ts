@@ -416,6 +416,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "yuma@okou.ai",
