@@ -666,11 +666,12 @@ def forward_request_sync(
         protocol = h11.Connection(
             h11.CLIENT, max_incomplete_event_size=_AUTH_BASE_RESPONSE_MAX_LINE_BYTES
         )
+        # h11 takes field content without the surrounding HTTP OWS (SP/HTAB).
         request = h11.Request(
             method=method,
             target=prepared.target,
             headers=[
-                (name.encode("latin-1"), value.encode("latin-1"))
+                (name.encode("latin-1"), value.strip(" \t").encode("latin-1"))
                 for name, value in _outbound_request_headers(
                     headers, prepared.host, prepared.port, body
                 )
