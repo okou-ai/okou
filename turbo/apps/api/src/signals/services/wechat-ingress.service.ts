@@ -28,7 +28,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
-import type { WechatMessage } from "../external/wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";

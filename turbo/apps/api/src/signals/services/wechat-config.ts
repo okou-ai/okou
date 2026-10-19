@@ -62,8 +62,19 @@ export function wechatConfigured() {
     env("WECHAT_GATEWAY_CONTROL_SECRET")
   );
 }
-export async function startWechatPoller(
+export function startWechatPoller(
   connectionId: string,
+  generation: string,
+  signal: AbortSignal,
+) {
+  return controlWechatPoller("/start", { connectionId, generation }, signal);
+}
+export function stopWechatPoller(connectionId: string, signal: AbortSignal) {
+  return controlWechatPoller("/stop", { connectionId }, signal);
+}
+async function controlWechatPoller(
+  path: string,
+  body: unknown,
   signal: AbortSignal,
 ) {
   const url = env("WECHAT_GATEWAY_URL");
@@ -71,14 +82,14 @@ export async function startWechatPoller(
   if (!url || !secret) {
     throw new Error("WeChat receiver is not configured");
   }
-  const response = await fetch(new URL("/start", url), {
+  const response = await fetch(new URL(path, url), {
     method: "POST",
     redirect: "error",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${secret}`,
     },
-    body: JSON.stringify({ connectionId }),
+    body: JSON.stringify(body),
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
   });
   if (!response.ok) {

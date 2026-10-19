@@ -6,11 +6,11 @@ import { wechatConnections, wechatMessages } from "@okouai/db/schema/wechat";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
   sendWechatText,
   WechatSessionExpiredError,
-  type WechatMessage,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { wechatEnabled$ } from "./wechat-config";
 import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";

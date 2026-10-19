@@ -6,7 +6,7 @@ import { writeDb$ } from "../external/db";
 import {
   sendWechatText,
   WechatSessionExpiredError,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import { settle } from "../utils";
 import { conflict } from "../../lib/error";
 import { monotonicNow, nowDate } from "../../lib/time";
