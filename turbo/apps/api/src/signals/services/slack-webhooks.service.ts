@@ -469,30 +469,6 @@ async function getWorkspaceAgent(
   return agent;
 }
 
-async function getVisibleWorkspaceAgent(
-  db: Db,
-  composeId: string,
-  orgId: string,
-  userId: string,
-): Promise<WorkspaceAgentSummary | undefined> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, composeId),
-        eq(agents.orgId, orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
-      ),
-    )
-    .limit(1);
-  return agent;
-}
-
 async function resolveEffectiveCompose(
   db: Db,
   userId: string,
@@ -517,12 +493,24 @@ async function resolveEffectiveCompose(
   if (!configuredDefaultAgent) {
     return { status: "not_found" };
   }
-  const visibleDefaultAgent = await getVisibleWorkspaceAgent(
-    db,
-    defaultAgentId,
-    orgId,
-    userId,
-  );
+  const visibleDefaultAgent = await (async () => {
+    const [agent] = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        displayName: agents.displayName,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, defaultAgentId),
+          eq(agents.orgId, orgId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
+        ),
+      )
+      .limit(1);
+    return agent;
+  })();
   if (!visibleDefaultAgent) {
     return { status: "not_accessible" };
   }
