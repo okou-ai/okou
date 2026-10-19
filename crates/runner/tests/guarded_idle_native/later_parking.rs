@@ -48,10 +48,8 @@ pub async fn exercise(
     blank: bool,
 ) -> TestResult<()> {
     let status_path = directory.join("status.json");
-    context
-        .status
-        .set_idle_snapshot(context.pool.lock().await.status_snapshot())
-        .await?;
+    let initial = context.pool.lock().await.status_snapshot();
+    context.status.set_idle_snapshot(initial).await?;
     let published = read_status(&status_path).await?;
     let gate = Arc::new(foreground_io::Gate::new()?);
     proof.install_foreground_io(gate.clone())?;
@@ -168,6 +166,12 @@ pub async fn exercise(
         proof.require_original_lease_released()?;
         if futures_util::poll!(Box::pin(later_backing.exit_confirmed()).as_mut()).is_ready() {
             return Err(io::Error::other("later backing completed in the original batch").into());
+        }
+        // The result receiver can wake before the producer drops its final
+        // tracking token. Observe that completion without closing admission,
+        // which is still needed for the separate later batch below.
+        while context.operations.snapshot()?.tracked_tasks != 0 {
+            tokio::task::yield_now().await;
         }
         let idle = accounting(&context.operations.snapshot()?);
         let zero = json!({"registered_operations":0,"queued":0,"granted":0,"started":0,
