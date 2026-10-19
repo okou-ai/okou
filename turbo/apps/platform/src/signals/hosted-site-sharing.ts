@@ -10,24 +10,17 @@ import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
-import { debounceCommand } from "./command-scheduling.ts";
+import { debounceCommand, throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
-import {
-  onRef,
-  resetSignal,
-  settle,
-  waitForOperation,
-  withCleanup,
-} from "./utils.ts";
+import { onRef, resetSignal, waitForOperation } from "./utils.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
-type Validation =
-  "unchanged" | "invalid" | "checking" | "available" | "taken" | "failed";
+type Validation = "unchanged" | "invalid" | "available" | "taken";
 
 function createSiteUrlCheck(validation$: State<Validation>) {
   return debounceCommand(
@@ -38,27 +31,17 @@ function createSiteUrlCheck(validation$: State<Validation>) {
         publicSlug: string,
         checkSignal: AbortSignal,
       ) => {
-        const result = await settle(
-          accept(
-            get(apiClient$)(hostContract).siteUrlAvailability({
-              params: { siteId },
-              query: { publicSlug },
-              fetchOptions: { signal: checkSignal },
-            }),
-            [200],
-            checkSignal,
-          ),
+        const result = await accept(
+          get(apiClient$)(hostContract).siteUrlAvailability({
+            params: { siteId },
+            query: { publicSlug },
+            fetchOptions: { signal: checkSignal },
+          }),
+          [200],
           checkSignal,
         );
         checkSignal.throwIfAborted();
-        set(
-          validation$,
-          result.ok
-            ? result.value.body.available
-              ? "available"
-              : "taken"
-            : "failed",
-        );
+        set(validation$, result.body.available ? "available" : "taken");
       },
     ),
     300,
@@ -71,15 +54,14 @@ function createSiteUrlEditorSignals(
 ) {
   const draft$ = state<string | null>(null);
   const validation$ = state<Validation>("unchanged");
-  const saving$ = state(false);
-  const saveFailed$ = state(false);
+  const saveConflict$ = state(false);
   const returnFocus$ = state(false);
   const resetCheck$ = resetSignal();
   const cancel$ = command(({ get, set }) => {
     set(returnFocus$, get(draft$) !== null);
     set(resetCheck$);
     set(draft$, null);
-    set(saveFailed$, false);
+    set(saveConflict$, false);
   });
   const edit$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await waitForOperation(get(details$), signal);
@@ -89,19 +71,19 @@ function createSiteUrlEditorSignals(
     }
     set(draft$, details.publicSlug);
     set(validation$, "unchanged");
-    set(saveFailed$, false);
+    set(saveConflict$, false);
   });
   const check$ = createSiteUrlCheck(validation$);
   const change$ = command(
     async ({ get, set }, value: string, signal: AbortSignal) => {
       const checkSignal = set(resetCheck$, signal);
       set(draft$, value);
-      set(saveFailed$, false);
+      set(saveConflict$, false);
       if (!hostedSiteUrlSlugSchema.safeParse(value).success) {
         set(validation$, "invalid");
         return;
       }
-      set(validation$, "checking");
+      set(validation$, "unchanged");
       const details = await waitForOperation(get(details$), checkSignal);
       signal.throwIfAborted();
       checkSignal.throwIfAborted();
@@ -119,28 +101,29 @@ function createSiteUrlEditorSignals(
     const details = await waitForOperation(get(details$), signal);
     signal.throwIfAborted();
     const draft = get(draft$);
-    if (!details?.isActive || draft === null) {
+    if (
+      !details?.isActive ||
+      draft === null ||
+      get(validation$) !== "available"
+    ) {
       return;
     }
-    const result = await settle(
-      accept(
-        get(apiClient$)(hostContract).updateSiteUrl({
-          params: { siteId: details.siteId },
-          body: { publicSlug: draft, expectedPublicSlug: details.publicSlug },
-          fetchOptions: { signal },
-        }),
-        [200, 409],
-        signal,
-      ),
+    const result = await accept(
+      get(apiClient$)(hostContract).updateSiteUrl({
+        params: { siteId: details.siteId },
+        body: { publicSlug: draft, expectedPublicSlug: details.publicSlug },
+        fetchOptions: { signal },
+      }),
+      [200, 409],
       signal,
     );
     signal.throwIfAborted();
-    if (!result.ok || result.value.status !== 200) {
-      set(saveFailed$, true);
+    if (result.status === 409) {
+      set(saveConflict$, true);
       return;
     }
-    set(saved$, result.value.body);
-    set(recordHostedSiteUrlChange$, details.url, result.value.body.url);
+    set(saved$, result.body);
+    set(recordHostedSiteUrlChange$, details.url, result.body.url);
     set(cancel$);
     toast.success(
       i18n.t(($) => {
@@ -148,20 +131,11 @@ function createSiteUrlEditorSignals(
       }),
     );
   });
-  const save$ = command(({ get, set }, signal: AbortSignal) => {
-    if (get(saving$) || get(validation$) !== "available") {
-      return;
-    }
-    set(saving$, true);
-    return withCleanup(set(persist$, signal), () => {
-      set(saving$, false);
-    });
-  });
+  const save$ = throttleCommand(persist$, 0);
   return {
     draft$,
     validation$,
-    saving$,
-    saveFailed$,
+    saveConflict$,
     returnFocus$,
     edit$,
     change$,
@@ -200,17 +174,14 @@ function createHostedSiteShareSession(sourceUrl: string) {
     return result.status === 200 ? result.body : null;
   });
   const copyUrl$ = computed(async (get) => {
-    const result = await settle(get(details$));
-    return result.ok && result.value?.isActive
-      ? result.value.url
+    const details = await get(details$);
+    return details?.isActive
+      ? details.url
       : currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
   });
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
-  const setOpen$ = command(({ get, set }, open: boolean) => {
-    if (get(editor.saving$)) {
-      return;
-    }
+  const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
       set(editor.cancel$);
@@ -245,7 +216,11 @@ export type HostedSiteShareSession = ReturnType<
 >;
 
 function createHostedSiteShareScope() {
-  const session$ = state<HostedSiteShareSession | null>(null);
+  const source$ = state<{ readonly url: string } | null>(null);
+  const session$ = computed((get) => {
+    const source = get(source$);
+    return source ? createHostedSiteShareSession(source.url) : null;
+  });
   const resetMount$ = resetSignal();
   const mountRef$ = onRef(
     command(
@@ -255,14 +230,16 @@ function createHostedSiteShareScope() {
           return;
         }
         const signal = set(resetMount$, mountSignal, get(pageSignal$));
-        const session = createHostedSiteShareSession(url);
-        set(session$, session);
+        signal.throwIfAborted();
+        const source = { url };
+        set(source$, source);
+        const session = get(session$)!;
         set(session.signal$, signal);
         signal.addEventListener(
           "abort",
           () => {
-            if (get(session$) === session) {
-              set(session$, null);
+            if (get(source$) === source) {
+              set(source$, null);
             }
           },
           { once: true },

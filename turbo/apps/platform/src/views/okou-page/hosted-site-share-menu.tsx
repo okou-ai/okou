@@ -26,13 +26,20 @@ interface ShareButtonProps {
 
 function WebsiteUrlFeedback({
   session,
+  checking,
+  checkFailed,
+  saveFailed,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly checking: boolean;
+  readonly checkFailed: boolean;
+  readonly saveFailed: boolean;
 }) {
   const { t } = useTranslation();
   const id = session.inputId;
   const validation = useGet(session.validation$);
-  const failed = useGet(session.saveFailed$);
+  const conflict = useGet(session.saveConflict$);
+  const failed = saveFailed || conflict;
   const message = failed
     ? t(($) => {
         return $.artifacts.siteUrl.saveFailed;
@@ -45,11 +52,11 @@ function WebsiteUrlFeedback({
         ? t(($) => {
             return $.artifacts.siteUrl.taken;
           })
-        : validation === "checking"
+        : checking
           ? t(($) => {
               return $.artifacts.siteUrl.checking;
             })
-          : validation === "failed"
+          : checkFailed
             ? t(($) => {
                 return $.artifacts.siteUrl.checkFailed;
               })
@@ -69,7 +76,7 @@ function WebsiteUrlFeedback({
         failed ||
           validation === "invalid" ||
           validation === "taken" ||
-          validation === "failed"
+          checkFailed
           ? "text-destructive"
           : "text-muted-foreground",
       )}
@@ -81,8 +88,14 @@ function WebsiteUrlFeedback({
 
 function WebsiteUrlEditor({
   session,
+  saving,
+  saveFailed,
+  onSave,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly saveFailed: boolean;
+  readonly onSave: () => void;
 }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
@@ -90,10 +103,8 @@ function WebsiteUrlEditor({
   const details = useLastResolved(session.details$);
   const draft = useGet(session.draft$);
   const validation = useGet(session.validation$);
-  const saving = useGet(session.saving$);
-  const change = useSet(session.change$);
+  const [checking, change] = useLoadableSet(session.change$);
   const cancel = useSet(session.cancel$);
-  const save = useSet(session.save$);
   if (!details || draft === null || !signal) {
     return null;
   }
@@ -104,7 +115,7 @@ function WebsiteUrlEditor({
       onSubmit={(event) => {
         // This form owns URL submission; keep navigation with the current preview.
         event.preventDefault();
-        detach(save(signal), Reason.DomCallback);
+        onSave();
       }}
     >
       <div className="space-y-2">
@@ -144,7 +155,12 @@ function WebsiteUrlEditor({
             {suffix}
           </span>
         </div>
-        <WebsiteUrlFeedback session={session} />
+        <WebsiteUrlFeedback
+          session={session}
+          checking={checking.state === "loading"}
+          checkFailed={checking.state === "hasError"}
+          saveFailed={saveFailed}
+        />
       </div>
       <p className="text-xs text-muted-foreground">
         {t(($) => {
@@ -168,7 +184,9 @@ function WebsiteUrlEditor({
         <Button
           type="submit"
           size="sm"
-          disabled={saving || validation !== "available"}
+          disabled={
+            saving || checking.state === "loading" || validation !== "available"
+          }
         >
           {saving && <Loader2 size={14} className="animate-spin" />}
           {t(($) => {
@@ -189,7 +207,7 @@ function HostedSiteShareSessionMenu({
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
   const details = useLoadable(session.details$);
-  const link = useLastResolved(session.copyUrl$);
+  const link = useLoadable(session.copyUrl$);
   const open = useGet(session.open$);
   const draft = useGet(session.draft$);
   const returnFocus = useGet(session.returnFocus$);
@@ -197,11 +215,19 @@ function HostedSiteShareSessionMenu({
   const edit = useSet(session.edit$);
   const refresh = useSet(session.refresh$);
   const [copying, copy] = useLoadableSet(session.copy$);
+  const [saving, save] = useLoadableSet(session.save$);
   if (!signal) {
     return null;
   }
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (saving.state !== "loading") {
+          setOpen(nextOpen);
+        }
+      }}
+    >
       <PopoverTrigger
         aria-label={ariaLabel}
         render={<Button variant="quiet" size="icon-sm" className={className} />}
@@ -228,12 +254,23 @@ function HostedSiteShareSessionMenu({
           <Check size={16} />
         </div>
         {draft !== null ? (
-          <WebsiteUrlEditor session={session} />
+          <WebsiteUrlEditor
+            session={session}
+            saving={saving.state === "loading"}
+            saveFailed={saving.state === "hasError"}
+            onSave={() => {
+              detach(save(signal), Reason.DomCallback);
+            }}
+          />
         ) : (
           <>
             <ShareLinkRow
               copying={copying.state === "loading"}
-              link={link ? link.replace(/^https?:\/\//u, "") : null}
+              link={
+                link.state === "hasData"
+                  ? link.data.replace(/^https?:\/\//u, "")
+                  : null
+              }
               onCopy={() => {
                 detach(copy(signal), Reason.DomCallback);
               }}

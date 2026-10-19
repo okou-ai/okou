@@ -169,6 +169,113 @@ test("a save conflict keeps the draft and current shared address", async () => {
   expect(screen.getByText("weekly-report.okou.app")).toBeInTheDocument();
 });
 
+test("an unavailable address check disables saving and a new draft can retry", async () => {
+  let unavailable = true;
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Address check unavailable",
+          },
+        })
+      : respond(200, { available: true });
+  });
+  await openSite();
+  await openShare();
+  await waitFor(() => {
+    expect(queryButtonByName("Customize URL")).toBeDefined();
+  });
+  click(getButtonByName("Customize URL"));
+  const input = await screen.findByLabelText("Website URL");
+  await fill(input, "launch-report");
+  await screen.findByText("Address check unavailable");
+  await screen.findByText(
+    "Could not check this address. Edit it to try again.",
+  );
+  expect(getButtonByName("Save")).toBeDisabled();
+  expect(input).toHaveValue("launch-report");
+  unavailable = false;
+  await fill(input, "launch-report-retry");
+  await screen.findByText("Available");
+  expect(getButtonByName("Save")).toBeEnabled();
+});
+
+test("a failed save retains the draft and can retry without replacing the current address", async () => {
+  let unavailable = true;
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
+    return respond(200, { available: true });
+  });
+  context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Website save unavailable",
+          },
+        })
+      : respond(200, {
+          ...site,
+          publicSlug: body.publicSlug,
+          url: `https://${body.publicSlug}.okou.app`,
+        });
+  });
+  await openSite();
+  await openShare();
+  await waitFor(() => {
+    expect(queryButtonByName("Customize URL")).toBeDefined();
+  });
+  click(getButtonByName("Customize URL"));
+  await fill(await screen.findByLabelText("Website URL"), "launch-report");
+  await screen.findByText("Available");
+  click(getButtonByName("Save"));
+  await screen.findByText("Website save unavailable");
+  await screen.findByText(/Could not save/);
+  expect(screen.getByLabelText("Website URL")).toHaveValue("launch-report");
+  expect(getButtonByName("Save")).toBeEnabled();
+  expect(
+    screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+  ).toHaveAttribute("src", site.url);
+  unavailable = false;
+  click(getButtonByName("Save"));
+  await screen.findByText("Website URL updated");
+  await screen.findByText("launch-report.okou.app");
+});
+
+test("a settings failure disables copying until Retry resolves the current address", async () => {
+  let unavailable = true;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Website settings unavailable",
+          },
+        })
+      : respond(200, site);
+  });
+  await openSite();
+  await openShare();
+  await screen.findByText("Could not load website settings");
+  expect(getButtonByName("Copy link")).toBeDisabled();
+  expect(queryButtonByName("Customize URL")).toBeUndefined();
+  unavailable = false;
+  click(getButtonByName("Retry"));
+  await screen.findByText("weekly-report.okou.app");
+  expect(getButtonByName("Copy link")).toBeEnabled();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+});
+
 test("other people's sites offer Published and copying without URL editing", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(404, {
