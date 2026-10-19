@@ -243,32 +243,6 @@ function normalizeTelegramDisplayName(
   return value ? value.slice(0, 255) : null;
 }
 
-async function getWorkspaceAgent(
-  db: Db,
-  composeId: string,
-): Promise<WorkspaceAgent | null> {
-  const [row] = await db
-    .select({
-      composeId: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(eq(agents.id, composeId))
-    .limit(1);
-
-  if (!row) {
-    return null;
-  }
-
-  return {
-    composeId: row.composeId,
-    agentId: row.composeId,
-    name: row.name,
-    displayName: row.displayName,
-  };
-}
-
 function verifyTelegramWebhook(
   request: Request,
   expectedSecret: string,
@@ -1386,7 +1360,30 @@ const handleTelegramAgentMessage$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const chatId = String(args.message.chat.id);
-    const agent = await getWorkspaceAgent(args.db, args.composeId);
+    const agentDb = args.db;
+    const agentComposeId = args.composeId;
+    const agent = await (async (): Promise<WorkspaceAgent | null> => {
+      const [row] = await agentDb
+        .select({
+          composeId: agents.id,
+          name: agents.name,
+          displayName: agents.displayName,
+        })
+        .from(agents)
+        .where(eq(agents.id, agentComposeId))
+        .limit(1);
+
+      if (!row) {
+        return null;
+      }
+
+      return {
+        composeId: row.composeId,
+        agentId: row.composeId,
+        name: row.name,
+        displayName: row.displayName,
+      };
+    })();
     signal.throwIfAborted();
     if (!agent) {
       await postTelegramMessage({
