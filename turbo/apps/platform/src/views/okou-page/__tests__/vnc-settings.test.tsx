@@ -461,15 +461,11 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
     orgId: auth.organization.activeOrg.id,
   });
   await started.promise;
-  try {
-    expect(
-      screen.queryByText(
-        "Authentication or server identity verification failed.",
-      ),
-    ).not.toBeInTheDocument();
-  } finally {
-    release.resolve();
-  }
+  expect(
+    screen.queryByText(
+      "Authentication or server identity verification failed.",
+    ),
+  ).not.toBeInTheDocument();
   await waitFor(() => {
     expect(
       screen.queryByText(
@@ -531,19 +527,15 @@ test("A local SSH carrier reset invalidates retained VNC diagnostics before real
   click(getAction("button", "Reset host key"));
   const dialog = await screen.findByRole("dialog", { name: "Reset host key" });
   click(getAction("button", "Reset host key", dialog));
-  try {
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(
-      screen.queryByText(
-        "Authentication or server identity verification failed.",
-      ),
-    ).not.toBeInTheDocument();
-    await started.promise;
-  } finally {
-    release.resolve();
-  }
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(
+    screen.queryByText(
+      "Authentication or server identity verification failed.",
+    ),
+  ).not.toBeInTheDocument();
+  await started.promise;
   expect(
     screen.queryByRole("status", { name: "1 VNC host needs attention" }),
   ).toBeNull();
