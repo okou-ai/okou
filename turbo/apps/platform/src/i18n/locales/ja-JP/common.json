@@ -3957,7 +3957,6 @@
     "retry": "再試行",
     "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
-    "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"
   },
   "global": {

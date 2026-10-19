@@ -3957,7 +3957,6 @@
     "retry": "다시 시도",
     "samplePages": "샘플 페이지 수: {{total}}",
     "title": "문서",
-    "use": "템플릿 사용",
     "useNamed": "{{title}} 사용"
   },
   "global": {

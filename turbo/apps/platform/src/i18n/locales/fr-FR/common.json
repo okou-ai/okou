@@ -4034,7 +4034,6 @@
     "retry": "Réessayer",
     "samplePages": "Pages d’exemple : {{total}}",
     "title": "Document",
-    "use": "Utiliser ce modèle",
     "useNamed": "Utiliser {{title}}"
   },
   "global": {

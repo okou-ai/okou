@@ -143,7 +143,7 @@ function DocumentTemplateCard({
           )}
         >
           {t(($) => {
-            return $.documentTemplates.use;
+            return $.artifacts.templates.use;
           })}
         </button>
       </div>
