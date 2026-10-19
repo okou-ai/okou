@@ -240,7 +240,7 @@ async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
         }
         files.push({
           path: target,
-          // MEMFS copies with .slice(); Buffer.slice() would alias the cache.
+          // Engines copy these image bytes before taking mutable ownership.
           data: new Uint8Array(Buffer.concat(chunks)),
           modifiedAt: Math.floor(entry.mtime.getTime() / 1000),
         });
@@ -299,7 +299,10 @@ class SnapshotMemoryFS extends MemoryFS {
       filesystem.mkdirTree(directory);
     }
     for (const file of this.snapshot.files) {
-      filesystem.writeFile(file.path, file.data);
+      // Transfer a fresh copy so each engine can mutate files independently.
+      filesystem.writeFile(file.path, new Uint8Array(file.data), {
+        canOwn: true,
+      });
       filesystem.utime(file.path, file.modifiedAt, file.modifiedAt);
     }
   }
