@@ -2927,7 +2927,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
   it("google docs conversion preserves Chinese and Latin font choices in Word text", async () => {
     const bytes = docsImportFixture();
-    const fixture = await workspaceSource("bilingual.docx", bytes);
+    const fixture = await publicOfficeConversionSource(bytes, "docx");
     const native = {
       id: "native-doc",
       name: "bilingual",
@@ -3049,7 +3049,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         new AdmZip(bytes).readFile(part),
       );
     }
-    await fixture.finish();
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
   it("google docs conversion accepts UTF-16 Word XML", async () => {
@@ -3061,7 +3061,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         Buffer.from(archive.readAsText("word/document.xml"), "utf16le"),
       ]),
     );
-    const fixture = await workspaceSource("bilingual.docx", archive.toBuffer());
+    const bytes = archive.toBuffer();
+    const fixture = await publicOfficeConversionSource(bytes, "docx");
     const native = {
       id: "native-doc",
       name: "bilingual",
@@ -3075,19 +3076,19 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         return run.text === "合同（中文），";
       })?.fonts.ascii,
     ).toBe("Noto Serif SC");
-    await fixture.finish();
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
   it("original uploads keep DOCX font declarations intact", async () => {
     const bytes = docsImportFixture();
-    const fixture = await workspaceSource("bilingual.docx", bytes);
+    const fixture = await publicOfficeConversionSource(bytes, "docx");
     const upload = mockGoogleDriveArtifactUpload({
       id: "original-doc",
       name: "bilingual.docx",
     });
     expect((await fixture.upload("original")).status).toBe(200);
     expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
-    await fixture.finish();
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
   it.each(["DTD", "cyclic styles"])(
@@ -3114,19 +3115,17 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           ),
         );
       }
-      const fixture = await workspaceSource(
-        "bilingual.docx",
-        archive.toBuffer(),
-      );
+      const bytes = archive.toBuffer();
+      const fixture = await publicOfficeConversionSource(bytes, "docx");
       const upload = mockGoogleDriveArtifactUpload({
         id: "unexpected",
         name: "bilingual.docx",
       });
-      const response = await fixture.upload("google");
+      const response = await fixture.upload("google", [400]);
       expect(response.status).toBe(400);
       expectApiError(response.body);
       expect(upload.bodies).toHaveLength(0);
-      await fixture.finish();
+      await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
     },
     120_000,
   );
@@ -3303,19 +3302,27 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   const picturePptxMime =
     "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
-  async function publicPictureSlidesSource(bytes: Buffer) {
+  async function publicOfficeConversionSource(
+    bytes: Buffer,
+    format: "docx" | "pptx" = "pptx",
+  ) {
+    const filename = format === "docx" ? "bilingual.docx" : "deck.pptx";
+    const contentType =
+      format === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : picturePptxMime;
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     owned.ownsFeatureSwitches();
     await owned.run(() => {
       return createBillingMediaApi(context).updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.GoogleSlidesConversion]: true,
-        [FeatureSwitchKey.GoogleDocsSheetsConversion]: false,
+        [FeatureSwitchKey.GoogleSlidesConversion]: format === "pptx",
+        [FeatureSwitchKey.GoogleDocsSheetsConversion]: format === "docx",
       });
     });
     const run = await owned.sendChatRun(actor, {
       agentId,
-      prompt: "Create a presentation with off-page background artwork",
+      prompt: "Create an Office document for Google conversion",
     });
     const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
     // Drive imports consume public-storage files. Use the supported org-less
@@ -3326,8 +3333,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       return chat.prepareUpload(
         { ...actor, orgId: null },
         {
-          filename: "deck.pptx",
-          contentType: picturePptxMime,
+          filename,
+          contentType,
           size: bytes.byteLength,
           purpose: "artifact",
         },
@@ -3364,8 +3371,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         kind: "file",
         file: {
           url: prepared.url,
-          filename: "deck.pptx",
-          contentType: picturePptxMime,
+          filename,
+          contentType,
           size: bytes.byteLength,
         },
       });
@@ -3392,7 +3399,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       webFilesContract,
     );
     return {
-      upload: (mode: GoogleDriveUploadMode) => {
+      upload: (
+        mode: GoogleDriveUploadMode,
+        statuses: readonly (200 | 400)[] = [200],
+      ) => {
         return owned.run(() => {
           return accept(
             client.uploadWithMode({
@@ -3400,7 +3410,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
               params: { artifactId },
               body: { agentId, mode },
             }),
-            [200],
+            statuses,
           );
         });
       },
@@ -3494,7 +3504,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     "uploads native cropped picture frames only for Google Slides conversion (%s)",
     async (mode) => {
       const bytes = slidesPictureCropFixture();
-      const fixture = await publicPictureSlidesSource(bytes);
+      const fixture = await publicOfficeConversionSource(bytes);
       const native = {
         id: "picture-deck",
         name: "deck",
@@ -3567,7 +3577,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
   it("uploads native cropped picture frames through the legacy Slides conversion route", async () => {
     const bytes = slidesPictureCropFixture();
-    const fixture = await publicPictureSlidesSource(bytes);
+    const fixture = await publicOfficeConversionSource(bytes);
     const native = {
       id: "legacy-picture-deck",
       name: "deck",
@@ -3585,7 +3595,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
   it("preserves unsupported, fully outside and timed pictures during Slides conversion", async () => {
     const bytes = slidesPictureCropNoopFixture();
-    const fixture = await publicPictureSlidesSource(bytes);
+    const fixture = await publicOfficeConversionSource(bytes);
     const native = {
       id: "conservative-picture-deck",
       name: "deck",
