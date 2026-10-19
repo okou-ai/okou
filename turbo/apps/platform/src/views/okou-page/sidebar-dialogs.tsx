@@ -1442,6 +1442,7 @@ export function PinAgentDialog({
   onCreateAgent,
   onOpenChangeComplete,
   handingOff,
+  returnFocusTo,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1452,6 +1453,8 @@ export function PinAgentDialog({
   onOpenChangeComplete: (open: boolean) => void;
   /** Closing to open the create dialog: leave focus for that dialog to take. */
   handingOff: boolean;
+  /** The pin control mounted now, which may not be the one that opened it. */
+  returnFocusTo: HTMLElement | null;
 }) {
   const { t } = useTranslation("agents");
   const query = useGet(pinAgentDialogQuery$);
@@ -1510,7 +1513,13 @@ export function PinAgentDialog({
       open={open}
       onOpenChange={onOpenChange}
       onOpenChangeComplete={onOpenChangeComplete}
-      finalFocus={handingOff ? false : undefined}
+      finalFocus={
+        handingOff
+          ? false
+          : () => {
+              return returnFocusTo;
+            }
+      }
       closeLabel={t(($) => {
         return $.actions.close;
       })}

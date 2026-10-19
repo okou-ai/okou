@@ -1,8 +1,8 @@
 """HTTP protocol, bounds, and cleanup tests for auth.base forwarding."""
 
-import http.client as http_client
 from unittest.mock import patch
 
+import h11
 import pytest
 
 import auth_base_forwarder as forwarder
@@ -308,12 +308,10 @@ class TestAuthBaseForwarderResponseBodyLimit:
                 body=b"123",
                 headers=[("Content-Length", "4")],
             ) as upstream,
-            pytest.raises(http_client.IncompleteRead) as exc_info,
+            pytest.raises(h11.RemoteProtocolError),
         ):
             await forwarder.forward_request("https://example.com", "GET", [], None)
 
-        assert exc_info.value.partial == b"123"
-        assert exc_info.value.expected == 1
         assert upstream.socket.response_file is not None
         assert upstream.socket.response_file.closed
         assert upstream.socket.closed
@@ -520,7 +518,7 @@ class TestAuthBaseForwarderResourceCleanup:
             fake_forwarder_upstream(
                 socket_factory=lambda: FakeSocket(b"not an HTTP response\r\n")
             ) as upstream,
-            pytest.raises(http_client.BadStatusLine),
+            pytest.raises(h11.RemoteProtocolError),
         ):
             await forwarder.forward_request("https://example.com", "GET", [], None)
 

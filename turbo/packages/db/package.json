@@ -63,7 +63,7 @@
     "test:usage-allowance-retirement": "tsx scripts/test-usage-allowance-retirement.ts",
     "test:canonical-selected-model-history": "tsx scripts/test-canonical-selected-model-history.ts",
     "test:link-wallet-workspace-owner": "tsx scripts/test-link-wallet-workspace-owner.ts",
-    "test:migration-consistency": "pnpm test:billing-run-lifecycle-preparation && pnpm test:run-credit-admission-retirement-preparation && pnpm test:legacy-history-retain-release && pnpm test:link-wallet-workspace-owner && pnpm test:billing-thread-attribution-backfill && pnpm test:session-conversation-contraction && pnpm test:session-conversation-runtime && pnpm test:run-history-deletion && pnpm test:discord-account-connections && pnpm test:run-native-facts-preparation && pnpm test:workflow-name-scope-preparation && pnpm test:canonical-selected-model-history && pnpm test:computer-use-host-token-retirement-preparation && pnpm test:pi-memory-phase2-input-revision && pnpm test:run-checkpoint-retirement && pnpm test:usage-allowance-retirement && pnpm test:oauth-contract-hash-retirement && pnpm test:connector-permission-baseline-retirement && pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:migration-smoke-diagnostics && pnpm test:pi-memory-checkpoint-settlement && pnpm test:run-checkpoint-retirement-preparation && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:usage-pack-overdraft-transfer && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:remote-connection-observations && pnpm test:cloudflare-access && pnpm test:tailscale && pnpm test:ssh-needs-rebind-contraction && pnpm test:official-result-email-retirement-preparation && pnpm test:vnc-configuration && pnpm test:vnc-native-network-storage && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:private-artifact-absolute-urls && pnpm test:runtime-usage-reporting && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:billing-run-lifecycle-backfill && pnpm test:billing-run-lifecycle-preparation && pnpm test:run-credit-admission-retirement-preparation && pnpm test:legacy-history-retain-release && pnpm test:link-wallet-workspace-owner && pnpm test:billing-thread-attribution-backfill && pnpm test:session-conversation-contraction && pnpm test:session-conversation-runtime && pnpm test:run-history-deletion && pnpm test:discord-account-connections && pnpm test:run-native-facts-preparation && pnpm test:workflow-name-scope-preparation && pnpm test:canonical-selected-model-history && pnpm test:computer-use-host-token-retirement-preparation && pnpm test:pi-memory-phase2-input-revision && pnpm test:run-checkpoint-retirement && pnpm test:usage-allowance-retirement && pnpm test:oauth-contract-hash-retirement && pnpm test:connector-permission-baseline-retirement && pnpm test:connector-catalog-entry-columns && pnpm test:unselectable-thread-model-cleanup && pnpm test:auto-model-selection-null && pnpm test:file-run-provenance && pnpm test:file-thread-associations && pnpm test:legacy-free-retirement && pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:migration-smoke-diagnostics && pnpm test:pi-memory-checkpoint-settlement && pnpm test:run-checkpoint-retirement-preparation && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:usage-pack-overdraft-transfer && pnpm test:plan-entitlement-capability-migration && pnpm test:reusable-ssh-credentials && pnpm test:remote-connection-observations && pnpm test:cloudflare-access && pnpm test:tailscale && pnpm test:ssh-needs-rebind-contraction && pnpm test:official-result-email-retirement-preparation && pnpm test:vnc-configuration && pnpm test:vnc-native-network-storage && pnpm test:vnc-runner-authority && pnpm test:agent-grant-table-retirement && pnpm test:morning-brief-enrollment-installation && pnpm test:pi-candidate-trigger-retirement && pnpm test:hosted-publication-history-audit && pnpm test:hosted-publication-runtime && pnpm test:hosted-publication-contraction && pnpm test:private-artifact-absolute-urls && pnpm test:runtime-usage-reporting && pnpm test:pro-suspend-retirement && pnpm test:slack-ingress-failed-retirement && pnpm test:prepared-domain-trigger-retirement && pnpm test:pi-inference-lifecycle && pnpm test:retire-v7-chat-event-snapshots && tsx scripts/test-migration-consistency-schema.ts",
     "test:run-credit-admission-retirement-preparation": "tsx scripts/test-run-credit-admission-retirement-preparation.ts",
     "test:vnc-configuration": "tsx scripts/test-vnc-configuration.ts",
     "test:vnc-native-network-storage": "tsx scripts/test-vnc-native-network-storage.ts",
@@ -118,28 +118,31 @@
     "test:session-conversation-runtime": "tsx scripts/test-session-conversation-runtime.ts",
     "test:billing-thread-attribution-backfill": "tsx scripts/test-billing-thread-attribution-backfill.ts",
     "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
-    "test:billing-run-lifecycle-preparation": "tsx scripts/test-billing-run-lifecycle-preparation.ts"
+    "test:billing-run-lifecycle-preparation": "tsx scripts/test-billing-run-lifecycle-preparation.ts",
+    "test:billing-run-lifecycle-backfill": "tsx scripts/test-billing-run-lifecycle-backfill.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "tar": "^7.5.22"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
-    "@types/pg": "^8.21.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "@types/pg": "^8.21.0",
+    "@typescript/native": "npm:typescript@7.0.2",
     "drizzle-kit": "^0.31.9",
     "eslint": "^9.34.0",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "pg": "^8.23.0",
     "tsx": "^4.21.0",
-    "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.0.3",
     "zod": "^4.5.4"
