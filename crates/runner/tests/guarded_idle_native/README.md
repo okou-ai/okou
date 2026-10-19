@@ -1,5 +1,38 @@
 # Guarded idle terminal fixture
 
+## Final status write failure
+
+`native_status_failure_preserves_saving_and_retries_current_inventory` runs fresh
+and matching-snapshot factories. It first publishes the original parked inventory,
+then positively observes held accepted saving and pool/status contention. An
+independent host-memory read and acknowledged heartbeat must progress while the
+original full lease and required IO remain owned.
+
+After complete durable 64-MiB tail IO, the final status write must positively wait
+for the held status lock while accounting is joined/zero and another heartbeat
+completes. Only the invocation's private `status.json` destination is then replaced
+with a directory. The original batch must return an actual `Write` error with all
+physical work completed and `is_complete=false`. Repairing that private fault and
+calling the existing current-snapshot retry must publish empty inventory without
+resurrecting the original parked sandbox or rewriting the failed report. Complete
+original home restoration and joined dependencies remain required.
+
+Use the existing supplied artifacts/policy and bounded P1 collector with this exact
+ignored entry. Metadata must include `native_status_failure_policy_json` as the
+raw policy text and `native_terminal_artifacts`; retain the original
+`snapshot-preparation.json`. Validate the original files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/status_failure_report.py <p1-directory>
+```
+
+Default Cargo runs synthetic real-file/CLI consumer regressions. Actual KVM/NBD
+execution is opt-in, requires submitted-source/Host/input verification and uses
+only owned disposable resources. This is a deterministic private status-write
+failure, not a status timeout, stalled storage or provider panic. It does not
+establish complete residency, calibrated resource bounds, physical relief, OOM or
+production protection. Remaining C/D acceptance stays in #39998.
+
 ## Cleanup observer loss
 
 `native_observer_loss_keeps_required_saving_and_independent_progress` runs four
