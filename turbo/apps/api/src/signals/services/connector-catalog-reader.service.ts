@@ -1,9 +1,6 @@
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  PublicConnectorCatalogDiscoveryResponse,
-  PublicConnectorCatalogPermissionDetail,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -13,12 +10,10 @@ import {
   materializeConnectorCatalogDisplayRow,
 } from "./connector-catalog-columns";
 import { computed, type Computed } from "ccstate";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
-import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import {
   connectorBriefsFromSource,
-  discoverExternalPublicConnectorCatalogStatus,
   ExternalConnectorCatalogUnavailableError,
   publicConnectorCatalogPermissionDetailFromSource,
 } from "./connector-catalog-external-reader.service";
@@ -30,11 +25,6 @@ import {
 
 export function isConnectorCatalogUnavailableError(error: unknown): boolean {
   return error instanceof ExternalConnectorCatalogUnavailableError;
-}
-
-interface ConnectorCatalogReadArgs {
-  readonly db: ReadonlyDb;
-  readonly featureStates: ConnectorFeatureStates;
 }
 
 export function connectorBriefsFromRows(args: {
@@ -64,20 +54,6 @@ export function connectorBriefsFromRows(args: {
     ),
     featureStates: args.featureStates,
   });
-}
-
-export async function discoverPublicConnectorCatalogStatus(
-  args: ConnectorCatalogReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-    readonly keyword: string | undefined;
-    readonly category: string | undefined;
-  },
-): Promise<PublicConnectorCatalogDiscoveryResponse> {
-  const read = await discoverExternalPublicConnectorCatalogStatus({
-    ...args,
-    referenceConnectorSlugs: [],
-  });
-  return read.status;
 }
 
 export function publicConnectorCatalogPermissionDetail(
