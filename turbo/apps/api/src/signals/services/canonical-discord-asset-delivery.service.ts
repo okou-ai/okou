@@ -419,20 +419,6 @@ async function currentDeliveryResult(
   return current ? deliveryResult(current) : unavailableDelivery();
 }
 
-async function markFailed(
-  db: Db,
-  { identity, row }: DiscordDeliveryOperation,
-  failure: CanonicalAssetDeliveryError,
-  signal: AbortSignal,
-): Promise<DiscordDeliveryResult> {
-  await db
-    .update(canonicalAssetDeliveries)
-    .set({ status: "failed", lastError: failure, updatedAt: sql`now()` })
-    .where(transitionCondition(row));
-  signal.throwIfAborted();
-  return await currentDeliveryResult(db, identity, signal);
-}
-
 function deliveryFailure(
   code: string,
   message: string,
@@ -481,6 +467,20 @@ const sendDiscordFile$ = command(
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
+
+    async function markFailed(
+      { identity, row }: DiscordDeliveryOperation,
+      failure: CanonicalAssetDeliveryError,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryResult> {
+      await db
+        .update(canonicalAssetDeliveries)
+        .set({ status: "failed", lastError: failure, updatedAt: sql`now()` })
+        .where(transitionCondition(row));
+      signal.throwIfAborted();
+      return await currentDeliveryResult(db, identity, signal);
+    }
+
     const { identity: args, row: attemptRow } = operation;
     // Recheck after storage I/O and the durable claim, immediately before send.
     const sendAccess = await set(
@@ -492,7 +492,6 @@ const sendDiscordFile$ = command(
     );
     if (!sendAccess.ok) {
       await markFailed(
-        db,
         operation,
         deliveryFailure(
           "discord-access-denied",
@@ -522,7 +521,7 @@ const sendDiscordFile$ = command(
       signal,
     );
     if (!sent.ok) {
-      return await markFailed(db, operation, unconfirmedDelivery, signal);
+      return await markFailed(operation, unconfirmedDelivery, signal);
     }
     if (sent.value.kind === "ok") {
       async function recordDelivered(
@@ -537,7 +536,6 @@ const sendDiscordFile$ = command(
         const attachment = deliveredAttachment(message, row, context.botUserId);
         if (!attachment) {
           return await markFailed(
-            db,
             { identity, row },
             deliveryFailure(
               "discord-delivery-unverified",
@@ -578,7 +576,6 @@ const sendDiscordFile$ = command(
       );
     }
     return await markFailed(
-      db,
       operation,
       discordSendFailure(sent.value.status),
       signal,
