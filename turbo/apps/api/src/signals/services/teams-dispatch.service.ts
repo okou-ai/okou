@@ -24,7 +24,7 @@ import { inferMimetype } from "../../lib/mimetype";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -86,6 +86,7 @@ type TeamsBotCommand = "help" | "connect" | "disconnect";
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
 type BoundTeamsInstallation = TeamsInstallation & { readonly orgId: string };
 type TeamsConnection = typeof teamsOrgConnections.$inferSelect;
+type TeamsConnectionLookup = TeamsConnection | undefined;
 type TeamsMessageActivity = Extract<TeamsInboundActivity, { kind: "message" }>;
 
 function teamsIdentity(installation: TeamsInstallation | null | undefined): {
@@ -173,6 +174,24 @@ interface TeamsMessageDispatchArgs {
   readonly apiStartTime: number;
   readonly timing: ApiDispatchTimingCollector;
 }
+
+interface TeamsDispatchMessage {
+  readonly kind: "dispatch";
+  readonly activity: TeamsMessageActivity;
+  readonly command: TeamsBotCommand | null;
+  readonly isGreeting: boolean;
+  readonly prompt: string;
+  readonly promptFiles: readonly TeamsPromptFile[];
+}
+
+type TeamsMessagePreparation =
+  | {
+      readonly kind: "validation";
+      readonly command: TeamsBotCommand | null;
+      readonly isGreeting: boolean;
+    }
+  | { readonly kind: "empty" }
+  | TeamsDispatchMessage;
 
 function isTeamsBotCommand(value: string): value is TeamsBotCommand {
   return value === "help" || value === "connect" || value === "disconnect";
@@ -473,50 +492,18 @@ function teamsGraphPromptFiles(
   });
 }
 
-async function connectionForTeamsUser(
-  db: Db,
-  tenantId: string,
-  teamsUserId: string | null,
-  teamsAadObjectId: string | null,
-): Promise<TeamsConnection | undefined> {
-  if (teamsAadObjectId) {
-    const [connection] = await db
-      .select()
-      .from(teamsOrgConnections)
-      .where(
-        and(
-          eq(teamsOrgConnections.teamsTenantId, tenantId),
-          eq(teamsOrgConnections.teamsAadObjectId, teamsAadObjectId),
-        ),
-      )
-      .limit(1);
+function aadConnectionWhere(tenantId: string, teamsAadObjectId: string) {
+  return and(
+    eq(teamsOrgConnections.teamsTenantId, tenantId),
+    eq(teamsOrgConnections.teamsAadObjectId, teamsAadObjectId),
+  );
+}
 
-    if (connection) {
-      if (teamsUserId && connection.teamsUserId !== teamsUserId) {
-        await db
-          .update(teamsOrgConnections)
-          .set({ teamsUserId, updatedAt: nowDate() })
-          .where(eq(teamsOrgConnections.id, connection.id));
-      }
-      return connection;
-    }
-  }
-
-  if (!teamsUserId) {
-    return undefined;
-  }
-
-  const [connection] = await db
-    .select()
-    .from(teamsOrgConnections)
-    .where(
-      and(
-        eq(teamsOrgConnections.teamsTenantId, tenantId),
-        eq(teamsOrgConnections.teamsUserId, teamsUserId),
-      ),
-    )
-    .limit(1);
-  return connection;
+function userConnectionWhere(tenantId: string, teamsUserId: string) {
+  return and(
+    eq(teamsOrgConnections.teamsTenantId, tenantId),
+    eq(teamsOrgConnections.teamsUserId, teamsUserId),
+  );
 }
 
 async function sendTeamsRunStartIndicator(
@@ -1626,41 +1613,37 @@ function composeResolutionNotice(
   }
 }
 
-function unboundInstallationNotice(args: {
-  readonly command: TeamsBotCommand | null;
-  readonly isGreeting: boolean;
-  readonly activity: TeamsMessageActivity;
-  readonly installation: TeamsInstallation | null;
-}): TeamsMessageDispatchResult {
-  if (args.command === "help") {
+function unboundInstallationNotice(
+  message: TeamsDispatchMessage,
+  installation: TeamsInstallation | null,
+): TeamsMessageDispatchResult {
+  if (message.command === "help") {
     return commandHelpNotice({
-      installation: args.installation,
+      installation: installation,
     });
   }
-  if (args.command === "connect" && !args.installation) {
-    return notInstalledNotice(args.installation);
+  if (message.command === "connect" && !installation) {
+    return notInstalledNotice(installation);
   }
-  if (args.isGreeting) {
-    return greetingNotice(args.installation);
+  if (message.isGreeting) {
+    return greetingNotice(installation);
   }
-  return connectNotice(args.activity, args.installation);
+  return connectNotice(message.activity, installation);
 }
 
-function missingConnectionNotice(args: {
-  readonly command: TeamsBotCommand | null;
-  readonly isGreeting: boolean;
-  readonly activity: TeamsMessageActivity;
-  readonly installation: TeamsInstallation;
-}): TeamsMessageDispatchResult {
-  if (args.command === "help") {
+function missingConnectionNotice(
+  message: TeamsDispatchMessage,
+  installation: TeamsInstallation,
+): TeamsMessageDispatchResult {
+  if (message.command === "help") {
     return commandHelpNotice({
-      installation: args.installation,
+      installation: installation,
     });
   }
-  if (args.isGreeting) {
-    return greetingNotice(args.installation);
+  if (message.isGreeting) {
+    return greetingNotice(installation);
   }
-  return connectNotice(args.activity, args.installation);
+  return connectNotice(message.activity, installation);
 }
 
 interface ConnectedCommandBeforeComposeArgs {
@@ -1791,6 +1774,50 @@ function teamsAgentPrompt(activity: TeamsMessageActivity): string {
   return [recipientMention, activity.text.trim()].filter(Boolean).join(" ");
 }
 
+function prepareTeamsMessage(
+  activity: TeamsMessageActivity,
+): TeamsMessagePreparation {
+  const commandText = activity.text.trim();
+  const prompt = teamsAgentPrompt(activity);
+  const command = parseTeamsBotCommand(commandText);
+  const isGreeting = isTeamsBotGreeting(commandText);
+  if (!shouldDispatchTeamsMessage(activity)) {
+    return { kind: "validation", command, isGreeting };
+  }
+
+  const promptFiles = teamsPromptFiles(activity);
+  if (!prompt && promptFiles.length === 0) {
+    return { kind: "empty" };
+  }
+
+  return {
+    kind: "dispatch",
+    activity,
+    command,
+    isGreeting,
+    prompt,
+    promptFiles,
+  };
+}
+
+function preparedTeamsNotice(
+  preparation: Exclude<TeamsMessagePreparation, TeamsDispatchMessage>,
+  installation: TeamsInstallation | null | undefined,
+): TeamsMessageDispatchResult {
+  if (preparation.kind === "empty") {
+    return emptyPromptNotice(installation);
+  }
+  return (
+    teamsValidationFallbackNotice({
+      command: preparation.command,
+      isGreeting: preparation.isGreeting,
+      installation,
+    }) ?? {
+      kind: "ignored",
+    }
+  );
+}
+
 export const dispatchTeamsMessageToAgent$ = command(
   async (
     { set },
@@ -1802,26 +1829,11 @@ export const dispatchTeamsMessageToAgent$ = command(
       return { kind: "ignored" };
     }
 
-    const commandText = activity.text.trim();
-    const prompt = teamsAgentPrompt(activity);
-    const command = parseTeamsBotCommand(commandText);
-    const isGreeting = isTeamsBotGreeting(commandText);
-    if (!shouldDispatchTeamsMessage(activity)) {
-      return (
-        teamsValidationFallbackNotice({
-          command,
-          isGreeting,
-          installation: args.installation,
-        }) ?? {
-          kind: "ignored",
-        }
-      );
+    const message = prepareTeamsMessage(activity);
+    if (message.kind !== "dispatch") {
+      return preparedTeamsNotice(message, args.installation);
     }
-
-    const promptFiles = teamsPromptFiles(activity);
-    if (!prompt && promptFiles.length === 0) {
-      return emptyPromptNotice(args.installation);
-    }
+    const { command, prompt, promptFiles } = message;
 
     const db = set(writeDb$);
     let installation = args.installation ?? null;
@@ -1836,33 +1848,51 @@ export const dispatchTeamsMessageToAgent$ = command(
     signal.throwIfAborted();
 
     if (!installation?.orgId) {
-      return unboundInstallationNotice({
-        command,
-        isGreeting,
-        activity,
-        installation,
-      });
+      return unboundInstallationNotice(message, installation);
     }
     const boundInstallation: BoundTeamsInstallation = {
       ...installation,
       orgId: installation.orgId,
     };
 
-    const connection = await connectionForTeamsUser(
-      db,
-      activity.tenantId,
-      activity.sender.id,
-      activity.sender.aadObjectId,
-    );
+    const connectionDb = db;
+    const tenantId = activity.tenantId;
+    const teamsUserId = activity.sender.id;
+    const teamsAadObjectId = activity.sender.aadObjectId;
+    const connection = await (async (): Promise<TeamsConnectionLookup> => {
+      if (teamsAadObjectId) {
+        const [connection] = await connectionDb
+          .select()
+          .from(teamsOrgConnections)
+          .where(aadConnectionWhere(tenantId, teamsAadObjectId))
+          .limit(1);
+
+        if (connection) {
+          if (teamsUserId && connection.teamsUserId !== teamsUserId) {
+            await connectionDb
+              .update(teamsOrgConnections)
+              .set({ teamsUserId, updatedAt: nowDate() })
+              .where(eq(teamsOrgConnections.id, connection.id));
+          }
+          return connection;
+        }
+      }
+
+      if (!teamsUserId) {
+        return undefined;
+      }
+
+      const [connection] = await connectionDb
+        .select()
+        .from(teamsOrgConnections)
+        .where(userConnectionWhere(tenantId, teamsUserId))
+        .limit(1);
+      return connection;
+    })();
     signal.throwIfAborted();
 
     if (!connection) {
-      return missingConnectionNotice({
-        command,
-        isGreeting,
-        activity,
-        installation,
-      });
+      return missingConnectionNotice(message, installation);
     }
 
     const commandResult = await set(
