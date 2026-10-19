@@ -7,6 +7,8 @@ use crate::test_fixtures::remote_inventory;
 use crate::test_fixtures::{diagnostic_attempt, diagnostic_text};
 use serde_json::{Value, json};
 
+mod authority;
+
 #[tokio::test]
 async fn installation_requires_trusted_agent_token_and_feature_without_disrupting_ssh() {
     for (feature_enabled, trusted_token_present) in [(true, false), (false, true)] {
