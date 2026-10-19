@@ -32,7 +32,7 @@ function writeTitleOverflow(element: HTMLElement): void {
 }
 
 /**
- * Publishes how much of a thread title is cut off. The stylesheet
+ * Publishes how much of a title is cut off. The stylesheet
  * derives both the fade mask and the hover travel from that one number, so a
  * title that fits gets neither without a second code path.
  *
@@ -40,7 +40,7 @@ function writeTitleOverflow(element: HTMLElement): void {
  * renames and late web-font metrics. Neither remounts the element, so the ref
  * on its own would leave a stale distance behind.
  */
-export const threadTitleOverflowRef$ = onRef(
+export const titleOverflowRef$ = onRef(
   command((_context, element: HTMLElement, signal: AbortSignal) => {
     writeTitleOverflow(element);
 

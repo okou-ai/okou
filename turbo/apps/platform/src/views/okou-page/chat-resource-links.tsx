@@ -10,6 +10,7 @@ import {
 } from "./chat-resource-section.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 
 export function CopyResourceLink({ url }: { readonly url: string }) {
   const { t } = useTranslation();
@@ -80,12 +81,15 @@ export function ChatResourceLinks({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-8 min-w-0 flex-1 truncate rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
-                  title={link.url}
+                  className="flex min-h-8 min-w-0 flex-1 items-center rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
                 >
-                  {link.title === link.url
-                    ? link.title.replace(/^https?:\/\//u, "")
-                    : link.title}
+                  <HoverScrollTitle
+                    title={
+                      link.title === link.url
+                        ? link.title.replace(/^https?:\/\//u, "")
+                        : link.title
+                    }
+                  />
                 </a>
                 <CopyResourceLink url={link.url} />
               </li>

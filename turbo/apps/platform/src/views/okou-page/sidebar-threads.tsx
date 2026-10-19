@@ -70,7 +70,7 @@ import {
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
-import { ChatThreadTitle } from "./chat-thread-title.tsx";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import {
   currentChatAgentScope$,
   currentChatAgentId$,
@@ -579,7 +579,7 @@ function ChatThreadItemLink({
         )}
       >
         <ChatThreadListPaneIcon signals={signals} />
-        <ChatThreadTitle
+        <HoverScrollTitle
           data-slot="sidebar-thread-title"
           className="text-[color:var(--nav-copy,inherit)]"
           title={

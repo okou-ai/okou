@@ -1,23 +1,23 @@
 import { useSet } from "ccstate-react";
 import { cn } from "@okouai/ui";
-import { threadTitleOverflowRef$ } from "../../signals/chat-page/thread-title-overflow.ts";
+import { titleOverflowRef$ } from "../../signals/chat-page/title-overflow.ts";
 
 /**
- * Fade clipped titles and reveal their end while the containing link is hovered
+ * Fade clipped titles and reveal their end while the containing control is hovered
  * or keyboard-focused. The measured overflow drives both the mask and travel,
  * so fitting titles stay still. The registered shift property is inherited by
  * the text span and stays at zero for reduced motion.
  */
-export function ChatThreadTitle({
+export function HoverScrollTitle({
   title,
   className,
-  "data-slot": slot = "chat-thread-title",
+  "data-slot": slot = "hover-scroll-title",
 }: {
   readonly title: string;
   readonly className?: string;
   readonly "data-slot"?: string;
 }) {
-  const measureTitle = useSet(threadTitleOverflowRef$);
+  const measureTitle = useSet(titleOverflowRef$);
 
   return (
     <span
@@ -32,8 +32,8 @@ export function ChatThreadTitle({
         "[transition:--okou-nav-title-shift_660ms_cubic-bezier(0.4,0,0.2,1)]",
         // Keep the sidebar's coarse-pointer behavior: group-hover would gate
         // this behind @media (hover: hover). The delay ignores passing pointers.
-        "[:is(a:hover,a:focus-visible)_&]:[transition:--okou-nav-title-shift_var(--okou-nav-title-duration)_cubic-bezier(0.33,0,0.2,1)_750ms]",
-        "motion-safe:[:is(a:hover,a:focus-visible)_&]:[--okou-nav-title-shift:calc(-1*var(--okou-nav-title-overflow))]",
+        "[:is(a:hover,a:focus-visible,button:hover,button:focus-visible)_&]:[transition:--okou-nav-title-shift_var(--okou-nav-title-duration)_cubic-bezier(0.33,0,0.2,1)_750ms]",
+        "motion-safe:[:is(a:hover,a:focus-visible,button:hover,button:focus-visible)_&]:[--okou-nav-title-shift:calc(-1*var(--okou-nav-title-overflow))]",
         className,
       )}
     >

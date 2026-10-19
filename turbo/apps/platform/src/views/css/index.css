@@ -863,8 +863,8 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-/* The travel a chat thread title is scrolled by while its link is hovered or
-   focused. `ChatThreadTitle` composes the mask and the travel as Tailwind
+/* The travel a title is scrolled by while its control is hovered or
+   focused. `HoverScrollTitle` composes the mask and the travel as Tailwind
    utilities and reads this property from both; it is registered here because a
    registered property is what lets a transition interpolate a length, and
    because `inherits: true` is what carries the animated value down to the text
