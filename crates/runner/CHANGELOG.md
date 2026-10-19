@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.234.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.17...runner-rs-v0.234.18) (2026-10-19)
+
+
+### Bug Fixes
+
+* **runner:** consume auth.base informational responses before the final response ([#41413](https://github.com/okou-ai/okou/issues/41413)) ([d5dd79b](https://github.com/okou-ai/okou/commit/d5dd79b4c06ba67d3e7b3ce32635cb944883f29b))
+
+
+### Refactoring
+
+* **runner:** retire numeric debootstrap temp names ([#41430](https://github.com/okou-ai/okou/issues/41430)) ([ca8a8af](https://github.com/okou-ai/okou/commit/ca8a8afe90560624baacd7ecccc79865111ac23a))
+* **rust:** retire the home-cache capacity compatibility flock ([#41437](https://github.com/okou-ai/okou/issues/41437)) ([d23a9b4](https://github.com/okou-ai/okou/commit/d23a9b4f9a8cea2ce4f0250e3ec068a1d829cbcd))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.16...runner-rs-v0.234.17) (2026-10-19)
 
 

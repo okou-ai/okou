@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.60](https://github.com/okou-ai/okou/compare/runner-network-v0.2.59...runner-network-v0.2.60) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-network:** use one accepted row path identity ([#41490](https://github.com/okou-ai/okou/issues/41490)) ([1ed2821](https://github.com/okou-ai/okou/commit/1ed282160be4e10524ae83873cd1640e3e5459db))
+
 ## [0.2.59](https://github.com/okou-ai/okou/compare/runner-network-v0.2.58...runner-network-v0.2.59) (2026-10-19)
 
 ## [0.2.58](https://github.com/okou-ai/okou/compare/runner-network-v0.2.57...runner-network-v0.2.58) (2026-10-19)

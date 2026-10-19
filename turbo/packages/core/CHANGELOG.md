@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.771.0](https://github.com/okou-ai/okou/compare/core-v8.770.0...core-v8.771.0) (2026-10-19)
+
+
+### Features
+
+* **app:** add a staff-gated mention search hint ([#41446](https://github.com/okou-ai/okou/issues/41446)) ([57d4f7f](https://github.com/okou-ai/okou/commit/57d4f7f80cb19ccf8900bea1daf011ec7ad485e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.577.0
+
 ## [8.770.0](https://github.com/okou-ai/okou/compare/core-v8.769.3...core-v8.770.0) (2026-10-19)
 
 

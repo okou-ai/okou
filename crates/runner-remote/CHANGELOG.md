@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.29.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.28.2...runner-remote-v0.29.0) (2026-10-19)
+
+
+### Features
+
+* **remote:** retrieve active-check receipts without replay ([#41486](https://github.com/okou-ai/okou/issues/41486)) ([3b33c59](https://github.com/okou-ai/okou/commit/3b33c594658cd1639c943cb3cf0c5446ab82389f))
+* **vnc:** retain elapsed diagnostic stage timing ([#41489](https://github.com/okou-ai/okou/issues/41489)) ([4a10b88](https://github.com/okou-ai/okou/commit/4a10b88df150955f78a00b95ea0dedc9b88e5f96))
+
+
+### Bug Fixes
+
+* **remote:** distinguish diagnostic authority lookup failures ([#41488](https://github.com/okou-ai/okou/issues/41488)) ([fbfa1bc](https://github.com/okou-ai/okou/commit/fbfa1bcf6e20cd36be763c3e1119b27bf22194c6))
+* **remote:** prefer exact attempts in ssh and vnc diagnostic guidance ([#41479](https://github.com/okou-ai/okou/issues/41479)) ([81b763d](https://github.com/okou-ai/okou/commit/81b763de04dd2b1d9b34b15007fa147bd254f221))
+
+
+### Refactoring
+
+* prepare database-backed agent instructions ([#41393](https://github.com/okou-ai/okou/issues/41393)) ([da0dc9c](https://github.com/okou-ai/okou/commit/da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29))
+
 ## [0.28.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.28.1...runner-remote-v0.28.2) (2026-10-19)
 
 

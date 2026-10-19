@@ -12,6 +12,38 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1044.0](https://github.com/okou-ai/okou/compare/app-v0.1043.0...app-v0.1044.0) (2026-10-19)
+
+
+### Features
+
+* **app:** add a staff-gated mention search hint ([#41446](https://github.com/okou-ai/okou/issues/41446)) ([57d4f7f](https://github.com/okou-ai/okou/commit/57d4f7f80cb19ccf8900bea1daf011ec7ad485e6))
+
+
+### Bug Fixes
+
+* **app:** show highest-priority mention results first ([#41445](https://github.com/okou-ai/okou/issues/41445)) ([83f615c](https://github.com/okou-ai/okou/commit/83f615cb9314cfc2105ea80becafc4bd80f10525))
+* **app:** show more of pinned agent names in the sidebar grid ([#41429](https://github.com/okou-ai/okou/issues/41429)) ([187c5b6](https://github.com/okou-ai/okou/commit/187c5b6a465a300ca80f7b660748713f42eaec37))
+
+
+### Refactoring
+
+* prepare connector account status readers ([#41472](https://github.com/okou-ai/okou/issues/41472)) ([3af754b](https://github.com/okou-ai/okou/commit/3af754bd4086b0c8fbf7bcf7e1633b1eed1e3947))
+
+
+### Performance Improvements
+
+* **app:** narrow vnc editor field subscriptions ([#41428](https://github.com/okou-ai/okou/issues/41428)) ([bad20ac](https://github.com/okou-ai/okou/commit/bad20acf80071075460ce36f9a3c31c13a7989a9))
+* streamline sql reads and thread artifact ownership ([#41240](https://github.com/okou-ai/okou/issues/41240)) ([859ae6d](https://github.com/okou-ai/okou/commit/859ae6d2be16afa00ec717ba3680f002ced8f235))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.577.0
+    * @okouai/core bumped to 8.771.0
+
 ## [0.1043.0](https://github.com/okou-ai/okou/compare/app-v0.1042.0...app-v0.1043.0) (2026-10-19)
 
 

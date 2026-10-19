@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.15...runner-supervisor-v0.17.16) (2026-10-19)
+
+
+### Bug Fixes
+
+* **runner:** reuse finalizing cancelled and failed predecessors ([#41492](https://github.com/okou-ai/okou/issues/41492)) ([204439c](https://github.com/okou-ai/okou/commit/204439c4147e9e1f68860ac0ba1000d6d7b4dd3b))
+
+
+### Refactoring
+
+* **rust:** retire the home-cache capacity compatibility flock ([#41437](https://github.com/okou-ai/okou/issues/41437)) ([d23a9b4](https://github.com/okou-ai/okou/commit/d23a9b4f9a8cea2ce4f0250e3ec068a1d829cbcd))
+
 ## [0.17.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.14...runner-supervisor-v0.17.15) (2026-10-19)
 
 ## [0.17.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.13...runner-supervisor-v0.17.14) (2026-10-19)

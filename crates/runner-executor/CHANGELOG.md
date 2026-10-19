@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.15...runner-executor-v0.14.16) (2026-10-19)
+
+
+### Refactoring
+
+* prepare database-backed agent instructions ([#41393](https://github.com/okou-ai/okou/issues/41393)) ([da0dc9c](https://github.com/okou-ai/okou/commit/da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29))
+
 ## [0.14.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.14...runner-executor-v0.14.15) (2026-10-19)
 
 

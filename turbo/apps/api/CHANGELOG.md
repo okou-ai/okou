@@ -9,6 +9,54 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.755.0](https://github.com/okou-ai/okou/compare/api-v1.754.0...api-v1.755.0) (2026-10-19)
+
+
+### Features
+
+* **api:** make official workflows free and platform controlled ([#41496](https://github.com/okou-ai/okou/issues/41496)) ([1673e0e](https://github.com/okou-ai/okou/commit/1673e0e6d1f2f2c95f515894430e348d73acc195))
+
+
+### Bug Fixes
+
+* **agentphone:** defer contact cards until after a successful conversation ([#41427](https://github.com/okou-ai/okou/issues/41427)) ([50f988e](https://github.com/okou-ai/okou/commit/50f988e6f08e2ebfd709ac0ad48c4e6e8caeae1d))
+* **api:** preserve discovery rank for migrated mcp connectors ([#41450](https://github.com/okou-ai/okou/issues/41450)) ([3330068](https://github.com/okou-ai/okou/commit/33300689f87539baf927dcd38a7bb7d1888b9bd9))
+* **api:** re-verify active suggestions for expiry in curation ([#41453](https://github.com/okou-ai/okou/issues/41453)) ([75041d2](https://github.com/okou-ai/okou/commit/75041d29bebbbf3b388e37b52eb790754b229f55))
+* **remote:** prefer exact attempts in ssh and vnc diagnostic guidance ([#41479](https://github.com/okou-ai/okou/issues/41479)) ([81b763d](https://github.com/okou-ai/okou/commit/81b763de04dd2b1d9b34b15007fa147bd254f221))
+* **runner:** reuse finalizing cancelled and failed predecessors ([#41492](https://github.com/okou-ai/okou/issues/41492)) ([204439c](https://github.com/okou-ai/okou/commit/204439c4147e9e1f68860ac0ba1000d6d7b4dd3b))
+
+
+### Refactoring
+
+* **api:** localize available log filter reads ([#41439](https://github.com/okou-ai/okou/issues/41439)) ([9cdb309](https://github.com/okou-ai/okou/commit/9cdb3096486c5129227169b7bfe27caf1f2d3948))
+* **api:** localize canonical slack conflict reads ([#41504](https://github.com/okou-ai/okou/issues/41504)) ([426e380](https://github.com/okou-ai/okou/commit/426e38055777468a2b2e3c6747bbb205252c86bc)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** localize discord duplicate-message reads ([#41485](https://github.com/okou-ai/okou/issues/41485)) ([0db4103](https://github.com/okou-ai/okou/commit/0db410379eb495ccb17e516c1888908a333b344a))
+* **api:** localize discord materialization loads ([#41434](https://github.com/okou-ai/okou/issues/41434)) ([e1ddb21](https://github.com/okou-ai/okou/commit/e1ddb214c7a193da065b5093c1e3a2aa8414e777))
+* **api:** localize feishu conversation history ownership ([#41483](https://github.com/okou-ai/okou/issues/41483)) ([5894cb7](https://github.com/okou-ai/okou/commit/5894cb77115d44286f5301fcc041bc9d16d8ed17))
+* **api:** own deferred subscription schedule reload ([#41455](https://github.com/okou-ai/okou/issues/41455)) ([b91cd40](https://github.com/okou-ai/okou/commit/b91cd40a7e7fa990d14e0836ca121b879b44995b)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own discord completion load and isolate history fixture ([#41482](https://github.com/okou-ai/okou/issues/41482)) ([3389cee](https://github.com/okou-ai/okou/commit/3389cee781aaedf07bdd013d108f38f351040457))
+* **api:** own first subscription invoice reload ([#41497](https://github.com/okou-ai/okou/issues/41497)) ([49eb25d](https://github.com/okou-ai/okou/commit/49eb25da7e76e44fcecbc6a6fa92f8b7607a52fc)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own teams connection lookup in dispatch ([#41493](https://github.com/okou-ai/okou/issues/41493)) ([43c7d83](https://github.com/okou-ai/okou/commit/43c7d83d585f75d7697ca01bfd434891fcec6f29)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own telegram agent message store executor ([#41441](https://github.com/okou-ai/okou/issues/41441)) ([5f9c0e7](https://github.com/okou-ai/okou/commit/5f9c0e77bcdb901d3b68458306dcf936203c4b88))
+* **api:** retire legacy disk telemetry ingestion ([#41380](https://github.com/okou-ai/okou/issues/41380)) ([ab96eac](https://github.com/okou-ai/okou/commit/ab96eaca320cbdf6fb46103d3de7a4207e948aba))
+* **api:** retire provider-scoped canonical delivery index ([#41435](https://github.com/okou-ai/okou/issues/41435)) ([3f89a59](https://github.com/okou-ai/okou/commit/3f89a59ad3d4f28812b5f99c02697e65a599a7d2))
+* prepare database-backed agent instructions ([#41393](https://github.com/okou-ai/okou/issues/41393)) ([da0dc9c](https://github.com/okou-ai/okou/commit/da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29))
+
+
+### Performance Improvements
+
+* streamline sql reads and thread artifact ownership ([#41240](https://github.com/okou-ai/okou/issues/41240)) ([859ae6d](https://github.com/okou-ai/okou/commit/859ae6d2be16afa00ec717ba3680f002ced8f235))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.577.0
+    * @okouai/core bumped to 8.771.0
+    * @okouai/db bumped to 1.348.0
+    * @okouai/pi-agent-runtime bumped to 1.50.27
+
 ## [1.754.0](https://github.com/okou-ai/okou/compare/api-v1.753.0...api-v1.754.0) (2026-10-19)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.12](https://github.com/okou-ai/okou/compare/runner-types-v0.7.11...runner-types-v0.7.12) (2026-10-19)
+
+
+### Refactoring
+
+* prepare database-backed agent instructions ([#41393](https://github.com/okou-ai/okou/issues/41393)) ([da0dc9c](https://github.com/okou-ai/okou/commit/da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29))
+
 ## [0.7.11](https://github.com/okou-ai/okou/compare/runner-types-v0.7.10...runner-types-v0.7.11) (2026-10-19)
 
 
