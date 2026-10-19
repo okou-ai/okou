@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
   integrationsDiscordDownloadFileContract,
@@ -32,6 +33,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   discordChatThreads,
@@ -58,6 +60,7 @@ import { claimPublicDiscordTestRun } from "./helpers/discord-run";
 import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
+import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -1046,6 +1049,97 @@ describe("Canonical Discord file publication and delivery", () => {
       }
     }
   });
+
+  it.each(["discord", "slack"] as const)(
+    "preserves the provider across concurrent initialization and replay (%s first)",
+    async (firstProvider) => {
+      const fixture = await boundFixture();
+      const slackOrgs = createPublicSlackOrgApi(context);
+      const slack = await slackOrgs.installOrg({
+        actor: fixture.actor,
+        withConnection: true,
+      });
+      onTestFinished(async () => {
+        await slackOrgs.uninstallWorkspace(slack.slackWorkspaceId);
+      });
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      await runs.grantProEntitlement(fixture.actor);
+      await runs.ensurePersonalSubscriptionModel(fixture.actor);
+      const runnerGroup = runs.configureRunnerGroup();
+      await runs.heartbeatRunner(runnerGroup);
+      const agent = await bdd.createAgent(fixture.actor, {
+        displayName: "File delivery identity test",
+      });
+      const sent = await chatFiles.sendAndLaunch(fixture.actor, {
+        agentId: agent.agentId,
+        prompt: "Create a report",
+      });
+      const claim = await runs.claimRunnerJob(sent.runId);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected the Runner claim to issue an Okou run token");
+      }
+      const headers = { authorization: `Bearer ${token}` };
+      const body = uploadBody({ channelId: fixture.channelId });
+      const slackClient = setupApp({
+        context,
+        routes: integrationsSlackUploadInitRoutes,
+      })(integrationsSlackUploadInitContract);
+      const requests = {
+        discord: () => {
+          return accept(fileClients().init({ headers, body }), [200, 409]);
+        },
+        slack: () => {
+          return accept(
+            slackClient.init({
+              headers,
+              body: {
+                filename: body.filename,
+                length: body.length,
+                canonical: {
+                  operationId: body.operationId,
+                  contentType: body.contentType,
+                  checksumSha256: body.checksumSha256,
+                  channel: "C_FILE_IDENTITY",
+                },
+              },
+            }),
+            [200, 409],
+          );
+        },
+      };
+      expect((await requests[firstProvider]()).status).toBe(200);
+      const outcomes = await Promise.all(
+        Object.values(requests).map(async (request) => {
+          const response = await request();
+          return { request, response };
+        }),
+      );
+      expect(
+        outcomes
+          .map(({ response }) => {
+            return response.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 409]);
+      for (const { request, response } of outcomes) {
+        const repeated = await request();
+        expect(repeated.status).toBe(response.status);
+        if (repeated.status === 200 && response.status === 200) {
+          const identity = z
+            .object({
+              assetId: z.uuid(),
+              operationId: z.uuid(),
+              url: z.string(),
+            })
+            .parse(response.body);
+          expect(identity.operationId).toBe(body.operationId);
+          expect(repeated.body).toMatchObject(identity);
+        }
+      }
+    },
+  );
 
   it("rejects reuse of an operation for a different destination or file", async () => {
     const fixture = await boundFixture();

@@ -1,6 +1,6 @@
 {
-  "id": "189384a0-027f-4513-b539-510af92d292c",
-  "prevId": "9b9b6711-1434-4c10-b3b0-30b43b98341f",
+  "id": "6d9f01e9-4241-441e-9e94-58b9b9bc8e94",
+  "prevId": "e6edbb56-2928-4515-9d13-9b03f3e93784",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2458,28 +2458,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "artifacts_projection_file_org_idx": {
-          "name": "artifacts_projection_file_org_idx",
-          "columns": [
-            {
-              "expression": "projection_file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -24414,33 +24392,6 @@
         }
       },
       "indexes": {
-        "canonical_asset_deliveries_asset_provider_operation_unique": {
-          "name": "canonical_asset_deliveries_asset_provider_operation_unique",
-          "columns": [
-            {
-              "expression": "asset_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "operation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "canonical_asset_deliveries_asset_operation_unique": {
           "name": "canonical_asset_deliveries_asset_operation_unique",
           "columns": [
