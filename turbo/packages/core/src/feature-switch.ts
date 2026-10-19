@@ -278,7 +278,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
   [FeatureSwitchKey.SanityMcpConnector]: {
-    maintainer: "liangyou@vm0.ai",
+    maintainer: "liangyou@okou.ai",
     description: "Enable the Sanity builtin MCP connector",
     enabled: false,
   },
