@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.15](https://github.com/okou-ai/okou/compare/runner-host-v0.9.14...runner-host-v0.9.15) (2026-10-19)
+
+
+### Refactoring
+
+* **rust:** retire the home-cache capacity compatibility flock ([#41437](https://github.com/okou-ai/okou/issues/41437)) ([d23a9b4](https://github.com/okou-ai/okou/commit/d23a9b4f9a8cea2ce4f0250e3ec068a1d829cbcd))
+
 ## [0.9.14](https://github.com/okou-ai/okou/compare/runner-host-v0.9.13...runner-host-v0.9.14) (2026-10-19)
 
 ## [0.9.13](https://github.com/okou-ai/okou/compare/runner-host-v0.9.12...runner-host-v0.9.13) (2026-10-19)
