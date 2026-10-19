@@ -804,9 +804,15 @@ async fn hard_shutdown_during_reserved_reuse_running_status_stall_converges() {
     let stopping = tokio::spawn(async move {
         handle_stopping_signal("TEST", &cancel, &cancel_tokens, &lifecycle).await;
     });
-    // Independent activation lets Reactor publish Stopping while the transfer
-    // is still gated. Finish that real I/O before advancing just the deadline.
+    // Stopping can be visible from the mode-change write before teardown's
+    // second publication completes. Join both real writes before advancing
+    // the deliberately stalled activation's deadline.
     wait_status_mode(&status_path, "stopping", Duration::from_secs(5)).await;
+    env.start_observer
+        .wait_for(Duration::from_secs(5), "claim-task drain", |event| {
+            matches!(event, StartLoopEvent::ClaimsDrainEntered).then_some(())
+        })
+        .await;
     assert!(
         !stopping.is_finished(),
         "hard shutdown should wait for the claimed activation transfer"
