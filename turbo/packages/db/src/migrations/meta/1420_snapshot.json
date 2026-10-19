@@ -1,6 +1,6 @@
 {
-  "id": "eb2a0589-b839-4223-b5d8-9b934441a0a2",
-  "prevId": "11b32217-619c-472d-a868-de6bcc7c6a63",
+  "id": "4eead6a3-63fe-4474-bf89-ceb7199f3667",
+  "prevId": "6c1774ac-0ab3-4d60-96d3-362dab190cf9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2452,28 +2452,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "artifacts_projection_file_org_idx": {
-          "name": "artifacts_projection_file_org_idx",
-          "columns": [
-            {
-              "expression": "projection_file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17566,6 +17544,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "approval_thread_id": {
+          "name": "approval_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approval_run_id": {
+          "name": "approval_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "provider_spend_id": {
           "name": "provider_spend_id",
           "type": "varchar(256)",
@@ -17618,6 +17608,12 @@
         "approval_url": {
           "name": "approval_url",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action_resolution": {
+          "name": "action_resolution",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -17683,6 +17679,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_link_wallet_spends_approval_deadline": {
+          "name": "idx_link_wallet_spends_approval_deadline",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"link_wallet_spends\".\"approval_thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -17710,6 +17728,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "link_wallet_spends_approval_thread_id_chat_threads_id_fk": {
+          "name": "link_wallet_spends_approval_thread_id_chat_threads_id_fk",
+          "tableFrom": "link_wallet_spends",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "approval_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

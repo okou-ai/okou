@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
@@ -321,10 +321,10 @@ test("The feature switch leaves a linked member's model panel ungrouped", async 
 test("An unresolved subscription lookup offers no entry yet", async () => {
   const pending = context.mocks.deferred<void>();
   context.mocks.api(
-    personalModelProvidersMainContract.list,
+    thirdPartySubscriptionsMainContract.list,
     async ({ respond, withSignal }) => {
       await withSignal(pending.promise);
-      return respond(200, { modelProviders: [] });
+      return respond(200, { subscriptions: [] });
     },
   );
   await setupLinking();

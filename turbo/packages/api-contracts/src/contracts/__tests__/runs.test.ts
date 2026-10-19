@@ -211,40 +211,20 @@ describe("network log model catalog cache telemetry", () => {
   });
 });
 
-describe("Run result generations", () => {
-  it("reads native identity and file outputs from current and historical results", () => {
-    for (const result of [
-      {
-        agentSessionId: "agent-session",
-        conversationId: "conversation",
-        artifact: { memory: "old-version" },
-      },
-      {
-        framework: "pi",
-        frameworkSessionId: "native-session",
-        storageOutputs: [
-          {
-            name: "memory",
-            version: "version",
-            mountPath: "/memory",
-            missingRootPolicy: "preserveParentVersion",
-          },
-        ],
-      },
-    ]) {
-      if ("framework" in result)
-        expect(runResultSchema.parse(result)).toMatchObject({
-          framework: result.framework,
-          frameworkSessionId: result.frameworkSessionId,
-        });
-      if ("storageOutputs" in result)
-        expect(runResultSchema.parse(result).storageOutputs).toStrictEqual(
-          result.storageOutputs,
-        );
-      if ("artifact" in result)
-        expect(runResultSchema.parse(result).artifact).toStrictEqual(
-          result.artifact,
-        );
-    }
+describe("Run completion results", () => {
+  it("reads native identity and exact storage output versions", () => {
+    const result = {
+      framework: "pi",
+      frameworkSessionId: "native-session",
+      storageOutputs: [
+        {
+          name: "memory",
+          version: "version",
+          mountPath: "/memory",
+          missingRootPolicy: "preserveParentVersion",
+        },
+      ],
+    };
+    expect(runResultSchema.parse(result)).toStrictEqual(result);
   });
 });

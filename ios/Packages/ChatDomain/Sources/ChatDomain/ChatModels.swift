@@ -117,6 +117,7 @@ public enum ChatExecutionState: String, Equatable, Sendable {
 
 public struct ChatHistory: Equatable, Sendable {
   public let messages: [ChatMessage]
+  public let workSections: [ChatWorkSection]
   public let executionState: ChatExecutionState
   public let activeRunIDs: [String]
   public let queuedEventIDs: [String]
@@ -127,9 +128,11 @@ public struct ChatHistory: Equatable, Sendable {
     executionState: ChatExecutionState,
     activeRunIDs: [String],
     queuedEventIDs: [String],
-    persistedEventIDs: Set<String> = []
+    persistedEventIDs: Set<String> = [],
+    workSections: [ChatWorkSection] = []
   ) {
     self.messages = messages
+    self.workSections = workSections
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
     self.queuedEventIDs = queuedEventIDs
@@ -139,6 +142,18 @@ public struct ChatHistory: Equatable, Sendable {
   public static let empty = ChatHistory(
     messages: [], executionState: .idle, activeRunIDs: [], queuedEventIDs: [])
   public var canStop: Bool { !activeRunIDs.isEmpty || !queuedEventIDs.isEmpty }
+}
+
+/// One contiguous run phase, bounded by user inputs rather than the run's lifetime.
+public struct ChatWorkSection: Equatable, Identifiable, Sendable {
+  public let id: String
+  public let anchorMessageID: String
+  public let hiddenMessageIDs: [String]
+  public let stepCount: Int
+  public let startTime: Date
+  public let endTime: Date?
+
+  public var isCollapsible: Bool { stepCount > 0 }
 }
 
 public struct SendReceipt: Sendable {

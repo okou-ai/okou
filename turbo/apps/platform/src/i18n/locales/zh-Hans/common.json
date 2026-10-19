@@ -2933,6 +2933,11 @@
       "transcriptionFailed": "语音转写失败，请重试。"
     },
     "walletAction": {
+      "approvalApproved": "审批已通过，等待接续",
+      "approvalContinued": "已接续此购买请求",
+      "approvalRecorded": "状态已更新",
+      "approvalStopped": "自动等待已结束，可手动继续",
+      "approvalWaiting": "等待购买审批",
       "approveButton": "审核",
       "approveTitle": "审核购买",
       "authorized": "已授权",

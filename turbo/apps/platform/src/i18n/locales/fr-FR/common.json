@@ -2992,6 +2992,11 @@
       "transcriptionFailed": "Échec de la transcription vocale. Réessayez."
     },
     "walletAction": {
+      "approvalApproved": "Achat approuvé, en attente de reprise",
+      "approvalContinued": "Demande d’achat reprise",
+      "approvalRecorded": "Statut mis à jour",
+      "approvalStopped": "Attente automatique terminée ; vous pouvez reprendre manuellement",
+      "approvalWaiting": "En attente de l’approbation de l’achat",
       "approveButton": "Vérifier",
       "approveTitle": "Vérifier l’achat",
       "authorized": "Autorisé",

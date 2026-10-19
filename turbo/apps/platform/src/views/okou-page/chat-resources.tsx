@@ -30,6 +30,11 @@ import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { hostedSiteLink } from "./artifact-display.ts";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "../../signals/hosted-site-url-changes.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -198,6 +203,15 @@ function ResourceOutputRow({
 }) {
   const openArtifact = useSet(openThreadCatalogArtifact$);
   const pageSignal = useGet(pageSignal$);
+  const changes = useGet(hostedSiteUrlChanges$);
+  const titleLink =
+    artifact.kind === "hosted-site"
+      ? hostedSiteLink(
+          artifact.aliasUrl
+            ? currentHostedSiteUrl(artifact.aliasUrl, changes)
+            : undefined,
+        )
+      : null;
   return (
     <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
@@ -215,7 +229,7 @@ function ResourceOutputRow({
           size="sm"
           className="shrink-0"
         />
-        <HoverScrollTitle title={artifact.title} />
+        <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
       </Button>
       <CopyResourceLink
         artifactId={artifact.id}

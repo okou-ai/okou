@@ -1,0 +1,185 @@
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import {
+  artifactRun,
+  buttonNamed,
+  mockArtifactConversation,
+  NAVIGATION_ARTIFACT_RUN_ID,
+  NAVIGATION_ARTIFACT_THREAD_ID,
+} from "./chat-navigation-artifact-test-helpers.ts";
+import {
+  context,
+  installResourceGeometry,
+  resourceButton,
+} from "./chat-resources-test-helpers.ts";
+
+const deploymentId = "00000000-0000-4000-8000-000000000041";
+const deploymentUrl = `https://dpl-${deploymentId}.okou.app/`;
+const siteId = "00000000-0000-4000-8000-000000000042";
+
+async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
+  let currentSlug = initialSlug;
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  const run = artifactRun({
+    filename: "launch-site.html",
+    fileId: deploymentId,
+    contentType: "text/html",
+    url: deploymentUrl,
+  });
+  mockArtifactConversation(context, {
+    catalog: [],
+    artifactRuns: () => {
+      return [
+        {
+          ...run,
+          files: run.files.map((file) => {
+            return {
+              ...file,
+              aliasUrl: `https://${currentSlug}.okou.app`,
+              artifactKind: "hosted-site" as const,
+            };
+          }),
+        },
+      ];
+    },
+    chatEvents: [
+      {
+        id: "hosted-url-message",
+        createdAt: "2026-09-01T12:00:00.000Z",
+        role: "assistant",
+        content: `[Open website](${deploymentUrl})`,
+        runId: NAVIGATION_ARTIFACT_RUN_ID,
+        seqId: 1,
+      },
+      {
+        id: "hosted-url-completed",
+        createdAt: "2026-09-01T12:00:01.000Z",
+        role: "assistant",
+        content: null,
+        runId: NAVIGATION_ARTIFACT_RUN_ID,
+        runLifecycleEvent: "completed",
+        seqId: 2,
+      },
+    ],
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, {
+      siteId,
+      publicSlug: currentSlug,
+      url: `https://${currentSlug}.okou.app`,
+      isActive: true,
+    });
+  });
+  context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
+    return respond(200, { available: true });
+  });
+  context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
+    currentSlug = body.publicSlug;
+    return respond(200, {
+      siteId,
+      publicSlug: currentSlug,
+      url: `https://${currentSlug}.okou.app`,
+      isActive: true,
+    });
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.HostedSiteUrlEditing]: true,
+      [FeatureSwitchKey.ChatResourcePanel]: true,
+      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+    },
+  });
+  await screen.findByText("Open website");
+  const link = queryAllByRoleFast("link").find((element) => {
+    return element.textContent === "Open website";
+  });
+  expect(link).toBeDefined();
+  click(link!);
+  return await screen.findByTestId(
+    sidebar ? "artifact-sidebar" : "attachment-lightbox",
+  );
+}
+
+async function copyFromResources(slug: string) {
+  click(resourceButton());
+  const resources = await screen.findByRole("region", { name: "Resources" });
+  const title = await within(resources).findByText(`${slug}.okou.app`);
+  const row = title.closest("li")!;
+  click(buttonNamed("Copy link", row));
+}
+
+test.each([false, true])(
+  "renaming a site updates its title, title link, and resource copy link (sidebar=%s)",
+  async (sidebar) => {
+    const preview = await setupHostedSite(sidebar);
+    const title = await within(preview).findByTestId("artifact-title-link");
+    expect(title).toHaveTextContent("launch-site.okou.app");
+    const shareLabel = sidebar ? "Share artifact" : "Share";
+    await waitFor(() => {
+      expect(buttonNamed(shareLabel, preview)).toBeEnabled();
+    });
+    click(buttonNamed(shareLabel, preview));
+    await screen.findByText("Published");
+    for (const slug of ["renamed-site", "final-site"]) {
+      await waitFor(() => {
+        expect(buttonNamed("Customize URL")).toBeEnabled();
+      });
+      click(buttonNamed("Customize URL"));
+      await fill(await screen.findByLabelText("Website URL"), slug);
+      await screen.findByText("Available");
+      click(buttonNamed("Save"));
+      await waitFor(() => {
+        expect(title).toHaveTextContent(`${slug}.okou.app`);
+        expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
+        expect(buttonNamed("Copy link")).toBeEnabled();
+      });
+      const clipboard = context.mocks.browser.clipboardWriteText();
+      click(buttonNamed("Copy link"));
+      await waitFor(() => {
+        expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
+      });
+    }
+    await userEvent.keyboard("{Escape}");
+    click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));
+    await waitFor(() => {
+      expect(title).not.toBeInTheDocument();
+    });
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    await copyFromResources("final-site");
+    await waitFor(() => {
+      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app/");
+    });
+  },
+);
+
+test("a reopened chat shows and copies the current site address despite the original filename", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const preview = await setupHostedSite(true, "already-renamed");
+  const title = await within(preview).findByTestId("artifact-title-link");
+  expect(title).toHaveTextContent("already-renamed.okou.app");
+  expect(title).toHaveAttribute("href", "https://already-renamed.okou.app/");
+  click(buttonNamed("Close artifact", preview));
+  await waitFor(() => {
+    expect(title).not.toBeInTheDocument();
+  });
+  await copyFromResources("already-renamed");
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([
+      "https://already-renamed.okou.app",
+    ]);
+  });
+});

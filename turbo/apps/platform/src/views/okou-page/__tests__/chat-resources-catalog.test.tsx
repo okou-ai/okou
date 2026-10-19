@@ -82,6 +82,47 @@ test("Browse directory artifacts with permanently optional source URLs and open 
   );
 });
 
+test.each([
+  {
+    kind: "hosted-site",
+    aliasUrl: "https://report.sites.okou.ai/",
+    title: "report.sites.okou.ai",
+  },
+  {
+    kind: "presentation",
+    aliasUrl: "https://report.sites.okou.ai/",
+    title: "index.html",
+  },
+  { kind: "hosted-site", aliasUrl: undefined, title: "index.html" },
+] as const)(
+  "Render the $kind resource title as $title",
+  async ({ kind, aliasUrl, title }) => {
+    const artifact = {
+      ...artifactSummary(RESOURCE_ARTIFACT_ID, kind, "index.html"),
+      aliasUrl,
+    };
+    await setupResources({
+      mock: () => {
+        context.mocks.api(
+          artifactCatalogContract.list,
+          ({ query, respond }) => {
+            return respond(200, {
+              artifacts:
+                query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID
+                  ? [artifact]
+                  : [],
+              nextCursor: null,
+            });
+          },
+        );
+      },
+    });
+    const resources = await screen.findByRole("region", { name: "Resources" });
+    await within(resources).findByText(title);
+    expect(artifactEntryNamed(title, resources)).toBeInTheDocument();
+  },
+);
+
 test("Deduplicate both source and hosted alias links using only summaries", async () => {
   await setupResources({ aliasUrl: "https://report.sites.okou.ai/" });
   const resources = await screen.findByRole("region", { name: "Resources" });

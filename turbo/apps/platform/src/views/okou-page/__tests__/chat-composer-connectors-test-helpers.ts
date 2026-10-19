@@ -256,6 +256,68 @@ function browseSlice<
   });
 }
 
+function savedAccountSummaries(
+  catalog: readonly PublicConnectorCatalogStatusItem[],
+  customConnectors: readonly CustomConnectorResponse[],
+  accounts: readonly ConnectorAccountConnection[],
+): readonly ConnectorAccountSummary[] {
+  const byTarget = new Map<string, ConnectorAccountConnection[]>();
+  for (const account of accounts) {
+    const key = connectorAccountTargetKey(account.target);
+    const group = byTarget.get(key) ?? [];
+    group.push(account);
+    byTarget.set(key, group);
+  }
+  for (const connector of catalog) {
+    const target = { kind: "builtin", connectorSlug: connector.slug } as const;
+    const key = connectorAccountTargetKey(target);
+    if (connector.connection?.id && !byTarget.has(key)) {
+      byTarget.set(key, [
+        {
+          ...connectorAccount({
+            id: connector.connection.id,
+            target,
+            displayName: "Work",
+            isDefault: true,
+          }),
+          authMethod: connector.connection.authMethod,
+          externalUsername: connector.connection.externalUsername,
+          externalEmail: connector.connection.externalEmail,
+          connectionStatus:
+            connector.connectionStatus === "reconnect-required"
+              ? "reconnect-required"
+              : "connected",
+          reconnectReason: connector.connection.reconnectReason,
+        },
+      ]);
+    }
+  }
+  for (const connector of customConnectors) {
+    const target = { kind: "custom", customConnectorId: connector.id } as const;
+    const key = connectorAccountTargetKey(target);
+    if (
+      !isIntegrationManagedCustomConnector(connector) &&
+      connector.connectedAccountId &&
+      !byTarget.has(key)
+    ) {
+      byTarget.set(key, [
+        {
+          ...connectorAccount({
+            id: connector.connectedAccountId,
+            target,
+            displayName: "Work",
+            isDefault: true,
+          }),
+          authMethod: connector.authMode === "manual" ? "manual" : "oauth",
+        },
+      ]);
+    }
+  }
+  return [...byTarget.values()].map((group) => {
+    return accountSummary(group[0]!.target, group);
+  });
+}
+
 export function installComposerConnectorFixture(
   options: ConnectorFixtureOptions = {},
 ): ComposerConnectorFixture {
@@ -270,6 +332,12 @@ export function installComposerConnectorFixture(
   );
   const threadSelections = copyAuthorizationRecord(options.threadSelections);
   const accounts = [...(options.accounts ?? [])];
+  const currentAccountSummaries = () => {
+    return (
+      options.accountSummaries ??
+      savedAccountSummaries(catalog, customConnectors, accounts)
+    );
+  };
   const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
   const customAuthorizationUpdates: CustomAuthorizationUpdate[] = [];
   const customValueRequests: {
@@ -396,10 +464,18 @@ export function installComposerConnectorFixture(
     return respond(200, { connectors: customConnectors });
   });
   context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    const summaries = currentAccountSummaries();
+    const savedTargets = new Set(
+      summaries.flatMap((summary) => {
+        return summary.accountCount > 0
+          ? [connectorAccountTargetKey(summary.target)]
+          : [];
+      }),
+    );
     return respond(200, {
       builtinConnectors: catalog
         .filter((connector) => {
-          return connector.connected;
+          return savedTargets.has(`builtin:${connector.slug}`);
         })
         .map((connector) => {
           return {
@@ -411,7 +487,9 @@ export function installComposerConnectorFixture(
         }),
       customConnectors: customConnectors
         .filter((connector) => {
-          return connector.connected;
+          return (
+            connector.connected || savedTargets.has(`custom:${connector.id}`)
+          );
         })
         .map((connector) => {
           return {
@@ -422,7 +500,7 @@ export function installComposerConnectorFixture(
             integrationManaged: isIntegrationManagedCustomConnector(connector),
           };
         }),
-      accountSummaries: (options.accountSummaries ?? []).map((summary) => {
+      accountSummaries: summaries.map((summary) => {
         const account = summary.defaultConnection;
         return {
           target: summary.target,
@@ -522,7 +600,7 @@ export function installComposerConnectorFixture(
     },
   );
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [...(options.accountSummaries ?? [])] });
+    return respond(200, { summaries: [...currentAccountSummaries()] });
   });
   context.mocks.api(
     connectorAccountsContract.connections,
@@ -985,7 +1063,9 @@ export function accountSummary(
   return {
     target,
     accountCount: accounts.length,
-    attentionCount: 0,
+    attentionCount: accounts.filter((account) => {
+      return account.connectionStatus === "reconnect-required";
+    }).length,
     defaultConnection:
       accounts.find((account) => {
         return account.isDefault;

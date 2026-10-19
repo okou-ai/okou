@@ -1,5 +1,9 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
@@ -28,6 +32,7 @@ export interface ConnectorDirectoryModel {
   readonly matchedConnected: readonly PlatformConnectorCatalogStatusItem[];
   readonly discover: readonly PlatformConnectorCatalogStatusItem[];
   readonly custom: readonly CustomConnectorResponse[];
+  readonly customAttention: readonly CustomConnectorResponse[];
   readonly categorySections: readonly ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[];
   /**
    * The categories the chip row offers. They come from the browse response
@@ -44,11 +49,53 @@ export interface ConnectorDirectoryModel {
   readonly categoryLabelOf: (category: string) => string | undefined;
 }
 
+export function currentDirectoryAccountSummaries(
+  connectors: readonly PlatformConnectorCatalogStatusItem[],
+  summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
+): ReadonlyMap<string, ConnectorAccountSummary> | undefined {
+  if (!summaries) {
+    return undefined;
+  }
+  const current = new Map(summaries);
+  for (const connector of connectors) {
+    const key = `builtin:${connector.slug}`;
+    const summary = summaries.get(key);
+    if (!summary?.defaultConnection) {
+      continue;
+    }
+    const account = summary.defaultConnection;
+    if (
+      account.connectionStatus !== "connected" ||
+      account.authMethod !== connector.connection?.authMethod
+    ) {
+      continue;
+    }
+    const status = builtinConnectorCurrentConnectionStatus({
+      ...connector,
+      connectionStatus: account.connectionStatus,
+      tokenExpiresAt: account.tokenExpiresAt,
+    });
+    if (status === "reconnect-required") {
+      current.set(key, {
+        ...summary,
+        attentionCount: summary.attentionCount + 1,
+        defaultConnection: { ...account, connectionStatus: status },
+      });
+    }
+  }
+  return current;
+}
+
 function needsAttention(
   connector: PlatformConnectorCatalogStatusItem,
+  summary: ConnectorAccountSummary | undefined,
 ): boolean {
   const status = builtinConnectorCurrentConnectionStatus(connector);
-  return status === "reconnect-required" || status === "scope-mismatch";
+  return (
+    (summary?.attentionCount ?? 0) > 0 ||
+    summary?.defaultConnection === null ||
+    status === "scope-mismatch"
+  );
 }
 
 function matchesCustomConnectorSearch(
@@ -68,41 +115,101 @@ function matchesCustomConnectorSearch(
   });
 }
 
+function customConnectorGroups(
+  connectors: readonly CustomConnectorResponse[],
+  summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
+) {
+  const customAttention = connectors.filter((connector) => {
+    const summary = summaries?.get(`custom:${connector.id}`);
+    return (
+      !isIntegrationManagedCustomConnector(connector) &&
+      summary !== undefined &&
+      summary.accountCount > 0 &&
+      (summary.attentionCount > 0 ||
+        summary.defaultConnection === null ||
+        !connector.connected)
+    );
+  });
+  const attentionIds = new Set(
+    customAttention.map((connector) => {
+      return connector.id;
+    }),
+  );
+  return {
+    customAttention,
+    custom: connectors.filter((connector) => {
+      return !attentionIds.has(connector.id);
+    }),
+  };
+}
+
 /**
  * Derives everything the directory renders from the raw connector lists, so the
  * dialog stays a view: which connected connectors need a fix, what discovery
  * shows for the current search and category.
  */
 export function buildConnectorDirectoryModel({
-  connected,
-  unconnected,
+  connectors,
+  customConnectors,
+  accountSummaries,
   chipCatalog,
-  connectedCustom,
-  unconnectedCustom,
   search,
   category,
   otherCategoryLabel,
   categoryCounts,
   headShelfLabel,
 }: {
-  readonly connected: readonly PlatformConnectorCatalogStatusItem[];
-  readonly unconnected: readonly PlatformConnectorCatalogStatusItem[];
+  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
+  readonly customConnectors: readonly CustomConnectorResponse[];
+  /** Undefined means account metadata is not currently available, not zero. */
+  readonly accountSummaries:
+    ReadonlyMap<string, ConnectorAccountSummary> | undefined;
   /** Every connector the browse response carried, for the chip row. */
   readonly chipCatalog: readonly PlatformConnectorCatalogStatusItem[];
-  readonly connectedCustom: readonly CustomConnectorResponse[];
-  readonly unconnectedCustom: readonly CustomConnectorResponse[];
   readonly search: string;
   readonly category: string | null;
   readonly otherCategoryLabel: string;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly headShelfLabel: string;
 }): ConnectorDirectoryModel {
+  const connected = connectors.filter((connector) => {
+    return (
+      (accountSummaries?.get(`builtin:${connector.slug}`)?.accountCount ?? 0) >
+      0
+    );
+  });
+  const unconnected = connectors.filter((connector) => {
+    return (
+      accountSummaries !== undefined &&
+      (accountSummaries.get(`builtin:${connector.slug}`)?.accountCount ?? 0) ===
+        0
+    );
+  });
+  const connectedCustom = customConnectors.filter((connector) => {
+    return isIntegrationManagedCustomConnector(connector)
+      ? connector.connected
+      : (accountSummaries?.get(`custom:${connector.id}`)?.accountCount ?? 0) >
+          0;
+  });
+  const unconnectedCustom = customConnectors.filter((connector) => {
+    return (
+      !isIntegrationManagedCustomConnector(connector) &&
+      accountSummaries !== undefined &&
+      (accountSummaries.get(`custom:${connector.id}`)?.accountCount ?? 0) === 0
+    );
+  });
+  const requiresAttention = (connector: PlatformConnectorCatalogStatusItem) => {
+    return needsAttention(
+      connector,
+      accountSummaries?.get(`builtin:${connector.slug}`),
+    );
+  };
   const matchedConnected = connected.filter((connector) => {
     return matchesConnectorDirectorySearch(search, connector);
   });
-  const attention = connected.filter(needsAttention);
+  const attention = connected.filter(requiresAttention);
   const searchedConnected = matchedConnected.filter((connector) => {
-    return !needsAttention(connector);
+    return !requiresAttention(connector);
   });
   const discover = unconnected.filter((connector) => {
     return (
@@ -110,10 +217,14 @@ export function buildConnectorDirectoryModel({
       (category === null || connector.category === category)
     );
   });
-  const custom = [...connectedCustom, ...unconnectedCustom].filter(
+  const matchedCustom = [...connectedCustom, ...unconnectedCustom].filter(
     (connector) => {
       return matchesCustomConnectorSearch(search, connector);
     },
+  );
+  const { custom, customAttention } = customConnectorGroups(
+    matchedCustom,
+    accountSummaries,
   );
   const categoryMetadata = connectorCategoryLabels(
     [...unconnected, ...chipCatalog].map((connector) => {
@@ -151,6 +262,7 @@ export function buildConnectorDirectoryModel({
     matchedConnected: search.trim() ? searchedConnected : [],
     discover,
     custom,
+    customAttention,
     categorySections,
     chipSections,
     shelfLayout,

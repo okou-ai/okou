@@ -7,6 +7,7 @@ import type {
   ChatRelationMessage,
   RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
+import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   formatChatTimestamp,
   formatCompactChatTimestamp,
@@ -17,6 +18,7 @@ import type {
   ChatRelationSignals,
   ResourceChat,
 } from "../../signals/chat-page/chat-relations.ts";
+import { chatThreadMetaMap$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -34,6 +36,33 @@ import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   return enabled ? <Origin signals={thread.relations} /> : null;
+}
+
+function AgentOriginLink({
+  part,
+}: {
+  readonly part: Extract<UserMessagePart, { type: "source"; kind: "agent" }>;
+}) {
+  const { t } = useTranslation();
+  const thread = useGet(chatThreadMetaMap$).get(part.threadId);
+  const title =
+    (thread ? thread.title : part.titleSnapshot) ??
+    t(($) => {
+      return $.chat.relations.untitled;
+    });
+  return (
+    <Link
+      pathname={ROUTES.chat}
+      options={{
+        pathParams: { threadId: part.threadId },
+        hash: `run-${part.runId}`,
+      }}
+      className="min-w-0 truncate rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground transition-colors hover:bg-gray-50 hover:text-foreground focus-visible:bg-gray-50"
+      title={title}
+    >
+      {title}
+    </Link>
+  );
 }
 
 function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
@@ -56,17 +85,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
         })}
       </h4>
       {part.kind === "agent" ? (
-        <Link
-          pathname={ROUTES.chat}
-          options={{
-            pathParams: { threadId: part.threadId },
-            hash: `run-${part.runId}`,
-          }}
-          className="min-w-0 truncate rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground transition-colors hover:bg-gray-50 hover:text-foreground focus-visible:bg-gray-50"
-          title={part.titleSnapshot}
-        >
-          {part.titleSnapshot}
-        </Link>
+        <AgentOriginLink part={part} />
       ) : part.kind === "mcp" ? (
         <p className="min-w-0 truncate px-1.5 py-1 text-xs leading-4.5 text-muted-foreground">
           {part.clientName ??
@@ -85,13 +104,14 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
   );
 }
 
-function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
+function RelatedChatLink({
+  chat,
+  title,
+}: {
+  readonly chat: RelatedChat;
+  readonly title: string;
+}) {
   const { t } = useTranslation();
-  const title =
-    chat.title ??
-    t(($) => {
-      return $.chat.relations.untitled;
-    });
   if (chat.status === "unavailable") {
     return (
       <span className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1.75 text-[13px] leading-5 text-muted-foreground">
@@ -216,6 +236,16 @@ function ResourceChatRow({
   readonly signals: ChatRelationSignals;
 }) {
   const { t } = useTranslation();
+  const thread = useGet(chatThreadMetaMap$).get(chat.threadId);
+  const title =
+    chat.status === "unavailable"
+      ? t(($) => {
+          return $.chat.relations.unavailable;
+        })
+      : ((thread ? thread.title : chat.title) ??
+        t(($) => {
+          return $.chat.relations.untitled;
+        }));
   const retry = useSet(signals.retry$);
   const toggle = useSet(signals.togglePeer$);
   const selectedPeer = useGet(signals.selectedPeer$);
@@ -226,7 +256,7 @@ function ResourceChatRow({
   return (
     <li>
       <div className="flex min-w-0 items-center gap-1">
-        <RelatedChatLink chat={chat} />
+        <RelatedChatLink chat={chat} title={title} />
         {!emptyPeers.includes(chat.threadId) && (
           <Button
             variant="quiet"
@@ -237,17 +267,7 @@ function ResourceChatRow({
               ($) => {
                 return $.chat.relations.toggleMessages;
               },
-              {
-                title:
-                  chat.status === "unavailable"
-                    ? t(($) => {
-                        return $.chat.relations.unavailable;
-                      })
-                    : (chat.title ??
-                      t(($) => {
-                        return $.chat.relations.untitled;
-                      })),
-              },
+              { title },
             )}
             onClick={(event) => {
               detach(

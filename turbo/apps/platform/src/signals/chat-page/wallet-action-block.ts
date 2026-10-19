@@ -1,13 +1,15 @@
 import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
 import { walletChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 import { command, computed, state } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { apiClient$ } from "../api-client.ts";
-import { waitAblyPayloadLoopUntil$ } from "../realtime.ts";
-import { onRejection, withCleanup } from "../utils.ts";
+import { setAblyPayloadLoop$, waitAblyPayloadLoopUntil$ } from "../realtime.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { onRef, onRejection, withCleanup } from "../utils.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
@@ -165,8 +167,80 @@ function createWalletConnectSignals(
 export type WalletConnectSignals = ReturnType<
   typeof createWalletConnectSignals
 >;
+
+function createWalletApprovalSignals(
+  approvalUrl: string,
+  context: ChatActionContext,
+) {
+  const reload$ = state(0);
+  const enabled$ = computed((get) => {
+    return get(featureSwitch$)[FeatureSwitchKey.LinkWalletApprovalContinuation];
+  });
+  const status$ = computed(async (get) => {
+    get(reload$);
+    if (!get(enabled$)) {
+      return { status: "unavailable" as const };
+    }
+    const response = await accept(
+      get(apiClient$)(walletUserContract).spendStatus({
+        body: { ...context, approvalUrl },
+      }),
+      [200, 403],
+    );
+    return response.status === 200
+      ? response.body
+      : { status: "unavailable" as const };
+  });
+  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+    set(reload$, (value) => {
+      return value + 1;
+    });
+    const result = await get(status$);
+    signal.throwIfAborted();
+    return !["pending", "approved"].includes(result.status);
+  });
+  const changed$ = command(
+    async ({ get, set }, payload: unknown, signal: AbortSignal) => {
+      const parsed = walletChangedPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return false;
+      }
+      const identity = await get(runtimeAuthenticatedIdentity$);
+      signal.throwIfAborted();
+      if (identity.orgId !== parsed.data.orgId) {
+        return false;
+      }
+      return await set(refresh$, signal);
+    },
+  );
+  const mounted$ = onRef(
+    command(
+      async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+        if (!get(enabled$)) {
+          return;
+        }
+        await set(
+          setAblyPayloadLoop$,
+          {
+            topic: "wallet:changed",
+            loopCommand$: changed$,
+            initializeCommand$: refresh$,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+      },
+    ),
+  );
+  return { status$, mounted$ };
+}
+
+export type WalletApprovalSignals = ReturnType<
+  typeof createWalletApprovalSignals
+>;
 export type WalletActionSignals = WalletActionDescriptor & {
   readonly connect: WalletConnectSignals | null;
+  readonly approval: WalletApprovalSignals | null;
 };
 
 export function createWalletCardSignalsRegistry(context: ChatActionContext) {
@@ -180,6 +254,10 @@ export function createWalletCardSignalsRegistry(context: ChatActionContext) {
       );
       return {
         ...descriptor,
+        approval:
+          descriptor.action === "approve"
+            ? createWalletApprovalSignals(descriptor.originalUrl, context)
+            : null,
         connect:
           descriptor.action === "connect" &&
           oauthState &&

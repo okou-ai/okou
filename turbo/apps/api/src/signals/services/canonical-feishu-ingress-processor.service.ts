@@ -21,13 +21,21 @@ import { logger } from "../../lib/log";
 import { inferMimetype } from "../../lib/mimetype";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { replyWithFeishuMessage } from "../external/feishu-client";
+import {
+  FeishuApiError,
+  feishuReactionCreationUrl,
+  feishuTokenUpdateValues,
+  parseFeishuReactionCreationResponse,
+  readFeishuResponseJson,
+  replyWithFeishuMessage,
+  resolveFeishuRequestCredentials,
+} from "../external/feishu-client";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
-import { settle } from "../utils";
+import { settle, tapError } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
@@ -57,7 +65,6 @@ import {
   feishuOAuthCredentialReadPlan,
 } from "./feishu-custom-connector.service";
 import {
-  addFeishuThinkingReaction,
   dispatchConnectedFeishuCommand$,
   loadFeishuConversationHistory,
   feishuMessageReceivedValues,
@@ -88,6 +95,8 @@ import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 
 const L = logger("CanonicalFeishuIngressProcessor");
+const thinkingReactionL = logger("FeishuDispatch");
+const FEISHU_THINKING_EMOJI = "Typing";
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
 const SWEEP_LIMIT = 20;
 
@@ -696,6 +705,102 @@ async function loadFeishuIngressDispatchContext(
   return { ingress, message, installation, connection };
 }
 
+const addFeishuThinkingReaction$ = command(
+  async (
+    { set },
+    message: FeishuInboundMessage,
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    const creationArgs = {
+      db: set(writeDb$),
+      installationId: message.installationId,
+      messageId: message.messageId,
+      emojiType: FEISHU_THINKING_EMOJI,
+    };
+    const creationSignal = signal;
+    const createdReactionId = await tapError(
+      (async () => {
+        const addReactionContextArgs = creationArgs;
+        const addReactionContextSignal = creationSignal;
+        const { token, apiOrigin, providerName } = await (async () => {
+          const [installation] = await addReactionContextArgs.db
+            .select()
+            .from(feishuOrgInstallations)
+            .where(
+              eq(
+                feishuOrgInstallations.id,
+                addReactionContextArgs.installationId,
+              ),
+            )
+            .limit(1);
+          addReactionContextSignal.throwIfAborted();
+          if (!installation) {
+            throw new Error("Bot installation not found");
+          }
+          if (
+            !(await (async () => {
+              const plan = feishuInstallationAvailabilityReadPlan(installation);
+              if (plan.kind === "resolved") {
+                return plan.enabled;
+              }
+              const rows = await addReactionContextArgs.db
+                .select(plan.columns)
+                .from(userFeatureSwitches)
+                .where(plan.condition);
+              return feishuInstallationEnabledFromRows(plan.scope, rows);
+            })())
+          ) {
+            throw new FeishuApiError("Lark integration is not enabled", 403);
+          }
+          const credentials = await resolveFeishuRequestCredentials(
+            installation,
+            addReactionContextSignal,
+          );
+          if (credentials.refreshedToken) {
+            await addReactionContextArgs.db
+              .update(feishuOrgInstallations)
+              .set(feishuTokenUpdateValues(credentials.refreshedToken))
+              .where(
+                eq(
+                  feishuOrgInstallations.id,
+                  addReactionContextArgs.installationId,
+                ),
+              );
+            addReactionContextSignal.throwIfAborted();
+          }
+          return credentials.context;
+        })();
+        const response = await fetch(
+          feishuReactionCreationUrl(apiOrigin, creationArgs.messageId),
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json; charset=utf-8",
+            },
+            body: JSON.stringify({
+              reaction_type: { emoji_type: creationArgs.emojiType },
+            }),
+            signal: creationSignal,
+          },
+        );
+        return parseFeishuReactionCreationResponse(
+          await readFeishuResponseJson(response, providerName),
+          providerName,
+        );
+      })(),
+      (error) => {
+        thinkingReactionL.warn("Failed to set Feishu thinking indicator", {
+          error,
+          messageId: message.messageId,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    return createdReactionId;
+  },
+);
+
 const processClaimedIngress$ = command(
   async (
     { set },
@@ -780,13 +885,7 @@ const processClaimedIngress$ = command(
 
     const reactionId =
       ingress.reactionId ??
-      (await addFeishuThinkingReaction(
-        {
-          db: args.db,
-          message,
-        },
-        signal,
-      ));
+      (await set(addFeishuThinkingReaction$, message, signal));
     signal.throwIfAborted();
     if (reactionId && reactionId !== ingress.reactionId) {
       await args.db

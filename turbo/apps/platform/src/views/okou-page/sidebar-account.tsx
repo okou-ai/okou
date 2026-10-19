@@ -70,7 +70,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { SubscriptionLinkingMenuItem } from "./subscription-linking.tsx";
 import { subscriptionLinkingEnabled$ } from "../../signals/okou-page/subscription-linking.ts";
-import { refreshPersonalModelProvidersIfStale$ } from "../../signals/external/personal-model-providers.ts";
+import { refreshThirdPartySubscriptionsIfStale$ } from "../../signals/external/third-party-subscriptions.ts";
 
 interface SessionAccount {
   sessionId: string;
@@ -758,7 +758,7 @@ export function AccountDropdown({
   const profile = useAccountProfile();
   const linkingEnabled = useGet(subscriptionLinkingEnabled$);
   const refreshPersonalProviders = useSet(
-    refreshPersonalModelProvidersIfStale$,
+    refreshThirdPartySubscriptionsIfStale$,
   );
   const {
     accountDisplay,

@@ -2944,6 +2944,11 @@
       "transcriptionFailed": "ध्वनि प्रतिलेखन विफल रहा. पुनः प्रयास करें।"
     },
     "walletAction": {
+      "approvalApproved": "मंज़ूर; आगे बढ़ने की प्रतीक्षा है",
+      "approvalContinued": "खरीद अनुरोध आगे बढ़ाया गया",
+      "approvalRecorded": "स्थिति अपडेट की गई",
+      "approvalStopped": "अपने-आप प्रतीक्षा समाप्त हुई; आप खुद आगे बढ़ सकते हैं",
+      "approvalWaiting": "खरीदारी की मंज़ूरी की प्रतीक्षा है",
       "approveButton": "समीक्षा करें",
       "approveTitle": "खरीद की समीक्षा करें",
       "authorized": "अधिकृत",

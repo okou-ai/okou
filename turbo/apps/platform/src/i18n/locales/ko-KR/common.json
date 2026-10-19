@@ -2933,6 +2933,11 @@
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
     "walletAction": {
+      "approvalApproved": "승인됨, 계속 진행 대기 중",
+      "approvalContinued": "구매 요청을 이어서 진행합니다",
+      "approvalRecorded": "상태 업데이트됨",
+      "approvalStopped": "자동 대기가 종료되었습니다. 직접 계속할 수 있습니다",
+      "approvalWaiting": "구매 승인 대기 중",
       "approveButton": "검토",
       "approveTitle": "구매 검토",
       "authorized": "승인됨",

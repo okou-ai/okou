@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { agents } from "./agent";
+import { chatThreads } from "./chat-thread";
 
 export const linkWalletConnections = pgTable(
   "link_wallet_connections",
@@ -110,6 +111,17 @@ export const linkWalletSpends = pgTable(
       }),
     authorizationId: uuid("authorization_id").notNull(),
     intentId: uuid("intent_id").notNull(),
+    // An opt-in approval continuation belongs to the original interactive chat.
+    // Null on legacy requests and requests created while the feature is off.
+    approvalThreadId: uuid("approval_thread_id").references(
+      () => {
+        return chatThreads.id;
+      },
+      {
+        onDelete: "set null",
+      },
+    ),
+    approvalRunId: uuid("approval_run_id"),
     providerSpendId: varchar("provider_spend_id", { length: 256 }),
     amount: integer("amount").notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
@@ -119,6 +131,8 @@ export const linkWalletSpends = pgTable(
     test: boolean("test").notNull(),
     status: varchar("status", { length: 32 }).notNull().default("creating"),
     approvalUrl: text("approval_url"),
+    // Provider business state needed to distinguish resumable actions in cards.
+    actionResolution: varchar("action_resolution", { length: 64 }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -133,6 +147,9 @@ export const linkWalletSpends = pgTable(
         table.intentId,
       ),
       uniqueIndex("idx_link_wallet_spends_provider").on(table.providerSpendId),
+      index("idx_link_wallet_spends_approval_deadline")
+        .on(table.expiresAt, table.id)
+        .where(sql`${table.approvalThreadId} IS NOT NULL`),
     ];
   },
 );

@@ -58,8 +58,8 @@ pub use factory::{
 pub use guest_duplex::{AcceptedGuestDuplex, GuestDuplexAcceptor, GuestDuplexStream};
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
 pub use home_drive_pressure::{
-    HomeDrivePressureFuture, HomeDrivePressurePolicy, home_drive_copy_peak_bytes,
-    home_drive_copy_peak_bytes_from_file,
+    HOME_DRIVE_RECLAIM_OBSERVATION, HomeDrivePressureFuture, HomeDrivePressurePolicy,
+    home_drive_copy_peak_bytes, home_drive_copy_peak_bytes_from_file,
 };
 pub use operation_cancellation::{CancelledOperationOwner, OperationCancellationContext};
 pub use runtime::{RuntimeProvider, SandboxRuntime};

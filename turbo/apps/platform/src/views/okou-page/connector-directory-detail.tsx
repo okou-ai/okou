@@ -1,14 +1,14 @@
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, SlidersHorizontal } from "lucide-react";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
-import { Button } from "@okouai/ui";
+import { Button, buttonVariants } from "@okouai/ui";
+import { Link } from "../router/link.tsx";
 import { DialogTitle } from "@okouai/ui/components/ui/dialog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import {
   ConnectorIconTile,
   ConnectorAccountSummaryText,
-  connectorAccountSummaryStatus,
 } from "./components/settings/connector-card.tsx";
 import {
   launchConnectorConnect,
@@ -36,17 +36,32 @@ function DetailRow({
 
 function ConnectorDetailHeader({
   connector,
+  accountSummary,
   busy,
   connect,
   onBack,
 }: {
   readonly connector: PlatformConnectorCatalogStatusItem;
+  readonly accountSummary: ConnectorAccountSummary | undefined;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly onBack: () => void;
 }) {
   const { t } = useTranslation();
   const status = builtinConnectorCurrentConnectionStatus(connector);
+  const hasConflictingPresence =
+    connector.connection !== null && (accountSummary?.accountCount ?? 0) === 0;
+  const needsAccountChoice =
+    hasConflictingPresence ||
+    (accountSummary !== undefined &&
+      accountSummary.accountCount > 0 &&
+      (!accountSummary.defaultConnection ||
+        connector.connection?.id !== accountSummary.defaultConnection.id ||
+        (status === "reconnect-required") !==
+          (accountSummary.defaultConnection.connectionStatus ===
+            "reconnect-required") ||
+        (accountSummary.attentionCount > 0 &&
+          accountSummary.defaultConnection.connectionStatus === "connected")));
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-6 pt-6">
@@ -80,7 +95,19 @@ function ConnectorDetailHeader({
             {connector.description}
           </p>
         </div>
-        {status !== "connected" && status !== "scope-mismatch" && (
+        {needsAccountChoice ? (
+          <Link
+            pathname="/connectors"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            {t(
+              ($) => {
+                return $.connectors.accounts.managerTitle;
+              },
+              { connector: connector.label },
+            )}
+          </Link>
+        ) : status !== "connected" && status !== "scope-mismatch" ? (
           <Button
             type="button"
             disabled={busy}
@@ -96,7 +123,7 @@ function ConnectorDetailHeader({
                   return $.connectors.actions.reconnect;
                 })}
           </Button>
-        )}
+        ) : null}
       </div>
     </>
   );
@@ -131,6 +158,7 @@ export function ConnectorDetailPanel({
     <>
       <ConnectorDetailHeader
         connector={connector}
+        accountSummary={accountSummary}
         busy={busy}
         connect={connect}
         onBack={onBack}
@@ -145,9 +173,7 @@ export function ConnectorDetailPanel({
           <div className="flex items-center gap-3 px-4 py-2.5 text-sm">
             <ConnectorAccountSummaryText
               summary={accountSummary}
-              status={connectorAccountSummaryStatus(
-                accountSummary ? "hasData" : "loading",
-              )}
+              status="ready"
               className="min-w-0 flex-1 truncate text-muted-foreground"
             />
           </div>

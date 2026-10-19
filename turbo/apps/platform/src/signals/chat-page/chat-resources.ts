@@ -8,6 +8,10 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "../hosted-site-url-changes.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import {
   userPreferences$,
@@ -100,8 +104,9 @@ async function messageLinks(content: string): Promise<ChatResourceLink[]> {
 }
 
 export const copyChatResourceLink$ = command(
-  async (_context, url: string, signal: AbortSignal) => {
-    const copied = await writeToClipboard(publicAttachmentUrl(url));
+  async ({ get }, url: string, signal: AbortSignal) => {
+    const currentUrl = currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
+    const copied = await writeToClipboard(publicAttachmentUrl(currentUrl));
     signal.throwIfAborted();
     if (copied) {
       toast.success(

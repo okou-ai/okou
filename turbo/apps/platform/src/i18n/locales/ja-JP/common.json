@@ -2933,6 +2933,11 @@
       "transcriptionFailed": "音声の転写に失敗しました。もう一度やり直してください。"
     },
     "walletAction": {
+      "approvalApproved": "承認済み、続行を待っています",
+      "approvalContinued": "購入リクエストを再開しました",
+      "approvalRecorded": "状態を更新しました",
+      "approvalStopped": "自動待機が終了しました。手動で続行できます",
+      "approvalWaiting": "購入の承認を待っています",
       "approveButton": "確認",
       "approveTitle": "購入内容を確認",
       "authorized": "認証済み",

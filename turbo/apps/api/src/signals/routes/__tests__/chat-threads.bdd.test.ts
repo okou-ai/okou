@@ -1,5 +1,7 @@
 import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostRoutes } from "../host";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
@@ -4412,6 +4414,35 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         return file.id;
       }),
     ).toStrictEqual([ownId]);
+
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.HostedSiteUrlEditing]: true,
+    });
+    const nextSlug = `${prepared.publicSlug}-renamed`;
+    const renamed = await accept(
+      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteUrl({
+        headers: authHeaders(actor),
+        params: { siteId: prepared.siteId },
+        body: {
+          publicSlug: nextSlug,
+          expectedPublicSlug: prepared.publicSlug,
+        },
+      }),
+      [200],
+    );
+    const reread = await chat.listThreadArtifacts(actor, run1.threadId);
+    const renamedFile = reread.runs
+      .flatMap((run) => {
+        return run.files;
+      })
+      .find((file) => {
+        return file.url === prepared.artifactUrl;
+      });
+    expect(renamedFile).toMatchObject({
+      url: prepared.artifactUrl,
+      aliasUrl: renamed.body.url,
+      artifactKind: "hosted-site",
+    });
 
     // A Drive connection without a refresh token resolves 401s to "unknown".
     mockGoogleDriveConnectorOAuth({ omitRefreshToken: true });
