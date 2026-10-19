@@ -64,8 +64,11 @@
         # ========================================
         # Phase 4: Readiness + health check
         # ========================================
+        # Allow catalog retries (3 x 60s + 2s + 5s), the 60s inventory
+        # delivery barrier, and headroom for other startup work. Readiness
+        # returns immediately on success rather than waiting out this budget.
         - name: Wait for target runner readiness
-          command: "{{ bin_dir }}/runner service wait-running --name {{ runner_release }} --timeout-secs 120"
+          command: "{{ bin_dir }}/runner service wait-running --name {{ runner_release }} --timeout-secs 300"
           changed_when: false
 
         - name: Verify runner health

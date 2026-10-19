@@ -249,7 +249,7 @@ assert_line_count "$invocation_log" 2 \
   "gc --keep-latest 6 --protect-version $runner_release"
 assert_line_count "$invocation_log" 4 "doctor --name $runner_release"
 assert_line_count "$invocation_log" 2 \
-  "service wait-running --name $runner_release --timeout-secs 120"
+  "service wait-running --name $runner_release --timeout-secs 300"
 assert_line_count "$invocation_log" 0 "service drain --name $runner_release"
 for old_release in v100.0.0 v101.0.0 v102.0.0; do
   assert_line_count "$invocation_log" 2 "service drain --name $old_release"

@@ -447,8 +447,10 @@
             --env SENTRY_DSN={{ sentry_dsn }}
             {% endif %}
 
+        # Match promotion's allowance for catalog retries and initial inventory
+        # delivery; a ready target returns immediately.
         - name: Wait for target runner readiness
-          command: "{{ bin_dir }}/runner service wait-running --name {{ runner_release }} --timeout-secs 120"
+          command: "{{ bin_dir }}/runner service wait-running --name {{ runner_release }} --timeout-secs 300"
           changed_when: false
 
         - name: Verify target runner health
