@@ -309,7 +309,7 @@ function Messages({
     return null;
   }
   return (
-    <div className="mb-2 ml-1 max-h-80 overflow-y-auto overscroll-contain border-l border-divider pl-1">
+    <div className="mb-2 mt-1 max-h-80 overflow-y-auto overscroll-contain rounded-lg bg-gray-50 p-1">
       {data.state === "hasError" ? (
         <div
           role="alert"
