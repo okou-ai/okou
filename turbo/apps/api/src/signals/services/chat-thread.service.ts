@@ -137,6 +137,27 @@ const publicHostedArtifactMetadataSchema = z.object({
   aliasUrl: z.string(),
 });
 
+function publicHostedSiteIds(rows: readonly { readonly metadata: unknown }[]) {
+  return [
+    ...new Set(
+      rows.flatMap((row) => {
+        const metadata = publicHostedArtifactMetadataSchema.safeParse(
+          row.metadata,
+        );
+        return metadata.success ? [metadata.data.siteId] : [];
+      }),
+    ),
+  ];
+}
+
+function currentHostedArtifactAliasUrl(
+  metadata: unknown,
+  publicSiteUrls: ReadonlyMap<string, string>,
+): string | undefined {
+  const parsed = publicHostedArtifactMetadataSchema.safeParse(metadata);
+  return parsed.success ? publicSiteUrls.get(parsed.data.siteId) : undefined;
+}
+
 function canonicalAssetMaterialization(
   status: "pending" | "ready" | "failed" | null,
   error: {
@@ -612,6 +633,46 @@ export function chatThreadArtifacts(args: {
 }): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
   const thread$ = ownedChatThread(args.threadId, args.userId);
   const rows$ = chatThreadArtifactRows(args);
+  const publicSiteUrls$ = computed(async (get) => {
+    const thread = await get(thread$);
+    if (!thread) {
+      return new Map<string, string>();
+    }
+    const rows = await get(rows$);
+    const publicSiteIds = publicHostedSiteIds(rows);
+    // Public aliases are mutable; stored upload metadata identifies the site,
+    // while its current row owns the address across every deployment version.
+    const publicSites =
+      thread.orgId && publicSiteIds.length > 0
+        ? await get(db$)
+            .select({
+              id: hostedSites.id,
+              publicSlug: hostedSites.publicSlug,
+              linkLayoutSegment: hostedSites.linkLayoutSegment,
+            })
+            .from(hostedSites)
+            .where(
+              and(
+                inArray(hostedSites.id, publicSiteIds),
+                eq(hostedSites.orgId, thread.orgId),
+                eq(hostedSites.userId, args.userId),
+                isNull(hostedSites.deletedAt),
+                isNotNull(hostedSites.activeDeploymentId),
+              ),
+            )
+        : [];
+    return new Map(
+      publicSites.map((site) => {
+        return [
+          site.id,
+          hostedLinkOrigin(
+            linkLayoutFromSegment(site.linkLayoutSegment),
+            site.publicSlug,
+          ),
+        ];
+      }),
+    );
+  });
   return computed(
     async (get): Promise<readonly ChatThreadArtifactRun[] | null> => {
       const thread = await get(thread$);
@@ -620,48 +681,7 @@ export function chatThreadArtifacts(args: {
       }
 
       const rows = await get(rows$);
-      const publicSiteIds = [
-        ...new Set(
-          rows.flatMap((row) => {
-            const metadata = publicHostedArtifactMetadataSchema.safeParse(
-              row.metadata,
-            );
-            return metadata.success ? [metadata.data.siteId] : [];
-          }),
-        ),
-      ];
-      // Public aliases are mutable; stored upload metadata identifies the site,
-      // while its current row owns the address across every deployment version.
-      const publicSites =
-        thread.orgId && publicSiteIds.length > 0
-          ? await get(db$)
-              .select({
-                id: hostedSites.id,
-                publicSlug: hostedSites.publicSlug,
-                linkLayoutSegment: hostedSites.linkLayoutSegment,
-              })
-              .from(hostedSites)
-              .where(
-                and(
-                  inArray(hostedSites.id, publicSiteIds),
-                  eq(hostedSites.orgId, thread.orgId),
-                  eq(hostedSites.userId, args.userId),
-                  isNull(hostedSites.deletedAt),
-                  isNotNull(hostedSites.activeDeploymentId),
-                ),
-              )
-          : [];
-      const publicSiteUrls = new Map(
-        publicSites.map((site) => {
-          return [
-            site.id,
-            hostedLinkOrigin(
-              linkLayoutFromSegment(site.linkLayoutSegment),
-              site.publicSlug,
-            ),
-          ];
-        }),
-      );
+      const publicSiteUrls = await get(publicSiteUrls$);
 
       const visibleRows = rows.filter((row) => {
         return row.runId !== null;
@@ -687,12 +707,10 @@ export function chatThreadArtifacts(args: {
           files: [],
         };
         const artifactKind = parseHostedArtifactKindFromMetadata(row.metadata);
-        const hostedMetadata = publicHostedArtifactMetadataSchema.safeParse(
+        const aliasUrl = currentHostedArtifactAliasUrl(
           row.metadata,
+          publicSiteUrls,
         );
-        const aliasUrl = hostedMetadata.success
-          ? publicSiteUrls.get(hostedMetadata.data.siteId)
-          : undefined;
         const canonical =
           row.assetVersion === CANONICAL_ASSET_VERSION &&
           row.classification === "published-output" &&
