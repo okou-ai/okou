@@ -530,48 +530,63 @@ test("Custom alone enables the Document task and sends the selected custom refer
   });
 });
 
-test("The Document shelf imports a reusable document without requesting document generation", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, []);
-  });
-  context.mocks.upload.success({
-    id: "81000000-0000-4000-a000-000000000025",
-    filename: "brand.docx",
-    contentType:
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    size: 5,
-    url: "https://cdn.example.test/brand.docx",
-  });
-  const { shelf } = await openShelf("Document", "Document templates");
-  click(button("Custom", shelf));
-  await userEvent.setup({ delay: null }).upload(
-    within(shelf).getByLabelText("Import your own document"),
-    new File(["brand"], "brand.docx", {
-      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    }),
-  );
-  await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
-  });
-  expect(capture.runPrompts).toStrictEqual([
-    "Analyse this file and save it as a reusable template.",
-  ]);
-  expect(capture.sentMessages[0]?.parts).toContainEqual(
-    expect.objectContaining({ type: "file", filenameSnapshot: "brand.docx" }),
-  );
-  expect(capture.sentMessages[0]?.parts).toContainEqual(
-    expect.objectContaining({
-      type: "additional_info",
-      text: expect.stringContaining("okou user-template publish"),
-    }),
-  );
-  expect(capture.sentMessages[0]?.parts).not.toContainEqual({
-    type: "additional_info",
-    text: "Create a document.",
-  });
-  expect(capture.selectedTemplates).toStrictEqual([]);
-});
+test.each(["shelf", "picker"] as const)(
+  "The Document %s imports a reusable document without requesting document generation",
+  async (entry) => {
+    const capture = mockTemplateChat();
+    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+      return respond(200, []);
+    });
+    context.mocks.upload.success({
+      id: "81000000-0000-4000-a000-000000000025",
+      filename: "brand.docx",
+      contentType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: 5,
+      url: "https://cdn.example.test/brand.docx",
+    });
+    const { shelf } = await openShelf(
+      "Document",
+      "Document templates",
+      true,
+      "",
+      false,
+    );
+    let importSurface = shelf;
+    if (entry === "picker") {
+      click(button("More templates", shelf));
+      importSurface = await screen.findByRole("dialog");
+    }
+    await userEvent.setup({ delay: null }).upload(
+      within(importSurface).getByLabelText("Import your own document"),
+      new File(["brand"], "brand.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+    );
+    await waitFor(() => {
+      expect(capture.sentMessages).toHaveLength(1);
+    });
+    expect(capture.runPrompts).toStrictEqual([
+      "Analyse this file and save it as a reusable template.",
+    ]);
+    expect(capture.sentMessages[0]?.parts).toContainEqual(
+      expect.objectContaining({ type: "file", filenameSnapshot: "brand.docx" }),
+    );
+    expect(capture.sentMessages[0]?.parts).toContainEqual(
+      expect.objectContaining({
+        type: "additional_info",
+        text: expect.stringContaining("okou user-template publish"),
+      }),
+    );
+    expect(capture.sentMessages[0]?.parts).not.toContainEqual(
+      expect.objectContaining({
+        type: "additional_info",
+        text: expect.stringContaining("Create a document."),
+      }),
+    );
+    expect(capture.selectedTemplates).toStrictEqual([]);
+  },
+);
 
 test("A failed custom catalog still shows built-in document templates and the import chip", async () => {
   mockTemplateChat();

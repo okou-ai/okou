@@ -184,6 +184,9 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
+    // Import analyses the source, regardless of which creation task opened
+    // the picker. Do not append that task's generation instructions.
+    set(signals.create.setMode$, null, false);
     set(signals.draft.setDraftInput$, message.prompt);
 
     const action = await get(signals.submission.primaryAction$);
