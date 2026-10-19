@@ -19,6 +19,60 @@ fn empty_manifest() -> Manifest {
     }
 }
 
+#[tokio::test]
+async fn inline_instructions_are_optional_and_use_private_file_transport() {
+    let sandbox = MockSandbox::new("test");
+    let mut context = minimal_context();
+    super::super::storage::apply_agent_instructions(&sandbox, &context)
+        .await
+        .unwrap();
+    assert!(sandbox.exec_calls().is_empty());
+    assert!(sandbox.private_write_files_calls().is_empty());
+    for content in ["Unicode 指令\n'$(never execute)'", ""] {
+        context.agent_instructions = Some(content.into());
+        super::super::storage::apply_agent_instructions(&sandbox, &context)
+            .await
+            .unwrap();
+        let calls = sandbox.private_write_files_calls();
+        assert_eq!(calls.last().unwrap().files[0].content, content.as_bytes());
+        assert!(
+            !sandbox
+                .exec_calls()
+                .last()
+                .unwrap()
+                .cmd
+                .contains("never execute")
+        );
+    }
+}
+
+#[tokio::test]
+async fn inline_instruction_helper_failure_is_required() {
+    let sandbox = MockSandbox::new("test");
+    let mut context = minimal_context();
+    context.agent_instructions = Some("new".into());
+    sandbox.push_exec_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
+    assert!(
+        super::super::storage::apply_agent_instructions(&sandbox, &context)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn inline_instruction_transfer_failure_does_not_apply_stale_source() {
+    let sandbox = MockSandbox::new("test");
+    let mut context = minimal_context();
+    context.agent_instructions = Some("new".into());
+    sandbox.push_private_write_files_result(Err(sandbox_write_file_error("private write failed")));
+    assert!(
+        super::super::storage::apply_agent_instructions(&sandbox, &context)
+            .await
+            .is_err()
+    );
+    assert!(sandbox.exec_calls().is_empty());
+}
+
 fn storage_manifest() -> Manifest {
     Manifest {
         storages: vec![StorageEntry {

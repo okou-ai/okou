@@ -1045,6 +1045,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1152.0
+        version: 3.1152.0
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -1060,6 +1063,9 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+      tar:
+        specifier: ^7.5.22
+        version: 7.5.22
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*
