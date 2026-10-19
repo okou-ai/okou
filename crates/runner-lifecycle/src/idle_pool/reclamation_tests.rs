@@ -156,8 +156,8 @@ async fn idle_reclamation_uses_host_cpu_capacity_across_cache_clones() {
                 .iter()
                 .all(|result| result.outcome == DestroyOutcome::Completed)
         );
-        // Publication is best effort: concurrent post-kill publishers may skip
-        // the nonblocking cache-capacity lock, but every sandbox must be cleaned up.
+        // Publication is best effort: IO admission or headroom can refuse a
+        // post-kill publisher, but every sandbox must be cleaned up.
         let promoted = results
             .iter()
             .filter(|result| result.home_cache_promoted)

@@ -307,10 +307,13 @@ async fn publication_refusal_retains_pressure_saving_custody_after_exact_exit() 
     let mut home = fixture
         .park("thread:required-pressure-publication", true)
         .await;
-    let lock_path = runner_host::paths::home_image_cache_capacity_lock_path(
-        &home.cache.paths().base_dir().join("locks"),
-    );
-    let capacity = runner_host::lock::acquire(lock_path).await.unwrap();
+    // An infeasible filesystem reserve refuses publication without changing source bytes.
+    home.cache
+        .set_fs_stats_for_test(runner_lifecycle::home_image_cache::FsStats {
+            total_bytes: 1,
+            available_bytes: 0,
+            ..Default::default()
+        });
     home.confirm_exit();
     let owner = IdlePressureOwner::spawn(config(&fixture, 1)).unwrap();
     let mut updates = owner.subscribe();
@@ -328,7 +331,6 @@ async fn publication_refusal_retains_pressure_saving_custody_after_exact_exit() 
         fixture.operations.close_and_wait().await.unwrap().uncertain,
         1
     );
-    drop(capacity);
     let custody = fixture.tracker.take_retained_pressure_owners().unwrap();
     assert_eq!(custody.len(), 1);
     let retained = custody[0].take_owner().unwrap();

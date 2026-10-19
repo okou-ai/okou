@@ -69,17 +69,17 @@ completed stage and child error. Neither marker is a standalone host setup comma
 
 Home-cache restoration and Agent-ready measurements are **manual verification**,
 outside required per-PR CI. Different PRs can share a metal host and its global
-cache capacity/GC locks. Optional publication may correctly skip under contention,
-and the restoration fixture itself holds those locks across its restore submit.
+cache entry/GC locks. Optional publication may correctly skip under IO contention,
+and the restoration fixture itself holds the GC lock across its restore submit.
 Use a provisioned host reserved for these commands, without concurrent CI or
 other cache-mutating workloads.
 
 Run `bash crates/runner/tests/behavior/runner-behavior-home-cache-promotion.sh`
 to verify live-writer rejection, freeze-based publication and Guest home contents
 across a changed rootfs and Runner restart. It pins the committed entry through
-the rootfs build and Runner startup, then acquires the routine-GC and capacity
-locks before releasing the entry pin. The restore submit has a 60-second deadline;
-success, failure and cleanup release GC locks before service teardown. This
+the rootfs build and Runner startup, then acquires the routine-GC lock before
+releasing the entry pin. The restore submit has a 60-second deadline; success,
+failure and cleanup release the GC lock before service teardown. This
 native Guest filesystem integration is additional evidence beyond ordinary Rust
 tests and is not asserted by required CI on every PR.
 

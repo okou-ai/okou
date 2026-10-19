@@ -406,12 +406,13 @@ async fn uncertain_aged_provider_cleanup_keeps_physical_coverage_and_never_creat
 #[tokio::test]
 async fn guarded_aged_publication_refusal_retains_original_home_and_full_lease() {
     let (mut owner, mut home) = AgedFixture::new().await;
-    let capacity =
-        runner_host::lock::acquire(runner_host::paths::home_image_cache_capacity_lock_path(
-            &home.cache.paths().base_dir().join("locks"),
-        ))
-        .await
-        .unwrap();
+    // An infeasible filesystem reserve refuses publication without changing source bytes.
+    home.cache
+        .set_fs_stats_for_test(runner_lifecycle::home_image_cache::FsStats {
+            total_bytes: 1,
+            available_bytes: 0,
+            ..Default::default()
+        });
     home.confirm_exit();
     owner.start().await;
     assert!(matches!(
@@ -441,7 +442,6 @@ async fn guarded_aged_publication_refusal_retains_original_home_and_full_lease()
     assert_eq!(retained.len(), 1);
     assert_eq!(retained[0].sandbox_id(), home.id);
     assert!(!retained[0].cleanup_completed());
-    drop(capacity);
     drop(retained);
     assert_eq!(owner.fixture.budget.allocated(), (0, 0, 0));
 }

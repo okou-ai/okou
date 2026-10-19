@@ -629,14 +629,18 @@ async fn resource_backing_change_during_a_held_grant_preserves_owner_before_term
 }
 
 #[tokio::test]
-async fn publication_capacity_contention_preserves_required_image_and_full_lease_after_exit() {
+async fn publication_refusal_preserves_required_image_and_full_lease_after_exit() {
     let env = Env::new(64).await;
     let (exit, backing) = sandbox_mock::MockBackingProcess::channel();
-    let mut fixture = JobFixture::new("thread:caller-publication-contention", Some(backing)).await;
-    let lock_path = runner_host::paths::home_image_cache_capacity_lock_path(
-        &fixture.cache.paths().base_dir().join("locks"),
-    );
-    let capacity = runner_host::lock::acquire(lock_path).await.unwrap();
+    let mut fixture = JobFixture::new("thread:caller-publication-refusal", Some(backing)).await;
+    // An infeasible filesystem reserve refuses publication without changing source bytes.
+    fixture
+        .cache
+        .set_fs_stats_for_test(crate::home_image_cache::FsStats {
+            total_bytes: 1,
+            available_bytes: 0,
+            ..Default::default()
+        });
     let mut owner = failed(&mut fixture).await;
     exit.confirm_exit();
     owner
@@ -644,7 +648,7 @@ async fn publication_capacity_contention_preserves_required_image_and_full_lease
         .await
         .unwrap();
     let (task, retained) =
-        IdleActivationOwner::start_cleanup(&mut Some(owner), "caller_publication_contention")
+        IdleActivationOwner::start_cleanup(&mut Some(owner), "caller_publication_refusal")
             .unwrap()
             .into_parts();
     assert!(matches!(
@@ -666,5 +670,4 @@ async fn publication_capacity_contention_preserves_required_image_and_full_lease
     );
     assert_eq!(env.operations.snapshot().unwrap().uncertain, 1);
     assert_eq!(env.operations.snapshot().unwrap().cleanup_growth_bytes, MIB);
-    drop(capacity);
 }
