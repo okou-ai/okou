@@ -8,6 +8,8 @@ import {
   builtinConnectorOpenIdStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
+import * as Sentry from "@sentry/browser";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   customConnectorOAuth2Contract,
@@ -16,8 +18,9 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   customConnector,
@@ -34,6 +37,62 @@ import {
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000051";
 const PROGRESS = "Connecting your account";
+
+function oauthWaitDiagnostics() {
+  return context.mocks.sentry().breadcrumbs.filter((breadcrumb) => {
+    return breadcrumb.category === "connector.oauth.wait";
+  });
+}
+
+function expectBoundedWaitDiagnostics(oauthAttemptId: string, enabled = true) {
+  const breadcrumbs = oauthWaitDiagnostics();
+  expect(breadcrumbs.length > 0).toBe(enabled);
+  expect(breadcrumbs.length).toBeLessThanOrEqual(4);
+  const started = expect.objectContaining({
+    message: "started",
+    data: expect.objectContaining({
+      parent_aborted: false,
+      wait_aborted: false,
+      current: true,
+      completion_verified: false,
+    }),
+  });
+  expect(breadcrumbs.at(0)).toStrictEqual(enabled ? started : undefined);
+  expect(
+    new Set(
+      breadcrumbs.map((entry) => {
+        return entry.data?.flow_id;
+      }),
+    ).size,
+  ).toBe(enabled ? 1 : 0);
+  const allowed = new Set([
+    "flow_id",
+    "parent_aborted",
+    "wait_aborted",
+    "current",
+    "completion_verified",
+    "branch",
+    "cleanup_owned",
+    "accepted",
+    "error_kind",
+  ]);
+  for (const entry of breadcrumbs) {
+    expect(entry.data?.flow_id).toMatch(
+      /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u,
+    );
+    expect(
+      Object.keys(entry.data ?? {}).filter((key) => {
+        return !allowed.has(key);
+      }),
+    ).toStrictEqual([]);
+  }
+  const serialized = JSON.stringify(breadcrumbs);
+  expect(serialized).not.toContain(oauthAttemptId);
+  expect(serialized).not.toContain("https://");
+  expect(serialized).not.toContain("stripe");
+  expect(serialized).not.toContain("OAuth completion is unavailable");
+  return breadcrumbs;
+}
 
 function customOAuthConfig(): CustomConnectorOAuthConfig {
   return {
@@ -98,21 +157,59 @@ async function dismissProgress(dialog: HTMLElement): Promise<void> {
   });
 }
 
-async function expectCancelledConnection(popup: Window, connect: HTMLElement) {
+async function expectCancelledConnection(
+  popup: Window,
+  connect: HTMLElement,
+  oauthAttemptId: string,
+) {
   expect(popup.closed).toBeTruthy();
   await waitFor(() => {
     expect(connect).toBeEnabled();
   });
   expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => {
+    expect(oauthWaitDiagnostics().at(-1)?.message).toBe("failed");
+  });
+  expectBoundedWaitDiagnostics(oauthAttemptId);
+  expect(oauthWaitDiagnostics().at(-1)?.data).toMatchObject({
+    parent_aborted: true,
+    wait_aborted: true,
+    error_kind: "aborted",
+  });
+  expect(
+    oauthWaitDiagnostics().find((entry) => {
+      return entry.message === "cleanup";
+    })?.data,
+  ).toMatchObject({
+    cleanup_owned: false,
+    parent_aborted: true,
+    wait_aborted: true,
+    current: false,
+    completion_verified: false,
+  });
 }
 
 test.each([
-  { grantKind: "auth-code", cancel: false },
-  { grantKind: "openid-auth", cancel: false },
-  { grantKind: "auth-code", cancel: true },
+  { grantKind: "auth-code", cancel: false, diagnostics: "active" },
+  { grantKind: "openid-auth", cancel: false, diagnostics: "active" },
+  { grantKind: "auth-code", cancel: true, diagnostics: "active" },
+  { grantKind: "auth-code", cancel: false, diagnostics: "expired" },
+  { grantKind: "auth-code", cancel: false, diagnostics: "unavailable" },
 ] as const)(
-  "Keep $grantKind feedback through naming, or cancel explicitly (cancel: $cancel)",
-  async ({ grantKind, cancel }) => {
+  "Keep $grantKind feedback through naming, or cancel explicitly (cancel: $cancel, diagnostics: $diagnostics)",
+  async ({ grantKind, cancel, diagnostics }) => {
+    mockNow(
+      diagnostics === "expired"
+        ? AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT
+        : AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 60_000,
+      context.signal,
+    );
+    const sentry = context.mocks.sentry();
+    if (diagnostics === "unavailable") {
+      vi.spyOn(Sentry, "addBreadcrumb").mockImplementation(() => {
+        throw new Error("Diagnostic SDK is unavailable");
+      });
+    }
     const account = connectedAccount({
       kind: "builtin",
       connectorSlug: "stripe",
@@ -205,7 +302,7 @@ test.each([
     });
     if (cancel) {
       await dismissProgress(screen.getByRole("dialog", { name: PROGRESS }));
-      await expectCancelledConnection(popup, connect);
+      await expectCancelledConnection(popup, connect, oauthAttemptId);
       permissions.resolve();
       details.resolve();
       return;
@@ -246,6 +343,158 @@ test.each([
         getConnectorAction("button", "Manage Stripe accounts"),
       ).toBeEnabled();
     });
+    const enabled = diagnostics === "active";
+    const breadcrumbs = expectBoundedWaitDiagnostics(oauthAttemptId, enabled);
+    const cleanup = expect.objectContaining({
+      cleanup_owned: true,
+      parent_aborted: false,
+      wait_aborted: true,
+      current: true,
+    });
+    expect(
+      breadcrumbs.find((entry) => {
+        return entry.message === "cleanup";
+      })?.data,
+    ).toStrictEqual(enabled ? cleanup : undefined);
+    const accepted = expect.objectContaining({
+      message: "finished",
+      data: expect.objectContaining({
+        accepted: true,
+        completion_verified: true,
+        parent_aborted: false,
+        wait_aborted: true,
+      }),
+    });
+    expect(breadcrumbs.at(-1)).toStrictEqual(enabled ? accepted : undefined);
+    const winningBranches = enabled
+      ? ["connectorChanged", "popupClosed"]
+      : [undefined];
+    expect(winningBranches).toContain(
+      breadcrumbs.find((entry) => {
+        return entry.message === "race-settled";
+      })?.data?.branch,
+    );
+    expect(sentry.reports).toHaveLength(0);
+  },
+);
+
+test.each(["popup", "cancel", "forbidden"] as const)(
+  "Preserve the pending OAuth receipt outcome when %s ends the wait",
+  async (finish) => {
+    mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 60_000, context.signal);
+    const sentry = context.mocks.sentry();
+    const receiptStarted = context.mocks.deferred<void>();
+    const oauthAttemptId = crypto.randomUUID();
+    let firstReceiptRead = true;
+    mockConnectors(context, []);
+    mockPublicConnectorStatus(context, [
+      publicStatusItem({
+        connectorSlug: "stripe",
+        label: "Stripe",
+        singleAuthCodeAuthMethodId: "oauth",
+        authMethods: [
+          {
+            id: "oauth",
+            label: "OAuth",
+            description: null,
+            grantKind: "auth-code",
+            manualFields: [],
+            startOptions: [],
+          },
+        ],
+      }),
+    ]);
+    const popup = authorizationWindow();
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ respond }) => {
+        return respond(200, {
+          authorizationUrl: "https://oauth.test/stripe/authorize",
+          oauthAttemptId,
+        });
+      },
+    );
+    context.mocks.api(
+      connectorAccountsContract.oauthCompletion,
+      async ({ never, respond }) => {
+        if (firstReceiptRead) {
+          firstReceiptRead = false;
+          receiptStarted.resolve();
+          return await never();
+        }
+        return finish === "forbidden"
+          ? respond(403, {
+              error: {
+                code: "FORBIDDEN",
+                message: "OAuth completion is unavailable",
+              },
+            })
+          : respond(404, {
+              error: {
+                code: "NOT_FOUND",
+                message: "OAuth completion not found",
+              },
+            });
+      },
+    );
+    await setupPage({ context, path: "/connectors?keywords=stripe" });
+    const connect = await waitFor(() => {
+      return getConnectorAction("button", "Connect Stripe");
+    });
+    click(connect);
+    const progress = await expectProgressDialog();
+    await receiptStarted.promise;
+    if (finish === "cancel") {
+      await dismissProgress(progress);
+    } else {
+      popup.close();
+    }
+    await waitFor(() => {
+      return expect(connect).toBeEnabled();
+    });
+    await waitFor(() => {
+      expect(oauthWaitDiagnostics().at(-1)?.message).toBe(
+        finish === "popup" ? "finished" : "failed",
+      );
+    });
+    const breadcrumbs = expectBoundedWaitDiagnostics(oauthAttemptId);
+    expect(
+      breadcrumbs.find((entry) => {
+        return entry.message === "cleanup";
+      })?.data,
+    ).toMatchObject({
+      cleanup_owned: finish !== "cancel",
+      parent_aborted: finish === "cancel",
+      wait_aborted: true,
+      current: finish !== "cancel",
+      completion_verified: false,
+    });
+    const popupBranch = expect.objectContaining({ branch: "popupClosed" });
+    expect(
+      breadcrumbs.find((entry) => {
+        return entry.message === "race-settled";
+      })?.data,
+    ).toStrictEqual(finish === "cancel" ? undefined : popupBranch);
+    const expectedOutcome = {
+      popup: {
+        accepted: false,
+        completion_verified: false,
+        parent_aborted: false,
+      },
+      cancel: { parent_aborted: true, error_kind: "aborted" },
+      forbidden: { parent_aborted: false, error_kind: "error" },
+    }[finish];
+    expect(breadcrumbs.at(-1)?.data).toMatchObject(expectedOutcome);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByText("You've successfully connected with Stripe!"),
+    ).toBeNull();
+    await waitFor(() => {
+      expect(
+        screen.queryAllByText("OAuth completion is unavailable"),
+      ).toHaveLength(finish === "forbidden" ? 1 : 0);
+    });
+    expect(sentry.reports).toHaveLength(0);
   },
 );
 
