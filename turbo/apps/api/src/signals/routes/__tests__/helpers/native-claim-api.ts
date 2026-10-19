@@ -1,0 +1,305 @@
+import { serve } from "@hono/node-server";
+import { once } from "node:events";
+import { lstat, watch } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { http, passthrough } from "msw";
+import { z } from "zod";
+
+import type { TestContext } from "../../../../__tests__/test-context";
+import { createAppWithRoutes } from "../../../../app-factory-core";
+import { server } from "../../../../mocks/server";
+import { runnersRoutes } from "../../runners";
+import { webhooksAgentCompleteRoutes } from "../../webhooks-agent-complete";
+import { webhooksAgentEventsRoutes } from "../../webhooks-agent-events";
+import { webhooksAgentHealthUsageTelemetryRoutes } from "../../webhooks-agent-health-usage-telemetry";
+import {
+  createDeferredPromise,
+  isAbortError,
+  settleIncludingAbort,
+} from "../../../utils";
+
+export interface NativeClaimCase {
+  readonly runId: string;
+  readonly controlDirectory: string;
+  readonly runnerIds: readonly [string, string];
+  readonly first: "a" | "b" | "both";
+}
+
+interface ClaimReceipt {
+  readonly runId: string;
+  readonly runnerId: string;
+  readonly path: string;
+  readonly authorization: string | null;
+  readonly body: unknown;
+  readonly enteredNs: string;
+  forwardedNs?: string;
+  completedNs?: string;
+  status?: number;
+  response?: unknown;
+}
+
+const claimantSchema = z.object({
+  runnerIdentity: z.object({ runnerId: z.uuid() }),
+});
+
+async function regularFile(path: string): Promise<boolean> {
+  const result = await settleIncludingAbort(lstat(path));
+  if (result.ok) {
+    const entry = result.value;
+    if (!entry.isFile() || entry.isSymbolicLink()) {
+      throw new Error("Native claim readiness must be an owned regular file");
+    }
+    return true;
+  } else {
+    const error = result.error;
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** Transport controls delay requests, never choose an application response. */
+function claimGate(input: NativeClaimCase, signal: AbortSignal) {
+  const entered = createDeferredPromise<void>(signal);
+  const ready = createDeferredPromise<void>(signal);
+  const firstFinished = createDeferredPromise<void>(signal);
+  const resolve = (gate: ReturnType<typeof createDeferredPromise<void>>) => {
+    if (!gate.settled()) {
+      gate.resolve();
+    }
+  };
+  // Deferred rejections remain joined even if construction or an earlier gate fails.
+  void Promise.allSettled([
+    entered.promise,
+    ready.promise,
+    firstFinished.promise,
+  ]);
+  const arrivals = new Set<string>();
+  const receipts: ClaimReceipt[] = [];
+  const events = watch(input.controlDirectory, { signal });
+  const observe = async () => {
+    if (await regularFile(join(input.controlDirectory, "failed.ready"))) {
+      resolve(entered);
+      resolve(firstFinished);
+      return true;
+    }
+    return (
+      (await regularFile(join(input.controlDirectory, "a.ready"))) &&
+      (await regularFile(join(input.controlDirectory, "b.ready")))
+    );
+  };
+  const monitor = (async () => {
+    const observed = await settleIncludingAbort(async () => {
+      if (await observe()) {
+        resolve(ready);
+        return;
+      }
+      for await (const _event of events) {
+        if (await observe()) {
+          resolve(ready);
+          return;
+        }
+      }
+    });
+    await events.return?.();
+    if (!observed.ok && !isAbortError(observed.error)) {
+      throw observed.error;
+    }
+  })();
+  // Failure/teardown releases observers so the listener can drain accepted work.
+  const released = () => {
+    resolve(ready);
+    resolve(entered);
+    resolve(firstFinished);
+  };
+  signal.addEventListener("abort", released, { once: true });
+  return {
+    receipts,
+    monitor,
+    entered: entered.promise,
+    async forward(request: Request, dispatch: () => Promise<Response>) {
+      const body: unknown = await request.clone().json();
+      const parsed = claimantSchema.safeParse(body);
+      if (!parsed.success) {
+        return dispatch();
+      }
+      const runnerId = parsed.data.runnerIdentity.runnerId;
+      const index = input.runnerIds.indexOf(runnerId);
+      if (index < 0) {
+        return dispatch();
+      }
+      if (arrivals.has(runnerId)) {
+        throw new Error("Native claimant submitted its claim more than once");
+      }
+      arrivals.add(runnerId);
+      const receipt: ClaimReceipt = {
+        runId: input.runId,
+        runnerId,
+        path: new URL(request.url).pathname,
+        authorization: request.headers.get("authorization"),
+        body,
+        enteredNs: process.hrtime.bigint().toString(),
+      };
+      receipts.push(receipt);
+      if (arrivals.size === 2) {
+        resolve(entered);
+      }
+      await Promise.all([entered.promise, ready.promise]);
+      signal.throwIfAborted();
+      const role = index === 0 ? "a" : "b";
+      if (input.first !== "both" && input.first !== role) {
+        await firstFinished.promise;
+        signal.throwIfAborted();
+      }
+      receipt.forwardedNs = process.hrtime.bigint().toString();
+      const result = await settleIncludingAbort(async () => {
+        const response = await dispatch();
+        receipt.status = response.status;
+        receipt.response = await response.clone().json();
+        receipt.completedNs = process.hrtime.bigint().toString();
+        return response;
+      });
+      if (input.first === role) {
+        resolve(firstFinished);
+      }
+      if (!result.ok) {
+        throw result.error;
+      }
+      return result.value;
+    },
+  };
+}
+
+/** A fixture-owned listener for the existing production Runner/callback routes. */
+export async function startNativeClaimApi(
+  context: TestContext,
+  cases: readonly NativeClaimCase[],
+) {
+  const stop = new AbortController();
+  const signal = AbortSignal.any([context.signal, stop.signal]);
+  const failures: unknown[] = [];
+  const gates = new Map<string, ReturnType<typeof claimGate>>();
+  const constructed = await settleIncludingAbort(() => {
+    for (const entry of cases) {
+      if (gates.has(entry.runId)) {
+        throw new Error("Duplicate native API claim case");
+      }
+      const gate = claimGate(entry, signal);
+      gates.set(entry.runId, gate);
+      void gate.monitor.catch((error: unknown) => {
+        failures.push(error);
+        stop.abort();
+      });
+    }
+  });
+  if (!constructed.ok) {
+    stop.abort();
+    await Promise.allSettled(
+      [...gates.values()].map((gate) => {
+        return gate.monitor;
+      }),
+    );
+    throw constructed.error;
+  }
+  const app = createAppWithRoutes({
+    signal,
+    routes: [
+      ...runnersRoutes,
+      ...webhooksAgentCompleteRoutes,
+      ...webhooksAgentEventsRoutes,
+      ...webhooksAgentHealthUsageTelemetryRoutes,
+    ],
+  });
+  const accepted = new Set<Promise<Response>>();
+  const listener = serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      const gate = cases.find((entry) => {
+        return path === `/api/runners/jobs/${entry.runId}/claim`;
+      });
+      const dispatch = async () => {
+        return app.request(request);
+      };
+      const work =
+        request.method === "POST" && gate
+          ? (gates.get(gate.runId)?.forward(request, dispatch) ?? dispatch())
+          : dispatch();
+      accepted.add(work);
+      void work.then(
+        () => {
+          accepted.delete(work);
+        },
+        (error: unknown) => {
+          accepted.delete(work);
+          failures.push(error);
+        },
+      );
+      return work;
+    },
+  });
+  const listening = await settleIncludingAbort(async () => {
+    if (!listener.listening) {
+      await once(listener, "listening", { signal });
+    }
+  });
+  if (!listening.ok) {
+    stop.abort();
+    if (listener.listening) {
+      await promisify(listener.close.bind(listener))();
+    }
+    await Promise.allSettled(
+      [...gates.values()].map((gate) => {
+        return gate.monitor;
+      }),
+    );
+    throw listening.error;
+  }
+  const address = listener.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Native API fixture did not bind a TCP listener");
+  }
+  const url = `http://127.0.0.1:${address.port}`;
+  server.use(
+    http.all(`${url}/*`, () => {
+      return passthrough();
+    }),
+  );
+  return {
+    url,
+    async waitForClaims(runId: string) {
+      const gate = gates.get(runId);
+      if (!gate) {
+        throw new Error("Unknown native claim case");
+      }
+      await gate.entered;
+    },
+    receipts() {
+      return [...gates.values()].flatMap((gate) => {
+        return gate.receipts;
+      });
+    },
+    async finish() {
+      stop.abort();
+      const closed = promisify(listener.close.bind(listener))();
+      const joined = await Promise.allSettled([
+        ...accepted,
+        ...[...gates.values()].map((gate) => {
+          return gate.monitor;
+        }),
+      ]);
+      await closed;
+      for (const result of joined) {
+        if (result.status === "rejected") {
+          failures.push(result.reason);
+        }
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "Native API fixture failed");
+      }
+    },
+  };
+}
