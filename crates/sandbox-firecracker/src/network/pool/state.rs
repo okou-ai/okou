@@ -1196,8 +1196,16 @@ impl NetnsPool {
         }
     }
 
-    /// Delete all namespaces currently in the pool queue and wait for
-    /// in-flight background creation tasks so their resources can be deleted.
+    /// Clean up queued namespaces and firewall rules on a best-effort basis,
+    /// waiting for in-flight background creation tasks so their resources can
+    /// also be cleaned up.
+    ///
+    /// `Ok(())` means the pool has finished processing its tracked cleanup
+    /// work; it does not guarantee that all kernel resources have been removed.
+    /// Entries are removed from tracking even when namespace or firewall
+    /// deletion is abandoned, so another cleanup call on the same instance
+    /// does not retry those entries. Remaining resources are left for later
+    /// startup orphan reconciliation.
     ///
     /// Namespaces that have been acquired but not yet released are **not**
     /// cleaned up here — they will be caught by orphan cleanup on the next
