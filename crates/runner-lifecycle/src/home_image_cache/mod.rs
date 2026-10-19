@@ -197,6 +197,8 @@ struct HomeImageCacheInner {
     #[cfg(any(test, feature = "test-support"))]
     held_state_root_scan_count: AtomicUsize,
     #[cfg(any(test, feature = "test-support"))]
+    inventory_key_probe_count: AtomicUsize,
+    #[cfg(any(test, feature = "test-support"))]
     held_state_root_scan_notify: tokio::sync::Notify,
     #[cfg(test)]
     publication_fault: AtomicUsize,
@@ -314,6 +316,7 @@ impl HomeImageCache {
                 fs_stats_override: Mutex::new(stats),
                 gc_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_count: AtomicUsize::new(0),
+                inventory_key_probe_count: AtomicUsize::new(0),
                 held_state_root_scan_notify: tokio::sync::Notify::new(),
                 #[cfg(test)]
                 publication_fault: AtomicUsize::new(0),

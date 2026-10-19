@@ -3,6 +3,7 @@ mod blank_prefetch;
 mod device_limits;
 mod drain;
 mod home_cache;
+mod home_cache_recovery;
 mod parking;
 mod prune_idle;
 mod same_thread_reuse;
