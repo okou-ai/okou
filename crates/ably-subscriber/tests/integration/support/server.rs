@@ -67,6 +67,7 @@ impl MockAblyServer {
             connection_id: Some(conn_id.into()),
             connection_key: Some(conn_key.clone()),
             connection_details: Some(ConnectionDetails {
+                server_id: Some("mock-ably-server".into()),
                 connection_key: Some(conn_key),
                 connection_state_ttl: Some(opts.connection_state_ttl_ms),
                 max_idle_interval: Some(opts.max_idle_interval_ms),

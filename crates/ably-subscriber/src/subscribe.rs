@@ -1,11 +1,12 @@
 //! Public entry point: [`subscribe`] and [`Subscription`].
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 use crate::connection::{
-    DEFAULT_REALTIME_HOST, DropWarningState, EventLoopState, SessionState, TransportCloseTracker,
+    BacklogWarnings, DEFAULT_REALTIME_HOST, EventLoopState, SessionState, TransportCloseTracker,
     connect_and_attach, exchange_token, rest_host, run_event_loop,
 };
+use crate::event_queue::{EventReceiver, event_queue};
 use crate::protocol::error_code;
 use crate::types::{Error, Event, SubscribeConfig};
 
@@ -15,21 +16,15 @@ use crate::types::{Error, Event, SubscribeConfig};
 /// best-effort close request, or [`close_and_wait`](Subscription::close_and_wait) when the caller
 /// must observe bounded shutdown completion.
 ///
-/// # Backpressure
+/// # Event delivery
 ///
-/// All events share a bounded channel. [`Event::Message`] events use non-blocking delivery and may
-/// be dropped when the channel is full. Status events ([`Event::Connected`],
-/// [`Event::Disconnected`], and [`Event::Error`]) instead wait for channel capacity rather than
-/// being dropped because the channel is full.
-///
-/// Keep polling [`next`](Subscription::next) while the subscription is active. A full channel can
-/// delay reconnect until space is available for `Disconnected` and, after reconnect, delay
-/// processing on the new connection until space is available for `Connected`. Calling `close` or
-/// `close_and_wait`, or dropping the subscription, can interrupt a status-event send that is
-/// waiting for capacity. Before waiting to deliver a terminal `Error`, the background task
-/// releases its socket.
+/// All events share a lossless, unbounded FIFO, matching the official SDK's asynchronous
+/// delivery. A slow consumer does not block socket reception, token renewal or reconnection.
+/// Keep polling [`next`](Subscription::next) or close the subscription: queued events consume
+/// memory until read, and an indefinitely slow consumer can grow memory without a fixed limit.
+/// Sustained backlog is reported with rate-limited warnings, without message payloads.
 pub struct Subscription {
-    rx: mpsc::Receiver<Event>,
+    rx: EventReceiver,
     close_tx: Option<oneshot::Sender<CloseRequest>>,
     close_timeout: std::time::Duration,
     transport_close_tracker: TransportCloseTracker,
@@ -130,14 +125,12 @@ impl Drop for Subscription {
 ///
 /// The background task automatically handles reconnection, token renewal, and
 /// heartbeat timeout detection. While acquiring a renewal token, it continues
-/// receiving messages on the established connection. See [`Subscription`] for how
-/// a full event channel can delay reconnect and post-reconnect receive progress
-/// until the caller drains events or closes the subscription.
+/// receiving messages on the established connection. See [`Subscription`] for the
+/// event queue's memory and consumer-lifetime contract.
 pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
     let timing = config.timing.unwrap_or_default();
     let close_timeout = timing.close_timeout;
-    let event_channel_capacity = timing.event_channel_capacity.max(1);
-    let (event_tx, event_rx) = mpsc::channel::<Event>(event_channel_capacity);
+    let (event_tx, event_rx) = event_queue();
     let (close_tx, close_rx) = oneshot::channel::<CloseRequest>();
     let transport_close_tracker = TransportCloseTracker::new();
 
@@ -181,7 +174,7 @@ pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
         message: "Connection timed out".to_string(),
     })??;
 
-    let _ = event_tx.send(Event::Connected).await;
+    let _ = event_tx.send(Event::Connected);
 
     // Spawn background event loop
     tokio::spawn(run_event_loop(
@@ -197,7 +190,7 @@ pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
             get_token: config.get_token,
             pending_token_renewal: None,
             timing,
-            drop_warnings: DropWarningState::default(),
+            backlog_warnings: BacklogWarnings::default(),
             transport_close_tracker: transport_close_tracker.clone(),
         },
         close_rx,

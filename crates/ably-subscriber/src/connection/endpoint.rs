@@ -76,7 +76,8 @@ pub(super) fn build_ws_url(host: &str, token: &str, resume: Option<&str>) -> Res
         q.append_pair("format", "msgpack");
         q.append_pair("v", PROTOCOL_VERSION);
         q.append_pair("agent", AGENT_STRING);
-        q.append_pair("heartbeats", "true");
+        // Native WebSockets answer control Ping automatically, as in ably-js.
+        q.append_pair("heartbeats", "false");
         q.append_pair("echo", "false");
         if let Some(key) = resume {
             q.append_pair("resume", key);
@@ -117,7 +118,7 @@ mod tests {
             "agent",
             &[&format!("ably-subscriber-rs/{}", env!("CARGO_PKG_VERSION"))],
         );
-        assert_query_values(&parsed, "heartbeats", &["true"]);
+        assert_query_values(&parsed, "heartbeats", &["false"]);
         assert_query_values(&parsed, "echo", &["false"]);
         assert_query_values(&parsed, "resume", &[]);
     }

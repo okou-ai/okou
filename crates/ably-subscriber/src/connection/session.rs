@@ -124,6 +124,10 @@ impl SessionState {
         self.conn_state.connection_id.as_deref()
     }
 
+    pub(super) fn server_id(&self) -> Option<&str> {
+        self.conn_state.server_id.as_deref()
+    }
+
     pub(super) fn can_resume(&self) -> bool {
         self.conn_state.can_resume()
     }
@@ -407,6 +411,7 @@ mod tests {
     fn test_conn_state() -> ConnState {
         let timing = TimingConfig::default();
         ConnState {
+            server_id: None,
             connection_id: Some("conn-1".to_string()),
             connection_key: Some("conn-1!key".to_string()),
             channel_serial: Some("serial-0".to_string()),

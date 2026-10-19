@@ -7,6 +7,7 @@ use crate::types::{TimingConfig, TokenDetails};
 
 pub(crate) struct ConnState {
     pub(super) connection_id: Option<String>,
+    pub(super) server_id: Option<String>,
     pub(super) connection_key: Option<String>,
     pub(super) channel_serial: Option<String>,
     pub(super) connection_state_ttl: Duration,
@@ -23,6 +24,7 @@ impl ConnState {
         timing: &TimingConfig,
     ) -> Self {
         let mut state = ConnState {
+            server_id: None,
             connection_id: None,
             connection_key: None,
             channel_serial: None,
@@ -43,6 +45,7 @@ impl ConnState {
         }
 
         if let Some(ref details) = msg.connection_details {
+            self.server_id = details.server_id.clone();
             if let Some(ref key) = details.connection_key {
                 self.connection_key = Some(key.clone());
             }
@@ -82,6 +85,7 @@ impl ConnState {
 
     pub(super) fn clear_resume_state(&mut self) {
         self.connection_id = None;
+        self.server_id = None;
         self.connection_key = None;
         self.channel_serial = None;
     }
@@ -526,6 +530,7 @@ mod tests {
     #[test]
     fn conn_state_can_resume() {
         let mut state = ConnState {
+            server_id: None,
             connection_id: Some("c1".to_string()),
             connection_key: Some("c1!key".to_string()),
             channel_serial: None,

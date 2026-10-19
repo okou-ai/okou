@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,14 +26,41 @@ pub(crate) type WsWrite = futures_util::stream::SplitSink<WsStream, tungstenite:
 pub(crate) struct WsRead {
     inner: WsSplitRead,
     last_inbound_activity_at: Instant,
+    pub(super) connected_at: Instant,
+    pub(super) local_addr: Option<SocketAddr>,
+    pub(super) peer_addr: Option<SocketAddr>,
+    pub(super) tcp_nodelay: Option<bool>,
+    pub(super) received_messages: u64,
+    pub(super) received_bytes: u64,
+    pub(super) received_pings: u64,
+    pub(super) received_pongs: u64,
+    pub(super) last_message_kind: &'static str,
 }
 
 impl WsRead {
-    fn new(inner: WsSplitRead) -> Self {
+    fn new(
+        inner: WsSplitRead,
+        local_addr: Option<SocketAddr>,
+        peer_addr: Option<SocketAddr>,
+        tcp_nodelay: Option<bool>,
+    ) -> Self {
         Self {
             inner,
             last_inbound_activity_at: Instant::now(),
+            connected_at: Instant::now(),
+            local_addr,
+            peer_addr,
+            tcp_nodelay,
+            received_messages: 0,
+            received_bytes: 0,
+            received_pings: 0,
+            received_pongs: 0,
+            last_message_kind: "none",
         }
+    }
+
+    pub(super) fn last_received_age(&self) -> Duration {
+        self.last_inbound_activity_at.elapsed()
     }
 
     pub(super) fn idle_deadline(
@@ -53,8 +81,25 @@ impl Stream for WsRead {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let result = Pin::new(&mut self.inner).poll_next(cx);
-        if matches!(&result, Poll::Ready(Some(Ok(_)))) {
+        if let Poll::Ready(Some(Ok(message))) = &result {
             self.last_inbound_activity_at = Instant::now();
+            // Tungstenite yields assembled data messages and individual control frames.
+            self.received_messages = self.received_messages.saturating_add(1);
+            self.received_bytes = self.received_bytes.saturating_add(message.len() as u64);
+            self.last_message_kind = match message {
+                tungstenite::Message::Binary(_) => "binary",
+                tungstenite::Message::Text(_) => "text",
+                tungstenite::Message::Ping(_) => {
+                    self.received_pings = self.received_pings.saturating_add(1);
+                    "ping"
+                }
+                tungstenite::Message::Pong(_) => {
+                    self.received_pongs = self.received_pongs.saturating_add(1);
+                    "pong"
+                }
+                tungstenite::Message::Close(_) => "close",
+                tungstenite::Message::Frame(_) => "frame",
+            };
         }
         result
     }
@@ -216,10 +261,17 @@ pub(super) async fn connect_pending(
     close_timeout: Duration,
     close_tracker: TransportCloseTracker,
 ) -> Result<PendingWsTransport, Error> {
-    let (ws, _resp) = tokio_tungstenite::connect_async(url).await?;
+    let (ws, _resp) = tokio_tungstenite::connect_async_with_config(url, None, true).await?;
+    let tcp = ws.get_ref().get_ref();
+    let local_addr = tcp.local_addr().ok();
+    let peer_addr = tcp.peer_addr().ok();
+    let tcp_nodelay = tcp.nodelay().ok();
     let (ws_write, ws_read) = ws.split();
     Ok(PendingWsTransport::new(
-        WsTransport::new(WsRead::new(ws_read), ws_write),
+        WsTransport::new(
+            WsRead::new(ws_read, local_addr, peer_addr, tcp_nodelay),
+            ws_write,
+        ),
         close_timeout,
         close_tracker,
     ))

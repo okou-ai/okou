@@ -2,7 +2,7 @@ use crate::support::*;
 use ably_subscriber::protocol::{
     AblyMessage, ConnectionDetails, ErrorInfo, ProtocolMessage, action, encode_msg, error_code,
 };
-use ably_subscriber::{Event, TimingConfig, subscribe};
+use ably_subscriber::{Event, subscribe};
 use futures_util::{SinkExt, StreamExt};
 use httpmock::prelude::*;
 use std::time::Duration;
@@ -218,41 +218,6 @@ async fn non_target_channel_events_do_not_pollute_resume_serial() {
         .unwrap();
     match event {
         Event::Message(msg) => assert_eq!(msg.name.as_deref(), Some("expected")),
-        other => panic!("expected Message, got {other:?}"),
-    }
-
-    join_server_task(server_task, "mock server").await.unwrap();
-}
-
-#[tokio::test]
-async fn zero_event_channel_capacity_uses_minimum_capacity() {
-    let http = MockServer::start();
-    let ws = MockAblyServer::start().await.unwrap();
-    mock_token_endpoint(&http, "testKey.testId");
-
-    let ws_port = ws.port;
-    let (message_seen_tx, message_seen_rx) = tokio::sync::oneshot::channel::<()>();
-    let server_task = tokio::spawn(async move {
-        let mut conn = ws.accept_and_handshake("ch", "conn-1").await.unwrap();
-        send_message(&mut conn, "ch", "after-connect", serde_json::json!(1))
-            .await
-            .unwrap();
-        wait_for_test_observation(message_seen_rx, "after-connect message").await;
-    });
-
-    let mut timing = TimingConfig::default();
-    timing.event_channel_capacity = 0;
-    let mut sub = subscribe(test_config_with_timing(ws_port, http.port(), "ch", timing))
-        .await
-        .unwrap();
-
-    expect_connected(&mut sub, "Connected event").await.unwrap();
-    let event = expect_event(&mut sub, "message").await.unwrap();
-    match event {
-        Event::Message(msg) => {
-            assert_eq!(msg.name.as_deref(), Some("after-connect"));
-            message_seen_tx.send(()).unwrap();
-        }
         other => panic!("expected Message, got {other:?}"),
     }
 
