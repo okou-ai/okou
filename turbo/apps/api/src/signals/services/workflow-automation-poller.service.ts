@@ -27,11 +27,7 @@ import {
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { WorkflowScheduleAdmissionError } from "./workflow-schedule-queue.service";
 
-import {
-  SCHEDULE_GRACE_MS,
-  scheduleExpired,
-  scheduleExpiryEnabled,
-} from "./schedule-expiry-policy";
+import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import {
@@ -47,15 +43,10 @@ import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-
 
 const log = logger("WorkflowAutomationPoller");
 
+// The two lanes never sum above the tick cap. Expired Morning Brief anchors
+// cannot use the capacity reserved for other due automations.
 const DUE_BATCH_LIMIT = 200;
-// Reserved lanes never sum above the legacy tick cap. A poison head in any
-// lane cannot use the capacity reserved for fresh and one-time obligations.
-const FRESH_BATCH_LIMIT = 120;
-const RETRY_BATCH_LIMIT = 15;
 const EXPIRED_BATCH_LIMIT = 35;
-const ONCE_BATCH_LIMIT = 15;
-const ONCE_RETRY_BATCH_LIMIT = 5;
-const ONCE_EXPIRED_BATCH_LIMIT = 10;
 
 interface ExecuteResult {
   readonly executed: number;
@@ -153,9 +144,8 @@ const claimAutomation$ = command(
                   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
                 ),
               ),
-          scheduleExpiryEnabled() ||
-            automation.officialBlueprintKey ===
-              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+          automation.officialBlueprintKey ===
+            MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
             ? gte(
                 workflowAutomations.nextRunAt,
                 new Date(nowDate().getTime() - SCHEDULE_GRACE_MS),
@@ -169,25 +159,11 @@ const claimAutomation$ = command(
   },
 );
 
-type DueMode =
-  | "morning-brief-expired"
-  | "legacy"
-  | "fresh"
-  | "retry"
-  | "expired"
-  | "once"
-  | "once-retry"
-  | "once-expired";
+type DueMode = "morning-brief-expired" | "legacy";
 
 const DUE_MODE_LIMIT: Readonly<Record<DueMode, number>> = Object.freeze({
   legacy: DUE_BATCH_LIMIT - EXPIRED_BATCH_LIMIT,
   "morning-brief-expired": EXPIRED_BATCH_LIMIT,
-  fresh: FRESH_BATCH_LIMIT,
-  retry: RETRY_BATCH_LIMIT,
-  expired: EXPIRED_BATCH_LIMIT,
-  once: ONCE_BATCH_LIMIT,
-  "once-retry": ONCE_RETRY_BATCH_LIMIT,
-  "once-expired": ONCE_EXPIRED_BATCH_LIMIT,
 });
 
 interface DueSelection {
@@ -214,53 +190,18 @@ function scheduleModeFilter(mode: DueMode, at: Date) {
     );
   }
 
-  if (mode === "legacy") {
-    // While general expiry is off, old Morning Brief anchors must not occupy
-    // the entire due batch. A bounded separate lane
-    // skips them to the future; other automations retain their legacy policy.
-    return or(
-      isNull(workflowAutomations.officialBlueprintKey),
-      ne(
-        workflowAutomations.officialBlueprintKey,
-        MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-      ),
-      gte(
-        workflowAutomations.nextRunAt,
-        new Date(at.getTime() - SCHEDULE_GRACE_MS),
-      ),
-    );
-  }
-  const cutoff = new Date(at.getTime() - SCHEDULE_GRACE_MS);
-  const once = mode.startsWith("once");
-  const expired = mode === "expired" || mode === "once-expired";
-  const retry = mode === "retry" || mode === "once-retry";
-  const eligibleDeferral = or(
-    sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
-    isNull(workflowAutomations.deferredUntil),
-    lte(workflowAutomations.deferredUntil, at),
-  );
-  const deferral = retry
-    ? and(
-        eq(workflowAutomations.deferredAnchorAt, workflowAutomations.nextRunAt),
-        lte(workflowAutomations.deferredUntil, at),
-      )
-    : expired
-      ? eligibleDeferral
-      : or(
-          sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
-          isNull(workflowAutomations.deferredUntil),
-        );
-  return and(
-    once
-      ? eq(workflowAutomations.scheduleType, "once")
-      : or(
-          eq(workflowAutomations.scheduleType, "cron"),
-          eq(workflowAutomations.scheduleType, "loop"),
-        ),
-    expired
-      ? lt(workflowAutomations.nextRunAt, cutoff)
-      : gte(workflowAutomations.nextRunAt, cutoff),
-    deferral,
+  // Old Morning Brief anchors must not occupy the entire due batch. A bounded
+  // separate lane skips them to the future; other automations run when claimed.
+  return or(
+    isNull(workflowAutomations.officialBlueprintKey),
+    ne(
+      workflowAutomations.officialBlueprintKey,
+      MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+    ),
+    gte(
+      workflowAutomations.nextRunAt,
+      new Date(at.getTime() - SCHEDULE_GRACE_MS),
+    ),
   );
 }
 
@@ -312,15 +253,7 @@ const dueWorkflowAutomationRows$ = command(
           scheduleModeFilter(mode, args.at),
         ),
       )
-      .orderBy(
-        ...(mode === "retry" || mode === "once-retry"
-          ? [
-              workflowAutomations.deferredUntil,
-              workflowAutomations.nextRunAt,
-              workflowAutomations.id,
-            ]
-          : [workflowAutomations.nextRunAt, workflowAutomations.id]),
-      )
+      .orderBy(workflowAutomations.nextRunAt, workflowAutomations.id)
       .limit(DUE_MODE_LIMIT[mode]);
     signal.throwIfAborted();
     return rows;
@@ -408,15 +341,14 @@ const dueWorkflowAutomationIsFireable$ = command(
 const retireDepartedOwner$ = command(
   async (
     { set },
-    context: { currentTime: Date; expiryEnabled: boolean },
     row: DueWorkflowAutomationRow,
+    currentTime: Date,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const anchor = row.automation.nextRunAt;
     if (
-      (!context.expiryEnabled &&
-        row.automation.officialBlueprintKey !==
-          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY) ||
+      row.automation.officialBlueprintKey !==
+        MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
       !anchor ||
       !scheduleExpired(anchor, nowDate())
     ) {
@@ -425,7 +357,7 @@ const retireDepartedOwner$ = command(
     return !(await set(
       dueWorkflowAutomationOwnerIsMember$,
       row,
-      context.currentTime,
+      currentTime,
       signal,
     ));
   },
@@ -441,41 +373,22 @@ type PollCounters = {
 const loadDueWorkflowRows$ = command(
   async (
     { set },
-    args: {
-      readonly currentTime: Date;
-      readonly expiryEnabled: boolean;
-    },
+    currentTime: Date,
     signal: AbortSignal,
   ): Promise<DueWorkflowAutomationRow[]> => {
-    const common = {
-      at: args.currentTime,
-    };
-    if (!args.expiryEnabled) {
-      const expired = await set(
-        dueWorkflowAutomationRows$,
-        { ...common, mode: "morning-brief-expired" },
-        signal,
-      );
-      signal.throwIfAborted();
-      const due = await set(dueWorkflowAutomationRows$, common, signal);
-      signal.throwIfAborted();
-      return [...expired, ...due];
-    }
-    const modes: readonly DueMode[] = [
-      "expired",
-      "fresh",
-      "retry",
-      "once-expired",
-      "once",
-      "once-retry",
-    ];
-    const rows: DueWorkflowAutomationRow[] = [];
-    for (const mode of modes) {
-      rows.push(
-        ...(await set(dueWorkflowAutomationRows$, { ...common, mode }, signal)),
-      );
-    }
-    return rows;
+    const expired = await set(
+      dueWorkflowAutomationRows$,
+      { at: currentTime, mode: "morning-brief-expired" },
+      signal,
+    );
+    signal.throwIfAborted();
+    const due = await set(
+      dueWorkflowAutomationRows$,
+      { at: currentTime },
+      signal,
+    );
+    signal.throwIfAborted();
+    return [...expired, ...due];
   },
 );
 
@@ -488,7 +401,6 @@ const launchClaimedDueRow$ = command(
       readonly scheduledAnchorAt: Date | null;
       readonly journaled: boolean;
       readonly currentTime: Date;
-      readonly expiryEnabled: boolean;
       readonly counters: PollCounters;
     },
     signal: AbortSignal,
@@ -589,18 +501,6 @@ const launchClaimedDueRow$ = command(
       return;
     }
     if (result.scheduleOccurrence === "superseded") {
-      if (args.expiryEnabled && args.scheduledAnchorAt) {
-        await set(
-          deferWorkflowSchedule$,
-          {
-            automationId: row.automation.id,
-            anchor: args.scheduledAnchorAt,
-            at: nowDate(),
-            reason: "unavailable",
-          },
-          signal,
-        );
-      }
       counters.skipped++;
       return;
     }
@@ -612,15 +512,13 @@ const skipExpiredDueRow$ = command(
   async (
     { set },
     row: DueWorkflowAutomationRow,
-    expiryEnabled: boolean,
     counters: PollCounters,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const anchor = row.automation.nextRunAt;
     if (
-      (!expiryEnabled &&
-        row.automation.officialBlueprintKey !==
-          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY) ||
+      row.automation.officialBlueprintKey !==
+        MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
       anchor === null ||
       !scheduleExpired(anchor, nowDate())
     ) {
@@ -643,7 +541,6 @@ const skipExpiredDueRow$ = command(
           automationId: row.automation.id,
           anchor,
           at,
-          reason: "held",
         },
         signal,
       );
@@ -664,15 +561,7 @@ const skipExpiredDueRow$ = command(
 export const executeDueWorkflowAutomations$ = command(
   async ({ set }, signal: AbortSignal): Promise<ExecuteResult> => {
     const currentTime = nowDate();
-    const expiryEnabled = scheduleExpiryEnabled();
-    const rows = await set(
-      loadDueWorkflowRows$,
-      {
-        currentTime,
-        expiryEnabled,
-      },
-      signal,
-    );
+    const rows = await set(loadDueWorkflowRows$, currentTime, signal);
     const counters: PollCounters = {
       executed: 0,
       skipped: 0,
@@ -680,41 +569,26 @@ export const executeDueWorkflowAutomations$ = command(
       oldestExpiredAnchorAgeMs: 0,
     };
 
-    const expiryContext = { currentTime, expiryEnabled };
     for (const original of rows) {
       let row = original;
-      if (await set(retireDepartedOwner$, expiryContext, row, signal)) {
+      if (await set(retireDepartedOwner$, row, currentTime, signal)) {
         counters.skipped++;
         continue;
       }
       // Retire an expired slot before the potentially expensive pause check.
-      if (await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal)) {
+      if (await set(skipExpiredDueRow$, row, counters, signal)) {
         continue;
       }
       if (
         !(await set(dueWorkflowAutomationIsFireable$, row, currentTime, signal))
       ) {
-        if (
-          await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal)
-        ) {
+        if (await set(skipExpiredDueRow$, row, counters, signal)) {
           continue;
-        }
-        if (expiryEnabled && row.automation.nextRunAt) {
-          await set(
-            deferWorkflowSchedule$,
-            {
-              automationId: row.automation.id,
-              anchor: row.automation.nextRunAt,
-              at: nowDate(),
-              reason: "not_fireable",
-            },
-            signal,
-          );
         }
         counters.skipped++;
         continue;
       }
-      if (await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal)) {
+      if (await set(skipExpiredDueRow$, row, counters, signal)) {
         continue;
       }
 
@@ -748,9 +622,7 @@ export const executeDueWorkflowAutomations$ = command(
         : await set(claimAutomation$, row.automation, currentTime, signal);
       signal.throwIfAborted();
       if (!claimed) {
-        if (
-          !(await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal))
-        ) {
+        if (!(await set(skipExpiredDueRow$, row, counters, signal))) {
           counters.skipped++;
         }
         continue;
@@ -764,7 +636,6 @@ export const executeDueWorkflowAutomations$ = command(
           scheduledAnchorAt,
           journaled,
           currentTime,
-          expiryEnabled,
           counters,
         },
         signal,
