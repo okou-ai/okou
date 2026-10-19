@@ -89,13 +89,13 @@ import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 const CREATE_AGENT_ITEM_VALUE = "create-agent";
 
 /**
- * The pin manager's list bleeds 8px past the dialog's 20px text column, and
- * each row pads 8px back in. A highlighted row keeps the same 8px on all four
- * sides, while resting avatars, labels and section headings still line up
- * with the title and the search field.
+ * The pin manager's highlight sits 8px inside the dialog, so CommandItem's
+ * `rounded-lg` stays concentric with the dialog's `rounded-2xl` corners. Rows
+ * pad 12px back in, which keeps resting avatars, labels and section headings
+ * on the title's 20px column.
  */
-const AGENT_COMMAND_LIST_INSET = "px-3";
-const AGENT_COMMAND_ROW_CLASS = "w-full gap-2 px-2 py-2";
+const AGENT_COMMAND_LIST_INSET = "px-2";
+const AGENT_COMMAND_ROW_CLASS = "w-full gap-2 px-3 py-2";
 
 interface AgentDialogItem {
   readonly agentId: string;
@@ -264,7 +264,7 @@ function AgentCommandSection({
   return (
     <CommandGroup
       heading={label}
-      className={`${AGENT_COMMAND_LIST_INSET} ${className} [&_[data-slot=command-group-heading]]:px-2 [&_[data-slot=command-group-items]]:mt-1 [&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col`}
+      className={`${AGENT_COMMAND_LIST_INSET} ${className} [&_[data-slot=command-group-heading]]:px-3 [&_[data-slot=command-group-items]]:mt-1 [&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col`}
     >
       {children}
     </CommandGroup>
@@ -1440,6 +1440,8 @@ export function PinAgentDialog({
   saving,
   onSetAgentPinned,
   onCreateAgent,
+  onOpenChangeComplete,
+  handingOff,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1447,6 +1449,9 @@ export function PinAgentDialog({
   saving: boolean;
   onSetAgentPinned: (agentId: string, pinned: boolean) => Promise<void>;
   onCreateAgent: () => void;
+  onOpenChangeComplete: (open: boolean) => void;
+  /** Closing to open the create dialog: leave focus for that dialog to take. */
+  handingOff: boolean;
 }) {
   const { t } = useTranslation("agents");
   const query = useGet(pinAgentDialogQuery$);
@@ -1504,6 +1509,8 @@ export function PinAgentDialog({
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
+      onOpenChangeComplete={onOpenChangeComplete}
+      finalFocus={handingOff ? false : undefined}
       closeLabel={t(($) => {
         return $.actions.close;
       })}
@@ -1602,7 +1609,7 @@ export function PinAgentDialog({
             })}
           </AgentCommandSection>
         )}
-        <div className={`${AGENT_COMMAND_LIST_INSET} pb-3`}>
+        <div className={`${AGENT_COMMAND_LIST_INSET} pb-2`}>
           <AgentCommandCreateRow
             label={t(($) => {
               return $.list.actions.new;

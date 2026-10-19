@@ -60,17 +60,34 @@ test("Pin one highlighted search result with Enter and preserve the query", asyn
   ).not.toHaveAttribute("aria-disabled", "true");
 });
 
-test("Open the create-agent dialog from the pin manager", async () => {
-  const { dialog } = await openPinManager();
+test("Hand off from the pin manager to the create-agent dialog and back", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareAgents();
+  context.mocks.data.userPreferences({ pinnedAgentIds: [] });
+  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const grid = await screen.findByTestId("pinned-agents-grid");
+  const pinTile = within(grid).getByLabelText("Pin an agent");
 
-  click(within(dialog).getByRole("option", { name: "New agent" }));
+  await user.click(pinTile);
+  const dialog = await screen.findByRole("dialog", { name: "Pin an agent" });
+  await user.click(within(dialog).getByRole("option", { name: "New agent" }));
 
-  await expect(
-    screen.findByRole("dialog", { name: "Create a new agent" }),
-  ).resolves.toBeInTheDocument();
+  const createDialog = await screen.findByRole("dialog", {
+    name: "Create a new agent",
+  });
+  await waitFor(() => {
+    expect(within(createDialog).getByLabelText("Name")).toHaveFocus();
+  });
   expect(
     screen.queryByRole("dialog", { name: "Pin an agent" }),
   ).not.toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(pinTile).toHaveFocus();
+  });
+  expect(createDialog).not.toBeInTheDocument();
 });
 
 test("Create the first agent from an empty pin manager with Enter", async () => {
