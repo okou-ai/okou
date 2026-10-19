@@ -20,17 +20,14 @@ import {
   parseFeishuMessageContent,
   type FeishuPromptFile,
 } from "../../lib/feishu-message-content";
-import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
-  listFeishuMessages,
   replyWithFeishuMessage,
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import { tapError } from "../utils";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
@@ -39,7 +36,6 @@ import {
   feishuOrgChangedUserIds,
 } from "./feishu-realtime.service";
 
-const L = logger("FeishuDispatch");
 interface FeishuPromptContext {
   readonly text: string;
   readonly files: readonly FeishuPromptFile[];
@@ -364,7 +360,7 @@ function formatFeishuContext(
   };
 }
 
-function formatConversationHistory(
+export function formatFeishuConversationHistory(
   history: readonly FeishuHistoryMessage[],
   current: FeishuInboundMessage,
   threadHistory: readonly FeishuHistoryMessage[],
@@ -449,61 +445,6 @@ function formatConversationHistory(
     text: [recentContext.text, threadContext.text].filter(Boolean).join("\n\n"),
     files: [...recentContext.files, ...threadContext.files],
   };
-}
-
-async function loadFeishuHistory(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly containerType: "chat" | "thread";
-    readonly containerId: string;
-  },
-  signal: AbortSignal,
-): Promise<readonly FeishuHistoryMessage[]> {
-  const history = await tapError(listFeishuMessages(args, signal), (error) => {
-    L.warn("Failed to load Feishu conversation history", {
-      error,
-      installationId: args.installationId,
-      containerType: args.containerType,
-      containerId: args.containerId,
-    });
-  });
-  signal.throwIfAborted();
-  return history ?? [];
-}
-
-export async function loadFeishuConversationHistory(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-  },
-  signal: AbortSignal,
-): Promise<FeishuPromptContext> {
-  const { message } = args;
-  const [history, threadHistory] = await Promise.all([
-    loadFeishuHistory(
-      {
-        db: args.db,
-        installationId: message.installationId,
-        containerType: "chat",
-        containerId: message.chatId,
-      },
-      signal,
-    ),
-    message.chatType !== "p2p" && message.threadId
-      ? loadFeishuHistory(
-          {
-            db: args.db,
-            installationId: message.installationId,
-            containerType: "thread",
-            containerId: message.threadId,
-          },
-          signal,
-        )
-      : Promise.resolve([]),
-  ]);
-  signal.throwIfAborted();
-  return formatConversationHistory(history, message, threadHistory);
 }
 
 export function buildFeishuSystemPrompt(args: {

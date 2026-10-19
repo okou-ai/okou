@@ -877,58 +877,14 @@ export function parseFeishuReactionRemovalResponse(
   }
 }
 
-export async function listFeishuMessages(
+export function feishuMessageHistoryUrl(
+  apiOrigin: string,
   args: {
-    readonly db: Db;
-    readonly installationId: string;
     readonly containerType: "chat" | "thread";
     readonly containerId: string;
     readonly pageSize?: number;
   },
-  signal: AbortSignal,
-): Promise<readonly FeishuHistoryMessage[]> {
-  const historyContextArgs = args;
-  const historyContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await historyContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, historyContextArgs.installationId))
-      .limit(1);
-    historyContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await historyContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      historyContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await historyContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(
-          eq(feishuOrgInstallations.id, historyContextArgs.installationId),
-        );
-      historyContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
+): URL {
   const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
   url.searchParams.set("container_id_type", args.containerType);
   url.searchParams.set("container_id", args.containerId);
@@ -938,16 +894,14 @@ export async function listFeishuMessages(
   // The rendered card representation can replace Markdown and artifact links
   // with image previews. Read the original schema for conversation context.
   url.searchParams.set("card_msg_content_type", "user_card_content");
-  const response = await fetch(url, {
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json; charset=utf-8",
-    },
-    signal,
-  });
-  const parsed = feishuMessageHistoryResponseSchema.parse(
-    await readJson(response, providerName),
-  );
+  return url;
+}
+
+export function parseFeishuMessageHistoryResponse(
+  value: unknown,
+  providerName: string,
+): readonly FeishuHistoryMessage[] {
+  const parsed = feishuMessageHistoryResponseSchema.parse(value);
   if (parsed.code !== 0) {
     throw new FeishuApiError(
       parsed.msg ?? `${providerName} message history request failed`,
