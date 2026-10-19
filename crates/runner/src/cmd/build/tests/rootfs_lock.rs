@@ -165,12 +165,18 @@ async fn rootfs_image_lock_retries_exclusive_when_existing_rootfs_disappears() {
     tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
 
     let mut removed = false;
-    let image_lock = acquire_rootfs_lock_for_image_build_inner(&home, rootfs_hash, &rootfs, || {
-        if !removed {
-            std::fs::remove_file(rootfs.rootfs()).unwrap();
-            removed = true;
-        }
-    })
+    let image_lock = acquire_rootfs_lock_for_image_build_inner(
+        &home,
+        rootfs_hash,
+        &rootfs,
+        || {
+            if !removed {
+                std::fs::remove_file(rootfs.rootfs()).unwrap();
+                removed = true;
+            }
+        },
+        || {},
+    )
     .await
     .unwrap();
 
@@ -186,14 +192,33 @@ async fn rootfs_image_lock_retries_shared_when_another_builder_commits_rootfs() 
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
     let builder_lock = lock::acquire(home.rootfs_lock(rootfs_hash)).await.unwrap();
+    let (exclusive_lock_started, exclusive_lock_attempt) = tokio::sync::oneshot::channel();
 
     let task_home = home.clone();
     let task_rootfs_hash = rootfs_hash.to_string();
     let image_lock_task = tokio::spawn(async move {
         let task_rootfs = RootfsPaths::new(&task_home, &task_rootfs_hash);
-        acquire_rootfs_lock_for_image_build(&task_home, &task_rootfs_hash, &task_rootfs).await
+        let mut exclusive_lock_started = Some(exclusive_lock_started);
+        acquire_rootfs_lock_for_image_build_inner(
+            &task_home,
+            &task_rootfs_hash,
+            &task_rootfs,
+            || {},
+            || {
+                if let Some(started) = exclusive_lock_started.take() {
+                    started.send(()).unwrap();
+                }
+            },
+        )
+        .await
     });
 
+    // Rule out the initial shared path: the builder still holds its flock when
+    // acquisition observes missing rootfs and reaches the exclusive attempt.
+    tokio::time::timeout(std::time::Duration::from_secs(2), exclusive_lock_attempt)
+        .await
+        .expect("acquisition must reach the exclusive attempt before rootfs commit")
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
     drop(builder_lock);
 
@@ -204,6 +229,16 @@ async fn rootfs_image_lock_retries_shared_when_another_builder_commits_rootfs() 
         .unwrap();
 
     assert!(image_lock.is_shared());
+    assert!(matches!(
+        lock::try_acquire_or_busy(home.rootfs_lock(rootfs_hash))
+            .await
+            .unwrap(),
+        lock::TryLock::Busy
+    ));
+    let other_reader = lock::try_acquire_shared_or_busy(home.rootfs_lock(rootfs_hash))
+        .await
+        .unwrap();
+    assert!(matches!(other_reader, lock::TryLock::Acquired(_)));
 }
 
 #[tokio::test]
