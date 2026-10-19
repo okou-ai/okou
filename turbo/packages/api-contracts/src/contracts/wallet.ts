@@ -189,8 +189,8 @@ export const walletSpendSchema = z.object({
   paymentHistory: z.array(walletPaymentSchema).optional(),
   approvalUrl: z.url().nullable(),
   expiresAt: z.iso.datetime(),
-  // Absent on older APIs. A watch is bounded by expiresAt, never a payment promise.
-  autoContinue: z.boolean().optional(),
+  // A watch is bounded by expiresAt, never a payment promise.
+  autoContinue: z.boolean(),
   nextAction: z.enum([
     "wait_for_user",
     "check_status",

@@ -42,6 +42,7 @@ const spend = {
   approvalUrl:
     "https://app.link.com/activity/approve/lsrq_example?approval=keep-exact",
   expiresAt: "2026-10-12T08:00:00.000Z",
+  autoContinue: false,
   nextAction: "wait_for_user",
   action: null,
 };

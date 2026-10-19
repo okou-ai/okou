@@ -10,7 +10,6 @@ import { request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
-  buildTeamsInstallUrl,
   connectTeamsInstallation$,
   isTeamsInstallationActive,
   prepareTeamsInstallation$,
@@ -40,7 +39,6 @@ interface OAuthState {
   readonly userId: string | null;
   readonly prompt: string | null;
   readonly redirectUri: string;
-  readonly completion?: "settings";
 }
 
 interface MicrosoftTeamsUserInfo {
@@ -112,22 +110,11 @@ function settingsSuccessRedirect(args: {
   );
 }
 
-function teamsInstallRedirect(tenantId: string, state: OAuthState): Response {
-  // Old App tabs and in-flight states retain the install redirect. Remove this
-  // bridge only after those readers and retained rollback APIs drain (#40196).
-  if (state.completion === "settings") {
-    const params = new URLSearchParams({ status: "pending", tenantId });
-    return noStoreRedirect(
-      appUrl(`${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`),
-    );
-  }
-  const installUrl = buildTeamsInstallUrl(tenantId);
-  if (!installUrl) {
-    return settingsErrorRedirect(
-      "Microsoft Teams integration is not configured.",
-    );
-  }
-  return noStoreRedirect(installUrl);
+function teamsPendingInstallationRedirect(tenantId: string): Response {
+  const params = new URLSearchParams({ status: "pending", tenantId });
+  return noStoreRedirect(
+    appUrl(`${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`),
+  );
 }
 
 function truncatePrompt(prompt: string): string {
@@ -158,9 +145,6 @@ function parseOAuthState(state: string | undefined): OAuthState | null {
     userId: optionalString(record.userId),
     prompt: optionalString(record.prompt),
     redirectUri,
-    ...(record.completion === "settings"
-      ? { completion: "settings" as const }
-      : {}),
   };
 }
 
@@ -343,6 +327,8 @@ const connectOauth$ = command(({ get }) => {
     userId,
     redirectUri,
   };
+  // Rollback-target APIs before the settings-only completion still read this
+  // marker from states minted here; this API always completes in settings.
   if (query.completion) {
     stateObj.completion = query.completion;
   }
@@ -439,7 +425,7 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     signal.throwIfAborted();
 
-    return teamsInstallRedirect(exchange.tenantId, state);
+    return teamsPendingInstallationRedirect(exchange.tenantId);
   }
 
   if (result.kind === "forbidden") {
@@ -454,7 +440,7 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (!isTeamsInstallationActive(result.installation)) {
-    return teamsInstallRedirect(result.installation.teamsTenantId, state);
+    return teamsPendingInstallationRedirect(result.installation.teamsTenantId);
   }
 
   return settingsSuccessRedirect({
