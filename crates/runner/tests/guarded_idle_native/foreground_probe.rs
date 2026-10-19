@@ -125,6 +125,7 @@ impl Probe {
             provider: provider.clone(),
             active_runs: &active,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
+            home_cache: None,
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
             sandbox_op_reporter: None,
         }));
