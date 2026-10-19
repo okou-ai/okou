@@ -2881,29 +2881,24 @@ const finalizeAppliedMigration$ = command(
   },
 );
 
-async function failChangedMigration(
-  db: Db,
+function changedMigrationFailureWritePlan(
   migration: MigrationRow,
-): Promise<boolean> {
-  const completedAt = nowDate();
-  const [failed] = await db
-    .update(usagePackSubscriptionMigrations)
-    .set({
-      status: "failed",
+  completedAt: Date,
+) {
+  return {
+    values: {
+      status: "failed" as const,
       failureReason: "subscription_changed",
       completedAt,
       updatedAt: completedAt,
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptionMigrations.id, migration.id),
-        inArray(usagePackSubscriptionMigrations.status, [
-          ...RECONCILING_MIGRATION_STATUSES,
-        ]),
-      ),
-    )
-    .returning({ id: usagePackSubscriptionMigrations.id });
-  return failed !== undefined;
+    },
+    condition: and(
+      eq(usagePackSubscriptionMigrations.id, migration.id),
+      inArray(usagePackSubscriptionMigrations.status, [
+        ...RECONCILING_MIGRATION_STATUSES,
+      ]),
+    ),
+  };
 }
 
 function migrationRecurringDuration(
@@ -3149,7 +3144,22 @@ const reconcileMigration$ = command(
       };
     }
     if (!legacyMigrationShape(migration, subscription)) {
-      if (await failChangedMigration(db, migration)) {
+      if (
+        await (async () => {
+          const failedMigration = migration;
+          const completedAt = nowDate();
+          const plan = changedMigrationFailureWritePlan(
+            failedMigration,
+            completedAt,
+          );
+          const [failed] = await db
+            .update(usagePackSubscriptionMigrations)
+            .set(plan.values)
+            .where(plan.condition)
+            .returning({ id: usagePackSubscriptionMigrations.id });
+          return failed !== undefined;
+        })()
+      ) {
         return { status: "failed", orgId: migration.orgId };
       }
       return { status: "failed", orgId: migration.orgId };
