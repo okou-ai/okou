@@ -73,6 +73,7 @@ export interface PermissionConnectorCardItem {
 type PermissionConnectorCardProps = {
   readonly variant: "permission";
   readonly connector: PermissionConnectorCardItem;
+  readonly summary: ConnectorAccountBriefSummary | undefined;
   readonly enabled: boolean;
   readonly loading: boolean;
   readonly showManage: boolean;
@@ -87,8 +88,7 @@ type DirectoryConnectorCardProps = {
   readonly busy: boolean;
   readonly blocked: boolean;
   readonly connected: boolean;
-  readonly accountCount?: number;
-  readonly accountLabel?: string;
+  readonly summary: ConnectorAccountSummary | undefined;
   readonly unavailable?: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly onOpenDetail?: () => void;
@@ -147,17 +147,17 @@ export function ConnectorIconTile({
 
 function DirectoryConnectorStatusLine({
   connector,
-  accountCount,
-  accountLabel,
+  summary,
   unavailable,
 }: {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly accountCount: number;
-  readonly accountLabel: string | undefined;
+  readonly summary: ConnectorAccountSummary | undefined;
   readonly unavailable: boolean;
 }) {
   const { t } = useTranslation();
-  const connectionStatus = builtinConnectorCurrentConnectionStatus(connector);
+  const accountLabelOf = useConnectorAccountLabel();
+  const accountCount = summary?.accountCount ?? 0;
+  const connectionStatus = summary?.defaultConnection?.connectionStatus;
   if (unavailable) {
     return (
       <>
@@ -179,10 +179,13 @@ function DirectoryConnectorStatusLine({
             return $.connectors.card.connectionExpired;
           })}
         </span>
+        {summary && summary.accountCount > 1 && (
+          <ConnectorAccountSummaryText summary={summary} status="ready" />
+        )}
       </>
     );
   }
-  if (connectionStatus === "scope-mismatch") {
+  if (builtinConnectorCurrentConnectionStatus(connector) === "scope-mismatch") {
     return (
       <>
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
@@ -194,14 +197,18 @@ function DirectoryConnectorStatusLine({
       </>
     );
   }
+  if (summary && (summary.attentionCount > 0 || !summary.defaultConnection)) {
+    return <ConnectorAccountSummaryText summary={summary} status="ready" />;
+  }
   return (
     <>
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
       <span className="truncate text-muted-foreground">
-        {accountLabel ??
-          t(($) => {
-            return $.connectors.card.connected;
-          })}
+        {summary?.defaultConnection
+          ? accountLabelOf(summary.defaultConnection)
+          : t(($) => {
+              return $.connectors.card.connected;
+            })}
       </span>
       {accountCount > 1 && (
         <span className="ml-auto shrink-0 rounded-full bg-state-selected px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -222,8 +229,7 @@ function DirectoryConnectorCard({
   busy,
   blocked,
   connected,
-  accountCount = 0,
-  accountLabel,
+  summary,
   unavailable = false,
   connect,
   onOpenDetail,
@@ -234,7 +240,7 @@ function DirectoryConnectorCard({
     if (!interactive) {
       return;
     }
-    if (connected) {
+    if (connected || connector.connection !== null) {
       onOpenDetail?.();
       return;
     }
@@ -301,8 +307,7 @@ function DirectoryConnectorCard({
         <span className="flex h-10 items-center gap-2 border-t border-border/50 px-4 text-xs">
           <DirectoryConnectorStatusLine
             connector={connector}
-            accountCount={accountCount}
-            accountLabel={accountLabel}
+            summary={summary}
             unavailable={unavailable}
           />
         </span>
@@ -579,6 +584,7 @@ function ActionConnectorCard({
 
 function PermissionConnectorCard({
   connector,
+  summary,
   enabled,
   loading,
   showManage,
@@ -590,6 +596,11 @@ function PermissionConnectorCard({
     <ConnectorPermissionRow
       icon={<ConnectorIcon icon={connector.icon} size={20} />}
       label={connector.label}
+      description={
+        summary && (summary.accountCount > 1 || summary.attentionCount > 0) ? (
+          <ConnectorAccountSummaryText summary={summary} status="ready" />
+        ) : undefined
+      }
       labelSuffix={
         connector.externalUsername ? (
           <span
