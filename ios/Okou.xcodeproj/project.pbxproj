@@ -340,7 +340,7 @@
 			"buildConfigurationList" = "00000000000000000000001E";
 			"developmentRegion" = "en";
 			"hasScannedForEncodings" = 0;
-			"knownRegions" = ("en", "Base",);
+			"knownRegions" = ("en", "zh-Hans", "Base",);
 			"mainGroup" = "000000000000000000000008";
 			"minimizedProjectReferenceProxies" = 1;
 			"packageReferences" = ("00000000000000000000000C", "00000000000000000000000D", "000000000000000000000025", "000000000000000000000028", "00000000000000000000002C",);

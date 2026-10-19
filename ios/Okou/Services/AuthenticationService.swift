@@ -19,13 +19,18 @@ final class AuthenticationService {
     var errorDescription: String? {
       switch self {
       case .notConfigured:
-        "Sign-in is not configured for this build."
+        String(localized: "Sign-in is not configured for this build.")
       case .signedOut:
-        "Your session has expired. Please sign in again."
+        String(localized: "Your session has expired. Please sign in again.")
       case .workspaceChanged:
-        "Your account or workspace changed. Please try again in the current workspace."
+        String(
+          localized: "Your account or workspace changed. Please try again in the current workspace."
+        )
       case .workspaceUnavailable:
-        "This workspace is no longer available. Choose another workspace or manage access on the web."
+        String(
+          localized:
+            "This workspace is no longer available. Choose another workspace or manage access on the web."
+        )
       }
     }
   }
