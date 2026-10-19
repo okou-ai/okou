@@ -227,8 +227,8 @@ test("Enter keeps the keyboard selection while another workflow is hovered", asy
     return slashButton(`/${WORKFLOW_NAME}`);
   });
 
-  // The best match sits nearest the composer, so the next one is above it.
-  await user.keyboard("{ArrowUp}");
+  // Search starts at the best match and moves down to the next row.
+  await user.keyboard("{ArrowDown}");
   await user.pointer({
     target: workflow,
     coords: { clientX: 10, clientY: 10 },

@@ -1,34 +1,19 @@
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
-export function orderRecentWorkflows(
+export function findWorkflowQueryMatches(
   workflows: readonly ComposerSlashWorkflow[],
+  query: string,
   recentIds: readonly string[],
-): readonly ComposerSlashWorkflow[] {
+): readonly ComposerSlashWorkflowMatch[] {
+  const normalizedQuery = query.toLowerCase();
   const recency = new Map(
     recentIds.map((id, index) => {
       return [id, index] as const;
     }),
   );
-  return [...workflows].sort((left, right) => {
-    return (
-      (recency.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-        (recency.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
-      left.name.localeCompare(right.name, "en") ||
-      left.id.localeCompare(right.id, "en")
-    );
-  });
-}
-
-export function findWorkflowQueryMatches(
-  workflows: readonly ComposerSlashWorkflow[],
-  query: string,
-): readonly ComposerSlashWorkflowMatch[] {
-  const normalizedQuery = query.toLowerCase();
   const matches: {
     workflow: ComposerSlashWorkflowMatch;
     rank: number;
-    skippedCharacters: number;
-    start: number;
   }[] = [];
 
   for (const workflow of workflows) {
@@ -41,8 +26,6 @@ export function findWorkflowQueryMatches(
           matchRanges: query ? [{ start, end: start + query.length }] : [],
         },
         rank: normalizedName === normalizedQuery ? 0 : start === 0 ? 1 : 2,
-        skippedCharacters: 0,
-        start,
       });
       continue;
     }
@@ -50,25 +33,25 @@ export function findWorkflowQueryMatches(
       const match = findWorkflowSubsequence(normalizedName, normalizedQuery);
       if (match) {
         matches.push({
-          workflow: { ...workflow, matchRanges: match.ranges },
+          workflow: { ...workflow, matchRanges: match },
           rank: 3,
-          skippedCharacters: match.skippedCharacters,
-          start: match.start,
         });
+        continue;
       }
+    }
+    if (workflow.description?.toLowerCase().includes(normalizedQuery)) {
+      matches.push({ workflow: { ...workflow, matchRanges: [] }, rank: 3 });
     }
   }
 
   return matches
     .sort((left, right) => {
-      if (left.rank !== 3 || right.rank !== 3) {
-        return left.rank - right.rank;
-      }
-      // Prefer compact abbreviations, then earlier matches and shorter names.
       return (
-        left.skippedCharacters - right.skippedCharacters ||
-        left.start - right.start ||
-        left.workflow.name.length - right.workflow.name.length
+        left.rank - right.rank ||
+        (recency.get(left.workflow.id) ?? Number.MAX_SAFE_INTEGER) -
+          (recency.get(right.workflow.id) ?? Number.MAX_SAFE_INTEGER) ||
+        left.workflow.name.localeCompare(right.workflow.name, "en") ||
+        left.workflow.id.localeCompare(right.workflow.id, "en")
       );
     })
     .map((match) => {
@@ -79,26 +62,15 @@ export function findWorkflowQueryMatches(
 function findWorkflowSubsequence(
   name: string,
   query: string,
-): {
-  readonly ranges: readonly WorkflowMatchRange[];
-  readonly skippedCharacters: number;
-  readonly start: number;
-} | null {
+): readonly WorkflowMatchRange[] | null {
   const ranges: WorkflowMatchRange[] = [];
   let offset = 0;
-  let skippedCharacters = 0;
-  let matchStart = 0;
 
   // Keep numeric identifiers contiguous while allowing letters to skip ahead.
   for (const [part] of query.matchAll(/\d+|\D/g)) {
     const start = name.indexOf(part, offset);
     if (start === -1) {
       return null;
-    }
-    if (ranges.length === 0) {
-      matchStart = start;
-    } else {
-      skippedCharacters += start - offset;
     }
     offset = start + part.length;
     const previous = ranges.at(-1);
@@ -109,7 +81,7 @@ function findWorkflowSubsequence(
     }
   }
 
-  return { ranges, skippedCharacters, start: matchStart };
+  return ranges;
 }
 
 export interface SlashWorkflowRange {

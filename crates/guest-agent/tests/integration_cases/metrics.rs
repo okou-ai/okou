@@ -59,13 +59,9 @@ fn assert_valid_metrics_entries(path: &Path, expected: usize) -> TestResult {
         assert!(entry.get("scheduled_lag_ms").is_some_and(Value::is_u64));
         assert!(entry.get("mem_used").is_some_and(Value::is_u64));
         assert!(entry.get("mem_total").is_some_and(Value::is_u64));
-        assert!(entry.get("disk_used").is_some_and(Value::is_u64));
-        assert!(entry.get("disk_total").is_some_and(Value::is_u64));
         let rootfs = entry
             .get("rootfs")
             .ok_or_else(|| std::io::Error::other("root descriptor did not supply a measurement"))?;
-        assert_eq!(rootfs.get("used_bytes"), entry.get("disk_used"));
-        assert_eq!(rootfs.get("total_bytes"), entry.get("disk_total"));
         for filesystem in [Some(rootfs), entry.get("home")].into_iter().flatten() {
             for suffix in ["bytes", "inodes"] {
                 let used = filesystem_counter(filesystem, &format!("used_{suffix}"))?;

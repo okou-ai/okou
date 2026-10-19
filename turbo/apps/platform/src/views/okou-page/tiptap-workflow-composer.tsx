@@ -23,7 +23,6 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import {
   buildComposerSlashWorkflows,
   findWorkflowQueryMatches,
-  orderRecentWorkflows,
   type ComposerSlashWorkflow,
   type ComposerSlashWorkflowMatch,
 } from "../../signals/okou-page/workflow-composer-domain";
@@ -518,20 +517,19 @@ function useComposerWorkflowSuggestions(
     agentId: composer.agentId,
     workflows: requested ?? [],
   });
-  const recentOverview = query === "";
-  const ordered = recentOverview
-    ? orderRecentWorkflows(
-        workflows,
-        recentIds.state === "hasData" ? recentIds.data : [],
-      )
-    : workflows;
   return {
     workflows:
-      query === undefined ? [] : findWorkflowQueryMatches(ordered, query),
+      query === undefined
+        ? []
+        : findWorkflowQueryMatches(
+            workflows,
+            query,
+            recentIds.state === "hasData" ? recentIds.data : [],
+          ),
     loading:
       workflowsLoadable.state === "loading" ||
       requested === null ||
-      (recentOverview && recentIds.state === "loading"),
+      (query !== undefined && recentIds.state === "loading"),
   };
 }
 
@@ -794,10 +792,9 @@ function useComposerSuggestionMenu({
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
-  // The menus open above the composer, so their most relevant rows come last,
-  // nearest it. Mobile keyboards leave little room above the composer, so the
-  // slash menu keeps Make first there; rows and keyboard share one order.
-  const reversedSuggestions = !showWorkflows || isDesktop;
+  // Typed slash results read from strongest to weakest top-down on every
+  // screen. Preserve the anchored overview and @-mention navigation order.
+  const reversedSuggestions = !showWorkflows || (isDesktop && workflowOverview);
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;

@@ -25,8 +25,6 @@ struct MetricsEntry {
     scheduled_lag_ms: u64,
     mem_used: u64,
     mem_total: u64,
-    disk_used: u64,
-    disk_total: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     rootfs: Option<disk::FilesystemObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -311,10 +309,6 @@ async fn collect_metrics(
     let cpu = cpu_tracker.get_cpu_percentages(&sources.proc_stat);
     let (mem_used, mem_total) = get_memory_info();
     let (rootfs, home) = disk::observe();
-    // Retain the legacy rootfs fields for independently deployed API readers.
-    let (disk_used, disk_total) = rootfs
-        .map(|fs| (fs.used_bytes, fs.total_bytes))
-        .unwrap_or((0, 0));
     let control_cpu = sources
         .cgroup_cpu_stat
         .as_ref()
@@ -342,8 +336,6 @@ async fn collect_metrics(
         scheduled_lag_ms,
         mem_used,
         mem_total,
-        disk_used,
-        disk_total,
         rootfs,
         home,
         control_cpu_usage_usec: control_cpu.map(|stat| stat.usage_usec),
@@ -627,7 +619,14 @@ mod tests {
         assert!((0.0..=100.0).contains(&entry.cpu));
         assert!((0.0..=100.0).contains(&entry.cpu_steal_percent));
         assert!(entry.mem_total > 0);
-        assert!(entry.disk_total > 0);
+        let rootfs = entry
+            .rootfs
+            .expect("rootfs observation should be available");
+        assert!(rootfs.total_bytes > 0);
+        assert!(rootfs.used_bytes <= rootfs.total_bytes);
+        assert!(rootfs.available_bytes <= rootfs.total_bytes - rootfs.used_bytes);
+        assert!(rootfs.used_inodes <= rootfs.total_inodes);
+        assert!(rootfs.available_inodes <= rootfs.total_inodes - rootfs.used_inodes);
     }
 
     #[tokio::test]
@@ -643,8 +642,53 @@ mod tests {
         assert!(parsed["cpu_steal_percent"].is_f64());
         assert!(parsed["scheduled_lag_ms"].is_u64());
         assert!(parsed["mem_total"].is_u64());
-        assert!(parsed["disk_total"].is_u64());
+        for filesystem in ["rootfs", "home"] {
+            if let Some(observation) = parsed.get(filesystem) {
+                for dimension in [
+                    "used_bytes",
+                    "total_bytes",
+                    "available_bytes",
+                    "used_inodes",
+                    "total_inodes",
+                    "available_inodes",
+                ] {
+                    assert!(observation[dimension].is_u64());
+                }
+            }
+        }
         assert!(parsed.get("control_cpu_usage_usec").is_none());
         assert!(parsed.get("workload_cpu_usage_usec").is_none());
+    }
+
+    #[tokio::test]
+    async fn serialization_preserves_independent_unavailable_and_zero_observations() {
+        let mut tracker = CpuTracker::new();
+        let sources = MetricsSources::new(PathBuf::from("/proc/stat"), None);
+        let mut entry = collect_metrics(&mut tracker, &sources, 0).await;
+        let zero = disk::FilesystemObservation {
+            used_bytes: 0,
+            total_bytes: 200,
+            available_bytes: 190,
+            used_inodes: 0,
+            total_inodes: 20,
+            available_inodes: 19,
+        };
+        let expected_zero = serde_json::json!({
+            "used_bytes": 0,
+            "total_bytes": 200,
+            "available_bytes": 190,
+            "used_inodes": 0,
+            "total_inodes": 20,
+            "available_inodes": 19,
+        });
+        for (rootfs, home) in [(None, Some(zero)), (Some(zero), None), (None, None)] {
+            entry.rootfs = rootfs;
+            entry.home = home;
+            let parsed = serde_json::to_value(&entry).unwrap();
+            for (name, observation) in [("rootfs", rootfs), ("home", home)] {
+                let expected = observation.map(|_| &expected_zero);
+                assert_eq!(parsed.get(name), expected);
+            }
+        }
     }
 }
