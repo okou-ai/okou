@@ -257,30 +257,34 @@ export async function listPendingChatInputs(
     });
 }
 
-export async function loadPendingChatQueueEvent(
-  db: ChatQueueReadDb,
-  args: {
-    readonly chatThreadId: string;
-    readonly eventId: string;
-  },
-): Promise<PendingChatQueueEvent | null> {
-  const [event] = await db
-    .select({
+export function pendingChatQueueEventReadPlan(args: {
+  readonly chatThreadId: string;
+  readonly eventId: string;
+}) {
+  return {
+    columns: {
       id: chatEvents.id,
       chatThreadId: chatEvents.chatThreadId,
       eventType: chatEvents.eventType,
       seqId: chatEvents.seqId,
       createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        pendingChatQueueEventCondition(),
-      ),
-    )
-    .limit(1);
+    },
+    condition: and(
+      eq(chatEvents.id, args.eventId),
+      eq(chatEvents.chatThreadId, args.chatThreadId),
+      pendingChatQueueEventCondition(),
+    ),
+  };
+}
+
+type PendingChatQueueEventRow = Pick<
+  typeof chatEvents.$inferSelect,
+  keyof PendingChatQueueEvent
+>;
+
+export function pendingChatQueueEventFromRow(
+  event: PendingChatQueueEventRow | undefined,
+): PendingChatQueueEvent | null {
   if (
     !event ||
     (event.eventType !== "input.prompt" &&
