@@ -1,6 +1,59 @@
 use super::*;
 
 #[tokio::test]
+async fn complete_fixed_batch_publishes_later_inventory_without_retiring_it() {
+    let fixture = BatchFixture::new().await;
+    let mut original = fixture.park("thread:fixed-original", true).await;
+    let kill = MockLifecycleGate::new();
+    original.overrides.set_kill_lifecycle_gate(kill.clone());
+    original.confirm_exit();
+    let mut task = fixture.start(IdleRetirementBatchScope::All).await;
+    kill.wait_entered(1, WAIT).await.unwrap();
+    let mut later = fixture.park("thread:fixed-later", true).await;
+    let revision = fixture.pool.lock().await.status_snapshot().revision;
+    assert_eq!(fixture.budget.allocated(), (4, 4096, 2));
+    assert!(task.join().now_or_never().is_none());
+    kill.release_one();
+    let report = join(&mut task).await;
+    assert_eq!(
+        (report.selected, report.completed, report.uncertain),
+        (1, 1, 0)
+    );
+    assert!(report.is_complete());
+    assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+    let current = fixture.pool.lock().await.status_snapshot();
+    assert_eq!(current.revision, revision);
+    assert_eq!(current.idle_sandboxes.len(), 1);
+    assert_eq!(current.idle_sandboxes[0].sandbox_id, later.id);
+    let published: serde_json::Value = serde_json::from_slice(
+        &tokio::fs::read(fixture.dir.path().join("status.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        published["idle_sandboxes"],
+        serde_json::json!([
+        {"reuse_key":later.key,"sandbox_id":later.id}])
+    );
+    assert_eq!(later.overrides.kill_call_count(), 0);
+    later.assert_active_bytes().await;
+    original.assert_cached_bytes().await;
+    later.confirm_exit();
+    let later_report = join(&mut fixture.start(IdleRetirementBatchScope::All).await).await;
+    assert_eq!((later_report.selected, later_report.completed), (1, 1));
+    assert!(later_report.is_complete());
+    later.assert_cached_bytes().await;
+    fixture.tracker.close_and_wait().await;
+    let operations = fixture.operations.close_and_wait().await.unwrap();
+    assert_eq!(
+        (operations.registered_operations, operations.tracked_tasks),
+        (0, 0)
+    );
+    assert_eq!(fixture.budget.allocated(), (0, 0, 0));
+}
+
+#[tokio::test]
 async fn dropped_batch_receiver_does_not_cancel_original_pending_admission() {
     let mut fixture = BatchFixture::new().await;
     let source = fixture.gate_observation(0);

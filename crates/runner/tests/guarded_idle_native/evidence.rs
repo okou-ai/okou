@@ -292,6 +292,25 @@ impl Case {
         self.write_event("NATIVE_STATUS_FAILURE_WITNESS ", phase, evidence)
     }
 
+    pub fn later_parking_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_LATER_PARKING_WITNESS ", phase, evidence)
+    }
+
+    pub fn require_original_lease_released(&self) -> io::Result<()> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("native receipt state poisoned"))?;
+        if !state
+            .original_lease
+            .as_ref()
+            .is_some_and(|lease| !lease.is_active())
+        {
+            return Err(io::Error::other("native original full lease remains owned"));
+        }
+        Ok(())
+    }
+
     pub fn shared_reads_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_SHARED_READS_WITNESS ", phase, evidence)
     }

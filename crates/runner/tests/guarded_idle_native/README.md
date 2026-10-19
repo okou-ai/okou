@@ -1,5 +1,43 @@
 # Guarded idle terminal fixture
 
+## Later parking after a fixed batch capture
+
+`native_fixed_batch_preserves_later_exact_and_blank_inventory` runs four cases:
+fresh/snapshot factories, each with a distinct later exact or blank Guest. The
+incoming Guest is prepared through actual GuestRPC and physically parked before
+the original batch starts, retaining its separate full lease outside the pool.
+Only after the original captured entry reaches held accepted durable tail IO is
+the incoming owner inserted through guarded pool insertion.
+
+Both full leases and required cleanup growth remain owned while the pool/status
+locks and original IO are held. An independent actual memory read completes;
+pool release permits an HTTP 204 acknowledged heartbeat with both allocations.
+Releasing only IO permits complete durable 64-MiB saving and positive original
+backing exit. Another heartbeat observes only the later lease while original
+batch completion still waits for status. After status release, the original
+report completes exactly one selection, and the actual regular status file
+contains only the later live exact identity/key or blank identity. A separate
+guarded batch must retire that later entry before joined shutdown and zero
+accounting. Complete original required-home restoration remains mandatory.
+
+Use the existing supplied artifacts/policy and bounded P1 collector to invoke
+this exact ignored entry. Include the exact raw
+`native_later_parking_policy_json` and `native_terminal_artifacts` in metadata,
+and retain the original matching `snapshot-preparation.json`. Validate with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/later_parking_report.py <p1-directory>
+```
+
+Default Cargo runs synthetic real-file/CLI refusal regressions and an ordinary
+owner test preserving both required homes. Actual KVM/NBD execution is opt-in
+and requires verified committed source, frozen Host and matching inputs. The
+blank wire status contains only its sandbox identity; profile compatibility is
+checked through the prepared fixture. This corpus does not cover same-key/ABA
+replacement, concurrent preparation cancellation, complete residency, calibrated
+bounds, physical relief, OOM or production protection. Other C/D acceptance
+remains in #39998.
+
 ## Final status write failure
 
 `native_status_failure_preserves_saving_and_retries_current_inventory` runs fresh
