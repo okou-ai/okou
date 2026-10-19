@@ -12,7 +12,11 @@ import {
 } from "@okouai/ui";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
-import { remoteSetup$ } from "../../signals/remote-control-setup.ts";
+import { searchParams$ } from "../../signals/route.ts";
+import {
+  remoteSetup$,
+  returnToRemoteNetworkProvider$,
+} from "../../signals/remote-control-setup.ts";
 import {
   remoteNetworkGuide$,
   openRemoteNetworkGuide$,
@@ -449,11 +453,20 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
 }
 function GuideFooter({ step }: { readonly step: number }) {
   const { t } = useTranslation();
+  const standalone = useGet(searchParams$).get("scope") === "private-network";
+  const selectProvider = useSet(returnToRemoteNetworkProvider$);
   const move = useSet(moveRemoteNetworkGuide$);
   const close = useSet(closeRemoteNetworkGuide$);
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-divider pt-4">
       <div className="flex flex-wrap gap-2">
+        {standalone && step === 0 && (
+          <Button type="button" variant="quiet" onClick={selectProvider}>
+            {t(($) => {
+              return $.remoteNetworkGuide.returnToProvider;
+            })}
+          </Button>
+        )}
         {step > 0 && (
           <Button
             type="button"
@@ -467,7 +480,7 @@ function GuideFooter({ step }: { readonly step: number }) {
             })}
           </Button>
         )}
-        {step < 3 && (
+        {step < 3 && !(standalone && step === 0) && (
           <Button
             type="button"
             variant="quiet"
@@ -476,7 +489,9 @@ function GuideFooter({ step }: { readonly step: number }) {
             }}
           >
             {t(($) => {
-              return $.remoteNetworkGuide.returnToForm;
+              return standalone && step === 0
+                ? $.remoteNetworkGuide.existingCredentials
+                : $.remoteNetworkGuide.returnToForm;
             })}
           </Button>
         )}
@@ -500,6 +515,28 @@ function GuideFooter({ step }: { readonly step: number }) {
             })}
       </Button>
     </div>
+  );
+}
+function GuideFirstStepSkip({ step }: { readonly step: number }) {
+  const { t } = useTranslation();
+  const standalone = useGet(searchParams$).get("scope") === "private-network";
+  const close = useSet(closeRemoteNetworkGuide$);
+  if (!standalone || step !== 0) {
+    return null;
+  }
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      className="mt-5 h-auto justify-self-start px-0 text-sm"
+      onClick={() => {
+        close();
+      }}
+    >
+      {t(($) => {
+        return $.remoteNetworkGuide.existingCredentials;
+      })}
+    </Button>
   );
 }
 export function RemoteNetworkCredentialHelp({
@@ -557,6 +594,7 @@ export function RemoteNetworkCredentialHelp({
           </DialogHeader>
           <DialogBody className="min-h-0 overflow-y-auto py-3">
             {step && <GuideActions step={step} />}
+            <GuideFirstStepSkip step={index} />
           </DialogBody>
           <GuideFooter step={index} />
         </DialogContent>

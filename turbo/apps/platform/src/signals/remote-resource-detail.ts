@@ -7,6 +7,7 @@ import { searchParams$, updateSearchParams$ } from "./route.ts";
 import {
   remoteControlGuidedEnabled$,
   remoteNetworkPicker$,
+  selectedRemoteNetworkProvider$,
   setRemoteNetworkPicker$,
 } from "./remote-control-setup.ts";
 import { closeTailscaleDialog$, tailscaleDialog$ } from "./tailscale.ts";
@@ -85,10 +86,17 @@ export const remoteNetworkPage$ = computed(async (get) => {
     get(tailscaleDialog$),
     get(cloudflareAccessDialog$),
   ]);
-  if (tailscale?.kind === "create" || tailscale?.kind === "edit") {
+  const provider = get(selectedRemoteNetworkProvider$);
+  if (
+    tailscale?.kind === "edit" ||
+    (provider === "tailscale" && tailscale?.kind === "create")
+  ) {
     return "tailscale";
   }
-  if (cloudflare?.kind === "create" || cloudflare?.kind === "edit") {
+  if (
+    cloudflare?.kind === "edit" ||
+    (provider === "cloudflare_access" && cloudflare?.kind === "create")
+  ) {
     return "cloudflare";
   }
   return null;

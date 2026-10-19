@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import { remoteControlGuidedEnabled$ } from "./remote-control-setup.ts";
+import { featureSwitch$ } from "./external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 export type NetworkGuideProvider = "tailscale" | "cloudflare";
 interface NetworkGuide {
   readonly sessionKey: string | null;
@@ -12,20 +13,25 @@ interface NetworkGuide {
 const guide$ = state<NetworkGuide | null>(null);
 export const remoteNetworkGuide$ = computed((get) => {
   const current = get(guide$);
-  return get(remoteControlGuidedEnabled$) &&
+  return get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] &&
     current?.sessionKey === get(authenticatedSessionKey$)
     ? current
     : null;
 });
 export const openRemoteNetworkGuide$ = command(
-  ({ get, set }, provider: NetworkGuideProvider, tags: string) => {
+  (
+    { get, set },
+    provider: NetworkGuideProvider,
+    tags: string,
+    restart = false,
+  ) => {
     const previous = get(remoteNetworkGuide$);
     set(guide$, {
       sessionKey: get(authenticatedSessionKey$),
       provider,
       tags,
       open: true,
-      step: previous?.provider === provider ? previous.step : 0,
+      step: !restart && previous?.provider === provider ? previous.step : 0,
     });
   },
 );

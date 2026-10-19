@@ -238,8 +238,12 @@ export function RemoteNetworkPage() {
         {page.state === "hasData" && page.data === "provider" && (
           <NetworkProviderPicker inline />
         )}
-        <TailscaleDialog inline />
-        <CloudflareAccessDialog inline />
+        <div hidden={page.state !== "hasData" || page.data !== "tailscale"}>
+          <TailscaleDialog inline />
+        </div>
+        <div hidden={page.state !== "hasData" || page.data !== "cloudflare"}>
+          <CloudflareAccessDialog inline />
+        </div>
       </div>
     </RemoteDetailPage>
   );

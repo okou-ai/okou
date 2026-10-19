@@ -1,3 +1,7 @@
+import {
+  openRemoteNetworkGuide$,
+  closeRemoteNetworkGuide$,
+} from "./remote-network-guide.ts";
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$ } from "./auth.ts";
@@ -421,6 +425,10 @@ export const saveRemoteVnc$ = command(
 );
 
 const networkPicker$ = state(false);
+const networkProvider$ = state<"tailscale" | "cloudflare_access" | null>(null);
+export const selectedRemoteNetworkProvider$ = computed((get) => {
+  return get(remoteControlGuidedEnabled$) ? get(networkProvider$) : null;
+});
 export const remoteNetworkPicker$ = computed((get) => {
   return get(remoteControlGuidedEnabled$) && get(networkPicker$);
 });
@@ -431,6 +439,7 @@ export const chooseRemoteNetworkProvider$ = command(
   async (
     { get, set },
     kind: "tailscale" | "cloudflare_access",
+    tags: string,
     parentSignal: AbortSignal,
   ) => {
     const signal = set(resetSetupOperation$, parentSignal);
@@ -438,14 +447,33 @@ export const chooseRemoteNetworkProvider$ = command(
       return;
     }
     if (kind === "tailscale") {
-      await set(openTailscaleDialog$, "create", null, signal);
+      const existing = await get(tailscaleDialog$);
+      signal.throwIfAborted();
+      if (existing?.kind !== "create") {
+        await set(openTailscaleDialog$, "create", null, signal);
+      }
     } else {
-      await set(openCloudflareAccessDialog$, "create", null, signal);
+      const existing = await get(cloudflareAccessDialog$);
+      signal.throwIfAborted();
+      if (existing?.kind !== "create") {
+        await set(openCloudflareAccessDialog$, "create", null, signal);
+      }
     }
+    set(networkProvider$, kind);
     signal.throwIfAborted();
     set(networkPicker$, false);
+    set(
+      openRemoteNetworkGuide$,
+      kind === "tailscale" ? "tailscale" : "cloudflare",
+      kind === "tailscale" ? tags : "",
+      true,
+    );
   },
 );
+export const returnToRemoteNetworkProvider$ = command(({ set }) => {
+  set(closeRemoteNetworkGuide$, true);
+  set(networkPicker$, true);
+});
 
 export const openRemoteDependencySsh$ = command(
   async ({ set }, parentSignal: AbortSignal) => {

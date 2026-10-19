@@ -877,12 +877,19 @@ test.each(["ssh", "vnc"] as const)(
 async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
   await page("/connectors?scope=private-network");
   await waitFor(() => {
-    expect(getAction("button", "Add network")).toBeInTheDocument();
+    expect(getAction("button", "Add private network")).toBeInTheDocument();
   });
-  click(getAction("button", "Add network"));
+  click(getAction("button", "Add private network"));
   await screen.findByRole("heading", { name: "Add a private network" });
   click(screen.getByText(provider, { exact: true }));
-  return await screen.findByLabelText("Name");
+  await screen.findByRole("dialog", {
+    name:
+      provider === "Tailscale"
+        ? "Tailscale connection setup"
+        : "Cloudflare connection setup",
+  });
+  click(getAction("button", "Already have credentials? Enter them directly"));
+  return await screen.findByRole("textbox", { name: "Name" });
 }
 test("Cloudflare four-step guide preserves the draft and resumes after returning", async () => {
   const name = await openNetworkForm("Cloudflare Access");
@@ -950,4 +957,57 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   ).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   expect(getAction("button", "Save network")).toBeInTheDocument();
+  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Return to selection"));
+  await screen.findByRole("heading", { name: "Add a private network" });
+  click(screen.getByText("Tailscale", { exact: true }));
+  await screen.findByRole("dialog", { name: "Tailscale connection setup" });
+  click(getAction("button", "Next"));
+  click(getAction("button", "Next"));
+  expect(
+    screen.getByText(/tag:office, tag:review from the current Okou form/u),
+  ).toBeInTheDocument();
+  click(getAction("button", "Return to form"));
+  expect(name).toHaveValue("Tailnet draft");
+  expect(secret).toHaveValue("test-only-draft-secret");
+});
+
+test("Private network starts with one neutral provider selector and both guides can return to it", async () => {
+  await page("/connectors?scope=private-network");
+  await screen.findByRole("heading", { name: "No private networks yet" });
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.textContent?.trim() === "Add private network";
+    }),
+  ).toHaveLength(1);
+  click(getAction("button", "Add private network"));
+  await screen.findByRole("heading", { name: "Add a private network" });
+  expect(
+    screen.getByText("Choose a network type to continue setup."),
+  ).toBeInTheDocument();
+  for (const provider of ["Tailscale", "Cloudflare Access"]) {
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    click(screen.getByText(provider, { exact: true }));
+    await screen.findByRole("dialog", {
+      name:
+        provider === "Tailscale"
+          ? "Tailscale connection setup"
+          : "Cloudflare connection setup",
+    });
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    expect(
+      getAction("button", "Already have credentials? Enter them directly"),
+    ).toBeInTheDocument();
+    click(getAction("button", "Return to selection"));
+    await screen.findByRole("heading", { name: "Add a private network" });
+  }
+  expect(
+    screen.queryByRole("heading", {
+      name: "Install Tailscale on the target computer",
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Set up a connection" }),
+  ).toBeNull();
 });

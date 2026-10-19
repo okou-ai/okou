@@ -424,17 +424,19 @@ export function GuidedPrivateNetworkPanel() {
             })}
           </p>
         </div>
-        <Button
-          className={REMOTE_PAGE_ACTION}
-          onClick={() => {
-            open(true);
-          }}
-        >
-          <Plus size={16} aria-hidden />
-          {t(($) => {
-            return $.remoteControlSetup.addNetwork;
-          })}
-        </Button>
+        {!empty && (
+          <Button
+            className={REMOTE_PAGE_ACTION}
+            onClick={() => {
+              open(true);
+            }}
+          >
+            <Plus size={16} aria-hidden />
+            {t(($) => {
+              return $.remoteControlSetup.addNetwork;
+            })}
+          </Button>
+        )}
       </header>
       {(access.state === "loading" ||
         (tailscaleEnabled && tailscale.state === "loading")) && (

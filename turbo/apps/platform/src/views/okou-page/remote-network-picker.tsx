@@ -34,8 +34,13 @@ export function NetworkProviderPicker({
           variant="outline"
           className="h-auto min-h-16 justify-start whitespace-normal p-4 text-left"
           disabled={choosing.state === "loading"}
-          onClick={() => {
-            detach(choose("tailscale", signal), Reason.DomCallback);
+          onClick={(event) => {
+            const tags =
+              event.currentTarget
+                .closest("main")
+                ?.querySelector<HTMLInputElement>('input[name="tailscaleTags"]')
+                ?.value ?? "tag:okou";
+            detach(choose("tailscale", tags, signal), Reason.DomCallback);
           }}
         >
           <Network size={20} aria-hidden />
@@ -59,7 +64,7 @@ export function NetworkProviderPicker({
         className="h-auto min-h-16 justify-start whitespace-normal p-4 text-left"
         disabled={choosing.state === "loading"}
         onClick={() => {
-          detach(choose("cloudflare_access", signal), Reason.DomCallback);
+          detach(choose("cloudflare_access", "", signal), Reason.DomCallback);
         }}
       >
         <Cloud size={20} aria-hidden />
@@ -71,7 +76,7 @@ export function NetworkProviderPicker({
           </span>
           <span className="text-xs font-normal text-muted-foreground">
             {t(($) => {
-              return $.remoteControlSetup.cloudflareHelp;
+              return $.remoteControlSetup.networkCloudflareHelp;
             })}
           </span>
         </span>
