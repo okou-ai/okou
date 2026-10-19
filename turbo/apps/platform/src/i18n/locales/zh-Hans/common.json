@@ -4741,6 +4741,7 @@
     "trustTitle": "确认连接的是正确设备",
     "unavailable": "检查记录暂不可用",
     "unchecked": "尚未检查",
+    "usernameCommand": "whoami",
     "usernameExplanation": "在目标电脑上打开终端（Mac 或 Linux）或 PowerShell（Windows），运行以下命令。填写账户名称，不是显示名称或邮箱。",
     "usernameHelp": "用户名在哪里找？",
     "usernameWindows": "Windows 请核对 SSH 或 VNC 服务允许的账户；公司账户可能需要包含域名。",

@@ -42,7 +42,9 @@ export function NetworkProviderPicker() {
                 detach(choose("tailscale", signal), Reason.DomCallback);
               }}
             >
-              Tailscale
+              {t(($) => {
+                return $.tailscale.title;
+              })}
             </Button>
           )}
           <Button
@@ -52,7 +54,9 @@ export function NetworkProviderPicker() {
               detach(choose("cloudflare_access", signal), Reason.DomCallback);
             }}
           >
-            Cloudflare Access
+            {t(($) => {
+              return $.cloudflareAccess.title;
+            })}
           </Button>
           {choosing.state === "hasError" && (
             <p role="alert">

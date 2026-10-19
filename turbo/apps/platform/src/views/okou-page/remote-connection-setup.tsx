@@ -222,7 +222,11 @@ function SetupEntry({
         <SegmentControlItem value="ssh" className="flex-1">
           <Terminal size={18} aria-hidden />
           <span className="grid gap-1 text-left">
-            <strong>SSH</strong>
+            <strong>
+              {t(($) => {
+                return $.ssh.label;
+              })}
+            </strong>
             <span className="font-normal">
               {t(($) => {
                 return $.remoteControlSetup.sshDescription;
@@ -234,7 +238,11 @@ function SetupEntry({
           <SegmentControlItem value="vnc" className="flex-1">
             <Monitor size={18} aria-hidden />
             <span className="grid gap-1 text-left">
-              <strong>VNC</strong>
+              <strong>
+                {t(($) => {
+                  return $.vnc.label;
+                })}
+              </strong>
               <span className="font-normal">
                 {t(($) => {
                   return $.remoteControlSetup.vncDescription;
@@ -897,7 +905,11 @@ function ExistingStep() {
           }}
         >
           <span className="grid gap-2">
-            <strong>Tailscale</strong>
+            <strong>
+              {t(($) => {
+                return $.tailscale.title;
+              })}
+            </strong>
             <span className="font-normal text-muted-foreground">
               {t(($) => {
                 return $.remoteControlSetup.tailscaleHelp;
@@ -920,7 +932,11 @@ function ExistingStep() {
         }}
       >
         <span className="grid gap-2">
-          <strong>Cloudflare Access</strong>
+          <strong>
+            {t(($) => {
+              return $.cloudflareAccess.title;
+            })}
+          </strong>
           <span className="font-normal text-muted-foreground">
             {t(($) => {
               return $.remoteControlSetup.cloudflareHelp;
@@ -1143,7 +1159,13 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
         })}
       </Button>
       <span className="text-sm text-muted-foreground">
-        {setup.protocol === "ssh" ? "SSH" : "VNC"}
+        {setup.protocol === "ssh"
+          ? t(($) => {
+              return $.ssh.label;
+            })
+          : t(($) => {
+              return $.vnc.label;
+            })}
       </span>
     </div>
   );

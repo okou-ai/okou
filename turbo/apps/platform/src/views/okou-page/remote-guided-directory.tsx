@@ -84,8 +84,10 @@ function RemoteConnectionRows({
                   {connection.displayName}
                 </strong>
                 <span className="break-all text-xs text-muted-foreground">
-                  SSH · {connection.username}@{connection.host}:
-                  {connection.port} ·{" "}
+                  {t(($) => {
+                    return $.ssh.label;
+                  })}{" "}
+                  · {connection.username}@{connection.host}:{connection.port} ·{" "}
                   {"transport" in connection
                     ? networkLabel(
                         connection.transport.type,
@@ -127,9 +129,14 @@ function RemoteConnectionRows({
                   {connection.displayName}
                 </strong>
                 <span className="break-all text-xs text-muted-foreground">
-                  VNC · {connection.host}:{connection.port} ·{" "}
+                  {t(($) => {
+                    return $.vnc.label;
+                  })}{" "}
+                  · {connection.host}:{connection.port} ·{" "}
                   {connection.transport?.type === "ssh"
-                    ? `SSH · ${
+                    ? `${t(($) => {
+                        return $.ssh.label;
+                      })} · ${
                         sshRows?.find((host) => {
                           return (
                             connection.transport?.type === "ssh" &&
@@ -138,9 +145,13 @@ function RemoteConnectionRows({
                         })?.displayName ?? connection.transport.connectionId
                       }`
                     : connection.transport?.type === "tailscale"
-                      ? "Tailscale"
+                      ? t(($) => {
+                          return $.tailscale.title;
+                        })
                       : connection.transport?.type === "cloudflare_access"
-                        ? "Cloudflare Access"
+                        ? t(($) => {
+                            return $.cloudflareAccess.title;
+                          })
                         : t(($) => {
                             return $.remoteControlSetup.direct;
                           })}
@@ -191,7 +202,14 @@ function RemoteConnectionList({
           })?.name
         : null;
     return (
-      name ?? (type === "cloudflare_access" ? "Cloudflare Access" : "Tailscale")
+      name ??
+      (type === "cloudflare_access"
+        ? t(($) => {
+            return $.cloudflareAccess.title;
+          })
+        : t(($) => {
+            return $.tailscale.title;
+          }))
     );
   };
   return (
@@ -348,6 +366,7 @@ function PrivateNetworkRows({
   readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
   readonly canManageOrg: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="grid gap-3">
       {ts?.map((config) => {
@@ -361,7 +380,10 @@ function PrivateNetworkRows({
               <span className="grid gap-1">
                 <strong className="text-sm">{config.name}</strong>
                 <span className="text-xs text-muted-foreground">
-                  Tailscale · {config.tags.join(", ")}
+                  {t(($) => {
+                    return $.tailscale.title;
+                  })}{" "}
+                  · {config.tags.join(", ")}
                 </span>
               </span>
             </summary>
@@ -387,7 +409,9 @@ function PrivateNetworkRows({
               <span className="grid gap-1">
                 <strong className="text-sm">{config.name}</strong>
                 <span className="text-xs text-muted-foreground">
-                  Cloudflare Access
+                  {t(($) => {
+                    return $.cloudflareAccess.title;
+                  })}
                 </span>
               </span>
             </summary>

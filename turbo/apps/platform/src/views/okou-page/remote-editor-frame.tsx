@@ -87,7 +87,11 @@ export function RemoteUsernameHelp() {
             return $.remoteControlSetup.usernameExplanation;
           })}
         </p>
-        <code className="rounded-lg bg-gray-50 p-3">whoami</code>
+        <code className="rounded-lg bg-gray-50 p-3">
+          {t(($) => {
+            return $.remoteControlSetup.usernameCommand;
+          })}
+        </code>
         <p className="text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.usernameWindows;
