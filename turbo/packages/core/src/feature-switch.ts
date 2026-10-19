@@ -129,8 +129,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
+    displayName: "Custom templates",
     description:
-      "Templates compiled from a file the user uploaded, with their own catalog.",
+      "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
     enabled: false,
     // Back to the staff org now that the picker carries its own upload entry:
     // a colleague who opens the empty panel has the one action that fills it,
@@ -140,13 +141,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // into a customer workspace, where the org hash does not apply.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.ComposerSlashCustomTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Custom templates in slash commands",
-    description:
-      "Include accessible image, presentation, and document templates in the composer slash menu. Requires customTemplates.",
-    enabled: false,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
