@@ -4,7 +4,6 @@ import {
   walletContract,
   walletUserContract,
   type WalletCreateSpend,
-  type WalletConnect,
   walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -135,13 +134,10 @@ function tokenHandler(
   });
 }
 
-async function connect(
-  fixture: Awaited<ReturnType<typeof carrier>>,
-  body: WalletConnect = {},
-) {
+async function connect(fixture: Awaited<ReturnType<typeof carrier>>) {
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
   const request = await accept(
-    client().connect({ headers: fixture.headers, body }),
+    client().connect({ headers: fixture.headers, body: {} }),
     [200],
   );
   const url = new URL(request.body.url);
@@ -2242,7 +2238,7 @@ test("gates session wallet management and rejects run tokens on settings endpoin
   }
 });
 
-test("reads Link transactions with explicit financial consent and keeps a read-only wallet unable to spend", async () => {
+test("reads Link transactions with explicit financial consent and keeps a grant without payment access unable to spend", async () => {
   const fixture = await carrier();
   server.use(
     tokenHandler({
@@ -2250,20 +2246,14 @@ test("reads Link transactions with explicit financial consent and keeps a read-o
       actions: ["read_link_transactions"],
     }),
   );
-  const consent = await connect(fixture, { readOnly: true });
-  expect(consent.url.searchParams.get("scope")).toBe("userinfo:read");
-  // Settings reviews the actual read-only request before upgrading to payments.
+  const consent = await connect(fixture);
+  expect(consent.url.searchParams.get("scope")).toBe(
+    "payment_methods.agentic userinfo:read",
+  );
   expect(
     (await accept(userClient().status({ headers: sessionHeaders }), [200])).body
       .scopeChange,
-  ).toMatchObject({
-    reason: "permissions_changed",
-    storedScopes: expect.arrayContaining([
-      "userinfo:read",
-      "read_link_transactions",
-    ]),
-    addedScopes: expect.arrayContaining(["payment_methods.agentic"]),
-  });
+  ).toBeNull();
   expect(
     JSON.parse(consent.url.searchParams.get("authorization_details") ?? "null"),
   ).toStrictEqual([{ type: "source", actions: ["read_link_transactions"] }]);
@@ -2446,7 +2436,7 @@ test("does not infer financial actions from a scope or from a pending consent up
   const upgrade = await accept(
     client().connect({
       headers: fixture.headers,
-      body: { transactions: true },
+      body: {},
     }),
     [200],
   );
@@ -2477,50 +2467,6 @@ test("does not infer financial actions from a scope or from a pending consent up
     (await accept(client().status({ headers: fixture.headers }), [200])).body
       .authorization?.capabilities.payments,
   ).toBeTruthy();
-});
-
-test("rejects an unexpectedly payment-enabled grant for read-only consent", async () => {
-  const fixture = await carrier();
-  let revoked = false;
-  server.use(
-    tokenHandler(),
-    http.post("https://login.link.com/auth/revoke", () => {
-      revoked = true;
-      return new HttpResponse(null, { status: 200 });
-    }),
-  );
-  const consent = await accept(
-    client().connect({ headers: fixture.headers, body: { readOnly: true } }),
-    [200],
-  );
-  const state = new URL(consent.body.url).searchParams.get("state") ?? "";
-  await accept(
-    callbackClient().callback({
-      headers: sessionHeaders,
-      query: {
-        state: state.replace("read-only.", ""),
-        code: "wallet-code-fixture",
-        responseMode: "json",
-      },
-    }),
-    [400],
-  );
-  await accept(
-    callbackClient().callback({
-      headers: sessionHeaders,
-      query: {
-        state: new URL(consent.body.url).searchParams.get("state") ?? "",
-        code: "wallet-code-fixture",
-        responseMode: "json",
-      },
-    }),
-    [403],
-  );
-  expect(revoked).toBeTruthy();
-  expect(
-    (await accept(client().status({ headers: fixture.headers }), [200])).body
-      .connected,
-  ).toBeFalsy();
 });
 
 test("projects saved methods and user limits without exposing credential or address fields", async () => {
@@ -2772,7 +2718,7 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
       actions: ["read_link_transactions"],
     }),
   );
-  await connect(fixture, { readOnly: true });
+  await connect(fixture);
   const recorded = await accept(
     client().listSpends({ headers: fixture.headers, query: {} }),
     [200],
@@ -2788,7 +2734,7 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
 test("withholds wallet data if consent is revoked while a read is in flight", async () => {
   const fixture = await carrier();
   server.use(tokenHandler({ scope: "userinfo:read" }));
-  await connect(fixture, { readOnly: true });
+  await connect(fixture);
   const started = createDeferredPromise<void>(context.signal);
   const finish = createDeferredPromise<void>(context.signal);
   onTestFinished(() => {
@@ -2831,49 +2777,41 @@ test.each([
     actions: [],
     status: 403 as const,
   },
-  {
-    name: "refuses new payment authority",
-    scope: "userinfo:read payment_methods.agentic",
-    actions: ["read_link_transactions"],
-    status: 403 as const,
+])(
+  "refreshing a grant without payment access $name",
+  async ({ scope, actions, status }) => {
+    const fixture = await carrier();
+    server.use(
+      tokenHandler({
+        scope: "userinfo:read",
+        actions: ["read_link_transactions"],
+        expiresIn: 1,
+      }),
+    );
+    await connect(fixture);
+    let read = false;
+    server.use(
+      tokenHandler({ scope, actions }),
+      http.get("https://api.link.com/transactions", () => {
+        read = true;
+        return HttpResponse.json({ data: [], has_more: false });
+      }),
+    );
+    await accept(
+      client().transactions({ headers: fixture.headers, query: {} }),
+      [status],
+    );
+    expect(read).toBe(status === 200);
+    const state = await accept(
+      client().status({ headers: fixture.headers }),
+      [200],
+    );
+    expect(state.body.authorization?.capabilities.payments).toBeFalsy();
+    expect(state.body.authorization?.capabilities.transactions).toBe(
+      status === 200,
+    );
   },
-])("refreshing a read-only grant $name", async ({ scope, actions, status }) => {
-  const fixture = await carrier();
-  server.use(
-    tokenHandler({
-      scope: "userinfo:read",
-      actions: ["read_link_transactions"],
-      expiresIn: 1,
-    }),
-  );
-  await connect(fixture, { readOnly: true });
-  let revoked = false;
-  let read = false;
-  server.use(
-    tokenHandler({ scope, actions }),
-    http.get("https://api.link.com/transactions", () => {
-      read = true;
-      return HttpResponse.json({ data: [], has_more: false });
-    }),
-    http.post("https://login.link.com/auth/revoke", () => {
-      revoked = true;
-      return new HttpResponse(null, { status: 200 });
-    }),
-  );
-  await accept(client().transactions({ headers: fixture.headers, query: {} }), [
-    status,
-  ]);
-  expect(read).toBe(status === 200);
-  expect(revoked).toBe(scope.includes("payment_methods.agentic"));
-  const state = await accept(
-    client().status({ headers: fixture.headers }),
-    [200],
-  );
-  expect(state.body.authorization?.capabilities.payments).toBeFalsy();
-  expect(state.body.authorization?.capabilities.transactions).toBe(
-    status === 200,
-  );
-});
+);
 
 test("reading a recorded request never sends an approval request; retrying its original purchase can recover", async () => {
   const fixture = await carrier();

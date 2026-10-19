@@ -3,7 +3,6 @@ import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realt
 
 import {
   type WalletCreateSpend,
-  type WalletConnect,
   type WalletSpendListQuery,
   type WalletConnectStatus,
   type WalletConnectionStatus,
@@ -71,8 +70,8 @@ import {
   type WalletPermission,
 } from "./link-wallet-grants";
 
-// Public consent-mode marker, followed by 256 random bits. Hash and verify the
-// entire value so callers cannot strip or change the requested consent mode.
+// Honor the consent mode of already-issued OAuth states. The full state hash
+// prevents callers from stripping or changing this read-only restriction.
 const READ_ONLY_CONSENT_MARKER = "read-only.";
 
 export interface WalletOwner {
@@ -317,12 +316,7 @@ export const walletConnectStatus$ = command(
 );
 
 export const startWalletOAuth$ = command(
-  async (
-    { get, set },
-    owner: WalletOwner,
-    input: WalletConnect,
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, owner: WalletOwner, signal: AbortSignal) => {
     const config = linkWalletConfig();
     const current = await get(connection$);
     signal.throwIfAborted();
@@ -336,21 +330,12 @@ export const startWalletOAuth$ = command(
         : undefined;
     signal.throwIfAborted();
     const granted = walletAuthorization(credentials);
-    const scopes = new Set(granted.scopes);
-    scopes.add("userinfo:read");
-    if (input.readOnly) {
-      scopes.delete("payment_methods.agentic");
-    } else if (!input.transactions || granted.capabilities.payments) {
-      scopes.add("payment_methods.agentic");
-    }
+    const scopes = new Set([...granted.scopes, ...LINK_WALLET_OAUTH_SCOPES]);
     const actions = new Set([
       ...granted.sourceActions,
       ...LINK_WALLET_SOURCE_ACTIONS,
     ]);
-    const readOnly = !scopes.has("payment_methods.agentic");
-    // The prefix is authenticated by the stored hash of the full one-time state.
-    // Legacy base64url states cannot contain a dot; their PKCE format is unchanged.
-    const state = `${readOnly ? READ_ONLY_CONSENT_MARKER : ""}${randomBytes(32).toString("base64url")}`;
+    const state = randomBytes(32).toString("base64url");
     const verifier = randomBytes(48).toString("base64url");
     const expiresAt = new Date(now() + 30 * 60_000);
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
