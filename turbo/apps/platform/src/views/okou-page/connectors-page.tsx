@@ -21,7 +21,10 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { agents$ } from "../../signals/agent.ts";
-import { CustomConnectorGrid } from "./components/settings/custom-connectors-panel.tsx";
+import {
+  CustomConnectorDirectoryDialogs,
+  CustomConnectorGrid,
+} from "./components/settings/custom-connectors-panel.tsx";
 import { filteredDirectoryCustomConnectors$ } from "../../signals/okou-page/settings/connector-directory-custom.ts";
 import {
   ConnectorsDirectoryContent,
@@ -31,6 +34,7 @@ import {
   connectorDirectoryCustomScope$,
   connectorsScope$,
   setConnectorsScope$,
+  showCreatedDirectoryConnector$,
   type ConnectorsScope,
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
@@ -187,6 +191,9 @@ function configuredRemoteAccessResources(
 /** The custom connectors the page needs: all of them, and the connected ones. */
 function directoryCustomConnectors(
   loadable: Loadable<readonly CustomConnectorResponse[]>,
+  accountSummaries: Loadable<
+    ReadonlyMap<string, ConnectorAccountDisplaySummary>
+  >,
 ): {
   readonly all: readonly CustomConnectorResponse[];
   readonly connected: readonly CustomConnectorResponse[];
@@ -195,7 +202,11 @@ function directoryCustomConnectors(
   return {
     all,
     connected: all.filter((connector) => {
-      return connector.connected;
+      const summary =
+        accountSummaries.state === "hasData"
+          ? accountSummaries.data.get(`custom:${connector.id}`)
+          : undefined;
+      return summary !== undefined && summary.accountCount > 0;
     }),
   };
 }
@@ -1171,7 +1182,7 @@ function ConnectorsConnectedPanel({
   renderCard,
   extras,
   extraCount,
-  suppressEmpty = false,
+  accountsUnavailable = false,
 }: {
   readonly connected: readonly PlatformConnectorCatalogStatusItem[];
   readonly ready: boolean;
@@ -1181,16 +1192,19 @@ function ConnectorsConnectedPanel({
   ) => ReactNode;
   readonly extras: ReactNode;
   readonly extraCount: number;
-  readonly suppressEmpty?: boolean;
+  readonly accountsUnavailable?: boolean;
 }) {
   const { t } = useTranslation();
   if (!ready) {
     return <ConnectorCardSkeletons />;
   }
-  if (connected.length + extraCount === 0 && !suppressEmpty) {
+  if (connected.length + extraCount === 0) {
     return (
       <ConnectorEmptyState
         message={t(($) => {
+          if (accountsUnavailable) {
+            return $.connectors.accounts.accountsUnavailable;
+          }
           // An empty list means something different under each filter: nothing
           // connected at all, nothing this agent can reach, or nothing left
           // that no agent uses.
@@ -1367,6 +1381,7 @@ export function ConnectorsPage() {
   const setManagedConnectorSlug = useSet(setManagedConnectorAccessSlug$);
   const scope = useGet(connectorsScope$);
   const setScope = useSet(setConnectorsScope$);
+  const showCreated = useSet(showCreatedDirectoryConnector$);
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
 
   const search = useGet(connectorsSearch$);
@@ -1378,6 +1393,7 @@ export function ConnectorsPage() {
   const connectedBadge = useLastLoadable(connectedConnectorsBadge$);
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
+    accountSummariesLoadable,
   );
   const scopeBadge = connectorsScopeBadge(
     connectedBadge,
@@ -1578,7 +1594,8 @@ export function ConnectorsPage() {
               connectedPanel={
                 <ConnectorsConnectedPanel
                   connected={browse.connected}
-                  ready={browse.ready}
+                  ready={browse.ready && accountSummaryStatus !== "loading"}
+                  accountsUnavailable={accountSummaryStatus === "unavailable"}
                   connectionFilter={connectionFilter}
                   renderCard={renderCard}
                   extraCount={custom.connected.length}
@@ -1700,6 +1717,11 @@ export function ConnectorsPage() {
           }}
         />
       )}
+      <CustomConnectorDirectoryDialogs
+        onCreated={(connector) => {
+          showCreated(connector.id);
+        }}
+      />
       <ConnectorAccountNameDialog />
 
       <ManagedConnectorAccessDialog />
