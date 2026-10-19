@@ -206,7 +206,7 @@ function FilesRow({ signals, row }: FilesRowProps) {
     const { entry } = row;
     if (entry.kind === "directory") {
       return (
-        <div className="group/files-row flex h-11 min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
+        <div className="group/files-row flex h-11 min-w-0 items-center gap-1 rounded-lg pr-2 transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
           <Button
             type="button"
             variant="quiet"
@@ -257,7 +257,7 @@ function FilesRow({ signals, row }: FilesRowProps) {
       );
     }
     return (
-      <div className="group/files-row flex h-full min-w-0 items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
+      <div className="group/files-row flex h-full min-w-0 items-center gap-2 rounded-lg pr-2 pl-3 text-sm transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
         <span className="w-3.5 shrink-0" />
         {entry.kind === "symlink" ? (
           <Link size={16} className="shrink-0 text-muted-foreground" />
@@ -493,6 +493,7 @@ function FilesRefreshControl({
                 variant="quiet"
                 size="icon-sm"
                 className={cn(
+                  "shrink-0 [@media(pointer:coarse)]:size-10",
                   error && "text-destructive hover:text-destructive",
                 )}
                 aria-label={t(($) => {
