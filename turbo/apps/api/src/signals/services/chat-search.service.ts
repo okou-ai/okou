@@ -14,7 +14,7 @@ import {
   chatSearchBigramTsquery,
   chatSearchMatchRanges,
 } from "../../lib/chat-search-bigram";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 
 type ChatSearchMessageRow = {
   readonly chatThreadId: string;
@@ -45,115 +45,6 @@ function toChatSearchMessage(row: ChatSearchMessageRow): ChatSearchMessage {
   };
 }
 
-/**
- * Take up to 500 scoped keyword hits without ordering them, then sort only
- * those candidates by time. This intentionally does not find the newest hits
- * across all history; missing or deleted threads are not backfilled.
- */
-async function chatSearchVisibleMatches(
-  db: ReadonlyDb,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly keyword: string;
-    readonly agentId?: string;
-    readonly since?: Date;
-  },
-): Promise<ChatSearchMatchRow[]> {
-  const tsquery = chatSearchBigramTsquery(args.keyword);
-  if (tsquery === null) {
-    return [];
-  }
-
-  const keywordCandidates = db
-    .select({
-      chatThreadId: chatEventSearchMessages.chatThreadId,
-      seqId: chatEventSearchMessages.seqId,
-      createdAt: chatEventSearchMessages.createdAt,
-    })
-    .from(chatEventSearchMessages)
-    .where(
-      and(
-        eq(chatEventSearchMessages.userId, args.userId),
-        eq(chatEventSearchMessages.orgId, args.orgId),
-        args.agentId
-          ? eq(chatEventSearchMessages.agentId, args.agentId)
-          : undefined,
-        args.since
-          ? gte(chatEventSearchMessages.createdAt, args.since)
-          : undefined,
-        sql`${chatEventSearchMessages.tsv} @@ to_tsquery('simple', ${tsquery})`,
-      ),
-    )
-    // The inner LIMIT is a semantic boundary: ORDER BY applies only to its
-    // candidates. It does not bound the work done by the GIN index or force a
-    // particular physical index plan.
-    .limit(CHAT_SEARCH_CANDIDATE_LIMIT)
-    .as("chat_search_keyword_candidates");
-
-  const newestCandidates = db
-    .select({
-      chatThreadId: keywordCandidates.chatThreadId,
-      seqId: keywordCandidates.seqId,
-      createdAt: keywordCandidates.createdAt,
-    })
-    .from(keywordCandidates)
-    .orderBy(
-      desc(keywordCandidates.createdAt),
-      desc(keywordCandidates.chatThreadId),
-      desc(keywordCandidates.seqId),
-    )
-    .limit(CHAT_SEARCH_RESULT_LIMIT)
-    .as("chat_search_newest_candidates");
-
-  const matches = await db
-    .select({
-      chatThreadId: chatEventSearchMessages.chatThreadId,
-      seqId: chatEventSearchMessages.seqId,
-      runId: chatEventSearchMessages.runId,
-      role: chatEventSearchMessages.role,
-      createdAt: chatEventSearchMessages.createdAt,
-      text: chatEventSearchMessages.text,
-      existingChatThreadId: chatThreads.id,
-      agentName: agents.name,
-    })
-    .from(newestCandidates)
-    .innerJoin(
-      chatEventSearchMessages,
-      and(
-        eq(chatEventSearchMessages.chatThreadId, newestCandidates.chatThreadId),
-        eq(chatEventSearchMessages.seqId, newestCandidates.seqId),
-      ),
-    )
-    .leftJoin(chatThreads, eq(chatThreads.id, newestCandidates.chatThreadId))
-    .leftJoin(agents, eq(agents.id, chatEventSearchMessages.agentId))
-    .orderBy(
-      desc(newestCandidates.createdAt),
-      desc(newestCandidates.chatThreadId),
-      desc(newestCandidates.seqId),
-    );
-
-  return matches.flatMap((candidate): ChatSearchMatchRow[] => {
-    if (
-      candidate.existingChatThreadId === null ||
-      candidate.agentName === null
-    ) {
-      return [];
-    }
-    return [
-      {
-        chatThreadId: candidate.chatThreadId,
-        seqId: candidate.seqId,
-        runId: candidate.runId,
-        role: candidate.role,
-        createdAt: candidate.createdAt,
-        text: candidate.text,
-        agentName: candidate.agentName,
-      },
-    ];
-  });
-}
-
 type ChatSearchInput = {
   readonly userId: string;
   readonly orgId: string;
@@ -179,13 +70,112 @@ export function chatSearch(
     const args = get(input$);
     const db = get(db$);
     const sinceDate = args.since ? new Date(args.since) : undefined;
-    const matches = await chatSearchVisibleMatches(db, {
+    const searchArgs = {
       userId: args.userId,
       orgId: args.orgId,
       keyword: args.keyword,
       agentId: args.agentId,
       since: sinceDate,
-    });
+    };
+    const matches = await (async (): Promise<ChatSearchMatchRow[]> => {
+      /**
+       * Take up to 500 scoped keyword hits without ordering them, then sort only
+       * those candidates by time. This intentionally does not find the newest hits
+       * across all history; missing or deleted threads are not backfilled.
+       */
+      const tsquery = chatSearchBigramTsquery(searchArgs.keyword);
+      if (tsquery === null) {
+        return [];
+      }
+
+      const keywordCandidates = db
+        .select({
+          chatThreadId: chatEventSearchMessages.chatThreadId,
+          seqId: chatEventSearchMessages.seqId,
+          createdAt: chatEventSearchMessages.createdAt,
+        })
+        .from(chatEventSearchMessages)
+        .where(
+          and(
+            eq(chatEventSearchMessages.userId, searchArgs.userId),
+            eq(chatEventSearchMessages.orgId, searchArgs.orgId),
+            searchArgs.agentId
+              ? eq(chatEventSearchMessages.agentId, searchArgs.agentId)
+              : undefined,
+            searchArgs.since
+              ? gte(chatEventSearchMessages.createdAt, searchArgs.since)
+              : undefined,
+            sql`${chatEventSearchMessages.tsv} @@ to_tsquery('simple', ${tsquery})`,
+          ),
+        )
+        // The inner LIMIT is a semantic boundary: ORDER BY applies only to its
+        // candidates. It does not bound the work done by the GIN index or force a
+        // particular physical index plan.
+        .limit(CHAT_SEARCH_CANDIDATE_LIMIT)
+        .as("chat_search_keyword_candidates");
+
+      const newest = db
+        .select({
+          chatThreadId: keywordCandidates.chatThreadId,
+          seqId: keywordCandidates.seqId,
+          createdAt: keywordCandidates.createdAt,
+        })
+        .from(keywordCandidates)
+        .orderBy(
+          desc(keywordCandidates.createdAt),
+          desc(keywordCandidates.chatThreadId),
+          desc(keywordCandidates.seqId),
+        )
+        .limit(CHAT_SEARCH_RESULT_LIMIT)
+        .as("chat_search_newest_candidates");
+
+      const matches = await db
+        .select({
+          chatThreadId: chatEventSearchMessages.chatThreadId,
+          seqId: chatEventSearchMessages.seqId,
+          runId: chatEventSearchMessages.runId,
+          role: chatEventSearchMessages.role,
+          createdAt: chatEventSearchMessages.createdAt,
+          text: chatEventSearchMessages.text,
+          existingChatThreadId: chatThreads.id,
+          agentName: agents.name,
+        })
+        .from(newest)
+        .innerJoin(
+          chatEventSearchMessages,
+          and(
+            eq(chatEventSearchMessages.chatThreadId, newest.chatThreadId),
+            eq(chatEventSearchMessages.seqId, newest.seqId),
+          ),
+        )
+        .leftJoin(chatThreads, eq(chatThreads.id, newest.chatThreadId))
+        .leftJoin(agents, eq(agents.id, chatEventSearchMessages.agentId))
+        .orderBy(
+          desc(newest.createdAt),
+          desc(newest.chatThreadId),
+          desc(newest.seqId),
+        );
+
+      return matches.flatMap((candidate): ChatSearchMatchRow[] => {
+        if (
+          candidate.existingChatThreadId === null ||
+          candidate.agentName === null
+        ) {
+          return [];
+        }
+        return [
+          {
+            chatThreadId: candidate.chatThreadId,
+            seqId: candidate.seqId,
+            runId: candidate.runId,
+            role: candidate.role,
+            createdAt: candidate.createdAt,
+            text: candidate.text,
+            agentName: candidate.agentName,
+          },
+        ];
+      });
+    })();
 
     const results = matches.map((match): ChatSearchResult => {
       const matchedMessage = toChatSearchMessage(match);
