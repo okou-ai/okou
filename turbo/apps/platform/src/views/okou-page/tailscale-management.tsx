@@ -712,7 +712,7 @@ function TailscaleConfigCard({
           {admin && !compact && (
             <Button
               type="button"
-              variant={compact ? "quiet" : "outline"}
+              variant="outline"
               onClick={() => {
                 return detach(
                   open(

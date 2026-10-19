@@ -1211,7 +1211,7 @@ function CloudflareConfigCard({
           </Button>
           {scope === "personal" && canPromote && !compact && (
             <Button
-              variant={compact ? "quiet" : "outline"}
+              variant="outline"
               onClick={() => {
                 return detach(
                   openPromotion(config, signal),
@@ -1226,7 +1226,7 @@ function CloudflareConfigCard({
           )}
           {scope === "organization" && !compact && (
             <Button
-              variant={compact ? "quiet" : "outline"}
+              variant="outline"
               onClick={() => {
                 return detach(
                   openConversion(config, signal),
