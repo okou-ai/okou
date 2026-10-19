@@ -56,6 +56,10 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
+import {
+  docsImportFixture,
+  uploadedDocsText,
+} from "./helpers/docs-import-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
@@ -2916,6 +2920,212 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
       expect(readback.readFileIds).toStrictEqual(["native-file"]);
       expect(readback.trashedFileIds).toStrictEqual([]);
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it("google docs conversion preserves Chinese and Latin font choices in Word text", async () => {
+    const bytes = docsImportFixture();
+    const fixture = await workspaceSource("bilingual.docx", bytes);
+    const native = {
+      id: "native-doc",
+      name: "bilingual",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+    };
+    const upload = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(200);
+    const prepared = Buffer.from(upload.bodies[0]!);
+    const runs = uploadedDocsText(prepared);
+    expect(
+      runs
+        .map((run) => {
+          return run.text;
+        })
+        .join(""),
+    ).toBe(
+      uploadedDocsText(bytes)
+        .map((run) => {
+          return run.text;
+        })
+        .join(""),
+    );
+    for (const [text, font] of [
+      ["合同（中文），", "Noto Serif SC"],
+      ["尾款", "Noto Serif SC"],
+      ["正文", "Noto Serif SC"],
+      ["标题", "Noto Sans SC"],
+      ["链接", "Noto Sans SC"],
+      ["表格", "Noto Sans SC"],
+      ["文本框", "Noto Serif SC"],
+      ["页眉", "Noto Serif SC"],
+      ["页脚", "Noto Serif SC"],
+    ]) {
+      expect(
+        runs.find((run) => {
+          return run.text === text;
+        }),
+      ).toMatchObject({
+        fonts: { ascii: font, hAnsi: font, eastAsia: font, cs: font },
+      });
+    }
+    for (const text of ["Hello ", "Inherited ", "Header ", "Footer "]) {
+      expect(
+        runs.find((run) => {
+          return run.text === text;
+        })?.fonts.ascii,
+      ).toBe("Times New Roman");
+    }
+    expect(
+      runs.find((run) => {
+        return run.text === "Title ";
+      })?.fonts.ascii,
+    ).toBe("Arial");
+    for (const text of [
+      "Hello ",
+      "合同（中文），",
+      "& 2026 ",
+      "尾款",
+      "\t",
+      "\n",
+    ]) {
+      expect(
+        runs.find((run) => {
+          return run.text === text;
+        }),
+      ).toMatchObject({ size: "24", color: "123456", bold: true });
+    }
+    expect(
+      runs.find((run) => {
+        return run.text === "链接";
+      }),
+    ).toMatchObject({ italic: true });
+    expect(
+      runs.find((run) => {
+        return run.text === "Custom 自定义";
+      })?.fonts,
+    ).toStrictEqual({
+      ascii: "Georgia",
+      hAnsi: "Georgia",
+      eastAsia: "Unlisted CJK",
+    });
+    expect(
+      runs.find((run) => {
+        return run.text === "Theme 主题";
+      })?.fonts,
+    ).toStrictEqual({
+      asciiTheme: "minorHAnsi",
+      hAnsiTheme: "minorHAnsi",
+      eastAsiaTheme: "minorEastAsia",
+    });
+    expect(
+      runs.find((run) => {
+        return run.text === "条件字体";
+      })?.fonts.eastAsia,
+    ).toBeUndefined();
+    const archive = new AdmZip(prepared);
+    const document = archive.readAsText("word/document.xml");
+    for (const property of [
+      '<w:spacing w:after="120" w:line="276">',
+      '<w:tblW w:w="5000" w:type="dxa">',
+      '<w:pgSz w:w="11906" w:h="16838">',
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440">',
+      '<w:hyperlink r:id="link" w:tooltip="First&#10;second">',
+    ]) {
+      expect(document).toContain(property);
+    }
+    expect(archive.readAsText("word/footer1.xml")).toContain(
+      '<instrText xml:space="preserve"> PAGE </instrText>',
+    );
+    for (const part of [
+      "[Content_Types].xml",
+      "_rels/.rels",
+      "word/_rels/document.xml.rels",
+      "word/styles.xml",
+    ]) {
+      expect(archive.readFile(part)).toStrictEqual(
+        new AdmZip(bytes).readFile(part),
+      );
+    }
+    await fixture.finish();
+  }, 120_000);
+
+  it("google docs conversion accepts UTF-16 Word XML", async () => {
+    const archive = new AdmZip(docsImportFixture());
+    archive.addFile(
+      "word/document.xml",
+      Buffer.concat([
+        Buffer.from([0xff, 0xfe]),
+        Buffer.from(archive.readAsText("word/document.xml"), "utf16le"),
+      ]),
+    );
+    const fixture = await workspaceSource("bilingual.docx", archive.toBuffer());
+    const native = {
+      id: "native-doc",
+      name: "bilingual",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+    };
+    const upload = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    expect((await fixture.upload("google")).status).toBe(200);
+    expect(
+      uploadedDocsText(upload.bodies[0]!).find((run) => {
+        return run.text === "合同（中文），";
+      })?.fonts.ascii,
+    ).toBe("Noto Serif SC");
+    await fixture.finish();
+  }, 120_000);
+
+  it("original uploads keep DOCX font declarations intact", async () => {
+    const bytes = docsImportFixture();
+    const fixture = await workspaceSource("bilingual.docx", bytes);
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "original-doc",
+      name: "bilingual.docx",
+    });
+    expect((await fixture.upload("original")).status).toBe(200);
+    expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
+    await fixture.finish();
+  }, 120_000);
+
+  it.each(["DTD", "cyclic styles"])(
+    "google docs conversion rejects %s before creating a Drive file",
+    async (invalid) => {
+      const archive = new AdmZip(docsImportFixture());
+      if (invalid === "DTD") {
+        archive.addFile(
+          "word/document.xml",
+          Buffer.from(
+            `<!DOCTYPE document [<!ENTITY text "example">]>${archive.readAsText("word/document.xml")}`,
+          ),
+        );
+      } else {
+        archive.addFile(
+          "word/styles.xml",
+          Buffer.from(
+            archive
+              .readAsText("word/styles.xml")
+              .replace(
+                '<w:basedOn w:val="HeadingBase"/>',
+                '<w:basedOn w:val="Heading"/>',
+              ),
+          ),
+        );
+      }
+      const fixture = await workspaceSource(
+        "bilingual.docx",
+        archive.toBuffer(),
+      );
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "bilingual.docx",
+      });
+      const response = await fixture.upload("google");
+      expect(response.status).toBe(400);
+      expectApiError(response.body);
+      expect(upload.bodies).toHaveLength(0);
       await fixture.finish();
     },
     120_000,

@@ -6,6 +6,7 @@ import {
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { safeSync } from "../utils";
+import { prepareGoogleDocsFonts } from "./google-docs-import.service";
 
 const MAX_CELL_CHARACTERS = 50_000;
 const MAX_CELLS = 20_000_000;
@@ -324,6 +325,9 @@ export function prepareGoogleWorkspaceImport(
       }
     } else {
       checkOfficeSource(file, format.extension, format.sourceMimeType);
+      if (format.extension === "docx") {
+        file = prepareGoogleDocsFonts(file);
+      }
     }
     return {
       file,
