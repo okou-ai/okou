@@ -9,7 +9,8 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached, settle } from "../../utils";
+import { clearAllDetached, settle, settleIncludingAbort } from "../../utils";
+import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import {
   createBddApi,
   expectApiError,
@@ -65,6 +66,41 @@ interface LinkedAgentPhoneActor {
       readonly size: number;
     }): void;
   };
+}
+
+async function runFiniteAgentPhoneHistory(
+  operation: () => Promise<void>,
+): Promise<void> {
+  const lifecycle = createFixtureLifecycle({
+    async teardown() {
+      const waiting = await settleIncludingAbort(flushWaitUntilForTest);
+      const detached = await settleIncludingAbort(clearAllDetached);
+      const errors = [waiting, detached].flatMap((result) => {
+        return result.ok ? [] : [result.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "AgentPhone history cleanup failed");
+      }
+    },
+  });
+  const result = await settleIncludingAbort(() => {
+    return lifecycle.run(operation);
+  });
+  const finished = await settleIncludingAbort(() => {
+    return lifecycle.finish();
+  });
+  const errors = [result, finished].flatMap((outcome) => {
+    return outcome.ok ? [] : [outcome.error];
+  });
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "AgentPhone history fixture failed");
+  }
 }
 
 async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
@@ -2448,223 +2484,227 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   it("limits archived group history to linked participants captured for each message", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
+    await runFiniteAgentPhoneHistory(async () => {
+      const bdd = createBddApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      integrations.configureAgentPhoneProvider();
+      integrations.configureAgentPhoneWebhook();
+      const sends = ap.captureAgentPhoneSends();
 
-    const first = bdd.user();
-    const second = bdd.user();
-    const linkedLater = bdd.user();
-    const firstPhone = uniquePhoneHandle();
-    const secondPhone = uniquePhoneHandle();
-    const laterPhone = uniquePhoneHandle();
-    await ap.linkViaWebhookConnectPrompt(first, firstPhone, sends);
-    await ap.linkViaWebhookConnectPrompt(second, secondPhone, sends);
+      const first = bdd.user();
+      const second = bdd.user();
+      const linkedLater = bdd.user();
+      await bdd.readMe(first, { isolatePg: true });
+      const firstPhone = "+12025550101";
+      const secondPhone = "+12025550102";
+      const laterPhone = "+12025550103";
+      await ap.linkViaWebhookConnectPrompt(first, firstPhone, sends);
+      await ap.linkViaWebhookConnectPrompt(second, secondPhone, sends);
 
-    const conversationId = uniqueConversationId();
-    const stableGroupId = bddGroupId(conversationId);
+      const conversationId = uniqueConversationId();
+      const stableGroupId = bddGroupId(conversationId);
 
-    const senderOnlyConversationId = uniqueConversationId();
-    const senderOnlyMessageId = `ap-group-history-sender-only-${randomUUID()}`;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: firstPhone,
-      body: "sender is present even when the provider omits the roster",
-      messageId: senderOnlyMessageId,
-      conversationId: senderOnlyConversationId,
-      isGroup: true,
-    });
-    const senderOnlyHistory = await integrations.requestAgentPhoneGroupHistory(
-      first,
-      { groupId: bddGroupId(senderOnlyConversationId), limit: 100 },
-      [200],
-    );
-    expect(
-      senderOnlyHistory.status === 200 ? senderOnlyHistory.body.messages : [],
-    ).toMatchObject([{ id: senderOnlyMessageId }]);
-
-    const missingTimestampConversationId = uniqueConversationId();
-    const missingTimestampMessageId = `ap-group-history-missing-time-${randomUUID()}`;
-    await ap.postAgentPhoneInboundMessage(
-      {
+      const senderOnlyConversationId = uniqueConversationId();
+      const senderOnlyMessageId = `ap-group-history-sender-only-${randomUUID()}`;
+      await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
         from: firstPhone,
-        body: "group event without provider message time",
-        messageId: missingTimestampMessageId,
-        conversationId: missingTimestampConversationId,
+        body: "sender is present even when the provider omits the roster",
+        messageId: senderOnlyMessageId,
+        conversationId: senderOnlyConversationId,
         isGroup: true,
-        participants: [{ identifier: firstPhone }],
-        receivedAt: null,
-      },
-      [500],
-    );
-    const missingTimestampHistory =
-      await integrations.requestAgentPhoneGroupHistory(
+      });
+      const senderOnlyHistory =
+        await integrations.requestAgentPhoneGroupHistory(
+          first,
+          { groupId: bddGroupId(senderOnlyConversationId), limit: 100 },
+          [200],
+        );
+      expect(
+        senderOnlyHistory.status === 200 ? senderOnlyHistory.body.messages : [],
+      ).toMatchObject([{ id: senderOnlyMessageId }]);
+
+      const missingTimestampConversationId = uniqueConversationId();
+      const missingTimestampMessageId = `ap-group-history-missing-time-${randomUUID()}`;
+      await ap.postAgentPhoneInboundMessage(
+        {
+          channel: "imessage",
+          from: firstPhone,
+          body: "group event without provider message time",
+          messageId: missingTimestampMessageId,
+          conversationId: missingTimestampConversationId,
+          isGroup: true,
+          participants: [{ identifier: firstPhone }],
+          receivedAt: null,
+        },
+        [500],
+      );
+      const missingTimestampHistory =
+        await integrations.requestAgentPhoneGroupHistory(
+          first,
+          {
+            groupId: bddGroupId(missingTimestampConversationId),
+            limit: 100,
+          },
+          [200],
+        );
+      expect(
+        missingTimestampHistory.status === 200
+          ? missingTimestampHistory.body.messages
+          : [],
+      ).toHaveLength(0);
+
+      const noMatchConversationId = uniqueConversationId();
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: laterPhone,
+        body: "not archived before linking",
+        conversationId: noMatchConversationId,
+        isGroup: true,
+        participants: [{ identifier: laterPhone }],
+      });
+
+      const firstMessageId = `ap-group-history-first-${randomUUID()}`;
+      const groupMediaUrl = "https://files.agentphone.test/group-photo.png";
+      const participants = [
+        { identifier: firstPhone },
+        { identifier: secondPhone },
+        { identifier: laterPhone },
+      ];
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: firstPhone,
+        body: "first group note",
+        messageId: firstMessageId,
+        conversationId,
+        isGroup: true,
+        participants,
+        mediaUrl: groupMediaUrl,
+      });
+
+      const beforeLaterLink = new Date(now()).toISOString();
+      mockNow(now() + 1000);
+      await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
+      const delayedMessageId = `ap-group-history-delayed-${randomUUID()}`;
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: firstPhone,
+        body: "delivered after linking but sent before it",
+        messageId: delayedMessageId,
+        webhookId: null,
+        conversationId,
+        isGroup: true,
+        participants,
+        receivedAt: beforeLaterLink,
+      });
+      const noMatchHistory = await integrations.requestAgentPhoneGroupHistory(
+        linkedLater,
+        { groupId: bddGroupId(noMatchConversationId), limit: 100 },
+        [200],
+      );
+      expect(
+        noMatchHistory.status === 200 ? noMatchHistory.body.messages : [],
+      ).toHaveLength(0);
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: firstPhone,
+        body: "first group note",
+        messageId: firstMessageId,
+        conversationId,
+        isGroup: true,
+        participants,
+      });
+      const secondMessageId = `ap-group-history-second-${randomUUID()}`;
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: firstPhone,
+        body: "second group note",
+        messageId: secondMessageId,
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: firstPhone }, { identifier: laterPhone }],
+      });
+
+      async function visibleIds(actor: ApiTestUser) {
+        const result = await integrations.requestAgentPhoneGroupHistory(
+          actor,
+          { groupId: stableGroupId, limit: 100 },
+          [200],
+        );
+        if (result.status !== 200) {
+          throw new Error("Expected visible iMessage group history");
+        }
+        return result.body.messages.map((message) => {
+          return message.id;
+        });
+      }
+
+      await expect(visibleIds(first)).resolves.toStrictEqual([
+        firstMessageId,
+        delayedMessageId,
+        secondMessageId,
+      ]);
+      await expect(visibleIds(second)).resolves.toStrictEqual([
+        firstMessageId,
+        delayedMessageId,
+      ]);
+      await expect(visibleIds(linkedLater)).resolves.toStrictEqual([
+        secondMessageId,
+      ]);
+
+      server.use(
+        http.get(groupMediaUrl, () => {
+          return new HttpResponse("group-photo-bytes", {
+            headers: { "content-type": "image/png" },
+          });
+        }),
+      );
+      const visibleGroupFile = await integrations.requestPhoneDownloadFile(
+        second,
+        firstMessageId,
+        [200],
+      );
+      expect(visibleGroupFile.status).toBe(200);
+      const invisibleGroupFile = await integrations.requestPhoneDownloadFile(
+        linkedLater,
+        firstMessageId,
+        [404],
+      );
+      expect(invisibleGroupFile.status).toBe(404);
+
+      const filtered = await integrations.requestAgentPhoneGroupHistory(
+        first,
+        { groupId: stableGroupId, query: "second", limit: 100 },
+        [200],
+      );
+      expect(
+        filtered.status === 200 ? filtered.body.messages : [],
+      ).toMatchObject([{ id: secondMessageId }]);
+
+      const firstPage = await integrations.requestAgentPhoneGroupHistory(
+        first,
+        { groupId: stableGroupId, limit: 1 },
+        [200],
+      );
+      if (firstPage.status !== 200) {
+        throw new Error("Expected first group history page");
+      }
+      expect(firstPage.body.hasMore).toBeTruthy();
+      expect(firstPage.body.nextCursor).toBeTruthy();
+      const secondPage = await integrations.requestAgentPhoneGroupHistory(
         first,
         {
-          groupId: bddGroupId(missingTimestampConversationId),
-          limit: 100,
+          groupId: stableGroupId,
+          limit: 1,
+          cursor: firstPage.body.nextCursor ?? undefined,
         },
         [200],
       );
-    expect(
-      missingTimestampHistory.status === 200
-        ? missingTimestampHistory.body.messages
-        : [],
-    ).toHaveLength(0);
-
-    const noMatchConversationId = uniqueConversationId();
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: laterPhone,
-      body: "not archived before linking",
-      conversationId: noMatchConversationId,
-      isGroup: true,
-      participants: [{ identifier: laterPhone }],
+      expect(
+        secondPage.status === 200 ? secondPage.body.messages : [],
+      ).toMatchObject([{ id: delayedMessageId }]);
     });
-
-    const firstMessageId = `ap-group-history-first-${randomUUID()}`;
-    const groupMediaUrl = "https://files.agentphone.test/group-photo.png";
-    const participants = [
-      { identifier: firstPhone },
-      { identifier: secondPhone },
-      { identifier: laterPhone },
-    ];
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: firstPhone,
-      body: "first group note",
-      messageId: firstMessageId,
-      conversationId,
-      isGroup: true,
-      participants,
-      mediaUrl: groupMediaUrl,
-    });
-
-    const beforeLaterLink = new Date(now()).toISOString();
-    mockNow(now() + 1000);
-    await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
-    const delayedMessageId = `ap-group-history-delayed-${randomUUID()}`;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: firstPhone,
-      body: "delivered after linking but sent before it",
-      messageId: delayedMessageId,
-      webhookId: null,
-      conversationId,
-      isGroup: true,
-      participants,
-      receivedAt: beforeLaterLink,
-    });
-    const noMatchHistory = await integrations.requestAgentPhoneGroupHistory(
-      linkedLater,
-      { groupId: bddGroupId(noMatchConversationId), limit: 100 },
-      [200],
-    );
-    expect(
-      noMatchHistory.status === 200 ? noMatchHistory.body.messages : [],
-    ).toHaveLength(0);
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: firstPhone,
-      body: "first group note",
-      messageId: firstMessageId,
-      conversationId,
-      isGroup: true,
-      participants,
-    });
-    const secondMessageId = `ap-group-history-second-${randomUUID()}`;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: firstPhone,
-      body: "second group note",
-      messageId: secondMessageId,
-      conversationId,
-      isGroup: true,
-      participants: [{ identifier: firstPhone }, { identifier: laterPhone }],
-    });
-
-    async function visibleIds(actor: ApiTestUser) {
-      const result = await integrations.requestAgentPhoneGroupHistory(
-        actor,
-        { groupId: stableGroupId, limit: 100 },
-        [200],
-      );
-      if (result.status !== 200) {
-        throw new Error("Expected visible iMessage group history");
-      }
-      return result.body.messages.map((message) => {
-        return message.id;
-      });
-    }
-
-    await expect(visibleIds(first)).resolves.toStrictEqual([
-      firstMessageId,
-      delayedMessageId,
-      secondMessageId,
-    ]);
-    await expect(visibleIds(second)).resolves.toStrictEqual([
-      firstMessageId,
-      delayedMessageId,
-    ]);
-    await expect(visibleIds(linkedLater)).resolves.toStrictEqual([
-      secondMessageId,
-    ]);
-
-    server.use(
-      http.get(groupMediaUrl, () => {
-        return new HttpResponse("group-photo-bytes", {
-          headers: { "content-type": "image/png" },
-        });
-      }),
-    );
-    const visibleGroupFile = await integrations.requestPhoneDownloadFile(
-      second,
-      firstMessageId,
-      [200],
-    );
-    expect(visibleGroupFile.status).toBe(200);
-    const invisibleGroupFile = await integrations.requestPhoneDownloadFile(
-      linkedLater,
-      firstMessageId,
-      [404],
-    );
-    expect(invisibleGroupFile.status).toBe(404);
-
-    const filtered = await integrations.requestAgentPhoneGroupHistory(
-      first,
-      { groupId: stableGroupId, query: "second", limit: 100 },
-      [200],
-    );
-    expect(filtered.status === 200 ? filtered.body.messages : []).toMatchObject(
-      [{ id: secondMessageId }],
-    );
-
-    const firstPage = await integrations.requestAgentPhoneGroupHistory(
-      first,
-      { groupId: stableGroupId, limit: 1 },
-      [200],
-    );
-    if (firstPage.status !== 200) {
-      throw new Error("Expected first group history page");
-    }
-    expect(firstPage.body.hasMore).toBeTruthy();
-    expect(firstPage.body.nextCursor).toBeTruthy();
-    const secondPage = await integrations.requestAgentPhoneGroupHistory(
-      first,
-      {
-        groupId: stableGroupId,
-        limit: 1,
-        cursor: firstPage.body.nextCursor ?? undefined,
-      },
-      [200],
-    );
-    expect(
-      secondPage.status === 200 ? secondPage.body.messages : [],
-    ).toMatchObject([{ id: delayedMessageId }]);
   });
 
   it("returns 500 and does not dispatch group webhooks without a timestamp", async () => {
