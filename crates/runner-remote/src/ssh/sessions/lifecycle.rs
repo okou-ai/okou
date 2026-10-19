@@ -70,16 +70,20 @@ impl Lifecycle {
         outcome: &Result<RemoteExit, FailureReason>,
         diagnostic: Option<Report>,
     ) {
-        let effects = if outcome.is_ok() {
-            Effects::Completed
-        } else {
-            self.effects()
-        };
+        let effects = self.effects_for(outcome);
         *self = Self::Terminal(Box::new(TerminalReceipt {
             outcome: outcome.clone(),
             completed_at: Instant::now(),
             effects,
             diagnostic,
         }));
+    }
+
+    pub(super) fn effects_for(&self, outcome: &Result<RemoteExit, FailureReason>) -> Effects {
+        if outcome.is_ok() {
+            Effects::Completed
+        } else {
+            self.effects()
+        }
     }
 }

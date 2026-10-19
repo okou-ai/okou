@@ -232,6 +232,10 @@ impl Progress {
         self.wireguard.produced.initiation.count != 0
             && self.wireguard.produced.transport.count == 0
     }
+
+    pub(crate) fn initiation_without_peer_input(&self) -> bool {
+        self.handshake_only_output() && self.labelled.count == 0 && self.replies.count == 0
+    }
 }
 
 impl Trace {

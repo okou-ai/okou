@@ -1,5 +1,6 @@
 //! Bounded SSH business payloads inside the opaque RPC envelopes.
 
+use crate::diagnostics::Effects;
 use base64::Engine;
 use runner_rpc_proto::{Response, ResponseWriter};
 use serde::Serialize;
@@ -43,14 +44,6 @@ pub(super) enum RemoteExit {
         signal: &'static str,
         core_dumped: bool,
     },
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum Effects {
-    NotStarted,
-    Unknown,
-    Completed,
 }
 
 #[derive(Serialize)]
@@ -133,6 +126,14 @@ impl Output {
         }
     }
 
+    pub(super) fn effects(&self, terminal: &Terminal) -> Effects {
+        match terminal {
+            Terminal::Finished { .. } => Effects::Completed,
+            Terminal::Failed { .. } if self.attempted => Effects::Unknown,
+            Terminal::Failed { .. } => Effects::NotStarted,
+        }
+    }
+
     pub(super) async fn finish(
         &mut self,
         writer: &mut ResponseWriter<GuestIo>,
@@ -151,11 +152,7 @@ impl Output {
             stdout_truncated: bool,
             stderr_truncated: bool,
         }
-        let effects = match terminal {
-            Terminal::Finished { .. } => Effects::Completed,
-            Terminal::Failed { .. } if self.attempted => Effects::Unknown,
-            Terminal::Failed { .. } => Effects::NotStarted,
-        };
+        let effects = self.effects(&terminal);
         let data = crate::diagnostics::text::result(
             &ResultData {
                 terminal,

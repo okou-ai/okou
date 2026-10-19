@@ -15,15 +15,20 @@ impl Report {
     }
 
     pub(crate) fn message(&self) -> Option<String> {
+        self.message_with_budget(super::MAX_REPORT_BYTES)
+    }
+
+    pub(super) fn message_with_budget(&self, budget: usize) -> Option<String> {
+        let budget = budget.min(super::MAX_REPORT_BYTES);
         let text = self.render()?;
-        if text.len() <= super::MAX_REPORT_BYTES {
+        if text.len() <= budget {
             return Some(text);
         }
         let mut compact = self.clone();
         for minimal in [false, true] {
             compact.compact(minimal);
             let text = compact.render()?;
-            if text.len() <= super::MAX_REPORT_BYTES {
+            if text.len() <= budget {
                 return Some(text);
             }
         }
@@ -43,6 +48,20 @@ impl Report {
             ),
         };
         let mut text = format!("{summary}\n");
+        if let Some(observation) = self.effects {
+            use super::EffectObservation;
+            let (scope, effects) = match observation {
+                EffectObservation::Command(effects) => ("command", effects),
+                EffectObservation::SessionProgram(effects) => ("session program", effects),
+                EffectObservation::SessionRequest(effects) => ("session request", effects),
+            };
+            text.push_str(&format!("Runner-observed {scope} effects: {}. This describes that operation's remote effect, independently of CLI/helper delivery uncertainty.\n", words(effects)?));
+            if matches!(observation, EffectObservation::SessionRequest(_)) {
+                text.push_str("Session request effects do not describe whether its existing program was started or completed.\n");
+            }
+        }
+        self.native_summary(&mut text)?;
+        text.push_str(&format!("\nNext step: {}\n", self.guidance()));
         self.native_path(&mut text)?;
         text.push_str(&format!(
             "\nEvidence:\n- Source boundary: {}; detail: {}.\n",
@@ -200,8 +219,7 @@ impl Report {
             text.push_str("\nDetail omitted to retain the incident and critical path within the report budget.\n");
         }
         text.push_str(&format!(
-            "\nUnknown: Pending means still waiting at observation, not a proven remote cause. Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
-            self.guidance(),
+            "\nUnknown: Pending means still waiting at observation, not a proven remote cause. Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
             self.run_id,
             self.assignment_id,
             self.attempt_id,
@@ -250,11 +268,12 @@ impl Report {
         if matches!(
             cause,
             Cause::Native(crate::tailscale::Failure::DomainFailed)
-                | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure)
+                | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure | S::TimedOut)
                 | Cause::Vnc(
                     crate::vnc::Failure::Network
                         | crate::vnc::Failure::Cancelled
                         | crate::vnc::Failure::Unavailable
+                        | crate::vnc::Failure::TimedOut
                 )
         ) && let Some(root) = self.native_layers.as_ref().and_then(|s| s.root)
         {

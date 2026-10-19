@@ -37,8 +37,19 @@ pub(super) async fn run(
     let failure = result.as_ref().err().copied().filter(|reason| {
         *reason != FailureReason::Cancelled || !entry.scope.cancelled.is_cancelled()
     });
+    let diagnostics = entry.access.diagnostics();
+    if diagnostics.enabled() {
+        observation.effects = Some(crate::diagnostics::EffectObservation::SessionProgram(
+            entry
+                .data
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .lifecycle
+                .effects_for(&result),
+        ));
+    }
     let diagnostic = observation.record(
-        &entry.access.diagnostics(),
+        &diagnostics,
         entry.connection,
         crate::diagnostics::Operation::Session,
         Some(entry.id),

@@ -7,6 +7,7 @@ mod facts;
 mod path;
 #[cfg(test)]
 mod tests;
+pub(crate) use facts::PeerStatus;
 use facts::{Controls, Gone, Peer};
 pub(super) use path::Flow;
 pub(crate) use path::Progress;

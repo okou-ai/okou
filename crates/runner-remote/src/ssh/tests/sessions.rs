@@ -44,6 +44,7 @@ async fn lost_start_and_read_replies_do_not_kill_the_session_or_hold_guest_park(
 #[tokio::test]
 async fn backpressured_input_does_not_block_output_and_timeout_never_replays_partial_input() {
     let mut h = Harness::new(Reply::BlockedInput).await;
+    h.enable_diagnostics().await;
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
@@ -66,6 +67,15 @@ async fn backpressured_input_does_not_block_output_and_timeout_never_replays_par
     });
     assert_eq!(frames[0]["data"]["failure_reason"], "timed_out");
     assert_eq!(frames[0]["data"]["effects"], "unknown");
+    let detail = crate::test_fixtures::diagnostic_text(&frames[0]["data"]);
+    assert!(
+        detail.contains("Runner-observed session request effects: unknown."),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("Session request effects do not describe whether its existing program"),
+        "{detail}"
+    );
     assert_eq!(*h.observed.input.lock().unwrap(), b"x");
     let status = state(&h, &id, "failed").await;
     // RPC deadline reporting can retire its scope before the stdin actor polls
@@ -425,6 +435,7 @@ async fn dispatched_start_retains_honest_effects_through_acknowledgement_and_ter
         (Reply::Disconnect, "failed", "unknown", Some("disconnected")),
     ] {
         let mut h = Harness::new(reply).await;
+        h.enable_diagnostics().await;
         let _resolve = h.resolve(h.credential(true)).await;
         let gate = Arc::new(tokio::sync::Semaphore::new(0));
         *h.observed.exec_ack_gate.lock().unwrap() = Some(Arc::clone(&gate));
@@ -447,6 +458,15 @@ async fn dispatched_start_retains_honest_effects_through_acknowledgement_and_ter
         assert_eq!(status["generation"], 7);
         if let Some(reason) = failure {
             assert_eq!(status["state"]["failure_reason"], reason);
+            let retained = rpc(&h, "status", json!({"sessionId":id})).await;
+            let text = crate::test_fixtures::diagnostic_text(&retained);
+            assert!(
+                text.contains(&format!(
+                    "Runner-observed session program effects: {}.",
+                    expected_effects.replace('_', " ")
+                )),
+                "{text}"
+            );
             for _ in 0..2 {
                 let read = timeout(
                     Duration::from_secs(5),

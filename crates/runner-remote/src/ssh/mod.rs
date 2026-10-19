@@ -259,15 +259,19 @@ impl SshRuntime {
                 &sessions,
             )
             .await;
-        let observation = output.connection.finish(result.as_ref().err().copied());
+        let failure = result.as_ref().err().copied();
+        let observation = output.connection.finish(failure);
+        let outcome = output.terminal(result);
+        output.connection.effects = Some(crate::diagnostics::EffectObservation::Command(
+            output.effects(&outcome),
+        ));
         let diagnostic = output.connection.record(
             &sessions.registration.diagnostics(),
             connection,
             crate::diagnostics::Operation::Exec,
             None,
-            result.as_ref().err().copied(),
+            failure,
         );
-        let outcome = output.terminal(result);
         // A poisoned writer cannot emit a replacement terminal after partial I/O.
         let terminal_scope = Scope {
             cancelled: CancellationToken::new(),

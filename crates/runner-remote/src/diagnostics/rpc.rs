@@ -395,6 +395,7 @@ mod tests {
             .await;
         let handle = Handle::new(runner_types::ids::RunId::new_v4(), true);
         let _ = handle.record(super::super::Record {
+            effects: None,
             protocol: Protocol::Vnc,
             connection: vnc,
             operation: Operation::Start,
@@ -468,6 +469,7 @@ mod tests {
         let host = Uuid::new_v4();
         let handle = Handle::new(runner_types::ids::RunId::new_v4(), true);
         let _ = handle.record(super::super::Record {
+            effects: None,
             protocol: Protocol::Ssh,
             connection: host,
             operation: Operation::Exec,

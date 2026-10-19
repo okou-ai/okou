@@ -18,7 +18,11 @@ impl Manager {
                     .diagnostic()
                     .cloned()
             }
-            Response::Failed { failure_reason, .. } => {
+            Response::Failed {
+                failure_reason,
+                effects,
+                ..
+            } => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 struct Subject {
@@ -28,6 +32,9 @@ impl Manager {
                 let subject: Subject = serde_json::from_str(raw).ok()?;
                 let mut observation =
                     super::super::observation::Attempt::new(&self.registration.diagnostics());
+                observation.effects = Some(crate::diagnostics::EffectObservation::SessionRequest(
+                    *effects,
+                ));
                 let connection = if let Some(id) = subject.session_id {
                     let entry = self.get(id)?;
                     let identity = entry.access.diagnostic_identity();

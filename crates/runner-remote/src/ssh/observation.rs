@@ -11,6 +11,7 @@ use super::FailureReason;
 
 #[derive(Default)]
 pub(super) struct Attempt {
+    pub(super) effects: Option<crate::diagnostics::EffectObservation>,
     pub(super) trace: crate::diagnostics::trace::Trace,
     pub(super) carrier_trace: Option<crate::diagnostics::trace::Trace>,
     pub(super) native: Option<crate::diagnostics::NativeSource>,
@@ -104,6 +105,7 @@ impl Attempt {
             );
         }
         diagnostics.record(crate::diagnostics::Record {
+            effects: self.effects,
             protocol: crate::diagnostics::Protocol::Ssh,
             connection,
             operation,
