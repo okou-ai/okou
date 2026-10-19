@@ -115,6 +115,8 @@ type ComposerSuggestionSignals = Pick<
   | "slashWorkflowsExpandedHeight$"
   | "recentWorkflowIds$"
   | "expandSlashWorkflows$"
+  | "slashMenuSide$"
+  | "measureSlashMenuSide$"
   | "closeSuggestionMenu$"
   | "setSuggestionMenuRef$"
   | "setSlashHintMenuRef$"
@@ -385,6 +387,8 @@ function composerSuggestionSignals(
     slashWorkflowsExpandedHeight$: composer.slashWorkflowsExpandedHeight$,
     recentWorkflowIds$: composer.recentWorkflowIds$,
     expandSlashWorkflows$: composer.expandSlashWorkflows$,
+    slashMenuSide$: composer.slashMenuSide$,
+    measureSlashMenuSide$: composer.measureSlashMenuSide$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     setSuggestionMenuRef$: composer.setSuggestionMenuRef$,
     setSlashHintMenuRef$: composer.setSlashHintMenuRef$,
