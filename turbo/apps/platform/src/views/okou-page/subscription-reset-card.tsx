@@ -257,7 +257,7 @@ function SubscriptionResetIdentityContent({
           {loading ? (
             <Skeleton className="h-3 w-40 max-w-full" />
           ) : (
-            <span className="min-w-0 truncate" title={title}>
+            <span className="min-w-0 truncate">
               {account ? `${provider} · ${identity}` : title}
             </span>
           )}
@@ -272,11 +272,7 @@ function SubscriptionResetIdentityContent({
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <div
-                    role="status"
-                    className="min-w-0 truncate"
-                    title={notice}
-                  >
+                  <div role="status" className="min-w-0 truncate">
                     {notice}
                   </div>
                 }
@@ -291,7 +287,7 @@ function SubscriptionResetIdentityContent({
                 className="shrink-0 gap-1 text-xs"
               />
               {recovery ? (
-                <span className="min-w-0 truncate" title={absolute}>
+                <span aria-description={absolute} className="min-w-0 truncate">
                   · {recovery}
                 </span>
               ) : null}
@@ -456,9 +452,6 @@ function SubscriptionResetControls({
               aria-description={`${creditLabel} ${t(($) => {
                 return $.chat.subscriptionReset.confirmation;
               })}`}
-              title={t(($) => {
-                return $.chat.subscriptionReset.confirmation;
-              })}
               disabled={disabled}
               className="h-9 min-w-24 shrink-0 gap-1.5"
               onClick={() => {

@@ -448,6 +448,11 @@ function rehypePlugins(options: MarkdownParseOptions): PluggableList {
  */
 function postProcess(tree: Root): Root {
   visit(tree, (node, index, parent) => {
+    // Authored link/image titles and raw HTML must not reintroduce browser hints.
+    // Iframe titles identify embedded documents to assistive technology.
+    if (node.type === "element" && node.tagName !== "iframe") {
+      delete node.properties.title;
+    }
     if (node.type === "raw" && parent && typeof index === "number") {
       parent.children[index] = { type: "text", value: node.value };
       return index;

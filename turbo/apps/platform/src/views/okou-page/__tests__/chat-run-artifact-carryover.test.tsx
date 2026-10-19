@@ -428,7 +428,11 @@ test("Keep completed result actions before recommended followups", async () => {
     throw new Error("Expected the completed result action bar");
   }
   const keepGoing = await screen.findByRole("group", { name: "Keep going" });
-  const followupButton = within(keepGoing).getByTitle("Summarize the report");
+  const followupButton = queryAllByRoleFast("button", keepGoing).find(
+    (button) => {
+      return button.textContent?.trim() === "Summarize the report";
+    },
+  );
 
   expect(actions).toBeVisible();
   expect(followupButton).toBeVisible();

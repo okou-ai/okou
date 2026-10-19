@@ -176,7 +176,6 @@ function ConnectorAccountActionNotice({
         "mt-1 truncate text-xs leading-4",
         switchFailed ? "text-destructive" : "text-muted-foreground",
       )}
-      title={accountStatus}
     >
       {accountStatus}
     </div>

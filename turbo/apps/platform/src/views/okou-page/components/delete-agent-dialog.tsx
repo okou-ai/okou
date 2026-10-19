@@ -284,10 +284,7 @@ function AgentDeleteReconcileView({
                 key={workflow.id}
                 className="grid grid-cols-[1fr_200px] items-center gap-6"
               >
-                <span
-                  className="min-w-0 truncate text-sm text-foreground"
-                  title={workflow.title}
-                >
+                <span className="min-w-0 truncate text-sm text-foreground">
                   {workflow.title}
                 </span>
                 <AgentDeleteWorkflowDestination

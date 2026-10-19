@@ -302,10 +302,7 @@ function ConnectorPopoverList({
                     return $.workflows.list.actionRequired;
                   })}
                 </span>
-                <span
-                  title={ruleLabel}
-                  className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                >
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                   {ruleLabel}
                 </span>
                 <AlertTriangle
@@ -321,10 +318,7 @@ function ConnectorPopoverList({
                   />
                   {automationTypeLabel(entry.automation)}
                 </span>
-                <span
-                  title={ruleLabel}
-                  className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                >
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                   {ruleLabel}
                 </span>
               </>

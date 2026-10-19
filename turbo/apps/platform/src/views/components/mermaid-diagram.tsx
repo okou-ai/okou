@@ -91,8 +91,6 @@ export function MermaidDiagramView({
         className="relative block w-full max-w-[420px] aspect-4/3 my-1 p-2 border-[1px] border-[hsl(var(--foreground)/0.1)] rounded-lg bg-[hsl(var(--muted)/0.3)] overflow-hidden cursor-zoom-in disabled:cursor-default"
         disabled={image === null}
         aria-label={expandLabel}
-        // Restoring focus must not open a tooltip that consumes the next Escape.
-        title={expandLabel}
         data-slot="mermaid-diagram-trigger"
         onClick={(event) => {
           if (image === null) {

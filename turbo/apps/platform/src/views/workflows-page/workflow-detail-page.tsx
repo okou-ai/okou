@@ -1480,9 +1480,7 @@ function WorkflowMetadataFields({
         wideControls
       >
         <div className="flex h-9 w-full items-center rounded-lg border border-[hsl(var(--gray-400))] bg-gray-50 px-3 text-sm text-muted-foreground">
-          <span className="truncate" title={ownerAgentLabel}>
-            {ownerAgentLabel}
-          </span>
+          <span className="truncate">{ownerAgentLabel}</span>
         </div>
       </InlineSettingsRow>
       <InlineSettingsRow
@@ -1506,12 +1504,12 @@ function WorkflowMetadataFields({
       </InlineSettingsRow>
       <InlineSettingsRow
         label={copy.slug}
-        description={i18n.t(
+        description={`${i18n.t(
           ($) => {
             return $.workflows.detail.metadata.slugHelp;
           },
           { command: slugCommand },
-        )}
+        )} ${copy.slugTitle}`}
         wideControls
       >
         <Input
@@ -1530,7 +1528,7 @@ function WorkflowMetadataFields({
           required
           minLength={2}
           pattern="[a-z0-9][a-z0-9-]*[a-z0-9]"
-          title={copy.slugTitle}
+          aria-description={copy.slugTitle}
           autoCapitalize="none"
           autoComplete="off"
           spellCheck={false}
@@ -8169,7 +8167,6 @@ function AutomationRunStat({
           "min-w-0 truncate text-sm",
           emphasized ? "font-medium text-foreground" : "text-muted-foreground",
         )}
-        title={value}
       >
         {value}
       </span>
@@ -8329,17 +8326,11 @@ function AutomationRowHeading({
     <div className="flex min-w-0 items-center gap-3">
       <AutomationListIcon automation={automation} size="sm" />
       <div className="min-w-0">
-        <div
-          className="truncate text-sm font-medium text-foreground"
-          title={title}
-        >
+        <div className="truncate text-sm font-medium text-foreground">
           {title}
         </div>
         {subtitle ? (
-          <div
-            className="mt-0.5 truncate text-xs text-muted-foreground"
-            title={subtitle}
-          >
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
             {subtitle}
           </div>
         ) : null}

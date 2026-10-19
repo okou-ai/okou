@@ -136,9 +136,13 @@ test("A user can format and save agent instructions", async () => {
     "Blockquote",
   ] as const;
   for (const control of formattingControls) {
-    await expect(screen.findByTitle(control)).resolves.toBeEnabled();
+    const button = await screen.findByLabelText(control, {
+      selector: "button",
+    });
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute("title");
   }
-  await user.click(screen.getByTitle("Heading 2"));
+  await user.click(screen.getByLabelText("Heading 2", { selector: "button" }));
   expect(editor.querySelector("h2")).toHaveTextContent("Launch risks");
 
   const unsavedBar = await screen.findByTestId("unsaved-bar");

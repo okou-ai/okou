@@ -255,8 +255,8 @@ export function ChatVideoPreviewButton({
       type="button"
       data-testid={testId}
       onClick={onPreview}
-      title={filename}
       aria-label={ariaLabel}
+      aria-description={filename}
       className={cn(
         "group/video-preview relative inline-flex items-center justify-center overflow-hidden",
         buttonClassName,
@@ -1311,22 +1311,10 @@ function PermissionActionCardContent({
           <ConnectorIcon icon={icon} size={22} />
         </div>
         <div className="min-w-0">
-          <div
-            className="truncate text-[0.9375rem] font-medium text-foreground"
-            title={connectorTitle}
-          >
+          <div className="truncate text-[0.9375rem] font-medium text-foreground">
             {connectorTitle}
           </div>
-          {/*
-            The scope line is the card's only copy of the requested permission
-            and it clips at narrow widths, so it carries its own text as a
-            native tooltip the way `ConnectorAccountActionNotice` does. A
-            details dialog here would only repeat this same string.
-          */}
-          <div
-            className="mt-0.5 truncate text-sm leading-5 text-muted-foreground"
-            title={actionDescription}
-          >
+          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {actionDescription}
           </div>
           {showInlineStatus ? (

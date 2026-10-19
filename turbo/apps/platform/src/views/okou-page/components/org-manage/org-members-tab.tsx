@@ -1690,7 +1690,7 @@ function MembershipRequestRow({
           className="flex h-7 w-7 items-center justify-center rounded-md text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors disabled:opacity-50"
           onClick={handleAccept}
           disabled={loading}
-          title={t(($) => {
+          aria-label={t(($) => {
             return $.settings.workspace.members.membershipRequest.acceptTitle;
           })}
         >
@@ -1700,7 +1700,7 @@ function MembershipRequestRow({
           className="flex h-7 w-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
           onClick={handleReject}
           disabled={loading}
-          title={t(($) => {
+          aria-label={t(($) => {
             return $.settings.workspace.members.membershipRequest.rejectTitle;
           })}
         >

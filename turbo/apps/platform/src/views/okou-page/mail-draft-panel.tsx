@@ -419,7 +419,6 @@ function MailMediaAttachmentPreview({
         },
         { filename },
       )}
-      title={filename}
       className="group relative aspect-[10/9] w-[50px] max-w-full cursor-pointer overflow-hidden rounded-lg border border-foreground/10 bg-muted/30 shadow-sm transition-all duration-200 hover:scale-[1.015] hover:border-foreground/20 hover:shadow-lg hover:shadow-black/10 dark:hover:shadow-black/30"
     >
       {kind === "image" ? (
@@ -747,7 +746,6 @@ interface MailHtmlElementProps {
   readonly start?: number;
   readonly style?: CSSProperties;
   readonly target?: string;
-  readonly title?: string;
 }
 
 function positiveIntegerAttribute(
@@ -791,7 +789,6 @@ function renderMailImage(args: {
       key={args.key}
       src={remoteSource}
       alt={args.element.getAttribute("alt") ?? ""}
-      title={args.element.getAttribute("title") ?? undefined}
       width={positiveIntegerAttribute(args.element, "width")}
       height={positiveIntegerAttribute(args.element, "height")}
       loading="lazy"
@@ -807,7 +804,6 @@ function mailHtmlElementProps(args: {
   readonly tag: AllowedMailHtmlElement;
   readonly href?: string;
 }): MailHtmlElementProps {
-  const title = args.element.getAttribute("title") ?? undefined;
   return {
     ...(args.element instanceof HTMLElement
       ? { style: mailRichTextStyle(args.element) }
@@ -819,7 +815,6 @@ function mailHtmlElementProps(args: {
           rel: "noreferrer",
         }
       : {}),
-    ...(title ? { title } : {}),
     ...(args.tag === "td" || args.tag === "th"
       ? {
           colSpan: positiveIntegerAttribute(args.element, "colspan"),

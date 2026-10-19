@@ -25,7 +25,6 @@ export function ConnectorEntryStatus({
           "min-w-0 truncate",
           tone === "warning" && "text-amber-600 dark:text-amber-400",
         )}
-        title={label}
       >
         {label}
       </span>

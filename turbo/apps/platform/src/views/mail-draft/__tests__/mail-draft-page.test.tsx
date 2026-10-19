@@ -258,3 +258,20 @@ test("A draft whose Gmail access expired offers reconnection", async () => {
   expect(control("button", "Reconnect Gmail")).toBeInTheDocument();
   expect(screen.queryByText("Review the invitation")).not.toBeInTheDocument();
 });
+
+test("Email content retains links and image descriptions without native hover hints", async () => {
+  mockDraft(
+    mailDraft({
+      bodyHtml:
+        '<p title="Paragraph hint">Review the invitation</p><a href="https://example.com/reply" title="Link hint">Reply online</a><img src="https://example.com/logo.png" alt="Company logo" title="Image hint">',
+    }),
+  );
+  await setupPage({ context, path: MAIL_PATH, host: "app.okou.ai" });
+
+  const link = await screen.findByText("Reply online", { selector: "a" });
+  expect(link).toHaveAttribute("href", "https://example.com/reply");
+  expect(link).not.toHaveAttribute("title");
+  const image = screen.getByRole("img", { name: "Company logo" });
+  expect(image).not.toHaveAttribute("title");
+  expect(document.querySelector('[title="Paragraph hint"]')).toBeNull();
+});

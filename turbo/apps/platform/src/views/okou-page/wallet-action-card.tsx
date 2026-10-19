@@ -33,16 +33,10 @@ function WalletCard({
           <Wallet size={22} aria-hidden="true" />
         </div>
         <div className="min-w-0">
-          <div
-            className="truncate text-[0.9375rem] font-medium leading-5 text-foreground"
-            title={title}
-          >
+          <div className="truncate text-[0.9375rem] font-medium leading-5 text-foreground">
             {title}
           </div>
-          <div
-            className="mt-0.5 truncate text-sm leading-5 text-muted-foreground"
-            title={description}
-          >
+          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {description}
           </div>
         </div>

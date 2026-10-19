@@ -395,10 +395,7 @@ function CustomTemplateIllustrationCard({
         ) : null}
         <div className="flex items-center justify-between gap-3 px-3.5 py-3">
           <div className="flex min-w-0 flex-col gap-0.5">
-            <p
-              className="min-w-0 truncate text-sm font-semibold text-foreground"
-              title={template.title}
-            >
+            <p className="min-w-0 truncate text-sm font-semibold text-foreground">
               {template.title}
             </p>
             <CustomTemplateMeta template={template} />
@@ -523,10 +520,7 @@ function CustomTemplateCard({
         ) : null}
       </div>
       <div className="flex min-w-0 flex-col gap-1 px-0.5 pb-1 pt-2">
-        <p
-          className="min-w-0 truncate text-sm font-medium leading-5 text-foreground"
-          title={template.title}
-        >
+        <p className="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
           {template.title}
         </p>
         <CustomTemplateMeta template={template} />

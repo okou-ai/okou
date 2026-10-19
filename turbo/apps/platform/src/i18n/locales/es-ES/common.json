@@ -727,7 +727,6 @@
       "multiAccent": "Multiacentos",
       "nextSlide": "Vista previa de la diapositiva siguiente",
       "noMatches": "Sin coincidencias",
-      "placeholder": "Vista previa del sitio web {{title}}",
       "previewCurrentSlide": "Vista previa de {{title}} en la diapositiva actual",
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",

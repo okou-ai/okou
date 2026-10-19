@@ -707,7 +707,6 @@
       "multiAccent": "다중 악센트",
       "nextSlide": "다음 슬라이드 미리보기",
       "noMatches": "일치하는 항목 없음",
-      "placeholder": "{{title}} 웹사이트 미리보기 자리 표시자",
       "previewCurrentSlide": "현재 슬라이드에서 {{title}} 미리보기",
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",

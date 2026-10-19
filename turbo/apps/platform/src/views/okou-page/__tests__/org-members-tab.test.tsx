@@ -905,19 +905,23 @@ test("Accept and reject workspace membership requests", async () => {
 
   expect(screen.getByText("Carol Request")).toBeInTheDocument();
   expect(screen.getByText("Dan Reject")).toBeInTheDocument();
-  expect(screen.getAllByTitle("Accept request")).toHaveLength(2);
+  expect(
+    screen.getAllByLabelText("Accept request", { selector: "button" }),
+  ).toHaveLength(2);
 
-  click(screen.getAllByTitle("Accept request")[0]!);
+  click(screen.getAllByLabelText("Accept request", { selector: "button" })[0]!);
 
   await waitFor(() => {
     expect(
       within(rowByEmail("carol@example.com")).getByText("Member"),
     ).toBeInTheDocument();
-    expect(screen.getAllByTitle("Accept request")).toHaveLength(1);
+    expect(
+      screen.getAllByLabelText("Accept request", { selector: "button" }),
+    ).toHaveLength(1);
   });
   expect(screen.getByText("Dan Reject")).toBeInTheDocument();
 
-  click(screen.getByTitle("Reject request"));
+  click(screen.getByLabelText("Reject request", { selector: "button" }));
 
   await waitFor(() => {
     expect(screen.getByText("Membership request rejected")).toBeInTheDocument();

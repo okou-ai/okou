@@ -371,7 +371,6 @@ function PendingFormHeader({
               "break-words text-[0.9375rem] font-medium text-foreground",
               compact && "line-clamp-2 @[380px]:truncate",
             )}
-            title={compact ? title : undefined}
           >
             {title}
           </h2>
@@ -392,10 +391,7 @@ function PendingFormHeader({
               return $.chat.browserInput.site;
             })}
           </span>
-          <span
-            className={cn("min-w-0", compact ? "truncate" : "break-all")}
-            title={compact ? action.siteOrigin : undefined}
-          >
+          <span className={cn("min-w-0", compact ? "truncate" : "break-all")}>
             {action.siteOrigin}
           </span>
         </div>

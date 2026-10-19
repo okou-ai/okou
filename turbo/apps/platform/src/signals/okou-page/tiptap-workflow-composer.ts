@@ -731,7 +731,6 @@ function buildFeedbackItemChrome(
     return $.chat.feedback.remove;
   });
   removeButton.setAttribute("aria-label", removeLabel);
-  removeButton.title = removeLabel;
   removeButton.addEventListener("click", onRemove);
   return quoteDom;
 }
@@ -1035,7 +1034,6 @@ function createTemplateAttachmentNodeView(
     );
     const removeLabel = templateAttachmentRemoveLabel(attachment);
     removeButton.setAttribute("aria-label", removeLabel);
-    removeButton.title = removeLabel;
     typeText.textContent = templateAttachmentTypeLabel(attachment.type);
   }
   function render(nextNode: ProseMirrorNode): void {
@@ -1672,7 +1670,15 @@ function createTemplateAttachmentNode(
     addAttributes() {
       return {
         templateType: { default: "presentation" },
-        title: { default: "" },
+        title: {
+          default: "",
+          rendered: false,
+          parseHTML: (element) => {
+            return (
+              element.dataset.templateTitle ?? element.getAttribute("title")
+            );
+          },
+        },
         category: { default: "slides" },
         previewImageUrl: { default: null },
       };
@@ -1680,10 +1686,14 @@ function createTemplateAttachmentNode(
     parseHTML() {
       return [{ tag: "div[data-composer-template-attachment]" }];
     },
-    renderHTML({ HTMLAttributes }) {
+    renderHTML({ node, HTMLAttributes }) {
       return [
         "div",
-        { ...HTMLAttributes, "data-composer-template-attachment": "" },
+        {
+          ...HTMLAttributes,
+          "data-template-title": templateAttachmentNodeAttributes(node).title,
+          "data-composer-template-attachment": "",
+        },
       ];
     },
     addNodeView() {
@@ -1716,7 +1726,15 @@ function createInlineTemplateNode(
       return {
         templateType: { default: "presentation" },
         template: { default: null },
-        title: { default: "" },
+        title: {
+          default: "",
+          rendered: false,
+          parseHTML: (element) => {
+            return (
+              element.dataset.templateTitle ?? element.getAttribute("title")
+            );
+          },
+        },
         category: { default: "slides" },
         previewImageUrl: { default: null },
       };
@@ -1724,10 +1742,14 @@ function createInlineTemplateNode(
     parseHTML() {
       return [{ tag: "span[data-composer-inline-template]" }];
     },
-    renderHTML({ HTMLAttributes }) {
+    renderHTML({ node, HTMLAttributes }) {
       return [
         "span",
-        { ...HTMLAttributes, "data-composer-inline-template": "" },
+        {
+          ...HTMLAttributes,
+          "data-template-title": templateAttachmentNodeAttributes(node).title,
+          "data-composer-inline-template": "",
+        },
       ];
     },
     renderText({ node }) {

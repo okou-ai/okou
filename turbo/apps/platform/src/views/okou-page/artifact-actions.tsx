@@ -924,7 +924,7 @@ function ArtifactImageZoomButton({
   className,
   disabled,
   label,
-  nativeTitle,
+  showTooltip,
   onClick,
   testId,
 }: {
@@ -932,7 +932,7 @@ function ArtifactImageZoomButton({
   className: string;
   disabled?: boolean;
   label: string;
-  nativeTitle: boolean;
+  showTooltip: boolean;
   onClick: () => void;
   testId: string;
 }) {
@@ -943,28 +943,27 @@ function ArtifactImageZoomButton({
       disabled={disabled}
       className={className}
       aria-label={label}
-      title={nativeTitle ? label : undefined}
       data-testid={testId}
     >
       {children}
     </button>
   );
-  return nativeTitle ? (
-    button
-  ) : (
+  return showTooltip ? (
     <ArtifactActionTooltip label={label}>{button}</ArtifactActionTooltip>
+  ) : (
+    button
   );
 }
 
 export function ArtifactImageZoomControls({
   controls,
-  nativeTitle = false,
+  showTooltip = true,
   placement = "top",
   testIdPrefix,
 }: {
   controls: ZoomableImageControls;
-  /** Use the browser title tooltip instead of the floating action tooltip. */
-  nativeTitle?: boolean;
+  /** Disable floating hints when restoring lightbox focus must not open one. */
+  showTooltip?: boolean;
   /**
    * Fullscreen puts the exit control in the top-right corner, and it is the
    * only way back out, so zoom yields that corner rather than sharing it.
@@ -987,7 +986,7 @@ export function ArtifactImageZoomControls({
         label={t(($) => {
           return $.artifacts.actions.zoomOut;
         })}
-        nativeTitle={nativeTitle}
+        showTooltip={showTooltip}
         onClick={controls.zoomOut}
         testId={`${testIdPrefix}-image-zoom-out`}
       >
@@ -1005,7 +1004,7 @@ export function ArtifactImageZoomControls({
         label={t(($) => {
           return $.artifacts.actions.zoomIn;
         })}
-        nativeTitle={nativeTitle}
+        showTooltip={showTooltip}
         onClick={controls.zoomIn}
         testId={`${testIdPrefix}-image-zoom-in`}
       >
@@ -1016,7 +1015,7 @@ export function ArtifactImageZoomControls({
         label={t(($) => {
           return $.artifacts.actions.resetZoom;
         })}
-        nativeTitle={nativeTitle}
+        showTooltip={showTooltip}
         onClick={controls.resetZoom}
         testId={`${testIdPrefix}-image-reset-zoom`}
       >
