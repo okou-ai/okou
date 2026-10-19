@@ -55,6 +55,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 
 mod blank_prefetch;
+mod codex_reconnect;
 mod execution_diagnostics;
 mod fresh_sandbox;
 mod home_cache;
