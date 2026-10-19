@@ -7,6 +7,8 @@ import type { TextPreviewContent } from "../../signals/text-preview.ts";
 import type {
   JsonPreviewSignals,
   JsonPreviewRow,
+  JsonPreviewNodeSignals,
+  JsonPreviewPageSignals,
 } from "../../signals/json-preview.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatJsonPreviewText } from "../../lib/json-preview.ts";
@@ -61,16 +63,13 @@ function JsonRow({
   row,
   signals,
 }: {
-  readonly row: JsonPreviewRow;
+  readonly row: Extract<JsonPreviewRow, { kind: "node" }>;
   readonly signals: JsonPreviewSignals;
 }) {
   const { t } = useTranslation();
   const toggle = useSet(signals.toggleNode$);
   const node = row.node;
   const indent = INDENTS[Math.min(row.depth, INDENTS.length - 1)];
-  if (row.kind === "more") {
-    return <JsonPageRow row={row} signals={signals} />;
-  }
   const container = node.type === "object" || node.type === "array";
   const label = row.expanded
     ? t(
@@ -179,6 +178,128 @@ function JsonRow({
   );
 }
 
+interface JsonNodePageProps {
+  readonly page: JsonPreviewPageSignals;
+  readonly pages: readonly JsonPreviewPageSignals[];
+  readonly index: number;
+  readonly depth: number;
+  readonly signals: JsonPreviewSignals;
+}
+
+function JsonNodePage(props: JsonNodePageProps) {
+  const visible = useGet(props.page.visible$);
+  return visible ? <JsonPageNodes {...props} /> : null;
+}
+
+function JsonPageNodes({
+  page,
+  pages,
+  index,
+  depth,
+  signals,
+}: JsonNodePageProps) {
+  const nodes = useGet(page.nodes$);
+  const next = pages[index + 1];
+  return (
+    <>
+      {nodes.map((node) => {
+        return (
+          <JsonTreeNode
+            key={node.node.offset}
+            node={node}
+            depth={depth}
+            signals={signals}
+          />
+        );
+      })}
+      {next && (
+        <JsonNodePage
+          page={next}
+          pages={pages}
+          index={index + 1}
+          depth={depth}
+          signals={signals}
+        />
+      )}
+    </>
+  );
+}
+
+interface JsonTreeNodeProps {
+  readonly node: JsonPreviewNodeSignals;
+  readonly depth: number;
+  readonly signals: JsonPreviewSignals;
+}
+
+function JsonRemainingRow({ node, depth, signals }: JsonTreeNodeProps) {
+  const remaining = useGet(node.remaining$);
+  return remaining === undefined ? null : (
+    <JsonPageRow
+      row={{ kind: "more", node: node.node, depth, remaining }}
+      signals={signals}
+    />
+  );
+}
+
+function JsonNodeChildren({ node, depth, signals }: JsonTreeNodeProps) {
+  const pages = useGet(node.pages$);
+  const first = pages[0];
+  // Keep More outside the page frontier so keyboard focus survives paging.
+  return (
+    <>
+      {first && (
+        <JsonNodePage
+          page={first}
+          pages={pages}
+          index={0}
+          depth={depth}
+          signals={signals}
+        />
+      )}
+      <JsonRemainingRow node={node} depth={depth} signals={signals} />
+    </>
+  );
+}
+
+function JsonTreeNode({ node, depth, signals }: JsonTreeNodeProps) {
+  const expanded = useGet(node.expanded$);
+  if (expanded === undefined) {
+    return null;
+  }
+  return (
+    <>
+      <JsonRow
+        row={{ kind: "node", node: node.node, depth, expanded }}
+        signals={signals}
+      />
+      {expanded && node.node.children.length > 0 && (
+        <JsonNodeChildren node={node} depth={depth + 1} signals={signals} />
+      )}
+    </>
+  );
+}
+
+function JsonTreeRows({ signals }: { readonly signals: JsonPreviewSignals }) {
+  const root = useGet(signals.rootNode$);
+  return root ? <JsonTreeNode node={root} depth={0} signals={signals} /> : null;
+}
+
+function JsonLimitedStatus({
+  signals,
+}: {
+  readonly signals: JsonPreviewSignals;
+}) {
+  const limited = useGet(signals.limited$);
+  const { t } = useTranslation();
+  return limited ? (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.artifacts.jsonPreview.limited;
+      })}
+    </p>
+  ) : null;
+}
+
 function JsonTreePreview({
   signals,
 }: {
@@ -187,7 +308,6 @@ function JsonTreePreview({
   const { t } = useTranslation();
   const model = useGet(signals.model$);
   const sourceMode = useGet(signals.sourceMode$);
-  const { rows, limited } = useGet(signals.rows$);
   const selectView = useSet(signals.selectView$);
   const collapseAll = useSet(signals.collapseAll$);
   return (
@@ -265,22 +385,8 @@ function JsonTreePreview({
           </pre>
         ) : (
           <>
-            {rows.map((row) => {
-              return (
-                <JsonRow
-                  key={`${row.kind}:${String(row.node.offset)}`}
-                  row={row}
-                  signals={signals}
-                />
-              );
-            })}
-            {limited && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.artifacts.jsonPreview.limited;
-                })}
-              </p>
-            )}
+            <JsonTreeRows signals={signals} />
+            <JsonLimitedStatus signals={signals} />
           </>
         )}
       </div>

@@ -132,6 +132,39 @@ test("Large arrays reveal bounded pages while source and copy retain every loade
   expect(dialog.querySelector("pre")?.textContent).toBe(source);
 });
 
+test("Nested JSON pagination retains following siblings and keyboard focus", async () => {
+  const user = userEvent.setup();
+  const dialog = await openJson(
+    JSON.stringify({
+      before: "first marker",
+      items: Array.from({ length: 120 }, (_, index) => {
+        return index;
+      }),
+      after: "last marker",
+    }),
+  );
+  click(filesButton('Expand "items"', dialog));
+  expect(within(dialog).getByText("[49]")).toBeInTheDocument();
+  expect(within(dialog).queryByText("[50]")).not.toBeInTheDocument();
+  const more = filesButton("Show more", dialog);
+  more.focus();
+  await user.keyboard("{Enter}");
+  expect(within(dialog).getByText("[99]")).toBeInTheDocument();
+  expect(within(dialog).queryByText("[100]")).not.toBeInTheDocument();
+  expect(filesButton("Show more", dialog)).toHaveFocus();
+  await user.keyboard("{Enter}");
+  const last = within(dialog).getByText("[119]");
+  expect(last).toBeInTheDocument();
+  const sibling = within(dialog).getByText('"last marker"');
+  expect(
+    last.compareDocumentPosition(sibling) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(within(dialog).getByText('"first marker"')).toBeInTheDocument();
+  const allShown = filesButton("All items shown", dialog);
+  expect(allShown).toHaveAttribute("aria-disabled", "true");
+  expect(allShown).toHaveFocus();
+});
+
 test("Browsing another JSON file restores filename focus and keeps each source isolated", async () => {
   const user = userEvent.setup();
   await setupFilesPage(context, {
