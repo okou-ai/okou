@@ -18,6 +18,8 @@ const FAILURE: &str = "cancellation reconciliation read failed; will retry";
 const DEGRADED: &str = "cancellation reconciliation reads degraded; will retry";
 const RECOVERED: &str = "cancellation reconciliation read recovered";
 
+mod http_status;
+
 struct Request {
     text: String,
     socket: TcpStream,
@@ -314,8 +316,20 @@ async fn genuine_failure_is_the_only_axiom_ingested_event_in_an_episode() {
     let mut failures = ReadFailures::default();
 
     failures.record(run_id, &ReadError::Deadline(Box::new(request_context())));
-    failures.record(run_id, &ReadError::Status(StatusCode::SERVICE_UNAVAILABLE));
-    failures.record(run_id, &ReadError::Status(StatusCode::BAD_GATEWAY));
+    failures.record(
+        run_id,
+        &ReadError::Status {
+            status: StatusCode::FORBIDDEN,
+            request: Box::new(request_context()),
+        },
+    );
+    failures.record(
+        run_id,
+        &ReadError::Status {
+            status: StatusCode::BAD_GATEWAY,
+            request: Box::new(request_context()),
+        },
+    );
     guard.shutdown().await;
 
     assert_eq!(events(&captured, FAILURE).len(), 2);
@@ -325,7 +339,7 @@ async fn genuine_failure_is_the_only_axiom_ingested_event_in_an_episode() {
     assert_eq!(ingested.len(), 1);
     assert_eq!(ingested[0]["message"], FAILURE);
     assert_eq!(ingested[0]["level"], "warn");
-    assert_eq!(ingested[0]["status"], 503);
+    assert_eq!(ingested[0]["status"], 403);
     assert_eq!(ingested[0]["failure_stage"], "status");
     assert_eq!(ingested[0]["consecutive_failures"], 2);
 }
@@ -520,7 +534,7 @@ async fn authenticated_read_accepts_only_explicit_complete_matching_v1_results()
                 .to_string(),
             )
             .await;
-        assert!(matches!(read.await.unwrap(), Err(ReadError::Status(_))));
+        assert!(matches!(read.await.unwrap(), Err(ReadError::Status { .. })));
     }
     for body in ["not json".into(), "x".repeat(MAX_RESPONSE_BYTES + 1)] {
         let client = controller.client.clone();
