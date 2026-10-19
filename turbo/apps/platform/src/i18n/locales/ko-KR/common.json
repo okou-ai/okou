@@ -2105,14 +2105,10 @@
       "communications": "메시지",
       "idle": "유휴",
       "loadFailed": "불러오기 실패",
-      "loading": "불러오는 중…",
       "messageUnavailable": "메시지를 볼 수 없음",
-      "more": "더 보기",
-      "noMessages": "아직 메시지가 없습니다",
       "origin": "시작한 곳",
       "queued": "대기 중",
       "received": "받음",
-      "refresh": "새로고침",
       "running": "실행 중",
       "sent": "보냄",
       "toggleMessages": "{{title}}과의 메시지",
@@ -2137,15 +2133,13 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "emptyArtifacts": "아직 아티팩트가 없습니다",
       "emptyLinks": "이 채팅에는 아직 링크가 없습니다",
       "expand": "펼치기",
       "links": "링크",
       "loadFailed": "리소스를 불러오지 못했습니다",
       "loadingLinks": "링크 불러오는 중",
       "retry": "다시 시도",
-      "title": "채팅 리소스",
-      "viewAll": "모두 보기"
+      "title": "채팅 리소스"
     },
     "run": {
       "collapseWorkHistory": "작업 기록 접기",

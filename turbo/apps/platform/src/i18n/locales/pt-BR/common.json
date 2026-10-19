@@ -2152,14 +2152,10 @@
       "communications": "Mensagens",
       "idle": "Inativa",
       "loadFailed": "Falha ao carregar",
-      "loading": "Carregando…",
       "messageUnavailable": "Mensagem indisponível",
-      "more": "Mais",
-      "noMessages": "Ainda não há mensagens",
       "origin": "De",
       "queued": "Na fila",
       "received": "Recebido",
-      "refresh": "Atualizar",
       "running": "Em execução",
       "sent": "Enviado",
       "toggleMessages": "Mensagens com {{title}}",
@@ -2186,15 +2182,13 @@
     "resources": {
       "collapse": "Recolher",
       "copyLink": "Copiar link",
-      "emptyArtifacts": "Ainda não há artefatos",
       "emptyLinks": "Ainda não há links neste chat",
       "expand": "Expandir",
       "links": "Links",
       "loadFailed": "Não foi possível carregar os recursos",
       "loadingLinks": "Carregando links",
       "retry": "Tentar novamente",
-      "title": "Recursos da conversa",
-      "viewAll": "Ver tudo"
+      "title": "Recursos da conversa"
     },
     "run": {
       "collapseWorkHistory": "Recolher histórico de trabalho",

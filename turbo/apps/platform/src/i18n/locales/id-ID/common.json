@@ -2105,14 +2105,10 @@
       "communications": "Pesan",
       "idle": "Tidak aktif",
       "loadFailed": "Gagal memuat",
-      "loading": "Memuat…",
       "messageUnavailable": "Pesan tidak tersedia",
-      "more": "Lainnya",
-      "noMessages": "Belum ada pesan",
       "origin": "Dari",
       "queued": "Dalam antrean",
       "received": "Diterima",
-      "refresh": "Muat ulang",
       "running": "Berjalan",
       "sent": "Dikirim",
       "toggleMessages": "Pesan dengan {{title}}",
@@ -2137,15 +2133,13 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "emptyArtifacts": "Belum ada artefak",
       "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
-      "title": "Sumber daya chat",
-      "viewAll": "Lihat semua"
+      "title": "Sumber daya chat"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",

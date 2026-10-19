@@ -3815,6 +3815,7 @@ export function createChatPanelSignals(
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
   });
+  const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
     threadId,
     agentId,
@@ -3847,8 +3848,9 @@ export function createChatPanelSignals(
       messagePipeline.allChatGroups$,
       artifact.artifacts$,
       messagePipeline.initialEventsReady$,
+      relations.closeMessages$,
     ),
-    relations: createChatRelationSignals(threadId, messagePipeline),
+    relations,
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

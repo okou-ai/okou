@@ -12,6 +12,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import {
+  createResourcePagination,
+  type ResourcePagination,
+} from "./chat-resource-pagination.ts";
 import { withCleanup } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
@@ -23,6 +27,7 @@ export interface RelationPage<T> {
 export interface ChatRelationList<T> {
   readonly data$: Computed<Promise<RelationPage<T>>>;
   readonly more$: Command<Promise<void>, [AbortSignal]>;
+  readonly pagination: ResourcePagination;
 }
 
 function createPaging<T>(
@@ -84,7 +89,7 @@ function createPaging<T>(
       },
     );
   });
-  return { data$, more$ };
+  return { data$, more$, pagination: createResourcePagination(more$) };
 }
 function cursorQuery(cursor: ChatRelationCursor) {
   return { before: cursor.createdAt, beforeId: cursor.id };
@@ -154,33 +159,6 @@ function chatOrigin(events: ChatEvent[]): ChatOrigin {
   return source ? { kind: "source", part: source } : { kind: "unknown" };
 }
 
-function createRelationContentSignal(
-  origin$: Computed<ChatOrigin | null>,
-  lists: readonly ChatRelationList<unknown>[],
-) {
-  return computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel]) {
-      return false;
-    }
-    const origin = get(origin$);
-    if (origin === null) {
-      return null;
-    }
-    if (origin.kind === "source") {
-      return true;
-    }
-    // Failed lists are settled too: their views retain the error and retry UI.
-    const results = await Promise.allSettled(
-      lists.map((list) => {
-        return get(list.data$);
-      }),
-    );
-    return results.some((result) => {
-      return result.status === "rejected" || result.value.items.length > 0;
-    });
-  });
-}
-
 export interface ResourceChat extends RelatedChat {
   readonly lastActivityAt: string;
 }
@@ -190,6 +168,9 @@ function createResourceChats(
   communications: ChatRelationList<ChatCommunication>,
 ) {
   const data$ = computed(async (get) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel]) {
+      return { items: [], hasMore: false, failed: false, pageKey: "" };
+    }
     const [created, exchanged] = await Promise.allSettled([
       get(children.data$),
       get(communications.data$),
@@ -215,6 +196,13 @@ function createResourceChats(
           left.threadId.localeCompare(right.threadId)
         );
       }),
+      pageKey: [created, exchanged]
+        .map((result) => {
+          return result.status === "fulfilled"
+            ? (result.value.nextCursor?.id ?? "")
+            : "error";
+        })
+        .join(":"),
       hasMore: [created, exchanged].some((result) => {
         return (
           result.status === "fulfilled" && result.value.nextCursor !== null
@@ -245,7 +233,70 @@ function createResourceChats(
       }
     }
   });
-  return { data$, more$ };
+  return { data$, more$, pagination: createResourcePagination(more$) };
+}
+
+function createPeerMessages(threadId: string, revision$: Computed<unknown>) {
+  const selectedPeer$ = state<string | null>(null);
+  const emptyPeers$ = state<{
+    readonly revision: unknown;
+    readonly ids: readonly string[];
+  } | null>(null);
+  const confirmedEmptyPeers$ = computed((get) => {
+    const empty = get(emptyPeers$);
+    return empty && empty.revision === get(revision$) ? empty.ids : [];
+  });
+  const messages$ = computed((get) => {
+    const peerId = get(selectedPeer$);
+    return peerId ? createMessages(threadId, peerId, revision$) : null;
+  });
+  return {
+    selectedPeer$: computed((get) => {
+      return get(selectedPeer$);
+    }),
+    messages$,
+    closeMessages$: command(({ set }) => {
+      set(selectedPeer$, null);
+    }),
+    confirmedEmptyPeers$,
+    togglePeer$: command(
+      async (
+        { get, set },
+        peerId: string,
+        trigger: HTMLElement,
+        signal: AbortSignal,
+      ) => {
+        if (get(selectedPeer$) === peerId) {
+          set(selectedPeer$, null);
+          return;
+        }
+        set(selectedPeer$, peerId);
+        const revision = get(revision$);
+        const list = get(messages$);
+        if (!list) {
+          return;
+        }
+        const page = await get(list.data$);
+        signal.throwIfAborted();
+        if (
+          revision === get(revision$) &&
+          page.items.length === 0 &&
+          !page.nextCursor
+        ) {
+          if (document.activeElement === trigger) {
+            // The confirmed-empty toggle disappears; keep keyboard focus on its chat.
+            trigger.parentElement
+              ?.querySelector<HTMLElement>("a")
+              ?.focus({ preventScroll: true });
+          }
+          set(emptyPeers$, {
+            revision,
+            ids: [...get(confirmedEmptyPeers$), peerId],
+          });
+        }
+      },
+    ),
+  };
 }
 
 export function createChatRelationSignals(
@@ -258,8 +309,7 @@ export function createChatRelationSignals(
     readonly initialEventsReady$: Computed<boolean>;
   },
 ) {
-  const refresh$ = state(0);
-  const selectedPeer$ = state<string | null>(null);
+  const retryRevision$ = state(0);
   const eventRevision$ = computed((get) => {
     const events = get(events$);
     for (let index = events.length - 1; index >= 0; index--) {
@@ -280,7 +330,7 @@ export function createChatRelationSignals(
     return {
       threads: get(eventDrivenChatThreads$),
       latestEventId: get(eventRevision$),
-      refresh: get(refresh$),
+      retry: get(retryRevision$),
     };
   });
   const origin$ = computed((get): ChatOrigin | null => {
@@ -344,10 +394,6 @@ export function createChatRelationSignals(
       ).body;
     },
   );
-  const messages$ = computed((get) => {
-    const peerId = get(selectedPeer$);
-    return peerId ? createMessages(threadId, peerId, revision$) : null;
-  });
   const children = createPaging(childrenFirst$, childrenMore$);
   const communications = createPaging(
     communicationsFirst$,
@@ -355,20 +401,10 @@ export function createChatRelationSignals(
   );
   return {
     origin$,
-    hasContent$: createRelationContentSignal(origin$, [
-      children,
-      communications,
-    ]),
     chats: createResourceChats(children, communications),
-    selectedPeer$: computed((get) => {
-      return get(selectedPeer$);
-    }),
-    messages$,
-    togglePeer$: command(({ get, set }, peerId: string) => {
-      set(selectedPeer$, get(selectedPeer$) === peerId ? null : peerId);
-    }),
-    reload$: command(({ set }) => {
-      set(refresh$, (value) => {
+    ...createPeerMessages(threadId, revision$),
+    retry$: command(({ set }) => {
+      set(retryRevision$, (value) => {
         return value + 1;
       });
     }),

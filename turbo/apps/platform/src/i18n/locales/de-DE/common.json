@@ -2112,14 +2112,10 @@
       "communications": "Nachrichten",
       "idle": "Inaktiv",
       "loadFailed": "Laden fehlgeschlagen",
-      "loading": "Wird geladen…",
       "messageUnavailable": "Nachricht nicht verfügbar",
-      "more": "Mehr",
-      "noMessages": "Noch keine Nachrichten",
       "origin": "Von",
       "queued": "In Warteschlange",
       "received": "Empfangen",
-      "refresh": "Aktualisieren",
       "running": "Läuft",
       "sent": "Gesendet",
       "toggleMessages": "Nachrichten mit {{title}}",
@@ -2145,15 +2141,13 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "emptyArtifacts": "Noch keine Artefakte",
       "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "loadingLinks": "Links werden geladen",
       "retry": "Erneut versuchen",
-      "title": "Chat-Ressourcen",
-      "viewAll": "Alle anzeigen"
+      "title": "Chat-Ressourcen"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",

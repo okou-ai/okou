@@ -2105,14 +2105,10 @@
       "communications": "訊息",
       "idle": "閒置",
       "loadFailed": "載入失敗",
-      "loading": "載入中…",
       "messageUnavailable": "訊息無法取得",
-      "more": "更多",
-      "noMessages": "尚無訊息",
       "origin": "發起自",
       "queued": "排隊中",
       "received": "收到",
-      "refresh": "重新整理",
       "running": "執行中",
       "sent": "傳送",
       "toggleMessages": "與 {{title}} 的訊息往來",
@@ -2137,15 +2133,13 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
-      "emptyArtifacts": "目前還沒有 artifact",
       "emptyLinks": "此聊天中暫無連結",
       "expand": "展開",
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
       "loadingLinks": "正在載入連結",
       "retry": "重試",
-      "title": "聊天資源",
-      "viewAll": "查看全部"
+      "title": "聊天資源"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",
