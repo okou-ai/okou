@@ -508,7 +508,7 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const usage = useLoadable(composer.suggestion.workflowUsage$);
+  const recentIds = useLoadable(composer.suggestion.recentWorkflowIds$);
   // Null means the list is not requested yet; the last loadable keeps that
   // null while the first request is in flight.
   const requested =
@@ -524,12 +524,12 @@ function useComposerWorkflowSuggestions(
         : findWorkflowQueryMatches(
             workflows,
             query,
-            usage.state === "hasData" ? usage.data : new Map(),
+            recentIds.state === "hasData" ? recentIds.data : [],
           ),
     loading:
       workflowsLoadable.state === "loading" ||
       requested === null ||
-      (query !== undefined && usage.state === "loading"),
+      (query !== undefined && recentIds.state === "loading"),
   };
 }
 
@@ -729,8 +729,8 @@ function suggestionNavigationOrder(
   overviewCategoryCount: number | null,
 ): readonly number[] {
   return Array.from({ length: count }, (_, visualIndex) => {
-    // Above the composer the overview reads workflows from most used to
-    // least used, then the creation categories in their existing anchored
+    // Above the composer the overview reads workflows from most recent to
+    // least recent, then the creation categories in their existing anchored
     // order below them. Below the composer it reads categories then workflows
     // top-down, which is the index order, so callers pass null there.
     if (overviewCategoryCount !== null) {

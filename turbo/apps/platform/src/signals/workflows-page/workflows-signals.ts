@@ -59,9 +59,9 @@ import {
 } from "./workflow-reload.ts";
 import { bestEffort, onRef } from "../utils.ts";
 import {
-  captureWorkflowUse$,
-  recordWorkflowUse$,
-} from "../okou-page/workflow-usage.ts";
+  captureRecentWorkflowUse$,
+  recordRecentWorkflowUse$,
+} from "../okou-page/recent-workflows.ts";
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
@@ -1654,7 +1654,9 @@ export const runWorkflowAutomationNow$ = command(
     signal: AbortSignal,
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
     const workflowId = get(currentWorkflowId$);
-    const usage = workflowId ? set(captureWorkflowUse$, [workflowId]) : null;
+    const usage = workflowId
+      ? set(captureRecentWorkflowUse$, [workflowId])
+      : null;
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.run({
@@ -1665,7 +1667,7 @@ export const runWorkflowAutomationNow$ = command(
     );
     signal.throwIfAborted();
     if (usage) {
-      await bestEffort(set(recordWorkflowUse$, usage, signal));
+      await bestEffort(set(recordRecentWorkflowUse$, usage, signal));
     }
     return result.body;
   },

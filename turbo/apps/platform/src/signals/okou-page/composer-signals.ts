@@ -19,7 +19,10 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { bestEffort, onRef } from "../utils.ts";
-import { prepareWorkflowUse$, recordWorkflowUse$ } from "./workflow-usage.ts";
+import {
+  prepareRecentWorkflowUse$,
+  recordRecentWorkflowUse$,
+} from "./recent-workflows.ts";
 import {
   createPendingRemoteAccessSignals,
   threadRemoteAccess$,
@@ -110,7 +113,7 @@ type ComposerSuggestionSignals = Pick<
   | "previewSuggestion$"
   | "slashWorkflowsExpanded$"
   | "slashWorkflowsExpandedHeight$"
-  | "workflowUsage$"
+  | "recentWorkflowIds$"
   | "expandSlashWorkflows$"
   | "closeSuggestionMenu$"
   | "setSuggestionMenuRef$"
@@ -380,7 +383,7 @@ function composerSuggestionSignals(
     previewSuggestion$: composer.previewSuggestion$,
     slashWorkflowsExpanded$: composer.slashWorkflowsExpanded$,
     slashWorkflowsExpandedHeight$: composer.slashWorkflowsExpandedHeight$,
-    workflowUsage$: composer.workflowUsage$,
+    recentWorkflowIds$: composer.recentWorkflowIds$,
     expandSlashWorkflows$: composer.expandSlashWorkflows$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     setSuggestionMenuRef$: composer.setSuggestionMenuRef$,
@@ -857,7 +860,7 @@ function createSubmitCurrentInput({
       }
       signal.throwIfAborted();
       const workflowUse = await set(
-        prepareWorkflowUse$,
+        prepareRecentWorkflowUse$,
         visiblePrompt,
         workflowComposer.workflows$,
         signal,
@@ -870,7 +873,7 @@ function createSubmitCurrentInput({
       );
       if (submitted && workflowUse) {
         // Browser history must never turn an accepted send into a send error.
-        await bestEffort(set(recordWorkflowUse$, workflowUse, signal));
+        await bestEffort(set(recordRecentWorkflowUse$, workflowUse, signal));
       }
       return submitted;
     },

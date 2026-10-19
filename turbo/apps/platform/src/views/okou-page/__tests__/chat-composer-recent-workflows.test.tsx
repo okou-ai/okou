@@ -11,7 +11,6 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockNow, now } from "../../../lib/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
@@ -25,11 +24,8 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000920";
-const NOW = Date.parse("2026-10-19T12:00:00.000Z");
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function mockWorkflows(prefix = "") {
-  mockNow(NOW, context.signal);
   mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
@@ -91,17 +87,9 @@ function mockHistory(
     readonly org?: string;
   }[],
 ) {
-  const timestamp = now();
   const values = new Map(
     histories.map(({ ids, user = "test-user-123", org = "org_default" }) => {
-      return [
-        `okou_workflow-usage:${user}:${org}`,
-        JSON.stringify(
-          ids.map((workflowId, index) => {
-            return { workflowId, usedAt: timestamp - index - 1 };
-          }),
-        ),
-      ];
+      return [`okou_recent-workflows:${user}:${org}`, JSON.stringify(ids)];
     }),
   );
   vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
@@ -294,11 +282,8 @@ test("An accepted use retains history written by another browser tab", async () 
   const editor = await openComposer();
   // The page has read the first accepted use; another tab writes before the next send.
   history.set(
-    "okou_workflow-usage:test-user-123:org_default",
-    JSON.stringify([
-      { workflowId: echo.id, usedAt: now() - 1 },
-      { workflowId: zulu.id, usedAt: now() - 2 },
-    ]),
+    "okou_recent-workflows:test-user-123:org_default",
+    JSON.stringify([echo.id, zulu.id]),
   );
   for (const name of ["delta"]) {
     await fill(editor, `/${name}`);
@@ -371,7 +356,7 @@ test("Typed search keeps name matches ahead of more recently used description ma
   });
 });
 
-test("The pr-a search ranks frequent prefixes above substrings, abbreviations, and descriptions", async () => {
+test("The pr-a search ranks recently used prefixes above substrings, abbreviations, and descriptions", async () => {
   mockWorkflows();
   const names = [
     "report",
@@ -392,26 +377,17 @@ test("The pr-a search ranks frequent prefixes above substrings, abbreviations, a
   });
   mockHistory([
     {
-      ids: [
-        "report",
-        "report",
-        "report",
-        "report",
-        "team-pr-auto",
-        "team-pr-auto",
-        "team-pr-auto",
-        "pr-auto-deploy",
-        "pr-auto",
-        "pr-auto",
-      ].map((name) => {
-        const workflow = workflows.find((workflow) => {
-          return workflow.name === name;
-        });
-        if (!workflow) {
-          throw new Error(`Missing workflow ${name}`);
-        }
-        return workflow.id;
-      }),
+      ids: ["report", "team-pr-auto", "pr-auto", "pr-auto-deploy"].map(
+        (name) => {
+          const workflow = workflows.find((workflow) => {
+            return workflow.name === name;
+          });
+          if (!workflow) {
+            throw new Error(`Missing workflow ${name}`);
+          }
+          return workflow.id;
+        },
+      ),
     },
   ]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
@@ -453,13 +429,12 @@ async function sendWorkflowPrompt(prompt: string): Promise<HTMLElement> {
   return editor;
 }
 
-test("Frequency wins over recency within a match tier on desktop and mobile", async () => {
+test("The latest accepted use wins regardless of frequency on desktop and mobile", async () => {
   mockWorkflows("qz-");
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   await sendWorkflowPrompt("/qz-delta");
   await sendWorkflowPrompt("/qz-delta");
-  mockNow(NOW + 1000, context.signal);
   const editor = await sendWorkflowPrompt("/qz-beta");
 
   for (const desktop of [true, false]) {
@@ -467,59 +442,20 @@ test("Frequency wins over recency within a match tier on desktop and mobile", as
     await fill(editor, "Draft /qz");
     await waitFor(() => {
       expect(workflowNames()).toStrictEqual([
-        "/qz-delta",
         "/qz-beta",
+        "/qz-delta",
         "/qz-alpha",
         "/qz-charlie",
         "/qz-echo",
         "/qz-zulu",
       ]);
     });
-    expect(button("/qz-delta")).toHaveAttribute("data-active", "true");
+    expect(button("/qz-beta")).toHaveAttribute("data-active", "true");
     const user = userEvent.setup();
     await user.keyboard("{ArrowDown}{Enter}");
-    expect(editor).toHaveTextContent("Draft /qz-beta");
+    expect(editor).toHaveTextContent("Draft /qz-delta");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   }
-});
-
-test("A message counts each workflow once and equal counts use the latest accepted send", async () => {
-  mockWorkflows();
-  mockChatLifecycle(context, { threadId: THREAD_ID });
-  await openComposer();
-  await sendWorkflowPrompt("/zulu /zulu");
-  mockNow(NOW + 1000, context.signal);
-  const editor = await sendWorkflowPrompt("/echo");
-  await fill(editor, "Draft /");
-  await waitFor(() => {
-    expect(workflowNames()).toStrictEqual([
-      "/echo",
-      "/zulu",
-      "/alpha",
-      "/beta",
-    ]);
-  });
-});
-
-test("Uses outside the rolling 30-day window expire when the menu next opens", async () => {
-  mockWorkflows();
-  mockNow(NOW - 30 * DAY_MS, context.signal);
-  mockChatLifecycle(context, { threadId: THREAD_ID });
-  await openComposer();
-  await sendWorkflowPrompt("/zulu");
-  await sendWorkflowPrompt("/zulu");
-  mockNow(NOW - 29 * DAY_MS, context.signal);
-  const editor = await sendWorkflowPrompt("/echo");
-  mockNow(NOW, context.signal);
-  await fill(editor, "Draft /");
-  await waitFor(() => {
-    expect(workflowNames()).toStrictEqual([
-      "/echo",
-      "/alpha",
-      "/beta",
-      "/charlie",
-    ]);
-  });
 });
 
 test("A rejected send does not promote a workflow", async () => {
@@ -597,25 +533,4 @@ test("Typed results keep their order and keyboard selection while an earlier sen
       "/qz-zulu",
     ]);
   });
-});
-
-test("Undated legacy recency does not become fabricated 30-day usage", async () => {
-  const workflows = mockWorkflows();
-  const history = mockHistory([]);
-  history.set(
-    "okou_recent-workflows:test-user-123:org_default",
-    JSON.stringify(
-      workflows.map((workflow) => {
-        return workflow.id;
-      }),
-    ),
-  );
-  mockChatLifecycle(context, { threadId: THREAD_ID });
-  await openComposer();
-  expect(workflowNames()).toStrictEqual([
-    "/alpha",
-    "/beta",
-    "/charlie",
-    "/delta",
-  ]);
 });

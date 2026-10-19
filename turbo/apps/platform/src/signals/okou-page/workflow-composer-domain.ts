@@ -1,16 +1,16 @@
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
-export interface WorkflowUsage {
-  readonly count: number;
-  readonly lastUsedAt: number;
-}
-
 export function findWorkflowQueryMatches(
   workflows: readonly ComposerSlashWorkflow[],
   query: string,
-  usage: ReadonlyMap<string, WorkflowUsage>,
+  recentIds: readonly string[],
 ): readonly ComposerSlashWorkflowMatch[] {
   const normalizedQuery = query.toLowerCase();
+  const recency = new Map(
+    recentIds.map((id, index) => {
+      return [id, index] as const;
+    }),
+  );
   const matches: {
     workflow: ComposerSlashWorkflowMatch;
     rank: number;
@@ -46,12 +46,10 @@ export function findWorkflowQueryMatches(
 
   return matches
     .sort((left, right) => {
-      const leftUsage = usage.get(left.workflow.id);
-      const rightUsage = usage.get(right.workflow.id);
       return (
         left.rank - right.rank ||
-        (rightUsage?.count ?? 0) - (leftUsage?.count ?? 0) ||
-        (rightUsage?.lastUsedAt ?? 0) - (leftUsage?.lastUsedAt ?? 0) ||
+        (recency.get(left.workflow.id) ?? Number.MAX_SAFE_INTEGER) -
+          (recency.get(right.workflow.id) ?? Number.MAX_SAFE_INTEGER) ||
         left.workflow.name.localeCompare(right.workflow.name, "en") ||
         left.workflow.id.localeCompare(right.workflow.id, "en")
       );
