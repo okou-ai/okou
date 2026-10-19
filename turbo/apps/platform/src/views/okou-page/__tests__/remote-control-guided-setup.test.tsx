@@ -20,7 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/tailscale";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 import {
@@ -1016,9 +1016,14 @@ test("Private network starts with one neutral provider selector and both guides 
   click(screen.getByText("Cloudflare Access", { exact: true }));
   await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
   click(getAction("button", "Already have credentials? Enter them directly"));
-  await fill(await screen.findByRole("textbox", { name: "Name" }), "Saved network");
-  await fill(screen.getByRole("textbox", { name: "Client ID" }), "test-client");
-  await fill(screen.getByRole("textbox", { name: "Client Secret" }), "test-secret");
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  const form = name.closest("form");
+  if (!form) {
+    throw new Error("Missing network form");
+  }
+  await fill(name, "Saved network");
+  await fill(within(form).getByLabelText("Client ID"), "test-client");
+  await fill(within(form).getByLabelText("Client Secret"), "test-secret");
   click(getAction("button", "Save network"));
   await screen.findByRole("heading", { name: "No private networks yet" });
   expect(screen.queryByRole("dialog")).toBeNull();
