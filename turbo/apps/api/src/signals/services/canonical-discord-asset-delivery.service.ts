@@ -402,44 +402,6 @@ function deliveredAttachment(
     : undefined;
 }
 
-async function recordDelivered(
-  db: Db,
-  { identity, row }: DiscordDeliveryOperation,
-  message: DiscordMessage,
-  context: { readonly botUserId: string; readonly guildId: string | undefined },
-  signal: AbortSignal,
-): Promise<DiscordDeliveryResult> {
-  const attachment = deliveredAttachment(message, row, context.botUserId);
-  if (!attachment) {
-    return await markFailed(
-      db,
-      { identity, row },
-      deliveryFailure(
-        "discord-delivery-unverified",
-        "Discord's response does not match the file delivery",
-      ),
-      signal,
-    );
-  }
-  await db
-    .update(canonicalAssetDeliveries)
-    .set({
-      status: "delivered",
-      externalId: message.id,
-      url: discordMessageUrl({
-        guildId: context.guildId,
-        channelId: message.channel_id,
-        messageId: message.id,
-      }),
-      providerState: { ...row.providerState, attachmentId: attachment.id },
-      lastError: null,
-      updatedAt: sql`now()`,
-    })
-    .where(transitionCondition(row));
-  signal.throwIfAborted();
-  return await currentDeliveryResult(db, identity, signal);
-}
-
 const sendDiscordFile$ = command(
   async (
     { set },
@@ -492,8 +454,49 @@ const sendDiscordFile$ = command(
       return await markFailed(db, operation, unconfirmedDelivery, signal);
     }
     if (sent.value.kind === "ok") {
+      async function recordDelivered(
+        { identity, row }: DiscordDeliveryOperation,
+        message: DiscordMessage,
+        context: {
+          readonly botUserId: string;
+          readonly guildId: string | undefined;
+        },
+        signal: AbortSignal,
+      ): Promise<DiscordDeliveryResult> {
+        const attachment = deliveredAttachment(message, row, context.botUserId);
+        if (!attachment) {
+          return await markFailed(
+            db,
+            { identity, row },
+            deliveryFailure(
+              "discord-delivery-unverified",
+              "Discord's response does not match the file delivery",
+            ),
+            signal,
+          );
+        }
+        await db
+          .update(canonicalAssetDeliveries)
+          .set({
+            status: "delivered",
+            externalId: message.id,
+            url: discordMessageUrl({
+              guildId: context.guildId,
+              channelId: message.channel_id,
+              messageId: message.id,
+            }),
+            providerState: {
+              ...row.providerState,
+              attachmentId: attachment.id,
+            },
+            lastError: null,
+            updatedAt: sql`now()`,
+          })
+          .where(transitionCondition(row));
+        signal.throwIfAborted();
+        return await currentDeliveryResult(db, identity, signal);
+      }
       return await recordDelivered(
-        db,
         operation,
         sent.value.data,
         {
