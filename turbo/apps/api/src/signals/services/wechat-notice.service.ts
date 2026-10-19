@@ -26,6 +26,7 @@ export const sendWechatNotice$ = command(
     args: {
       readonly connection: Connection;
       readonly message: WechatMessage;
+      readonly failure?: "default_agent_unavailable" | "processing_failed";
     },
     signal: AbortSignal,
   ) => {
@@ -38,13 +39,25 @@ export const sendWechatNotice$ = command(
     }
     const disconnected = connection.status === "disconnected";
     const { assistantName } = BRAND_PRESENTATION;
-    const text = disconnected
-      ? `Your WeChat account isn't connected to ${assistantName}. Connect your account to start chatting:\n${new URL("/works", env("APP_URL")).toString()}`
-      : `Hi! I'm ${assistantName}. You're connected to your workspace's agent.\n\nJust describe what you need help with to get started.`;
+    const failureText =
+      args.failure === "default_agent_unavailable"
+        ? `Your workspace's agent is unavailable. Ask a workspace admin to configure it in ${assistantName}, then send your message again.`
+        : args.failure === "processing_failed"
+          ? "I couldn't process this message after retrying. Please send it again. If it includes a file, try sending the text separately."
+          : undefined;
+    const text =
+      failureText ??
+      (disconnected
+        ? `Your WeChat account isn't connected to ${assistantName}. Connect your account to start chatting:\n${new URL("/works", env("APP_URL")).toString()}`
+        : `Hi! I'm ${assistantName}. You're connected to your workspace's agent.\n\nJust describe what you need help with to get started.`);
     const id = wechatEventId(
       connection.id,
       connection.generation,
-      disconnected ? `reconnect:${message.message_id}` : "welcome",
+      args.failure
+        ? `ingress-failed:${message.message_id}`
+        : disconnected
+          ? `reconnect:${message.message_id}`
+          : "welcome",
     );
     const live = and(
       eq(wechatConnections.id, connection.id),
@@ -52,7 +65,7 @@ export const sendWechatNotice$ = command(
       eq(wechatConnections.status, connection.status),
     );
     const db = set(writeDb$);
-    // One welcome per binding, or one reconnect reply per incoming message.
+    // One welcome per binding, or one reconnect/failure reply per input.
     // Claim before the provider call: an ambiguous result must never be resent.
     const noticeClaimQuery = sql`INSERT INTO ${wechatMessages} (id,connection_id,generation,direction,status,content)
         SELECT ${id}::uuid,id,generation,'outbound','unknown',${text}

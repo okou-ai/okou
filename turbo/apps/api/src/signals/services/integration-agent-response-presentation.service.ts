@@ -3,12 +3,12 @@ import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
-import type { Db } from "../external/db";
+import type { ReadonlyDb } from "../external/db";
 import { resolveRunModelSelection } from "./run-model-selection.service";
 
 /** Names the responding agent only when it is not the org default. */
 async function resolveNonDefaultAgentLabel(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly composeId: string;
   readonly defaultAgentId?: string;
@@ -36,7 +36,7 @@ async function resolveNonDefaultAgentLabel(args: {
 }
 
 async function resolveModelLabel(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly runId: string;
 }): Promise<string | undefined> {
   const runModel = await resolveRunModelSelection(args.db, args.runId);
@@ -48,7 +48,7 @@ async function resolveModelLabel(args: {
 
 export async function resolveIntegrationAgentResponsePresentation(
   args: {
-    readonly db: Db;
+    readonly db: ReadonlyDb;
     readonly orgId: string;
     readonly runId: string;
     readonly agentId: string;
@@ -95,7 +95,7 @@ export async function resolveIntegrationAgentResponsePresentation(
  */
 export async function resolveIntegrationAdmissionFailurePresentation(
   args: {
-    readonly db: Db;
+    readonly db: ReadonlyDb;
     readonly orgId: string;
     readonly agentId: string;
     readonly replyToMention?: string;

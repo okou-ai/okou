@@ -29,6 +29,7 @@ const L = logger("AgentRunCallback");
 // never mistaken for HTTP callbacks by the terminal dispatch queries.
 const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
   "slack:chat",
+  "wechat:chat",
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
@@ -114,6 +115,12 @@ const dispatchInternalCallback$ = command(
           input.envelope,
           signal,
         );
+      }
+      case "wechat:chat": {
+        return {
+          success: false,
+          error: "WeChat chat delivery callbacks are inline-only",
+        };
       }
       case "slack:chat": {
         return {

@@ -201,3 +201,20 @@ test("a failed QR request can be retried from the dialog", async () => {
   ).resolves.toBeInTheDocument();
   expect(queryAction("button", "Create a new QR code")).not.toBeInTheDocument();
 });
+
+test("the connected card identifies its workspace and WeChat account", async () => {
+  context.mocks.api(contract.status, ({ respond }) => {
+    return respond(200, {
+      configured: true,
+      status: "active",
+      binding: {
+        workspace: { id: "org_operations", name: "Operations workspace" },
+        accountId: "scanner-owner",
+      },
+    });
+  });
+  await setup();
+  await expect(
+    screen.findByText("Operations workspace · scanner-owner"),
+  ).resolves.toBeInTheDocument();
+});

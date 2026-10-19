@@ -1,3 +1,4 @@
+import { orgCache } from "@okouai/db/schema/org-cache";
 import { settle } from "../utils";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { randomUUID } from "node:crypto";
@@ -46,8 +47,15 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const auth = get(organizationAuthContext$);
   const [row] = await set(writeDb$)
-    .select({ id: wechatConnections.id, status: wechatConnections.status })
+    .select({
+      id: wechatConnections.id,
+      status: wechatConnections.status,
+      accountId: wechatConnections.senderId,
+      workspaceId: wechatConnections.orgId,
+      workspaceName: orgCache.name,
+    })
     .from(wechatConnections)
+    .leftJoin(orgCache, eq(orgCache.orgId, wechatConnections.orgId))
     .where(
       and(
         eq(wechatConnections.orgId, auth.orgId),
@@ -64,6 +72,16 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       configured: wechatConfigured(),
+      binding:
+        row && row.status !== "disconnected"
+          ? {
+              workspace: {
+                id: row.workspaceId,
+                name: row.workspaceName || row.workspaceId,
+              },
+              accountId: row.accountId,
+            }
+          : null,
       status: row?.status ?? ("disconnected" as const),
     },
   };

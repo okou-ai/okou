@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { isAbortError, settleIncludingAbort } from "../utils";
+import { logger } from "../../lib/log";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -215,7 +216,21 @@ export const wechatMessageSchema = z.object({
 });
 export const wechatUpdatesSchema = z.object({
   get_updates_buf: z.string().optional(),
-  msgs: z.array(wechatMessageSchema).optional(),
+  msgs: z
+    .array(z.unknown())
+    .transform((values) => {
+      return values.flatMap((value) => {
+        const parsed = wechatMessageSchema.safeParse(value);
+        if (!parsed.success) {
+          logger("wechat-client").warn("Ignored malformed WeChat input", {
+            issueCount: parsed.error.issues.length,
+          });
+          return [];
+        }
+        return [parsed.data];
+      });
+    })
+    .optional(),
 });
 export type WechatMessage = z.infer<typeof wechatMessageSchema>;
 export async function getWechatUpdates(

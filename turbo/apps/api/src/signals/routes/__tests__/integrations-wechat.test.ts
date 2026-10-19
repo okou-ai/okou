@@ -27,7 +27,7 @@ import {
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { now, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { integrationsWechatRoutes } from "../integrations-wechat";
 import { wechatGatewayRoutes } from "../wechat-gateway";
@@ -428,24 +428,185 @@ describe("WeChat reply presentation and processing status", () => {
     },
   );
 
+  it.each([
+    { partial: false, membershipRead: 1 },
+    { partial: false, membershipRead: 4 },
+    { partial: true, membershipRead: 1 },
+  ])(
+    "recovers a reply after a pre-send failure (partial=$partial, membership read=$membershipRead)",
+    async ({ partial, membershipRead }) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Recover my reply");
+      const run = await fixture.claim();
+      await flushWaitUntilForTest();
+      const text = "x".repeat(2100);
+      const callbackHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+      await fixture.webhooks.requestAgentEvents(
+        {
+          runId: run.runId,
+          events: [{ type: "result", sequenceNumber: 0, result: text }],
+        },
+        callbackHeaders,
+        [200],
+      );
+      const memberships =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      const available = await memberships({
+        organizationId: fixture.actor.orgId,
+        userId: [fixture.actor.userId],
+        limit: 1,
+      });
+      let unavailable = !partial;
+      let unavailableReads = 0;
+      const chunks: string[] = [];
+      memberships.mockImplementation(() => {
+        return unavailable && ++unavailableReads >= membershipRead
+          ? Promise.reject(new Error("Clerk temporarily unavailable"))
+          : Promise.resolve(available);
+      });
+      server.use(
+        http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+          const body = z
+            .object({
+              msg: z.object({
+                item_list: z.array(
+                  z.object({ text_item: z.object({ text: z.string() }) }),
+                ),
+              }),
+            })
+            .parse(await request.json());
+          chunks.push(
+            ...body.msg.item_list.map((item) => {
+              return item.text_item.text;
+            }),
+          );
+          if (partial && chunks.length === 1) {
+            unavailable = true;
+          }
+          return HttpResponse.json({ ret: 0 });
+        }),
+      );
+      const completion = {
+        runId: run.runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: "claude-code" as const,
+          cliAgentSessionId: randomUUID(),
+          cliAgentSessionHistoryDisposition: "native_only" as const,
+        },
+      };
+      await fixture.webhooks.requestAgentComplete(
+        completion,
+        callbackHeaders,
+        [500],
+      );
+      expect(chunks).toHaveLength(partial ? 1 : 0);
+      unavailable = false;
+      if (partial) {
+        // Recovery also runs without another completion request from the runner.
+        server.use(
+          http.post(`${origin}/ilink/bot/getupdates`, () => {
+            return HttpResponse.json({ msgs: [] });
+          }),
+        );
+        mockNow(now() + 31_000);
+        await pollGateway(z.uuid().parse(fixture.provider.starts[0]));
+        expect(chunks).toHaveLength(2);
+      }
+      await fixture.webhooks.requestAgentComplete(
+        completion,
+        callbackHeaders,
+        [200],
+      );
+      await fixture.webhooks.requestAgentComplete(
+        completion,
+        callbackHeaders,
+        [200],
+      );
+      expect(chunks).toHaveLength(2);
+      expect(chunks.join("")).toBe(`${text}\n\nClaude Fable 5.1`);
+    },
+  );
+
+  it("serializes overlapping completion delivery attempts", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Reply once");
+    const run = await fixture.claim();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let attempts = 0;
+    server.use(
+      http.post(`${origin}/ilink/bot/sendmessage`, async () => {
+        attempts++;
+        entered.resolve();
+        await release.promise;
+        return HttpResponse.json({ ret: 0 });
+      }),
+    );
+    const completing = settleIncludingAbort(
+      fixture.finish(run, "Only one reply"),
+    );
+    const overlapping = await settleIncludingAbort(async () => {
+      await entered.promise;
+      await fixture.webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [500],
+      );
+      expect(attempts).toBe(1);
+    });
+    if (!release.settled()) {
+      release.resolve();
+    }
+    const finished = await completing;
+    if (!overlapping.ok) {
+      throw overlapping.error;
+    }
+    if (!finished.ok) {
+      throw finished.error;
+    }
+    await fixture.webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    expect(attempts).toBe(1);
+  });
+
   it("clears typing even when the reply cannot be delivered", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Hello");
     const run = await fixture.claim();
     await flushWaitUntilForTest();
     expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
+    let attempts = 0;
     server.use(
       http.post(`${origin}/ilink/bot/sendmessage`, () => {
+        attempts++;
         return new HttpResponse(null, { status: 503 });
       }),
     );
-    // Preserve the callback failure so delivery can be retried, but clear status.
-    await fixture.finish(run, "Done", 0, 500);
+    // Unknown provider delivery is terminal and must not be automatically resent.
+    await fixture.finish(run, "Done");
     await flushWaitUntilForTest();
     expect(fixture.sentTexts).toStrictEqual([
       expect.stringContaining("You're connected"),
     ]);
     expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({ msgs: [] });
+      }),
+    );
+    mockNow(now() + 31_000);
+    await pollGateway(z.uuid().parse(fixture.provider.starts[0]));
+    await fixture.webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    expect(attempts).toBe(1);
   });
 
   it("does not restore typing when a delayed config read outlives completion", async () => {
@@ -526,7 +687,7 @@ describe("WeChat reply presentation and processing status", () => {
 
 describe("WeChat QR owner binding", () => {
   it("handles verification and publishes only a sanitized connection status", async () => {
-    const { provider, confirm } = await fixture();
+    const { actor, provider, confirm } = await fixture();
     const attempt = await accept(client().connect({ headers }), [200]);
     expect(attempt.body).toMatchObject({
       qrContent: "https://weixin.qq.com/test-qr",
@@ -559,6 +720,10 @@ describe("WeChat QR owner binding", () => {
     ).toStrictEqual({
       status: "active",
       configured: true,
+      binding: {
+        workspace: { id: actor.orgId, name: expect.any(String) },
+        accountId: `scanner-${actor.userId}`,
+      },
     });
     expect(JSON.stringify(attempt.body)).not.toContain(
       "test-private-bot-token",
@@ -1105,6 +1270,10 @@ test("receives an owner DM once, resumes its native session and delivers the can
     {
       id: connectionId,
       name: "Your WeChat direct conversation",
+      binding: {
+        workspace: { id: actor.orgId, name: expect.any(String) },
+        accountId: `scanner-${actor.userId}`,
+      },
       status: "active",
     },
   ]);
@@ -2174,4 +2343,197 @@ describe("WeChat system notices", () => {
       },
     ]);
   });
+});
+
+describe("WeChat input failure isolation", () => {
+  it("reports a missing default agent once and advances to the next batch", async () => {
+    const owner = await fixture();
+    const connectionId = await connectOwner(owner);
+    const sends: string[] = [];
+    let polls = 0;
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        polls++;
+        return HttpResponse.json({
+          msgs: [ownerMessage(owner.actor.userId)],
+          get_updates_buf: `cursor-${polls}`,
+        });
+      }),
+      http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+        const body = z
+          .object({
+            msg: z.object({
+              item_list: z.array(
+                z.object({ text_item: z.object({ text: z.string() }) }),
+              ),
+            }),
+          })
+          .parse(await request.json());
+        sends.push(
+          ...body.msg.item_list.map((item) => {
+            return item.text_item.text;
+          }),
+        );
+        return HttpResponse.json({ ret: 0 });
+      }),
+    );
+    await pollGateway(connectionId);
+    await pollGateway(connectionId);
+    expect(polls).toBe(2);
+    expect(
+      sends.filter((text) => {
+        return text.includes("workspace's agent is unavailable");
+      }),
+    ).toHaveLength(1);
+  });
+
+  it.each([false, true])(
+    "isolates an unavailable attachment and persists bounded retries (recovers=%s)",
+    async (recovers) => {
+      const fixture = await responseFixture();
+      const connectionId = z.uuid().parse(fixture.provider.starts[0]);
+      const fileMessage = {
+        ...ownerMessage(fixture.actor.userId),
+        message_id: "failed-file",
+        item_list: [
+          {
+            type: 2,
+            image_item: { media: { encrypt_query_param: "retry-file" } },
+          },
+        ],
+      };
+      const nextMessage = {
+        ...ownerMessage(fixture.actor.userId),
+        message_id: "later-text",
+      };
+      let polls = 0;
+      let downloads = 0;
+      let available = false;
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
+        "base64",
+      );
+      server.use(
+        http.post(`${origin}/ilink/bot/getupdates`, () => {
+          polls++;
+          return HttpResponse.json({
+            msgs:
+              polls === 1
+                ? [{ message_id: "malformed" }, fileMessage, nextMessage]
+                : recovers
+                  ? []
+                  : [fileMessage],
+            get_updates_buf: `cursor-${polls}`,
+          });
+        }),
+        http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
+          downloads++;
+          return available
+            ? new HttpResponse(new Uint8Array(png))
+            : new HttpResponse(null, { status: 503 });
+        }),
+      );
+      await pollGateway(connectionId);
+      expect(downloads).toBe(1);
+      const messages = setupApp({
+        context,
+        routes: integrationsWechatMessagesRoutes,
+      })(integrationsWechatMessagesContract);
+      const history = await accept(
+        messages.history({
+          headers,
+          query: { channelId: connectionId, limit: 50 },
+        }),
+        [200],
+      );
+      expect(
+        history.body.messages.some((message) => {
+          return message.providerMessageId === "later-text";
+        }),
+      ).toBeTruthy();
+      // A fresh request respects the persisted backoff rather than retrying immediately.
+      await pollGateway(connectionId);
+      expect(downloads).toBe(1);
+      available = recovers;
+      mockNow(now() + 1100);
+      await pollGateway(connectionId);
+      expect(downloads).toBe(2);
+      if (!recovers) {
+        mockNow(now() + 2100);
+        await pollGateway(connectionId);
+        expect(downloads).toBe(3);
+        expect(
+          fixture.sentTexts.filter((text) => {
+            return text.includes("couldn't process this message");
+          }),
+        ).toHaveLength(1);
+      }
+      await pollGateway(connectionId);
+      expect(polls).toBe(2);
+      expect(downloads).toBe(recovers ? 2 : 3);
+      const final = await accept(
+        messages.history({
+          headers,
+          query: { channelId: connectionId, limit: 50 },
+        }),
+        [200],
+      );
+      expect(
+        final.body.messages.filter((message) => {
+          return message.providerMessageId === "later-text";
+        }),
+      ).toHaveLength(1);
+      expect(
+        final.body.messages.some((message) => {
+          return message.providerMessageId === "failed-file";
+        }),
+      ).toBe(recovers);
+    },
+  );
+});
+
+test("weChat history keeps time bounds across pages and validates their order", async () => {
+  const fixture = await responseFixture();
+  const channelId = z.uuid().parse(fixture.provider.starts[0]);
+  const oldest = "2026-10-19T01:00:00.000Z";
+  const latest = "2026-10-19T02:00:00.000Z";
+  mockNow(new Date("2026-10-19T00:00:00.000Z"));
+  await fixture.receive("Outside before");
+  mockNow(new Date(oldest));
+  await fixture.receive("At oldest");
+  mockNow(new Date("2026-10-19T01:30:00.000Z"));
+  await fixture.receive("Inside window");
+  mockNow(new Date(latest));
+  await fixture.receive("At latest");
+  const messages = setupApp({
+    context,
+    routes: integrationsWechatMessagesRoutes,
+  })(integrationsWechatMessagesContract);
+  const query = { channelId, oldest, latest, limit: 1 };
+  const first = await accept(messages.history({ headers, query }), [200]);
+  expect(
+    first.body.messages.map((message) => {
+      return message.content;
+    }),
+  ).toStrictEqual(["Inside window"]);
+  const second = await accept(
+    messages.history({
+      headers,
+      query: { ...query, before: z.uuid().parse(first.body.nextBefore) },
+    }),
+    [200],
+  );
+  expect(
+    second.body.messages.map((message) => {
+      return message.content;
+    }),
+  ).toStrictEqual(["At oldest"]);
+  expect(second.body.nextBefore).toBeNull();
+  await accept(
+    messages.history({
+      headers,
+      query: { ...query, oldest: latest, latest: oldest },
+    }),
+    [400],
+  );
 });

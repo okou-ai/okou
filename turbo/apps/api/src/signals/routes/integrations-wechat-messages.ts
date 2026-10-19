@@ -1,6 +1,7 @@
+import { orgCache } from "@okouai/db/schema/org-cache";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, desc, eq, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
 import {
   integrationsWechatMessagesContract as contract,
   type WechatReceipt,
@@ -25,8 +26,15 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const channels = await set(writeDb$)
-    .select({ id: wechatConnections.id, status: wechatConnections.status })
+    .select({
+      id: wechatConnections.id,
+      status: wechatConnections.status,
+      accountId: wechatConnections.senderId,
+      workspaceId: wechatConnections.orgId,
+      workspaceName: orgCache.name,
+    })
     .from(wechatConnections)
+    .leftJoin(orgCache, eq(orgCache.orgId, wechatConnections.orgId))
     .where(
       and(
         eq(wechatConnections.orgId, auth.orgId),
@@ -43,7 +51,14 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
         }
         return [
           {
-            ...channel,
+            id: channel.id,
+            binding: {
+              workspace: {
+                id: channel.workspaceId,
+                name: channel.workspaceName || channel.workspaceId,
+              },
+              accountId: channel.accountId,
+            },
             status: channel.status,
             name: "Your WeChat direct conversation",
           },
@@ -108,6 +123,12 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(wechatConnections.orgId, auth.orgId),
         ne(wechatConnections.status, "disconnected"),
         before === undefined ? undefined : lt(wechatMessages.sequence, before),
+        query.oldest
+          ? gte(wechatMessages.createdAt, new Date(query.oldest))
+          : undefined,
+        query.latest
+          ? lt(wechatMessages.createdAt, new Date(query.latest))
+          : undefined,
       ),
     )
     .orderBy(desc(wechatMessages.sequence))
