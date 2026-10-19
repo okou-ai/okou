@@ -4,7 +4,17 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  lt,
+  lte,
+  or,
+  sql,
+  type InferColumnsDataTypes,
+} from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import {
@@ -13,7 +23,7 @@ import {
   type SlackFile,
 } from "../../lib/slack-webhook-context";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -172,9 +182,9 @@ function ingressClaimWritePlan(ingressId: string, currentTime: Date) {
   };
 }
 
-async function loadClaimedIngress(db: Db, ingressId: string) {
-  const [row] = await db
-    .select({
+function claimedSlackIngressReadPlan(ingressId: string) {
+  return {
+    columns: {
       ingressId: slackChatIngress.id,
       payload: slackChatIngress.payload,
       createdAt: slackChatIngress.createdAt,
@@ -189,36 +199,27 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       orgId: slackOrgInstallations.orgId,
       encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       botUserId: slackOrgInstallations.botUserId,
-    })
-    .from(slackChatIngress)
-    .innerJoin(
-      slackChatThreadRoutes,
-      eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
-    )
-    .innerJoin(
-      slackOrgConnections,
-      eq(slackChatThreadRoutes.connectionId, slackOrgConnections.id),
-    )
-    .innerJoin(
-      slackOrgInstallations,
-      eq(
-        slackOrgConnections.slackWorkspaceId,
-        slackOrgInstallations.slackWorkspaceId,
-      ),
-    )
-    .where(
-      and(
-        eq(slackChatIngress.id, ingressId),
-        eq(slackChatIngress.status, "processing"),
-      ),
-    )
-    .limit(1);
-  return row;
+    },
+    routeJoin: eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
+    connectionJoin: eq(
+      slackChatThreadRoutes.connectionId,
+      slackOrgConnections.id,
+    ),
+    installationJoin: eq(
+      slackOrgConnections.slackWorkspaceId,
+      slackOrgInstallations.slackWorkspaceId,
+    ),
+    condition: and(
+      eq(slackChatIngress.id, ingressId),
+      eq(slackChatIngress.status, "processing"),
+    ),
+    limit: 1,
+  };
 }
 
 function requireMatchingEvent(
   payload: string,
-  route: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
+  route: ClaimedCanonicalSlackIngress,
 ) {
   const parsed = slackEventCallbackSchema.parse(JSON.parse(payload) as unknown);
   const event = parsed.event;
@@ -361,7 +362,7 @@ interface PersistedCanonicalSlackIngress {
 
 function persistedCanonicalSlackIngress(
   client: SlackClient,
-  ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
+  ingress: ClaimedCanonicalSlackIngress,
   orgId: string,
   threadTs: string,
   chatThreadId: string,
@@ -480,8 +481,8 @@ const settleCanonicalSlackStatusAfterPick$ = command(
   },
 );
 
-type ClaimedCanonicalSlackIngress = NonNullable<
-  Awaited<ReturnType<typeof loadClaimedIngress>>
+type ClaimedCanonicalSlackIngress = InferColumnsDataTypes<
+  ReturnType<typeof claimedSlackIngressReadPlan>["columns"]
 >;
 
 interface CanonicalSlackLaunchContext {
@@ -704,7 +705,18 @@ const persistClaimedCanonicalSlackIngress$ = command(
     signal: AbortSignal,
   ): Promise<PersistedCanonicalSlackIngress | undefined> => {
     const db = set(writeDb$);
-    const ingress = await loadClaimedIngress(db, ingressId);
+    const ingress = await (async () => {
+      const plan = claimedSlackIngressReadPlan(ingressId);
+      const [row] = await db
+        .select(plan.columns)
+        .from(slackChatIngress)
+        .innerJoin(slackChatThreadRoutes, plan.routeJoin)
+        .innerJoin(slackOrgConnections, plan.connectionJoin)
+        .innerJoin(slackOrgInstallations, plan.installationJoin)
+        .where(plan.condition)
+        .limit(plan.limit);
+      return row;
+    })();
     signal.throwIfAborted();
     if (!ingress) {
       return undefined;
