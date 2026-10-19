@@ -24,6 +24,7 @@ const MAX_HISTORY: u64 = 4 * 1024 * 1024;
 
 #[derive(Default)]
 struct Ledger {
+    claim: Option<Arc<super::claim_peer::Gate>>,
     storage_preparations: HashMap<String, storages::prepare::Request>,
     uploads: HashMap<String, Vec<u8>>,
     completions: HashMap<String, Value>,
@@ -35,6 +36,7 @@ struct Ledger {
 enum Reply {
     Json(Value),
     Empty,
+    Unavailable,
 }
 
 pub struct Api {
@@ -48,6 +50,23 @@ pub struct Api {
 }
 
 impl Api {
+    pub fn hold_claim(
+        &self,
+        run: super::RunId,
+        runner: runner_host::runner_process_identity::RunnerProcessIdentity,
+    ) -> TestResult<Arc<super::claim_peer::Gate>> {
+        let mut ledger = self
+            .ledger
+            .lock()
+            .map_err(|_| io::Error::other("native API ledger poisoned"))?;
+        if ledger.claim.is_some() {
+            return Err(io::Error::other("native API claim already armed").into());
+        }
+        let claim = super::claim_peer::Gate::new(run, runner);
+        ledger.claim = Some(claim.clone());
+        Ok(claim)
+    }
+
     pub async fn start() -> TestResult<Self> {
         let address: Ipv4Addr = std::env::var("OKOU_TEST_NATIVE_API_HOST")?.parse()?;
         if !address.is_private() {
@@ -164,6 +183,12 @@ async fn respond(
     let result: TestResult<Reply> = async {
         let bytes = Limited::new(body, MAX_HISTORY as usize).collect().await?.to_bytes();
         let path = parts.uri.path();
+        if path.starts_with("/api/runners/jobs/") && path.ends_with("/claim") {
+            let claim = ledger.lock().map_err(|_| io::Error::other("native API ledger poisoned"))?
+                .claim.clone().ok_or_else(|| io::Error::other("unexpected native provider claim"))?;
+            claim.reject(&parts, &bytes).await?;
+            return Ok(Reply::Unavailable);
+        }
         let mut state = ledger.lock().map_err(|_| io::Error::other("native API ledger poisoned"))?;
         if parts.method == Method::PUT && let Some(key) = path.strip_prefix("/storage-upload/") {
             state.uploads.insert(key.to_string(), bytes.to_vec());
@@ -230,6 +255,7 @@ async fn respond(
         }
     }.await;
     let encoded = match result {
+        Ok(Reply::Unavailable) => Ok((StatusCode::NOT_FOUND, Vec::new())),
         Ok(Reply::Empty) => Ok((StatusCode::NO_CONTENT, Vec::new())),
         Ok(Reply::Json(value)) => serde_json::to_vec(&value)
             .map(|bytes| (StatusCode::OK, bytes))
