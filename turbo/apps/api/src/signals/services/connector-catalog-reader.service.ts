@@ -2,7 +2,6 @@ import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
-  PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
   PublicConnectorCatalogStatusResponse,
@@ -23,7 +22,6 @@ import {
   connectorBriefsFromSource,
   discoverExternalPublicConnectorCatalogStatus,
   ExternalConnectorCatalogUnavailableError,
-  listExternalPublicConnectorCatalog,
   listExternalPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetailFromSource,
   searchExternalConnectorCatalog,
@@ -51,12 +49,6 @@ export async function searchConnectorCatalog(
   args: ConnectorCatalogSearchArgs,
 ): Promise<BuiltinConnectorSearchItem[]> {
   return await searchExternalConnectorCatalog(args);
-}
-
-export async function listPublicConnectorCatalog(
-  args: ConnectorCatalogReadArgs,
-): Promise<PublicConnectorCatalogListResponse> {
-  return await listExternalPublicConnectorCatalog(args);
 }
 
 export async function listPublicConnectorCatalogStatus(
