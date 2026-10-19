@@ -391,6 +391,94 @@ async fn drop_closes_resumed_socket_with_undrained_events() {
     undrained_reconnect(Interruption::ProtocolDisconnect, true).await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn fresh_reconnect_diagnostics_do_not_reuse_missing_server_identity() {
+    let http = MockServer::start();
+    mock_token_endpoint(&http, "testKey.testId");
+    let ws = MockAblyServer::start().await.unwrap();
+    let port = ws.port;
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let mut first = ws.accept_and_handshake("ch", "conn-1").await.unwrap();
+        first.close(None).await.unwrap();
+        let mut fresh = ws.accept_raw().await.unwrap();
+        send_protocol(
+            &mut fresh,
+            ProtocolMessage {
+                action: action::CONNECTED,
+                connection_id: Some("conn-2".into()),
+                connection_key: Some("conn-2!private-key".into()),
+                connection_details: None,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            expect_protocol_msg(&mut fresh, "fresh ATTACH")
+                .await
+                .unwrap()
+                .action,
+            action::ATTACH
+        );
+        send_protocol(
+            &mut fresh,
+            ProtocolMessage {
+                action: action::ATTACHED,
+                channel: Some("ch".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        protocol_ping(&mut fresh, "fresh-receive-ready").await;
+        ready_tx.send(()).unwrap();
+        expect_client_close(&mut fresh).await;
+    });
+    let captured = CapturedEvents::default();
+    let _guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let sub = subscribe(test_config(port, http.port(), "ch"))
+        .await
+        .unwrap();
+    wait_for_test_observation(ready_rx, "fresh connection receive progress").await;
+    // All status events are still queued; tracked shutdown must finish without draining them.
+    sub.close_and_wait().await.unwrap();
+    join_server_task(server, "fresh metadata peer")
+        .await
+        .unwrap();
+    let events = captured.entries();
+    let connected = events
+        .iter()
+        .find(|event| {
+            event
+                .fields
+                .get("phase")
+                .is_some_and(|phase| phase == "connected")
+        })
+        .unwrap();
+    assert_eq!(
+        connected.fields.get("server_id").map(String::as_str),
+        Some("mock-ably-server")
+    );
+    let fresh = events
+        .iter()
+        .find(|event| {
+            event
+                .fields
+                .get("phase")
+                .is_some_and(|phase| phase == "reconnected")
+        })
+        .unwrap();
+    assert_eq!(
+        fresh.fields.get("connection_id").map(String::as_str),
+        Some("conn-2")
+    );
+    assert!(
+        !fresh.fields.contains_key("server_id"),
+        "missing metadata must not identify the previous transport's server: {fresh:?}"
+    );
+    assert!(!format!("{events:?}").contains("conn-2!private-key"));
+}
+
 async fn control_ping_refreshes_activity(fragmented: bool) {
     use tungstenite::protocol::frame::{
         Frame,

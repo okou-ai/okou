@@ -40,12 +40,15 @@ impl ConnState {
 
     pub(super) fn update_from_connected(&mut self, msg: &ProtocolMessage) {
         self.connection_id = msg.connection_id.clone();
+        self.server_id = msg
+            .connection_details
+            .as_ref()
+            .and_then(|details| details.server_id.clone());
         if let Some(ref key) = msg.connection_key {
             self.connection_key = Some(key.clone());
         }
 
         if let Some(ref details) = msg.connection_details {
-            self.server_id = details.server_id.clone();
             if let Some(ref key) = details.connection_key {
                 self.connection_key = Some(key.clone());
             }
