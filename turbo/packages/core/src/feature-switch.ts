@@ -47,7 +47,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
   [FeatureSwitchKey.HostedSiteUrlEditing]: {
-    maintainer: "yuma@vm0.ai",
+    maintainer: "yuma@okou.ai",
     displayName: "Website URL editing",
     description: "Customize a published website address from its Share menu.",
     enabled: false,
