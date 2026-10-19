@@ -320,50 +320,6 @@ test("reconnects changed scopes directly and keeps the warning until new consent
   ).toBeFalsy();
 });
 
-test.each(["workspace_scope_changed", "permissions_unknown"] as const)(
-  "reconnects %s directly without a confirmation dialog",
-  async (reason) => {
-    const popup = context.mocks.browser.authWindow();
-    Object.defineProperty(popup, "location", {
-      configurable: true,
-      value: { href: "" },
-    });
-    context.mocks.browser.open(popup);
-    context.mocks.api(walletUserContract.status, ({ respond }) => {
-      return respond(200, {
-        ...connection(false),
-        connectionStatus: "scope-mismatch",
-        scopeChange: {
-          reason,
-          addedScopes: [],
-          removedScopes: [],
-          currentScopes: ["payment_methods.agentic", "userinfo:read"],
-          storedScopes: [],
-        },
-      });
-    });
-    context.mocks.api(walletUserContract.connect, ({ respond }) => {
-      return respond(200, {
-        url: authorizationUrl,
-        expiresAt: "2026-10-15T10:00:00Z",
-      });
-    });
-    context.mocks.api(walletUserContract.disconnect, ({ never }) => {
-      return never();
-    });
-    await openWallet();
-    await screen.findByText("Update permissions");
-    click(await button("Reconnect"));
-    await waitFor(() => {
-      expect(popup.location.href).toBe(authorizationUrl);
-    });
-    expect(
-      screen.queryByRole("dialog", { name: "Link permissions update" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("Update permissions")).toBeInTheDocument();
-  },
-);
-
 test("reconnects an expired authorization directly from its status", async () => {
   const popup = context.mocks.browser.authWindow();
   Object.defineProperty(popup, "location", {

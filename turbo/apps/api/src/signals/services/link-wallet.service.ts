@@ -180,14 +180,14 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
-// Historical consent has no requested-scope snapshot. Keep it unknown until
-// reauthorization; refresh cannot establish consent. Convergence gate: #40206.
 function walletScopeChange(
   storedScopes: string | null,
-  workspaceScopeChanged = false,
-  grantedScopes: readonly string[] = [],
-  grantedSourceActions: readonly string[] = [],
+  grantedScopes: readonly string[],
+  grantedSourceActions: readonly string[],
 ): WalletConnectionStatus["scopeChange"] {
+  if (storedScopes === null) {
+    throw new Error("Link wallet connection is missing oauthRequestedScopes");
+  }
   const current = [
     ...new Set([
       ...LINK_WALLET_OAUTH_SCOPES,
@@ -196,44 +196,30 @@ function walletScopeChange(
       ...grantedSourceActions,
     ]),
   ].sort();
-  const stored =
-    storedScopes === null
-      ? null
-      : [
-          ...new Set([
-            ...z.array(z.string()).parse(JSON.parse(storedScopes)),
-            ...grantedScopes,
-            ...grantedSourceActions,
-          ]),
-        ].sort();
-  const addedScopes = stored
-    ? current.filter((scope) => {
-        return !stored.includes(scope);
-      })
-    : [];
-  const removedScopes = (stored ?? []).filter((scope) => {
+  const stored = [
+    ...new Set([
+      ...z.array(z.string()).parse(JSON.parse(storedScopes)),
+      ...grantedScopes,
+      ...grantedSourceActions,
+    ]),
+  ].sort();
+  const addedScopes = current.filter((scope) => {
+    return !stored.includes(scope);
+  });
+  const removedScopes = stored.filter((scope) => {
     return !current.some((requested) => {
       return requested === scope;
     });
   });
-  if (
-    !workspaceScopeChanged &&
-    stored !== null &&
-    addedScopes.length === 0 &&
-    removedScopes.length === 0
-  ) {
+  if (addedScopes.length === 0 && removedScopes.length === 0) {
     return null;
   }
   return {
-    reason: workspaceScopeChanged
-      ? "workspace_scope_changed"
-      : stored === null
-        ? "permissions_unknown"
-        : "permissions_changed",
+    reason: "permissions_changed",
     addedScopes,
     removedScopes,
     currentScopes: current,
-    storedScopes: stored ?? [],
+    storedScopes: stored,
   };
 }
 
@@ -255,33 +241,14 @@ export const walletSettingsStatus$ = computed(
         ),
       )
       .limit(1);
-    // Retire this bridge only after old writers/rollback targets are gone and
-    // their grants are explicitly reauthorized or revoked; see #40206.
-    const [legacy] = await db
-      .select({ id: linkWalletConnections.id })
-      .from(linkWalletConnections)
-      .where(
-        and(
-          eq(linkWalletConnections.orgId, owner.orgId),
-          eq(linkWalletConnections.userId, owner.userId),
-          isNotNull(linkWalletConnections.agentId),
-          isNull(linkWalletConnections.revokedAt),
-        ),
-      )
-      .limit(1);
     const scopeChange =
-      row && !row.revokedAt
-        ? status.connected
-          ? walletScopeChange(
-              row.oauthRequestedScopes,
-              false,
-              status.authorization.scopes,
-              status.authorization.sourceActions,
-            )
-          : null
-        : legacy
-          ? walletScopeChange(null, true)
-          : null;
+      row && !row.revokedAt && status.connected
+        ? walletScopeChange(
+            row.oauthRequestedScopes,
+            status.authorization.scopes,
+            status.authorization.sourceActions,
+          )
+        : null;
     const connectionStatus = scopeChange
       ? "scope-mismatch"
       : status.connected
