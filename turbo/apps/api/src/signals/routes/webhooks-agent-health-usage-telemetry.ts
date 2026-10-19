@@ -655,12 +655,6 @@ function telemetryMetricEvent(
       : { scheduled_lag_ms: metric.scheduled_lag_ms }),
     mem_used: metric.mem_used,
     mem_total: metric.mem_total,
-    // Preserve supplied old Guest dimensions until #41244's producer/replay,
-    // rollback and retained-history gates pass; absent observations stay absent.
-    ...(metric.disk_used === undefined ? {} : { disk_used: metric.disk_used }),
-    ...(metric.disk_total === undefined
-      ? {}
-      : { disk_total: metric.disk_total }),
     ...(metric.rootfs === undefined
       ? {}
       : {
