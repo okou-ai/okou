@@ -3,6 +3,7 @@
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
 mod batch_aba;
+mod batch_repark;
 mod cleanup_progress;
 mod continuation;
 mod continuation_api;
@@ -90,6 +91,7 @@ enum Corpus {
     StatusFailure,
     LaterParking(bool),
     BatchAba,
+    BatchRepark,
 }
 
 enum PreparationProbe<'a> {
@@ -621,6 +623,32 @@ async fn native_fixed_batch_refuses_restored_insertion_and_recovers_original() -
     .await
 }
 
+#[test]
+fn native_repark_report_requires_physical_history_and_guarded_recovery() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/batch_repark_report_test.py"
+        ))
+        .output()
+        .expect("native repark report requires Python3");
+    assert!(
+        output.status.success(),
+        "repark report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source physical repark P1 proof"]
+async fn native_speculative_repark_preserves_history_and_batch_recovery() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::BatchRepark,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
 async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
@@ -952,6 +980,8 @@ async fn exercise_selected_factories(
                                 format!("Later{}", if blank { "Blank" } else { "Exact" })
                             } else if corpus == Corpus::BatchAba {
                                 "BatchAba".into()
+                            } else if corpus == Corpus::BatchRepark {
+                                "BatchRepark".into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1101,6 +1131,7 @@ async fn exercise_retirement(
             | Corpus::CreateCancellation
             | Corpus::ReturnedGuest(_)
             | Corpus::BatchAba
+            | Corpus::BatchRepark
     ) || matches!(
         scope,
         NativeScope::Recovery
@@ -1294,6 +1325,7 @@ async fn exercise_retirement(
             | Corpus::StatusFailure
             | Corpus::LaterParking(_)
             | Corpus::BatchAba
+            | Corpus::BatchRepark
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1619,7 +1651,7 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
-                if corpus == Corpus::BatchAba {
+                if matches!(corpus, Corpus::BatchAba | Corpus::BatchRepark) {
                     batch_aba::exercise(
                         transitions::Context {
                             factory: factory.clone(), pool: pool.clone(), status: status.clone(),
@@ -1629,6 +1661,7 @@ async fn exercise_retirement(
                         recovery_source.as_ref().ok_or_else(|| io::Error::other("batch ABA source missing"))?,
                         proof.ok_or_else(|| io::Error::other("batch ABA proof missing"))?,
                         paths.base_dir(), backing.clone(),
+                        (corpus == Corpus::BatchRepark).then_some(run_id),
                     ).await?;
                     return Ok(None);
                 }

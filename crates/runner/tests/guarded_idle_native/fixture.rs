@@ -228,6 +228,39 @@ pub async fn verify_saved_guest(sandbox: &dyn Sandbox, previous_run: RunId) -> T
     Ok(())
 }
 
+/// Observe original private history and every original payload byte after unpark.
+pub async fn verify_speculative_guest(
+    sandbox: &dyn Sandbox,
+    original: RunId,
+) -> TestResult<String> {
+    let private = quote_shell_arg(&runtime_dir(original)?);
+    let bytes = exec(
+        sandbox,
+        &format!("cat {private}/fixture-private && cat {HOME}/guarded-idle-ordinary"),
+    )
+    .await?;
+    if bytes != b"fixture private bytesnative ordinary home bytes" {
+        return Err(std::io::Error::other(
+            "speculative rollback changed original private/home bytes",
+        )
+        .into());
+    }
+    let actual = exec(sandbox, &format!(
+        "test $(wc -c < {HOME}/guarded-idle-payload) -eq {PAYLOAD_BYTES} && sha256sum {HOME}/guarded-idle-payload"
+    )).await?;
+    let actual = std::str::from_utf8(&actual)?
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| std::io::Error::other("speculative payload digest absent"))?;
+    if actual != hex::encode(sha2::Sha256::digest(home_payload(original))) {
+        return Err(std::io::Error::other(
+            "speculative rollback changed complete original payload",
+        )
+        .into());
+    }
+    Ok(actual.into())
+}
+
 pub async fn exec(sandbox: &dyn Sandbox, cmd: &str) -> TestResult<Vec<u8>> {
     let result = sandbox
         .exec(&ExecRequest {

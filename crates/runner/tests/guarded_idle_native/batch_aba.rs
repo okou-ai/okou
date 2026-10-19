@@ -74,6 +74,7 @@ pub async fn exercise(
     proof: &Arc<evidence::Case>,
     directory: &Path,
     backing: Arc<dyn SandboxBackingProcess>,
+    physical_history: Option<RunId>,
 ) -> TestResult<()> {
     let identity = IdleSandboxIdentity::Exact(context.reuse_key.clone());
     let (initial, selected) = {
@@ -124,6 +125,8 @@ pub async fn exercise(
     let mut completed = None;
     let mut pool_hold = None;
     let mut status_hold = None;
+    // Borrowed physical transitions may be cancelled, but never their owner.
+    let mut speculative = batch_repark::Owner::default();
     let outcome = tokio::time::timeout(Duration::from_secs(90), async {
         source.wait_for_readers(1).await;
         pending(completion.as_mut(), &mut completed).await?;
@@ -134,6 +137,12 @@ pub async fn exercise(
             "accounting":queued(&context)?,"allocated":context.budget.allocated(),
             "original_full_lease_active":true,"original_exit_polled_pending":true,
         }))?;
+        if let Some(history) = physical_history {
+            speculative.exercise(&context, proof, history, &selected, &backing).await?;
+            pending(completion.as_mut(), &mut completed).await?;
+            live(&context, proof, &backing, &original).await?;
+            queued(&context)?;
+        }
         pool_hold = Some(context.pool.lock().await);
         let pool_held_ns = evidence::clocks()?.0;
         status_hold = Some(context.status.hold_state_for_test().await);
@@ -246,6 +255,9 @@ pub async fn exercise(
         Some(value) => value,
         None => completion.await,
     };
+    // A failed physical rollback still owns mandatory original data. Attempt
+    // guarded cleanup before the tracker closes, after releasing its IO gate.
+    let physical_cleanup = speculative.finish(&context, inputs, proof).await;
     // Capture recovery outside the cancellable refusal block; accepted cleanup
     // survives cancellation of its progress observer.
     let recovery_started = evidence::clocks();
@@ -303,6 +315,7 @@ pub async fn exercise(
     old_release?;
     released?;
     first?;
+    physical_cleanup?;
     recovery?;
     reporting?;
     outcome.map_err(io::Error::other)??;
