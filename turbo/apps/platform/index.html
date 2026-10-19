@@ -142,58 +142,21 @@
       content="https://static.okou.io/web/okou-og-image-rudy-final-60db1bc00fa7.png"
     />
     <meta name="google" content="notranslate" />
-    <meta
-      name="theme-color"
-      content="#ffffff"
-      media="(prefers-color-scheme: light)"
-    />
-    <meta
-      name="theme-color"
-      content="#19191b"
-      media="(prefers-color-scheme: dark)"
-    />
+    <meta name="theme-color" content="#ffffff" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <script id="theme-bootstrap">
-      // Inline theme detection — mirrors signals/theme.ts resolveTheme() + applyTheme()
-      (function () {
-        var root = document.documentElement;
-        var p = null;
-        try {
-          var prefix = "__Secure-okou-theme=";
-          var cookies = document.cookie.split(";");
-          for (var i = 0; i < cookies.length; i += 1) {
-            var cookie = cookies[i].trim();
-            if (cookie.indexOf(prefix) === 0) {
-              var value = cookie.slice(prefix.length);
-              if (
-                value === "v1.light" ||
-                value === "v1.dark" ||
-                value === "v1.system"
-              ) {
-                p = value.slice(3);
-              }
-              if (p) break;
-            }
-          }
-        } catch (_) {}
-        if (!p) p = "system";
-        var t =
-          p === "dark" || p === "light"
-            ? p
-            : window.matchMedia("(prefers-color-scheme: dark)").matches
-              ? "dark"
-              : "light";
-        root.dataset.theme = t;
-        root.classList.toggle("dark", t === "dark");
-      })();
-    </script>
     <style id="app-bootstrap-critical-styles">
       :root {
         --app-skeleton-wordmark: url("./scripts/app-skeleton-assets/wordmark-sprite.webp?inline");
         --okou-viewport-height: 100dvh;
+        /* Matches the default palette until the application CSS loads. */
+        --app-bootstrap-background: 0 0% 100%;
+      }
+
+      :root[data-theme="dark"] {
+        --app-bootstrap-background: 40 4.3% 13.5%;
       }
 
       @supports (height: 100lvh) {
@@ -216,6 +179,7 @@
         height: var(--okou-viewport-height);
         min-height: var(--okou-viewport-height);
         overflow: hidden;
+        background: hsl(var(--background, var(--app-bootstrap-background)));
       }
 
       #root {
@@ -231,13 +195,9 @@
         inset: 0;
         z-index: 60;
         box-sizing: border-box;
-        background: #fdfdfe;
+        background: hsl(var(--background, var(--app-bootstrap-background)));
         opacity: 1;
         transition: opacity 300ms ease;
-      }
-
-      [data-theme="dark"] #app-bootstrap-skeleton {
-        background: #19191b;
       }
 
       #app-bootstrap-skeleton.app-bootstrap-skeleton--hidden {
@@ -356,6 +316,42 @@
         }
       }
     </style>
+    <script id="theme-bootstrap">
+      // Inline theme detection — mirrors signals/theme.ts resolveTheme() + applyTheme()
+      (function () {
+        var root = document.documentElement;
+        var p = null;
+        try {
+          var prefix = "__Secure-okou-theme=";
+          var cookies = document.cookie.split(";");
+          for (var i = 0; i < cookies.length; i += 1) {
+            var cookie = cookies[i].trim();
+            if (cookie.indexOf(prefix) === 0) {
+              var value = cookie.slice(prefix.length);
+              if (
+                value === "v1.light" ||
+                value === "v1.dark" ||
+                value === "v1.system"
+              ) {
+                p = value.slice(3);
+              }
+              if (p) break;
+            }
+          }
+        } catch (_) {}
+        if (!p) p = "system";
+        var t =
+          p === "dark" || p === "light"
+            ? p
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        root.dataset.theme = t;
+        root.classList.toggle("dark", t === "dark");
+        document.querySelector('meta[name="theme-color"]').content =
+          getComputedStyle(root).backgroundColor;
+      })();
+    </script>
     <script
       id="okou-clerk-core-script"
       src="__OKOU_CLERK_BROWSER_SCRIPT_URL__"

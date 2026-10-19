@@ -519,6 +519,7 @@ body,
   min-height: var(--okou-viewport-height);
   overflow: hidden;
   overscroll-behavior: none;
+  background-color: hsl(var(--background));
 }
 
 body {
@@ -539,7 +540,6 @@ body {
   left: 0;
   /* Top and horizontal insets are shared by every route. Bottom ownership is
      delegated to the active viewport shell or its bottom interaction. */
-  background-color: hsl(var(--background));
   padding: var(--sat) var(--sar) 0 var(--sal);
 }
 

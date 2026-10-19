@@ -76,6 +76,15 @@ function resolveTheme(preference: ThemePreference): "light" | "dark" {
   return preference;
 }
 
+function syncBrowserThemeColor() {
+  const meta = document.querySelector<HTMLMetaElement>(
+    'meta[name="theme-color"]',
+  );
+  if (meta) {
+    meta.content = getComputedStyle(document.documentElement).backgroundColor;
+  }
+}
+
 function applyTheme(theme: "light" | "dark") {
   document.documentElement.dataset.theme = theme;
   if (theme === "dark") {
@@ -83,6 +92,7 @@ function applyTheme(theme: "light" | "dark") {
   } else {
     document.documentElement.classList.remove("dark");
   }
+  syncBrowserThemeColor();
 }
 
 /**
@@ -175,6 +185,7 @@ export const syncShellDocumentAttributes$ = command(
     applyColorThemeDocumentAttributes(
       shellMounted ? get(paletteColorTheme$) : undefined,
     );
+    syncBrowserThemeColor();
   },
 );
 
