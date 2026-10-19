@@ -1,6 +1,7 @@
 """Ordinary synthetic-file/CLI refusals; actual kernel qualification is opt-in."""
 
 import copy
+import errno
 import importlib.util
 import json
 import os
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import uuid
 from pathlib import Path
 
@@ -110,6 +112,10 @@ class ReplayTests(unittest.TestCase):
             ("exit", 1290),
         ]:
             response = {"completed": name}
+            if name == "allocate":
+                response["held_bytes"] = 32 * MIB
+            if name == "release":
+                response["released_bytes"] = 32 * MIB
             if name == "transient":
                 response.update(
                     {
@@ -264,6 +270,12 @@ class ReplayTests(unittest.TestCase):
             "native_claim": lambda: self.capture["claims"].update(
                 native_guest_executed=True
             ),
+            "wrong_held_allocation": lambda: self.capture["requests"][0][
+                "response"
+            ].update(held_bytes=0),
+            "wrong_released_allocation": lambda: self.capture["requests"][1][
+                "response"
+            ].update(released_bytes=0),
         }
         for name, mutation in mutations.items():
             with self.subTest(name=name):
@@ -356,6 +368,41 @@ class ReplayTests(unittest.TestCase):
 
 
 class SafetyTests(unittest.TestCase):
+    @unittest.skipUnless(
+        os.environ.get("OKOU_CHARGE_TEST_PARENT"),
+        "opt-in real cgroup-v2 setup-failure test",
+    )
+    def test_live_constructor_metadata_failure_closes_original_peak_fd(self):
+        available = next(
+            int(line.split()[1]) * 1024
+            for line in Path("/proc/meminfo").read_text().splitlines()
+            if line.startswith("MemAvailable:")
+        )
+        self.assertGreaterEqual(available, 8192 * MIB)
+        parent = Path(os.environ["OKOU_CHARGE_TEST_PARENT"])
+        invocation = str(uuid.uuid4())
+        original_fstat = os.fstat
+        opened_peak = []
+
+        def metadata_failure(fd):
+            if not opened_peak and os.readlink(f"/proc/self/fd/{fd}").endswith(
+                "/memory.peak"
+            ):
+                opened_peak.append(fd)
+                raise OSError(errno.EIO, "injected peak metadata failure")
+            return original_fstat(fd)
+
+        with (
+            unittest.mock.patch.object(os, "fstat", metadata_failure),
+            self.assertRaisesRegex(OSError, "injected peak metadata"),
+        ):
+            LIB.ChargeWindows(parent, ["outer", "inner"], invocation, lambda _: None)
+        self.assertEqual(len(opened_peak), 1)
+        with self.assertRaises(OSError) as closed:
+            original_fstat(opened_peak[0])
+        self.assertEqual(closed.exception.errno, errno.EBADF)
+        self.assertFalse((parent / ("okou-charge-" + invocation)).exists())
+
     def test_cancellation_is_not_swallowed_by_a_blocked_selector(self):
         program = """
 import os, selectors, signal
@@ -409,6 +456,7 @@ finally:
         owner.states = {"window": "new"}
         owner.closed = False
         owner.failed = False
+        owner.peak_files = LIB.ExitStack()
         return owner
 
     def test_duplicate_reset_and_inactive_window_reads_are_refused(self):

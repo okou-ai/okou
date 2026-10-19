@@ -78,7 +78,8 @@ it can validate other files; the trusted repository reader can instead verify a
 bundle in its supported format.
 
 The workload touches/releases 32 MiB, joins a 16 MiB transient child and writes
-and syncs a 64 MiB owned file. After positive driver wait, its file charge must
+and syncs a 64 MiB owned file. Original held/released byte counts preserve the
+allocation's custody before its reference is cleared. After positive driver wait, its file charge must
 still be observed. It is not a cold-input test and performs no cache reset,
 pressure injection, existing-workload manipulation or global tracing. Bounds
 are fixed: 8 GiB host availability floor, 256 MiB owned memory limit, 60 seconds
@@ -110,3 +111,15 @@ root or native infrastructure. They are not live kernel qualification. Actual
 qualification is explicitly opt-in with the command above; native phase/file/
 kernel/NBD/shared completeness, cold lineage and matching-source fresh/snapshot
 overlaps require their own acquisition and acceptance.
+
+The constructor-failure regression is skipped in ordinary CI. To run it against
+real delegated cgroups, explicitly set `OKOU_CHARGE_TEST_PARENT`:
+
+```sh
+sudo env OKOU_CHARGE_TEST_PARENT=/sys/fs/cgroup python3 -m unittest discover \
+  -s crates/runner/tests/guarded_idle_native -p 'charged_windows_test.py'
+```
+
+It injects one external `fstat` error after opening a real peak file, verifies the
+original FD is closed and removes only the new empty subtree. It launches no
+workload and still requires 8 GiB headroom.

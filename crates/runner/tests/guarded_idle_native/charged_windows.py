@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 
 MIB = 1024 * 1024
@@ -50,6 +51,18 @@ def write_at(directory, name, value):
             raise OSError("short cgroup write")
     finally:
         os.close(fd)
+
+
+def peak_file(group):
+    """Return a file object so ownership transfers before metadata can fail."""
+    return open(
+        "memory.peak",
+        "r+b",
+        buffering=0,
+        opener=lambda path, flags: os.open(
+            path, flags | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=group.fd
+        ),
+    )
 
 
 class Group:
@@ -125,6 +138,7 @@ class ChargeWindows:
         self.parent = Group(parent)
         self.groups = []
         self.counters = {}
+        self.peak_files = ExitStack()
         self.states = dict.fromkeys(names, "new")
         self.owner_pid = os.getpid()
         self.owner_thread = threading.get_ident()
@@ -158,11 +172,8 @@ class ChargeWindows:
                 if index == 0:
                     write_at(group.fd, "memory.max", str(memory_limit_bytes).encode())
                 write_at(group.fd, "cgroup.subtree_control", b"+memory")
-                peak = os.open(
-                    "memory.peak",
-                    os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
-                    dir_fd=group.fd,
-                )
+                stream = self.peak_files.enter_context(peak_file(group))
+                peak = stream.fileno()
                 self.counters[name] = (
                     group,
                     peak,
@@ -295,8 +306,7 @@ class ChargeWindows:
             raise ValueError("charge-window owner already closed")
         self.closed = True
         errors = []
-        for _, fd, _ in self.counters.values():
-            os.close(fd)
+        self.peak_files.close()
         for group, owner, name in reversed(self.groups):
             started = time.monotonic_ns()
             try:

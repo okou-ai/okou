@@ -340,8 +340,8 @@ def replay(root, invocation, source_sha256):
     requests = capture["requests"]
     require(type(requests) is list and len(requests) == 5, "missing worker phase")
     response_fields = [
-        "completed",
-        "completed",
+        "completed held_bytes",
+        "completed released_bytes",
         "completed child child_exit_code child_wait_confirmed",
         "completed file",
         "completed",
@@ -354,6 +354,13 @@ def replay(root, invocation, source_sha256):
         keys(request["response"], fields)
         require(request["response"]["completed"] == name, "foreign worker response")
         span(request)
+    require(
+        type(requests[0]["response"]["held_bytes"]) is int
+        and requests[0]["response"]["held_bytes"] == 32 * MIB
+        and type(requests[1]["response"]["released_bytes"]) is int
+        and requests[1]["response"]["released_bytes"] == 32 * MIB,
+        "original held allocation/release custody missing",
+    )
     transient = requests[2]["response"]
     keys(transient["child"], "identity touched_bytes")
     worker_identity(transient["child"]["identity"], leaf)

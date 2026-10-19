@@ -54,8 +54,14 @@ def main():
         command = line.strip()
         result = {"completed": command}
         if command == "allocate":
+            if data is not None:
+                raise ValueError("owned allocation is already held")
             data = touch(32 * MIB)
+            result["held_bytes"] = len(data)
         elif command == "release":
+            if data is None:
+                raise ValueError("original owned allocation is missing")
+            result["released_bytes"] = len(data)
             data = None
             gc.collect()
             ctypes.CDLL(None).malloc_trim(0)

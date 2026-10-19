@@ -290,7 +290,7 @@ def run(output, parent):
                         try:
                             signal.pidfd_send_signal(pidfd, signal.SIGKILL)
                         except ProcessLookupError:
-                            pass
+                            pass  # Exit raced escalation; the positive wait is still required.
                         process.wait(timeout=5)
                 result["exit_code"] = process.returncode
                 result["wait_confirmed"] = process.returncode is not None
