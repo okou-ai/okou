@@ -186,9 +186,8 @@ pub enum Event {
     },
 }
 
-/// Timing parameters that control reconnection, heartbeat, token renewal, and
-/// backpressure behavior. Defaults are production-oriented; values that replace
-/// previous hardcoded constants keep their prior values.
+/// Timing parameters for connection establishment, liveness, token renewal and retry.
+/// Defaults are production-oriented.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct TimingConfig {
@@ -251,19 +250,6 @@ pub struct TimingConfig {
     pub token_renewal_retry_delay: Duration,
     /// Number of consecutive token renewal failures before emitting a fatal error.
     pub max_token_renewal_failures: u32,
-
-    // -- Backpressure --------------------------------------------------------
-    /// Bounded capacity of the internal event channel (mpsc). Values below 1
-    /// are treated as 1 because Tokio channels do not support zero capacity.
-    ///
-    /// [`Event::Message`] delivery is non-blocking and may drop messages when
-    /// this channel is full. Delivery of [`Event::Connected`],
-    /// [`Event::Disconnected`], and [`Event::Error`] instead waits for capacity,
-    /// which can delay reconnect and post-reconnect receive progress until the
-    /// caller drains an event or closes or drops the
-    /// [`Subscription`](crate::Subscription). See that type for the complete
-    /// backpressure and close behavior.
-    pub event_channel_capacity: usize,
 }
 
 impl Default for TimingConfig {
@@ -287,8 +273,6 @@ impl Default for TimingConfig {
             token_renewal_margin: Duration::from_secs(300),
             token_renewal_retry_delay: Duration::from_secs(30),
             max_token_renewal_failures: 3,
-            // Backpressure
-            event_channel_capacity: 64,
         }
     }
 }

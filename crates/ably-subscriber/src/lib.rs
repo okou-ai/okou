@@ -36,6 +36,7 @@
 #![deny(missing_docs)]
 
 mod connection;
+mod event_queue;
 #[doc(hidden)]
 pub mod protocol;
 mod subscribe;

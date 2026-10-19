@@ -14,15 +14,36 @@ use super::errors::{
     channel_detached_message, error_or_unknown, protocol_disconnect_reason, protocol_error_message,
 };
 use super::state::ConnState;
-use super::transport::{TransportCloseTracker, WsRead, WsTransport, connect_pending};
+use super::transport::{
+    PendingWsTransport, TransportCloseTracker, WsTransport, WsWrite, connect_pending,
+};
 
-pub(super) async fn wait_for_connected(ws_read: &mut WsRead) -> Result<ProtocolMessage, Error> {
-    while let Some(frame) = ws_read.next().await {
+pub(super) async fn send_protocol_pong(
+    ws_write: &mut WsWrite,
+    id: Option<String>,
+) -> Result<(), Error> {
+    let pong = ProtocolMessage {
+        action: action::PONG,
+        id,
+        ..Default::default()
+    };
+    ws_write
+        .send(tungstenite::Message::Binary(encode_msg(&pong)?.into()))
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn wait_for_connected(
+    transport: &mut PendingWsTransport,
+) -> Result<ProtocolMessage, Error> {
+    while let Some(frame) = transport.read_mut()?.next().await {
         let frame = frame?;
         if let tungstenite::Message::Binary(data) = frame {
             let msg = decode_msg(&data)?;
             match msg.action {
                 action::CONNECTED => return Ok(msg),
+                action::PING => send_protocol_pong(transport.write_mut()?, msg.id).await?,
+                action::PONG => {}
                 action::ERROR => {
                     let err = error_or_unknown(msg.error);
                     return Err(Error::Protocol {
@@ -74,14 +95,16 @@ fn closed_error_or_default(error: Option<ErrorInfo>) -> ErrorInfo {
 }
 
 pub(super) async fn wait_for_attach_outcome(
-    ws_read: &mut WsRead,
+    transport: &mut PendingWsTransport,
     channel: &str,
 ) -> Result<AttachOutcome, Error> {
-    while let Some(frame) = ws_read.next().await {
+    while let Some(frame) = transport.read_mut()?.next().await {
         let frame = frame?;
         if let tungstenite::Message::Binary(data) = frame {
             let msg = decode_msg(&data)?;
             match msg.action {
+                action::PING => send_protocol_pong(transport.write_mut()?, msg.id).await?,
+                action::PONG => {}
                 action::ATTACHED => {
                     if msg.channel.as_deref() == Some(channel) {
                         return Ok(AttachOutcome::Attached {
@@ -133,8 +156,11 @@ pub(super) async fn wait_for_attach_outcome(
     })
 }
 
-async fn wait_for_attached(ws_read: &mut WsRead, channel: &str) -> Result<Option<String>, Error> {
-    match wait_for_attach_outcome(ws_read, channel).await? {
+async fn wait_for_attached(
+    transport: &mut PendingWsTransport,
+    channel: &str,
+) -> Result<Option<String>, Error> {
+    match wait_for_attach_outcome(transport, channel).await? {
         AttachOutcome::Attached { channel_serial } => Ok(channel_serial),
         AttachOutcome::Detached(err) => Err(Error::Protocol {
             code: err.code,
@@ -175,13 +201,13 @@ pub(crate) async fn connect_and_attach(
 ) -> Result<(WsTransport, ConnState), Error> {
     let ws_url = build_ws_url(realtime_host, &token.token, None)?;
     let mut transport = connect_pending(&ws_url, timing.close_timeout, close_tracker).await?;
-    let connected_msg = wait_for_connected(transport.read_mut()?).await?;
+    let connected_msg = wait_for_connected(&mut transport).await?;
     let mut conn_state = ConnState::from_connected(&connected_msg, token, timing);
     let encoded = encode_attach_for_channel(channel, channel_params, None, AttachMode::Clean)?;
     transport
         .write_mut()?
         .send(tungstenite::Message::Binary(encoded.into()))
         .await?;
-    conn_state.channel_serial = wait_for_attached(transport.read_mut()?, channel).await?;
+    conn_state.channel_serial = wait_for_attached(&mut transport, channel).await?;
     Ok((transport.into_transport()?, conn_state))
 }

@@ -25,6 +25,8 @@ pub mod action {
     pub const DETACHED: i32 = 13;
     pub const MESSAGE: i32 = 15;
     pub const AUTH: i32 = 17;
+    pub const PING: i32 = 22;
+    pub const PONG: i32 = 23;
 }
 
 pub mod error_code {

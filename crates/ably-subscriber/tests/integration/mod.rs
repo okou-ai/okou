@@ -7,4 +7,5 @@ mod channel_state;
 mod close_drop;
 mod connection_messages;
 mod heartbeat_timeouts;
+mod native_parity;
 mod reconnect;
