@@ -364,18 +364,16 @@ describe("Teams OAuth API routes", () => {
         appTenantId: "11111111-1111-1111-1111-111111111111",
         tenantId: fixture.teamsTenantId,
       }).toString();
-      if (completion === "settings") {
-        const target = new URL(callback.headers.get("location")!);
-        expect(target.origin + target.pathname).toBe(
-          `${APP_ORIGIN}/settings/teams`,
-        );
-        expect(Object.fromEntries(target.searchParams)).toStrictEqual({
-          status: "pending",
-          tenantId: fixture.teamsTenantId,
-        });
-      } else {
-        expect(callback.headers.get("location")).toBe(installUrl.toString());
-      }
+      // Every state, with or without the App's completion marker, finishes
+      // in settings while the installation is still pending.
+      const target = new URL(callback.headers.get("location")!);
+      expect(target.origin + target.pathname).toBe(
+        `${APP_ORIGIN}/settings/teams`,
+      );
+      expect(Object.fromEntries(target.searchParams)).toStrictEqual({
+        status: "pending",
+        tenantId: fixture.teamsTenantId,
+      });
       expect(callback.headers.get("cache-control")).toBe("no-store");
       const prepared = await accept(
         statusClient.getStatus({
