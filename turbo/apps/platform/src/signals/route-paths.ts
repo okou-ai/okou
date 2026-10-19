@@ -42,6 +42,7 @@ export const ROUTES = {
   directedAuthorize: "/connectors/:connectorSlug/authorize",
   settings: "/settings",
   settingsSlack: INTEGRATION_SETTINGS_PATHS.slack,
+  settingsWechat: INTEGRATION_SETTINGS_PATHS.wechat,
   settingsDiscord: INTEGRATION_SETTINGS_PATHS.discord,
   settingsDiscordInstall: "/settings/discord/install",
   settingsTeams: INTEGRATION_SETTINGS_PATHS.teams,

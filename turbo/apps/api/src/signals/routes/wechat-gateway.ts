@@ -20,7 +20,7 @@ import {
 } from "../services/crypto.utils";
 import { wechatEnabled$ } from "../services/wechat-config";
 import { receiveWechatMessage$ } from "../services/wechat-ingress.service";
-import { sendWechatNotice$ } from "../services/wechat-notice.service";
+import { sendWechatReconnectNotice$ } from "../services/wechat-notice.service";
 import type { RouteEntry } from "../route-entry";
 
 const log = logger("api:wechat:gateway");
@@ -136,7 +136,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   for (const message of batch.msgs ?? []) {
     // A notice failure must not block a user's prompt or replay an ambiguous send.
     const notice = await settle(
-      set(sendWechatNotice$, { connection, message }, signal),
+      set(sendWechatReconnectNotice$, { connection, message }, signal),
       signal,
     );
     if (!notice.ok) {

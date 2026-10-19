@@ -28,7 +28,7 @@ const authorize$ = command(
       auth.userId,
       signal,
     );
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatRelations, features)) {
+    if (!isFeatureEnabled(FeatureSwitchKey.ChatResourcePanel, features)) {
       return resourceUnavailable("Chat relationships are not available");
     }
     const [thread] = await get(db$)

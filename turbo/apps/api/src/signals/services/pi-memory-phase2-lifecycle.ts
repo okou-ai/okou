@@ -17,25 +17,10 @@ function finalizedPrivateMaintenanceOutput() {
     eq(agentRuns.framework, "pi"),
     eq(agentRuns.frameworkSessionId, sql`${agentRuns.id}::text`),
     isNull(agentRuns.legacyConversationHistoryHash),
-    or(
-      and(
-        eq(sql`${agentRuns.result}->>'framework'`, "pi"),
-        eq(
-          sql`${agentRuns.result}->>'frameworkSessionId'`,
-          sql`${agentRuns.id}::text`,
-        ),
-      ),
-      // The prepared outgoing API commits the native mirrors and exact
-      // storage receipt together, but its result still carries legacy IDs.
-      // It can finish after migration; native-only writers never use this.
-      // Remove after outgoing API/finalizer drain and projection of their late
-      // terminal receipts in #37970's physical contraction.
-      and(
-        sql`${agentRuns.launchSnapshot}->>'schemaVersion' <> '5'`,
-        sql`NOT (${agentRuns.result} ?| ARRAY['framework', 'frameworkSessionId'])`,
-        sql`jsonb_typeof(${agentRuns.result}->'agentSessionId') = 'string'`,
-        sql`jsonb_typeof(${agentRuns.result}->'conversationId') = 'string'`,
-      ),
+    eq(sql`${agentRuns.result}->>'framework'`, "pi"),
+    eq(
+      sql`${agentRuns.result}->>'frameworkSessionId'`,
+      sql`${agentRuns.id}::text`,
     ),
     sql`${agentRuns.result}->'storageOutputs' @> jsonb_build_array(jsonb_build_object('name', 'memory', 'mountPath', ${PI_MEMORY_ROOT}::text))`,
   )})`;
