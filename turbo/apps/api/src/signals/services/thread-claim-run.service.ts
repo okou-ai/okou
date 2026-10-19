@@ -6401,6 +6401,8 @@ function pendingAtomicLaunchPlan(
     startedAt: context.createdAt.toISOString(),
     triggerSource: args.commit.persistence.rows.metadata.triggerSource,
     threadId: args.commit.persistence.rows.metadata.chatThreadId,
+    status: "pending",
+    billingCompletedAt: null,
   });
   const attribution = new QueryBuilder()
     .$with("inserted_launch_billing_attribution", {
