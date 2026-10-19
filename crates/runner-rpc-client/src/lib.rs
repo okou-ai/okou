@@ -92,30 +92,8 @@ where
         .read_to_end(&mut bytes)
         .await
         .map_err(|_| ErrorCode::InvalidRequest)?;
-    let mut request =
-        runner_rpc_proto::parse_request(&bytes).map_err(|_| ErrorCode::InvalidRequest)?;
-    if request.remaining_ms.is_some() {
-        return Err(ErrorCode::InvalidRequest);
-    }
-    let mut stream = connect().await.map_err(|_| ErrorCode::Unavailable)?;
-    request.remaining_ms = Some(
-        deadline
-            .saturating_duration_since(Instant::now())
-            .as_millis()
-            .min(60_000) as u64,
-    );
-    if serde_json::to_vec(&request)
-        .map_err(|_| ErrorCode::InvalidRequest)?
-        .len()
-        > MAX_REQUEST_BYTES
-    {
-        return Err(ErrorCode::InvalidRequest);
-    }
-    // Once transmission is attempted, any subsequent loss may hide effects.
-    *sent = true;
-    runner_rpc_proto::write_request(&mut stream, &request)
-        .await
-        .map_err(|_| ErrorCode::Transport)?;
+    let request = runner_rpc_proto::parse_request(&bytes).map_err(|_| ErrorCode::InvalidRequest)?;
+    let mut stream = dispatch_request(request, connect, sent, deadline, 60_000).await?;
     stream.shutdown().await.map_err(|_| ErrorCode::Transport)?;
     let mut responses = ResponseReader::new(stream);
     let mut terminal = None;
@@ -137,6 +115,43 @@ where
         }
     }
     terminal.ok_or(ErrorCode::Protocol)
+}
+
+async fn dispatch_request<S, C, F>(
+    mut request: runner_rpc_proto::Request,
+    connect: C,
+    sent: &mut bool,
+    deadline: Instant,
+    max_duration_ms: u64,
+) -> Result<S, ErrorCode>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    C: FnOnce() -> F,
+    F: Future<Output = io::Result<S>>,
+{
+    if request.remaining_ms.is_some() {
+        return Err(ErrorCode::InvalidRequest);
+    }
+    let mut stream = connect().await.map_err(|_| ErrorCode::Unavailable)?;
+    request.remaining_ms = Some(
+        deadline
+            .saturating_duration_since(Instant::now())
+            .as_millis()
+            .min(u128::from(max_duration_ms)) as u64,
+    );
+    if serde_json::to_vec(&request)
+        .map_err(|_| ErrorCode::InvalidRequest)?
+        .len()
+        > MAX_REQUEST_BYTES
+    {
+        return Err(ErrorCode::InvalidRequest);
+    }
+    // Once transmission is attempted, any subsequent loss may hide effects.
+    *sent = true;
+    runner_rpc_proto::write_request(&mut stream, &request)
+        .await
+        .map_err(|_| ErrorCode::Transport)?;
+    Ok(stream)
 }
 
 async fn emit(output: &mut (impl AsyncWrite + Unpin), response: &Response) -> io::Result<()> {
