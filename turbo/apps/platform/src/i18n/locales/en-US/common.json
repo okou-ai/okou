@@ -1822,7 +1822,6 @@
       },
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "hint": "Search workflows or choose a template…",
         "make": "Make",
         "useTemplate": "Use template {{title}}"
       },

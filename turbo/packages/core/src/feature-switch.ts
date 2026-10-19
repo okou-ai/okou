@@ -44,14 +44,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.ComposerSlashHint]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Composer slash hint",
-    description:
-      "Show an inline hint after / to search workflows or choose a template.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",

@@ -1851,7 +1851,6 @@
       },
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "hint": "Rechercher un workflow ou choisir un modèle…",
         "make": "Créer",
         "useTemplate": "Utiliser le modèle {{title}}"
       },

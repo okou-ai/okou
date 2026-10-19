@@ -1819,7 +1819,6 @@
       },
       "slashPanel": {
         "browseAll": "浏览全部模板",
-        "hint": "搜索工作流或选择模板…",
         "make": "制作",
         "useTemplate": "使用模板 {{title}}"
       },
