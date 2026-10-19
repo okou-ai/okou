@@ -36,7 +36,8 @@
 //! when there is no executor to emit ordinary job telemetry.
 //!
 //! When no direct or published exact resource is available, fallback first retries matching idle
-//! exact reuse, then consumes retiring idle capacity, and finally uses fresh budget capacity. A
+//! reuse, including generationless non-success publication, then consumes retiring idle capacity,
+//! and finally uses fresh budget capacity. Generic reuse grants no exact-history authority. A
 //! fresh fallback still attempts home-cache checkout, but skips its transient-contention
 //! retry when the predecessor state proves that a live or transferred sandbox retains the entry.
 //! Retiring leases are retained while the loop waits for capacity. The wait observes both budget
@@ -109,6 +110,7 @@ pub(super) struct FinalizingClaimRequest {
 
 enum FinalizingActivationOrigin {
     IdlePool,
+    GenericIdlePool,
     DirectHandoff,
 }
 
@@ -243,6 +245,10 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             reservation,
             origin: FinalizingActivationOrigin::IdlePool,
         },
+        FinalizingResource::Reusable(reservation) => FinalizingActivation::Reserved {
+            reservation,
+            origin: FinalizingActivationOrigin::GenericIdlePool,
+        },
         FinalizingResource::Handoff(candidate) => {
             let reservation =
                 match candidate.into_reservation(run_id, admission.history_generation_run_id) {
@@ -337,7 +343,9 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                     reuse_result,
                     idle_snapshot,
                 } => {
-                    if reuse_entry.is_none() {
+                    if reuse_entry.is_none()
+                        && !matches!(origin, FinalizingActivationOrigin::GenericIdlePool)
+                    {
                         pre_spawn_timing.record_finalizing_handoff(
                             FinalizingHandoffOutcome::ActivationFailed,
                             Some(FinalizingHandoffReason::ExactActivationFallback),
@@ -360,10 +368,12 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 } => {
                     drop(activation_transfer_guard.take());
                     drop(active_run_guard);
-                    pre_spawn_timing.record_finalizing_handoff(
-                        FinalizingHandoffOutcome::ActivationFailed,
-                        Some(FinalizingHandoffReason::ExactActivationFailed),
-                    );
+                    if !matches!(origin, FinalizingActivationOrigin::GenericIdlePool) {
+                        pre_spawn_timing.record_finalizing_handoff(
+                            FinalizingHandoffOutcome::ActivationFailed,
+                            Some(FinalizingHandoffReason::ExactActivationFailed),
+                        );
+                    }
                     let cancellation = complete_claimed_without_sandbox(
                         claimed,
                         cancellation,

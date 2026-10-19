@@ -666,7 +666,9 @@ async fn prepare_ranked_preference_candidate(
         };
     }
 
-    if advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected {
+    let selected_finalizing =
+        advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
+    if selected_finalizing {
         if let Some(history_generation_run_id) = history_generation_run_id
             && let Some(predecessor) = ctx.active_runs.finalizing_predecessor(
                 history_generation_run_id,
@@ -682,60 +684,65 @@ async fn prepare_ranked_preference_candidate(
                 history_generation_run_id,
             );
         }
-        return defer_preference_candidate(
-            candidate,
-            preference,
-            reuse_key,
-            ctx,
-            true,
-            "no_publishable_predecessor",
-        )
-        .await;
+        // Publication can resolve the producer between discovery and admission.
+        // Consume its ready generic resource through ordinary guarded activation.
     }
 
-    if ranked_preference_allows(
-        advertised_tier,
-        RunnerPreferenceTier::ReusableSandbox,
-        selected,
-    ) && let Some(reservation) = reserve_reusable_idle_for_spawn(
-        ctx.idle_pool,
-        reuse_key,
-        profile_name,
-        device_rate_limits,
-        None,
-    )
-    .await
+    if (selected_finalizing
+        || ranked_preference_allows(
+            advertised_tier,
+            RunnerPreferenceTier::ReusableSandbox,
+            selected,
+        ))
+        && let Some(reservation) = reserve_reusable_idle_for_spawn(
+            ctx.idle_pool,
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            None,
+        )
+        .await
     {
         return reusable_preparation(candidate, reservation);
     }
 
-    let reason =
-        if ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
-            && has_compatible_home(reuse_key, profile_name, ctx)
+    let reason = if (selected_finalizing
+        || ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected))
+        && has_compatible_home(reuse_key, profile_name, ctx)
+    {
+        if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+            &candidate,
+            profile_name,
+            job_vcpu,
+            job_memory,
+            device_rate_limits,
+            false,
+            ctx,
+        )
+        .await
         {
-            if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
-                &candidate,
-                profile_name,
-                job_vcpu,
-                job_memory,
-                device_rate_limits,
-                false,
-                ctx,
-            )
-            .await
-            {
-                return PreferencePreparation::Ready(PreparedCandidate {
-                    candidate,
-                    resource: Some(resource),
-                    blank_pool_selection,
-                });
-            }
-            "capacity_exhausted"
-        } else {
-            "no_qualifying_local_resource"
-        };
+            return PreferencePreparation::Ready(PreparedCandidate {
+                candidate,
+                resource: Some(resource),
+                blank_pool_selection,
+            });
+        }
+        "capacity_exhausted"
+    } else if selected_finalizing {
+        "no_publishable_predecessor"
+    } else {
+        "no_qualifying_local_resource"
+    };
 
-    defer_preference_candidate(candidate, preference, reuse_key, ctx, false, reason).await
+    defer_preference_candidate(
+        candidate,
+        preference,
+        reuse_key,
+        ctx,
+        selected_finalizing,
+        reason,
+    )
+    .await
 }
 
 fn ranked_preference_allows(

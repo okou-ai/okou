@@ -26,7 +26,8 @@ use tracing::info;
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
     ReservedIdleActivation, SharedIdlePool, reserve_exact_idle_for_spawn,
-    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
+    reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
+    select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 use runner_executor::executor::{
     ExecutionFailure, FinalizingExactIdleLookup, FinalizingHandoffOutcome, FinalizingHandoffReason,
@@ -106,6 +107,7 @@ pub struct FinalizingSelectionRequest<'a> {
 pub enum FinalizingResource {
     Handoff(Box<FinalizingHandoffCandidate>),
     Exact(ReservedIdleActivation),
+    Reusable(ReservedIdleActivation),
     Fresh(BudgetLease),
 }
 
@@ -134,7 +136,7 @@ impl FinalizingWaitOutcome {
     }
 }
 
-enum FallbackExactLookup {
+enum FallbackIdleLookup {
     Hit(ReservedIdleActivation),
     Miss(ExactIdleReservationMiss),
 }
@@ -530,10 +532,10 @@ async fn receive_finalizing_handoff(
 
 /// Acquire capacity after the predecessor can no longer provide an exact direct handoff.
 ///
-/// Each loop first reserves a matching exact idle entry, then tries retained retiring leases and
-/// rechecks exact reuse before accepting fresh budget capacity. Idle entries selected for pressure
-/// are either returned as exact reservations or converted into retiring leases; they are never
-/// counted twice. When neither source can make progress, the loop waits for cancellation, budget
+/// Each loop first reserves a matching idle entry, then tries retained retiring leases and
+/// rechecks exact or generic reuse before accepting fresh budget capacity. Idle entries selected
+/// for pressure are either returned as reuse reservations or converted into retiring leases;
+/// they are never counted twice. When neither source can make progress, the loop waits for cancellation, budget
 /// availability, or an idle-pool change and retries. A cancellation or other failure returns
 /// without a resource so the outer claim path can complete the job and release retained leases.
 async fn acquire_fallback_resource(
@@ -570,7 +572,9 @@ async fn acquire_fallback_resource(
                 reuse_key: Some(reuse_key),
                 profile_name,
                 device_rate_limits,
-                history_generation_run_id: Some(history_generation_run_id),
+                // Exact and generic publication share the reuse-key slot. A
+                // generic predecessor must be reserved before pressure eviction.
+                history_generation_run_id: None,
                 allow_compatible_blank: false,
                 blank_pool_diagnostics: None,
                 vcpu,
@@ -585,10 +589,12 @@ async fn acquire_fallback_resource(
         debug_assert!(blank_pool_selection.is_none());
         match selection {
             IdlePressureSelection::Reusable(reservation) => {
-                let reservation = accept_fallback_exact(cancellation, reservation, ctx).await?;
-                pre_spawn_timing
-                    .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
-                return Ok(FinalizingResource::Exact(reservation));
+                let reservation = accept_fallback_idle(cancellation, reservation, ctx).await?;
+                return Ok(fallback_idle_resource(
+                    reservation,
+                    history_generation_run_id,
+                    pre_spawn_timing,
+                ));
             }
             IdlePressureSelection::Fresh(lease) => break lease,
             IdlePressureSelection::Exhausted(retained) => retiring_leases = retained,
@@ -612,7 +618,7 @@ async fn acquire_fallback_resource(
         }
     };
 
-    match reserve_fallback_exact(
+    match reserve_fallback_idle(
         cancellation,
         reuse_key,
         profile_name,
@@ -622,12 +628,15 @@ async fn acquire_fallback_resource(
     )
     .await?
     {
-        FallbackExactLookup::Hit(reservation) => {
+        FallbackIdleLookup::Hit(reservation) => {
             drop(lease);
-            pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
-            Ok(FinalizingResource::Exact(reservation))
+            Ok(fallback_idle_resource(
+                reservation,
+                history_generation_run_id,
+                pre_spawn_timing,
+            ))
         }
-        FallbackExactLookup::Miss(miss) => {
+        FallbackIdleLookup::Miss(miss) => {
             pre_spawn_timing
                 .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(miss));
             Ok(FinalizingResource::Fresh(lease))
@@ -635,14 +644,30 @@ async fn acquire_fallback_resource(
     }
 }
 
-async fn reserve_fallback_exact(
+fn fallback_idle_resource(
+    reservation: ReservedIdleActivation,
+    history_generation_run_id: RunId,
+    pre_spawn_timing: &mut RunnerPreSpawnTiming,
+) -> FinalizingResource {
+    if reservation.history_generation_run_id() == Some(history_generation_run_id) {
+        pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
+        FinalizingResource::Exact(reservation)
+    } else {
+        pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(
+            ExactIdleReservationMiss::HistoryGenerationMismatch,
+        ));
+        FinalizingResource::Reusable(reservation)
+    }
+}
+
+async fn reserve_fallback_idle(
     cancellation: &RunCancellationRegistration,
     reuse_key: &str,
     profile_name: &str,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
     history_generation_run_id: RunId,
     ctx: FinalizingSelectionResources<'_>,
-) -> Result<FallbackExactLookup, Box<ExecutionFailure>> {
+) -> Result<FallbackIdleLookup, Box<ExecutionFailure>> {
     let reservation = match reserve_exact_idle_for_spawn(
         ctx.idle_pool,
         reuse_key,
@@ -653,14 +678,27 @@ async fn reserve_fallback_exact(
     .await
     {
         Ok(reservation) => reservation,
-        Err(miss) => return Ok(FallbackExactLookup::Miss(miss)),
+        Err(miss) => {
+            match reserve_reusable_idle_for_spawn(
+                ctx.idle_pool,
+                reuse_key,
+                profile_name,
+                device_rate_limits,
+                None,
+            )
+            .await
+            {
+                Some(reservation) => reservation,
+                None => return Ok(FallbackIdleLookup::Miss(miss)),
+            }
+        }
     };
-    accept_fallback_exact(cancellation, reservation, ctx)
+    accept_fallback_idle(cancellation, reservation, ctx)
         .await
-        .map(FallbackExactLookup::Hit)
+        .map(FallbackIdleLookup::Hit)
 }
 
-async fn accept_fallback_exact(
+async fn accept_fallback_idle(
     cancellation: &RunCancellationRegistration,
     reservation: ReservedIdleActivation,
     ctx: FinalizingSelectionResources<'_>,
@@ -1080,15 +1118,29 @@ mod tests {
 
     #[tokio::test]
     async fn fallback_budget_wakeup_reuses_exact_published_while_waiting() {
+        assert_fallback_budget_wakeup_reuses_published(true).await;
+    }
+
+    #[tokio::test]
+    async fn fallback_budget_wakeup_reuses_generic_published_while_waiting() {
+        assert_fallback_budget_wakeup_reuses_published(false).await;
+    }
+
+    async fn assert_fallback_budget_wakeup_reuses_published(exact: bool) {
         let mut admission = released_admission();
         let budget = Arc::new(ResourceBudget::new(5, 4096, 1.0, 0));
         let held = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
         let exact_lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
         let exact_id = sandbox::SandboxId::new_v4();
-        let candidate = ParkedIdleCandidateBuilder::new(&admission.reuse_key, exact_lease)
-            .with_sandbox_id(exact_id)
-            .with_history_generation_run_id(admission.history_generation_run_id)
-            .build();
+        let builder = ParkedIdleCandidateBuilder::new(&admission.reuse_key, exact_lease)
+            .with_sandbox_id(exact_id);
+        let candidate = if exact {
+            builder
+                .with_history_generation_run_id(admission.history_generation_run_id)
+                .build()
+        } else {
+            builder.build()
+        };
         let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
             IdlePoolConfig::default(),
         )));
@@ -1160,10 +1212,12 @@ mod tests {
         }
         let selected = tokio::time::timeout(Duration::from_secs(5), task)
             .await
-            .expect("selector should accept the published exact sandbox")
+            .expect("selector should accept the published sandbox")
             .unwrap();
-        let FinalizingResource::Exact(reservation) = selected else {
-            panic!("exact reuse should win over the newly available fresh capacity");
+        let reservation = match (exact, selected) {
+            (true, FinalizingResource::Exact(reservation))
+            | (false, FinalizingResource::Reusable(reservation)) => reservation,
+            _ => panic!("published reuse should win over the newly available fresh capacity"),
         };
         assert_eq!(reservation.sandbox_id(), exact_id);
         assert_eq!(idle_pool.lock().await.len(), 0);
