@@ -26,7 +26,11 @@ import {
 } from "vitest";
 
 import { createApp } from "../../../app-factory";
-import { accept, testContext } from "../../../__tests__/test-context";
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, nowDate } from "../../../lib/time";
@@ -204,7 +208,9 @@ function renderedThreadContextAfter(
   return parts[1] ?? "";
 }
 
-function actorForFixture(fixture: TelegramPostFixture): ApiTestUser {
+function actorForFixture(
+  fixture: Pick<TelegramPostFixture, "userId" | "orgId">,
+): ApiTestUser {
   return {
     userId: fixture.userId,
     orgId: fixture.orgId,
@@ -214,7 +220,10 @@ function actorForFixture(fixture: TelegramPostFixture): ApiTestUser {
 }
 
 /** Links a unique Telegram user to the actor through the signed link API. */
-async function linkOfficialTelegramUser(actor: ApiTestUser): Promise<string> {
+async function linkOfficialTelegramUser(
+  actor: ApiTestUser,
+  signal?: AbortSignal,
+): Promise<string> {
   const telegramAuth = {
     id: Number(newTelegramBotId()),
     auth_date: Math.floor(nowDate().getTime() / 1000),
@@ -230,7 +239,7 @@ async function linkOfficialTelegramUser(actor: ApiTestUser): Promise<string> {
     .join("\n");
   const secretKey = createHash("sha256").update(OFFICIAL_BOT_TOKEN).digest();
   await accept(
-    telegramClient().link({
+    telegramClient(signal).link({
       headers: authOrgApi.authenticate(actor),
       body: {
         telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
@@ -293,19 +302,20 @@ async function useNativeFableSubscription(
 }
 
 /** The poster's newest run whose launch prompt contains `text`. */
-async function runForPrompt(fixture: TelegramPostFixture, text: string) {
+async function runForPrompt(
+  fixture: Pick<TelegramPostFixture, "userId" | "orgId">,
+  text: string,
+  foreground?: TestContext,
+) {
   const actor = actorForFixture(fixture);
-  const listed = await runReadsApi.requestListLogs(
-    actor,
-    { limit: 100 },
-    [200],
-  );
+  const reads = foreground ? createRunReadsApi(foreground) : runReadsApi;
+  const listed = await reads.requestListLogs(actor, { limit: 100 }, [200]);
   expect(listed.body.pagination.hasMore).toBeFalsy();
   const run = listed.body.data.find((candidate) => {
     return candidate.prompt.includes(text);
   });
   return run
-    ? (await runReadsApi.requestReadLogById(actor, run.id, [200])).body
+    ? (await reads.requestReadLogById(actor, run.id, [200])).body
     : undefined;
 }
 
@@ -503,11 +513,13 @@ async function completeCanonicalChatRun(args: {
 }
 
 async function readTelegramSourcePart(
-  fixture: TelegramPostFixture,
+  fixture: Pick<TelegramPostFixture, "userId" | "orgId" | "composeId">,
   prompt: string,
+  foreground?: TestContext,
 ) {
   const actor = actorForFixture(fixture);
-  const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+  const chat = foreground ? createChatFilesBddApi(foreground) : chatApi;
+  const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
   if (lifecycle.status !== 200) {
     throw new Error("Expected Telegram thread lifecycle events");
   }
@@ -517,7 +529,7 @@ async function readTelegramSourcePart(
   if (!thread) {
     throw new Error("Expected a Telegram chat thread");
   }
-  const { events } = await chatApi.listThreadEvents(actor, thread.chatThreadId);
+  const { events } = await chat.listThreadEvents(actor, thread.chatThreadId);
   const input = events.find((event) => {
     return (
       event.eventType === "input.prompt" &&
@@ -1189,6 +1201,56 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         restoreWebhook = restore;
       },
     };
+  }
+
+  async function prepareTelegramGroup() {
+    configureOfficialBotEnv();
+    runsApi.acceptTelemetryIngest();
+    const actor = authOrgApi.user();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization for the Telegram poster");
+    }
+    const owned = createTelegramDmOwner(actor);
+    const foreground = owned.context;
+    const authOrg = createAuthOrgAgentsBddApi(foreground);
+    const runs = createRunsApi(foreground);
+    const prepared = owned.run(async () => {
+      await authOrg.completeOnboarding(actor);
+      const { defaultAgentId } = await authOrg.readOnboardingStatus(actor);
+      if (!defaultAgentId) {
+        throw new Error("Expected onboarding to create a default agent");
+      }
+      await runs.grantProEntitlement(actor, {
+        run: owned.run,
+        onExternalStateReady: owned.retainWebhook,
+      });
+      await runs.ensurePersonalSubscriptionModel(actor, {
+        model: "claude-fable-5-1",
+      });
+      return {
+        orgId,
+        userId: actor.userId,
+        composeId: defaultAgentId,
+        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+        webhookSecret: OFFICIAL_WEBHOOK_SECRET,
+        telegramUserId: await linkOfficialTelegramUser(
+          actor,
+          foreground.signal,
+        ),
+        context: foreground,
+        signal: foreground.signal,
+        run: owned.run,
+        finish: owned.finish,
+      };
+    });
+    const result = await settleIncludingAbort(prepared);
+    if (!result.ok) {
+      return closeTelegramDm(() => {
+        throw result.error;
+      }, owned.finish);
+    }
+    return result.value;
   }
 
   async function closeTelegramDm<T>(
@@ -2145,76 +2207,89 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("preserves a mention-only Telegram request with the preceding group task", async () => {
-    const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    const botUsername = OFFICIAL_BOT_USERNAME;
-    telegramApiMocks();
+    const fixture = await prepareTelegramGroup();
+    await closeTelegramDm(
+      fixture.run(async () => {
+        const botUsername = OFFICIAL_BOT_USERNAME;
+        telegramApiMocks();
 
-    await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: {
-        update_id: 2,
-        message: {
-          message_id: 100,
-          chat: { id: -10_099_002, type: "supergroup" },
-          from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
-          text: "Check https://example.com/broken-article",
-        },
-      },
-    });
-    await flushWaitUntilForTest();
-
-    const response = await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: {
-        update_id: 3,
-        message: {
-          message_id: 101,
-          chat: { id: -10_099_002, type: "supergroup" },
-          from: {
-            id: Number(fixture.telegramUserId),
-            username: "alice",
-            first_name: "Alice",
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          signal: fixture.signal,
+          body: {
+            update_id: 2,
+            message: {
+              message_id: 100,
+              chat: { id: -10_099_002, type: "supergroup" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              text: "Check https://example.com/broken-article",
+            },
           },
-          text: `@${botUsername}`,
-          entities: [mentionEntity(botUsername)],
-        },
-      },
-    });
+        });
+        await flushWaitUntilForTest();
 
-    expect(response.status).toBe(200);
-    await flushWaitUntilForTest();
+        const response = await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          signal: fixture.signal,
+          body: {
+            update_id: 3,
+            message: {
+              message_id: 101,
+              chat: { id: -10_099_002, type: "supergroup" },
+              from: {
+                id: Number(fixture.telegramUserId),
+                username: "alice",
+                first_name: "Alice",
+              },
+              text: `@${botUsername}`,
+              entities: [mentionEntity(botUsername)],
+            },
+          },
+        });
 
-    const run = await runForPrompt(fixture, `@${botUsername}`);
-    expect(run?.prompt).toBe(`@${botUsername}`);
-    await expect(
-      readTelegramSourcePart(fixture, `@${botUsername}`),
-    ).resolves.toStrictEqual({
-      type: "source",
-      kind: "telegram",
-      href: "https://t.me/c/99002/101",
-    });
-    expect(run?.appendSystemPrompt).toContain("Chat type: supergroup");
-    expect(run?.appendSystemPrompt).toContain(
-      "https://example.com/broken-article",
+        expect(response.status).toBe(200);
+        await flushWaitUntilForTest();
+
+        const run = await runForPrompt(
+          fixture,
+          `@${botUsername}`,
+          fixture.context,
+        );
+        expect(run?.prompt).toBe(`@${botUsername}`);
+        await expect(
+          readTelegramSourcePart(fixture, `@${botUsername}`, fixture.context),
+        ).resolves.toStrictEqual({
+          type: "source",
+          kind: "telegram",
+          href: "https://t.me/c/99002/101",
+        });
+        expect(run?.appendSystemPrompt).toContain("Chat type: supergroup");
+        expect(run?.appendSystemPrompt).toContain(
+          "https://example.com/broken-article",
+        );
+        expectExactSystemPromptFragment(
+          run?.appendSystemPrompt,
+          [
+            "# Current Integration",
+            "You are currently running inside: Telegram",
+            "Bot ID: 987654",
+            `Bot username: @${botUsername}`,
+            "Chat ID: -10099002",
+            "Chat type: supergroup",
+            "Message ID: 101",
+          ].join("\n"),
+        );
+        // A top-level group message has no reply chain or forum topic.
+        expect(run?.appendSystemPrompt).not.toContain("Root message ID:");
+        expect(run?.appendSystemPrompt).not.toContain("Message thread ID:");
+        expect(run?.appendSystemPrompt).toContain("Telegram username: @alice");
+        expect(run?.startedAt).toBeNull();
+        expect(["queued", "pending"]).toContain(run?.status);
+      }),
+      fixture.finish,
     );
-    expectExactSystemPromptFragment(
-      run?.appendSystemPrompt,
-      [
-        "# Current Integration",
-        "You are currently running inside: Telegram",
-        "Bot ID: 987654",
-        `Bot username: @${botUsername}`,
-        "Chat ID: -10099002",
-        "Chat type: supergroup",
-        "Message ID: 101",
-      ].join("\n"),
-    );
-    // A top-level group message has no reply chain or forum topic.
-    expect(run?.appendSystemPrompt).not.toContain("Root message ID:");
-    expect(run?.appendSystemPrompt).not.toContain("Message thread ID:");
-    expect(run?.appendSystemPrompt).toContain("Telegram username: @alice");
   });
 
   it("creates an agent run for a linked official-bot private message", async () => {
