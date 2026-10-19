@@ -419,24 +419,38 @@ EOF
 # ---------------------------------------------------------------------------
 
 install_runtimes() {
-  # The runtime split rewrites ELF search/interpreter paths. Pin the producer
-  # instead of depending on whichever distro patchelf happens to be installed.
+  # The runtime split rewrites ELF search/interpreter paths. Build the pinned
+  # source with its missing VERDEF relocation: official ARM Claude exports
+  # symbol versions, and an unchanged DT_VERDEF points at unmapped memory after
+  # patchelf moves .gnu.version_d. The produced-image smoke executes that ELF.
   sudo chroot "$ROOTFS_DIR" bash -s -- "$PATCHELF_VERSION" <<'INSTALL_PATCHELF'
 set -euo pipefail
 version=$1
-case "$(dpkg --print-architecture)" in
-  amd64) platform=x86_64; checksum=2abdc34fbe949c995a1baa4ec310896a085588a45a99cd0d726851bdfac2a4bb ;;
-  arm64) platform=aarch64; checksum=ba6850c1a6f4cbdb050e1cc22fa5239159ad31c43606846e49c408d335f594ff ;;
-  *) echo "unsupported patchelf architecture" >&2; exit 1 ;;
-esac
+checksum=78cb26bda2b89fababfe189c2f6507240340f1aa45dec2eb49a39473a50ceea1
 patch_tmp=$(mktemp -d)
 trap 'rm -rf -- "$patch_tmp"' EXIT
 curl -fsSL --connect-timeout 10 --max-time 60 \
-  "https://github.com/NixOS/patchelf/releases/download/${version}/patchelf-${version}-${platform}.tar.gz" \
+  "https://github.com/NixOS/patchelf/releases/download/${version}/patchelf-${version}.tar.gz" \
   -o "$patch_tmp/package.tgz"
 printf '%s  %s\n' "$checksum" "$patch_tmp/package.tgz" | sha256sum -c -
-tar -xzf "$patch_tmp/package.tgz" -C "$patch_tmp" ./bin/patchelf
-install -m 755 "$patch_tmp/bin/patchelf" /usr/local/bin/patchelf
+tar -xzf "$patch_tmp/package.tgz" -C "$patch_tmp"
+cd "$patch_tmp/patchelf-$version"
+python3 - <<'REPAIR_VERDEF'
+from pathlib import Path
+
+path = Path("src/patchelf.cc")
+source = path.read_text()
+before = 'else if (d_tag == DT_VERNEED)'
+after = '''else if (d_tag == DT_VERDEF)
+                dyn->d_un.d_ptr = findSectionHeader(".gnu.version_d").sh_addr;
+            else if (d_tag == DT_VERNEED)'''
+if source.count(before) != 1:
+    raise ValueError("Pinned patchelf VERDEF repair no longer matches")
+path.write_text(source.replace(before, after))
+REPAIR_VERDEF
+./configure
+make -j2
+install -m 755 src/patchelf /usr/local/bin/patchelf
 INSTALL_PATCHELF
   echo "installing language runtimes and CLIs..."
 
