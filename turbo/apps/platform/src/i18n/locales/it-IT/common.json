@@ -5272,6 +5272,16 @@
     },
     "wallet": {
       "actionError": "Impossibile completare l’azione. Controlla la connessione, consenti i popup e riprova.",
+      "cards": {
+        "default": "Predefinita",
+        "description": "Aggiungi una carta o cambia quella predefinita nel tuo portafoglio Link.",
+        "empty": "Non ci sono ancora carte nel tuo portafoglio Link",
+        "expires": "Scadenza {{date}}",
+        "loadError": "Impossibile caricare le carte. Riprova.",
+        "loading": "Caricamento delle carte",
+        "manage": "Gestisci carte",
+        "title": "Le tue carte su Link"
+      },
       "connect": "Collega",
       "description": "I tuoi agenti possono richiedere acquisti e consultare le transazioni Link. Tu approvi ogni acquisto.",
       "disconnect": "Scollega",

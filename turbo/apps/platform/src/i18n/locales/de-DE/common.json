@@ -5205,6 +5205,16 @@
     },
     "wallet": {
       "actionError": "Die Aktion konnte nicht abgeschlossen werden. Prüfe deine Verbindung, erlaube Pop-ups und versuche es erneut.",
+      "cards": {
+        "default": "Standard",
+        "description": "Füge in deinem Link-Wallet eine Karte hinzu oder ändere deine Standardkarte.",
+        "empty": "Noch keine Karten in deinem Link-Wallet",
+        "expires": "Gültig bis {{date}}",
+        "loadError": "Deine Karten konnten nicht geladen werden. Versuche es erneut.",
+        "loading": "Karten werden geladen",
+        "manage": "Karten verwalten",
+        "title": "Deine Karten bei Link"
+      },
       "connect": "Verbinden",
       "description": "Deine Agenten können Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
       "disconnect": "Trennen",

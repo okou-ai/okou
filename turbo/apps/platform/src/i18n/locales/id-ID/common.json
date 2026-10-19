@@ -5185,6 +5185,16 @@
     },
     "wallet": {
       "actionError": "Tindakan tidak dapat diselesaikan. Periksa koneksi, izinkan pop-up, lalu coba lagi.",
+      "cards": {
+        "default": "Default",
+        "description": "Tambahkan kartu atau ubah kartu default di dompet Link Anda.",
+        "empty": "Belum ada kartu di dompet Link Anda",
+        "expires": "Berlaku hingga {{date}}",
+        "loadError": "Kartu Anda tidak dapat dimuat. Coba lagi.",
+        "loading": "Memuat kartu",
+        "manage": "Kelola kartu",
+        "title": "Kartu Anda di Link"
+      },
       "connect": "Hubungkan",
       "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",

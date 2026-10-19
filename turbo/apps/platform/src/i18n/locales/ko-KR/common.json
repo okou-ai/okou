@@ -5185,6 +5185,16 @@
     },
     "wallet": {
       "actionError": "작업을 완료하지 못했습니다. 연결을 확인하고 팝업을 허용한 후 다시 시도하세요.",
+      "cards": {
+        "default": "기본",
+        "description": "Link 지갑에서 카드를 추가하거나 기본 카드를 변경하세요.",
+        "empty": "Link 지갑에 아직 카드가 없습니다",
+        "expires": "만료일 {{date}}",
+        "loadError": "카드를 불러오지 못했습니다. 다시 시도해 주세요.",
+        "loading": "카드 불러오는 중",
+        "manage": "카드 관리",
+        "title": "Link의 내 카드"
+      },
       "connect": "연결",
       "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",

@@ -5185,6 +5185,16 @@
     },
     "wallet": {
       "actionError": "操作未完成。請檢查網路、允許彈出視窗後重試。",
+      "cards": {
+        "default": "預設",
+        "description": "在 Link 錢包中新增卡片或變更預設卡片。",
+        "empty": "你的 Link 錢包中尚無卡片",
+        "expires": "有效期限 {{date}}",
+        "loadError": "無法載入卡片，請再試一次。",
+        "loading": "正在載入卡片",
+        "manage": "管理卡片",
+        "title": "你的 Link 卡片"
+      },
       "connect": "連線",
       "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
       "disconnect": "中斷連線",

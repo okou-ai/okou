@@ -5272,6 +5272,16 @@
     },
     "wallet": {
       "actionError": "Impossible de terminer cette action. Vérifie ta connexion, autorise les fenêtres pop-up et réessaie.",
+      "cards": {
+        "default": "Par défaut",
+        "description": "Ajoutez une carte ou changez la carte par défaut dans votre portefeuille Link.",
+        "empty": "Aucune carte dans votre portefeuille Link pour le moment",
+        "expires": "Expire en {{date}}",
+        "loadError": "Impossible de charger vos cartes. Réessayez.",
+        "loading": "Chargement des cartes",
+        "manage": "Gérer les cartes",
+        "title": "Vos cartes dans Link"
+      },
       "connect": "Connecter",
       "description": "Vos agents peuvent demander des achats et consulter les transactions Link. Vous approuvez chaque achat.",
       "disconnect": "Déconnecter",
