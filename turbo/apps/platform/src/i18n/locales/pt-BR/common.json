@@ -5264,7 +5264,6 @@
       "description": "Seus agentes podem solicitar compras e consultar transações do Link. Você aprova cada compra.",
       "disconnect": "Desconectar",
       "loadError": "Não foi possível carregar sua carteira.",
-      "permissionsUnknown": "Reconecte o Link para revisar e confirmar as permissões atuais.",
       "retry": "Tentar novamente",
       "scope": "Permita que o Okou faça compras e consulte sua atividade no Link.",
       "title": "Carteira",
@@ -5294,8 +5293,7 @@
         "statusLabel": "Status",
         "title": "Transações do Link",
         "unknownStatus": "Status indisponível"
-      },
-      "workspaceScopeChanged": "Sua carteira Link agora pode ser usada por todos os seus agentes neste espaço de trabalho. Reconecte para aprovar essa mudança."
+      }
     },
     "workspace": {
       "danger": {

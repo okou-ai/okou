@@ -220,29 +220,18 @@ async function markDeliveryDelivered(
     : await deliveryResultAfterTransitionConflict(db, row);
 }
 
-async function reservePreparedSlackFile(
-  db: Db,
-  row: CanonicalSlackDeliveryRow,
-  prepared: { readonly uploadUrl: string; readonly fileId: string },
-): Promise<CanonicalSlackDeliveryResult> {
-  const [reserved] = await db
-    .update(canonicalAssetDeliveries)
-    .set({
-      status: "pending",
-      externalId: prepared.fileId,
-      url: null,
-      lastError: null,
-      updatedAt: sql`now()`,
-    })
-    .where(deliveryTransitionCondition(row))
-    .returning({ id: canonicalAssetDeliveries.id });
-  if (!reserved) {
-    return await deliveryResultAfterTransitionConflict(db, row);
-  }
+function slackDeliverySelection() {
   return {
-    status: "pending",
-    uploadUrl: prepared.uploadUrl,
-    fileId: prepared.fileId,
+    assetId: runUploadedFiles.id,
+    filename: runUploadedFiles.filename,
+    sizeBytes: runUploadedFiles.sizeBytes,
+    assetUrl: runUploadedFiles.url,
+    operationId: canonicalAssetDeliveries.operationId,
+    status: canonicalAssetDeliveries.status,
+    destination: canonicalAssetDeliveries.destination,
+    externalId: canonicalAssetDeliveries.externalId,
+    deliveryUrl: canonicalAssetDeliveries.url,
+    lastError: canonicalAssetDeliveries.lastError,
   };
 }
 
@@ -299,18 +288,7 @@ export const prepareCanonicalSlackDelivery$ = command(
       CanonicalSlackDeliveryRow | undefined
     > => {
       const [row] = await db
-        .select({
-          assetId: runUploadedFiles.id,
-          filename: runUploadedFiles.filename,
-          sizeBytes: runUploadedFiles.sizeBytes,
-          assetUrl: runUploadedFiles.url,
-          operationId: canonicalAssetDeliveries.operationId,
-          status: canonicalAssetDeliveries.status,
-          destination: canonicalAssetDeliveries.destination,
-          externalId: canonicalAssetDeliveries.externalId,
-          deliveryUrl: canonicalAssetDeliveries.url,
-          lastError: canonicalAssetDeliveries.lastError,
-        })
+        .select(slackDeliverySelection())
         .from(canonicalAssetDeliveries)
         .innerJoin(
           runUploadedFiles,
@@ -394,7 +372,31 @@ export const prepareCanonicalSlackDelivery$ = command(
       });
     }
 
-    const result = await reservePreparedSlackFile(db, row, {
+    const reservePreparedSlackFile = async (prepared: {
+      readonly uploadUrl: string;
+      readonly fileId: string;
+    }): Promise<CanonicalSlackDeliveryResult> => {
+      const [reserved] = await db
+        .update(canonicalAssetDeliveries)
+        .set({
+          status: "pending",
+          externalId: prepared.fileId,
+          url: null,
+          lastError: null,
+          updatedAt: sql`now()`,
+        })
+        .where(deliveryTransitionCondition(row))
+        .returning({ id: canonicalAssetDeliveries.id });
+      if (!reserved) {
+        return await deliveryResultAfterTransitionConflict(db, row);
+      }
+      return {
+        status: "pending",
+        uploadUrl: prepared.uploadUrl,
+        fileId: prepared.fileId,
+      };
+    };
+    const result = await reservePreparedSlackFile({
       uploadUrl: prepared.uploadUrl,
       fileId: prepared.fileId,
     });
