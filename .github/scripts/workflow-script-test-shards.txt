@@ -16,6 +16,7 @@
 1 embedded-cli-workflow-test.sh
 1 fetch-okou-desktop-artifact-test.sh
 1 neon-credential-mask-test.sh
+1 release-r2-credential-mask-test.sh
 1 publish-okou-app-assets-test.sh
 1 reconcile-and-start-runner-groups-test.sh
 1 resolve-app-preview-url-test.sh

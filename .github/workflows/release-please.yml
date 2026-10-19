@@ -2393,6 +2393,10 @@ jobs:
             echo "::error::R2 credential decryption produced empty values"
             exit 1
           fi
+          # Decryption does not register these values with this job's masker.
+          # Mask before GITHUB_ENV exposes them in subsequent step logs.
+          printf '::add-mask::%s\n' "$AK"
+          printf '::add-mask::%s\n' "$SK"
           {
             echo "R2_ACCESS_KEY_ID=$AK"
             echo "R2_SECRET_ACCESS_KEY=$SK"
