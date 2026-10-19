@@ -630,6 +630,15 @@ def _compile_base(raw_base: str) -> _CompiledBase | None:
     )
 
 
+def _match_static_base_path_prefix(path: str, base_path: str) -> str | None:
+    if base_path and not path.startswith(base_path):
+        return None
+    rest = path[len(base_path) :] if base_path else path
+    if rest and rest[0] != "/":
+        return None
+    return rest or "/"
+
+
 def _match_compiled_base_url_parts(
     url_parts: _BaseUrlParts,
     base: _CompiledBase,
@@ -640,13 +649,9 @@ def _match_compiled_base_url_parts(
         if url_parts.authority.lower() != base.parts.authority.lower():
             return None
 
-        base_path = base.parts.path
-        if base_path and not url_parts.path.startswith(base_path):
+        rel_path = _match_static_base_path_prefix(url_parts.path, base.parts.path)
+        if rel_path is None:
             return None
-        rest = url_parts.path[len(base_path) :] if base_path else url_parts.path
-        if rest and rest[0] != "/":
-            return None
-        rel_path = rest or "/"
         return rel_path, {}
 
     if url_parts.scheme.lower() != base.parts.scheme.lower():
@@ -667,7 +672,10 @@ def _match_compiled_base_url_parts(
         path_params, rel_path = path_result
         all_params = {**host_params, **path_params}
     else:
-        rel_path = clean_url_path or "/"
+        # After removing one optional terminal slash, "/" still scopes a raw "//" base.
+        rel_path = _match_static_base_path_prefix(clean_url_path, base_path)
+        if rel_path is None:
+            return None
         all_params = host_params
 
     return rel_path, all_params

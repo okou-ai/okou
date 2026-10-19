@@ -40,6 +40,9 @@ Request context
   HTTP/1.1 request is a confirmed WebSocket upgrade handshake. Read by
   response streaming so only matching 101 responses defer model-provider usage
   release until ``websocket_end()``.
+- ``WEBSOCKET_INSPECTION``: opaque owner-loop parser state written while a
+  Responses message hook inspects its current message. Released on completion
+  or abandonment before terminal usage settlement.
 - ``RESPONSE_ENCODING_NEGOTIATION``: fixed ``str`` outcome written when request
   handling normalizes ``Accept-Encoding`` for response-body usage inspection.
   Read only by the fail-closed response-encoding diagnostic, restored with an
@@ -225,6 +228,8 @@ SUPPRESS_REQUEST_BODY_CAPTURE: Final = "suppress_request_body_capture"
 CLI_AGENT_TYPE: Final = "cli_agent_type"
 BROWSER_USER_AGENT: Final = "browser_user_agent"
 WEBSOCKET_UPGRADE_REQUEST: Final = "websocket_upgrade_request"
+# Opaque owner-loop parser state, released before WebSocket terminal settlement.
+WEBSOCKET_INSPECTION: Final = "websocket_inspection"
 RESPONSE_ENCODING_NEGOTIATION: Final = "response_encoding_negotiation"
 
 # Timing metadata

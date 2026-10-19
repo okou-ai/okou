@@ -362,6 +362,10 @@ function createIndicatorRows(args: IndicatorOwner) {
             inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
             isNotNull(agentRuns.triggerSource),
             eq(chatThreads.userId, args.userId),
+            sql`NOT EXISTS (SELECT 1 FROM workflow_user_automation_threads AS background_binding
+              JOIN workflows AS background_workflow ON background_workflow.id = background_binding.workflow_id
+              WHERE background_binding.chat_thread_id = ${chatThreads.id}
+                AND background_workflow.official_definition_name = 'agent-suggestions')`,
             inArray(chatThreads.agentId, agentIds),
           ),
         )

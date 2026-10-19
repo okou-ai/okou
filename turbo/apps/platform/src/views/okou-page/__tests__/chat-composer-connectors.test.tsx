@@ -211,6 +211,7 @@ describe("connecting a custom connector for the active agent", () => {
       expect(fixture.customValueRequests).toStrictEqual([
         {
           connectorId: ACME_CONNECTOR_ID,
+          account: { intent: "add" },
           values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
         },
       ]);
@@ -235,6 +236,71 @@ describe("connecting a custom connector for the active agent", () => {
       screen.findByLabelText("Remove Acme Search"),
     ).resolves.toBeVisible();
   });
+});
+
+test("Reconnect the expired custom default from the composer with healthy siblings", async () => {
+  const user = userEvent.setup({ delay: null });
+  const target = {
+    kind: "custom" as const,
+    customConnectorId: ACME_CONNECTOR_ID,
+  };
+  const expired = {
+    ...connectorAccount({
+      id: crypto.randomUUID(),
+      target,
+      displayName: "Expired default",
+      isDefault: true,
+    }),
+    connectionStatus: "reconnect-required" as const,
+    reconnectReason: "authorization_expired_or_revoked" as const,
+  };
+  const sibling = connectorAccount({
+    id: crypto.randomUUID(),
+    target,
+    displayName: "Healthy sibling",
+    isDefault: false,
+  });
+  const fixture = installComposerConnectorFixture({
+    customConnectors: [
+      httpConnector({
+        id: ACME_CONNECTOR_ID,
+        slug: "acme-search",
+        displayName: "Acme Search",
+        connected: false,
+      }),
+    ],
+    accounts: [expired, sibling],
+    accountSummaries: [
+      { ...accountSummary(target, [expired, sibling]), attentionCount: 1 },
+    ],
+  });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await loadComposer();
+  await openConnectors(user);
+  const catalog = await openCustomConnectors(user);
+  click(await findFastControl("button", "Connect Acme Search", catalog));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect Acme Search",
+  });
+  await fill(within(dialog).getByLabelText("Secret"), "replacement-secret");
+  click(await findFastControl("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(fixture.customValueRequests).toStrictEqual([
+    {
+      connectorId: ACME_CONNECTOR_ID,
+      account: { intent: "reconnect", connectionId: expired.id },
+      values: [{ key: "secret", kind: "secret", value: "replacement-secret" }],
+    },
+  ]);
+  expect(fixture.customAuthorizationUpdates).toStrictEqual([
+    {
+      agentId: SCOUT_AGENT_ID,
+      grants: [{ customConnectorId: ACME_CONNECTOR_ID, permissionNames: [] }],
+      operation: "add",
+    },
+  ]);
 });
 
 test("Show only the connector actions that are useful in chat", async () => {

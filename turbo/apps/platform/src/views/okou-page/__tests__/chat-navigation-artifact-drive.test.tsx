@@ -108,6 +108,7 @@ function installDriveMocks(
   let oauthConnectionId = SELECTED_DRIVE_CONNECTION_ID;
   let connectionState = initialConnectionState;
   let artifactConnectionState = initialConnectionState;
+  let selectedAccountReady = options.selectedAccountReady ?? false;
   let agentAuthorized = options.agentAuthorized ?? false;
   let artifactSynced = options.existingMimeType !== undefined;
   let mimeType = options.existingMimeType;
@@ -190,7 +191,7 @@ function installDriveMocks(
                 originalUploaded,
                 webViewLink: "https://drive.google.test/file/drive-file-1",
               }
-            : options.selectedAccountReady
+            : selectedAccountReady
               ? {
                   status: "not_synced",
                   accountReady: true,
@@ -372,6 +373,7 @@ function installDriveMocks(
     requireNewConnection: () => {
       connectionState = "not-connected";
       artifactConnectionState = "not-connected";
+      selectedAccountReady = false;
       agentAuthorized = false;
       artifactSynced = false;
     },
@@ -473,7 +475,7 @@ async function expectSyncCompletedPreview(
   ).toHaveLength(0);
 }
 
-async function openDriveMessageMenu() {
+async function openDriveMessageMenu(actionName = "Connect Google Drive") {
   click(await findNamedLink("Drive preview"));
   const preview = await waitFor(() => {
     const button = buttonNamed("Download options");
@@ -489,9 +491,10 @@ async function openDriveMessageMenu() {
   };
   click(downloadButton());
   await waitFor(() => {
-    expect(
-      roleItemNamed("menuitem", "Connect Google Drive"),
-    ).not.toHaveAttribute("aria-disabled", "true");
+    expect(roleItemNamed("menuitem", actionName)).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
   return { preview, downloadButton };
 }
@@ -544,15 +547,18 @@ describe("with a Drive artifact menu", () => {
 test("Recheck Drive authorization after leaving and reopening the chat page", async () => {
   mockWideScreen();
   const popup = installAuthorizationPopup();
-  const drive = installDriveMocks(context, "connected");
+  const drive = installDriveMocks(context, "connected", {
+    selectedAccountReady: true,
+    agentAuthorized: true,
+  });
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
   });
 
-  const initial = await openDriveMessageMenu();
-  click(roleItemNamed("menuitem", "Connect Google Drive"));
+  const initial = await openDriveMessageMenu("Upload to Google Drive");
+  click(roleItemNamed("menuitem", "Upload to Google Drive"));
   const successMessages = await screen.findAllByText("Synced to Google Drive");
   expect(successMessages.length).toBeGreaterThan(0);
   await waitFor(() => {

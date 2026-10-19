@@ -3,6 +3,7 @@ import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import {
   userLocaleSchema,
   type UserLocale,
@@ -59,6 +60,7 @@ const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
 };
 
 export interface WorkflowThreadPreparation {
+  readonly background?: boolean;
   readonly initialModel: DefaultModelFirstPin;
   readonly title: string;
   readonly modelSettings: ModelSettings;
@@ -141,6 +143,9 @@ export const prepareWorkflowUserAutomationThread$ = command(
     );
     signal.throwIfAborted();
     return {
+      background:
+        context?.officialDefinitionName ===
+        PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
       initialModel,
       title,
       modelSettings: modelSettingsSchema.parse(member?.modelSettings ?? {}),
@@ -224,6 +229,7 @@ export function preparedWorkflowThreadValues(
   const pin = preparation.initialModel;
   return {
     id: threadId,
+    ...(preparation.background ? { archived: true, muted: true } : {}),
     userId: args.userId,
     agentId: args.agentId,
     title: preparation.title,
@@ -305,6 +311,8 @@ export const ensureWorkflowUserAutomationThread$ = command(
     const publication = chatThreadEventInsertSql(
       {
         kind: "created",
+        initiallyArchived: preparation.background,
+        muted: preparation.background === true,
         orgId: args.orgId,
         userId: args.userId,
         chatThreadId: values.id,

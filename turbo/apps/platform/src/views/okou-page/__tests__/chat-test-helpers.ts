@@ -963,7 +963,11 @@ export function mockChatLifecycle(
         credentialScope: null,
         account: { status: "unknown" },
       },
-      result: { agentSessionId: "session-1", output: resultContent },
+      result: {
+        framework: "pi",
+        frameworkSessionId: "native-session-1",
+        output: resultContent,
+      },
       createdAt: "2026-03-10T00:00:00Z",
     });
   });

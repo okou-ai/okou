@@ -1,5 +1,6 @@
 """Lifetime bounds for model-provider WebSocket usage diagnostics."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -32,7 +33,7 @@ def deferred_websocket_trims(monkeypatch: pytest.MonkeyPatch) -> list[ScheduledW
     return capture_deferred_websocket_trims(monkeypatch)
 
 
-def test_websocket_usage_diagnostics_bound_encoding_and_output_before_recovery(
+async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_recovery(
     tmp_path,
     real_flow,
     monkeypatch: pytest.MonkeyPatch,
@@ -64,15 +65,17 @@ def test_websocket_usage_diagnostics_bound_encoding_and_output_before_recovery(
             run_deferred_websocket_trims(deferred_websocket_trims)
             assert logging_utils.flush_log_path(str(proxy_log))
             if batch == 0:
-                initial_warning_bytes = proxy_log.stat().st_size
+                initial_warning_bytes = (await asyncio.to_thread(proxy_log.stat)).st_size
 
         assert initial_warning_bytes > 0
-        assert proxy_log.stat().st_size == initial_warning_bytes
+        assert (await asyncio.to_thread(proxy_log.stat)).st_size == initial_warning_bytes
 
         # Exhaustion must not skip inspection or the independent correlation
         # transition when a different error kind arrives later.
         for _ in range(100):
-            feed_websocket_server_message(flow, _WORK_LIMIT_FRAME)
+            completion = feed_websocket_server_message(flow, _WORK_LIMIT_FRAME)
+            assert completion is not None
+            await completion
             assert flow.websocket is not None
             assert flow.websocket.messages[-1].content == _WORK_LIMIT_FRAME
             assert not flow.websocket.messages[-1].dropped
@@ -107,7 +110,7 @@ def test_websocket_usage_diagnostics_bound_encoding_and_output_before_recovery(
 
 
 @pytest.mark.parametrize("termination", ["websocket_end", "error"])
-def test_websocket_usage_diagnostic_budget_isolated_and_released(
+async def test_websocket_usage_diagnostic_budget_isolated_and_released(
     tmp_path,
     real_flow,
     deferred_websocket_trims,
@@ -124,7 +127,9 @@ def test_websocket_usage_diagnostic_budget_isolated_and_released(
     for _ in range(10):
         feed_websocket_server_message(first, _INTEGER_LIMIT_FRAME)
     for _ in range(10):
-        feed_websocket_server_message(second, _WORK_LIMIT_FRAME)
+        completion = feed_websocket_server_message(second, _WORK_LIMIT_FRAME)
+        assert completion is not None
+        await completion
     run_deferred_websocket_trims(deferred_websocket_trims)
 
     for log in (first_log, second_log):

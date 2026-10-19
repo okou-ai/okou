@@ -63,6 +63,16 @@ import {
 } from "../cron-official-workflow-catalog";
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { proactiveSuggestionsRoutes } from "../proactive-suggestions";
+import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
+import { suggestionsRoutes } from "../suggestions";
+import {
+  chatThreadsContract,
+  chatThreadMetadataContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadGetRoutes } from "../chat-threads-get";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -93,6 +103,21 @@ const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
+function createCatalogPublicationFixture() {
+  let published = false;
+  return {
+    reset() {
+      published = false;
+    },
+    hasProactiveDefinition() {
+      return published;
+    },
+    recordPublished(outcome: string) {
+      published = outcome !== "rejected";
+    },
+  };
+}
+const catalogPublication = createCatalogPublicationFixture();
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
   { readonly lifecycle: "active" }
@@ -116,7 +141,20 @@ function catalog(
 ): OfficialWorkflowSourceCatalog {
   return {
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-    definitions,
+    definitions:
+      catalogPublication.hasProactiveDefinition() &&
+      !definitions.some((definition) => {
+        return definition.name === "agent-suggestions";
+      })
+        ? [
+            ...definitions,
+            {
+              name: "agent-suggestions",
+              lifecycle: "retired",
+              presentation: { category: "productivity" },
+            },
+          ]
+        : definitions,
   };
 }
 
@@ -179,12 +217,14 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
-  return await accept(
+  const result = await accept(
     setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
       cronOfficialWorkflowCatalogContract,
     ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
+  catalogPublication.recordPublished(result.body.outcome);
+  return result;
 }
 
 async function syncMorningBriefCatalog() {
@@ -574,7 +614,335 @@ async function ordinaryDelegationScenario() {
 }
 
 beforeEach(() => {
+  catalogPublication.reset();
   mockEnv("CRON_SECRET", CRON_SECRET);
+});
+
+describe("Proactive Suggestions preference", () => {
+  it("repairs feature availability at the same hourly minute used by its schedule", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const owner = { ...actor, orgId: actor.orgId };
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    await accept(
+      setupApp({ context, routes: proactiveSuggestionsRoutes })(
+        proactiveSuggestionsContract,
+      ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const installation = listed.body.find((item) => {
+      return item.official?.definitionName === "agent-suggestions";
+    });
+    if (!installation) {
+      throw new Error("Expected Proactive Suggestions installation");
+    }
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: installation.id },
+      }),
+      [200],
+    );
+    const schedule = detail.body.automations[0];
+    if (!schedule?.nextRunAt) {
+      throw new Error("Expected hourly schedule");
+    }
+    const firstTick = new Date(schedule.nextRunAt).getTime();
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
+    await withMockNowForTest(firstTick, executeAutomationCron);
+    const paused = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: schedule.id },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, nextRunAt: null });
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    await withMockNowForTest(firstTick + 3_600_000, executeAutomationCron);
+    const repaired = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: schedule.id },
+      }),
+      [200],
+    );
+    expect(repaired.body).toMatchObject({
+      enabled: true,
+      nextRunAt: new Date(firstTick + 7_200_000).toISOString(),
+    });
+  });
+
+  it("runs the hourly Official workflow without Morning Brief and blocks curation and mail after opt-out", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const client = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const installation = listed.body.find((item) => {
+      return item.official?.definitionName === "agent-suggestions";
+    });
+    if (!installation) {
+      throw new Error("Expected Proactive Suggestions installation");
+    }
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: installation.id },
+      }),
+      [200],
+    );
+    const automation = detail.body.automations[0];
+    if (!automation) {
+      throw new Error("Expected hourly automation");
+    }
+    expect(automation).toMatchObject({
+      enabled: true,
+      kind: "schedule",
+      schedule: { type: "cron", timezone: "UTC" },
+    });
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
+    const { runId } = await fireOfficialSchedule(actor, automation);
+    const claim = await runs.claimRunnerJob(runId);
+    onTestFinished(async () => {
+      await webhooks.requestAgentComplete(
+        { runId, exitCode: 1, error: "Proactive Suggestions fixture cleanup" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    expect(claim.prompt).toMatch(/^\/agent-suggestions\n/u);
+    expect(
+      capturedOfficialSkill(claim.storageManifest, "agent-suggestions"),
+    ).toContain("Never send email");
+    const token = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };
+    const suggestionId = randomUUID();
+    const suggestions = setupApp({ context, routes: suggestionsRoutes })(
+      suggestionsContract,
+    );
+    await accept(
+      suggestions.create({
+        headers: token,
+        body: {
+          id: suggestionId,
+          title: "Review the pending decision",
+          rationale: "A response is needed",
+          priority: 1,
+          threadId: null,
+          draft: {
+            draftUserMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Review the verified pending decision." },
+              ],
+            },
+            draftAttachments: null,
+          },
+        },
+      }),
+      [200],
+    );
+    const homepage = await accept(
+      suggestions.list({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(
+      homepage.body.suggestions.map((item) => {
+        return item.id;
+      }),
+    ).toContain(suggestionId);
+    const indicators = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).indicators({ headers: authHeaders(actor) }),
+      [200],
+    );
+    const currentAutomation = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    if (!currentAutomation.body.chatThreadId) {
+      throw new Error("Expected diagnostic thread");
+    }
+    expect(
+      indicators.body.threads[currentAutomation.body.chatThreadId],
+    ).toBeUndefined();
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      ).get({
+        headers: authHeaders(actor),
+        params: { id: currentAutomation.body.chatThreadId },
+      }),
+      [200],
+    );
+    expect(thread.body).toMatchObject({ archived: true, muted: true });
+    await accept(
+      setupApp({ context, routes: notificationsRoutes })(
+        notificationsContract,
+      ).mail({
+        headers: token,
+        body: {
+          kind: "notification",
+          to: "me",
+          subject: "Should not send",
+          text: "Background checks only update suggestions.",
+          idempotencyKey: "proactive-mail",
+        },
+      }),
+      [403],
+    );
+    await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    await accept(
+      setupApp({ context, routes: suggestionsRoutes })(
+        suggestionsContract,
+      ).list({ headers: token }),
+      [403],
+    );
+    const paused = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, nextRunAt: null });
+    const retained = await accept(
+      suggestions.list({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(
+      retained.body.suggestions.map((item) => {
+        return item.id;
+      }),
+    ).toContain(suggestionId);
+    expect((await readBriefPreference(actor)).body.enabled).toBeFalsy();
+  });
+  it("defaults off and gates the preference without coupling it to Morning Brief", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    const client = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    const headers = authHeaders(actor);
+    await accept(client.get({ headers }), [403]);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const initial = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({ enabled: false, status: "paused" });
+    const enabled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    const morning = await readBriefPreference(actor);
+    expect(morning.body.enabled).toBeFalsy();
+    const disabled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: false },
+    );
+    await accept(client.get({ headers: authHeaders(actor) }), [403]);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const restored = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(restored.body.enabled).toBeFalsy();
+  });
+
+  it("keeps the explicit choice while the catalog is unavailable", async () => {
+    const { actor } = await prepareBriefMember({ catalogAvailable: false });
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+    const client = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    const pending = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    expect(pending.body).toMatchObject({ enabled: true, status: "preparing" });
+    const saved = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(saved.body.enabled).toBeTruthy();
+    const cancelled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    expect(cancelled.body).toMatchObject({ enabled: false, status: "paused" });
+  });
 });
 
 describe("Morning Brief preference", () => {
@@ -976,6 +1344,14 @@ describe("Morning Brief explicit installation", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: suggestion },
         );
+        if (suggestion) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
@@ -1215,225 +1591,242 @@ function capturedOfficialSkill(
 }
 
 describe("Morning Brief catalog reconciliation", () => {
-  it.each(
-    MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.flatMap((definitionName) => {
+  const scenarios = MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.flatMap(
+    (definitionName) => {
       return [false, true].flatMap((paused) => {
         return [false, true].map((withBindings) => {
           return { definitionName, paused, withBindings };
         });
       });
-    }),
-  )(
+    },
+  );
+
+  async function prepareReconciledSchedule({
+    definitionName,
+    paused,
+    withBindings,
+  }: (typeof scenarios)[number]) {
+    // Publication and the scheduler are explicitly scoped authenticated
+    // system boundaries; this first request selects the case-owned DB.
+    installCatalogStorageFixture();
+    const initialBlueprint: OfficialWorkflowBlueprint = {
+      key: "daily-delivery",
+      parameters: [],
+      desiredState: {
+        kind: "schedule",
+        schedule: { type: "cron", cronExpression: "0 7 * * *" },
+      },
+    };
+    // Both selectable Definitions start with the accepted initial schedule.
+    expect(
+      (
+        await syncCatalog(
+          catalog(
+            MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              return activeDefinition(name, [initialBlueprint]);
+            }),
+          ),
+        )
+      ).body.outcome,
+    ).toBe("accepted");
+    // Keep the same S3 object store installed for the entire lifecycle.
+    // setupWorkflowOrg would replace send with a permissive response.
+    const actor = bdd.user();
+    const { defaultAgentId } = await runs.grantProEntitlement(actor);
+    await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+    await runs.ensurePersonalSubscriptionModel(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected a Morning Brief workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.AgentSuggestion]:
+          definitionName === "internal-test-morning-brief",
+      },
+    );
+    if (definitionName === "internal-test-morning-brief") {
+      await accept(
+        setupApp({ context, routes: proactiveSuggestionsRoutes })(
+          proactiveSuggestionsContract,
+        ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+        [200],
+      );
+    }
+    await connectBriefSourceForAgent(actor, defaultAgentId);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected the Morning Brief installation");
+    }
+    const [initial] = await listMorningBriefAutomations(actor, installation.id);
+    if (!initial?.nextRunAt) {
+      throw new Error("Expected its initial schedule");
+    }
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
+    const first = await fireOfficialSchedule(actor, initial);
+    const firstClaim = await runs.claimRunnerJob(first.runId);
+    await webhooks.requestAgentComplete(
+      { runId: first.runId, exitCode: 0 },
+      { authorization: `Bearer ${firstClaim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    mockNow(new Date(initial.nextRunAt).getTime() + 1000);
+    if (paused) {
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: false },
+        }),
+        [200],
+      );
+    }
+
+    const blueprint = (changedDefaults: boolean): OfficialWorkflowBlueprint => {
+      return {
+        key: "daily-delivery",
+        parameters: withBindings
+          ? [
+              {
+                key: "delivery-cron",
+                type: "string",
+                format: "text",
+                required: true,
+                default: changedDefaults ? "0 9 * * *" : "0 8 * * *",
+              },
+              {
+                key: "edition",
+                type: "integer",
+                required: true,
+                default: changedDefaults ? 1 : 0,
+              },
+              {
+                key: "include-summary",
+                type: "boolean",
+                required: true,
+                default: changedDefaults,
+              },
+              {
+                key: "note",
+                type: "string",
+                format: "text",
+                required: true,
+                default: changedDefaults ? "new default" : "",
+              },
+            ]
+          : [],
+        desiredState: {
+          kind: "schedule",
+          schedule: {
+            type: "cron",
+            cronExpression: withBindings
+              ? { parameter: "delivery-cron" }
+              : "0 8 * * *",
+          },
+        },
+      };
+    };
+    const source = (
+      blueprints: readonly OfficialWorkflowBlueprint[],
+      retired = false,
+    ) => {
+      return catalog(
+        MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+          if (name !== definitionName) {
+            return activeDefinition(name, [initialBlueprint]);
+          }
+          return retired
+            ? {
+                name,
+                lifecycle: "retired" as const,
+                presentation: { category: "productivity" },
+              }
+            : activeDefinition(name, blueprints);
+        }),
+      );
+    };
+    const bindings = withBindings
+      ? [
+          { key: "delivery-cron", value: "0 8 * * *" },
+          { key: "edition", value: 0 },
+          { key: "include-summary", value: false },
+          { key: "note", value: "" },
+        ]
+      : [];
+    expect((await syncCatalog(source([blueprint(false)]))).body.outcome).toBe(
+      "accepted",
+    );
+    await executeAutomationCron();
+    await flushWaitUntilForTest();
+    await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
+      { id: installation.id, official: { definitionName } },
+    ]);
+    const [reconciled] = await listMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    expect(reconciled).toMatchObject({
+      id: initial.id,
+      chatThreadId: first.chatThreadId,
+      enabled: !paused,
+      schedule: {
+        type: "cron",
+        cronExpression: "0 8 * * *",
+        timezone: "Asia/Tokyo",
+      },
+      official: {
+        blueprintKey: "daily-delivery",
+        reconciliationStatus: "current",
+        intendedEnabled: !paused,
+        parameterBindings: bindings,
+      },
+    });
+    expect(reconciled?.official?.appliedFingerprint).not.toBe(
+      initial.official?.appliedFingerprint,
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: !paused,
+      status: paused ? "paused" : "enabled",
+    });
+    return {
+      actor,
+      installation,
+      initial,
+      first,
+      blueprint,
+      source,
+      bindings,
+      reconciled,
+    };
+  }
+
+  it.each(scenarios)(
     "reconciles, removes and restores a schedule without replacing identities ($definitionName, paused=$paused, bindings=$withBindings)",
     async ({ definitionName, paused, withBindings }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
-        // Publication and the scheduler are explicitly scoped authenticated
-        // system boundaries; this first request selects the case-owned DB.
-        installCatalogStorageFixture();
-        const initialBlueprint: OfficialWorkflowBlueprint = {
-          key: "daily-delivery",
-          parameters: [],
-          desiredState: {
-            kind: "schedule",
-            schedule: { type: "cron", cronExpression: "0 7 * * *" },
-          },
-        };
-        // Both selectable Definitions start with the accepted initial schedule.
-        expect(
-          (
-            await syncCatalog(
-              catalog(
-                MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
-                  return activeDefinition(name, [initialBlueprint]);
-                }),
-              ),
-            )
-          ).body.outcome,
-        ).toBe("accepted");
-        // Keep the same S3 object store installed for the entire lifecycle.
-        // setupWorkflowOrg would replace send with a permissive response.
-        const actor = bdd.user();
-        const { defaultAgentId } = await runs.grantProEntitlement(actor);
-        await bdd.updateUserTimezone(actor, "Asia/Tokyo");
-        await runs.ensurePersonalSubscriptionModel(actor);
-        if (!actor.orgId) {
-          throw new Error("Expected a Morning Brief workspace");
-        }
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...actor, orgId: actor.orgId },
-          {
-            [FeatureSwitchKey.AgentSuggestion]:
-              definitionName === "internal-test-morning-brief",
-          },
-        );
-        await connectBriefSourceForAgent(actor, defaultAgentId);
-        await accept(
-          morningBriefPreferenceClient().update({
-            headers: authHeaders(actor),
-            body: { enabled: true },
-          }),
-          [200],
-        );
-        const [installation] = await listMorningBriefInstallations(actor);
-        if (!installation) {
-          throw new Error("Expected the Morning Brief installation");
-        }
-        const [initial] = await listMorningBriefAutomations(
+        const {
           actor,
-          installation.id,
-        );
-        if (!initial?.nextRunAt) {
-          throw new Error("Expected its initial schedule");
-        }
-        const runnerGroup = runs.configureRunnerGroup();
-        runs.acceptStorageDownloads();
-        await runs.heartbeatRunner(runnerGroup);
-        const first = await fireOfficialSchedule(actor, initial);
-        const firstClaim = await runs.claimRunnerJob(first.runId);
-        await webhooks.requestAgentComplete(
-          { runId: first.runId, exitCode: 0 },
-          { authorization: `Bearer ${firstClaim.sandboxToken}` },
-          [200],
-        );
-        await flushWaitUntilForTest();
-        mockNow(new Date(initial.nextRunAt).getTime() + 1000);
-        if (paused) {
-          await accept(
-            morningBriefPreferenceClient().update({
-              headers: authHeaders(actor),
-              body: { enabled: false },
-            }),
-            [200],
-          );
-        }
-
-        const blueprint = (
-          changedDefaults: boolean,
-        ): OfficialWorkflowBlueprint => {
-          return {
-            key: "daily-delivery",
-            parameters: withBindings
-              ? [
-                  {
-                    key: "delivery-cron",
-                    type: "string",
-                    format: "text",
-                    required: true,
-                    default: changedDefaults ? "0 9 * * *" : "0 8 * * *",
-                  },
-                  {
-                    key: "edition",
-                    type: "integer",
-                    required: true,
-                    default: changedDefaults ? 1 : 0,
-                  },
-                  {
-                    key: "include-summary",
-                    type: "boolean",
-                    required: true,
-                    default: changedDefaults,
-                  },
-                  {
-                    key: "note",
-                    type: "string",
-                    format: "text",
-                    required: true,
-                    default: changedDefaults ? "new default" : "",
-                  },
-                ]
-              : [],
-            desiredState: {
-              kind: "schedule",
-              schedule: {
-                type: "cron",
-                cronExpression: withBindings
-                  ? { parameter: "delivery-cron" }
-                  : "0 8 * * *",
-              },
-            },
-          };
-        };
-        const source = (
-          blueprints: readonly OfficialWorkflowBlueprint[],
-          retired = false,
-        ) => {
-          return catalog(
-            MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
-              if (name !== definitionName) {
-                return activeDefinition(name, [initialBlueprint]);
-              }
-              return retired
-                ? {
-                    name,
-                    lifecycle: "retired" as const,
-                    presentation: { category: "productivity" },
-                  }
-                : activeDefinition(name, blueprints);
-            }),
-          );
-        };
-        const bindings = withBindings
-          ? [
-              { key: "delivery-cron", value: "0 8 * * *" },
-              { key: "edition", value: 0 },
-              { key: "include-summary", value: false },
-              { key: "note", value: "" },
-            ]
-          : [];
-        expect(
-          (await syncCatalog(source([blueprint(false)]))).body.outcome,
-        ).toBe("accepted");
-        await executeAutomationCron();
-        await flushWaitUntilForTest();
-        await expect(
-          listMorningBriefInstallations(actor),
-        ).resolves.toMatchObject([
-          { id: installation.id, official: { definitionName } },
-        ]);
-        const [reconciled] = await listMorningBriefAutomations(
-          actor,
-          installation.id,
-        );
-        expect(reconciled).toMatchObject({
-          id: initial.id,
-          chatThreadId: first.chatThreadId,
-          enabled: !paused,
-          schedule: {
-            type: "cron",
-            cronExpression: "0 8 * * *",
-            timezone: "Asia/Tokyo",
-          },
-          official: {
-            blueprintKey: "daily-delivery",
-            reconciliationStatus: "current",
-            intendedEnabled: !paused,
-            parameterBindings: bindings,
-          },
+          installation,
+          initial,
+          first,
+          blueprint,
+          source,
+          bindings,
+        } = await prepareReconciledSchedule({
+          definitionName,
+          paused,
+          withBindings,
         });
-        expect(reconciled?.official?.appliedFingerprint).not.toBe(
-          initial.official?.appliedFingerprint,
-        );
-        expect((await readBriefPreference(actor)).body).toMatchObject({
-          enabled: !paused,
-          status: paused ? "paused" : "enabled",
-        });
-        // Retirement is an active-only worker no-op, even though it has no key.
-        expect((await syncCatalog(source([], true))).body.outcome).toBe(
-          "accepted",
-        );
-        await executeAutomationCron();
-        await flushWaitUntilForTest();
-        await expect(
-          listMorningBriefAutomations(actor, installation.id),
-        ).resolves.toMatchObject([
-          {
-            id: initial.id,
-            enabled: !paused,
-            official: { parameterBindings: bindings },
-          },
-        ]);
-
         const history = await allThreadEventRows(actor, first.chatThreadId);
         expect((await syncCatalog(source([]))).body.outcome).toBe("accepted");
         await executeAutomationCron();
@@ -1544,6 +1937,78 @@ describe("Morning Brief catalog reconciliation", () => {
       });
     },
   );
+
+  it.each(scenarios)(
+    "retains schedule identity and history while its definition is retired ($definitionName, paused=$paused, bindings=$withBindings)",
+    async ({ definitionName, paused, withBindings }) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        const {
+          actor,
+          installation,
+          initial,
+          first,
+          blueprint,
+          source,
+          bindings,
+          reconciled,
+        } = await prepareReconciledSchedule({
+          definitionName,
+          paused,
+          withBindings,
+        });
+        const history = await allThreadEventRows(actor, first.chatThreadId);
+        // Retirement is an active-only worker no-op, even though it has no key.
+        expect((await syncCatalog(source([], true))).body.outcome).toBe(
+          "accepted",
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toMatchObject([
+          {
+            id: initial.id,
+            enabled: !paused,
+            official: { parameterBindings: bindings },
+          },
+        ]);
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName } },
+        ]);
+        await expect(
+          allThreadEventRows(actor, first.chatThreadId),
+        ).resolves.toStrictEqual(history);
+
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([reconciled]);
+        await expect(
+          allThreadEventRows(actor, first.chatThreadId),
+        ).resolves.toStrictEqual(history);
+
+        expect(
+          (await syncCatalog(source([blueprint(false)]))).body.outcome,
+        ).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([reconciled]);
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName } },
+        ]);
+        await expect(
+          allThreadEventRows(actor, first.chatThreadId),
+        ).resolves.toStrictEqual(history);
+      });
+    },
+  );
 });
 
 describe("Morning Brief suggestion instruction rollout", () => {
@@ -1569,6 +2034,14 @@ describe("Morning Brief suggestion instruction rollout", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: enabled },
         );
+        if (enabled) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
@@ -1618,7 +2091,7 @@ describe("Morning Brief suggestion instruction rollout", () => {
         );
         if (expected) {
           expect(mountedSkill).toContain(
-            "Before completing the briefing or making its email decision",
+            "Match existing active suggestions before creating another.",
           );
           expect(mountedSkill).toContain(
             "There may be zero to ten active suggestions",
@@ -1680,6 +2153,14 @@ describe("Debug Morning Brief", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: enabled },
         );
+        if (enabled) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         const runnerGroup = runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         await runs.heartbeatRunner(runnerGroup);
@@ -1777,14 +2258,11 @@ describe("Debug Morning Brief", () => {
           status: "queued",
           deduplicated: false,
         });
-        // The automation event, not an agent-supplied key, identifies the email.
+        // The automation event identifies the email, so a retry replays it.
         expect(
           (
             await accept(
-              notifications.mail({
-                headers: notificationHeaders,
-                body: { ...brief, idempotencyKey: `debug-brief:${requestId}` },
-              }),
+              notifications.mail({ headers: notificationHeaders, body: brief }),
               [200],
             )
           ).body,
@@ -2122,6 +2600,14 @@ describe("Morning Brief workflow selection", () => {
           { ...actor, orgId: actor.orgId },
           { [FeatureSwitchKey.AgentSuggestion]: enabled },
         );
+        if (enabled) {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         const [schedule] = await readMorningBriefAutomations(
           actor,
           installation.id,
@@ -2167,6 +2653,15 @@ describe("Morning Brief workflow selection", () => {
             context,
             { ...actor, orgId: actor.orgId },
             { [FeatureSwitchKey.AgentSuggestion]: true },
+          );
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
+            [200],
           );
           await withMockNowForTest(
             new Date(schedule.nextRunAt),
@@ -2230,6 +2725,12 @@ describe("Morning Brief workflow selection", () => {
         { ...actor, orgId: actor.orgId },
         { [FeatureSwitchKey.AgentSuggestion]: true },
       );
+      await accept(
+        setupApp({ context, routes: proactiveSuggestionsRoutes })(
+          proactiveSuggestionsContract,
+        ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+        [200],
+      );
       await executeAutomationCron();
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: false,
@@ -2276,9 +2777,16 @@ describe("Morning Brief workflow selection", () => {
       if (!onboarding.defaultAgentId) {
         throw new Error("Expected Okou");
       }
-      await expect(
-        listAgentRunLogIds(actor, onboarding.defaultAgentId),
-      ).resolves.toStrictEqual([runId]);
+      const briefEvents = await allThreadEventRows(actor, running.chatThreadId);
+      expect(
+        briefEvents
+          .filter((event) => {
+            return event.eventType === "input.prompt" && event.runId;
+          })
+          .map((event) => {
+            return event.runId;
+          }),
+      ).toStrictEqual([runId]);
       const claim = await withMockNowForTest(
         new Date(schedule.nextRunAt),
         () => {
@@ -3309,6 +3817,14 @@ describe("Morning Brief dormant partial bindings", () => {
               definitionName === "internal-test-morning-brief",
           },
         );
+        if (definitionName === "internal-test-morning-brief") {
+          await accept(
+            setupApp({ context, routes: proactiveSuggestionsRoutes })(
+              proactiveSuggestionsContract,
+            ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
         await connectBriefSourceForAgent(actor, defaultAgentId);
         await accept(
           morningBriefPreferenceClient().update({

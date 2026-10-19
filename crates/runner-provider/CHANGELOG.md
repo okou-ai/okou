@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.8.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.18...runner-provider-v0.8.19) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share connector registry command values ([#41271](https://github.com/okou-ai/okou/issues/41271)) ([e3346f3](https://github.com/okou-ai/okou/commit/e3346f3c0448090e9c4a00fa12745f248d051233))
+
+## [0.8.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.17...runner-provider-v0.8.18) (2026-10-19)
+
+## [0.8.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.16...runner-provider-v0.8.17) (2026-10-19)
+
+## [0.8.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.15...runner-provider-v0.8.16) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-provider:** remove unused finite retry mode ([#41182](https://github.com/okou-ai/okou/issues/41182)) ([c6b6f6d](https://github.com/okou-ai/okou/commit/c6b6f6dd33f2fc959d5b9b6fb5a21258242d3049))
+
+## [0.8.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.14...runner-provider-v0.8.15) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-provider:** remove redundant inbox overflow state ([#41086](https://github.com/okou-ai/okou/issues/41086)) ([dff8b90](https://github.com/okou-ai/okou/commit/dff8b908ba24d57fc725de71111b483e69b4e40d))
+* **runner-provider:** share successful poll wakeup completion ([#41112](https://github.com/okou-ai/okou/issues/41112)) ([bd2208e](https://github.com/okou-ai/okou/commit/bd2208e003fc0022257fbbb3e9be08340d421be6))
+
 ## [0.8.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.13...runner-provider-v0.8.14) (2026-10-17)
 
 

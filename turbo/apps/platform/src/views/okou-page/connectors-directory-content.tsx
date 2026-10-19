@@ -9,7 +9,6 @@ import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
   connectorDirectoryCustomScope$,
   openConnectorDirectoryScope$,
-  showCreatedDirectoryConnector$,
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorsCategoryFilter$,
@@ -20,10 +19,7 @@ import {
   retryCustomConnectors$,
 } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { filteredDirectoryCustomConnectors$ } from "../../signals/okou-page/settings/connector-directory-custom.ts";
-import {
-  CustomConnectorDirectoryDialogs,
-  CustomConnectorGrid,
-} from "./components/settings/custom-connectors-panel.tsx";
+import { CustomConnectorGrid } from "./components/settings/custom-connectors-panel.tsx";
 
 type SourceState = "loading" | "hasData" | "hasError";
 
@@ -191,7 +187,6 @@ export function ConnectorsDirectoryContent({
   const customOnly = useGet(connectorDirectoryCustomScope$);
   const custom = useLoadable(filteredDirectoryCustomConnectors$);
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
-  const showCreated = useSet(showCreatedDirectoryConnector$);
   const retryCatalog = useSet(reloadBuiltinConnectors$);
   const connectors = custom.state === "hasData" ? custom.data : [];
   // Custom is its own scope, so browsing the catalog does not list custom
@@ -247,11 +242,6 @@ export function ConnectorsDirectoryContent({
       {empty && !customOnly && (Boolean(search) || category !== null) && (
         <DirectoryEmpty scoped={category !== null} isAdmin={isAdmin} />
       )}
-      <CustomConnectorDirectoryDialogs
-        onCreated={(connector) => {
-          showCreated(connector.id);
-        }}
-      />
     </>
   );
 }

@@ -324,7 +324,7 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
   click(control(dialog, "button", "Preview Simple invoice"));
   expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
   expect(control(dialog, "button", "Next sample page")).toBeDisabled();
-  click(control(dialog, "button", "Use template"));
+  click(control(dialog, "button", "Use"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

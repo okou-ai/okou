@@ -552,7 +552,7 @@ async fn run_supervisor(config: SupervisorTaskConfig) {
     let mut ably: Option<ably_subscriber::Subscription> = None;
     let mut cancel_deliveries = FuturesUnordered::<CancelDelivery>::new();
     let mut ably_retry: RetryState<AblyConnectHandle> =
-        RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX, None);
+        RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX);
     ably_retry.restart_at = Some(StdInstant::now());
     let mut disconnect = AblyDisconnectState::disconnected("connecting".to_string());
 
@@ -1129,7 +1129,7 @@ fn handle_ably_connect_result(
         }
         Err(e) => {
             let next_secs = retry.backoff().as_secs();
-            let _ = retry.on_failure();
+            retry.on_failure();
             info!(
                 error = %e,
                 failures = retry.consecutive_failures(),
@@ -1262,7 +1262,7 @@ mod tests {
 
         tracing::subscriber::with_default(subscriber, || {
             let mut ably = None;
-            let mut retry = RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX, None);
+            let mut retry = RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX);
             let error = "token exchange transport failed".to_string();
 
             assert_eq!(

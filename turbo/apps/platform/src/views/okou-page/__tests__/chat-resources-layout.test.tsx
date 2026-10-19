@@ -240,7 +240,7 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
   });
 });
 
-test("Keep category expansion at the current panel height after switching to mobile", async () => {
+test("Preserve category expansion controls after switching to mobile", async () => {
   const { media, resize } = await setupOverflowResources(4);
   resize(200);
   await waitFor(() => {
@@ -248,17 +248,12 @@ test("Keep category expansion at the current panel height after switching to mob
   });
   await userEvent.click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
-  Object.defineProperty(panel, "offsetHeight", {
-    configurable: true,
-    value: 640,
-  });
   await userEvent.click(
     buttonNamed(
       "Expand",
       within(panel).getByRole("region", { name: "Artifacts" }),
     ),
   );
-  expect(panel.style.getPropertyValue("--resource-panel-height")).toBe("640px");
   await userEvent.click(
     buttonNamed(
       "Collapse",
@@ -270,21 +265,11 @@ test("Keep category expansion at the current panel height after switching to mob
     media.setMatches(false);
   });
   const mobilePanel = await screen.findByRole("region", { name: "Resources" });
-  expect(mobilePanel).not.toBe(panel);
-  Object.defineProperty(mobilePanel, "offsetHeight", {
-    configurable: true,
-    value: 450,
-  });
   const artifacts = within(mobilePanel).getByRole("region", {
     name: "Artifacts",
   });
   await userEvent.click(buttonNamed("Expand", artifacts));
   await within(artifacts).findByText("report-4.pdf");
-  expect(mobilePanel.style.getPropertyValue("--resource-panel-height")).toBe(
-    "450px",
-  );
   await userEvent.click(buttonNamed("Collapse", artifacts));
-  expect(mobilePanel.style.getPropertyValue("--resource-panel-height")).toBe(
-    "450px",
-  );
+  expect(within(artifacts).queryByText("report-4.pdf")).not.toBeInTheDocument();
 });

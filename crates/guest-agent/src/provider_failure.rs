@@ -70,7 +70,7 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     {
         return Some(FailureReason::ProviderOverloaded);
     }
-    if semantic_message.starts_with(
+    if semantic_message == "provider finish_reason: content_filter" || semantic_message.starts_with(
         "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
     ) || semantic_message.starts_with(
         "this content was flagged for possible biological risk. if this seems wrong, try rephrasing your request. we are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: ",
@@ -300,9 +300,7 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
             Some(FailureReason::ContextWindowExceeded)
         }
         Some("invalid_request_error")
-            if error.get("type").and_then(Value::as_str) == Some("invalid_request_error")
-                && error.get("code").and_then(Value::as_str) == Some("invalid_request_error")
-                && error.get("message").and_then(Value::as_str) == Some("Content Exists Risk") =>
+            if failure_patterns::is_content_policy_rejection_error(error) =>
         {
             Some(FailureReason::SafetyPolicyRefusal)
         }

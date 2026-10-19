@@ -3,21 +3,6 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { userMessageDocumentSchema } from "./chat-threads";
 
-const cursorSchema = z.object({
-  createdAt: z.string().datetime(),
-  id: z.string().uuid(),
-});
-function paginationQuery(defaultLimit: number) {
-  return z
-    .object({
-      limit: z.coerce.number().int().min(1).max(50).default(defaultLimit),
-      before: z.string().datetime().optional(),
-      beforeId: z.string().uuid().optional(),
-    })
-    .refine((query) => {
-      return (query.before === undefined) === (query.beforeId === undefined);
-    }, "Both cursor fields are required");
-}
 const relatedChatSchema = z.object({
   threadId: z.string().uuid(),
   title: z.string().nullable(),
@@ -58,11 +43,9 @@ export const chatRelationsContract = c.router({
     path: "/api/chat-threads/:id/relations/children",
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.string().uuid() }),
-    query: paginationQuery(5),
     responses: {
       200: z.object({
         items: z.array(createdChatSchema),
-        nextCursor: cursorSchema.nullable(),
       }),
       ...errors,
     },
@@ -72,11 +55,9 @@ export const chatRelationsContract = c.router({
     path: "/api/chat-threads/:id/relations/communications",
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.string().uuid() }),
-    query: paginationQuery(5),
     responses: {
       200: z.object({
         items: z.array(communicationSchema),
-        nextCursor: cursorSchema.nullable(),
       }),
       ...errors,
     },
@@ -86,17 +67,14 @@ export const chatRelationsContract = c.router({
     path: "/api/chat-threads/:id/relations/communications/:peerId/messages",
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.string().uuid(), peerId: z.string().uuid() }),
-    query: paginationQuery(20),
     responses: {
       200: z.object({
         items: z.array(messageSchema),
-        nextCursor: cursorSchema.nullable(),
       }),
       ...errors,
     },
   },
 });
-export type ChatRelationCursor = z.infer<typeof cursorSchema>;
 export type RelatedChat = z.infer<typeof relatedChatSchema>;
 export type CreatedChatRelation = z.infer<typeof createdChatSchema>;
 export type ChatCommunication = z.infer<typeof communicationSchema>;

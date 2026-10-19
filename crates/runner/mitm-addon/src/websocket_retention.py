@@ -2,7 +2,9 @@
 
 Mitmproxy shares each flow's message list across addon hook dispatch. Registered
 flows therefore defer trimming to the event loop, preserving unchanged history
-for subsequent synchronous addon hooks in the same dispatch. Unregistered
+for subsequent synchronous addon hooks in the same dispatch. Activated Responses
+messages also hold history across their awaited native hook so an earlier
+deferred trim cannot remove a message before its inspection starts. Unregistered
 ordinary flows keep mitmproxy's normal history for small messages. The callback
 retains the latest complete registered-flow message when it is within the
 history boundary and releases larger messages on every flow. Pre-hook message
@@ -18,6 +20,7 @@ import deferred_callbacks
 import flow_metadata
 
 _WEBSOCKET_MESSAGE_TRIM_SCHEDULED = "_websocket_message_trim_scheduled"
+_WEBSOCKET_MESSAGE_HOOK_ACTIVE = "_websocket_message_hook_active"
 MAX_RETAINED_MESSAGE_BYTES = 16 * 1024 * 1024
 
 
@@ -46,6 +49,16 @@ def schedule_message_trim(flow: http.HTTPFlow) -> None:
     deferred_callbacks.call_soon(_trim_messages, flow)
 
 
+def hold_message(flow: http.HTTPFlow) -> None:
+    """Protect a native message from earlier deferred trims during its hook."""
+    flow.metadata[_WEBSOCKET_MESSAGE_HOOK_ACTIVE] = True
+
+
+def release_message(flow: http.HTTPFlow) -> None:
+    flow.metadata.pop(_WEBSOCKET_MESSAGE_HOOK_ACTIVE, None)
+    schedule_message_trim(flow)
+
+
 def release_terminal_messages(flow: http.HTTPFlow) -> None:
     """Release retained messages at a registered flow's terminal boundary.
 
@@ -54,6 +67,7 @@ def release_terminal_messages(flow: http.HTTPFlow) -> None:
     may still run afterward and safely observes the updated list.
     """
     flow.metadata.pop(_WEBSOCKET_MESSAGE_TRIM_SCHEDULED, None)
+    flow.metadata.pop(_WEBSOCKET_MESSAGE_HOOK_ACTIVE, None)
     websocket_data = flow.websocket
     if websocket_data is None:
         return
@@ -67,6 +81,8 @@ def release_terminal_messages(flow: http.HTTPFlow) -> None:
 
 def _trim_messages(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_WEBSOCKET_MESSAGE_TRIM_SCHEDULED, None)
+    if flow.metadata.get(_WEBSOCKET_MESSAGE_HOOK_ACTIVE, False):
+        return
     websocket_data = flow.websocket
     if websocket_data is None or not websocket_data.messages:
         return

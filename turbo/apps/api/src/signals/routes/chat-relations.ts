@@ -9,7 +9,7 @@ import { resourceUnavailable, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
-import { pathParamsOf, queryOf } from "../context/request";
+import { pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -28,7 +28,7 @@ const authorize$ = command(
       auth.userId,
       signal,
     );
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatRelations, features)) {
+    if (!isFeatureEnabled(FeatureSwitchKey.ChatResourcePanel, features)) {
       return resourceUnavailable("Chat relationships are not available");
     }
     const [thread] = await get(db$)
@@ -58,14 +58,9 @@ const children$ = command(async ({ get, set }, signal: AbortSignal) => {
     return error;
   }
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(chatRelationsContract.children));
   return {
     status: 200 as const,
-    body: await set(
-      createdChatRelations$,
-      { ...auth, threadId: id, ...query },
-      signal,
-    ),
+    body: await set(createdChatRelations$, { ...auth, threadId: id }, signal),
   };
 });
 const communications$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -75,14 +70,9 @@ const communications$ = command(async ({ get, set }, signal: AbortSignal) => {
     return error;
   }
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(chatRelationsContract.communications));
   return {
     status: 200 as const,
-    body: await set(
-      chatCommunications$,
-      { ...auth, threadId: id, ...query },
-      signal,
-    ),
+    body: await set(chatCommunications$, { ...auth, threadId: id }, signal),
   };
 });
 const messages$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -92,12 +82,11 @@ const messages$ = command(async ({ get, set }, signal: AbortSignal) => {
     return error;
   }
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(chatRelationsContract.messages));
   return {
     status: 200 as const,
     body: await set(
       chatRelationMessages$,
-      { ...auth, threadId: id, ...query },
+      { ...auth, threadId: id },
       peerId,
       signal,
     ),

@@ -9,7 +9,8 @@ import { integrationsWechatMessagesRoutes } from "../integrations-wechat-message
 import { integrationsWechatFileRoutes } from "../integrations-wechat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { sanitizeArtifactFilename } from "../../../lib/file-url";
-import type { WechatMessage } from "../../external/wechat-client";
+import { getWechatUpdates } from "@okouai/core/wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
   createHmac,
   createHash,
@@ -23,13 +24,15 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   integrationsWechatContract as contract,
   wechatGatewayContract,
+  wechatReceiverContract,
 } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { now, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { integrationsWechatRoutes } from "../integrations-wechat";
+import { wechatReceiverRoutes } from "../wechat-receiver";
 import { wechatGatewayRoutes } from "../wechat-gateway";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -63,6 +66,10 @@ async function fixture() {
     orgRole: "org:admin" as const,
     email: "wechat@example.test",
   };
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+    id: actor.orgId,
+    name: "WeChat test workspace",
+  });
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
       data: [
@@ -89,8 +96,13 @@ async function fixture() {
     starts: [] as string[],
     verificationCodes: [] as (string | null)[],
     typingStatuses: [] as number[],
+    sends: [] as unknown[],
   };
   server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      provider.sends.push(await request.json());
+      return HttpResponse.json({ ret: 0 });
+    }),
     http.post(`${origin}/ilink/bot/get_bot_qrcode`, async ({ request }) => {
       await expect(request.json()).resolves.toStrictEqual({
         local_token_list: [],
@@ -147,6 +159,7 @@ async function fixture() {
       actor.orgId,
       "org:admin",
     );
+    await flushWaitUntilForTest();
     await accept(client().disconnect({ headers }), [204]);
     await deleteFeatureSwitchesForUser(context, actor);
   });
@@ -208,6 +221,7 @@ async function connectOwner(owner: Awaited<ReturnType<typeof fixture>>) {
     client().poll({ headers, body: { id: attempt.body.id } }),
     [200],
   );
+  await flushWaitUntilForTest();
   return z.uuid().parse(owner.provider.starts.at(-1));
 }
 function ownerMessage(userId: string): WechatMessage {
@@ -236,13 +250,6 @@ async function responseFixture() {
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   await bdd.readOnboardingStatus(actor);
-  const attempt = await accept(client().connect({ headers }), [200]);
-  confirm();
-  await accept(
-    client().poll({ headers, body: { id: attempt.body.id } }),
-    [200],
-  );
-  const connectionId = z.uuid().parse(provider.starts[0]);
   const sentTexts: string[] = [];
   server.use(
     http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
@@ -263,8 +270,17 @@ async function responseFixture() {
       return HttpResponse.json({ ret: 0 });
     }),
   );
+  const attempt = await accept(client().connect({ headers }), [200]);
+  confirm();
+  await accept(
+    client().poll({ headers, body: { id: attempt.body.id } }),
+    [200],
+  );
+  const connectionId = z.uuid().parse(provider.starts[0]);
+  await flushWaitUntilForTest();
   return {
     ...connected,
+    connectionId,
     runs,
     webhooks,
     sentTexts,
@@ -351,6 +367,153 @@ async function responseFixture() {
 }
 
 describe("WeChat reply presentation and processing status", () => {
+  it.each(["membership", "feature"] as const)(
+    "stops a multi-part reply when %s access is revoked after the first part",
+    async (revoked) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Return a long reply");
+      const run = await fixture.claim();
+      await flushWaitUntilForTest();
+      const text = "🌿".repeat(2050);
+      server.use(
+        http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+          const body = z
+            .object({
+              msg: z.object({
+                item_list: z.array(
+                  z.object({ text_item: z.object({ text: z.string() }) }),
+                ),
+              }),
+            })
+            .parse(await request.json());
+          fixture.sentTexts.push(
+            ...body.msg.item_list.map((item) => {
+              return item.text_item.text;
+            }),
+          );
+          if (revoked === "membership") {
+            context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+              { data: [], totalCount: 0 },
+            );
+          } else {
+            await updateFeatureSwitchesForUser(context, fixture.actor, {
+              [FeatureSwitchKey.WechatIntegration]: false,
+            });
+          }
+          return HttpResponse.json({ ret: 0, message_id: "first-part" });
+        }),
+      );
+      const finished = await settleIncludingAbort(async () => {
+        await fixture.finish(run, text, 0, 500);
+        await flushWaitUntilForTest();
+        expect(fixture.sentTexts).toStrictEqual([
+          expect.stringContaining("You're connected"),
+          "🌿".repeat(2000),
+        ]);
+      });
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              publicUserData: { userId: fixture.actor.userId },
+              organization: { id: fixture.actor.orgId },
+              role: "org:admin",
+            },
+          ],
+          totalCount: 1,
+        },
+      );
+      await updateFeatureSwitchesForUser(context, fixture.actor, {
+        [FeatureSwitchKey.WechatIntegration]: true,
+      });
+      if (!finished.ok) {
+        throw finished.error;
+      }
+      const messages = setupApp({
+        context,
+        routes: integrationsWechatMessagesRoutes,
+      })(integrationsWechatMessagesContract);
+      const history = await accept(
+        messages.history({
+          headers,
+          query: { channelId: fixture.connectionId, limit: 50 },
+        }),
+        [200],
+      );
+      expect(
+        history.body.messages.filter((message) => {
+          return message.direction === "outbound";
+        }),
+      ).toMatchObject([
+        { status: "sent", providerMessageId: "first-part" },
+        {
+          status: "sent",
+          content: expect.stringContaining("You're connected"),
+        },
+      ]);
+    },
+  );
+
+  it.each(["disconnect", "reconnect"] as const)(
+    "rejects a send when a %s happens during credential decryption",
+    async (change) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Hello");
+      await fixture.claim();
+      await flushWaitUntilForTest();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let holdNextDecrypt = true;
+      server.use(
+        http.post(
+          "https://kms.us-west-2.amazonaws.com/",
+          async ({ request }) => {
+            if (
+              holdNextDecrypt &&
+              request.headers.get("x-amz-target") === "TrentService.Decrypt"
+            ) {
+              holdNextDecrypt = false;
+              entered.resolve();
+              await release.promise;
+            }
+            // Let the shared KMS HTTP fixture perform the actual decrypt.
+          },
+        ),
+      );
+      const messages = setupApp({
+        context,
+        routes: integrationsWechatMessagesRoutes,
+      })(integrationsWechatMessagesContract);
+      const sending = messages.sendMessage({
+        headers,
+        body: {
+          channelId: fixture.connectionId,
+          operationId: randomUUID(),
+          text: "Do not send with obsolete credentials",
+        },
+      });
+      await (async () => {
+        await entered.promise;
+        if (change === "disconnect") {
+          await accept(client().disconnect({ headers }), [204]);
+        } else {
+          const attempt = await accept(client().connect({ headers }), [200]);
+          fixture.confirm();
+          await accept(
+            client().poll({ headers, body: { id: attempt.body.id } }),
+            [200],
+          );
+        }
+      })().finally(() => {
+        release.resolve();
+      });
+      await accept(sending, [404]);
+      expect(fixture.sentTexts).toStrictEqual([
+        expect.stringContaining("You're connected"),
+      ]);
+    },
+  );
+
   it("adds one model footer across long Unicode replies and keeps typing for queued follow-ups", async () => {
     const fixture = await responseFixture();
     await fixture.receive("First task");
@@ -428,24 +591,275 @@ describe("WeChat reply presentation and processing status", () => {
     },
   );
 
+  it.each([
+    { partial: false, mode: "legacy" },
+    { partial: true, mode: "legacy" },
+    { partial: true, mode: "workflow" },
+  ])(
+    "recovers a reply after a pre-send failure (partial=$partial, receiver=$mode)",
+    async ({ partial, mode }) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Recover my reply");
+      const run = await fixture.claim();
+      await flushWaitUntilForTest();
+      const text = "x".repeat(2100);
+      const callbackHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+      await fixture.webhooks.requestAgentEvents(
+        {
+          runId: run.runId,
+          events: [{ type: "result", sequenceNumber: 0, result: text }],
+        },
+        callbackHeaders,
+        [200],
+      );
+      const memberships =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      const available = await memberships({
+        organizationId: fixture.actor.orgId,
+        userId: [fixture.actor.userId],
+        limit: 1,
+      });
+      let unavailable = !partial;
+      const chunks: string[] = [];
+      memberships.mockImplementation(() => {
+        return unavailable
+          ? Promise.reject(new Error("Clerk temporarily unavailable"))
+          : Promise.resolve(available);
+      });
+      server.use(
+        http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+          const body = z
+            .object({
+              msg: z.object({
+                item_list: z.array(
+                  z.object({ text_item: z.object({ text: z.string() }) }),
+                ),
+              }),
+            })
+            .parse(await request.json());
+          chunks.push(
+            ...body.msg.item_list.map((item) => {
+              return item.text_item.text;
+            }),
+          );
+          if (partial && chunks.length === 1) {
+            unavailable = true;
+          }
+          return HttpResponse.json({ ret: 0 });
+        }),
+      );
+      const completion = {
+        runId: run.runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: "claude-code" as const,
+          cliAgentSessionId: randomUUID(),
+          cliAgentSessionHistoryDisposition: "native_only" as const,
+        },
+      };
+      await fixture.webhooks.requestAgentComplete(
+        completion,
+        callbackHeaders,
+        [500],
+      );
+      expect(chunks).toHaveLength(partial ? 1 : 0);
+      unavailable = false;
+      if (partial) {
+        // Recovery also runs without another completion request from the runner.
+        server.use(
+          http.post(`${origin}/ilink/bot/getupdates`, () => {
+            return HttpResponse.json({ msgs: [] });
+          }),
+        );
+        mockNow(now() + 31_000);
+        const connectionId = z.uuid().parse(fixture.provider.starts[0]);
+        if (mode === "workflow") {
+          const body = { connectionId };
+          await accept(
+            receiverClient().bootstrap({
+              body,
+              headers: receiverHeaders(body),
+            }),
+            [200],
+          );
+        } else {
+          await pollGateway(connectionId);
+        }
+        await flushWaitUntilForTest();
+        expect(chunks).toHaveLength(2);
+      }
+      await fixture.webhooks.requestAgentComplete(
+        completion,
+        callbackHeaders,
+        [200],
+      );
+      await fixture.webhooks.requestAgentComplete(
+        completion,
+        callbackHeaders,
+        [200],
+      );
+      expect(chunks).toHaveLength(2);
+      expect(chunks.join("")).toBe(`${text}\n\nClaude Fable 5.1`);
+    },
+  );
+
+  it("accepts new input while reply recovery is waiting for WeChat", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("First prompt");
+    const run = await fixture.claim();
+    await flushWaitUntilForTest();
+    const memberships =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const available = await memberships({
+      organizationId: fixture.actor.orgId,
+      userId: [fixture.actor.userId],
+      limit: 1,
+    });
+    memberships.mockRejectedValue(new Error("Clerk temporarily unavailable"));
+    await fixture.finish(run, "Recovered answer", 0, 500);
+    memberships.mockResolvedValue(available);
+
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const replies: string[] = [];
+    server.use(
+      http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+        const body = z
+          .object({
+            msg: z.object({
+              item_list: z.array(
+                z.object({
+                  text_item: z.object({ text: z.string() }),
+                }),
+              ),
+            }),
+          })
+          .parse(await request.json());
+        replies.push(
+          ...body.msg.item_list.map((item) => {
+            return item.text_item.text;
+          }),
+        );
+        entered.resolve();
+        await release.promise;
+        return HttpResponse.json({ ret: 0 });
+      }),
+    );
+    mockNow(now() + 31_000);
+    const received = await settleIncludingAbort(async () => {
+      await fixture.receive("A later prompt");
+      await entered.promise;
+      const history = await accept(
+        setupApp({ context, routes: integrationsWechatMessagesRoutes })(
+          integrationsWechatMessagesContract,
+        ).history({
+          headers,
+          query: {
+            channelId: z.uuid().parse(fixture.provider.starts[0]),
+            limit: 50,
+          },
+        }),
+        [200],
+      );
+      expect(history.body.messages).toContainEqual(
+        expect.objectContaining({
+          direction: "inbound",
+          content: "A later prompt",
+        }),
+      );
+    });
+    release.resolve();
+    await flushWaitUntilForTest();
+    if (!received.ok) {
+      throw received.error;
+    }
+    expect(replies).toStrictEqual(["Recovered answer\n\nClaude Fable 5.1"]);
+  });
+
+  it.each([0, 91_000])(
+    "serializes overlapping completion delivery attempts after %s ms",
+    async (elapsed) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Reply once");
+      const run = await fixture.claim();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let attempts = 0;
+      server.use(
+        http.post(`${origin}/ilink/bot/sendmessage`, async () => {
+          attempts++;
+          entered.resolve();
+          await release.promise;
+          return HttpResponse.json({ ret: 0 });
+        }),
+      );
+      const completing = settleIncludingAbort(
+        fixture.finish(run, "Only one reply"),
+      );
+      const overlapping = await settleIncludingAbort(async () => {
+        await entered.promise;
+        mockNow(now() + elapsed);
+        await fixture.webhooks.requestAgentComplete(
+          { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+          { authorization: `Bearer ${run.sandboxToken}` },
+          [500],
+        );
+        expect(attempts).toBe(1);
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
+      const finished = await completing;
+      if (!overlapping.ok) {
+        throw overlapping.error;
+      }
+      if (!finished.ok) {
+        throw finished.error;
+      }
+      await fixture.webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [200],
+      );
+      expect(attempts).toBe(1);
+    },
+  );
+
   it("clears typing even when the reply cannot be delivered", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Hello");
     const run = await fixture.claim();
     await flushWaitUntilForTest();
     expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
+    let attempts = 0;
     server.use(
       http.post(`${origin}/ilink/bot/sendmessage`, () => {
+        attempts++;
         return new HttpResponse(null, { status: 503 });
       }),
     );
-    // Preserve the callback failure so delivery can be retried, but clear status.
-    await fixture.finish(run, "Done", 0, 500);
+    // Unknown provider delivery is terminal and must not be automatically resent.
+    await fixture.finish(run, "Done");
     await flushWaitUntilForTest();
     expect(fixture.sentTexts).toStrictEqual([
       expect.stringContaining("You're connected"),
     ]);
     expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({ msgs: [] });
+      }),
+    );
+    mockNow(now() + 31_000);
+    await pollGateway(z.uuid().parse(fixture.provider.starts[0]));
+    await flushWaitUntilForTest();
+    await fixture.webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    expect(attempts).toBe(1);
   });
 
   it("does not restore typing when a delayed config read outlives completion", async () => {
@@ -526,7 +940,7 @@ describe("WeChat reply presentation and processing status", () => {
 
 describe("WeChat QR owner binding", () => {
   it("handles verification and publishes only a sanitized connection status", async () => {
-    const { provider, confirm } = await fixture();
+    const { actor, provider, confirm } = await fixture();
     const attempt = await accept(client().connect({ headers }), [200]);
     expect(attempt.body).toMatchObject({
       qrContent: "https://weixin.qq.com/test-qr",
@@ -559,6 +973,10 @@ describe("WeChat QR owner binding", () => {
     ).toStrictEqual({
       status: "active",
       configured: true,
+      binding: {
+        workspace: { id: actor.orgId, name: "WeChat test workspace" },
+        accountId: `scanner-${actor.userId}`,
+      },
     });
     expect(JSON.stringify(attempt.body)).not.toContain(
       "test-private-bot-token",
@@ -881,13 +1299,6 @@ test("receives an owner DM once, resumes its native session and delivers the can
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   await bdd.readOnboardingStatus(actor);
-  const attempt = await accept(client().connect({ headers }), [200]);
-  confirm();
-  await accept(
-    client().poll({ headers, body: { id: attempt.body.id } }),
-    [200],
-  );
-  const connectionId = z.uuid().parse(provider.starts[0]);
   const sends: unknown[] = [];
   const delivered = createDeferredPromise<void>(context.signal);
   let extraItems: NonNullable<WechatMessage["item_list"]> = [];
@@ -939,6 +1350,14 @@ test("receives an owner DM once, resumes its native session and delivers the can
       return HttpResponse.json({ ret: 0 });
     }),
   );
+  const attempt = await accept(client().connect({ headers }), [200]);
+  confirm();
+  await accept(
+    client().poll({ headers, body: { id: attempt.body.id } }),
+    [200],
+  );
+  const connectionId = z.uuid().parse(provider.starts[0]);
+  await flushWaitUntilForTest();
   async function receive() {
     return await pollGateway(connectionId);
   }
@@ -957,12 +1376,10 @@ test("receives an owner DM once, resumes its native session and delivers the can
       .toBeDefined();
     return await runs.claimRunnerJob(z.uuid().parse(runId));
   }
-  await receive();
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({
     msg: {
       to_user_id: `scanner-${actor.userId}`,
-      context_token: "private-reply-context",
       item_list: [
         {
           type: 1,
@@ -971,6 +1388,14 @@ test("receives an owner DM once, resumes its native session and delivers the can
       ],
     },
   });
+
+  expect(
+    z
+      .object({ msg: z.object({ context_token: z.string().optional() }) })
+      .parse(sends[0]).msg.context_token,
+  ).toBeUndefined();
+  await receive();
+  expect(sends).toHaveLength(1);
 
   const first = await claim();
   await flushWaitUntilForTest();
@@ -1105,6 +1530,10 @@ test("receives an owner DM once, resumes its native session and delivers the can
     {
       id: connectionId,
       name: "Your WeChat direct conversation",
+      binding: {
+        workspace: { id: actor.orgId, name: expect.any(String) },
+        accountId: `scanner-${actor.userId}`,
+      },
       status: "active",
     },
   ]);
@@ -1843,7 +2272,9 @@ describe("WeChat system notices", () => {
           {
             type: 1,
             text_item: {
-              text: expect.stringContaining("https://app.okou.test/works"),
+              text: expect.stringContaining(
+                "https://app.okou.test/settings/wechat?token=",
+              ),
             },
           },
         ],
@@ -1899,7 +2330,12 @@ describe("WeChat system notices", () => {
           [200],
         )
       ).body.messages,
-    ).toStrictEqual([]);
+    ).toMatchObject([
+      {
+        direction: "outbound",
+        content: expect.stringContaining("You're connected"),
+      },
+    ]);
   });
 
   it("ignores unverified messages and never retries an ambiguous reconnect send", async () => {
@@ -1972,7 +2408,6 @@ describe("WeChat system notices", () => {
 
   it("does not create a chat when disconnect completes during the welcome request", async () => {
     const owner = await fixture();
-    const connectionId = await connectOwner(owner);
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     server.use(
@@ -1988,11 +2423,16 @@ describe("WeChat system notices", () => {
         return HttpResponse.json({ ret: 0 });
       }),
     );
-    const pending = pollGateway(connectionId);
+    const attempt = await accept(client().connect({ headers }), [200]);
+    owner.confirm();
+    await accept(
+      client().poll({ headers, body: { id: attempt.body.id } }),
+      [200],
+    );
     await entered.promise;
     await accept(client().disconnect({ headers }), [204]);
     release.resolve();
-    await pending;
+    await flushWaitUntilForTest();
     expect(
       (await accept(client().status({ headers }), [200])).body.status,
     ).toBe("disconnected");
@@ -2117,7 +2557,6 @@ describe("WeChat system notices", () => {
     await runs.ensurePersonalSubscriptionModel(owner.actor);
     await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
     await bdd.readOnboardingStatus(owner.actor);
-    const connectionId = await connectOwner(owner);
     const message = ownerMessage(owner.actor.userId);
     let attempts = 0;
     const messages = setupApp({
@@ -2138,6 +2577,8 @@ describe("WeChat system notices", () => {
           : HttpResponse.json({ ret: 0 });
       }),
     );
+    const connectionId = await connectOwner(owner);
+    expect(attempts).toBe(1);
     await pollGateway(connectionId);
     await pollGateway(connectionId);
     expect(attempts).toBe(1);
@@ -2175,3 +2616,836 @@ describe("WeChat system notices", () => {
     ]);
   });
 });
+
+describe.each(["legacy", "workflow"] as const)(
+  "WeChat %s input failure isolation",
+  (mode) => {
+    it("reports a missing default agent once and advances to the next batch", async () => {
+      const owner = await fixture();
+      const connectionId = await connectOwner(owner);
+      const receive = await gatewayReceiver(mode, connectionId);
+      const sends: string[] = [];
+      let polls = 0;
+      server.use(
+        http.post(`${origin}/ilink/bot/getupdates`, () => {
+          polls++;
+          return HttpResponse.json({
+            msgs: [ownerMessage(owner.actor.userId)],
+            get_updates_buf: `cursor-${polls}`,
+          });
+        }),
+        http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+          const body = z
+            .object({
+              msg: z.object({
+                item_list: z.array(
+                  z.object({ text_item: z.object({ text: z.string() }) }),
+                ),
+              }),
+            })
+            .parse(await request.json());
+          sends.push(
+            ...body.msg.item_list.map((item) => {
+              return item.text_item.text;
+            }),
+          );
+          return HttpResponse.json({ ret: 0 });
+        }),
+      );
+      await receive();
+      await receive();
+      expect(polls).toBe(2);
+      expect(
+        sends.filter((text) => {
+          return text.includes("workspace's agent is unavailable");
+        }),
+      ).toHaveLength(1);
+    });
+
+    it.each([false, true])(
+      "isolates an unavailable attachment and persists bounded retries (recovers=%s)",
+      async (recovers) => {
+        const fixture = await responseFixture();
+        const connectionId = z.uuid().parse(fixture.provider.starts[0]);
+        const receive = await gatewayReceiver(mode, connectionId);
+        const fileMessage = {
+          ...ownerMessage(fixture.actor.userId),
+          message_id: "failed-file",
+          item_list: [
+            {
+              type: 2,
+              image_item: { media: { encrypt_query_param: "retry-file" } },
+            },
+          ],
+        };
+        const nextMessage = {
+          ...ownerMessage(fixture.actor.userId),
+          message_id: "later-text",
+        };
+        let polls = 0;
+        let downloads = 0;
+        let available = false;
+        const png = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
+          "base64",
+        );
+        server.use(
+          http.post(`${origin}/ilink/bot/getupdates`, () => {
+            polls++;
+            return HttpResponse.json({
+              msgs:
+                polls === 1
+                  ? [{ message_id: "malformed" }, fileMessage, nextMessage]
+                  : recovers
+                    ? []
+                    : [fileMessage],
+              get_updates_buf: `cursor-${polls}`,
+            });
+          }),
+          http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
+            downloads++;
+            return available
+              ? new HttpResponse(new Uint8Array(png))
+              : new HttpResponse(null, { status: 503 });
+          }),
+        );
+        await receive();
+        expect(downloads).toBe(1);
+        const messages = setupApp({
+          context,
+          routes: integrationsWechatMessagesRoutes,
+        })(integrationsWechatMessagesContract);
+        const history = await accept(
+          messages.history({
+            headers,
+            query: { channelId: connectionId, limit: 50 },
+          }),
+          [200],
+        );
+        expect(
+          history.body.messages.some((message) => {
+            return message.providerMessageId === "later-text";
+          }),
+        ).toBeTruthy();
+        // A fresh request respects the persisted backoff rather than retrying immediately.
+        await receive();
+        expect(downloads).toBe(1);
+        available = recovers;
+        mockNow(now() + 1100);
+        await receive();
+        expect(downloads).toBe(2);
+        if (!recovers) {
+          mockNow(now() + 2100);
+          await receive();
+          expect(downloads).toBe(3);
+          expect(
+            fixture.sentTexts.filter((text) => {
+              return text.includes("couldn't process this message");
+            }),
+          ).toHaveLength(1);
+        }
+        await receive();
+        expect(polls).toBe(2);
+        expect(downloads).toBe(recovers ? 2 : 3);
+        const final = await accept(
+          messages.history({
+            headers,
+            query: { channelId: connectionId, limit: 50 },
+          }),
+          [200],
+        );
+        expect(
+          final.body.messages.filter((message) => {
+            return message.providerMessageId === "later-text";
+          }),
+        ).toHaveLength(1);
+        expect(
+          final.body.messages.some((message) => {
+            return message.providerMessageId === "failed-file";
+          }),
+        ).toBe(recovers);
+      },
+    );
+  },
+);
+
+test("weChat history keeps time bounds across pages and validates their order", async () => {
+  const fixture = await responseFixture();
+  const channelId = z.uuid().parse(fixture.provider.starts[0]);
+  const oldest = "2026-10-19T01:00:00.000Z";
+  const latest = "2026-10-19T02:00:00.000Z";
+  mockNow(new Date("2026-10-19T00:00:00.000Z"));
+  await fixture.receive("Outside before");
+  mockNow(new Date(oldest));
+  await fixture.receive("At oldest");
+  mockNow(new Date("2026-10-19T01:30:00.000Z"));
+  await fixture.receive("Inside window");
+  mockNow(new Date(latest));
+  await fixture.receive("At latest");
+  const messages = setupApp({
+    context,
+    routes: integrationsWechatMessagesRoutes,
+  })(integrationsWechatMessagesContract);
+  const query = { channelId, oldest, latest, limit: 1 };
+  const first = await accept(messages.history({ headers, query }), [200]);
+  expect(
+    first.body.messages.map((message) => {
+      return message.content;
+    }),
+  ).toStrictEqual(["Inside window"]);
+  const second = await accept(
+    messages.history({
+      headers,
+      query: { ...query, before: z.uuid().parse(first.body.nextBefore) },
+    }),
+    [200],
+  );
+  expect(
+    second.body.messages.map((message) => {
+      return message.content;
+    }),
+  ).toStrictEqual(["At oldest"]);
+  expect(second.body.nextBefore).toBeNull();
+  await accept(
+    messages.history({
+      headers,
+      query: { ...query, oldest: latest, latest: oldest },
+    }),
+    [400],
+  );
+});
+
+async function disconnectedLink() {
+  const owner = await fixture();
+  const connectionId = await connectOwner(owner);
+  expect(owner.provider.sends).toHaveLength(1);
+  expect(owner.provider.sends[0]).toMatchObject({
+    msg: { to_user_id: `scanner-${owner.actor.userId}` },
+  });
+  await accept(client().disconnect({ headers }), [204]);
+  server.use(
+    http.post(`${origin}/ilink/bot/getupdates`, () => {
+      return HttpResponse.json({
+        msgs: [ownerMessage(owner.actor.userId)],
+        get_updates_buf: "disconnected-cursor",
+      });
+    }),
+  );
+  await pollGateway(connectionId);
+  const notice = z
+    .object({
+      msg: z.object({
+        item_list: z.array(
+          z.object({ text_item: z.object({ text: z.string() }) }),
+        ),
+      }),
+    })
+    .parse(owner.provider.sends.at(-1));
+  const text = z.string().parse(notice.msg.item_list[0]?.text_item.text);
+  const url = new URL(z.string().parse(text.split("\n").at(-1)));
+  expect(url.pathname).toBe("/settings/wechat");
+  expect(url.toString()).not.toMatch(
+    /test-private-bot-token|private-reply-context|scanner-/,
+  );
+  return {
+    ...owner,
+    connectionId,
+    token: z.string().parse(url.searchParams.get("token")),
+  };
+}
+
+describe("WeChat reconnect links", () => {
+  it("requires confirmation, restores without a new QR, and consumes concurrent and old links", async () => {
+    const owner = await disconnectedLink();
+    let qrRequests = 0;
+    server.use(
+      http.post(`${origin}/ilink/bot/get_bot_qrcode`, () => {
+        qrRequests++;
+        return HttpResponse.json({
+          qrcode: randomUUID(),
+          qrcode_img_content: "https://weixin.qq.com/unexpected",
+        });
+      }),
+    );
+    const query = { token: owner.token };
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeTruthy();
+    expect(
+      (await accept(client().status({ headers }), [200])).body.status,
+    ).toBe("disconnected");
+    const results = await Promise.all([
+      client().reconnect({ headers, body: query }),
+      client().reconnect({ headers, body: query }),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([204, 409]);
+    await flushWaitUntilForTest();
+    expect(qrRequests).toBe(0);
+    expect(owner.provider.starts.at(-1)).toBe(owner.connectionId);
+    expect(
+      (await accept(client().status({ headers }), [200])).body.status,
+    ).toBe("active");
+    expect(owner.provider.sends).toHaveLength(3);
+    const welcome = z
+      .object({
+        msg: z.object({
+          context_token: z.string().optional(),
+          item_list: z.array(
+            z.object({ text_item: z.object({ text: z.string() }) }),
+          ),
+        }),
+      })
+      .parse(owner.provider.sends.at(-1));
+    expect(welcome.msg.context_token).toBeUndefined();
+    expect(welcome.msg.item_list[0]?.text_item.text).toContain(
+      "You're connected",
+    );
+    await accept(client().disconnect({ headers }), [204]);
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+  });
+
+  it("rejects a different owner or workspace without exposing the binding", async () => {
+    const owner = await disconnectedLink();
+    const other = await fixture();
+    const query = { token: owner.token };
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    createRouteMocks(context).clerk.session(
+      owner.actor.userId,
+      other.actor.orgId,
+      "org:admin",
+    );
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            publicUserData: { userId: owner.actor.userId },
+            organization: { id: other.actor.orgId },
+            role: "org:admin",
+          },
+        ],
+        totalCount: 1,
+      },
+    );
+    const otherWorkspace = { ...owner.actor, orgId: other.actor.orgId };
+    await updateFeatureSwitchesForUser(context, otherWorkspace, {
+      [FeatureSwitchKey.WechatIntegration]: true,
+    });
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    await deleteFeatureSwitchesForUser(context, otherWorkspace);
+  });
+
+  it("rejects forged and expired links and accepts a newly issued link", async () => {
+    const owner = await disconnectedLink();
+    const query = { token: `${owner.token}tampered` };
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    mockNow(now() + 10 * 60_000);
+    query.token = owner.token;
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({
+          msgs: [
+            { ...ownerMessage(owner.actor.userId), message_id: "new-link" },
+          ],
+        });
+      }),
+    );
+    await pollGateway(owner.connectionId);
+    const notice = z
+      .object({
+        msg: z.object({
+          item_list: z.array(
+            z.object({ text_item: z.object({ text: z.string() }) }),
+          ),
+        }),
+      })
+      .parse(owner.provider.sends.at(-1));
+    const text = z.string().parse(notice.msg.item_list[0]?.text_item.text);
+    query.token = z
+      .string()
+      .parse(
+        new URL(z.string().parse(text.split("\n").at(-1))).searchParams.get(
+          "token",
+        ),
+      );
+    await accept(client().reconnect({ headers, body: query }), [204]);
+    await flushWaitUntilForTest();
+  });
+
+  it("rejects revoked access and expired transports", async () => {
+    const owner = await disconnectedLink();
+    const query = { token: owner.token };
+    await updateFeatureSwitchesForUser(context, owner.actor, {
+      [FeatureSwitchKey.WechatIntegration]: false,
+    });
+    await accept(client().reconnectStatus({ headers, query }), [403]);
+    await accept(client().reconnect({ headers, body: query }), [403]);
+    await updateFeatureSwitchesForUser(context, owner.actor, {
+      [FeatureSwitchKey.WechatIntegration]: true,
+    });
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({ ret: -14 });
+      }),
+    );
+    expect((await pollGateway(owner.connectionId)).body.active).toBeFalsy();
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+  });
+
+  it("discards a disconnected poll response completed after restoration", async () => {
+    const owner = await disconnectedLink();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, async () => {
+        entered.resolve();
+        await release.promise;
+        return HttpResponse.json({
+          msgs: [
+            {
+              ...ownerMessage(owner.actor.userId),
+              message_id: "late-disconnected-message",
+            },
+          ],
+          get_updates_buf: "late",
+        });
+      }),
+    );
+    const pending = pollGateway(owner.connectionId);
+    await entered.promise;
+    await accept(
+      client().reconnect({ headers, body: { token: owner.token } }),
+      [204],
+    );
+    await flushWaitUntilForTest();
+    release.resolve();
+    await pending;
+    expect(owner.provider.sends).toHaveLength(3);
+    const messages = setupApp({
+      context,
+      routes: integrationsWechatMessagesRoutes,
+    })(integrationsWechatMessagesContract);
+    const history = await accept(
+      messages.history({
+        headers,
+        query: { channelId: owner.connectionId, limit: 50 },
+      }),
+      [200],
+    );
+    expect(history.body.messages).toMatchObject([
+      {
+        direction: "outbound",
+        content: expect.stringContaining("You're connected"),
+      },
+    ]);
+  });
+});
+
+test.each(["legacy", "workflow"] as const)(
+  "a restored %s transport ignores provider backlog and accepts only newly created messages",
+  async (mode) => {
+    const owner = await disconnectedLink();
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    runs.configureRunnerGroup();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    await runs.grantProEntitlement(owner.actor);
+    await runs.ensurePersonalSubscriptionModel(owner.actor);
+    await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
+    await bdd.readOnboardingStatus(owner.actor);
+    const oldMessage = {
+      ...ownerMessage(owner.actor.userId),
+      create_time_ms: now() - 60_000,
+    };
+    await accept(
+      client().reconnect({ headers, body: { token: owner.token } }),
+      [204],
+    );
+    await flushWaitUntilForTest();
+    let msgs: WechatMessage[] = [
+      oldMessage,
+      { ...ownerMessage(owner.actor.userId), message_id: "unverifiable-age" },
+    ];
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({
+          msgs,
+          get_updates_buf: "post-reconnect-cursor",
+        });
+      }),
+    );
+    const receive = async () => {
+      if (mode === "legacy") {
+        await pollGateway(owner.connectionId);
+        return;
+      }
+      const body = { connectionId: owner.connectionId };
+      const claimed = await accept(
+        receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+        [200],
+      );
+      if (!claimed.body.active) {
+        throw new Error("Expected active receiver");
+      }
+      expect(claimed.body.session?.preserveCursor).toBeTruthy();
+      const delivery = {
+        ...body,
+        generation: claimed.body.generation,
+        updates: { msgs, get_updates_buf: "post-reconnect-cursor" },
+      };
+      await accept(
+        receiverClient().deliver({
+          body: delivery,
+          headers: receiverHeaders(delivery),
+        }),
+        [200],
+      );
+    };
+    await receive();
+    const messages = setupApp({
+      context,
+      routes: integrationsWechatMessagesRoutes,
+    })(integrationsWechatMessagesContract);
+    const history = await accept(
+      messages.history({
+        headers,
+        query: { channelId: owner.connectionId, limit: 50 },
+      }),
+      [200],
+    );
+    expect(history.body.messages).toMatchObject([
+      {
+        direction: "outbound",
+        content: expect.stringContaining("You're connected"),
+      },
+    ]);
+    msgs = [
+      {
+        ...ownerMessage(owner.actor.userId),
+        message_id: "fresh-message",
+        create_time_ms: now(),
+      },
+    ];
+    await receive();
+    const fresh = await accept(
+      messages.history({
+        headers,
+        query: { channelId: owner.connectionId, limit: 50 },
+      }),
+      [200],
+    );
+    expect(fresh.body.messages).toMatchObject([
+      { direction: "inbound", providerMessageId: "fresh-message" },
+      {
+        direction: "outbound",
+        content: expect.stringContaining("You're connected"),
+      },
+    ]);
+    expect(owner.provider.sends).toHaveLength(3);
+  },
+);
+
+function receiverHeaders(body: unknown) {
+  const timestamp = String(Math.floor(now() / 1000));
+  return {
+    "x-wechat-timestamp": timestamp,
+    "x-wechat-signature": createHmac("sha256", secret)
+      .update(`${timestamp}.${JSON.stringify(body)}`)
+      .digest("hex"),
+  };
+}
+function receiverClient() {
+  return setupApp({ context, routes: wechatReceiverRoutes })(
+    wechatReceiverContract,
+  );
+}
+describe("WeChat Workflow receiver", () => {
+  it("transfers the cursor exclusively and renews without exposing credentials again", async () => {
+    const owner = await fixture();
+    const connectionId = await connectOwner(owner);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({
+          get_updates_buf: "saved-provider-cursor",
+          msgs: [],
+        });
+      }),
+    );
+    await pollGateway(connectionId);
+    const body = { connectionId };
+    await accept(
+      receiverClient().bootstrap({
+        body,
+        headers: { ...receiverHeaders(body), "x-wechat-signature": "forged" },
+      }),
+      [401],
+    );
+    const claimed = await accept(
+      receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+      [200],
+    );
+    expect(claimed.body).toMatchObject({
+      active: true,
+      session: {
+        token: "test-private-bot-token",
+        cursor: "saved-provider-cursor",
+      },
+    });
+    if (!claimed.body.active) {
+      throw new Error("Expected active receiver");
+    }
+    expect((await pollGateway(connectionId)).body).toStrictEqual({
+      active: false,
+    });
+    const renewal = { connectionId, generation: claimed.body.generation };
+    expect(
+      (
+        await accept(
+          receiverClient().bootstrap({
+            body: renewal,
+            headers: receiverHeaders(renewal),
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ active: true, generation: claimed.body.generation });
+    expect(
+      (await accept(client().status({ headers }), [200])).body,
+    ).toStrictEqual({
+      configured: true,
+      status: "active",
+      binding: {
+        workspace: { id: owner.actor.orgId, name: "WeChat test workspace" },
+        accountId: `scanner-${owner.actor.userId}`,
+      },
+    });
+  });
+  it("deduplicates delivered messages, rejects stale generations and retains reconnect notices", async () => {
+    const owner = await responseFixture();
+    const body = { connectionId: owner.connectionId };
+    const claimed = await accept(
+      receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+      [200],
+    );
+    if (!claimed.body.active) {
+      throw new Error("Expected active receiver");
+    }
+    const delivery = {
+      ...body,
+      generation: claimed.body.generation,
+      updates: {
+        get_updates_buf: "next",
+        msgs: [ownerMessage(owner.actor.userId)],
+      },
+    };
+    for (let retry = 0; retry < 2; retry++) {
+      await accept(
+        receiverClient().deliver({
+          body: delivery,
+          headers: receiverHeaders(delivery),
+        }),
+        [200],
+      );
+    }
+    const messages = setupApp({
+      context,
+      routes: integrationsWechatMessagesRoutes,
+    })(integrationsWechatMessagesContract);
+    const history = await accept(
+      messages.history({
+        headers,
+        query: { channelId: owner.connectionId, limit: 50 },
+      }),
+      [200],
+    );
+    expect(
+      history.body.messages.filter((message) => {
+        return message.direction === "inbound";
+      }),
+    ).toHaveLength(1);
+    server.use(
+      http.post("https://wechat-receiver.test/start", () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    await accept(client().disconnect({ headers }), [204]);
+    expect(
+      (
+        await accept(
+          receiverClient().deliver({
+            body: delivery,
+            headers: receiverHeaders(delivery),
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ active: true, refresh: true });
+    const detached = await accept(
+      receiverClient().bootstrap({
+        body: { ...body, generation: delivery.generation },
+        headers: receiverHeaders({ ...body, generation: delivery.generation }),
+      }),
+      [200],
+    );
+    if (!detached.body.active) {
+      throw new Error("Expected detached transport");
+    }
+    const notice = {
+      ...delivery,
+      generation: detached.body.generation,
+      updates: {
+        msgs: [
+          {
+            ...ownerMessage(owner.actor.userId),
+            message_id: "detached-notice",
+          },
+        ],
+      },
+    };
+    const before = owner.sentTexts.length;
+    await accept(
+      receiverClient().deliver({
+        body: notice,
+        headers: receiverHeaders(notice),
+      }),
+      [200],
+    );
+    await accept(
+      receiverClient().deliver({
+        body: notice,
+        headers: receiverHeaders(notice),
+      }),
+      [200],
+    );
+    expect(owner.sentTexts.slice(before)).toHaveLength(1);
+    expect(owner.sentTexts.at(-1)).toContain("/settings/wechat?token=");
+    await accept(
+      messages.history({
+        headers,
+        query: { channelId: owner.connectionId, limit: 50 },
+      }),
+      [404],
+    );
+    const expired = { ...body, generation: detached.body.generation };
+    expect(
+      (
+        await accept(
+          receiverClient().expire({
+            body: expired,
+            headers: receiverHeaders(expired),
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ active: false });
+    expect(
+      (
+        await accept(
+          receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ active: false });
+  });
+  it("stops renewal when workspace membership is revoked", async () => {
+    const owner = await fixture();
+    const body = { connectionId: await connectOwner(owner) };
+    await accept(
+      receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+      [200],
+    );
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [], totalCount: 0 },
+    );
+    expect(
+      (
+        await accept(
+          receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ active: false });
+  });
+});
+
+// Exercise the receiver's public HTTP lifecycle; all state comes from bootstrap
+// and provider responses, just as it does for the real Workflows caller.
+async function gatewayReceiver(
+  mode: "legacy" | "workflow",
+  connectionId: string,
+) {
+  if (mode === "legacy") {
+    return () => {
+      return pollGateway(connectionId);
+    };
+  }
+  const body = { connectionId };
+  const claimed = await accept(
+    receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
+    [200],
+  );
+  if (!claimed.body.active || !claimed.body.session) {
+    throw new Error("Expected a receiver session");
+  }
+  const { generation, session } = claimed.body;
+  let cursor = session.cursor;
+  let pending = session.pending;
+  return async () => {
+    pending ??= await getWechatUpdates(
+      session.baseUrl,
+      session.token,
+      cursor,
+      context.signal,
+    );
+    if (!pending) {
+      throw new Error("Expected a provider batch");
+    }
+    const delivery = { connectionId, generation, updates: pending };
+    const result = await accept(
+      receiverClient().deliver({
+        body: delivery,
+        headers: receiverHeaders(delivery),
+      }),
+      [200],
+    );
+    if (!result.body.retryAfterMs) {
+      cursor = pending.get_updates_buf ?? cursor;
+      pending = null;
+    }
+    return result;
+  };
+}

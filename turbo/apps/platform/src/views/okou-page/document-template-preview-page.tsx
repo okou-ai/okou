@@ -215,7 +215,7 @@ function DocumentPreviewDetails({ item, onSelect }: Omit<Props, "signals">) {
           }}
         >
           {t(($) => {
-            return $.documentTemplates.use;
+            return $.artifacts.templates.use;
           })}
           <ArrowRight className="size-4" />
         </Button>

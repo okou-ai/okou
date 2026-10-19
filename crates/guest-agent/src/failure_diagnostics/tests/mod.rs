@@ -43,6 +43,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
         AgentFramework::ClaudeCode,
     ] {
         for message in [
+            "Provider finish_reason: content_filter",
             "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_synthetic in your message.",
             "Codex error: Unable to verify model access right now. Please retry.",
             "Our servers are currently overloaded. Please try again later.",
@@ -1909,28 +1910,40 @@ fn cli_failure_reason_does_not_broadly_classify_safety_policy_text() {
 }
 
 #[test]
-fn cli_failure_reason_classifies_codex_content_policy_rejection_envelope() {
+fn content_policy_rejection_is_consistent_across_terminal_frameworks() {
     for message in [
         r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#,
         r#"unexpected status 400 Bad Request: {"error":{"message":"Content Exists Risk","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}, url: https://api.example.com/responses"#,
         r#"{"error":{"message":"  Content Exists Risk  ","type":"invalid_request_error","code":"invalid_request_error"}}"#,
+        r#"API Error: 400 {"error":{"message":"\tContent Exists Risk\n","type":"invalid_request_error","code":"invalid_request_error"}}"#,
     ] {
-        let reason = super::classify_cli_failure_reason(
-            AgentFramework::Codex,
-            FailureDetailSource::CodexJsonl,
-            message,
-        );
+        for (framework, source) in [
+            (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+            (AgentFramework::Pi, FailureDetailSource::PiResult),
+            (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+            ),
+        ] {
+            let diagnostic = FailureDiagnostic::new(
+                FailureClass::CliNonzero,
+                framework,
+                PromptMetadata::from_prompt("plain prompt"),
+            )
+            .with_failure_detail_source(source);
+            let failure_message = selected_failure_message(message, source, None);
 
-        assert_eq!(
-            reason,
-            Some(FailureReason::SafetyPolicyRefusal),
-            "message: {message}"
-        );
+            assert_eq!(
+                with_cli_failure_reason(diagnostic, &failure_message).failure_reason,
+                Some(FailureReason::SafetyPolicyRefusal),
+                "{framework:?}: {message}"
+            );
+        }
     }
 }
 
 #[test]
-fn cli_failure_reason_keeps_other_invalid_request_errors_unclassified() {
+fn content_policy_rejection_keeps_other_invalid_requests_unclassified() {
     for message in [
         // Real request-shape defects share the `invalid_request_error` type and
         // must keep their actionable unclassified failure.
@@ -1938,40 +1951,113 @@ fn cli_failure_reason_keeps_other_invalid_request_errors_unclassified() {
         r#"{"error":{"message":"Input token length too long","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#,
         // Same phrase, different envelope shape or missing fields.
         r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error"}}"#,
+        r#"{"error":{"message":"Content Exists Risk","code":"invalid_request_error"}}"#,
         r#"{"error":{"message":"Content Exists Risk","type":"content_filter","code":"content_filter"}}"#,
+        r#"{"error":{"message":"Content Exists Risk","type":"other_error","code":"invalid_request_error"}}"#,
+        r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","code":"other_error"}}"#,
+        r#"{"error":{"message":"Content Exists Risk detected in input","type":"invalid_request_error","code":"invalid_request_error"}}"#,
         r#"{"detail":"Content Exists Risk"}"#,
+        r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","code":"invalid_request_error"}"#,
+        "Content Exists Risk",
         "the provider reported Content Exists Risk for this request",
     ] {
-        let reason = super::classify_cli_failure_reason(
-            AgentFramework::Codex,
-            FailureDetailSource::CodexJsonl,
-            message,
-        );
-
-        assert_eq!(reason, None, "message: {message}");
+        for (framework, source) in [
+            (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+            (AgentFramework::Pi, FailureDetailSource::PiResult),
+            (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+            ),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, message),
+                None,
+                "{framework:?}: {message}"
+            );
+        }
     }
 }
 
 #[test]
-fn cli_failure_reason_scopes_content_policy_rejection_to_codex_jsonl() {
+fn content_policy_rejection_requires_matching_terminal_source() {
     const ENVELOPE: &str = r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#;
 
-    assert_eq!(
-        super::classify_cli_failure_reason(
-            AgentFramework::Codex,
+    for framework in [
+        AgentFramework::Codex,
+        AgentFramework::Pi,
+        AgentFramework::ClaudeCode,
+    ] {
+        for source in [
             FailureDetailSource::Stderr,
-            ENVELOPE,
-        ),
-        None
-    );
-    assert_eq!(
-        super::classify_cli_failure_reason(
-            AgentFramework::ClaudeCode,
+            FailureDetailSource::FallbackExitCode,
             FailureDetailSource::CodexJsonl,
-            ENVELOPE,
-        ),
-        None
-    );
+            FailureDetailSource::PiResult,
+            FailureDetailSource::ClaudeResult,
+        ] {
+            if matches!(
+                (framework, source),
+                (AgentFramework::Codex, FailureDetailSource::CodexJsonl)
+                    | (AgentFramework::Pi, FailureDetailSource::PiResult)
+                    | (
+                        AgentFramework::ClaudeCode,
+                        FailureDetailSource::ClaudeResult
+                    )
+            ) {
+                continue;
+            }
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, ENVELOPE),
+                None,
+                "{framework:?}/{source:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn content_policy_rejection_preserves_caller_owned_envelope_discovery() {
+    const ENVELOPE: &str = r#"{"error":{"message":"  Content Exists Risk  ","type":"invalid_request_error","code":"invalid_request_error"}}"#;
+    for message in [
+        format!("provider reported: {ENVELOPE}"),
+        format!(r#"{{"metadata":"first object"}} {ENVELOPE}"#),
+    ] {
+        for (framework, source) in [
+            (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+            (AgentFramework::Pi, FailureDetailSource::PiResult),
+            (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+            ),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, &message),
+                (framework == AgentFramework::Codex).then_some(FailureReason::SafetyPolicyRefusal),
+                "{framework:?}: {message}"
+            );
+        }
+    }
+}
+
+#[test]
+fn content_policy_rejection_text_keeps_selected_structured_reason() {
+    const ENVELOPE: &str = r#"{"error":{"message":"  Content Exists Risk  ","type":"invalid_request_error","code":"invalid_request_error"}}"#;
+    for (framework, source) in [
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+        (AgentFramework::Pi, FailureDetailSource::PiResult),
+    ] {
+        let diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            framework,
+            PromptMetadata::from_prompt("plain prompt"),
+        );
+        let failure_message =
+            selected_failure_message(ENVELOPE, source, Some(FailureReason::ProviderRateLimited));
+        assert_eq!(
+            with_cli_failure_reason(diagnostic, &failure_message).failure_reason,
+            Some(FailureReason::ProviderRateLimited),
+            "{framework:?}"
+        );
+    }
 }
 
 #[test]

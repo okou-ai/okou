@@ -46,14 +46,11 @@ export const notifyMailBodySchema = z.discriminatedUnion("kind", [
       idempotencyKey: idempotencyKeySchema,
     })
     .strict(),
-  // Okou derives a Morning Brief key from the Run's automation event. Runner
-  // rootfs CLIs and captured instructions from before that change still send a
-  // key, so it is accepted and ignored until those Runners and Runs have drained.
+  // Okou derives a Morning Brief key from the Run's automation event.
   z
     .object({
       ...notifyMailFields,
       kind: z.literal("morning-brief"),
-      idempotencyKey: idempotencyKeySchema.optional(),
     })
     .strict(),
 ]);

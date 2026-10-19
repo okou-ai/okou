@@ -6,6 +6,7 @@ import {
   ChevronRight,
   MessageSquare,
   MessageSquarePlus,
+  LoaderCircle,
   X,
 } from "lucide-react";
 import type { Suggestion } from "@okouai/api-contracts/contracts/suggestions";
@@ -13,6 +14,7 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
+  agentSuggestionStarting$,
   consumeAgentSuggestion$,
   showAgentSuggestion$,
   startAgentSuggestion$,
@@ -64,6 +66,7 @@ function AgentSuggestionHeader({
 }) {
   const { t } = useTranslation();
   const consume = useSet(consumeAgentSuggestion$);
+  const starting = useGet(agentSuggestionStarting$);
   const show = useSet(showAgentSuggestion$);
   const signal = useGet(pageSignal$);
   return (
@@ -83,7 +86,7 @@ function AgentSuggestionHeader({
           size="icon-xs"
           showTooltip
           focusableWhenDisabled
-          disabled={total <= 1}
+          disabled={starting || total <= 1}
           className={PAGER}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.previous;
@@ -100,7 +103,7 @@ function AgentSuggestionHeader({
           size="icon-xs"
           showTooltip
           focusableWhenDisabled
-          disabled={total <= 1}
+          disabled={starting || total <= 1}
           className={PAGER}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.next;
@@ -120,6 +123,7 @@ function AgentSuggestionHeader({
           aria-label={t(($) => {
             return $.chat.agentSuggestions.dismiss;
           })}
+          disabled={starting}
           onClick={() => {
             detach(consume(item, signal), Reason.DomCallback);
           }}
@@ -135,6 +139,7 @@ export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
   const start = useSet(startAgentSuggestion$);
+  const starting = useGet(agentSuggestionStarting$);
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   // The tab exists only for a resolved, non-empty pool, so a read that is
@@ -166,6 +171,8 @@ export function AgentSuggestions() {
           type="button"
           variant="neutral"
           className={SUGGESTION_CARD}
+          disabled={starting}
+          aria-busy={starting}
           onClick={() => {
             detach(start(item, signal), Reason.DomCallback);
           }}
@@ -177,18 +184,24 @@ export function AgentSuggestions() {
             {item.rationale}
           </span>
           <span className="inline-flex items-center gap-1.5 pt-2 text-xs text-muted-foreground">
-            {item.threadId ? (
+            {starting ? (
+              <LoaderCircle aria-hidden className="animate-spin" />
+            ) : item.threadId ? (
               <MessageSquare aria-hidden />
             ) : (
               <MessageSquarePlus aria-hidden />
             )}
-            {item.threadId
+            {starting
               ? t(($) => {
-                  return $.chat.agentSuggestions.continueChat;
+                  return $.chat.agentSuggestions.starting;
                 })
-              : t(($) => {
-                  return $.chat.agentSuggestions.newChat;
-                })}
+              : item.threadId
+                ? t(($) => {
+                    return $.chat.agentSuggestions.runInChat;
+                  })
+                : t(($) => {
+                    return $.chat.agentSuggestions.runNewChat;
+                  })}
             <ArrowRight
               aria-hidden
               className="opacity-0 transition-opacity group-hover/suggestion:opacity-100"

@@ -32,7 +32,7 @@ import {
   listAllPendingOrganizationInvitations,
   listAllUserOrganizationMemberships,
 } from "../external/clerk-organization-lists";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { onRejection, settle } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
@@ -149,41 +149,6 @@ function isClerkNotFound(error: unknown): boolean {
     Reflect.get(error, "code") === "NOT_FOUND" ||
     Reflect.get(error, "name") === "NotFoundError"
   );
-}
-
-/**
- * Deleting an org only needs to know that the org still exists; a fresh cache
- * row is pointless for something we are about to remove.
- */
-async function orgExistsForDelete(args: {
-  readonly db: ReadonlyDb;
-  readonly client: ReturnType<typeof clerk$.read>;
-  readonly orgId: string;
-}): Promise<boolean> {
-  const [cached] = await args.db
-    .select({ cachedAt: orgCache.cachedAt })
-    .from(orgCache)
-    .where(eq(orgCache.orgId, args.orgId))
-    .limit(1);
-
-  if (
-    cached &&
-    nowDate().getTime() - cached.cachedAt.getTime() < CACHE_TTL_MS
-  ) {
-    return true;
-  }
-
-  const clerkOrgSettled = await settle(
-    args.client.organizations.getOrganization({ organizationId: args.orgId }),
-  );
-  if (!clerkOrgSettled.ok) {
-    if (isClerkNotFound(clerkOrgSettled.error)) {
-      return false;
-    }
-    throw clerkOrgSettled.error;
-  }
-
-  return true;
 }
 
 interface OrgDetailArgs {
@@ -589,11 +554,33 @@ export const deleteOrg$ = command(
     const db = get(db$);
     const writeDb = set(writeDb$);
     const client = get(clerk$);
-    const exists = await orgExistsForDelete({
-      db,
-      client,
-      orgId: args.orgId,
-    });
+    const orgExistsId = args.orgId;
+    const exists = await (async () => {
+      const [cached] = await db
+        .select({ cachedAt: orgCache.cachedAt })
+        .from(orgCache)
+        .where(eq(orgCache.orgId, orgExistsId))
+        .limit(1);
+
+      if (
+        cached &&
+        nowDate().getTime() - cached.cachedAt.getTime() < CACHE_TTL_MS
+      ) {
+        return true;
+      }
+
+      const clerkOrgSettled = await settle(
+        client.organizations.getOrganization({ organizationId: orgExistsId }),
+      );
+      if (!clerkOrgSettled.ok) {
+        if (isClerkNotFound(clerkOrgSettled.error)) {
+          return false;
+        }
+        throw clerkOrgSettled.error;
+      }
+
+      return true;
+    })();
     signal.throwIfAborted();
 
     if (!exists) {

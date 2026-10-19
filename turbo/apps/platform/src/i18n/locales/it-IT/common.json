@@ -1573,13 +1573,17 @@
       "viewAgentProfile": "Visualizza il profilo dell'agente"
     },
     "agentSuggestions": {
-      "continueChat": "Continua la chat",
       "dismiss": "Ignora",
       "label": "Suggerimenti",
-      "newChat": "Nuova chat",
       "next": "Suggerimento successivo",
       "position": "{{current}} di {{total}}",
-      "previous": "Suggerimento precedente"
+      "previous": "Suggerimento precedente",
+      "recoveryHint": "Controlla la chat prima di inviare di nuovo. Puoi ripristinare il suggerimento nella bozza.",
+      "restoreDraft": "Ripristina bozza",
+      "runFailed": "Impossibile avviare il suggerimento",
+      "runInChat": "Esegui in questa chat",
+      "runNewChat": "Esegui in una nuova chat",
+      "starting": "Avvio…"
     },
     "attachments": {
       "attach": "Allega",
@@ -1820,6 +1824,7 @@
       "selectedModelUnavailableToast": "Il modello selezionato non è disponibile",
       "selectModel": "Seleziona modello",
       "slashActions": {
+        "actions": "Azioni",
         "archive": "Archivia chat",
         "back": "Indietro",
         "connect": "Collega uno strumento",
@@ -1833,6 +1838,11 @@
         "pin": "Fissa chat",
         "rename": "Rinomina chat",
         "schedule": "Pianifica",
+        "scheduleCustom": "Pianificazione personalizzata",
+        "scheduleEveryMonday": "Ogni lunedì",
+        "scheduleEveryMonth": "Il primo giorno di ogni mese",
+        "scheduleEveryMorning": "Ogni mattina",
+        "scheduleEveryWeekday": "Ogni giorno feriale",
         "scheduleHint": "Esegui secondo una pianificazione",
         "share": "Condividi chat",
         "shareHint": "Condividi un link a questa conversazione",
@@ -2142,14 +2152,10 @@
       "communications": "Messaggi",
       "idle": "Inattiva",
       "loadFailed": "Caricamento non riuscito",
-      "loading": "Caricamento…",
       "messageUnavailable": "Messaggio non disponibile",
-      "more": "Altro",
-      "noMessages": "Ancora nessun messaggio",
       "origin": "Da",
       "queued": "In coda",
       "received": "Ricevuto",
-      "refresh": "Aggiorna",
       "running": "In esecuzione",
       "sent": "Inviato",
       "toggleMessages": "Messaggi con {{title}}",
@@ -2176,15 +2182,13 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "emptyArtifacts": "Non ci sono ancora artefatti",
       "emptyLinks": "Non ci sono ancora link in questa chat",
       "expand": "Espandi",
       "links": "Link",
       "loadFailed": "Impossibile caricare le risorse",
       "loadingLinks": "Caricamento dei link",
       "retry": "Riprova",
-      "title": "Risorse della chat",
-      "viewAll": "Mostra tutto"
+      "title": "Risorse della chat"
     },
     "run": {
       "collapseWorkHistory": "Comprimi la cronologia lavorativa",
@@ -4034,7 +4038,6 @@
     "retry": "Riprova",
     "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
-    "use": "Usa modello",
     "useNamed": "Usa {{title}}"
   },
   "global": {
@@ -5207,6 +5210,15 @@
         "retryMessage": "Non è stato possibile caricare o aggiornare le impostazioni di Morning Brief. Riprova per continuare.",
         "title": "Riepilogo mattutino"
       },
+      "proactiveSuggestions": {
+        "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
+        "missingDefaultAgent": "Scegli un Agent predefinito disponibile per ricevere suggerimenti proattivi.",
+        "preparationFailed": "Impossibile completare la configurazione. Riprova.",
+        "preparing": "Preparazione dei suggerimenti orari. Puoi disattivarli in qualsiasi momento.",
+        "retry": "Riprova",
+        "retryMessage": "Impossibile caricare o aggiornare le impostazioni. Riprova.",
+        "title": "Suggerimenti proattivi"
+      },
       "send": {
         "cmdEnter": "⌘ Invio",
         "cmdEnterDescription": "Premi ⌘/Ctrl+Invio per inviare, Invio per una nuova riga",
@@ -5264,7 +5276,6 @@
       "description": "I tuoi agenti possono richiedere acquisti e consultare le transazioni Link. Tu approvi ogni acquisto.",
       "disconnect": "Scollega",
       "loadError": "Impossibile caricare il tuo portafoglio.",
-      "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
       "retry": "Riprova",
       "scope": "Consenti a Okou di fare acquisti e consultare la tua attività Link.",
       "title": "Portafoglio",
@@ -5294,8 +5305,7 @@
         "statusLabel": "Stato",
         "title": "Transazioni Link",
         "unknownStatus": "Stato non disponibile"
-      },
-      "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
+      }
     },
     "workspace": {
       "danger": {
@@ -6761,6 +6771,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Account",
+      "agentLabel": "Agente",
       "code": "Codice di verifica",
       "connect": "Connetti",
       "connected": "Connesso",
@@ -6770,11 +6782,15 @@
       "expired": "Questo codice QR è scaduto. Creane uno nuovo.",
       "failed": "Impossibile connettersi a WeChat. Riprova.",
       "instructions": "Scansiona questo codice QR con WeChat, poi conferma sul telefono.",
+      "linkUnavailable": "Questo link non è disponibile. Usa l’account e lo spazio di lavoro originali e invia un altro messaggio su WeChat per ottenere un nuovo link. Puoi anche scansionare un nuovo codice QR.",
       "name": "WeChat",
+      "newQr": "Collega con un nuovo codice QR",
       "reconnect": "Riconnetti",
       "reconnect_required": "Scansiona di nuovo per riconnetterti.",
       "restart_required": "Questo account WeChat è già collegato. Crea un nuovo codice QR per riconnetterlo.",
+      "restoreDescription": "Ricollega WeChat all’account e allo spazio di lavoro qui sotto.",
       "retry": "Crea un nuovo codice QR",
+      "returnToWechat": "Torna su WeChat e invia un messaggio per iniziare la conversazione.",
       "scanned": "Scansionato. Conferma sul telefono.",
       "scope": "Vengono collegati solo i tuoi messaggi diretti a questo agente. Sono supportati i messaggi di testo.",
       "title": "Connetti WeChat",
@@ -6782,7 +6798,8 @@
       "verification_blocked": "Troppi tentativi. Crea un nuovo codice QR.",
       "verification_required": "Inserisci il codice di verifica mostrato in WeChat.",
       "verify": "Verifica",
-      "waiting": "In attesa della scansione…"
+      "waiting": "In attesa della scansione…",
+      "workspaceLabel": "Spazio di lavoro"
     }
   }
 }

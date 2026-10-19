@@ -88,6 +88,41 @@ native HTTP stream hooks and fixture-owned TCP peers for both paths to verify
 fairness, byte forwarding and read backpressure. These tests do not claim
 production latency or a production load soak.
 
+### Responses WebSocket message inspection
+
+Activated Responses WebSockets use the same owner-loop inspection driver.
+Client intent and shared server lifecycle/usage parsing feed at most 4 KiB per
+step, with at most eight steps before yielding. Each complete message retains
+the existing 65,536-unit total parser-work budget across all feeds. The separate
+4 KiB event-type prefix probe and documented non-usage fast path remain bounded
+and synchronous. Observations commit only after complete accepted extraction;
+failed or abandoned messages never contribute authoritative partial usage.
+
+The native message hook awaits remaining work before forwarding and before the
+next message hook. Its pinned `WebsocketLayer.relay_messages` bridge preserves
+the original hook, framing and message bytes, protects message history from
+earlier deferred trim callbacks, and joins the complete hook continuation in
+both peers' existing reader `drain_writers()` boundaries. Each peer waits before
+its next read, bounding the paused layer's queued socket input. Successor
+messages already in one read transfer checkpoints back to that reader, avoiding a retained chain of
+native hook tasks. The addon creates no detached inspection task or payload
+queue. Ordinary WebSocket hooks keep their native behavior.
+
+Hook cancellation, reader cancellation, connection errors and terminal release
+discard pending parser state and mark interrupted coverage and ambiguous
+correlation. A checkpoint abandoned before its hook starts cannot later inspect
+the message. An already resumed hook is never completed a second time after a
+continuation failure. Earlier complete observations remain valid and later
+messages can recover. Deferred trims resume after the native hook, and terminal
+cleanup prevents stale completion from restoring usage or retained history.
+
+`tests/test_websocket_cooperative_inspection.py` covers costly accepted/rejected
+messages, exact budgets, consistency, recovery, retention and terminal cleanup.
+`tests/test_mitmproxy_websocket_inspection.py` uses the real pinned WebSocket
+layer and read loop with local TCP peers for forwarding, ordering, read
+backpressure, bounded native hook ownership and cancellation. These are local
+protocol tests, not live-provider or production latency measurements.
+
 ## Platform connector authorization path policy
 
 Registered sandbox requests to the configured platform API normally use the
@@ -378,7 +413,7 @@ IP registration. The same request/generation checks reject stale callers.
 No delivery method reads policy files or changes registry/auth ownership.
 
 `delivery.flush` returns `state: admitted|coalesced`, acknowledging only a wake
-for the existing billing/retained-diagnostic owners. One delivery worker plus
+for the existing billing usage buffer. One delivery worker plus
 one queued wake bound admission. Repeated wakes cannot create parallel flush
 workers. Actual buffer admission or synchronous fallback may block that worker;
 neither the control loop nor its short snapshot lock waits for delivery I/O.
@@ -392,6 +427,10 @@ report delivery cycles, including the existing HTTP retries inside each cycle;
 they are not source-record counts, billable units or per-request/run totals.
 They reset on process restart and omit losses before webhook admission.
 `flushFailures` counts internal worker flush failures separately.
+These observations cover billing usage, not process diagnostics or run-local
+JSONL writes. Process diagnostics make one best-effort nonblocking stderr write
+without retention or retries; delivery controls cannot replay dropped events.
+See [Logging Boundaries](#logging-boundaries) for the separate logging paths.
 
 One `delivery.drain` observer is admitted at a time; another receives `busy`.
 The observer requests the existing worker at most once per second and checks
@@ -413,8 +452,9 @@ stops automatic requests because execution is unknown.
 
 After control stops, `done()` closes delivery admission and joins the actual
 flush worker before shutting down the usage executor. It then retries retained
-billing and diagnostics synchronously under their existing retry/idempotency
-owners.
+billing usage synchronously under its existing retry/idempotency owner.
+Process diagnostics have no shutdown drain. The independent JSONL writer's
+shutdown is bounded and best effort; a timeout can leave accepted entries pending.
 Runner's existing outer SIGTERM/SIGKILL process stop remains the ultimate bound
 for a stuck kernel/network call; no caller deadline safely cancels that call.
 

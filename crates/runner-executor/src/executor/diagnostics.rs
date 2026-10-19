@@ -28,6 +28,7 @@ mod environment;
 mod exit;
 mod guest_files;
 mod guest_logs;
+mod network_auth;
 mod oom;
 mod resource;
 mod stdout_stream;
@@ -48,6 +49,7 @@ pub(super) use guest_files::{
 pub(super) use guest_logs::copy_guest_logs;
 #[cfg(test)]
 pub(super) use guest_logs::{GuestLogCopyFailureKind, guest_log_copy_failure_kind};
+pub(super) use network_auth::enrich_codex_workspace_reconnect;
 #[cfg(test)]
 pub(super) use oom::host_dmesg_indicates_oom;
 pub(super) use oom::{HostOomEvidenceSince, check_host_oom, host_oom_evidence_since_now};

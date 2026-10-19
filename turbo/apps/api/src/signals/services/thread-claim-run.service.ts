@@ -5759,8 +5759,6 @@ function createRunBody(args: {
   return {
     prompt: args.prompt.userPrompt,
     agentId: args.agent.id,
-    sessionId: args.body.sessionId,
-    conversationId: args.body.conversationId,
     additionalVolumes: args.body.additionalVolumes,
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
@@ -6403,6 +6401,8 @@ function pendingAtomicLaunchPlan(
     startedAt: context.createdAt.toISOString(),
     triggerSource: args.commit.persistence.rows.metadata.triggerSource,
     threadId: args.commit.persistence.rows.metadata.chatThreadId,
+    status: "pending",
+    billingCompletedAt: null,
   });
   const attribution = new QueryBuilder()
     .$with("inserted_launch_billing_attribution", {

@@ -228,6 +228,67 @@ async fn flush_is_incremental_between_calls() {
 }
 
 #[tokio::test]
+async fn ordinary_telemetry_uses_its_ingest_derived_request_deadline() {
+    // Receive the real request before pausing time: no mock-server thread can
+    // be outrun by the virtual request deadline.
+    let _api = SharedApiMock::new().await;
+    let files = ExplicitTelemetryFiles::new("telemetry-request-deadline").unwrap();
+    guest_agent::paths::write_private(files.paths.system_log_file(), "pending telemetry\n")
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let http = guest_agent::http::HttpClient::with_api_config(
+        format!("http://{}", listener.local_addr().unwrap()),
+        "test-token",
+        "",
+        "test-session",
+        Duration::ZERO,
+    )
+    .unwrap();
+    let telemetry = guest_agent::telemetry::Telemetry::spawn_for_paths(
+        "request-deadline".into(),
+        &files.paths,
+        Arc::new(SecretMasker::from_raw("")),
+        http,
+    );
+    let flush = tokio::spawn(async move {
+        let result = telemetry
+            .flush(guest_agent::telemetry::UploadMode::Live)
+            .await;
+        telemetry.shutdown().await;
+        result
+    });
+    let (mut request, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        super::http_client::read_raw_request(&mut request),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_millis(
+        api_contracts::generated::constants::runners::AGENT_TELEMETRY_HTTP_TIMEOUT_MS + 1,
+    ))
+    .await;
+    let result = tokio::time::timeout(Duration::from_secs(1), flush)
+        .await
+        .expect("ordinary telemetry must not spend the general webhook timeout")
+        .expect("uploader owner should terminate normally");
+    assert!(matches!(
+        result,
+        Err(guest_agent::error::AgentError::Http(_))
+    ));
+    assert!(
+        !std::path::Path::new(files.paths.telemetry_system_log_pos_file()).exists(),
+        "an unacknowledged request must not advance the retained log position"
+    );
+}
+
+#[tokio::test]
 async fn final_flush_and_shutdown_uploads_log_emitted_immediately_before_it() {
     let api = SharedApiMock::new().await;
     let server = api.server();
@@ -684,8 +745,14 @@ async fn flush_reports_position_persistence_status_after_upload_then_recovers() 
         "scheduled_lag_ms": 17,
         "mem_used": 1024,
         "mem_total": 2048,
-        "disk_used": 4096,
-        "disk_total": 8192,
+        "rootfs": {
+            "used_bytes": 4096,
+            "total_bytes": 8192,
+            "available_bytes": 3072,
+            "used_inodes": 4,
+            "total_inodes": 8,
+            "available_inodes": 3,
+        },
         "control_cpu_usage_usec": 101,
         "control_cpu_nr_throttled": 2,
         "control_cpu_throttled_usec": 3,

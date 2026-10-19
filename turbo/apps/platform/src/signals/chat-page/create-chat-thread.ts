@@ -3517,6 +3517,7 @@ interface CreateChatThreadComposerSignalsOptions {
 interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
+  readonly preserveThreadDraft?: boolean;
   readonly agentId: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
@@ -3663,12 +3664,18 @@ function createThreadComposerSignalsWithContext(
     context.threadMeta$,
   );
   const { queueDraftSync$, cancelDraftSync$, flushDraftClear$ } =
-    createDraftSync(threadId, draft);
-  const loadDraft$ = createThreadDraftLoad(
-    context.threadDraft$,
-    draft,
-    queueDraftSync$,
-  );
+    context.preserveThreadDraft
+      ? {
+          queueDraftSync$: noOpComposerDraftAction$,
+          cancelDraftSync$: command(() => {
+            return undefined;
+          }),
+          flushDraftClear$: noOpComposerDraftAction$,
+        }
+      : createDraftSync(threadId, draft);
+  const loadDraft$ = context.preserveThreadDraft
+    ? noOpComposerDraftAction$
+    : createThreadDraftLoad(context.threadDraft$, draft, queueDraftSync$);
   const messageActions = createThreadMessageActions({
     threadId,
     agentId: context.agentId,
@@ -3708,6 +3715,7 @@ export function createThreadComposerSignals(
   options: {
     readonly forward?: ChatForwardContext;
     readonly onOptimisticSend?: () => void;
+    readonly preserveThreadDraft?: boolean;
   } = {},
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
@@ -3722,6 +3730,7 @@ export function createThreadComposerSignals(
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
+      preserveThreadDraft: options.preserveThreadDraft,
     },
     createDraftSignals(),
   );
@@ -3806,6 +3815,7 @@ export function createChatPanelSignals(
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
   });
+  const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
     threadId,
     agentId,
@@ -3838,8 +3848,9 @@ export function createChatPanelSignals(
       messagePipeline.allChatGroups$,
       artifact.artifacts$,
       messagePipeline.initialEventsReady$,
+      relations.closeMessages$,
     ),
-    relations: createChatRelationSignals(threadId, messagePipeline),
+    relations,
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

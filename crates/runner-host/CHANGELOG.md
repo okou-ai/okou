@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.13](https://github.com/okou-ai/okou/compare/runner-host-v0.9.12...runner-host-v0.9.13) (2026-10-19)
+
+## [0.9.12](https://github.com/okou-ai/okou/compare/runner-host-v0.9.11...runner-host-v0.9.12) (2026-10-19)
+
+## [0.9.11](https://github.com/okou-ai/okou/compare/runner-host-v0.9.10...runner-host-v0.9.11) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-host:** converge status command failure retirement ([#41136](https://github.com/okou-ai/okou/issues/41136)) ([c92bedc](https://github.com/okou-ai/okou/commit/c92bedc380cc47c3c228668a35c5c1e5fce8e73a))
+
 ## [0.9.10](https://github.com/okou-ai/okou/compare/runner-host-v0.9.9...runner-host-v0.9.10) (2026-10-17)
 
 ## [0.9.9](https://github.com/okou-ai/okou/compare/runner-host-v0.9.8...runner-host-v0.9.9) (2026-10-17)

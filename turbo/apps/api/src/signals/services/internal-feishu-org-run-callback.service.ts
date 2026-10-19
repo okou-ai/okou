@@ -5,11 +5,21 @@ import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import {
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "./feishu-config";
 
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
 import {
-  removeFeishuMessageReaction,
+  FeishuApiError,
+  feishuReactionRemovalUrl,
+  parseFeishuReactionRemovalResponse,
+  readFeishuResponseJson,
+  resolveFeishuRequestCredentials,
+  feishuTokenUpdateValues,
   replyWithFeishuMessage,
   sendFeishuMessage,
 } from "../external/feishu-client";
@@ -64,16 +74,85 @@ const clearThinkingReaction$ = command(
     if (!payload.reactionId) {
       return;
     }
+    const removalArgs = {
+      db: set(writeDb$),
+      installationId: payload.installationId,
+      messageId: payload.messageId,
+      reactionId: payload.reactionId,
+    };
+    const removalSignal = signal;
     await tapError(
-      removeFeishuMessageReaction(
-        {
-          db: set(writeDb$),
-          installationId: payload.installationId,
-          messageId: payload.messageId,
-          reactionId: payload.reactionId,
-        },
-        signal,
-      ),
+      (async () => {
+        const removeReactionContextArgs = removalArgs;
+        const removeReactionContextSignal = removalSignal;
+        const { token, apiOrigin, providerName } = await (async () => {
+          const [installation] = await removeReactionContextArgs.db
+            .select()
+            .from(feishuOrgInstallations)
+            .where(
+              eq(
+                feishuOrgInstallations.id,
+                removeReactionContextArgs.installationId,
+              ),
+            )
+            .limit(1);
+          removeReactionContextSignal.throwIfAborted();
+          if (!installation) {
+            throw new Error("Bot installation not found");
+          }
+          if (
+            !(await (async () => {
+              const plan = feishuInstallationAvailabilityReadPlan(installation);
+              if (plan.kind === "resolved") {
+                return plan.enabled;
+              }
+              const rows = await removeReactionContextArgs.db
+                .select(plan.columns)
+                .from(userFeatureSwitches)
+                .where(plan.condition);
+              return feishuInstallationEnabledFromRows(plan.scope, rows);
+            })())
+          ) {
+            throw new FeishuApiError("Lark integration is not enabled", 403);
+          }
+          const credentials = await resolveFeishuRequestCredentials(
+            installation,
+            removeReactionContextSignal,
+          );
+          if (credentials.refreshedToken) {
+            await removeReactionContextArgs.db
+              .update(feishuOrgInstallations)
+              .set(feishuTokenUpdateValues(credentials.refreshedToken))
+              .where(
+                eq(
+                  feishuOrgInstallations.id,
+                  removeReactionContextArgs.installationId,
+                ),
+              );
+            removeReactionContextSignal.throwIfAborted();
+          }
+          return credentials.context;
+        })();
+        const response = await fetch(
+          feishuReactionRemovalUrl(
+            apiOrigin,
+            removalArgs.messageId,
+            removalArgs.reactionId,
+          ),
+          {
+            method: "DELETE",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json; charset=utf-8",
+            },
+            signal: removalSignal,
+          },
+        );
+        parseFeishuReactionRemovalResponse(
+          await readFeishuResponseJson(response, providerName),
+          providerName,
+        );
+      })(),
       (error) => {
         L.warn("Failed to clear Feishu thinking indicator", {
           error,

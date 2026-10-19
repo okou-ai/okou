@@ -66,23 +66,33 @@ teardown() {
     echo "$output"
     assert_success
 
-    # Preview deployments do not schedule the production usage cron. Once the
-    # first run's asynchronous usage upload has arrived, cancelling a freshly
-    # launched run exercises the public cancellation reconciliation for the same
-    # organization and settles that usage without an internal test endpoint.
+    # Preview deployments do not schedule the production usage cron. Keep a
+    # successor active until cancellation triggers public usage reconciliation
+    # for this organization; an ordinary answer can finish before we cancel it.
+    local billable_run_id="$RUN_ID"
+    local settlement_prompt
+    settlement_prompt=$(cat <<'EOF'
+Run this command with Bash in the foreground: python3 -c 'import signal; signal.pause()'
+Wait for it to exit before replying. Do not background it; this run will be cancelled externally.
+EOF
+)
     run runner_chat_send \
         "$AGENT_ID" \
-        "This follow-up run should be cancelled immediately." \
+        "$settlement_prompt" \
         "$THREAD_ID" \
         ""
     echo "$output"
     assert_success
-    local settlement_run_id
-    settlement_run_id=$(jq -er \
+    # Teardown must own the successor if waiting or cancellation fails.
+    RUN_ID=$(jq -er \
         '.runId | select(type == "string" and length > 0)' \
         <<<"$output")
 
-    run runner_e2e_cancel_run "$settlement_run_id"
+    run runner_e2e_wait_for_run_status "$RUN_ID" running
+    echo "$output"
+    assert_success
+
+    run runner_e2e_cancel_run "$RUN_ID"
     echo "$output"
     assert_success
     run jq -e '.status == "cancelled"' <<<"$output"
@@ -90,7 +100,7 @@ teardown() {
     assert_success
     run runner_e2e_wait_for_chat_event \
         "$THREAD_ID" \
-        "$settlement_run_id" \
+        "$RUN_ID" \
         run.cancelled
     echo "$output"
     assert_success
@@ -100,7 +110,7 @@ teardown() {
     local runtime_model="@preset/okou-1-0"
     run runner_e2e_wait_for_usage_event \
         "$THREAD_ID" \
-        "$RUN_ID" \
+        "$billable_run_id" \
         "$runtime_model"
     echo "$output"
     assert_success

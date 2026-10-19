@@ -371,9 +371,7 @@ describe("sandbox hosted previews", () => {
       routes: featureSwitchesRoutes,
     })(featureSwitchesContract);
     const headers = { authorization: `Bearer ${runner.bearerToken}` };
-    // Captured CLI packages still use this response to enable cover uploads.
     const available = await accept(features.get({ headers }), [200]);
-    expect(available.body.effectiveSwitches.artifactPreviews).toBeTruthy();
     expect(available.headers.get("cache-control")).toBe("private, no-store");
     await accept(
       features.update({

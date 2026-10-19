@@ -102,11 +102,7 @@ function createWalletConnectSignals(
       }
       const identity = await get(runtimeAuthenticatedIdentity$);
       signal.throwIfAborted();
-      if (
-        "orgId" in parsed.data
-          ? parsed.data.orgId !== identity.orgId
-          : parsed.data.agentId !== context.agentId
-      ) {
+      if (parsed.data.orgId !== identity.orgId) {
         return false;
       }
       return await set(refreshCompletion$, signal);

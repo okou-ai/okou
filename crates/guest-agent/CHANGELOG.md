@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.107.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.14...guest-agent-v0.107.15) (2026-10-19)
+
+## [0.107.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.13...guest-agent-v0.107.14) (2026-10-19)
+
+
+### Bug Fixes
+
+* **guest-agent:** share content-policy rejection matching ([#41258](https://github.com/okou-ai/okou/issues/41258)) ([cb2e705](https://github.com/okou-ai/okou/commit/cb2e705705439dd1be8c5dd3795e9d3bbd111ddf))
+
+
+### Documentation
+
+* **rust:** clarify active-input idempotency after terminal closure ([#41238](https://github.com/okou-ai/okou/issues/41238)) ([c6bc1a6](https://github.com/okou-ai/okou/commit/c6bc1a666426a271f183c549b588de7a08990b53))
+
+## [0.107.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.12...guest-agent-v0.107.13) (2026-10-19)
+
+## [0.107.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.11...guest-agent-v0.107.12) (2026-10-19)
+
+
+### Bug Fixes
+
+* **pi:** classify terminal provider content filters ([#41192](https://github.com/okou-ai/okou/issues/41192)) ([c8a917e](https://github.com/okou-ai/okou/commit/c8a917ee8b8a35b97c6a85ce7ad73f844b2f04f9))
+
 ## [0.107.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.10...guest-agent-v0.107.11) (2026-10-17)
 
 ## [0.107.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.9...guest-agent-v0.107.10) (2026-10-16)

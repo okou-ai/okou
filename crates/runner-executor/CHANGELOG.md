@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.14.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.13...runner-executor-v0.14.14) (2026-10-19)
+
+## [0.14.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.12...runner-executor-v0.14.13) (2026-10-19)
+
+## [0.14.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.11...runner-executor-v0.14.12) (2026-10-19)
+
+
+### Bug Fixes
+
+* **runner:** preserve codex subscription reconnect outcomes ([#41201](https://github.com/okou-ai/okou/issues/41201)) ([f359e10](https://github.com/okou-ai/okou/commit/f359e10a52ad666904a28c2c0641fba175a22631))
+
+## [0.14.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.10...runner-executor-v0.14.11) (2026-10-19)
+
+## [0.14.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.9...runner-executor-v0.14.10) (2026-10-19)
+
+## [0.14.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.8...runner-executor-v0.14.9) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-executor:** converge fallback storage failure cleanup ([#41065](https://github.com/okou-ai/okou/issues/41065)) ([7866dd8](https://github.com/okou-ai/okou/commit/7866dd85f436bdadd3c2563b823415eeaf139a40))
+* **runner-executor:** converge fresh post-start failure cleanup ([#41033](https://github.com/okou-ai/okou/issues/41033)) ([ba50bf6](https://github.com/okou-ai/okou/commit/ba50bf63c4588d1a44bb11b32b27ef0ce1b7dfdb))
+
 ## [0.14.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.7...runner-executor-v0.14.8) (2026-10-17)
 
 ## [0.14.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.6...runner-executor-v0.14.7) (2026-10-17)

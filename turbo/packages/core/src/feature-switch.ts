@@ -52,15 +52,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SlackOpenGraphPreviews]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Slack Open Graph previews",
-    description:
-      "Use public page metadata and bounded thumbnails for links you share in Slack.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
@@ -74,14 +65,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Remote control CLI management",
     description:
       "Manage owned SSH, VNC and private-network configuration through the CLI.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatRelations]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat relationships",
-    description:
-      "Show chat origins, created chats, and cross-chat communication.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -106,6 +89,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Retain and query safe SSH and VNC failure evidence in the same Run.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
@@ -141,11 +125,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
+    displayName: "Custom templates",
     description:
-      "Templates compiled from a file the user uploaded, with their own catalog.",
+      "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
     enabled: false,
     // Back to the staff org now that the picker carries its own upload entry:
     // a colleague who opens the empty panel has the one action that fills it,
@@ -155,13 +141,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // into a customer workspace, where the org hash does not apply.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.ComposerSlashCustomTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Custom templates in slash commands",
-    description:
-      "Include accessible image, presentation, and document templates in the composer slash menu. Requires customTemplates.",
-    enabled: false,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
@@ -416,6 +395,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "yuma@okou.ai",

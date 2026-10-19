@@ -209,6 +209,8 @@ async function readJson(
   return body;
 }
 
+export { readJson as readFeishuResponseJson };
+
 export async function fetchFeishuTenantAccessToken(
   args: {
     readonly appId: string;
@@ -912,76 +914,19 @@ export async function addFeishuMessageReaction(
   return parsed.data.reaction_id;
 }
 
-export async function removeFeishuMessageReaction(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly messageId: string;
-    readonly reactionId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const removeReactionContextArgs = args;
-  const removeReactionContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await removeReactionContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(
-        eq(feishuOrgInstallations.id, removeReactionContextArgs.installationId),
-      )
-      .limit(1);
-    removeReactionContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await removeReactionContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      removeReactionContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await removeReactionContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(
-          eq(
-            feishuOrgInstallations.id,
-            removeReactionContextArgs.installationId,
-          ),
-        );
-      removeReactionContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
-  const response = await fetch(
-    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reactions/${encodeURIComponent(args.reactionId)}`,
-    {
-      method: "DELETE",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json; charset=utf-8",
-      },
-      signal,
-    },
-  );
-  const parsed = feishuResponseSchema.parse(
-    await readJson(response, providerName),
-  );
+export function feishuReactionRemovalUrl(
+  apiOrigin: string,
+  messageId: string,
+  reactionId: string,
+): string {
+  return `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(reactionId)}`;
+}
+
+export function parseFeishuReactionRemovalResponse(
+  value: unknown,
+  providerName: string,
+): void {
+  const parsed = feishuResponseSchema.parse(value);
   if (parsed.code !== 0) {
     throw new FeishuApiError(
       parsed.msg ?? `${providerName} message reaction removal failed`,

@@ -62,6 +62,7 @@ import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
+import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
 import {
   paletteColorTheme$,
   shellDocumentAttributesRef$,
@@ -541,6 +542,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SubscriptionPurchaseConfirmDialog />
       <AttachmentLightboxMount />
       <SkillImportDialogMount />
+      <CreateAgentDialogContainer />
       <QueueDrawer />
       {pwaNavigation ? (
         <>

@@ -15,13 +15,17 @@ import wsproto
 from mitmproxy import http, version
 from mitmproxy.connection import Connection
 from mitmproxy.proxy import commands, events, layer
+from mitmproxy.proxy.layers import websocket
 from mitmproxy.proxy.layers.http import HttpStream
 from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
 from mitmproxy.proxy.server import ConnectionHandler
 
+import model_websocket_usage
 import response_streaming
 import websocket_framing
+import websocket_inspection
+import websocket_retention
 
 # The contract test in ``crates/runner/src/deps.rs`` enforces alignment with
 # the runner artifact and Python test dependency. Re-audit the private
@@ -32,7 +36,7 @@ _SUPPORTED_WSPROTO_VERSION = "1.3.2"
 _BRIDGE_MARKER_ATTRIBUTE = "_request_end_stream_bridge"
 _REQUEST_END_STREAM_METADATA = "_request_end_stream"
 _RESPONSE_INSPECTION_BRIDGE = "_response_inspection_bridge"
-_INSPECTION_CHECKPOINTS: ContextVar[list["ResponseInspectionHook"] | None] = ContextVar(
+_INSPECTION_CHECKPOINTS: ContextVar[list["_InspectionHook"] | None] = ContextVar(
     "response_inspection_checkpoints", default=None
 )
 
@@ -44,15 +48,43 @@ class ResponseInspectionHook(commands.StartHook):
     name = "responseinspection"
     flow: http.HTTPFlow
     completed: asyncio.Future[None] | None = field(default=None, repr=False)
+    resumed: bool = False
 
     def args(self) -> list[http.HTTPFlow]:
         return [self.flow]
 
 
 @dataclass
+class _WebsocketInspectionCheckpoint:
+    """Track a native message hook without registering another event class."""
+
+    flow: http.HTTPFlow
+    completed: asyncio.Future[None] | None = field(default=None, repr=False)
+    started: bool = False
+    abandoned: bool = False
+    resumed: bool = False
+
+
+type _InspectionHook = ResponseInspectionHook | _WebsocketInspectionCheckpoint
+_WEBSOCKET_CHECKPOINT_ATTRIBUTE = "_okou_websocket_inspection_checkpoint"
+_ACTIVE_WEBSOCKET_CHECKPOINT = "_okou_active_websocket_inspection_checkpoint"
+
+
+def _abandon_inspection(checkpoint: _InspectionHook) -> None:
+    if isinstance(checkpoint, _WebsocketInspectionCheckpoint):
+        if not checkpoint.started and not checkpoint.abandoned:
+            model_websocket_usage.interrupt_inspection(checkpoint.flow)
+        checkpoint.abandoned = True
+        websocket_inspection.release(checkpoint.flow)
+    else:
+        response_streaming.abandon_response_inspection(checkpoint.flow)
+
+
+@dataclass
 class _ReaderInspectionCheckpoints:
     owner: asyncio.Task[object] | None
-    pending: list[ResponseInspectionHook] = field(default_factory=list)
+    pending: list[_InspectionHook] = field(default_factory=list)
+    closed: bool = False
 
 
 _READER_INSPECTION: ContextVar[_ReaderInspectionCheckpoints | None] = ContextVar(
@@ -131,8 +163,8 @@ def _install_response_inspection_bridge() -> None:
     A hook alone does not backpressure those reads. Join the complete hook task
     (including HookCompleted and any buffered body events it resumes), not just
     the parser future, before allowing the read loop to continue.
-    Insert checkpoints only in the streamed-response state, keeping shared
-    HTTP event dispatch with upstream.
+    Insert checkpoints only in the streamed-response state and activated
+    Responses WebSocket message hooks, keeping protocol dispatch with upstream.
     """
     current_stream = HttpStream.state_stream_response_body
     if hasattr(current_stream, _RESPONSE_INSPECTION_BRIDGE):
@@ -141,6 +173,13 @@ def _install_response_inspection_bridge() -> None:
     current_hook = ConnectionHandler.hook_task
     current_connection = ConnectionHandler.handle_connection
     current_drain = ConnectionHandler.drain_writers
+    current_relay = websocket.WebsocketLayer.relay_messages
+
+    def register_checkpoint(checkpoint: _InspectionHook) -> None:
+        checkpoints = _INSPECTION_CHECKPOINTS.get()
+        if checkpoints is not None:
+            checkpoint.completed = asyncio.get_running_loop().create_future()
+            checkpoints.append(checkpoint)
 
     def state_stream_response_body(
         self: HttpStream, event: events.Event
@@ -148,38 +187,69 @@ def _install_response_inspection_bridge() -> None:
         for command in current_stream(self, event):
             if response_streaming.has_pending_response_inspection(self.flow):
                 checkpoint = ResponseInspectionHook(self.flow)
-                checkpoints = _INSPECTION_CHECKPOINTS.get()
-                if checkpoints is not None:
-                    checkpoint.completed = asyncio.get_running_loop().create_future()
-                    checkpoints.append(checkpoint)
-                yield checkpoint
+                register_checkpoint(checkpoint)
+                try:
+                    yield checkpoint
+                finally:
+                    checkpoint.resumed = True
             yield command
 
+    def relay_messages(
+        self: websocket.WebsocketLayer, event: events.Event
+    ) -> layer.CommandGenerator[None]:
+        for command in current_relay(self, event):
+            if isinstance(
+                command, websocket.WebsocketMessageHook
+            ) and model_websocket_usage.is_enabled(command.flow):
+                checkpoint = _WebsocketInspectionCheckpoint(command.flow)
+                register_checkpoint(checkpoint)
+                setattr(command, _WEBSOCKET_CHECKPOINT_ATTRIBUTE, checkpoint)
+                websocket_retention.hold_message(command.flow)
+                try:
+                    yield command
+                finally:
+                    checkpoint.resumed = True
+                    websocket_retention.release_message(command.flow)
+            else:
+                yield command
+
     async def server_event(self: ConnectionHandler, event: events.Event) -> None:
-        checkpoints: list[ResponseInspectionHook] = []
+        checkpoints: list[_InspectionHook] = []
         token = _INSPECTION_CHECKPOINTS.set(checkpoints)
         try:
             await current_event(self, event)
         finally:
             _INSPECTION_CHECKPOINTS.reset(token)
+        for checkpoint in checkpoints:
+            if isinstance(checkpoint, _WebsocketInspectionCheckpoint):
+                setattr(self, _ACTIVE_WEBSOCKET_CHECKPOINT, checkpoint)
         reader = _READER_INSPECTION.get()
-        if (
-            isinstance(event, events.DataReceived)
-            and reader is not None
-            and reader.owner is asyncio.current_task()
+        if reader is not None and (
+            (isinstance(event, events.DataReceived) and reader.owner is asyncio.current_task())
+            or (
+                isinstance(event, events.HookCompleted)
+                and isinstance(event.command, websocket.WebsocketMessageHook)
+            )
         ):
-            reader.pending.extend(checkpoints)
+            # A single read can contain many small WebSocket messages. Transfer
+            # successor checkpoints to the reader instead of retaining a chain
+            # of native hook tasks waiting on all later messages in that read.
+            if reader.closed:
+                for checkpoint in checkpoints:
+                    _abandon_inspection(checkpoint)
+            else:
+                reader.pending.extend(checkpoints)
         else:
             await join_checkpoints(checkpoints)
 
-    async def join_checkpoints(checkpoints: list[ResponseInspectionHook]) -> None:
+    async def join_checkpoints(checkpoints: list[_InspectionHook]) -> None:
         try:
             for checkpoint in checkpoints:
                 if checkpoint.completed is not None:
                     await asyncio.shield(checkpoint.completed)
         except BaseException:
             for checkpoint in checkpoints:
-                response_streaming.abandon_response_inspection(checkpoint.flow)
+                _abandon_inspection(checkpoint)
             raise
 
     async def handle_connection(self: ConnectionHandler, connection: Connection) -> None:
@@ -189,38 +259,67 @@ def _install_response_inspection_bridge() -> None:
             await current_connection(self, connection)
         finally:
             _READER_INSPECTION.reset(token)
+            reader.closed = True
             for checkpoint in reader.pending:
-                response_streaming.abandon_response_inspection(checkpoint.flow)
+                _abandon_inspection(checkpoint)
 
     async def drain_writers(self: ConnectionHandler) -> None:
         reader = _READER_INSPECTION.get()
         # Native hook tasks inherit the reader's context, but their buffered
         # HookCompleted continuations must keep their own checkpoint joins.
         if reader is not None and reader.owner is asyncio.current_task():
-            checkpoints, reader.pending = reader.pending, []
-            await join_checkpoints(checkpoints)
+            while True:
+                checkpoints, reader.pending = reader.pending, []
+                active = getattr(self, _ACTIVE_WEBSOCKET_CHECKPOINT, None)
+                if (
+                    isinstance(active, _WebsocketInspectionCheckpoint)
+                    and active.completed is not None
+                    and not active.completed.done()
+                    and all(checkpoint is not active for checkpoint in checkpoints)
+                ):
+                    # The opposite WebSocket reader may have delivered a read
+                    # while this layer was paused. Both readers must wait;
+                    # otherwise its buffered DataReceived queue can grow.
+                    checkpoints.append(active)
+                if not checkpoints:
+                    break
+                await join_checkpoints(checkpoints)
         await current_drain(self)
 
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
-        if not isinstance(hook, ResponseInspectionHook):
+        checkpoint = (
+            hook
+            if isinstance(hook, ResponseInspectionHook)
+            else getattr(hook, _WEBSOCKET_CHECKPOINT_ATTRIBUTE, None)
+        )
+        if not isinstance(checkpoint, (ResponseInspectionHook, _WebsocketInspectionCheckpoint)):
             await current_hook(self, hook)
             return
         try:
+            if isinstance(checkpoint, _WebsocketInspectionCheckpoint):
+                if checkpoint.abandoned:
+                    if hook.blocking:
+                        await self.server_event(events.HookCompleted(hook))
+                    return
+                checkpoint.started = True
             await current_hook(self, hook)
         except BaseException:
-            response_streaming.abandon_response_inspection(hook.flow)
+            _abandon_inspection(checkpoint)
             # The stock hook task does not resume a stream after an exception.
             # Release our checkpoint with explicitly unparsed state instead of
             # leaving an indefinitely paused event queue behind.
-            if hook.blocking:
+            if hook.blocking and not checkpoint.resumed:
                 await self.server_event(events.HookCompleted(hook))
             raise
         finally:
-            if hook.completed is not None and not hook.completed.done():
-                hook.completed.set_result(None)
+            if checkpoint.completed is not None and not checkpoint.completed.done():
+                checkpoint.completed.set_result(None)
+            if getattr(self, _ACTIVE_WEBSOCKET_CHECKPOINT, None) is checkpoint:
+                delattr(self, _ACTIVE_WEBSOCKET_CHECKPOINT)
 
     setattr(state_stream_response_body, _RESPONSE_INSPECTION_BRIDGE, True)
     HttpStream.state_stream_response_body = state_stream_response_body
+    websocket.WebsocketLayer.relay_messages = relay_messages
     ConnectionHandler.server_event = server_event
     ConnectionHandler.hook_task = hook_task
     ConnectionHandler.handle_connection = handle_connection

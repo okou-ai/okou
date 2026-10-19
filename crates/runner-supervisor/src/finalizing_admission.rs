@@ -43,7 +43,9 @@ use runner_provider::RunCancellationRegistration;
 use runner_types::ids::RunId;
 
 /// Grace for an in-progress predecessor to accept a successor's handoff request.
-pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(1500);
+pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(
+    api_contracts::generated::constants::runners::RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
+);
 
 /// Exact-predecessor proof carried across the provider claim boundary.
 pub struct FinalizingAdmission {

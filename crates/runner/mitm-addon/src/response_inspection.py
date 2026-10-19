@@ -33,7 +33,8 @@ class CooperativeResponseInspection:
         return self._pending is not None
 
     def feed(self, chunk: bytes) -> None:
-        if self._closed or not chunk:
+        # Empty complete messages still need their iterator's final observation.
+        if self._closed:
             return
         if self._pending is not None:
             raise RuntimeError("response inspection must finish before the next wire callback")
@@ -91,5 +92,8 @@ def decoded_steps(
     feed_steps: Callable[[bytes], Iterator[None]],
     chunk: bytes,
 ) -> Generator[None, None, None]:
+    # Streaming EOF stays with the explicit decoder/parser finalization path.
+    if not chunk:
+        return
     for decoded in iter_chunks(chunk):
         yield from feed_steps(decoded)

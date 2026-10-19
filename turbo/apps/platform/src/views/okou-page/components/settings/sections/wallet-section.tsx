@@ -2,7 +2,6 @@ import type { WalletConnectionStatus } from "@okouai/api-contracts/contracts/wal
 import {
   Button,
   Card,
-  DialogTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -17,21 +16,22 @@ import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings
 import {
   connectWallet$,
   disconnectWallet$,
-  prepareWalletScopeReview$,
   refreshWalletConnection$,
-  walletActionsRef$,
   walletConnection$,
 } from "../../../../../signals/okou-page/settings/wallet.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { ConnectedIndicator } from "../../connected-indicator.tsx";
 import { ConnectorEntryStatus } from "../connector-entry-card.tsx";
-import { WalletScopeReviewDialog } from "../wallet-scope-review-dialog.tsx";
 import { WalletTransactions } from "../wallet-transactions.tsx";
 
 function WalletConnectionNotice({
   status,
+  disabled,
+  onReconnect,
 }: {
   readonly status: WalletConnectionStatus | null;
+  readonly disabled: boolean;
+  readonly onReconnect: () => void;
 }) {
   const { t } = useTranslation();
   if (
@@ -41,19 +41,32 @@ function WalletConnectionNotice({
     return null;
   }
   return (
-    <ConnectorEntryStatus
-      tone="warning"
-      className="text-sm"
-      label={
-        status.connectionStatus === "scope-mismatch"
-          ? t(($) => {
-              return $.connectors.card.updatePermissions;
-            })
-          : t(($) => {
-              return $.connectors.accounts.reconnectRequired;
-            })
-      }
-    />
+    <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+      <ConnectorEntryStatus
+        tone="warning"
+        label={
+          status.connectionStatus === "scope-mismatch"
+            ? t(($) => {
+                return $.connectors.card.updatePermissions;
+              })
+            : t(($) => {
+                return $.connectors.accounts.reconnectRequired;
+              })
+        }
+      />
+      <span aria-hidden="true">·</span>
+      <Button
+        type="button"
+        variant="link"
+        className="h-auto p-0 text-[13px]"
+        disabled={disabled}
+        onClick={onReconnect}
+      >
+        {t(($) => {
+          return $.connectors.actions.reconnect;
+        })}
+      </Button>
+    </div>
   );
 }
 
@@ -73,16 +86,13 @@ function WalletActions({
   readonly onDisconnect: () => void;
 }) {
   const { t } = useTranslation();
-  const actionsRef = useSet(walletActionsRef$);
-  const prepareScopeReview = useSet(prepareWalletScopeReview$);
   const hasConnection =
     status.connectionStatus !== "not-connected" || disconnectOnly;
-  const reconnectLabel = t(($) => {
-    return $.connectors.actions.reconnect;
-  });
-  const actions = (
+  return (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
-      {status.connected && !disconnectOnly && <ConnectedIndicator />}
+      {status.connected &&
+        status.connectionStatus === "connected" &&
+        !disconnectOnly && <ConnectedIndicator />}
       {busy && (
         <Loader2
           size={16}
@@ -99,22 +109,9 @@ function WalletActions({
           })}
         </Button>
       )}
-      {status.scopeChange && !disconnectOnly && (
-        <DialogTrigger
-          render={<Button disabled={disabled} />}
-          onClick={(event) => {
-            prepareScopeReview(event.currentTarget);
-          }}
-        >
-          {t(($) => {
-            return $.connectors.card.reviewPermissions;
-          })}
-        </DialogTrigger>
-      )}
       {hasConnection && (
         <DropdownMenu>
           <DropdownMenuTrigger
-            ref={actionsRef}
             render={
               <Button
                 showTooltip
@@ -131,24 +128,13 @@ function WalletActions({
             <EllipsisVertical size={16} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {!disconnectOnly &&
-              (status.scopeChange ? (
-                <DropdownMenuItem
-                  nativeButton
-                  disabled={disabled}
-                  render={<DialogTrigger />}
-                  onClick={() => {
-                    // The menu item unmounts as the dialog opens.
-                    prepareScopeReview("menu");
-                  }}
-                >
-                  {reconnectLabel}
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem disabled={disabled} onClick={onReconnect}>
-                  {reconnectLabel}
-                </DropdownMenuItem>
-              ))}
+            {!disconnectOnly && status.connectionStatus === "connected" && (
+              <DropdownMenuItem disabled={disabled} onClick={onReconnect}>
+                {t(($) => {
+                  return $.connectors.actions.reconnect;
+                })}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               disabled={disabled}
               className="text-destructive focus:text-destructive"
@@ -162,17 +148,6 @@ function WalletActions({
         </DropdownMenu>
       )}
     </div>
-  );
-  return status.scopeChange ? (
-    <WalletScopeReviewDialog
-      change={status.scopeChange}
-      disabled={disabled}
-      onReconnect={onReconnect}
-    >
-      {actions}
-    </WalletScopeReviewDialog>
-  ) : (
-    actions
   );
 }
 
@@ -192,6 +167,11 @@ export function WalletSection() {
   const disabled = busy || !signal || signal.aborted;
   const failed =
     connecting.state === "hasError" || disconnecting.state === "hasError";
+  const handleReconnect = () => {
+    if (signal) {
+      detach(connect(signal), Reason.DomCallback);
+    }
+  };
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6">
       <Card
@@ -220,11 +200,7 @@ export function WalletSection() {
               disabled={disabled}
               busy={busy}
               disconnectOnly={disconnectOnly}
-              onReconnect={() => {
-                if (signal) {
-                  detach(connect(signal), Reason.DomCallback);
-                }
-              }}
+              onReconnect={handleReconnect}
               onDisconnect={() => {
                 if (signal) {
                   detach(disconnect(signal), Reason.DomCallback);
@@ -245,7 +221,11 @@ export function WalletSection() {
               return $.settings.wallet.description;
             })}
           </p>
-          <WalletConnectionNotice status={status} />
+          <WalletConnectionNotice
+            status={status}
+            disabled={disabled || disconnectOnly}
+            onReconnect={handleReconnect}
+          />
         </div>
         {connection.state === "hasError" ? (
           <div className="mt-4 flex items-center gap-2">

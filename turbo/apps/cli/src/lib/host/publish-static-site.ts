@@ -65,7 +65,7 @@ export async function publishStaticSite(
   const totalSize = scan.files.reduce((sum, file) => {
     return sum + file.size;
   }, 0);
-  let preview = options.preview
+  const preview = options.preview
     ? await readHostedPreview(
         options.preview,
         bundleFingerprint(scan.files),
@@ -95,12 +95,9 @@ export async function publishStaticSite(
     }),
   });
 
-  // Older serving/rollback APIs can skip a supplied preview. Keep both skip
-  // acknowledgments until those API targets are retired (#39754).
-  if (prepared.previewSkipped) preview = undefined;
   if (preview && prepared.preview?.sha256 !== preview.metadata.sha256) {
     throw new Error(
-      "This API did not acknowledge the supplied preview. Deploy the compatible API before publishing; no files were uploaded or activated",
+      "The API did not acknowledge the supplied preview; no files were uploaded or activated",
     );
   }
 
@@ -141,9 +138,9 @@ export async function publishStaticSite(
       );
     },
   );
-  if (preview && !completed.previewSkipped && !completed.previewImageUrl) {
+  if (preview && !completed.previewImageUrl) {
     throw new Error(
-      `API did not confirm the preview for deployment ${prepared.deploymentId}. Retry completion against the compatible API with: okou host complete ${prepared.deploymentId}`,
+      `API did not confirm the preview for deployment ${prepared.deploymentId}. Retry completion with: okou host complete ${prepared.deploymentId}`,
     );
   }
 

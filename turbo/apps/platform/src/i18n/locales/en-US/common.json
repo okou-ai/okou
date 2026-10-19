@@ -1549,13 +1549,17 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
-      "continueChat": "Continue chat",
       "dismiss": "Dismiss",
       "label": "Suggestions",
-      "newChat": "New chat",
       "next": "Next suggestion",
       "position": "{{current}} of {{total}}",
-      "previous": "Previous suggestion"
+      "previous": "Previous suggestion",
+      "recoveryHint": "Check the chat before sending again. You can restore the suggestion to your draft.",
+      "restoreDraft": "Restore draft",
+      "runFailed": "Could not start the suggestion",
+      "runInChat": "Run in this chat",
+      "runNewChat": "Run in a new chat",
+      "starting": "Starting…"
     },
     "attachments": {
       "attach": "Attach",
@@ -1791,6 +1795,7 @@
       "selectedModelUnavailableToast": "The selected model is not available",
       "selectModel": "Select model",
       "slashActions": {
+        "actions": "Actions",
         "archive": "Archive chat",
         "back": "Back",
         "connect": "Connect a tool",
@@ -1804,6 +1809,11 @@
         "pin": "Pin chat",
         "rename": "Rename chat",
         "schedule": "Schedule",
+        "scheduleCustom": "Custom schedule",
+        "scheduleEveryMonday": "Every Monday",
+        "scheduleEveryMonth": "First day of every month",
+        "scheduleEveryMorning": "Every morning",
+        "scheduleEveryWeekday": "Every weekday",
         "scheduleHint": "Run this on a schedule",
         "share": "Share chat",
         "shareHint": "Share a link to this conversation",
@@ -2102,14 +2112,10 @@
       "communications": "Messages",
       "idle": "Idle",
       "loadFailed": "Could not load",
-      "loading": "Loading…",
       "messageUnavailable": "Message unavailable",
-      "more": "More",
-      "noMessages": "No messages yet",
       "origin": "From",
       "queued": "Queued",
       "received": "Received",
-      "refresh": "Refresh",
       "running": "Running",
       "sent": "Sent",
       "toggleMessages": "Messages with {{title}}",
@@ -2135,15 +2141,13 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "emptyArtifacts": "No artifacts yet",
       "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
       "links": "Links",
       "loadFailed": "Could not load resources",
       "loadingLinks": "Loading links",
       "retry": "Try again",
-      "title": "Resources",
-      "viewAll": "View all"
+      "title": "Resources"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",
@@ -3967,7 +3971,6 @@
     "retry": "Retry",
     "samplePages": "Sample pages: {{total}}",
     "title": "Document",
-    "use": "Use template",
     "useNamed": "Use {{title}}"
   },
   "global": {
@@ -5132,6 +5135,15 @@
         "retryMessage": "Morning Brief settings could not be loaded or updated. Retry to continue.",
         "title": "Morning brief"
       },
+      "proactiveSuggestions": {
+        "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
+        "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
+        "preparationFailed": "Proactive Suggestions setup could not finish. Retry to continue.",
+        "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
+        "retry": "Retry",
+        "retryMessage": "Proactive Suggestions settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive Suggestions"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Press ⌘/Ctrl+Enter to send, Enter for new line",
@@ -5189,7 +5201,6 @@
       "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
       "loadError": "Couldn’t load your wallet.",
-      "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
       "retry": "Retry",
       "scope": "Let Okou make purchases and view your Link activity.",
       "title": "Wallet",
@@ -5219,8 +5230,7 @@
         "statusLabel": "Status",
         "title": "Link transactions",
         "unknownStatus": "Status unavailable"
-      },
-      "workspaceScopeChanged": "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change."
+      }
     },
     "workspace": {
       "danger": {
@@ -6670,6 +6680,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Account",
+      "agentLabel": "Agent",
       "code": "Verification code",
       "connect": "Connect",
       "connected": "Connected",
@@ -6679,11 +6691,15 @@
       "expired": "This QR code expired. Create a new one.",
       "failed": "Could not connect to WeChat. Please try again.",
       "instructions": "Scan this QR code with WeChat, then confirm on your phone.",
+      "linkUnavailable": "This link is unavailable. Use the original account and workspace, and send another message in WeChat for a fresh link. You can also connect by scanning a new QR code.",
       "name": "WeChat",
+      "newQr": "Connect with a new QR code",
       "reconnect": "Reconnect",
       "reconnect_required": "Scan again to reconnect.",
       "restart_required": "This WeChat account is already bound. Create a new QR code to reconnect.",
+      "restoreDescription": "Restore this WeChat connection to the account and workspace below.",
       "retry": "Create a new QR code",
+      "returnToWechat": "Return to WeChat and send a message to start chatting.",
       "scanned": "Scanned. Confirm on your phone.",
       "scope": "Only your direct messages to this agent are connected. Text messages are supported.",
       "title": "Connect WeChat",
@@ -6691,7 +6707,8 @@
       "verification_blocked": "Too many verification attempts. Create a new QR code.",
       "verification_required": "Enter the verification code shown in WeChat.",
       "verify": "Verify",
-      "waiting": "Waiting for you to scan…"
+      "waiting": "Waiting for you to scan…",
+      "workspaceLabel": "Workspace"
     }
   }
 }

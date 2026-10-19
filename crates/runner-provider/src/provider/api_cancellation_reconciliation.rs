@@ -54,7 +54,10 @@ enum ReadError {
     Prepare,
     Send,
     Transport(Box<ApiTransportError>),
-    Status(StatusCode),
+    Status {
+        status: StatusCode,
+        request: Box<ApiRequestContext>,
+    },
     Body(ApiTransportCause),
     Oversized,
     Contract,
@@ -96,6 +99,14 @@ impl ReadError {
                 error.failure_cause,
                 ApiTransportCause::Timeout | ApiTransportCause::ConnectionReset
             ),
+            // Temporary gateway/unavailability responses share the existing
+            // sustained-failure gate; other status failures still warn immediately.
+            Self::Status { status, .. } => matches!(
+                *status,
+                StatusCode::BAD_GATEWAY
+                    | StatusCode::SERVICE_UNAVAILABLE
+                    | StatusCode::GATEWAY_TIMEOUT
+            ),
             _ => false,
         }
     }
@@ -128,11 +139,18 @@ impl ReadError {
                 kind: error.failure_kind.as_str(),
                 cause: error.failure_cause.as_str(),
             },
-            Self::Status(status) => ReadFailureDiagnostic {
+            Self::Status { status, request } => ReadFailureDiagnostic {
+                endpoint: request.endpoint_label,
+                method: &request.method,
+                host: &request.host,
+                path: &request.path,
+                client_request_id: &request.client_request_id,
+                client_session_id: &request.client_session_id,
+                client_version: &request.client_version,
                 status: status.as_u16(),
                 stage: "status",
                 kind: "http_status",
-                ..ReadFailureDiagnostic::empty()
+                cause: "",
             },
             Self::Body(cause) => ReadFailureDiagnostic {
                 status: StatusCode::OK.as_u16(),
@@ -443,7 +461,7 @@ impl ReadClient {
             .map_err(|_| ReadError::Prepare)?;
         let request_context = request.context().clone();
         let requested_url = request.url().clone();
-        let read = timeout(REQUEST_DEADLINE, async move {
+        let read = timeout(REQUEST_DEADLINE, async {
             let mut response = request.send().await.map_err(|error| match error {
                 ProviderError::ApiTransport(error) => ReadError::Transport(error),
                 _ => ReadError::Send,
@@ -452,7 +470,10 @@ impl ReadClient {
                 return Err(ReadError::Redirect);
             }
             if response.status() != StatusCode::OK {
-                return Err(ReadError::Status(response.status()));
+                return Err(ReadError::Status {
+                    status: response.status(),
+                    request: Box::new(request_context.clone()),
+                });
             }
             if response
                 .content_length()

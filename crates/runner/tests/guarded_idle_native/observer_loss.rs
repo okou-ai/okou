@@ -1,81 +1,11 @@
 //! Accepted native saving outlives its dropped or panicked external observer.
 
-use std::{future::Future, path::Path, pin::Pin, time::Duration};
+use std::{path::Path, time::Duration};
 
-use runner_lifecycle::host_memory_operations::MemoryOperationSnapshot;
-use serde_json::{Value, json};
+use serde_json::json;
 
+use super::cleanup_progress::{accounting, coverage, pending, settled};
 use super::*;
-
-async fn pending<F: Future>(
-    future: Pin<&mut F>,
-    completed: &mut Option<F::Output>,
-) -> TestResult<()> {
-    if completed.is_some() {
-        return Err(io::Error::other("native observer-loss shutdown already completed").into());
-    }
-    if let std::task::Poll::Ready(result) = futures_util::poll!(future) {
-        *completed = Some(result);
-        return Err(io::Error::other("native observer-loss shutdown forgot held work").into());
-    }
-    Ok(())
-}
-
-fn accounting(value: &MemoryOperationSnapshot) -> Value {
-    json!({
-        "registered_operations": value.registered_operations, "queued": value.queued,
-        "granted": value.granted, "started": value.started, "uncertain": value.uncertain,
-        "ordinary_growth_bytes": value.ordinary_growth_bytes,
-        "cleanup_growth_bytes": value.cleanup_growth_bytes,
-        "tracked_tasks": value.tracked_tasks, "closed": value.closed,
-    })
-}
-
-fn coverage(
-    context: &transitions::Context,
-    inputs: &fixture::Inputs,
-    proof: &evidence::Case,
-    closed: bool,
-) -> TestResult<Value> {
-    proof.require_full_lease()?;
-    let value = context.operations.snapshot()?;
-    let envelope = inputs.envelope();
-    let maximum = envelope
-        .live_growth_bytes
-        .checked_add(envelope.tail_growth_bytes)
-        .ok_or_else(|| io::Error::other("native observer-loss growth overflow"))?;
-    if value.registered_operations == 0
-        || value.started == 0
-        || value.tracked_tasks == 0
-        || value.uncertain != 0
-        || value.ordinary_growth_bytes != 0
-        || value.cleanup_growth_bytes < envelope.tail_growth_bytes
-        || value.cleanup_growth_bytes > maximum
-        || value.closed != closed
-    {
-        return Err(io::Error::other("native observer loss released required growth").into());
-    }
-    Ok(
-        json!({"allocated": context.budget.allocated(), "accounting": accounting(&value),
-        "original_lease_active": true, "io_release_withheld": true}),
-    )
-}
-
-fn settled(value: &MemoryOperationSnapshot) -> TestResult<()> {
-    if value.registered_operations != 0
-        || value.queued != 0
-        || value.granted != 0
-        || value.started != 0
-        || value.uncertain != 0
-        || value.ordinary_growth_bytes != 0
-        || value.cleanup_growth_bytes != 0
-        || value.tracked_tasks != 0
-        || !value.closed
-    {
-        return Err(io::Error::other("native observer-loss accounting remains owned").into());
-    }
-    Ok(())
-}
 
 pub async fn exercise(
     context: transitions::Context,
@@ -198,8 +128,10 @@ pub async fn exercise(
                     "observer": observation, "coverage": coverage(&context, inputs, proof, true)?,
                 }),
             )?;
-            drop(pool_hold.take());
+            // The heartbeat may be acknowledged on the other worker before
+            // this task resumes after unlock, so record the lower bound first.
             let pool_released_ns = evidence::clocks()?.0;
+            drop(pool_hold.take());
             let heartbeat = probe.complete().await?;
             pending(tracker_shutdown.as_mut(), &mut tracker_completed).await?;
             pending(accounting_shutdown.as_mut(), &mut accounting_completed).await?;

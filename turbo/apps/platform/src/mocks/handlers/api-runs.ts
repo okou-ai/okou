@@ -24,7 +24,11 @@ export const apiRunsHandlers = [
         credentialScope: null,
         account: { status: "unknown" },
       },
-      result: { agentSessionId: "session-1", output: "" },
+      result: {
+        framework: "pi",
+        frameworkSessionId: "native-session-1",
+        output: "",
+      },
       createdAt: "2026-03-10T00:00:00Z",
     }),
   ),

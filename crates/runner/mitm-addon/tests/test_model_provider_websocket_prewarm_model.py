@@ -684,13 +684,15 @@ def _assert_diagnostics(
     assert marker not in json.dumps(entries), context
 
 
-def _replay_case(flow: http.HTTPFlow, case: _TraceCase) -> None:
+async def _replay_case(flow: http.HTTPFlow, case: _TraceCase) -> None:
     for event in case.events:
         from_client, content = _render_event(event)
         if from_client:
-            feed_websocket_client_message(flow, content)
+            completion = feed_websocket_client_message(flow, content)
         else:
-            feed_websocket_server_message(flow, content)
+            completion = feed_websocket_server_message(flow, content)
+        if completion is not None:
+            await completion
 
 
 def _assert_terminal_state_released(flow: http.HTTPFlow, *, context: str) -> None:
@@ -771,7 +773,7 @@ def test_generated_corpus_has_bounded_declared_coverage() -> None:
 
 
 @pytest.mark.parametrize("case", _GENERATED_CASES, ids=lambda case: case.key)
-def test_generated_websocket_prewarm_trace_matches_reference_model(
+async def test_generated_websocket_prewarm_trace_matches_reference_model(
     case: _TraceCase,
     tmp_path: Path,
     real_flow: RealFlowFactory,
@@ -785,7 +787,7 @@ def test_generated_websocket_prewarm_trace_matches_reference_model(
     context = case.describe()
 
     with usage_webhook_api() as webhook:
-        _replay_case(flow, case)
+        await _replay_case(flow, case)
         mitm_addon.websocket_end(flow)
         usage.flush_usage_events(trigger="test")
 
@@ -804,7 +806,7 @@ def test_generated_websocket_prewarm_trace_matches_reference_model(
 
 
 @pytest.mark.parametrize("ambiguous_intent", ["normal", "prewarm"])
-def test_generated_websocket_prewarm_state_isolated_across_terminated_flows(
+async def test_generated_websocket_prewarm_state_isolated_across_terminated_flows(
     ambiguous_intent: _Intent,
     tmp_path: Path,
     real_flow: RealFlowFactory,
@@ -842,8 +844,8 @@ def test_generated_websocket_prewarm_state_isolated_across_terminated_flows(
     ambiguous_expected = _reference_for_case(ambiguous_case)
 
     with usage_webhook_api() as webhook:
-        _replay_case(exact_flow, exact_case)
-        _replay_case(ambiguous_flow, ambiguous_case)
+        await _replay_case(exact_flow, exact_case)
+        await _replay_case(ambiguous_flow, ambiguous_case)
         mitm_addon.websocket_end(exact_flow)
         _assert_terminal_state_released(exact_flow, context=exact_case.describe())
         assert model_websocket_usage.is_enabled(ambiguous_flow)

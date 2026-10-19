@@ -23,6 +23,9 @@ import { settle } from "../utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
+import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { loadProactiveSuggestionsEligibility$ } from "./proactive-suggestions-eligibility.service";
 
 interface Owner {
   readonly userId: string;
@@ -59,7 +62,7 @@ function capacityViolation(error: unknown): boolean {
 }
 
 export const suggestionAccess$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const overrides = await get(
       userFeatureSwitchOverrides(auth.orgId, auth.userId),
@@ -76,7 +79,12 @@ export const suggestionAccess$ = command(
     }
     if (auth.tokenType === "agent") {
       const [run] = await get(db$)
-        .select({ id: agentRuns.id })
+        .select({
+          id: agentRuns.id,
+          agentId: agentRuns.agentId,
+          triggerSource: agentRuns.triggerSource,
+          provenance: agentRuns.officialWorkflowProvenance,
+        })
         .from(agentRuns)
         .innerJoin(
           orgMetadata,
@@ -99,6 +107,31 @@ export const suggestionAccess$ = command(
         return resourceUnavailable(
           "Suggestions are available only to a running Okou primary Agent.",
         );
+      }
+      if (
+        (run.triggerSource === "automation-schedule" ||
+          run.triggerSource === "automation-event") &&
+        run.provenance?.definitions.some((definition) => {
+          return (
+            definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
+            isMorningBriefDefinitionName(definition.name)
+          );
+        })
+      ) {
+        const preference = await set(
+          loadProactiveSuggestionsEligibility$,
+          auth,
+          signal,
+        );
+        if (
+          !preference.available ||
+          !preference.enabled ||
+          preference.agentId !== run.agentId
+        ) {
+          return resourceUnavailable(
+            "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",
+          );
+        }
       }
     }
     return { userId: auth.userId, orgId: auth.orgId };

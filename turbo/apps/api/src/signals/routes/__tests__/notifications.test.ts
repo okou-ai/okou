@@ -78,24 +78,29 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   };
 }
 
-const body = () => {
+const content = () => {
   return {
     to: "me" as const,
     subject: "Useful update",
     text: "## Today\nA useful update.",
-    idempotencyKey: `update:${randomUUID()}`,
   };
 };
 
+const body = () => {
+  return { ...content(), idempotencyKey: `update:${randomUUID()}` };
+};
+
 describe("agent mail notifications", () => {
-  it("rejects Morning Brief purpose from an ordinary run without consuming the key or silently downgrading", async () => {
+  it("rejects Morning Brief purpose from an ordinary run without silently downgrading", async () => {
     const fixture = await runningAgent();
+    const brief = {
+      ...content(),
+      subject: "Morning Brief",
+      kind: "morning-brief" as const,
+    };
     const input = { ...body(), subject: "Morning Brief" };
     const rejected = await accept(
-      client().mail({
-        headers: fixture.headers,
-        body: { ...input, kind: "morning-brief" },
-      }),
+      client().mail({ headers: fixture.headers, body: brief }),
       [403],
     );
     expect(rejected.body.error).toMatchObject({
@@ -125,10 +130,7 @@ describe("agent mail notifications", () => {
       deduplicated: true,
     });
     await accept(
-      client().mail({
-        headers: fixture.headers,
-        body: { ...input, kind: "morning-brief" },
-      }),
+      client().mail({ headers: fixture.headers, body: brief }),
       [403],
     );
   });
@@ -171,7 +173,7 @@ describe("agent mail notifications", () => {
     const headers = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };
     const input = body();
     await accept(
-      client().mail({ headers, body: { ...input, kind: "morning-brief" } }),
+      client().mail({ headers, body: { ...content(), kind: "morning-brief" } }),
       [403],
     );
     expect(

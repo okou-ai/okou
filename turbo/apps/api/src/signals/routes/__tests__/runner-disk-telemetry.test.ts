@@ -177,7 +177,7 @@ function createDiskTelemetryFixture(context: TestContext) {
 }
 
 describe("Runner disk telemetry HTTP compatibility", () => {
-  it("accepts legacy, independent, missing and malformed optional snapshots on an authenticated claimed run", async () => {
+  it("accepts legacy and pair-free snapshots with independent, missing and malformed observations on an authenticated claimed run", async () => {
     mockSecretKmsHttp();
     const fixture = createDiskTelemetryFixture(context);
     const { bdd, runs, webhooks, actor } = fixture;
@@ -261,6 +261,9 @@ describe("Runner disk telemetry HTTP compatibility", () => {
       cpu: 1,
       mem_used: 10,
       mem_total: 100,
+    };
+    const legacyMetric = {
+      ...metric,
       disk_used: 20,
       disk_total: 100,
     };
@@ -281,11 +284,17 @@ describe("Runner disk telemetry HTTP compatibility", () => {
       available_inodes: 0,
     };
     for (const snapshot of [
-      metric,
+      legacyMetric,
+      { ...legacyMetric, rootfs, home },
+      { ...legacyMetric, rootfs },
+      { ...legacyMetric, home },
+      { ...legacyMetric, rootfs, home: { used_bytes: -1 } },
       { ...metric, rootfs, home },
       { ...metric, rootfs },
       { ...metric, home },
       { ...metric, rootfs, home: { used_bytes: -1 } },
+      { ...metric, rootfs: { used_bytes: -1 }, home },
+      metric,
     ]) {
       const response = await fixture.run(() => {
         return webhooks.requestAgentTelemetryUnchecked(

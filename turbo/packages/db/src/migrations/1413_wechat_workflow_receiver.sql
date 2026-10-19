@@ -1,0 +1,1 @@
+ALTER TABLE "wechat_connections" ADD COLUMN "workflow_receiver" boolean DEFAULT false NOT NULL;

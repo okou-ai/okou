@@ -20,11 +20,7 @@ import { rootVersion$ } from "../root-signal.ts";
 const catalogVersion$ = state(0);
 
 export const slashCustomTemplatesEnabled$ = computed((get) => {
-  const features = get(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.CustomTemplates] === true &&
-    features[FeatureSwitchKey.ComposerSlashCustomTemplates] === true
-  );
+  return get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
 });
 
 type ConfirmedTemplateChange = Pick<

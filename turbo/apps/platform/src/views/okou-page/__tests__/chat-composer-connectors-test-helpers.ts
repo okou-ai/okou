@@ -7,6 +7,7 @@ import {
   connectorAccountsContract,
   connectorAccountTargetKey,
   type ConnectorAccountConnection,
+  type ConnectorAccountMutationIntent,
   type ConnectorAccountSelection,
   type ConnectorAccountSummary,
   type ConnectorAccountTarget,
@@ -127,6 +128,7 @@ interface ComposerConnectorFixture {
   readonly customAuthorizationUpdates: readonly CustomAuthorizationUpdate[];
   readonly customValueRequests: readonly {
     readonly connectorId: string;
+    readonly account: ConnectorAccountMutationIntent;
     readonly values: readonly CustomConnectorValueInput[];
   }[];
   readonly manualConnectionRequests: readonly BuiltinConnectionRequest[];
@@ -272,6 +274,7 @@ export function installComposerConnectorFixture(
   const customAuthorizationUpdates: CustomAuthorizationUpdate[] = [];
   const customValueRequests: {
     connectorId: string;
+    account: ConnectorAccountMutationIntent;
     values: readonly CustomConnectorValueInput[];
   }[] = [];
   const manualConnectionRequests: BuiltinConnectionRequest[] = [];
@@ -591,6 +594,7 @@ export function installComposerConnectorFixture(
     ({ body, params, respond }) => {
       customValueRequests.push({
         connectorId: params.id,
+        account: body.account,
         values: body.values.map((value) => {
           return { ...value };
         }),
@@ -607,7 +611,9 @@ export function installComposerConnectorFixture(
         ...current,
         connected: true,
         connectedAccountId:
-          current.connectedAccountId ?? "f0000000-0000-4000-a000-000000000061",
+          body.account.intent === "reconnect"
+            ? body.account.connectionId
+            : "f0000000-0000-4000-a000-000000000061",
         connectedAccountUpdatedAt: CREATED_AT,
         configuredFieldKeys: body.values.map((value) => {
           return value.key;

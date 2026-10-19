@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (($# < 1 || $# > 2)) || [[ "$1" != test && "$1" != production ]]; then
-  echo "Usage: $0 <test|production> [true|false]" >&2
+if (($# < 1 || $# > 3)) || [[ "$1" != test && "$1" != production ]]; then
+  echo "Usage: $0 <test|production> [enable-gateway:true|false] [enable-workflows:true|false]" >&2
   exit 2
 fi
 gateway_environment=$1
 gateway_enabled=${2:-false}
-if [[ "$gateway_enabled" != true && "$gateway_enabled" != false ]]; then
+workflows_enabled=${3:-false}
+export WECHAT_WORKFLOWS_ENABLED="$workflows_enabled"
+if [[ ( "$gateway_enabled" != true && "$gateway_enabled" != false ) || ( "$workflows_enabled" != true && "$workflows_enabled" != false ) ]]; then
   echo "Gateway startup must be explicitly true or false" >&2
   exit 2
 fi
@@ -26,6 +28,13 @@ const required = [
   "WECHAT_GATEWAY_CONTROL_SECRET",
   "WECHAT_API_ORIGIN",
 ];
+if (process.env.WECHAT_WORKFLOWS_ENABLED === "true") {
+  required.push("WECHAT_RECEIVER_ENCRYPTION_KEY");
+  const key = process.env.WECHAT_RECEIVER_ENCRYPTION_KEY;
+  if (!key || key.length < 32 || [process.env.WECHAT_GATEWAY_SECRET, process.env.WECHAT_GATEWAY_CONTROL_SECRET].includes(key)) {
+    throw new Error("Workflows requires a distinct receiver encryption key of at least 32 characters");
+  }
+}
 for (const key of required) {
   const value = process.env[key];
   if (!value || /\s/.test(value)) {
@@ -62,8 +71,8 @@ jq -n '{
   WECHAT_GATEWAY_SECRET: env.WECHAT_GATEWAY_SECRET,
   WECHAT_GATEWAY_CONTROL_SECRET: env.WECHAT_GATEWAY_CONTROL_SECRET,
   API_ORIGIN: env.WECHAT_API_ORIGIN
-}' > "$worker_secrets"
-unset WECHAT_GATEWAY_SECRET WECHAT_GATEWAY_CONTROL_SECRET WECHAT_API_ORIGIN
+} + (if (env.WECHAT_RECEIVER_ENCRYPTION_KEY // "") != "" then {WECHAT_RECEIVER_ENCRYPTION_KEY: env.WECHAT_RECEIVER_ENCRYPTION_KEY} else {} end)' > "$worker_secrets"
+unset WECHAT_GATEWAY_SECRET WECHAT_GATEWAY_CONTROL_SECRET WECHAT_API_ORIGIN WECHAT_RECEIVER_ENCRYPTION_KEY
 
 cd "$repo_root/turbo"
 # Startup defaults to disabled regardless of the checked-in configuration.
@@ -71,5 +80,6 @@ cd "$repo_root/turbo"
 pnpm --filter @okouai/wechat-gateway-worker exec wrangler deploy \
   --env "$gateway_environment" \
   --var "WECHAT_GATEWAY_ENABLED:$gateway_enabled" \
+  --var "WECHAT_WORKFLOWS_ENABLED:$workflows_enabled" \
   --secrets-file "$worker_secrets" \
-  --message "WeChat Gateway relay ${GITHUB_SHA:-manual} (enabled=$gateway_enabled)"
+  --message "WeChat Gateway relay ${GITHUB_SHA:-manual} (enabled=$gateway_enabled, workflows=$workflows_enabled)"

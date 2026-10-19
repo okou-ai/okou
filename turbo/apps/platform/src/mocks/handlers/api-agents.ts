@@ -6,6 +6,7 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -337,6 +338,14 @@ export const apiAgentsHandlers = [
   // GET /api/chat-threads/:threadId/artifacts
   mockApi(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(200, { runs: [] });
+  }),
+
+  mockApi(chatRelationsContract.children, ({ respond }) => {
+    return respond(200, { items: [] });
+  }),
+
+  mockApi(chatRelationsContract.communications, ({ respond }) => {
+    return respond(200, { items: [] });
   }),
 
   // GET /api/chat-threads/:id (thread detail)

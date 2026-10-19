@@ -1,34 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use runner_types::types::{ConnectorRuntimeTarget, FirewallEntry, NetworkPolicy};
+pub use runner_types::connector_registry::{
+    ConnectorRuntimeRegistryUpdate, CustomConnectorRuntimeRegistryState,
+};
+use runner_types::types::ConnectorRuntimeTarget;
 
 use crate::{ProviderError, ProviderResult};
-
-#[derive(Clone)]
-pub enum CustomConnectorRuntimeRegistryState {
-    Available {
-        firewall: FirewallEntry,
-        network_policy: Box<NetworkPolicy>,
-        routing_variables: std::collections::HashMap<String, String>,
-    },
-    Absent,
-}
-
-#[derive(Clone)]
-pub enum ConnectorRuntimeRegistryUpdate {
-    BuiltinAvailable {
-        connector_slug: String,
-        network_policy: NetworkPolicy,
-    },
-    BuiltinAbsent {
-        connector_slug: String,
-    },
-    Custom {
-        custom_connector_id: String,
-        state: CustomConnectorRuntimeRegistryState,
-    },
-}
 
 pub enum ConnectorRuntimeFailCloseOutcome {
     Applied,

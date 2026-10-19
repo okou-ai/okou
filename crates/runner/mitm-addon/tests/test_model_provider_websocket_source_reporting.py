@@ -216,7 +216,7 @@ class TestModelProviderWebSocketSourceReporting:
             event["idempotencyKey"] for event in webhook.usage_events()
         }
 
-    def test_model_websocket_work_limit_warns_and_later_frame_reports(
+    async def test_model_websocket_work_limit_warns_and_later_frame_reports(
         self,
         tmp_path,
         real_flow,
@@ -233,7 +233,10 @@ class TestModelProviderWebSocketSourceReporting:
         )
 
         with self._usage_webhook_api() as webhook:
-            feed_websocket_server_message(flow, over_budget_frame)
+            completion = feed_websocket_server_message(flow, over_budget_frame)
+            assert completion is not None
+            await completion
+            inspection_feeds = full_body_feeds.copy()
 
             assert flow.websocket is not None
             assert flow.websocket.messages[-1].content == over_budget_frame
@@ -250,7 +253,10 @@ class TestModelProviderWebSocketSourceReporting:
             )
             usage.flush_usage_events(trigger="test")
 
-        assert full_body_feeds.count(over_budget_frame) == 1
+        inspected_prefix = b"".join(inspection_feeds)
+        assert over_budget_frame.startswith(inspected_prefix)
+        assert len(inspected_prefix) < len(over_budget_frame)
+        assert max(map(len, inspection_feeds)) <= 4096
         proxy_entries = read_jsonl_entries_after_flush(proxy_log)
         warning_entries = [
             entry

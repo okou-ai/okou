@@ -1,0 +1,1 @@
+ALTER TABLE "wechat_connections" ADD COLUMN "resumed_at" timestamp;

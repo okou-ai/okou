@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.17.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.13...runner-supervisor-v0.17.14) (2026-10-19)
+
+## [0.17.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.12...runner-supervisor-v0.17.13) (2026-10-19)
+
+## [0.17.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.11...runner-supervisor-v0.17.12) (2026-10-19)
+
+## [0.17.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.10...runner-supervisor-v0.17.11) (2026-10-19)
+
+## [0.17.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.9...runner-supervisor-v0.17.10) (2026-10-19)
+
+## [0.17.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.8...runner-supervisor-v0.17.9) (2026-10-19)
+
+
+### Performance Improvements
+
+* **runner:** claim before the late reuse recheck ([#40977](https://github.com/okou-ai/okou/issues/40977)) ([0222df9](https://github.com/okou-ai/okou/commit/0222df983231b88b389ac64a9f779b123f7496a8))
+* **runner:** keep blank inventory publication off the reactor ([#41014](https://github.com/okou-ai/okou/issues/41014)) ([ab78a3e](https://github.com/okou-ai/okou/commit/ab78a3e9b08e96312963672353711c8341a11d88))
+* **runner:** keep claimed activation off the reactor ([#41022](https://github.com/okou-ai/okou/issues/41022)) ([12b7427](https://github.com/okou-ai/okou/commit/12b742772962039adacb7d690e5bcb7cd843d65d))
+
 ## [0.17.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.7...runner-supervisor-v0.17.8) (2026-10-17)
 
 

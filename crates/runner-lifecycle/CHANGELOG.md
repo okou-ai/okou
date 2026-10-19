@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.8...runner-lifecycle-v0.15.9) (2026-10-19)
+
+## [0.15.8](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.7...runner-lifecycle-v0.15.8) (2026-10-19)
+
+
+### Refactoring
+
+* **runtime:** remove retired session conversation code ([#41218](https://github.com/okou-ai/okou/issues/41218)) ([b88a27d](https://github.com/okou-ai/okou/commit/b88a27dd3bc4df3a11e4e8953547d9170421e804))
+
+## [0.15.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.6...runner-lifecycle-v0.15.7) (2026-10-19)
+
 ## [0.15.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.5...runner-lifecycle-v0.15.6) (2026-10-17)
 
 

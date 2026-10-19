@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.234.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.14...runner-rs-v0.234.15) (2026-10-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.234.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.13...runner-rs-v0.234.14) (2026-10-19)
+
+
+### Bug Fixes
+
+* **firewall:** preserve parameterized host repeated root scope ([#41249](https://github.com/okou-ai/okou/issues/41249)) ([966f5e9](https://github.com/okou-ai/okou/commit/966f5e92243a0a1f4ab04d6df21b8503218689a0))
+
+
+### Documentation
+
+* **python:** correct diagnostic delivery and shutdown guarantees ([#41247](https://github.com/okou-ai/okou/issues/41247)) ([722a418](https://github.com/okou-ai/okou/commit/722a4180711359c552e48c3e5310830affec1536))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.234.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.12...runner-rs-v0.234.13) (2026-10-19)
+
+
+### Bug Fixes
+
+* **runner:** preserve codex subscription reconnect outcomes ([#41201](https://github.com/okou-ai/okou/issues/41201)) ([f359e10](https://github.com/okou-ai/okou/commit/f359e10a52ad666904a28c2c0641fba175a22631))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.234.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.11...runner-rs-v0.234.12) (2026-10-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.234.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.10...runner-rs-v0.234.11) (2026-10-19)
+
+## [0.234.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.9...runner-rs-v0.234.10) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** own service unit staging cleanup ([#41023](https://github.com/okou-ai/okou/issues/41023)) ([c4adc4b](https://github.com/okou-ai/okou/commit/c4adc4bb2a047ab7aa491da6b881f77c5f6dc10e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.8...runner-rs-v0.234.9) (2026-10-17)
 
 ### Release Dependencies

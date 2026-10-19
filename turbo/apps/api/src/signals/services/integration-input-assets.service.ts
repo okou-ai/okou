@@ -20,7 +20,7 @@ import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { fetchTeamsFile } from "../external/teams-bot-client";
 import { buildFileDownloadUrl, getFile } from "../external/telegram-client";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
-import type { WechatMessage } from "../external/wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { downloadWechatInputMedia } from "../external/wechat-input-media";
 
 type IntegrationInputResource =

@@ -687,6 +687,19 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
         )
         .await?;
     }
+    let content_filter: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/pi-content-filter.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000192",
+        &[content_filter],
+        ExpectedTerminalResult::Exact("Provider finish_reason: content_filter"),
+        Some(FailureReason::SafetyPolicyRefusal),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
     // Shared with the real TypeScript provider-boundary regression. No status
     // is inferred from the detail text by this guest entry point.
     let rate_limit: Value = serde_json::from_str(include_str!(

@@ -3,12 +3,16 @@
 use crate::diagnostics::trace::Timing;
 use serde::Serialize;
 
+mod facts;
 mod path;
 #[cfg(test)]
 mod tests;
+use facts::{Controls, Gone, Peer};
 pub(super) use path::Flow;
 pub(crate) use path::Progress;
+pub(super) use path::WireKind;
 use std::{
+    collections::VecDeque,
     future::Future,
     net::SocketAddr,
     sync::{Arc, Mutex},
@@ -157,8 +161,16 @@ pub(crate) struct Snapshot {
     pub(crate) progress: Option<Progress>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) dial: Vec<Snapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) peer: Option<Peer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) controls: Option<Controls>,
     #[serde(skip)]
-    relay_source: Option<(Trace, Option<uuid::Uuid>)>,
+    gone: VecDeque<(ts_keys::NodePublicKey, Gone)>,
+    #[serde(skip)]
+    started: std::time::Instant,
+    #[serde(skip)]
+    relay_source: Option<(Trace, Option<uuid::Uuid>, ts_keys::NodePublicKey)>,
     #[serde(skip)]
     dial_sources: Vec<Trace>,
     #[serde(skip)]
@@ -188,6 +200,10 @@ impl Trace {
                     relay: None,
                     relay_reused: false,
                     progress: None,
+                    peer: None,
+                    controls: None,
+                    gone: VecDeque::new(),
+                    started: std::time::Instant::now(),
                     relay_source: None,
                     dial: Vec::new(),
                     dial_sources: Vec::new(),
@@ -338,6 +354,10 @@ impl Trace {
         }
     }
     pub(crate) fn snapshot(&self) -> Option<Snapshot> {
+        self.snapshot_for(None)
+    }
+
+    fn snapshot_for(&self, peer: Option<ts_keys::NodePublicKey>) -> Option<Snapshot> {
         let mut state = self
             .state
             .as_ref()?
@@ -350,8 +370,8 @@ impl Trace {
                 step.status = Status::Pending;
             }
         }
-        if let Some((source, previous)) = state.relay_source.take() {
-            state.relay = source.snapshot().map(Box::new);
+        if let Some((source, previous, key)) = state.relay_source.take() {
+            state.relay = source.snapshot_for(Some(key)).map(Box::new);
             state.relay_reused = state
                 .relay
                 .as_ref()
@@ -360,6 +380,17 @@ impl Trace {
         if let Some(progress) = &mut state.progress {
             progress.freeze();
         }
+        if let Some(controls) = &mut state.controls {
+            controls.elapsed_ms = state.started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+            controls.target_gone = state
+                .gone
+                .iter()
+                .rev()
+                .find(|(key, _)| Some(*key) == peer)
+                .map(|(_, gone)| gone.clone());
+        }
+        // The raw keys used for correlation never leave the live regional trace.
+        state.gone.clear();
         if !state.dial_sources.is_empty() {
             state.dial = std::mem::take(&mut state.dial_sources)
                 .into_iter()
@@ -370,7 +401,7 @@ impl Trace {
     }
 
     /// Only regional pure state is linked; no IO or physical owner is retained.
-    pub(super) fn relay(&self, source: Self) {
+    pub(super) fn relay(&self, source: Self, peer: ts_keys::NodePublicKey) {
         if let (Some(own), Some(other)) = (&self.state, &source.state)
             && !Arc::ptr_eq(own, other)
         {
@@ -380,11 +411,12 @@ impl Trace {
                 .unwrap_or_else(|p| p.into_inner())
                 .relay_source
                 .as_ref()
-                .is_some_and(|(previous, _)| {
-                    previous
-                        .state
-                        .as_ref()
-                        .is_some_and(|previous| Arc::ptr_eq(previous, other))
+                .is_some_and(|(previous, _, key)| {
+                    *key == peer
+                        && previous
+                            .state
+                            .as_ref()
+                            .is_some_and(|previous| Arc::ptr_eq(previous, other))
                 })
             {
                 return;
@@ -393,7 +425,7 @@ impl Trace {
                 .snapshot()
                 .filter(|snapshot| !snapshot.steps.is_empty())
                 .map(|snapshot| snapshot.attempt_id);
-            self.update(|state| state.relay_source = Some((source, previous)));
+            self.update(|state| state.relay_source = Some((source, previous, peer)));
         }
     }
 

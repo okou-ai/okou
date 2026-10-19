@@ -3,6 +3,7 @@ import { debounceCommand } from "../command-scheduling.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
+import { openCreateAgentDialog$ } from "./jobs-page.ts";
 
 // ---------------------------------------------------------------------------
 // Chat navigation search query
@@ -221,9 +222,32 @@ export const setPinAgentDialogQuery$ = command(({ set }, query: string) => {
   set(internalPinAgentDialogQuery$, query);
 });
 
+// The pin manager hands off to the create-agent dialog only after it has
+// finished closing, and skips its own focus return while doing so. Swapping
+// both in one commit let that return land after the create dialog's initial
+// focus, outside the open create dialog.
+const internalPinAgentDialogHandoff$ = state(false);
+export const pinAgentDialogHandoff$ = computed((get) => {
+  return get(internalPinAgentDialogHandoff$);
+});
+
 export const openPinAgentDialog$ = command(({ set }) => {
+  set(internalPinAgentDialogHandoff$, false);
   set(internalPinAgentDialogQuery$, "");
   set(internalPinAgentDialogOpen$, true);
+});
+
+export const handOffPinAgentDialogToCreateAgent$ = command(({ set }) => {
+  set(internalPinAgentDialogHandoff$, true);
+  set(internalPinAgentDialogOpen$, false);
+});
+
+export const completePinAgentDialogClose$ = command(({ get, set }) => {
+  if (!get(internalPinAgentDialogHandoff$)) {
+    return;
+  }
+  set(internalPinAgentDialogHandoff$, false);
+  set(openCreateAgentDialog$);
 });
 
 // ---------------------------------------------------------------------------

@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "continueChat": "Lanjutkan chat",
       "dismiss": "Abaikan",
       "label": "Saran",
-      "newChat": "Chat baru",
       "next": "Saran berikutnya",
       "position": "{{current}} dari {{total}}",
-      "previous": "Saran sebelumnya"
+      "previous": "Saran sebelumnya",
+      "recoveryHint": "Periksa chat sebelum mengirim lagi. Anda dapat memulihkan saran ke draf.",
+      "restoreDraft": "Pulihkan draf",
+      "runFailed": "Tidak dapat memulai saran",
+      "runInChat": "Jalankan di chat ini",
+      "runNewChat": "Jalankan di chat baru",
+      "starting": "Memulai…"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -1788,6 +1792,7 @@
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
       "slashActions": {
+        "actions": "Tindakan",
         "archive": "Arsipkan obrolan",
         "back": "Kembali",
         "connect": "Hubungkan alat",
@@ -1801,6 +1806,11 @@
         "pin": "Sematkan obrolan",
         "rename": "Ganti nama obrolan",
         "schedule": "Jadwalkan",
+        "scheduleCustom": "Jadwal khusus",
+        "scheduleEveryMonday": "Setiap Senin",
+        "scheduleEveryMonth": "Hari pertama setiap bulan",
+        "scheduleEveryMorning": "Setiap pagi",
+        "scheduleEveryWeekday": "Setiap hari kerja",
         "scheduleHint": "Jalankan sesuai jadwal",
         "share": "Bagikan obrolan",
         "shareHint": "Bagikan tautan ke percakapan ini",
@@ -2095,14 +2105,10 @@
       "communications": "Pesan",
       "idle": "Tidak aktif",
       "loadFailed": "Gagal memuat",
-      "loading": "Memuat…",
       "messageUnavailable": "Pesan tidak tersedia",
-      "more": "Lainnya",
-      "noMessages": "Belum ada pesan",
       "origin": "Dari",
       "queued": "Dalam antrean",
       "received": "Diterima",
-      "refresh": "Muat ulang",
       "running": "Berjalan",
       "sent": "Dikirim",
       "toggleMessages": "Pesan dengan {{title}}",
@@ -2127,15 +2133,13 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "emptyArtifacts": "Belum ada artefak",
       "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
-      "title": "Sumber daya chat",
-      "viewAll": "Lihat semua"
+      "title": "Sumber daya chat"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -3957,7 +3961,6 @@
     "retry": "Coba lagi",
     "samplePages": "Halaman contoh: {{total}}",
     "title": "Dokumen",
-    "use": "Gunakan templat",
     "useNamed": "Gunakan {{title}}"
   },
   "global": {
@@ -5120,6 +5123,15 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
+      "proactiveSuggestions": {
+        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "preparationFailed": "Penyiapan tidak dapat diselesaikan. Coba lagi.",
+        "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
+        "retry": "Coba lagi",
+        "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Saran proaktif"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Tekan ⌘/Ctrl+Enter untuk mengirim, Enter untuk baris baru",
@@ -5177,7 +5189,6 @@
       "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
-      "permissionsUnknown": "Hubungkan kembali Link untuk meninjau dan mengonfirmasi izin saat ini.",
       "retry": "Coba lagi",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
       "title": "Dompet",
@@ -5207,8 +5218,7 @@
         "statusLabel": "Status",
         "title": "Transaksi Link",
         "unknownStatus": "Status tidak tersedia"
-      },
-      "workspaceScopeChanged": "Dompet Link Anda kini dapat digunakan oleh semua agen Anda di ruang kerja ini. Hubungkan kembali untuk menyetujui perubahan ini."
+      }
     },
     "workspace": {
       "danger": {
@@ -6651,6 +6661,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Akun",
+      "agentLabel": "Agen",
       "code": "Kode verifikasi",
       "connect": "Hubungkan",
       "connected": "Terhubung",
@@ -6660,11 +6672,15 @@
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat. Coba lagi.",
       "instructions": "Pindai kode QR ini dengan WeChat, lalu konfirmasi di ponsel Anda.",
+      "linkUnavailable": "Tautan ini tidak tersedia. Gunakan akun dan ruang kerja semula, lalu kirim pesan lagi di WeChat untuk mendapatkan tautan baru. Anda juga dapat memindai kode QR baru.",
       "name": "WeChat",
+      "newQr": "Hubungkan dengan kode QR baru",
       "reconnect": "Hubungkan kembali",
       "reconnect_required": "Pindai lagi untuk menghubungkan kembali.",
       "restart_required": "Akun WeChat ini sudah ditautkan. Buat kode QR baru untuk menghubungkannya kembali.",
+      "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "retry": "Buat kode QR baru",
+      "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
       "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
@@ -6672,7 +6688,8 @@
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
       "verification_required": "Masukkan kode verifikasi yang ditampilkan di WeChat.",
       "verify": "Verifikasi",
-      "waiting": "Menunggu pemindaian…"
+      "waiting": "Menunggu pemindaian…",
+      "workspaceLabel": "Ruang kerja"
     }
   }
 }

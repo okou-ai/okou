@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "continueChat": "チャットを続ける",
       "dismiss": "非表示にする",
       "label": "提案",
-      "newChat": "新しいチャット",
       "next": "次の提案",
       "position": "{{current}} / {{total}}",
-      "previous": "前の提案"
+      "previous": "前の提案",
+      "recoveryHint": "再送信する前にチャットを確認してください。提案を下書きに戻せます。",
+      "restoreDraft": "下書きに戻す",
+      "runFailed": "提案を開始できませんでした",
+      "runInChat": "このチャットで実行",
+      "runNewChat": "新しいチャットで実行",
+      "starting": "開始中…"
     },
     "attachments": {
       "attach": "添付する",
@@ -1788,6 +1792,7 @@
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
       "slashActions": {
+        "actions": "アクション",
         "archive": "チャットをアーカイブ",
         "back": "戻る",
         "connect": "ツールを接続",
@@ -1801,6 +1806,11 @@
         "pin": "チャットをピン留め",
         "rename": "チャット名を変更",
         "schedule": "スケジュール",
+        "scheduleCustom": "カスタムスケジュール",
+        "scheduleEveryMonday": "毎週月曜日",
+        "scheduleEveryMonth": "毎月1日",
+        "scheduleEveryMorning": "毎朝",
+        "scheduleEveryWeekday": "平日毎日",
         "scheduleHint": "定期的に実行",
         "share": "チャットを共有",
         "shareHint": "この会話のリンクを共有",
@@ -2095,14 +2105,10 @@
       "communications": "メッセージ",
       "idle": "待機",
       "loadFailed": "読み込み失敗",
-      "loading": "読み込み中…",
       "messageUnavailable": "メッセージ取得不可",
-      "more": "もっと見る",
-      "noMessages": "まだメッセージはありません",
       "origin": "開始元",
       "queued": "待機中",
       "received": "受信",
-      "refresh": "更新",
       "running": "実行中",
       "sent": "送信",
       "toggleMessages": "{{title}} とのメッセージ",
@@ -2127,15 +2133,13 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "emptyArtifacts": "まだアーティファクトはありません",
       "emptyLinks": "このチャットにはまだリンクがありません",
       "expand": "展開",
       "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
       "loadingLinks": "リンクを読み込み中",
       "retry": "再試行",
-      "title": "チャットのリソース",
-      "viewAll": "すべて表示"
+      "title": "チャットのリソース"
     },
     "run": {
       "collapseWorkHistory": "作業履歴を折りたたむ",
@@ -3957,7 +3961,6 @@
     "retry": "再試行",
     "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
-    "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"
   },
   "global": {
@@ -5120,6 +5123,15 @@
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
         "title": "モーニングブリーフ"
       },
+      "proactiveSuggestions": {
+        "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
+        "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "preparationFailed": "提案の設定を完了できませんでした。再試行してください。",
+        "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
+        "retry": "再試行",
+        "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",
+        "title": "先回りの提案"
+      },
       "send": {
         "cmdEnter": "⌘ 入力してください",
         "cmdEnterDescription": "⌘/Ctrl+Enter を押して送信し、Enter を押して改行します",
@@ -5177,7 +5189,6 @@
       "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
-      "permissionsUnknown": "Link に再接続して、現在の権限を確認し承認してください。",
       "retry": "再試行",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
       "title": "ウォレット",
@@ -5207,8 +5218,7 @@
         "statusLabel": "ステータス",
         "title": "Link の取引履歴",
         "unknownStatus": "ステータスを取得できません"
-      },
-      "workspaceScopeChanged": "Link ウォレットが、このワークスペース内のすべてのエージェントで使えるようになります。再接続して、この変更を承認してください。"
+      }
     },
     "workspace": {
       "danger": {
@@ -6651,6 +6661,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "アカウント",
+      "agentLabel": "エージェント",
       "code": "確認コード",
       "connect": "接続",
       "connected": "接続済み",
@@ -6660,11 +6672,15 @@
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。もう一度お試しください。",
       "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
+      "linkUnavailable": "このリンクは利用できません。元のアカウントとワークスペースを使用し、WeChat で再度メッセージを送信して新しいリンクを取得してください。新しい QR コードでも接続できます。",
       "name": "WeChat",
+      "newQr": "新しい QR コードで接続",
       "reconnect": "再接続",
       "reconnect_required": "もう一度スキャンして再接続してください。",
       "restart_required": "このWeChatアカウントはすでに連携されています。再接続するには新しいQRコードを作成してください。",
+      "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
       "retry": "新しいQRコードを作成",
+      "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
       "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
       "title": "WeChatに接続",
@@ -6672,7 +6688,8 @@
       "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
       "verification_required": "WeChatに表示された確認コードを入力してください。",
       "verify": "確認",
-      "waiting": "スキャンを待っています…"
+      "waiting": "スキャンを待っています…",
+      "workspaceLabel": "ワークスペース"
     }
   }
 }

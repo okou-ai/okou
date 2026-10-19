@@ -14,6 +14,9 @@ use super::registry_application::{RegistryDigest, RegistryPublication};
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::lock;
 use runner_host::state_file::PROXY_REGISTRY_MAX_BYTES;
+pub use runner_types::connector_registry::{
+    ConnectorRuntimeRegistryUpdate, CustomConnectorRuntimeRegistryState,
+};
 use runner_types::types::{
     ConnectorRuntimeTarget, ConnectorRuntimeTargetRegistration, FirewallEntry, NetworkPolicy,
     SecretConnectorMetadata,
@@ -188,31 +191,6 @@ pub struct ConnectorRuntimeRegistryTransaction {
 pub struct ConnectorRuntimePublication<T> {
     pub outcomes: Vec<T>,
     pub publication: Option<RegistryPublication>,
-}
-
-#[derive(Clone)]
-pub enum CustomConnectorRuntimeRegistryState {
-    Available {
-        firewall: FirewallEntry,
-        network_policy: Box<NetworkPolicy>,
-        routing_variables: HashMap<String, String>,
-    },
-    Absent,
-}
-
-#[derive(Clone)]
-pub enum ConnectorRuntimeRegistryUpdate {
-    BuiltinAvailable {
-        connector_slug: String,
-        network_policy: NetworkPolicy,
-    },
-    BuiltinAbsent {
-        connector_slug: String,
-    },
-    Custom {
-        custom_connector_id: String,
-        state: CustomConnectorRuntimeRegistryState,
-    },
 }
 
 pub enum ConnectorRuntimeFailCloseOutcome {

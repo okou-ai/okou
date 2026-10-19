@@ -4,7 +4,10 @@ import { Copy } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { copyChatResourceLink$ } from "../../signals/chat-page/chat-resources.ts";
-import { ChatResourceSectionHeading } from "./chat-resource-section.tsx";
+import {
+  ChatResourceSectionHeading,
+  ChatResourceSectionToggle,
+} from "./chat-resource-section.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -39,11 +42,12 @@ export function ChatResourceLinks({
   readonly preview?: {
     readonly limit: number;
     readonly expanded: boolean;
-    readonly onToggle: () => void;
+    readonly onToggle: (trigger: HTMLElement) => void;
   };
   readonly showHeading?: boolean;
 }) {
   const { t } = useTranslation();
+  const linksId = `${thread.threadId}-${preview ? "resource" : "sidebar"}-links`;
   const links = useLastResolved(thread.resources.links$) ?? [];
   if (links.length === 0) {
     return null;
@@ -61,12 +65,9 @@ export function ChatResourceLinks({
             return $.chat.resources.links;
           })}
           count={links.length}
-          preview={
-            preview && links.length > preview.limit ? preview : undefined
-          }
         />
       )}
-      <ul className="m-0 list-none p-0">
+      <ul id={linksId} className="m-0 list-none p-0">
         {links
           .slice(0, preview?.expanded ? undefined : preview?.limit)
           .map((link) => {
@@ -91,6 +92,13 @@ export function ChatResourceLinks({
             );
           })}
       </ul>
+      {preview && links.length > preview.limit && (
+        <ChatResourceSectionToggle
+          expanded={preview.expanded}
+          controls={linksId}
+          onToggle={preview.onToggle}
+        />
+      )}
     </section>
   );
 }

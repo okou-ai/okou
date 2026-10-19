@@ -2,8 +2,12 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { agents } from "@okouai/db/schema/agent";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { loadProactiveSuggestionsEligibility$ } from "./proactive-suggestions-eligibility.service";
 
 import { writeDb$ } from "../external/db";
 import {
@@ -62,6 +66,7 @@ export const workflowAutomationCanFire$ = command(
     const [visible] = await db
       .select({
         id: workflows.id,
+        definitionName: workflows.officialDefinitionName,
         owner: agents.owner,
         visibility: agents.visibility,
       })
@@ -80,6 +85,40 @@ export const workflowAutomationCanFire$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
+    if (visible?.definitionName === PROACTIVE_SUGGESTIONS_DEFINITION_NAME) {
+      const eligibility = await set(
+        loadProactiveSuggestionsEligibility$,
+        { orgId: automation.orgId, userId: automation.ownerUserId },
+        signal,
+      );
+      if (
+        !eligibility.available ||
+        !eligibility.enabled ||
+        eligibility.agentId !== args.agentId
+      ) {
+        return false;
+      }
+      // A primary-Agent replacement must wait for the previous installation's
+      // check. The current schedule already serializes its own occurrences.
+      const [otherCheck] = await db
+        .select({ id: agentRuns.id })
+        .from(activeAgentRuns)
+        .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
+        .where(
+          and(
+            eq(activeAgentRuns.orgId, automation.orgId),
+            eq(activeAgentRuns.userId, automation.ownerUserId),
+            inArray(agentRuns.status, ["pending", "running"]),
+            sql`${agentRuns.workflowAutomationId} IS DISTINCT FROM ${automation.id}::uuid`,
+            sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME }] })}::jsonb`,
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (otherCheck) {
+        return false;
+      }
+    }
     return (
       visible !== undefined && canReadAgent(visible, automation.ownerUserId)
     );

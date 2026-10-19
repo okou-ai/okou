@@ -6,6 +6,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
@@ -24,6 +25,7 @@ import { replyWithFeishuMessage } from "../external/feishu-client";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
+  publishUserSignal,
 } from "../external/realtime";
 import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
@@ -58,7 +60,8 @@ import {
   addFeishuThinkingReaction,
   dispatchConnectedFeishuCommand$,
   loadFeishuConversationHistory,
-  markFeishuMessageReceived,
+  feishuMessageReceivedValues,
+  feishuMessageReceivedCondition,
   replyFeishuAgentUnavailable,
   replyToUnconnectedFeishuMessage,
   feishuEffectiveAgentReadPlan,
@@ -67,6 +70,10 @@ import {
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
 } from "./feishu-dispatch.service";
+import {
+  feishuOrgChangedAdminReadPlan,
+  feishuOrgChangedUserIds,
+} from "./feishu-realtime.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
   canonicalInputFilePrompt,
@@ -653,7 +660,37 @@ async function loadFeishuIngressDispatchContext(
     botName: ingress.botName,
     messageReceivedAt: ingress.messageReceivedAt,
   };
-  await markFeishuMessageReceived({ db, installation, message }, signal);
+  const receiptArgs = { db, installation, message };
+  await (async () => {
+    if (receiptArgs.installation.messageReceivedAt) {
+      return;
+    }
+    const [markedAsReceived] = await receiptArgs.db
+      .update(feishuOrgInstallations)
+      .set(feishuMessageReceivedValues(receiptArgs.message.tenantKey))
+      .where(feishuMessageReceivedCondition(receiptArgs.message.installationId))
+      .returning({ id: feishuOrgInstallations.id });
+    signal.throwIfAborted();
+    if (markedAsReceived) {
+      await (async () => {
+        const plan = feishuOrgChangedAdminReadPlan(
+          receiptArgs.installation.orgId,
+        );
+        const admins = await receiptArgs.db
+          .select(plan.columns)
+          .from(orgMembersCache)
+          .where(plan.condition);
+        const userIds = feishuOrgChangedUserIds(
+          admins,
+          receiptArgs.installation.ownerUserId,
+        );
+        if (userIds.length === 0) {
+          return;
+        }
+        await publishUserSignal(userIds, "feishu:changed");
+      })();
+    }
+  })();
   const connection = await loadConnection(db, ingress.orgId, message);
   signal.throwIfAborted();
   return { ingress, message, installation, connection };

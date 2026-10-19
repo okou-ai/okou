@@ -81,7 +81,11 @@ impl Report {
                 }
                 text.push_str(&format!(
                     "- {}: {}.\n",
-                    words(step.stage)?,
+                    if step.stage == super::trace::Stage::Credential {
+                        "credential preparation".into()
+                    } else {
+                        words(step.stage)?
+                    },
                     words(step.status)?,
                 ));
                 if step.timing.elapsed_ms != 0 {
@@ -180,17 +184,17 @@ impl Report {
             ));
             text.push_str(&format!("- Native lifecycle first terminal observed at: {}. Node lifecycle and cleanup may complete after this operation; layered stages below are the report's captured facts.\n",
                 observed(state.terminal_at.map(timestamp))));
-            native_text(&mut text, "Native node", self.native_layers.as_ref())?;
+            native_text(&mut text, "Native node", self.native_layers.as_deref())?;
             native_text(
                 &mut text,
                 "Native connection",
-                self.native_connection.as_ref(),
+                self.native_connection.as_deref(),
             )?;
         }
         let boundary = if self.operation == super::Operation::ActiveCheck {
             "This active check verifies only newly passed connection stages at the recorded time. SSH authentication or VNC initialization does not establish later command, framebuffer or input health."
         } else {
-            "This is retained evidence; current connectivity has not been checked."
+            "These facts were captured with the operation; no additional connectivity check was performed."
         };
         if self.truncated {
             text.push_str("\nDetail omitted to retain the incident and critical path within the report budget.\n");
@@ -413,10 +417,12 @@ fn native_text(
     }
     for step in &snapshot.steps {
         text.push_str(&format!(
-            "- {subject} {}: {}; detail: {}.\n",
+            "- {subject} {}: {}; detail: {}. Elapsed {} ms.{}\n",
             words(step.stage)?,
             words(step.status)?,
-            words(step.detail)?
+            words(step.detail)?,
+            step.timing.elapsed_ms,
+            native::wait_note(step.stage, step.status, snapshot),
         ));
     }
     Some(())

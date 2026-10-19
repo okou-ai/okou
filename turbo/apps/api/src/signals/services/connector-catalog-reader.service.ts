@@ -1,12 +1,6 @@
-import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  PublicConnectorCatalogListResponse,
-  PublicConnectorCatalogDiscoveryResponse,
-  PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogStatusResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -16,17 +10,12 @@ import {
   materializeConnectorCatalogDisplayRow,
 } from "./connector-catalog-columns";
 import { computed, type Computed } from "ccstate";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
-import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import {
   connectorBriefsFromSource,
-  discoverExternalPublicConnectorCatalogStatus,
   ExternalConnectorCatalogUnavailableError,
-  listExternalPublicConnectorCatalog,
-  listExternalPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetailFromSource,
-  searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
 import {
   connectorCatalogCurrentWhere,
@@ -36,39 +25,6 @@ import {
 
 export function isConnectorCatalogUnavailableError(error: unknown): boolean {
   return error instanceof ExternalConnectorCatalogUnavailableError;
-}
-
-interface ConnectorCatalogReadArgs {
-  readonly db: ReadonlyDb;
-  readonly featureStates: ConnectorFeatureStates;
-}
-
-interface ConnectorCatalogSearchArgs extends ConnectorCatalogReadArgs {
-  readonly keyword: string | undefined;
-}
-
-export async function searchConnectorCatalog(
-  args: ConnectorCatalogSearchArgs,
-): Promise<BuiltinConnectorSearchItem[]> {
-  return await searchExternalConnectorCatalog(args);
-}
-
-export async function listPublicConnectorCatalog(
-  args: ConnectorCatalogReadArgs,
-): Promise<PublicConnectorCatalogListResponse> {
-  return await listExternalPublicConnectorCatalog(args);
-}
-
-export async function listPublicConnectorCatalogStatus(
-  args: ConnectorCatalogReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-  },
-): Promise<PublicConnectorCatalogStatusResponse> {
-  const read = await listExternalPublicConnectorCatalogStatus({
-    ...args,
-    referenceConnectorSlugs: [],
-  });
-  return read.status;
 }
 
 export function connectorBriefsFromRows(args: {
@@ -98,20 +54,6 @@ export function connectorBriefsFromRows(args: {
     ),
     featureStates: args.featureStates,
   });
-}
-
-export async function discoverPublicConnectorCatalogStatus(
-  args: ConnectorCatalogReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-    readonly keyword: string | undefined;
-    readonly category: string | undefined;
-  },
-): Promise<PublicConnectorCatalogDiscoveryResponse> {
-  const read = await discoverExternalPublicConnectorCatalogStatus({
-    ...args,
-    referenceConnectorSlugs: [],
-  });
-  return read.status;
 }
 
 export function publicConnectorCatalogPermissionDetail(

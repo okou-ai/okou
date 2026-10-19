@@ -1,3 +1,4 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { command } from "ccstate";
 import {
   connectorCatalog,
@@ -17,6 +18,7 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
 import { writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
+import { settle } from "../utils";
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import {
   customConnectorPermissionBundleDependencySlug,
@@ -27,7 +29,12 @@ import {
   connectorRuntimeSlugSelectionReadPlan,
   connectorRuntimeSlugSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
-import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
+import {
+  uniqueConnectorRuntimeTargets,
+  connectorRuntimeWakeupCondition,
+  publishConnectorRuntimeWakeupRows,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+} from "./connector-runtime-wakeup.service";
 import { changedCustomConnectorIds } from "./user-custom-connector-changes";
 import {
   effectiveCustomConnectorPermissionBundleRef,
@@ -776,8 +783,7 @@ export async function updateUserCustomConnectors(
     committed.result.status === "updated" &&
     !options.deferRuntimeWakeupUntilOuterCommit
   ) {
-    await publishConnectorRuntimeSyncWakeups({
-      db,
+    const wakeupArgs = {
       scope: {
         orgId: args.orgId,
         userId: args.userId,
@@ -786,7 +792,38 @@ export async function updateUserCustomConnectors(
       targets: committed.changedConnectorIds.map((customConnectorId) => {
         return { kind: "custom" as const, customConnectorId };
       }),
-    });
+    };
+    await (async () => {
+      const result = await settle(
+        (async () => {
+          const targets = uniqueConnectorRuntimeTargets(wakeupArgs.targets);
+          if (targets.length === 0) {
+            return;
+          }
+
+          const rows = await db
+            .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
+            .from(agentRuns)
+
+            .where(connectorRuntimeWakeupCondition(wakeupArgs.scope));
+
+          await publishConnectorRuntimeWakeupRows({
+            scope: wakeupArgs.scope,
+            targets,
+            rows,
+          });
+        })(),
+      );
+      if (!result.ok) {
+        reportConnectorRuntimeWakeupDiscoveryFailure({
+          orgId: wakeupArgs.scope.orgId,
+          scopedToUser: wakeupArgs.scope.userId !== undefined,
+          scopedToAgent: wakeupArgs.scope.agentId !== undefined,
+          targetCount: uniqueConnectorRuntimeTargets(wakeupArgs.targets).length,
+          error: result.error,
+        });
+      }
+    })();
   }
   return committed.result;
 }

@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { inferMimetype } from "../../lib/mimetype";
-import type { WechatMessage } from "./wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { downloadWechatMedia, WechatMediaDownloadError } from "./wechat-media";
 import { settle } from "../utils";
 

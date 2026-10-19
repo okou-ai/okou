@@ -1,10 +1,10 @@
 import { command } from "ccstate";
 import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
+import { AGENT_TELEMETRY_INGEST_TIMEOUT_MS } from "@okouai/api-contracts/contracts/runners";
 import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
-  sessionHistoryDownloadAttributionFields,
   type ArchiveConnectionAttempt,
   type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
@@ -12,7 +12,6 @@ import {
   type RunnerResourceBudgetUtilizationBucket,
   type RunnerStartupPath,
   type SandboxReuseResult,
-  type SessionHistoryDownloadAttribution,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -64,12 +63,11 @@ import { XResourceUsageError } from "../services/x-resource-usage-values";
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
 const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
-const TELEMETRY_INGEST_TIMEOUT_MS = 10_000;
 const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
 
-interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownloadAttribution> {
+interface SandboxOperationDimensionInput {
   readonly error?: string;
   readonly outcome?: string;
   readonly reason?: string;
@@ -130,35 +128,6 @@ interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownload
   readonly runner_resource_budget_vcpu_utilization_bucket?: RunnerResourceBudgetUtilizationBucket;
   readonly runner_resource_budget_memory_utilization_bucket?: RunnerResourceBudgetUtilizationBucket;
   readonly runner_resource_budget_lease_count_bucket?: RunnerResourceBudgetLeaseCountBucket;
-  readonly encoding?: string;
-  readonly session_history_raw_size_bucket?: string;
-  readonly session_history_encoded_size_bucket?: string;
-  readonly session_history_compression_ratio_bucket?: string;
-  readonly session_history_ref_seen_recently?: string;
-  readonly session_history_ref_download_inflight?: string;
-  readonly session_history_content_length_state?: string;
-  readonly session_history_content_encoding_state?: string;
-  readonly session_history_transfer_encoding_state?: string;
-  readonly session_history_download_source?: string;
-  readonly session_history_framework?: string;
-  readonly session_history_raw_bytes?: number;
-  readonly session_history_source_bytes?: number;
-  readonly session_history_guest_bytes?: number;
-  readonly session_history_source_representation?: string;
-  readonly session_history_restore_representation?: string;
-  readonly session_history_restore_reason?: string;
-  readonly session_history_transfer_source?: string;
-  readonly session_history_wire_codec?: string;
-  readonly session_history_codec_decision?: string;
-  readonly session_history_codec_reason?: string;
-  readonly session_history_transfer_bytes?: number;
-  readonly session_history_wire_bytes?: number;
-  readonly session_history_write_requests?: number;
-  readonly session_history_selection_ms?: number;
-  readonly session_history_file_gate_wait_ms?: number;
-  readonly session_history_requests_ms?: number;
-  readonly session_history_encoder_pipeline_ms?: number;
-  readonly session_history_publication_ms?: number;
 }
 
 interface SandboxRunnerDimensionInput {
@@ -437,60 +406,6 @@ function sandboxOperationDimensions(
         }
       : {}),
     ...runnerResourceBudgetDimensions(op),
-    ...workspaceHistoryRestoreDimensions(op),
-    ...historyTransferDimensions(op),
-    ...historyDownloadAttributionDimensions(op),
-    ...(op.encoding ? { encoding: op.encoding } : {}),
-    ...(op.session_history_raw_size_bucket
-      ? {
-          session_history_raw_size_bucket: op.session_history_raw_size_bucket,
-        }
-      : {}),
-    ...(op.session_history_encoded_size_bucket
-      ? {
-          session_history_encoded_size_bucket:
-            op.session_history_encoded_size_bucket,
-        }
-      : {}),
-    ...(op.session_history_compression_ratio_bucket
-      ? {
-          session_history_compression_ratio_bucket:
-            op.session_history_compression_ratio_bucket,
-        }
-      : {}),
-    ...(op.session_history_ref_seen_recently
-      ? {
-          session_history_ref_seen_recently:
-            op.session_history_ref_seen_recently,
-        }
-      : {}),
-    ...(op.session_history_ref_download_inflight
-      ? {
-          session_history_ref_download_inflight:
-            op.session_history_ref_download_inflight,
-        }
-      : {}),
-    ...(op.session_history_content_length_state
-      ? {
-          session_history_content_length_state:
-            op.session_history_content_length_state,
-        }
-      : {}),
-    ...(op.session_history_content_encoding_state
-      ? {
-          session_history_content_encoding_state:
-            op.session_history_content_encoding_state,
-        }
-      : {}),
-    ...(op.session_history_transfer_encoding_state
-      ? {
-          session_history_transfer_encoding_state:
-            op.session_history_transfer_encoding_state,
-        }
-      : {}),
-    ...(op.session_history_download_source
-      ? { session_history_download_source: op.session_history_download_source }
-      : {}),
   };
 }
 
@@ -505,79 +420,6 @@ function sandboxStartupContextDimensions(
     ...(op.reuse_key !== undefined ? { reuse_key: op.reuse_key } : {}),
     ...(op.home_reuse_result
       ? { home_reuse_result: op.home_reuse_result }
-      : {}),
-  };
-}
-
-function historyDownloadAttributionDimensions(
-  op: SandboxOperationDimensionInput,
-): Record<string, string | number> {
-  const dimensions: Record<string, string | number> = {};
-  for (const key of sessionHistoryDownloadAttributionFields) {
-    const value = op[key];
-    if (value !== undefined) {
-      dimensions[key] = value;
-    }
-  }
-  return dimensions;
-}
-
-function historyTransferDimensions(
-  op: SandboxOperationDimensionInput,
-): Record<string, string | number> {
-  const dimensions: Record<string, string | number> = {};
-  for (const key of [
-    "session_history_transfer_source",
-    "session_history_wire_codec",
-    "session_history_codec_decision",
-    "session_history_codec_reason",
-    "session_history_transfer_bytes",
-    "session_history_wire_bytes",
-    "session_history_write_requests",
-    "session_history_selection_ms",
-    "session_history_file_gate_wait_ms",
-    "session_history_requests_ms",
-    "session_history_encoder_pipeline_ms",
-    "session_history_publication_ms",
-  ] as const) {
-    const value = op[key];
-    if (value !== undefined) {
-      dimensions[key] = value;
-    }
-  }
-  return dimensions;
-}
-
-function workspaceHistoryRestoreDimensions(
-  op: SandboxOperationDimensionInput,
-): Record<string, string | number> {
-  return {
-    ...(op.session_history_framework
-      ? { session_history_framework: op.session_history_framework }
-      : {}),
-    ...(op.session_history_raw_bytes !== undefined
-      ? { session_history_raw_bytes: op.session_history_raw_bytes }
-      : {}),
-    ...(op.session_history_source_bytes !== undefined
-      ? { session_history_source_bytes: op.session_history_source_bytes }
-      : {}),
-    ...(op.session_history_guest_bytes !== undefined
-      ? { session_history_guest_bytes: op.session_history_guest_bytes }
-      : {}),
-    ...(op.session_history_source_representation
-      ? {
-          session_history_source_representation:
-            op.session_history_source_representation,
-        }
-      : {}),
-    ...(op.session_history_restore_representation
-      ? {
-          session_history_restore_representation:
-            op.session_history_restore_representation,
-        }
-      : {}),
-    ...(op.session_history_restore_reason
-      ? { session_history_restore_reason: op.session_history_restore_reason }
       : {}),
   };
 }
@@ -772,7 +614,7 @@ async function ingestTelemetryBatch(
     ingestAxiomDirect(
       batch.dataset,
       batch.events,
-      TELEMETRY_INGEST_TIMEOUT_MS,
+      AGENT_TELEMETRY_INGEST_TIMEOUT_MS,
       signal,
     ),
   );
@@ -813,8 +655,12 @@ function telemetryMetricEvent(
       : { scheduled_lag_ms: metric.scheduled_lag_ms }),
     mem_used: metric.mem_used,
     mem_total: metric.mem_total,
-    disk_used: metric.disk_used,
-    disk_total: metric.disk_total,
+    // Preserve supplied old Guest dimensions until #41244's producer/replay,
+    // rollback and retained-history gates pass; absent observations stay absent.
+    ...(metric.disk_used === undefined ? {} : { disk_used: metric.disk_used }),
+    ...(metric.disk_total === undefined
+      ? {}
+      : { disk_total: metric.disk_total }),
     ...(metric.rootfs === undefined
       ? {}
       : {

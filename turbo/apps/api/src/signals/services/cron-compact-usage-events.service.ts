@@ -142,7 +142,7 @@ function retainedIdentityCtes(args: {
       LIMIT ${args.rawSeedLimit}
     ),
     retained_runs AS MATERIALIZED (
-      SELECT id, org_id, user_id, created_at, trigger_source, chat_thread_id
+      SELECT id, org_id, user_id, created_at, trigger_source, chat_thread_id, status, completed_at
       FROM ${agentRuns}
       WHERE id IN (
         SELECT COALESCE(billing_run_id, run_id) FROM raw_candidates
@@ -169,7 +169,8 @@ function capturedIdentityCtes(): SQL {
   return sql`
     captured_attributions AS (
       INSERT INTO ${billingRunAttribution} (
-        run_id, org_id, user_id, run_started_at, source, thread_id, thread_context
+        run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
+        run_terminal_status, run_completed_at, run_lifecycle_context
       )
       SELECT id, org_id, user_id, created_at,
         CASE
@@ -179,7 +180,10 @@ function capturedIdentityCtes(): SQL {
           ELSE 'other'
         END,
         chat_thread_id,
-        CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
+        CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END,
+        CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN status END,
+        CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN completed_at END,
+        'captured'
       FROM retained_runs run
       WHERE NOT EXISTS (SELECT 1 FROM retained_attributions attribution WHERE attribution.run_id = run.id)
         AND EXISTS (

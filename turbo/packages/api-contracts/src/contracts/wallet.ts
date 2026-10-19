@@ -557,11 +557,7 @@ export const walletUserContract = c.router({
         ]),
         scopeChange: scopeDiffResponseSchema
           .extend({
-            reason: z.enum([
-              "permissions_changed",
-              "permissions_unknown",
-              "workspace_scope_changed",
-            ]),
+            reason: z.literal("permissions_changed"),
           })
           .nullable(),
       }),

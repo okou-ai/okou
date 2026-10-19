@@ -521,6 +521,72 @@ describe("matchFirewallBaseUrl", () => {
     });
   });
 
+  describe.each([
+    ["{sub}.example.com", "api.example.com"],
+    ["api-{region}.example.com", "api-us.example.com"],
+    ["{sub+}.example.com", "a.b.example.com"],
+    ["{sub*}.example.com", "example.com"],
+  ])("root slash scope for %s", (host, runtimeHost) => {
+    it.each([
+      ["", "/foo", "/foo"],
+      ["/", "/foo", "/foo"],
+      ["", "//foo", "//foo"],
+      ["/", "//foo", "//foo"],
+      ["//", "/foo", null],
+      ["//", "//foo", "/foo"],
+      ["//", "///foo", "//foo"],
+      ["//", "/", "/"],
+      ["//", "//", "/"],
+      ["///", "//foo", null],
+      ["///", "///foo", "/foo"],
+      ["///", "////foo", "//foo"],
+      ["///", "//", "/"],
+    ])(
+      "base path %s with request path %s",
+      (basePath, requestPath, relativePath) => {
+        const base = `https://${host}${basePath}`;
+        const url = `https://${runtimeHost}${requestPath}`;
+        const firewalls: FirewallConfig[] = [
+          {
+            name: "example",
+            apis: [
+              {
+                base,
+                auth: { headers: { Authorization: "Bearer token" } },
+                permissions: [{ name: "read", rules: ["GET /foo"] }],
+              },
+            ],
+          },
+        ];
+        const match = matchFirewallBaseUrl(url, base);
+        const decision = matchFirewallRequestDecision(firewalls, "GET", url, {
+          example: { allow: ["read"], deny: [], unknownPolicy: "deny" },
+        });
+
+        if (relativePath === null) {
+          expect(match).toBeNull();
+          expect(decision).toEqual({ kind: "no_match" });
+        } else {
+          expect(match).toMatchObject({ relativePath });
+          if (relativePath === "/foo") {
+            expect(decision).toMatchObject({
+              kind: "allow",
+              base,
+              relativePath: "/foo",
+              permission: "read",
+            });
+          } else {
+            expect(decision).toMatchObject({
+              kind: "block",
+              relativePath,
+              reason: "unknown_endpoint",
+            });
+          }
+        }
+      },
+    );
+  });
+
   it.each([
     [
       "base trailing host dot",

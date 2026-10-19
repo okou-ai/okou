@@ -10,6 +10,10 @@ import { listCommand } from "../channel/list";
 import { connectCommand } from "../connect";
 const origin = "http://localhost:3000/api/integrations/wechat";
 const channelId = randomUUID();
+const binding = {
+  workspace: { id: "org_team", name: "Operations" },
+  accountId: "scanner-owner",
+};
 const messageId = randomUUID();
 const before = randomUUID();
 const message = {
@@ -48,6 +52,8 @@ describe("okou wechat", () => {
       for (const option of [
         "channelId",
         "before",
+        "oldest",
+        "latest",
         "to",
         "text",
         "operationId",
@@ -65,7 +71,9 @@ describe("okou wechat", () => {
     });
   });
   it("discovers the verified conversation", async () => {
-    const channels = [{ id: channelId, name: "WeChat", status: "active" }];
+    const channels = [
+      { id: channelId, name: "WeChat", status: "active", binding },
+    ];
     server.use(
       http.get(`${origin}/channels`, () => {
         return HttpResponse.json({ channels });
@@ -76,6 +84,97 @@ describe("okou wechat", () => {
       channels,
     });
   });
+  it("shows the bound workspace and WeChat account", async () => {
+    server.use(
+      http.get(`${origin}/channels`, () => {
+        return HttpResponse.json({
+          channels: [
+            {
+              id: channelId,
+              name: "WeChat",
+              status: "active",
+              binding: {
+                workspace: { id: "org_team", name: "Operations" },
+                accountId: "scanner-owner",
+              },
+            },
+          ],
+        });
+      }),
+    );
+    await run(["channel", "list"]);
+    expect(output.mock.calls.flat().join("\n")).toContain(
+      "Workspace: Operations (org_team)",
+    );
+    expect(output.mock.calls.flat().join("\n")).toContain(
+      "WeChat account: scanner-owner",
+    );
+  });
+  it("resolves --to me through the current owner's verified conversation", async () => {
+    const operationId = randomUUID();
+    let sent: unknown;
+    server.use(
+      http.get(`${origin}/channels`, () => {
+        return HttpResponse.json({
+          channels: [
+            { id: channelId, name: "WeChat", status: "active", binding },
+          ],
+        });
+      }),
+      http.post(`${origin}/message`, async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json({
+          operationId,
+          messages: [
+            { id: messageId, channelId, providerMessageId: null, url: null },
+          ],
+        });
+      }),
+    );
+    await run([
+      "message",
+      "send",
+      "--to",
+      "me",
+      "--text",
+      "Hello",
+      "--operation-id",
+      operationId,
+    ]);
+    expect(sent).toStrictEqual({ channelId, operationId, text: "Hello" });
+  });
+  it.each(["missing", "reconnect_required", "multiple"])(
+    "does not send --to me for %s bindings",
+    async (state) => {
+      const channel = {
+        id: channelId,
+        name: "WeChat",
+        status: state === "reconnect_required" ? state : "active",
+        binding,
+      };
+      let sends = 0;
+      server.use(
+        http.get(`${origin}/channels`, () => {
+          return HttpResponse.json({
+            channels:
+              state === "missing"
+                ? []
+                : state === "multiple"
+                  ? [channel, { ...channel, id: randomUUID() }]
+                  : [channel],
+          });
+        }),
+        http.post(`${origin}/message`, () => {
+          sends++;
+          return new HttpResponse(null, { status: 500 });
+        }),
+      );
+      await expect(
+        run(["message", "send", "--to", "me", "--text", "Hello"]),
+      ).rejects.toThrow("process.exit");
+      expect(sends).toBe(0);
+    },
+  );
   it("keeps exact provider IDs and bounded pagination", async () => {
     let query: URLSearchParams | undefined;
     const response = {
@@ -99,12 +198,18 @@ describe("okou wechat", () => {
       before,
       "--limit",
       "25",
+      "--oldest",
+      "2026-10-01T00:00:00+08:00",
+      "--latest",
+      "2026-11-01T00:00:00Z",
       "--json",
     ]);
     expect(Object.fromEntries(query ?? [])).toStrictEqual({
       channelId,
       before,
       limit: "25",
+      oldest: "2026-10-01T00:00:00+08:00",
+      latest: "2026-11-01T00:00:00Z",
     });
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual(
       response,
@@ -207,6 +312,17 @@ describe("okou wechat", () => {
   it.each([
     ["message", "history", "--channel-id", channelId, "--limit", "101"],
     ["message", "history", "--channel-id", "not-a-conversation"],
+    ["message", "history", "--channel-id", channelId, "--oldest", "yesterday"],
+    [
+      "message",
+      "history",
+      "--channel-id",
+      channelId,
+      "--oldest",
+      "2026-11-01T00:00:00Z",
+      "--latest",
+      "2026-10-01T00:00:00Z",
+    ],
     ["message", "send", "--to", channelId, "--text", "   "],
   ])("rejects invalid command input %j", async (...args) => {
     await expect(run(args)).rejects.toThrow("process.exit");

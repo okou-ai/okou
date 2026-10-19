@@ -47,7 +47,7 @@ export const connectorAccountSummaryByTarget$ = computed(
   },
 );
 
-/** Shared brief summaries for surfaces that only display connected accounts. */
+/** Shared brief summaries of saved accounts, including those needing reconnect. */
 export const connectorOverviewAccountSummaryByTarget$ = computed(
   async (get) => {
     const { accountSummaries } = await get(connectorOverview$);

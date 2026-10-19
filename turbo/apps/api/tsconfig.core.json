@@ -589,6 +589,7 @@
     "src/signals/services/wechat-context.service.ts",
     "src/lib/wechat-conversation-context.ts",
     "src/signals/services/wechat-delivery.service.ts",
+    "src/signals/services/wechat-delivery-timing.service.ts",
     "src/signals/services/wechat-thread-typing.service.ts",
     "src/signals/services/wechat-access.service.ts",
     "src/signals/services/wechat-message-send.service.ts",
@@ -596,7 +597,8 @@
     "src/signals/services/usage-pack-upgrade-invoice-sql.ts",
     "src/signals/services/usage-pack-retained-sql.ts",
     "src/signals/services/usage-pack-pending-snapshot-plan.ts",
-    "src/signals/services/usage-pack-member-removal-plan.ts"
+    "src/signals/services/usage-pack-member-removal-plan.ts",
+    "src/signals/services/proactive-suggestions-eligibility.service.ts"
   ],
   "references": [
     {

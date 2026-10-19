@@ -1,6 +1,8 @@
-import { randomBytes } from "node:crypto";
+import {
+  wechatUpdatesSchema,
+  wechatMessageSchema,
+} from "@okouai/api-contracts/contracts/wechat-protocol";
 import { z } from "zod";
-import { isAbortError, settleIncludingAbort } from "../utils";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -73,16 +75,20 @@ async function requestWechat(
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     headers.AuthorizationType = "ilink_bot_token";
-    headers["X-WECHAT-UIN"] = Buffer.from(
-      String(randomBytes(4).readUInt32BE()),
-    ).toString("base64");
+    headers["X-WECHAT-UIN"] = btoa(
+      String(
+        new DataView(
+          crypto.getRandomValues(new Uint8Array(4)).buffer,
+        ).getUint32(0),
+      ),
+    );
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
   const response = await fetch(`${wechatOrigin(baseUrl)}${path}`, {
     method: body === undefined ? "GET" : "POST",
-    redirect: "error",
+    redirect: "manual",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
@@ -156,68 +162,18 @@ export async function pollWechatQr(
     ),
   );
 }
-const wechatCdnMediaSchema = z.object({
-  encrypt_query_param: z.string().optional(),
-  aes_key: z.string().optional(),
-  full_url: z.string().optional(),
-  encrypt_type: z.number().optional(),
-});
-export const wechatItemSchema = z.object({
-  type: z.number(),
-  text_item: z.object({ text: z.string() }).optional(),
-  image_item: z
-    .object({
-      media: wechatCdnMediaSchema.optional(),
-      aeskey: z.string().optional(),
-      mid_size: z.number().optional(),
-    })
-    .optional(),
-  voice_item: z
-    .object({
-      media: wechatCdnMediaSchema.optional(),
-      text: z.string().optional(),
-    })
-    .optional(),
-  file_item: z
-    .object({
-      media: wechatCdnMediaSchema.optional(),
-      file_name: z.string().optional(),
-      len: z.string().optional(),
-    })
-    .optional(),
-  video_item: z
-    .object({
-      media: wechatCdnMediaSchema.optional(),
-      video_size: z.number().optional(),
-    })
-    .optional(),
-  ref_msg: z
-    .object({
-      title: z.string().optional(),
-      message_item: z
-        .object({
-          type: z.number(),
-          text_item: z.object({ text: z.string() }).optional(),
-        })
-        .optional(),
+const providerUpdatesSchema = wechatUpdatesSchema.extend({
+  // One malformed provider input must not discard the rest of its batch.
+  msgs: z
+    .array(z.unknown())
+    .transform((values) => {
+      return values.flatMap((value) => {
+        const parsed = wechatMessageSchema.safeParse(value);
+        return parsed.success ? [parsed.data] : [];
+      });
     })
     .optional(),
 });
-export const wechatMessageSchema = z.object({
-  message_id: z.string().min(1),
-  from_user_id: z.string(),
-  to_user_id: z.string().optional(),
-  group_id: z.string().optional(),
-  message_type: z.number(),
-  message_state: z.number().optional(),
-  context_token: z.string().optional(),
-  item_list: z.array(wechatItemSchema).optional(),
-});
-export const wechatUpdatesSchema = z.object({
-  get_updates_buf: z.string().optional(),
-  msgs: z.array(wechatMessageSchema).optional(),
-});
-export type WechatMessage = z.infer<typeof wechatMessageSchema>;
 export async function getWechatUpdates(
   baseUrl: string,
   token: string,
@@ -225,28 +181,31 @@ export async function getWechatUpdates(
   signal: AbortSignal,
 ) {
   const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  const result = await settleIncludingAbort(
-    requestWechat(
+  try {
+    const result = await requestWechat(
       baseUrl,
       "/ilink/bot/getupdates",
       { get_updates_buf: cursor, base_info: baseInfo },
       token,
       AbortSignal.any([signal, timeoutSignal]),
-    ),
-  );
-  signal.throwIfAborted();
-  if (!result.ok) {
+    );
+    signal.throwIfAborted();
+    return providerUpdatesSchema.parse(result);
+  } catch (error) {
+    signal.throwIfAborted();
     if (
       timeoutSignal.aborted &&
-      (result.error === timeoutSignal.reason || isAbortError(result.error))
+      (error === timeoutSignal.reason ||
+        (error instanceof Error && error.name === "AbortError") ||
+        (error instanceof DOMException && error.name === "TimeoutError"))
     ) {
       // An idle long poll ends without advancing the cursor. Only this
       // request's deadline is expected; caller cancellation remains an error.
+      // workerd clones the timeout DOMException instead of preserving identity.
       return null;
     }
-    throw result.error;
+    throw error;
   }
-  return wechatUpdatesSchema.parse(result.value);
 }
 const wechatConfigSchema = z.object({
   typing_ticket: z.string().optional(),
@@ -309,7 +268,7 @@ export async function sendWechatText(
     baseUrl: string;
     token: string;
     senderId: string;
-    contextToken: string;
+    contextToken?: string;
     clientId: string;
     text: string;
   },

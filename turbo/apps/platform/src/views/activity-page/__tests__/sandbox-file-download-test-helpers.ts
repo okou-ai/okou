@@ -278,10 +278,12 @@ export function fileGuest(
         if (typeof offset !== "string" || typeof length !== "number") {
           throw new Error("Invalid file request");
         }
-        const data = Buffer.alloc(length);
-        for (let index = 0; index < data.length; index++) {
-          data[index] = (Number(offset) + index) % 251;
+        const pattern = Buffer.alloc(251);
+        const phase = Number(BigInt(offset) % BigInt(pattern.length));
+        for (let index = 0; index < pattern.length; index++) {
+          pattern[index] = (phase + index) % pattern.length;
         }
+        const data = Buffer.alloc(length, pattern);
         return { result: { offset, length, data: data.toString("base64") } };
       }
       case "finish": {

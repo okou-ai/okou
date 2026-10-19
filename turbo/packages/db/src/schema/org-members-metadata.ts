@@ -25,6 +25,8 @@ export const orgMembersMetadata = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     timezone: text("timezone"),
+    /** User intent; execution availability never overwrites this preference. */
+    proactiveSuggestionsEnabled: boolean("proactive_suggestions_enabled"),
     locale: text("locale"),
     // Retired chat preference; keep the physical column and schema in sync
     // until API versions that select it have drained before a later migration.

@@ -94,6 +94,7 @@ function providerTextFailureReason(
   )
     return "provider_overloaded";
   if (
+    semanticMessage === "provider finish_reason: content_filter" ||
     semanticMessage.startsWith(
       "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
     ) ||

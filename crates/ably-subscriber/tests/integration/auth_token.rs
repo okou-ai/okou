@@ -6,6 +6,9 @@ use httpmock::prelude::*;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite;
+use tracing::Level;
+use tracing_subscriber::prelude::*;
+use tracing_test_support::CapturedEvents;
 
 const TOKEN_EXCHANGE_RESPONSE_MAX_BYTES: usize = 64 * 1024;
 
@@ -651,8 +654,11 @@ async fn get_token_callback_error() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn token_renewal_failures_fatal() {
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
     let http = MockServer::start();
     let ws = MockAblyServer::start().await.unwrap();
 
@@ -736,4 +742,20 @@ async fn token_renewal_failures_fatal() {
     expect_subscription_closed(&mut sub, "subscription end")
         .await
         .unwrap();
+
+    let renewal_failure_levels: Vec<_> = captured
+        .entries()
+        .into_iter()
+        .filter(|event| {
+            event
+                .fields
+                .get("message")
+                .is_some_and(|message| message.starts_with("Token renewal failed:"))
+        })
+        .map(|event| event.level)
+        .collect();
+    assert_eq!(
+        renewal_failure_levels,
+        vec![Level::INFO, Level::INFO, Level::ERROR]
+    );
 }

@@ -19,7 +19,7 @@ model-provider usage billing:
   ``model_websocket_usage.py`` for WebSocket events.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -72,6 +72,7 @@ _RESPONSES_EVENT_PREFILTER_MAX_BYTES = 4096
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
 _RESPONSES_MAX_WORK_UNITS = 65_536
+_WEBSOCKET_INSPECTION_STEP_BYTES = 4096
 OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR = "work_limit_exceeded"
 
 
@@ -188,13 +189,39 @@ _RESPONSES_LIFECYCLE_SCALAR_FIELDS = {
 
 def inspect_openai_responses_client_event_json(body: bytes) -> OpenAIResponsesClientEvent:
     """Inspect exact non-generating request intent from one client event."""
+    return _finish_inspection(inspect_openai_responses_client_event_steps(body))
+
+
+def _finish_inspection[Result](steps: Generator[None, None, Result]) -> Result:
+    while True:
+        try:
+            next(steps)
+        except StopIteration as completed:
+            return completed.value
+
+
+def _inspect_websocket_json_steps(
+    extractor: JsonSelectiveExtractor, body: bytes
+) -> Generator[None, None, JsonExtractionResult]:
+    for offset in range(0, len(body), _WEBSOCKET_INSPECTION_STEP_BYTES):
+        extractor.feed(body[offset : offset + _WEBSOCKET_INSPECTION_STEP_BYTES])
+        if not extractor.accepts_more_input():
+            break
+        if offset + _WEBSOCKET_INSPECTION_STEP_BYTES < len(body):
+            yield
+    return extractor.finish()
+
+
+def inspect_openai_responses_client_event_steps(
+    body: bytes,
+) -> Generator[None, None, OpenAIResponsesClientEvent]:
+    """Inspect client intent with bounded feeds and one total-message budget."""
     extractor = JsonSelectiveExtractor(
         scalar_fields=_RESPONSES_CLIENT_SCALAR_FIELDS,
         scalar_consistency_paths={("type",), ("generate",)},
         max_work_units=_RESPONSES_MAX_WORK_UNITS,
     )
-    extractor.feed(body)
-    result = extractor.finish()
+    result = yield from _inspect_websocket_json_steps(extractor, body)
     if not result.complete:
         return OpenAIResponsesClientEvent(
             False,
@@ -306,6 +333,17 @@ def inspect_openai_responses_server_event(
     include_lifecycle: bool,
 ) -> OpenAIResponsesServerEventInspection:
     """Inspect one server frame with at most one bounded full-body parse."""
+    return _finish_inspection(
+        inspect_openai_responses_server_event_steps(event, include_lifecycle=include_lifecycle)
+    )
+
+
+def inspect_openai_responses_server_event_steps(
+    event: OpenAIResponsesEvent,
+    *,
+    include_lifecycle: bool,
+) -> Generator[None, None, OpenAIResponsesServerEventInspection]:
+    """Share one incremental parse between lifecycle and usage observations."""
     lifecycle: OpenAIResponsesServerLifecycle | None = None
     needs_lifecycle_parse = include_lifecycle
     if (
@@ -337,8 +375,7 @@ def inspect_openai_responses_server_event(
         scalar_consistency_paths=consistency_paths,
         max_work_units=_RESPONSES_MAX_WORK_UNITS,
     )
-    extractor.feed(event._body)
-    result = extractor.finish()
+    result = yield from _inspect_websocket_json_steps(extractor, event._body)
 
     if needs_lifecycle_parse:
         lifecycle = _lifecycle_from_extraction(event, extractor, result)

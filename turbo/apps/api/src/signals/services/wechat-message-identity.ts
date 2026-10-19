@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { WechatMessage } from "../external/wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 
 export function isWechatOwnerMessage(
   connection: { readonly senderId: string; readonly botId: string },

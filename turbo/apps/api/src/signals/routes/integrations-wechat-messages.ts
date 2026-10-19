@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, desc, eq, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
 import {
   integrationsWechatMessagesContract as contract,
   type WechatReceipt,
@@ -10,7 +10,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { wechatEnabled$ } from "../services/wechat-config";
+import {
+  wechatEnabled$,
+  loadWechatWorkspace$,
+} from "../services/wechat-config";
 import { requireWechatConnection$ } from "../services/wechat-access.service";
 import { sendArchivedWechatText$ } from "../services/wechat-message-send.service";
 import { integrationMessageSendLabels$ } from "../services/integration-message-context.service";
@@ -25,7 +28,12 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const channels = await set(writeDb$)
-    .select({ id: wechatConnections.id, status: wechatConnections.status })
+    .select({
+      id: wechatConnections.id,
+      status: wechatConnections.status,
+      accountId: wechatConnections.senderId,
+      workspaceId: wechatConnections.orgId,
+    })
     .from(wechatConnections)
     .where(
       and(
@@ -34,6 +42,17 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   signal.throwIfAborted();
+  if (
+    !channels.some((channel) => {
+      return channel.status !== "disconnected";
+    })
+  ) {
+    return { status: 200, body: { channels: [] } } as const;
+  }
+  const workspace = await set(loadWechatWorkspace$, auth.orgId, signal);
+  if (!workspace) {
+    return notFound("This workspace is unavailable.");
+  }
   return {
     status: 200,
     body: {
@@ -43,7 +62,14 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
         }
         return [
           {
-            ...channel,
+            id: channel.id,
+            binding: {
+              workspace: {
+                id: channel.workspaceId,
+                name: workspace.name,
+              },
+              accountId: channel.accountId,
+            },
             status: channel.status,
             name: "Your WeChat direct conversation",
           },
@@ -74,6 +100,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
         and(
           eq(wechatMessages.id, query.before),
           eq(wechatMessages.connectionId, query.channelId),
+          eq(wechatMessages.generation, access.connection.generation),
         ),
       )
       .limit(1);
@@ -104,10 +131,17 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(wechatMessages.connectionId, query.channelId),
+        eq(wechatMessages.generation, wechatConnections.generation),
         eq(wechatConnections.userId, auth.userId),
         eq(wechatConnections.orgId, auth.orgId),
         ne(wechatConnections.status, "disconnected"),
         before === undefined ? undefined : lt(wechatMessages.sequence, before),
+        query.oldest
+          ? gte(wechatMessages.createdAt, new Date(query.oldest))
+          : undefined,
+        query.latest
+          ? lt(wechatMessages.createdAt, new Date(query.latest))
+          : undefined,
       ),
     )
     .orderBy(desc(wechatMessages.sequence))

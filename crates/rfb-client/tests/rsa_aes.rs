@@ -14,8 +14,14 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream},
+    sync::Mutex,
     time::Instant,
 };
+
+// The authentication engine's two-job crypto limit is process-global.
+// Every matrix that reaches crypto must hold this guard through peer completion.
+static CRYPTO_TEST_LOCK: Mutex<()> = Mutex::const_new(());
+
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 fn key() -> TestResult<RsaPrivateKey> {
     Ok(RsaPrivateKey::new(
@@ -301,6 +307,7 @@ fn credential(user: bool) -> Result<RsaAesCredentials, Error> {
 #[tokio::test]
 async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_post_auth_transport()
 -> TestResult {
+    let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
     let private = key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
     for mode in [
@@ -335,6 +342,7 @@ async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_pos
 #[tokio::test]
 async fn large_then_small_authenticated_records_preserve_plaintext_and_late_failure_cleanup()
 -> TestResult {
+    let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
     let private = key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
     for mode in [RsaAesSecurity::Ra2, RsaAesSecurity::Ra2_256] {
@@ -403,10 +411,9 @@ async fn large_then_small_authenticated_records_preserve_plaintext_and_late_fail
 #[tokio::test]
 async fn wrong_proof_mac_subtype_raw_transition_and_security_result_never_return_a_session()
 -> TestResult {
+    let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
     let private = key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
-    // Keep related negative exchanges in one matrix: separate concurrently
-    // running crypto-heavy tests must not compete for the engine's two-job limit.
     for (mode, user, fault) in [
         (RsaAesSecurity::Ra2ne, false, Fault::Proof),
         (RsaAesSecurity::Ra2ne, false, Fault::Mac),

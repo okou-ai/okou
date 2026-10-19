@@ -2,6 +2,7 @@ export const internalRunCallbackKinds = [
   "agentphone:chat",
   "chat",
   "slack:chat",
+  "wechat:chat",
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
@@ -48,6 +49,7 @@ function isInternalRunCallbackKind(
   switch (value) {
     case "agentphone:chat":
     case "chat":
+    case "wechat:chat":
     case "slack:chat":
     case "feishu:chat":
     case "teams:chat":

@@ -14,7 +14,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { wechatItemSchema } from "../external/wechat-client";
+import { wechatItemSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { downloadWechatMedia } from "../external/wechat-media";
 import {
   requireWechatConnection$,

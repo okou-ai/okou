@@ -66,6 +66,7 @@ use telemetry::{RunnerSpawnTiming, record_api_latency};
 
 use api_contracts::generated::constants::runners::{
     AGENT_EXECUTION_TIMEOUT_SECONDS, RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
+    RUNNER_JOB_TERMINAL_GRACE_MS, RUNNER_JOB_TERMINAL_HOST_SLACK_MS,
     paths::{CANONICAL_GUEST_HOME_DIR, CANONICAL_WORKING_DIR},
 };
 use guest_contracts::exec_terminal::EXEC_TERMINAL_CLEANUP_BUDGET;
@@ -83,7 +84,7 @@ const JOB_TIMEOUT_EXIT_CODE: i32 = guest_contracts::diagnostics::AGENT_EXECUTION
 const JOB_FINALIZATION_GRACE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Host-owned allowance beyond guest terminal cleanup for scheduling,
 /// observation, and terminal proof delivery after the supervisor timeout.
-const JOB_TERMINAL_HOST_SLACK: Duration = Duration::from_millis(3_250);
+const JOB_TERMINAL_HOST_SLACK: Duration = Duration::from_millis(RUNNER_JOB_TERMINAL_HOST_SLACK_MS);
 const JOB_TERMINAL_GRACE_TIMEOUT: Duration =
     EXEC_TERMINAL_CLEANUP_BUDGET.saturating_add(JOB_TERMINAL_HOST_SLACK);
 /// Maximum time to spend writing a guest control or cancellation frame.
@@ -93,8 +94,9 @@ const PROCESS_CANCEL_TERMINAL_HOST_SLACK: Duration = Duration::from_millis(1_250
 const PROCESS_CANCEL_TERMINAL_GRACE_TIMEOUT: Duration =
     EXEC_TERMINAL_CLEANUP_BUDGET.saturating_add(PROCESS_CANCEL_TERMINAL_HOST_SLACK);
 const _: () = assert!(
-    JOB_TERMINAL_GRACE_TIMEOUT.as_nanos() == 10_000_000_000,
-    "job terminal grace changed; review guest cleanup and host slack"
+    JOB_TERMINAL_GRACE_TIMEOUT.as_nanos()
+        == Duration::from_millis(RUNNER_JOB_TERMINAL_GRACE_MS).as_nanos(),
+    "job terminal grace changed; reconcile API predecessor protection with guest cleanup and host slack"
 );
 const _: () = assert!(
     PROCESS_CANCEL_TERMINAL_GRACE_TIMEOUT.as_nanos() == 8_000_000_000,

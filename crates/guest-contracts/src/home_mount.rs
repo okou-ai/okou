@@ -19,7 +19,8 @@ pub const HOME_MOUNT_PATH: &str = "/sbin/guest-home-mount";
 /// Maximum time the guest waits for the fixed home-mount helper process.
 pub const HOME_DRIVE_MOUNT_TIMEOUT_MS: u32 = 30_000;
 
-const HOME_DRIVE_MOUNT_HELPER_TIMEOUT: Duration = Duration::from_secs(30);
+const HOME_DRIVE_MOUNT_HELPER_TIMEOUT: Duration =
+    Duration::from_millis(HOME_DRIVE_MOUNT_TIMEOUT_MS as u64);
 // A terminal frame can first wait behind another producer's bounded writer
 // lock. Reserve one complete competing frame deadline plus scheduling and
 // transport slack beyond this operation's own configured guest phases.
@@ -30,11 +31,6 @@ pub const HOME_DRIVE_MOUNT_REQUEST_DEADLINE: Duration = HOME_DRIVE_MOUNT_HELPER_
     .saturating_add(EXEC_OUTPUT_DRAIN_DEADLINE)
     .saturating_add(GUEST_FRAME_WRITE_DEADLINE)
     .saturating_add(HOME_DRIVE_MOUNT_TRANSPORT_HEADROOM);
-
-const _: () = assert!(
-    HOME_DRIVE_MOUNT_HELPER_TIMEOUT.as_millis() == HOME_DRIVE_MOUNT_TIMEOUT_MS as u128,
-    "home-mount helper duration and millisecond arguments must stay aligned"
-);
 
 const _: () = assert!(
     HOME_DRIVE_MOUNT_REQUEST_DEADLINE.as_secs() == 60,

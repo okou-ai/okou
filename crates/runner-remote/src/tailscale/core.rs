@@ -68,7 +68,7 @@ impl Core {
                 {
                     let trace = active.binding.trace();
                     trace.region(region.0.get());
-                    trace.relay(routes.evidence(region));
+                    trace.relay(routes.evidence(region), active.binding.peer_key());
                 }
             }
         }
@@ -172,7 +172,7 @@ impl Core {
             let trace = super::evidence::Trace::current();
             trace.region(region.0.get());
             if let Some(routes) = &self.relays {
-                trace.relay(routes.evidence(region));
+                trace.relay(routes.evidence(region), binding.peer_key());
             }
         }
         self.peers.endpoint(

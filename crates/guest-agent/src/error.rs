@@ -77,4 +77,8 @@ pub enum AgentError {
     /// initialized, has exited, or dropped the per-flush response channel.
     #[error("telemetry uploader unavailable")]
     TelemetryUnavailable,
+
+    /// The aggregate final telemetry budget expired before worker retirement.
+    #[error("final telemetry shutdown deadline exceeded")]
+    TelemetryShutdownTimeout,
 }

@@ -1,6 +1,7 @@
 //! Withhold DERP lengths and fixed-body shape before the public SDK codec.
 //! Framing, message decoding, handshake and cryptography remain SDK-owned.
 
+use super::evidence::Trace;
 use std::{
     io,
     pin::Pin,
@@ -8,6 +9,9 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use ts_derp::frame::{self, FrameType, Header};
+
+#[cfg(test)]
+mod tests;
 
 pub(super) struct Reader<Io> {
     io: Io,
@@ -17,10 +21,43 @@ pub(super) struct Reader<Io> {
     remaining: usize,
     rejected: bool,
     polls: usize,
+    observer: Option<Box<Observer>>,
+}
+
+struct Observer {
+    trace: Trace,
+    body: [u8; std::mem::size_of::<frame::PeerGone>()],
+    captured: usize,
+}
+
+impl Observer {
+    // Servers still send this SDK-supported legacy control frame.
+    #[allow(deprecated)]
+    fn complete(&self, header: &[u8; Header::LEN_BYTES]) {
+        let [typ, ..] = *header;
+        match FrameType::try_from(typ) {
+            Ok(FrameType::KeepAlive) => self.trace.relay_control(false),
+            Ok(FrameType::Ping) => self.trace.relay_control(true),
+            Ok(FrameType::PeerGone) => {
+                if let Ok(header) = Header::new(FrameType::PeerGone, self.captured as u32)
+                    && let Some(raw_body) = self.body.get(..self.captured)
+                {
+                    let raw = frame::RawFrame { header, raw_body };
+                    if let Some((gone, _)) = raw.as_type::<frame::PeerGone>()
+                        && let Ok(reason) = gone.reason()
+                    {
+                        self.trace.peer_gone(gone.key, reason);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 impl<Io> Reader<Io> {
     pub(super) fn new(io: Io) -> Self {
+        let trace = Trace::current();
         Self {
             io,
             header: [0; Header::LEN_BYTES],
@@ -29,6 +66,13 @@ impl<Io> Reader<Io> {
             remaining: 0,
             rejected: false,
             polls: 0,
+            observer: trace.enabled().then(|| {
+                Box::new(Observer {
+                    trace,
+                    body: [0; std::mem::size_of::<frame::PeerGone>()],
+                    captured: 0,
+                })
+            }),
         }
     }
 }
@@ -111,6 +155,9 @@ impl<Io: AsyncRead + Unpin> AsyncRead for Reader<Io> {
                     return Poll::Ready(Err(io::ErrorKind::InvalidData.into()));
                 }
                 this.remaining = body_length(&this.header);
+                if let Some(observer) = &mut this.observer {
+                    observer.captured = 0;
+                }
             }
             if this.released < Header::LEN_BYTES {
                 let count = out.remaining().min(Header::LEN_BYTES - this.released);
@@ -120,6 +167,12 @@ impl<Io: AsyncRead + Unpin> AsyncRead for Reader<Io> {
                         .ok_or(io::ErrorKind::InvalidData)?,
                 );
                 this.released += count;
+                if this.released == Header::LEN_BYTES
+                    && this.remaining == 0
+                    && let Some(observer) = &this.observer
+                {
+                    observer.complete(&this.header);
+                }
                 return Poll::Ready(Ok(()));
             }
             if this.remaining != 0 {
@@ -138,6 +191,19 @@ impl<Io: AsyncRead + Unpin> AsyncRead for Reader<Io> {
                     Poll::Ready(Ok(())) => {
                         this.remaining -= buffer.filled().len();
                         out.put_slice(buffer.filled());
+                        if let Some(observer) = &mut this.observer {
+                            if this.header.first() == Some(&(FrameType::PeerGone as u8)) {
+                                let end = observer.captured + buffer.filled().len();
+                                if let Some(target) = observer.body.get_mut(observer.captured..end)
+                                {
+                                    target.copy_from_slice(buffer.filled());
+                                    observer.captured = end;
+                                }
+                            }
+                            if this.remaining == 0 {
+                                observer.complete(&this.header);
+                            }
+                        }
                         Poll::Ready(Ok(()))
                     }
                 };

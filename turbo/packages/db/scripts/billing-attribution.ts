@@ -314,9 +314,13 @@ try {
                   // so repeating the phase converges instead of rewriting. A row
                   // whose identity disagrees with its run stays reported and
                   // unmodified, exactly as the source phases below require.
-                  `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context)
+                  `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
+                    run_terminal_status, run_completed_at, run_lifecycle_context)
                 SELECT id, org_id, user_id, created_at, ${billingUsageSource("trigger_source")}, chat_thread_id,
-                  CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
+                  CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END,
+                  CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN status END,
+                  CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN completed_at END,
+                  'captured'
                 FROM agent_runs WHERE id = ANY($1::uuid[])
                 ON CONFLICT (run_id) DO UPDATE SET thread_id = EXCLUDED.thread_id, thread_context = EXCLUDED.thread_context
                   WHERE billing_run_attribution.thread_context = 'unknown'

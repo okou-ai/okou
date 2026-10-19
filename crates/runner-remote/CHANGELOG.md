@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.28.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.28.0...runner-remote-v0.28.1) (2026-10-19)
+
+## [0.28.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.27.3...runner-remote-v0.28.0) (2026-10-19)
+
+
+### Features
+
+* **remote:** explain peer and encrypted tunnel progress in diagnostics ([#41256](https://github.com/okou-ai/okou/issues/41256)) ([01e0e74](https://github.com/okou-ai/okou/commit/01e0e74dd8aa149174a9f48be1bec4f7d0b34536))
+
+## [0.27.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.27.2...runner-remote-v0.27.3) (2026-10-19)
+
+## [0.27.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.27.1...runner-remote-v0.27.2) (2026-10-19)
+
+## [0.27.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.27.0...runner-remote-v0.27.1) (2026-10-19)
+
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.26.0...runner-remote-v0.27.0) (2026-10-19)
+
+
+### Features
+
+* **remote:** explain native tcp waits with correlated path evidence ([#41012](https://github.com/okou-ai/okou/issues/41012)) ([2ab7476](https://github.com/okou-ai/okou/commit/2ab7476b8fc882bd6530fa88308ca1b656ac54d4))
+
+
+### Bug Fixes
+
+* **runner:** finish relay dialing when the only enabled family fails ([#41025](https://github.com/okou-ai/okou/issues/41025)) ([b247bd3](https://github.com/okou-ai/okou/commit/b247bd34bf84b78e6378a7e603de75ed5a8f7abb))
+
 ## [0.26.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.25.0...runner-remote-v0.26.0) (2026-10-17)
 
 

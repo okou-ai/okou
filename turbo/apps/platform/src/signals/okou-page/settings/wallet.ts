@@ -10,7 +10,7 @@ import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { generateRouterPath } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
-import { onRef, withCleanup } from "../../utils.ts";
+import { withCleanup } from "../../utils.ts";
 
 export const walletSettingsEnabled$ = computed((get) => {
   const features = get(featureSwitch$);
@@ -21,28 +21,6 @@ export const walletSettingsEnabled$ = computed((get) => {
 });
 
 const version$ = state(0);
-const actionsElement$ = state<HTMLElement | null>(null);
-const scopeReviewReturnFocus$ = state<HTMLElement | null>(null);
-export const walletActionsRef$ = onRef(
-  command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-    set(actionsElement$, element);
-    signal.addEventListener("abort", () => {
-      set(actionsElement$, null);
-      set(scopeReviewReturnFocus$, null);
-    });
-  }),
-);
-export const prepareWalletScopeReview$ = command(
-  ({ get, set }, trigger: HTMLElement | "menu") => {
-    set(
-      scopeReviewReturnFocus$,
-      trigger === "menu" ? get(actionsElement$) : trigger,
-    );
-  },
-);
-export const walletScopeReviewReturnFocus$ = computed((get) => {
-  return get(scopeReviewReturnFocus$);
-});
 const transactionsVersion$ = state(0);
 export const walletTransactions$ = computed(async (get) => {
   get(transactionsVersion$);
@@ -99,7 +77,7 @@ const onWalletChanged$ = command(
     }
     const identity = await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
-    if (!("orgId" in parsed.data) || parsed.data.orgId === identity.orgId) {
+    if (parsed.data.orgId === identity.orgId) {
       set(refreshWalletConnection$);
     }
     return false;

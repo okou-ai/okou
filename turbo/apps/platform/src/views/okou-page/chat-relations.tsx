@@ -1,14 +1,7 @@
-import type { ReactNode } from "react";
-import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  ChevronDown,
-  ChevronRight,
-  CircleSlash,
-  RefreshCw,
-} from "lucide-react";
-import { Button, cn, LazySpinner } from "@okouai/ui";
+import { ChevronDown, ChevronRight, CircleSlash } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ChatRelationMessage,
@@ -23,7 +16,6 @@ import type {
   ChatRelationList,
   ChatRelationSignals,
   ResourceChat,
-  RelationPage,
 } from "../../signals/chat-page/chat-relations.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -33,101 +25,13 @@ import { messageDocumentToDisplayText } from "../../signals/okou-page/user-messa
 import { Link } from "../router/link.tsx";
 import {
   ChatResourceSectionHeading,
+  ChatResourceSectionToggle,
   RESOURCE_PREVIEW_LIMIT,
 } from "./chat-resource-section.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 
-function RelationsLoading() {
-  const { t } = useTranslation();
-  return (
-    <div
-      role="status"
-      aria-label={t(($) => {
-        return $.chat.relations.loading;
-      })}
-      className="flex h-12 items-center justify-center text-muted-foreground"
-    >
-      <LazySpinner size={16} aria-hidden="true" />
-    </div>
-  );
-}
-
-function RelationList<T>({
-  list,
-  data,
-  renderItem,
-  reload,
-  title,
-}: {
-  readonly list: ChatRelationList<T>;
-  readonly data: Loadable<RelationPage<T>>;
-  readonly renderItem: (item: T) => ReactNode;
-  readonly reload: () => void;
-  readonly title?: string;
-}) {
-  const { t } = useTranslation();
-  const [loadingMore, more] = useLoadableSet(list.more$);
-  const signal = useGet(pageSignal$);
-  if (data.state === "hasData" && data.data.items.length === 0) {
-    return null;
-  }
-  if (data.state === "loading") {
-    return <RelationsLoading />;
-  }
-  return (
-    <section aria-label={title} className="space-y-1">
-      {title && <h4 className="px-2 text-xs text-muted-foreground">{title}</h4>}
-      {data.state === "hasError" ? (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
-        >
-          <p>
-            {t(($) => {
-              return $.chat.relations.loadFailed;
-            })}
-          </p>
-          <Button variant="quiet" size="sm" onClick={reload}>
-            {t(($) => {
-              return $.chat.resources.retry;
-            })}
-          </Button>
-        </div>
-      ) : (
-        <>
-          <ul className="m-0 list-none p-0">
-            {data.data.items.map(renderItem)}
-          </ul>
-          {data.data.nextCursor && (
-            <Button
-              variant="quiet"
-              size="sm"
-              className="mt-1 w-full justify-start text-muted-foreground"
-              disabled={loadingMore.state === "loading"}
-              onClick={() => {
-                detach(more(signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.chat.relations.more;
-              })}
-            </Button>
-          )}
-          {loadingMore.state === "hasError" && (
-            <p role="alert" className="px-2 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.chat.relations.loadFailed;
-              })}
-            </p>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
-
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   return enabled ? <Origin signals={thread.relations} /> : null;
 }
 
@@ -143,7 +47,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
       aria-label={t(($) => {
         return $.chat.relations.origin;
       })}
-      className="flex min-h-10.5 shrink-0 items-center gap-1.5 border-b border-divider px-4 py-1.5"
+      className="flex min-h-10.5 shrink-0 items-center gap-1.5 border-divider px-4 py-1.5 has-[+div:not(:empty)]:border-b"
     >
       <h4 className="shrink-0 text-xs leading-4.5 text-muted-foreground">
         {t(($) => {
@@ -312,51 +216,56 @@ function ResourceChatRow({
   readonly signals: ChatRelationSignals;
 }) {
   const { t } = useTranslation();
-  const reload = useSet(signals.reload$);
+  const retry = useSet(signals.retry$);
   const toggle = useSet(signals.togglePeer$);
   const selectedPeer = useGet(signals.selectedPeer$);
   const messages = useGet(signals.messages$);
+  const emptyPeers = useGet(signals.confirmedEmptyPeers$);
+  const signal = useGet(pageSignal$);
   const expanded = selectedPeer === chat.threadId;
   return (
     <li>
       <div className="flex min-w-0 items-center gap-1">
         <RelatedChatLink chat={chat} />
-        <Button
-          variant="quiet"
-          size="icon-xs"
-          className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [&_svg]:size-3"
-          aria-expanded={expanded}
-          aria-label={t(
-            ($) => {
-              return $.chat.relations.toggleMessages;
-            },
-            {
-              title:
-                chat.status === "unavailable"
-                  ? t(($) => {
-                      return $.chat.relations.unavailable;
-                    })
-                  : (chat.title ??
-                    t(($) => {
-                      return $.chat.relations.untitled;
-                    })),
-            },
-          )}
-          onClick={() => {
-            toggle(chat.threadId);
-          }}
-        >
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </Button>
+        {!emptyPeers.includes(chat.threadId) && (
+          <Button
+            variant="quiet"
+            size="icon-xs"
+            className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [&_svg]:size-3"
+            aria-expanded={expanded}
+            aria-label={t(
+              ($) => {
+                return $.chat.relations.toggleMessages;
+              },
+              {
+                title:
+                  chat.status === "unavailable"
+                    ? t(($) => {
+                        return $.chat.relations.unavailable;
+                      })
+                    : (chat.title ??
+                      t(($) => {
+                        return $.chat.relations.untitled;
+                      })),
+              },
+            )}
+            onClick={(event) => {
+              detach(
+                toggle(chat.threadId, event.currentTarget, signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </Button>
+        )}
       </div>
       {expanded && messages && (
-        <div className="mb-2 ml-1 border-l border-divider pl-1">
-          <Messages
-            list={messages}
-            reload={reload}
-            unavailable={chat.status === "unavailable"}
-          />
-        </div>
+        <Messages
+          list={messages}
+          retry={retry}
+          unavailable={chat.status === "unavailable"}
+        />
       )}
     </li>
   );
@@ -364,53 +273,66 @@ function ResourceChatRow({
 
 function Messages({
   list,
-  reload,
+  retry,
   unavailable,
 }: {
   readonly list: ChatRelationList<ChatRelationMessage>;
-  readonly reload: () => void;
+  readonly retry: () => void;
   readonly unavailable: boolean;
 }) {
   const { t } = useTranslation();
   const data = useLastLoadable(list.data$);
-  if (data.state === "hasData" && data.data.items.length === 0) {
-    return (
-      <p className="px-2 py-3 text-xs text-muted-foreground">
-        {t(($) => {
-          return $.chat.relations.noMessages;
-        })}
-      </p>
-    );
+  if (
+    data.state === "loading" ||
+    (data.state === "hasData" && data.data.items.length === 0)
+  ) {
+    return null;
   }
   return (
-    <RelationList
-      list={list}
-      data={data}
-      reload={reload}
-      renderItem={(message) => {
-        return (
-          <MessageRow
-            key={message.id}
-            message={message}
-            unavailable={unavailable}
-          />
-        );
-      }}
-    />
+    <div className="mb-2 ml-1 border-l border-divider pl-1">
+      {data.state === "hasError" ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
+        >
+          <p>
+            {t(($) => {
+              return $.chat.relations.loadFailed;
+            })}
+          </p>
+          <Button variant="quiet" size="xs" onClick={retry}>
+            {t(($) => {
+              return $.chat.resources.retry;
+            })}
+          </Button>
+        </div>
+      ) : (
+        <ul className="m-0 list-none p-0">
+          {data.data.items.map((message) => {
+            return (
+              <MessageRow
+                key={message.id}
+                message={message}
+                unavailable={unavailable}
+              />
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
 function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
+  const chatsId = `${thread.threadId}-resource-messages`;
   const { t } = useTranslation();
   const signals = thread.relations;
-  const reload = useSet(signals.reload$);
+  const retry = useSet(signals.retry$);
   const chats = useLastLoadable(signals.chats.data$);
   const expanded = useGet(thread.resources.expandedSections$).messages;
   const toggleSection = useSet(thread.resources.toggleSection$);
-  const [loadingMore, more] = useLoadableSet(signals.chats.more$);
-  const signal = useGet(pageSignal$);
   if (chats.state === "loading") {
-    return <RelationsLoading />;
+    return null;
   }
   const data = chats.state === "hasData" ? chats.data : null;
   if (data && data.items.length === 0 && !data.failed) {
@@ -427,32 +349,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
         title={t(($) => {
           return $.chat.relations.communications;
         })}
-        count={data?.items.length}
-        hasMore={data?.hasMore || data?.failed}
-        preview={
-          data && (data.items.length > RESOURCE_PREVIEW_LIMIT || data.hasMore)
-            ? {
-                expanded,
-                onToggle: () => {
-                  toggleSection("messages");
-                },
-              }
-            : undefined
-        }
-      >
-        <Button
-          variant="quiet"
-          size="icon-xs"
-          showTooltip
-          className="text-muted-foreground hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/heading:opacity-100 group-focus-within/heading:opacity-100 [&_svg]:size-3.5"
-          aria-label={t(($) => {
-            return $.chat.relations.refresh;
-          })}
-          onClick={reload}
-        >
-          <RefreshCw size={14} />
-        </Button>
-      </ChatResourceSectionHeading>
+      />
       {(!data || data.failed) && (
         <div
           role="alert"
@@ -463,7 +360,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
               return $.chat.relations.loadFailed;
             })}
           </p>
-          <Button variant="quiet" size="sm" onClick={reload}>
+          <Button variant="quiet" size="sm" onClick={retry}>
             {t(($) => {
               return $.chat.resources.retry;
             })}
@@ -472,7 +369,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
       )}
       {data && (
         <>
-          <ul className="m-0 list-none p-0">
+          <ul id={chatsId} className="m-0 list-none p-0">
             {data.items
               .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT)
               .map((chat) => {
@@ -485,27 +382,14 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
                 );
               })}
           </ul>
-          {expanded && data.hasMore && (
-            <Button
-              variant="quiet"
-              size="sm"
-              className="mt-1 w-full justify-start text-muted-foreground"
-              disabled={loadingMore.state === "loading"}
-              onClick={() => {
-                detach(more(signal), Reason.DomCallback);
+          {data.items.length > RESOURCE_PREVIEW_LIMIT && (
+            <ChatResourceSectionToggle
+              expanded={expanded}
+              controls={chatsId}
+              onToggle={(trigger) => {
+                toggleSection("messages", trigger);
               }}
-            >
-              {t(($) => {
-                return $.chat.relations.more;
-              })}
-            </Button>
-          )}
-          {loadingMore.state === "hasError" && (
-            <p role="alert" className="px-2 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.chat.relations.loadFailed;
-              })}
-            </p>
+            />
           )}
         </>
       )}
@@ -518,7 +402,7 @@ export function ChatRelationships({
 }: {
   readonly thread: ChatPanelSignals;
 }) {
-  return useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations] ? (
+  return useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] ? (
     <RelationshipsInner thread={thread} />
   ) : null;
 }

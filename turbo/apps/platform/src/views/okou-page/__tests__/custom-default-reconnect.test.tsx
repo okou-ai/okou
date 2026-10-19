@@ -1,0 +1,368 @@
+import {
+  agentCustomConnectorsContract,
+  type AgentCustomConnectorGrant,
+} from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountMutationIntent,
+  type ConnectorAccountSummary,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  customConnector,
+  customConnectorAccount,
+  getConnectorAction,
+  mockOAuthCompletions,
+} from "./connector-page-test-helpers.ts";
+
+const context = testContext();
+const AGENT_ID = "00000000-0000-0000-0000-000000000001";
+
+function mockSummaries(summaries: readonly ConnectorAccountSummary[]): void {
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, { summaries: [...summaries] });
+  });
+}
+
+async function openConnection(
+  connector: ReturnType<typeof customConnector>,
+): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+  });
+  await screen.findByText(
+    connector.connected
+      ? `${connector.displayName} connected`
+      : `Okou needs ${connector.displayName} to proceed`,
+  );
+  click(
+    getConnectorAction("button", connector.connected ? "Reconnect" : "Connect"),
+  );
+  return await screen.findByRole("dialog", {
+    name: `Connect ${connector.displayName}`,
+  });
+}
+
+test.each([1, 2])(
+  "Reconnect an expired custom default with %i saved accounts",
+  async (accountCount) => {
+    let connector = customConnector({
+      slug: "_acme-search",
+      configuredFieldKeys: ["secret"],
+    });
+    const account = customConnectorAccount(connector.id, {
+      connectionStatus: "reconnect-required",
+      reconnectReason: "authorization_expired_or_revoked",
+    });
+    mockSummaries([
+      {
+        target: account.target,
+        accountCount,
+        attentionCount: 1,
+        defaultConnection: account,
+      },
+    ]);
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      return respond(200, { connectors: [connector] });
+    });
+    const mutations: ConnectorAccountMutationIntent[] = [];
+    context.mocks.api(
+      customConnectorValuesContract.set,
+      ({ body, respond }) => {
+        mutations.push(body.account);
+        connector = {
+          ...connector,
+          connected: true,
+          connectedAccountId: account.id,
+          missingRequiredFields: [],
+        };
+        return respond(200, connector);
+      },
+    );
+    let grants: AgentCustomConnectorGrant[] = [];
+    context.mocks.api(
+      agentCustomConnectorsContract.update,
+      ({ body, respond }) => {
+        grants = body.grants;
+        return respond(200, { grants });
+      },
+    );
+
+    const dialog = await openConnection(connector);
+    expect(getConnectorAction("button", "Save", dialog)).toBeDisabled();
+    await fill(within(dialog).getByLabelText("Secret"), "replacement-secret");
+    click(getConnectorAction("button", "Save", dialog));
+
+    await screen.findByText(`${connector.displayName} connected`);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", {
+          name: `Connect ${connector.displayName}`,
+        }),
+      ).toBeNull();
+    });
+    expect(mutations).toStrictEqual([
+      { intent: "reconnect", connectionId: account.id },
+    ]);
+    expect(grants).toStrictEqual([
+      { customConnectorId: connector.id, permissionNames: [] },
+    ]);
+  },
+);
+
+test("Resolve the current default instead of stale definition identity", async () => {
+  let connector = customConnector({
+    slug: "_acme-search",
+    connected: true,
+    connectedAccountId: crypto.randomUUID(),
+    configuredFieldKeys: ["secret"],
+    missingRequiredFields: [],
+  });
+  const account = customConnectorAccount(connector.id);
+  mockSummaries([
+    {
+      target: account.target,
+      accountCount: 2,
+      attentionCount: 0,
+      defaultConnection: account,
+    },
+  ]);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  const mutations: ConnectorAccountMutationIntent[] = [];
+  context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
+    mutations.push(body.account);
+    connector = { ...connector, connectedAccountId: account.id };
+    return respond(200, connector);
+  });
+  const dialog = await openConnection(connector);
+  await fill(within(dialog).getByLabelText("Secret"), "replacement-secret");
+  click(getConnectorAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", {
+        name: `Connect ${connector.displayName}`,
+      }),
+    ).toBeNull();
+  });
+  expect(mutations).toStrictEqual([
+    { intent: "reconnect", connectionId: account.id },
+  ]);
+});
+
+type PreflightState = "zero" | "pending" | "failed" | "no-default" | "expired";
+
+function installOAuthFlow(state: PreflightState, complete = false) {
+  let connector = customConnector({
+    slug: "_acme-search",
+    authMode: "oauth",
+    fields: [],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{oauth.access_token}}" },
+    ],
+    missingRequiredFields: ["oauth"],
+    oauthConfig: {
+      providerAdapter: "standard",
+      clientId: "client-id",
+      authorizationUrl: "https://acme.test/oauth/authorize",
+      tokenUrl: "https://acme.test/oauth/token",
+      tokenEndpointAuthMethod: "client_secret_post",
+      pkceMethod: "S256",
+      scopes: [],
+      authorizationParams: {},
+    },
+  });
+  const account = customConnectorAccount(connector.id, {
+    authMethod: "oauth",
+    connectionStatus: "reconnect-required",
+    reconnectReason: "authorization_expired_or_revoked",
+  });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorAccountsContract.summaries,
+    async ({ respond }) => {
+      requested.resolve();
+      if (state === "pending") {
+        await release.promise;
+      }
+      if (state === "failed") {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Account access unavailable" },
+        });
+      }
+      return respond(200, {
+        summaries:
+          state === "expired" || state === "no-default"
+            ? [
+                {
+                  target: account.target,
+                  accountCount: 2,
+                  attentionCount: 1,
+                  defaultConnection: state === "expired" ? account : null,
+                },
+              ]
+            : [],
+      });
+    },
+  );
+  const completed = mockOAuthCompletions(context);
+  const attemptId = crypto.randomUUID();
+  const mutations: ConnectorAccountMutationIntent[] = [];
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ body, respond }) => {
+      mutations.push(body.account);
+      completed.set(attemptId, account.id);
+      if (complete) {
+        connector = {
+          ...connector,
+          connected: true,
+          connectedAccountId: account.id,
+          missingRequiredFields: [],
+        };
+      }
+      return respond(200, {
+        result: "authorization",
+        oauthAttemptId: attemptId,
+        authorizationUrl: "https://acme.test/oauth/authorize",
+        connectionId: account.id,
+      });
+    },
+  );
+  const grants: AgentCustomConnectorGrant[][] = [];
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    ({ body, respond }) => {
+      grants.push(body.grants);
+      return respond(200, { grants: body.grants });
+    },
+  );
+  const authWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "about:blank" },
+    configurable: true,
+  });
+  context.mocks.browser.open(authWindow);
+  return {
+    connector: () => {
+      return connector;
+    },
+    account,
+    requested,
+    release,
+    mutations,
+    grants,
+    authWindow,
+  };
+}
+
+test("Add the first custom OAuth account after confirming zero accounts", async () => {
+  const flow = installOAuthFlow("zero");
+  const dialog = await openConnection(flow.connector());
+  click(getConnectorAction("button", "Continue", dialog));
+  await waitFor(() => {
+    expect(flow.authWindow.location.href).toBe(
+      "https://acme.test/oauth/authorize",
+    );
+  });
+  expect(flow.mutations).toStrictEqual([{ intent: "add" }]);
+  flow.authWindow.close();
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Continue", dialog)).toBeEnabled();
+  });
+});
+
+test("Cancel a pending default lookup before starting provider authorization", async () => {
+  const flow = installOAuthFlow("pending");
+  const dialog = await openConnection(flow.connector());
+  click(getConnectorAction("button", "Continue", dialog));
+  await flow.requested.promise;
+  expect(flow.authWindow.location.href).toBe("about:blank");
+  expect(flow.mutations).toStrictEqual([]);
+  click(getConnectorAction("button", "Close", dialog));
+  await waitFor(() => {
+    expect(flow.authWindow.closed).toBeTruthy();
+  });
+  flow.release.resolve();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Connect Acme Search" }),
+    ).toBeNull();
+  });
+  expect(flow.mutations).toStrictEqual([]);
+});
+
+test.each([
+  { state: "failed" as const, error: /Account access unavailable/u },
+  { state: "no-default" as const, error: /saved accounts but no default/u },
+])(
+  "Keep a $state default lookup from creating another account",
+  async ({ state, error }) => {
+    const flow = installOAuthFlow(state);
+    const dialog = await openConnection(flow.connector());
+    click(getConnectorAction("button", "Continue", dialog));
+    await within(dialog).findByText(error);
+    expect(flow.authWindow.closed).toBeTruthy();
+    expect(flow.authWindow.location.href).toBe("about:blank");
+    expect(flow.mutations).toStrictEqual([]);
+  },
+);
+
+test("Authorize an expired OAuth default only after ready completion", async () => {
+  const flow = installOAuthFlow("expired", true);
+  const dialog = await openConnection(flow.connector());
+  click(getConnectorAction("button", "Continue", dialog));
+  await waitFor(() => {
+    expect(flow.authWindow.location.href).toBe(
+      "https://acme.test/oauth/authorize",
+    );
+  });
+  flow.authWindow.close();
+  await screen.findByText("Acme Search connected");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Connect Acme Search" }),
+    ).toBeNull();
+  });
+  expect(flow.grants).toStrictEqual([
+    [{ customConnectorId: flow.connector().id, permissionNames: [] }],
+  ]);
+  expect(flow.mutations).toStrictEqual([
+    { intent: "reconnect", connectionId: flow.account.id },
+  ]);
+});
+
+test("Keep an incomplete OAuth reconnect unauthorized", async () => {
+  const flow = installOAuthFlow("expired");
+  const dialog = await openConnection(flow.connector());
+  click(getConnectorAction("button", "Continue", dialog));
+  await waitFor(() => {
+    expect(flow.authWindow.location.href).toBe(
+      "https://acme.test/oauth/authorize",
+    );
+  });
+  flow.authWindow.close();
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Continue", dialog)).toBeEnabled();
+  });
+  expect(flow.mutations).toStrictEqual([
+    { intent: "reconnect", connectionId: flow.account.id },
+  ]);
+  expect(flow.grants).toStrictEqual([]);
+  expect(screen.queryByText("Acme Search connected")).toBeNull();
+});

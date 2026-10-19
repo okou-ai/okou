@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.6](https://github.com/okou-ai/okou/compare/ably-subscriber-v1.1.5...ably-subscriber-v1.1.6) (2026-10-19)
+
+
+### Bug Fixes
+
+* **ably-subscriber:** log retryable token renewal failures at info ([#41206](https://github.com/okou-ai/okou/issues/41206)) ([ac2b79c](https://github.com/okou-ai/okou/commit/ac2b79c67cd631bb0bf360e3c9b601305aea6ec2))
+
 ## [1.1.5](https://github.com/vm0-ai/okou/compare/ably-subscriber-v1.1.4...ably-subscriber-v1.1.5) (2026-09-20)
 
 

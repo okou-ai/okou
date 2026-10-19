@@ -39,8 +39,9 @@ def assert_pending(
     """Read the current pending projection through the private socket.
 
     Buffered usage counts original source records until delivery callbacks settle;
-    retained diagnostics contribute until admission or terminal discard. Zero
-    outstanding work is independent of cumulative known delivery outcomes.
+    reports count admitted usage webhooks until delivery finishes. Process
+    diagnostics do not contribute to these counters. Zero outstanding work is
+    independent of cumulative known delivery outcomes.
     """
     control_root.mkdir(parents=True, exist_ok=True)
     reply = delivery_exchange("delivery.status", control_root)

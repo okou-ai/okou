@@ -111,7 +111,8 @@ pub(crate) fn is_content_policy_rejection_message(message: &str) -> bool {
     while let Some((value, end_index)) = parse_next_json_object(message, search_start) {
         if value
             .as_ref()
-            .is_some_and(is_content_policy_rejection_envelope)
+            .and_then(|value| value.get("error"))
+            .is_some_and(is_content_policy_rejection_error)
         {
             return true;
         }
@@ -120,23 +121,20 @@ pub(crate) fn is_content_policy_rejection_message(message: &str) -> bool {
     false
 }
 
-/// Exact OpenAI-compatible content-policy rejection envelope.
+/// Exact OpenAI-compatible content-policy rejection error object.
 ///
 /// Providers behind the OpenAI-compatible surface report a content-safety
 /// rejection as an `invalid_request_error` whose message is a fixed phrase
 /// rather than a request-shape complaint. Match the message, type, and code
 /// together so a genuine malformed request, which shares the same error type,
 /// keeps its unclassified actionable failure.
-fn is_content_policy_rejection_envelope(value: &Value) -> bool {
-    value.get("error").is_some_and(|error| {
-        error.get("type").and_then(Value::as_str) == Some(CONTENT_POLICY_REJECTION_ERROR_TYPE)
-            && error.get("code").and_then(Value::as_str)
-                == Some(CONTENT_POLICY_REJECTION_ERROR_TYPE)
-            && error
-                .get("message")
-                .and_then(Value::as_str)
-                .is_some_and(|message| message.trim() == CONTENT_POLICY_REJECTION_MESSAGE)
-    })
+pub(crate) fn is_content_policy_rejection_error(error: &Value) -> bool {
+    error.get("type").and_then(Value::as_str) == Some(CONTENT_POLICY_REJECTION_ERROR_TYPE)
+        && error.get("code").and_then(Value::as_str) == Some(CONTENT_POLICY_REJECTION_ERROR_TYPE)
+        && error
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.trim() == CONTENT_POLICY_REJECTION_MESSAGE)
 }
 
 /// Parse the next embedded JSON object, returning the value when it decodes and

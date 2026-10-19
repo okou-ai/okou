@@ -930,6 +930,41 @@
       }
     },
     {
+      "name": "parameterized host repeated root slash base rejects an unscoped path",
+      "url": "https://api.example.com/foo",
+      "base": "https://{sub}.example.com//",
+      "expected": {
+        "kind": "no-match"
+      }
+    },
+    {
+      "name": "parameterized host repeated root slash base preserves path boundary",
+      "url": "https://api.example.com//foo",
+      "base": "https://{sub}.example.com//",
+      "expected": {
+        "kind": "match",
+        "relativePath": "/foo"
+      }
+    },
+    {
+      "name": "parameterized host repeated root slash base matches its exact normalized root",
+      "url": "https://api.example.com/",
+      "base": "https://{sub}.example.com//",
+      "expected": {
+        "kind": "match",
+        "relativePath": "/"
+      }
+    },
+    {
+      "name": "parameterized host repeated root slash base retains additional relative slashes",
+      "url": "https://api.example.com///foo",
+      "base": "https://{sub}.example.com//",
+      "expected": {
+        "kind": "match",
+        "relativePath": "//foo"
+      }
+    },
+    {
       "name": "runtime URL with userinfo fails closed",
       "url": "https://user:pass@api.github.com/repos",
       "base": "https://api.github.com",
@@ -971,6 +1006,98 @@
     }
   ],
   "finalDecisionCases": [
+    {
+      "name": "parameterized repeated root slash base does not select credentials outside its scope",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://{sub}.example.com//",
+              "auth": { "headers": { "Authorization": "Bearer token" } },
+              "permissions": [{ "name": "read", "rules": ["GET /foo"] }]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": { "allow": ["read"], "deny": [], "unknownPolicy": "deny" }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/foo"
+      },
+      "expected": { "kind": "no_match" }
+    },
+    {
+      "name": "parameterized repeated root slash base selects the intended permission",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://{sub}.example.com//",
+              "auth": { "headers": { "Authorization": "Bearer token" } },
+              "permissions": [{ "name": "read", "rules": ["GET /foo"] }]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": { "allow": ["read"], "deny": [], "unknownPolicy": "deny" }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com//foo"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://{sub}.example.com//",
+        "relativePath": "/foo",
+        "permission": "read",
+        "rule": "GET /foo"
+      }
+    },
+    {
+      "name": "parameterized repeated root slash scope outranks the ordinary root base",
+      "firewalls": [
+        {
+          "name": "example",
+          "apis": [
+            {
+              "base": "https://{sub}.example.com/",
+              "auth": { "headers": { "Authorization": "Bearer root-token" } },
+              "permissions": [{ "name": "root.read", "rules": ["GET //foo"] }]
+            },
+            {
+              "base": "https://{sub}.example.com//",
+              "auth": { "headers": { "Authorization": "Bearer scoped-token" } },
+              "permissions": [{ "name": "read", "rules": ["GET /foo"] }]
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "example": {
+          "allow": ["read", "root.read"],
+          "deny": [],
+          "unknownPolicy": "deny"
+        }
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com//foo"
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "example",
+        "base": "https://{sub}.example.com//",
+        "relativePath": "/foo",
+        "permission": "read",
+        "rule": "GET /foo"
+      }
+    },
     {
       "name": "no base match returns no_match",
       "firewalls": [

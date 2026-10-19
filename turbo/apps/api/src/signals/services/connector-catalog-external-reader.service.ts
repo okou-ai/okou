@@ -282,43 +282,37 @@ function measureCatalogLoadSync<T>(
   return timing ? timing.measureSync(actionType, operation) : operation();
 }
 
-async function readCurrentRuntimeCatalogRows(args: {
-  readonly db: ReadonlyDb;
-  readonly identity: ExternalCatalogIdentity;
-  readonly timing?: ConnectorCatalogLoadTiming;
-}) {
-  return await measureCatalogLoad(
-    args.timing,
-    "api_dispatch_connector_catalog_query_payload",
-    async () => {
-      return await args.db
-        .select({
-          slug: connectorCatalogRuntimeColumns.slug,
-          authMethods: connectorCatalogRuntimeColumns.authMethods,
-          mcp: connectorCatalogRuntimeColumns.mcp,
-          label: connectorCatalogRuntimeColumns.label,
-          description: connectorCatalogRuntimeColumns.description,
-          category: connectorCatalogRuntimeColumns.category,
-          icon: connectorCatalogRuntimeColumns.icon,
-          tags: connectorCatalogRuntimeColumns.tags,
-          generation: connectorCatalogRuntimeColumns.generation,
-          skill: connectorCatalogRuntimeColumns.skill,
-          firewall: connectorCatalogRuntimeColumns.firewall,
-        })
-        .from(connectorCatalogEntries)
-        .where(eq(connectorCatalogEntries.hash, args.identity.catalogDigest))
-        .orderBy(asc(connectorCatalogEntries.slug));
-    },
-  );
-}
-
 async function readCurrentCatalog(args: {
   readonly db: ReadonlyDb;
   readonly identity: ExternalCatalogIdentity;
   readonly capability: ExecutableCapabilityState;
   readonly timing?: ConnectorCatalogLoadTiming;
 }): Promise<AcceptedConnectorCatalogSnapshot> {
-  const rows = await readCurrentRuntimeCatalogRows(args);
+  const rows = await (async () => {
+    return await measureCatalogLoad(
+      args.timing,
+      "api_dispatch_connector_catalog_query_payload",
+      async () => {
+        return await args.db
+          .select({
+            slug: connectorCatalogRuntimeColumns.slug,
+            authMethods: connectorCatalogRuntimeColumns.authMethods,
+            mcp: connectorCatalogRuntimeColumns.mcp,
+            label: connectorCatalogRuntimeColumns.label,
+            description: connectorCatalogRuntimeColumns.description,
+            category: connectorCatalogRuntimeColumns.category,
+            icon: connectorCatalogRuntimeColumns.icon,
+            tags: connectorCatalogRuntimeColumns.tags,
+            generation: connectorCatalogRuntimeColumns.generation,
+            skill: connectorCatalogRuntimeColumns.skill,
+            firewall: connectorCatalogRuntimeColumns.firewall,
+          })
+          .from(connectorCatalogEntries)
+          .where(eq(connectorCatalogEntries.hash, args.identity.catalogDigest))
+          .orderBy(asc(connectorCatalogEntries.slug));
+      },
+    );
+  })();
   // A published artifact contains at least one connector. A whole-catalog
   // read must not turn an unavailable generation into a successful empty list.
   if (rows.length === 0) {

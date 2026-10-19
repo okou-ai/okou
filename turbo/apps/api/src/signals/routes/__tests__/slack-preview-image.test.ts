@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { escapeAttribute } from "entities/escape";
 import { http, HttpResponse } from "msw";
 import sharp from "sharp";
@@ -18,7 +17,6 @@ import { artifactOgRoutes } from "../artifact-og";
 import { slackEventsRoutes } from "../slack-events";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const integrations = createBddIntegrationApi(context);
@@ -39,12 +37,9 @@ async function fixture() {
     botScopes: "chat:write,im:write,users:read,links:read,links:write",
     installerSlackUserId: authorSlackUserId,
   });
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SlackOpenGraphPreviews]: true,
-  });
   await flushWaitUntilForTest();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
-  return { actor, teamId };
+  return { teamId };
 }
 
 /** Obtain capabilities through a real signed webhook, without signing test URLs. */
@@ -181,10 +176,6 @@ describe("Slack preview thumbnails", () => {
       );
     }
     const urls = await previewUrls(f.teamId, sources);
-    // Previously issued URLs remain usable when new preview production is off.
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      [FeatureSwitchKey.SlackOpenGraphPreviews]: false,
-    });
     for (const [index, url] of urls.entries()) {
       const response = await accept(readImage(url), [200]);
       expect(response.headers.get("content-type")).toBe("image/png");

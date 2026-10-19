@@ -1,5 +1,86 @@
 # Changelog
 
+## [9.402.0](https://github.com/okou-ai/okou/compare/cli-v9.401.4...cli-v9.402.0) (2026-10-19)
+
+
+### Features
+
+* **suggestions:** add opt-in hourly proactive suggestions ([#41251](https://github.com/okou-ai/okou/issues/41251)) ([154bc8a](https://github.com/okou-ai/okou/commit/154bc8acb035843ea47c99f6f56f5779698c6bbb))
+
+
+### Refactoring
+
+* retire artifact preview wire compatibility ([#41305](https://github.com/okou-ai/okou/issues/41305)) ([9b8bf22](https://github.com/okou-ai/okou/commit/9b8bf22ebd17f157abd67822f65c8771b6e314d6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.574.0
+    * @okouai/core bumped to 8.769.2
+    * @okouai/pi-agent-runtime bumped to 1.50.24
+
+## [9.401.4](https://github.com/okou-ai/okou/compare/cli-v9.401.3...cli-v9.401.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* **wechat:** recover dm replies and improve conversation tools ([#41215](https://github.com/okou-ai/okou/issues/41215)) ([654e918](https://github.com/okou-ai/okou/commit/654e918b1962876fb33696475f836e5a9842cb27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.4
+    * @okouai/connectors bumped to 3.16.10
+    * @okouai/core bumped to 8.769.1
+    * @okouai/pi-agent-runtime bumped to 1.50.23
+
+## [9.401.3](https://github.com/okou-ai/okou/compare/cli-v9.401.2...cli-v9.401.3) (2026-10-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.3
+    * @okouai/core bumped to 8.769.0
+    * @okouai/pi-agent-runtime bumped to 1.50.22
+
+## [9.401.2](https://github.com/okou-ai/okou/compare/cli-v9.401.1...cli-v9.401.2) (2026-10-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.2
+    * @okouai/core bumped to 8.768.0
+    * @okouai/pi-agent-runtime bumped to 1.50.21
+
+## [9.401.1](https://github.com/okou-ai/okou/compare/cli-v9.401.0...cli-v9.401.1) (2026-10-19)
+
+
+### Documentation
+
+* **cli:** correct vnc network rebind guidance ([#41018](https://github.com/okou-ai/okou/issues/41018)) ([05feb23](https://github.com/okou-ai/okou/commit/05feb23d324709bd90620b4f027f538fe53974de))
+
+
+### Refactoring
+
+* **vnc:** require canonical private-network metadata ([#41009](https://github.com/okou-ai/okou/issues/41009)) ([38331a6](https://github.com/okou-ai/okou/commit/38331a61885b86154b21c5585387e250bede70ae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.1
+    * @okouai/core bumped to 8.767.1
+    * @okouai/pi-agent-runtime bumped to 1.50.20
+
 ## [9.401.0](https://github.com/okou-ai/okou/compare/cli-v9.400.3...cli-v9.401.0) (2026-10-17)
 
 

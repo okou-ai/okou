@@ -22,6 +22,7 @@ import {
 } from "./official-workflow-catalog-read.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { loadProactiveSuggestionsEligibility$ } from "./proactive-suggestions-eligibility.service";
 
 // Temporary AgentSuggestion rollout (#39591). At GA, move the test instructions
 // into morning-brief, converge installations back to that definition, retire
@@ -45,7 +46,13 @@ export const selectedMorningBriefDefinition$ = command(
       set(loadUserFeatureSwitchContext$, owner.orgId, owner.userId, signal),
     ]);
     signal.throwIfAborted();
-    return org?.defaultAgentId === owner.agentId &&
+    const proactive = await set(
+      loadProactiveSuggestionsEligibility$,
+      owner,
+      signal,
+    );
+    return proactive.enabled &&
+      org?.defaultAgentId === owner.agentId &&
       isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)
       ? INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME
       : MORNING_BRIEF_OFFICIAL_DEFINITION_NAME;

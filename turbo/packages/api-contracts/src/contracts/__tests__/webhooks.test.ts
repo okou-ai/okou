@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 
 import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
-import historyDownloadAttribution from "./fixtures/runner-history-download-attribution.json";
 
-import {
-  RESUME_SESSION_HISTORY_MAX_BYTES,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-} from "../runners";
 import {
   knownRunFailureReasonSchema,
   runFailureReasonTokenSchema,
@@ -29,66 +23,6 @@ import {
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
-
-describe("bounded session-history download attribution", () => {
-  it("accepts the shared Runner upload fixture without changing its measurements", () => {
-    expect(
-      webhookTelemetryContract.send.body.parse(historyDownloadAttribution),
-    ).toEqual(historyDownloadAttribution);
-  });
-
-  it("accepts legacy uploads and strips undeclared customer/transport details", () => {
-    const legacy = {
-      ts: "2026-01-15T10:00:00Z",
-      action_type: "session_history_download",
-      duration_ms: 10,
-      success: true,
-    };
-    expect(
-      webhookTelemetryContract.send.body.parse({
-        runId: "run",
-        sandboxOperations: [
-          {
-            ...legacy,
-            session_history_download_url:
-              "https://private.invalid/history?signature=private",
-            session_history_ref_hash: "private",
-            session_history_attempts: [{ body: "private", key: "private" }],
-          },
-        ],
-      }),
-    ).toEqual({ runId: "run", sandboxOperations: [legacy] });
-  });
-
-  it.each([
-    { session_history_observation_stage: "arbitrary" },
-    { session_history_download_attempt: 0 },
-    { session_history_download_attempt: 4 },
-    { session_history_attempt_count: 4 },
-    { session_history_failed_attempt_count: -1 },
-    { session_history_interrupted_attempt_count: 4 },
-    { session_history_retry_count: 3 },
-    { session_history_request_start_offset_ms: -1 },
-    { session_history_body_end_offset_ms: 0.5 },
-    { session_history_chunk_wait_ms: Number.MAX_SAFE_INTEGER + 1 },
-    { session_history_chunk_wait_max_ms: Infinity },
-    { session_history_chunk_count: 4_294_967_296 },
-    { session_history_body_copy_ms: "private" },
-    { session_history_cpu_admission_end_offset_ms: -1 },
-    { session_history_cpu_queue_end_offset_ms: NaN },
-    { session_history_restore_wait_end_offset_ms: -1 },
-    { session_history_timing_origin_unix_ms: -1 },
-  ])("rejects out-of-contract measurements %j", (invalid) => {
-    expect(
-      webhookTelemetryContract.send.body.safeParse({
-        ...historyDownloadAttribution,
-        sandboxOperations: [
-          { ...historyDownloadAttribution.sandboxOperations[0], ...invalid },
-        ],
-      }).success,
-    ).toBe(false);
-  });
-});
 
 describe("captured runtime usage identities", () => {
   it.each(["okou-1.0", "@preset/okou-1-0", "@preset/" + "x".repeat(247)])(
@@ -466,173 +400,6 @@ describe("Sandbox transient session output", () => {
   });
 });
 
-describe("home history restore telemetry", () => {
-  const operation = {
-    ts: "2026-09-15T00:00:00Z",
-    action_type: "session_history_home_cache_guest_restore",
-    duration_ms: 1234,
-    success: true,
-  };
-
-  it("preserves local source and completed payload measurements", () => {
-    const measured = {
-      ...operation,
-      session_history_framework: "codex",
-      session_history_raw_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-      session_history_source_bytes: 1024,
-      session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-      session_history_source_representation: "codex_zstd",
-      session_history_restore_representation: "raw",
-      session_history_restore_reason: "codex_pruning_guard",
-    };
-    const parsed = webhookTelemetryContract.send.body.parse({
-      runId: "run",
-      sandboxOperations: [{ ...measured, session_history_ref_hash: "private" }],
-    });
-    expect(parsed.sandboxOperations).toStrictEqual([measured]);
-  });
-
-  it("preserves zero measurements and accepts legacy operations without metadata", () => {
-    const zero = {
-      ...operation,
-      session_history_raw_bytes: 0,
-      session_history_source_bytes: 0,
-      session_history_guest_bytes: 0,
-    };
-    expect(
-      webhookTelemetryContract.send.body.parse({
-        runId: "run",
-        sandboxOperations: [operation, zero],
-      }).sandboxOperations,
-    ).toStrictEqual([operation, zero]);
-  });
-
-  it("rejects out-of-contract byte values and representation categories", () => {
-    for (const invalid of [
-      { session_history_raw_bytes: -1 },
-      { session_history_source_bytes: 1.5 },
-      { session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES + 1 },
-      { session_history_framework: "unknown-framework" },
-      { session_history_source_representation: "gzip" },
-      { session_history_restore_representation: "json" },
-      { session_history_restore_reason: "arbitrary" },
-      { session_history_wire_codec: "gzip" },
-      { session_history_codec_decision: "arbitrary" },
-      { session_history_codec_decision: "sample_accepted" },
-      { session_history_codec_reason: "arbitrary" },
-      { session_history_transfer_source: "arbitrary-path" },
-      { session_history_wire_bytes: Number.MAX_SAFE_INTEGER + 1 },
-      { session_history_transfer_bytes: -1 },
-      { session_history_write_requests: 0 },
-      { session_history_write_requests: Number.MAX_SAFE_INTEGER + 1 },
-      { session_history_selection_ms: -1 },
-      { session_history_file_gate_wait_ms: 0.5 },
-      { session_history_requests_ms: -1 },
-      { session_history_encoder_pipeline_ms: -1 },
-      { session_history_publication_ms: -1 },
-    ]) {
-      expect(
-        webhookTelemetryContract.send.body.safeParse({
-          runId: "run",
-          sandboxOperations: [{ ...operation, ...invalid }],
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("preserves measured wire costs separately from logical history representation", () => {
-    const transferMeasurements = {
-      ...operation,
-      action_type: "session_history_transfer",
-      session_history_framework: "codex",
-      session_history_restore_representation: "raw",
-      session_history_transfer_source: "home_cache",
-      session_history_wire_codec: "zstd",
-      session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-      session_history_wire_bytes: 144 * 1024 * 1024,
-      session_history_write_requests: 9,
-      session_history_selection_ms: 0,
-      session_history_file_gate_wait_ms: 0,
-      session_history_requests_ms: 20,
-      session_history_encoder_pipeline_ms: 15,
-      session_history_publication_ms: 0,
-    };
-    const transfer = {
-      ...transferMeasurements,
-      session_history_codec_decision: "above_threshold",
-    };
-    const legacyTransfer = {
-      ...transferMeasurements,
-      session_history_codec_reason: "sample_accepted",
-    };
-    const failed = {
-      ...operation,
-      action_type: "session_history_transfer",
-      success: false,
-      session_history_transfer_source: "downloaded",
-    };
-    const empty = {
-      ...transfer,
-      session_history_transfer_source: "inline",
-      session_history_transfer_bytes: 0,
-      session_history_wire_bytes: 0,
-      session_history_write_requests: 1,
-      session_history_wire_codec: "none",
-      session_history_codec_decision: "below_threshold",
-    };
-    const nativeZstd = {
-      ...transfer,
-      session_history_restore_representation: "codex_zstd",
-      session_history_wire_codec: "none",
-      session_history_codec_decision: "native_zstd",
-      session_history_wire_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-      session_history_encoder_pipeline_ms: 0,
-    };
-    const sourceZstd = {
-      ...transfer,
-      session_history_framework: "pi",
-      session_history_transfer_source: "downloaded",
-      session_history_codec_decision: "source_zstd",
-      session_history_transfer_bytes: 64 * 1024,
-      session_history_wire_bytes: 1024,
-      session_history_write_requests: 1,
-      session_history_encoder_pipeline_ms: 0,
-      session_history_publication_ms: 2,
-    };
-    const largeInline = {
-      ...transfer,
-      session_history_transfer_source: "inline",
-      session_history_transfer_bytes: 256 * 1024 * 1024,
-      session_history_wire_bytes: 288 * 1024 * 1024,
-      session_history_write_requests: 18,
-    };
-    expect(
-      webhookTelemetryContract.send.body.parse({
-        runId: "run",
-        sandboxOperations: [
-          transfer,
-          legacyTransfer,
-          failed,
-          empty,
-          nativeZstd,
-          sourceZstd,
-          largeInline,
-          operation,
-        ],
-      }).sandboxOperations,
-    ).toStrictEqual([
-      transfer,
-      legacyTransfer,
-      failed,
-      empty,
-      nativeZstd,
-      sourceZstd,
-      largeInline,
-      operation,
-    ]);
-  });
-});
-
 describe("Pi memory citation event transport", () => {
   const citation = {
     entries: [
@@ -888,16 +655,23 @@ describe("agent completion failure reasons", () => {
 describe("webhook telemetry contract", () => {
   it("preserves metric payload compatibility across Guest and API rollout", () => {
     const runId = "00000000-0000-4000-8000-000000000000";
-    const oldMetric = {
+    const metric = {
       ts: "2026-09-01T00:00:00.000Z",
       cpu: 91.25,
       mem_used: 1024,
       mem_total: 2048,
-      disk_used: 4096,
-      disk_total: 8192,
     };
+    const oldMetric = { ...metric, disk_used: 4096, disk_total: 8192 };
     const fullMetric = {
-      ...oldMetric,
+      ...metric,
+      rootfs: {
+        used_bytes: 4096,
+        total_bytes: 8192,
+        available_bytes: 3072,
+        used_inodes: 4,
+        total_inodes: 8,
+        available_inodes: 3,
+      },
       cpu_steal_percent: 12.5,
       scheduled_lag_ms: 17,
       control_cpu_usage_usec: 101,
@@ -908,7 +682,7 @@ describe("webhook telemetry contract", () => {
       workload_cpu_throttled_usec: 5,
     };
     const partialMetric = {
-      ...oldMetric,
+      ...metric,
       scheduled_lag_ms: 29,
       workload_cpu_usage_usec: 301,
     };
@@ -932,15 +706,6 @@ describe("webhook telemetry contract", () => {
       }).metrics,
     ).toStrictEqual([partialMetric]);
 
-    const legacyMetricSchema = z.object({
-      ts: z.string(),
-      cpu: z.number(),
-      mem_used: z.number(),
-      mem_total: z.number(),
-      disk_used: z.number(),
-      disk_total: z.number(),
-    });
-    expect(legacyMetricSchema.parse(fullMetric)).toStrictEqual(oldMetric);
     expect(
       webhookTelemetryContract.send.body.parse({
         runId,
@@ -1267,64 +1032,6 @@ describe("webhook telemetry contract", () => {
         ],
       }).success,
     ).toBe(false);
-  });
-
-  it("accepts known session history download sources", () => {
-    const result = webhookTelemetryContract.send.body.safeParse({
-      runId: "00000000-0000-4000-8000-000000000000",
-      sandboxOperations: [
-        {
-          ts: "2026-01-15T10:00:00.000Z",
-          action_type: "session_history_download",
-          duration_ms: 10,
-          success: true,
-          session_history_download_source:
-            SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-        },
-      ],
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("drops unknown session history download source strings", () => {
-    const result = webhookTelemetryContract.send.body.safeParse({
-      runId: "00000000-0000-4000-8000-000000000000",
-      sandboxOperations: [
-        {
-          ts: "2026-01-15T10:00:00.000Z",
-          action_type: "session_history_download",
-          duration_ms: 10,
-          success: true,
-          session_history_download_source: "regional_edge_cache",
-        },
-      ],
-    });
-
-    expect(result.success).toBe(true);
-    if (!result.success) {
-      throw new Error("expected webhook telemetry body to parse");
-    }
-    expect(
-      result.data.sandboxOperations?.[0]?.session_history_download_source,
-    ).toBeUndefined();
-  });
-
-  it("rejects non-string session history download sources", () => {
-    const result = webhookTelemetryContract.send.body.safeParse({
-      runId: "00000000-0000-4000-8000-000000000000",
-      sandboxOperations: [
-        {
-          ts: "2026-01-15T10:00:00.000Z",
-          action_type: "session_history_download",
-          duration_ms: 10,
-          success: true,
-          session_history_download_source: 123,
-        },
-      ],
-    });
-
-    expect(result.success).toBe(false);
   });
 });
 

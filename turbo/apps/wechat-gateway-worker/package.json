@@ -10,7 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@okouai/core": "workspace:*",
+    "@okouai/api-contracts": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260903.1",

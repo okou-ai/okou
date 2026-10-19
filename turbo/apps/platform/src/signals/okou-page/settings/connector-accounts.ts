@@ -2,37 +2,79 @@ import { command } from "ccstate";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
+  type ConnectorAccountMutationIntent,
+  type ConnectorAccountSummary,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
+import type { CustomConnectorAccountMutationIntent } from "./connector-account-dialogs.ts";
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
   reloadConnectorAccountSummaries$,
 } from "../connector-accounts.ts";
 
-export async function readConnectorAccountCount(
+async function readConnectorAccountSummary(
   createClient: ApiClientFactory,
   target: ConnectorAccountTarget,
   signal: AbortSignal,
-): Promise<number> {
+): Promise<ConnectorAccountSummary | undefined> {
   const result = await accept(
     createClient(connectorAccountsContract).summaries({
       fetchOptions: { signal },
     }),
     [200],
+    signal,
   );
+  return result.body.summaries.find((summary) => {
+    return (
+      connectorAccountTargetKey(summary.target) ===
+      connectorAccountTargetKey(target)
+    );
+  });
+}
+
+export async function readConnectorAccountCount(
+  createClient: ApiClientFactory,
+  target: ConnectorAccountTarget,
+  signal: AbortSignal,
+): Promise<number> {
   return (
-    result.body.summaries.find((summary) => {
-      return (
-        connectorAccountTargetKey(summary.target) ===
-        connectorAccountTargetKey(target)
-      );
-    })?.accountCount ?? 0
+    (await readConnectorAccountSummary(createClient, target, signal))
+      ?.accountCount ?? 0
   );
+}
+
+export async function resolveCustomConnectorAccountMutation(
+  createClient: ApiClientFactory,
+  customConnectorId: string,
+  account: CustomConnectorAccountMutationIntent,
+  signal: AbortSignal,
+): Promise<ConnectorAccountMutationIntent> {
+  if (account.intent !== "default") {
+    return account;
+  }
+  const summary = await readConnectorAccountSummary(
+    createClient,
+    { kind: "custom", customConnectorId },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (summary?.defaultConnection) {
+    return {
+      intent: "reconnect",
+      connectionId: summary.defaultConnection.id,
+    };
+  }
+  if (summary && summary.accountCount > 0) {
+    throw new Error(
+      "This connector has saved accounts but no default. Choose an account in Connectors settings.",
+    );
+  }
+  return { intent: "add" };
 }
 
 export async function readConnectorOAuthCompletion(

@@ -10,6 +10,12 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+export type BillingRunTerminalStatus =
+  "completed" | "failed" | "cancelled" | "timeout";
+
+export type BillingRunLifecycleContext =
+  "unknown" | "captured" | "legacy_unavailable";
+
 /** Content-free reconciliation identity; deliberately independent of content FKs.
  * A run with no incurred or outstanding billing obligation is provisional, not
  * permanently retained evidence.
@@ -29,6 +35,16 @@ export const billingRunAttribution = pgTable(
     // distinct from a run that genuinely had no thread.
     threadId: uuid("thread_id"),
     threadContext: text("thread_context").notNull().default("unknown"),
+    // Receipt metadata, independent of Run retention. A captured nonterminal Run
+    // has neither terminal field. Older writers leave the context unknown.
+    runTerminalStatus: text(
+      "run_terminal_status",
+    ).$type<BillingRunTerminalStatus>(),
+    runCompletedAt: timestamp("run_completed_at"),
+    runLifecycleContext: text("run_lifecycle_context")
+      .$type<BillingRunLifecycleContext>()
+      .notNull()
+      .default("unknown"),
     // Monotone evidence marker; identity fields remain immutable. A raw event's
     // normal compaction or existing teardown cannot make billed work provisional.
     usageObserved: boolean("usage_observed").notNull().default(false),
@@ -51,6 +67,18 @@ export const billingRunAttribution = pgTable(
         (${table.threadContext} = 'thread' AND ${table.threadId} IS NOT NULL)
         OR (${table.threadContext} IN ('threadless', 'unknown') AND ${table.threadId} IS NULL)
       )`,
+      ),
+      check(
+        "billing_run_attribution_lifecycle_check",
+        sql`(
+          (${table.runLifecycleContext} IN ('unknown', 'legacy_unavailable')
+            AND ${table.runTerminalStatus} IS NULL AND ${table.runCompletedAt} IS NULL)
+          OR (${table.runLifecycleContext} = 'captured' AND (
+            (${table.runTerminalStatus} IS NULL AND ${table.runCompletedAt} IS NULL)
+            OR (${table.runTerminalStatus} IS NOT NULL
+              AND ${table.runTerminalStatus} IN ('completed', 'failed', 'cancelled', 'timeout'))
+          ))
+        )`,
       ),
     ];
   },

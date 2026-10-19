@@ -17,7 +17,7 @@ import { writeDb$ } from "../external/db";
 import {
   getWechatTypingTicket,
   sendWechatTyping,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import { settle } from "../utils";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { internalRunCallbackKindForRecord } from "./internal-run-callback";

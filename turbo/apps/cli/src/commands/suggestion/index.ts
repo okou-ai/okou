@@ -1,4 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { Command } from "commander";
 import { z } from "zod";
 import {
@@ -69,6 +70,35 @@ export function createSuggestionCommand() {
   const suggestionCommand = new Command("suggestion").description(
     "Manage your next-step suggestions from Okou",
   );
+  suggestionCommand
+    .command("identity")
+    .description(
+      "Derive a stable UUID for one source object/event and next action",
+    )
+    .requiredOption(
+      "--key <key>",
+      "Stable provider, object/event identity and specific action; exclude run IDs and dates",
+    )
+    .option("--json", "Output JSON")
+    .action(
+      withErrorHandler(
+        async (options: { readonly key: string; readonly json?: boolean }) => {
+          const key = z.string().trim().min(1).max(2048).parse(options.key);
+          // UUID v5 with a fixed Okou suggestion namespace; this never publishes an item.
+          const bytes = createHash("sha1")
+            .update(Buffer.from("a91f53c81e9d54d6a3f99cda27e35e48", "hex"))
+            .update(key)
+            .digest()
+            .subarray(0, 16);
+          bytes[6] = (bytes.readUInt8(6) & 0x0f) | 0x50;
+          bytes[8] = (bytes.readUInt8(8) & 0x3f) | 0x80;
+          const hex = bytes.toString("hex");
+          const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+          console.log(options.json ? JSON.stringify({ id }) : id);
+        },
+        jsonError,
+      ),
+    );
   suggestionCommand
     .command("list")
     .description(

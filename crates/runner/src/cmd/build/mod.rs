@@ -329,7 +329,7 @@ async fn acquire_rootfs_lock_for_image_build(
     rootfs_hash: &str,
     rootfs_paths: &RootfsPaths,
 ) -> RunnerResult<RootfsImageLock> {
-    acquire_rootfs_lock_for_image_build_inner(paths, rootfs_hash, rootfs_paths, || {}).await
+    acquire_rootfs_lock_for_image_build_inner(paths, rootfs_hash, rootfs_paths, || {}, || {}).await
 }
 
 async fn acquire_rootfs_lock_for_image_build_inner(
@@ -337,6 +337,7 @@ async fn acquire_rootfs_lock_for_image_build_inner(
     rootfs_hash: &str,
     rootfs_paths: &RootfsPaths,
     mut before_shared_lock: impl FnMut(),
+    mut before_exclusive_lock: impl FnMut(),
 ) -> RunnerResult<RootfsImageLock> {
     let rootfs_lock_path = paths.rootfs_lock(rootfs_hash);
 
@@ -358,6 +359,7 @@ async fn acquire_rootfs_lock_for_image_build_inner(
             continue;
         }
 
+        before_exclusive_lock();
         tracing::info!(
             "acquiring exclusive rootfs lock for image build: {}",
             rootfs_lock_path.display()

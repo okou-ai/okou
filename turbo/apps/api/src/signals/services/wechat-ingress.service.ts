@@ -28,8 +28,9 @@ import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
-import type { WechatMessage } from "../external/wechat-client";
-import { nowDate } from "../../lib/time";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
+import { monotonicNow, nowDate } from "../../lib/time";
+import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
@@ -56,6 +57,16 @@ import {
 } from "./chat-thread-queue-drain.service";
 
 type Connection = typeof wechatConnections.$inferSelect;
+
+export class WechatIngressError extends Error {
+  constructor(
+    readonly reason: "default_agent_unavailable" | "attachment_unavailable",
+    readonly retryable: boolean,
+  ) {
+    super(`WeChat input unavailable: ${reason}`);
+    this.name = "WechatIngressError";
+  }
+}
 
 function activeBinding(connection: Connection) {
   return and(
@@ -130,7 +141,7 @@ const ensureThread$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!agent) {
-      throw new Error("WeChat workspace has no default agent");
+      throw new WechatIngressError("default_agent_unavailable", false);
     }
     const owner = { orgId: connection.orgId, userId: connection.userId };
     const initialModel = await set(
@@ -297,7 +308,7 @@ const materializeWechatUserMessage$ = command(
       })
     ) {
       // Keep the durable provider batch until a transient import can be retried.
-      throw new Error("WeChat attachment import is temporarily unavailable");
+      throw new WechatIngressError("attachment_unavailable", true);
     }
     return createUserMessageDocument({
       text: args.text,
@@ -338,9 +349,14 @@ export const receiveWechatMessage$ = command(
   ) => {
     const { connection, message } = args;
     // Only the verified scanner's direct messages can become an Okou input.
+    // A provider can redeliver an old long-poll batch after reconnection. Only
+    // messages demonstrably created after consent belong to this new binding.
     if (
       connection.status !== "active" ||
-      !isWechatOwnerMessage(connection, message)
+      !isWechatOwnerMessage(connection, message) ||
+      (connection.resumedAt !== null &&
+        (message.create_time_ms === undefined ||
+          message.create_time_ms <= connection.resumedAt.getTime()))
     ) {
       return;
     }
@@ -349,6 +365,8 @@ export const receiveWechatMessage$ = command(
       connection.generation,
       message.message_id,
     );
+    const receivedAt = nowDate().toISOString();
+    const receivedStartedAt = monotonicNow();
     const { context, attachments, mediaCiphertext } =
       await wechatMessageMaterial(connection, message, message.context_token);
     signal.throwIfAborted();
@@ -410,6 +428,7 @@ export const receiveWechatMessage$ = command(
     );
     signal.throwIfAborted();
     if (inserted.length > 0) {
+      recordWechatMessageReceived(id, threadId, receivedAt, receivedStartedAt);
       waitUntil(
         set(
           reconcileWechatThreadTyping$,

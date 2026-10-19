@@ -198,23 +198,36 @@ test("updates the wallet after a workspace notification", async () => {
   );
 });
 
-test.each([false, true])(
-  "shows authorization errors and keeps the existing connection when connected=%s",
-  async (connected) => {
+test.each([
+  "not-connected",
+  "connected",
+  "scope-mismatch",
+  "reconnect-required",
+] as const)(
+  "shows authorization errors and allows retry when connectionStatus=%s",
+  async (connectionStatus) => {
     context.mocks.browser.open(null);
     context.mocks.api(walletUserContract.status, ({ respond }) => {
-      return respond(200, connection(connected));
+      return respond(200, {
+        ...connection(
+          connectionStatus === "connected" ||
+            connectionStatus === "scope-mismatch",
+        ),
+        connectionStatus,
+      });
     });
     context.mocks.api(walletUserContract.connect, ({ never }) => {
       return never();
     });
     await openWallet();
-    const label = connected ? "Reconnect" : "Connect";
-    click(await (connected ? menuItem(label) : button(label)));
+    const label =
+      connectionStatus === "not-connected" ? "Connect" : "Reconnect";
+    const inMenu = connectionStatus === "connected";
+    click(await (inMenu ? menuItem(label) : button(label)));
     await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
       "Couldn’t complete the action.",
     );
-    const retry = await (connected ? menuItem(label) : button(label));
+    const retry = await (inMenu ? menuItem(label) : button(label));
     expect(retry).toBeEnabled();
     expect(retry).not.toHaveAttribute("aria-disabled", "true");
   },
@@ -250,7 +263,7 @@ test("reconnects an existing wallet without disconnecting it first", async () =>
   );
 });
 
-test("reviews changed scopes and keeps the warning until new consent completes", async () => {
+test("reconnects changed scopes directly and keeps the warning until new consent completes", async () => {
   let status: WalletConnectionStatus = {
     ...connection(true),
     connectionStatus: "scope-mismatch",
@@ -282,85 +295,70 @@ test("reviews changed scopes and keeps the warning until new consent completes",
   });
   await openWallet();
   await screen.findByText("Update permissions");
-  click(await button("Review permissions"));
-  await screen.findByRole("dialog", { name: "Link permissions update" });
-  expect(screen.getByText("userinfo:read")).toBeVisible();
-  expect(screen.getByText("legacy:read")).toBeVisible();
-  click(await button("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Link permissions update" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(opened.calls).toHaveLength(0);
-  click(await button("Review permissions"));
+  expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+  expect(screen.queryByText("Review permissions")).not.toBeInTheDocument();
   click(await button("Reconnect"));
   await waitFor(() => {
     expect(popup.location.href).toBe(authorizationUrl);
   });
-  expect(screen.getByText("Update permissions")).toBeVisible();
+  expect(opened.calls).toHaveLength(1);
+  expect(
+    screen.queryByRole("dialog", { name: "Link permissions update" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText("Update permissions")).toBeInTheDocument();
+  expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   status = connection(true);
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
   await waitFor(() => {
-    expect(screen.queryByText("Update permissions")).not.toBeInTheDocument();
     expect(screen.getByText("Connected")).toBeInTheDocument();
   });
+  expect(screen.queryByText("Update permissions")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((element) => {
+      return element.textContent?.trim() === "Reconnect";
+    }),
+  ).toBeFalsy();
 });
 
-test.each([
-  [
-    "workspace_scope_changed",
-    "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change.",
-  ],
-  [
-    "permissions_unknown",
-    "Reconnect Link to review and confirm its current permissions.",
-  ],
-] as const)(
-  "explains %s before requesting new consent",
-  async (reason, description) => {
-    context.mocks.api(walletUserContract.status, ({ respond }) => {
-      return respond(200, {
-        ...connection(false),
-        connectionStatus: "scope-mismatch",
-        scopeChange: {
-          reason,
-          addedScopes: [],
-          removedScopes: [],
-          currentScopes: ["payment_methods.agentic", "userinfo:read"],
-          storedScopes: [],
-        },
-      });
-    });
-    context.mocks.api(walletUserContract.connect, ({ never }) => {
-      return never();
-    });
-    await openWallet();
-    click(await button("Review permissions"));
-    await screen.findByRole("dialog", { name: "Link permissions update" });
-    expect(screen.getByText(description)).toBeVisible();
-    await expect(button("Reconnect")).resolves.toBeEnabled();
-  },
-);
-
-test("offers reconnect for an expired authorization instead of a first-time connection", async () => {
+test("reconnects an expired authorization directly from its status", async () => {
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  context.mocks.browser.open(popup);
   context.mocks.api(walletUserContract.status, ({ respond }) => {
     return respond(200, {
       ...connection(false),
       connectionStatus: "reconnect-required",
     });
   });
+  context.mocks.api(walletUserContract.connect, ({ respond }) => {
+    return respond(200, {
+      url: authorizationUrl,
+      expiresAt: "2026-10-15T10:00:00Z",
+    });
+  });
+  context.mocks.api(walletUserContract.disconnect, ({ never }) => {
+    return never();
+  });
   await openWallet();
   await screen.findByText("Reconnect required");
-  await expect(menuItem("Reconnect")).resolves.not.toHaveAttribute(
+  click(await button("Reconnect"));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(authorizationUrl);
+  });
+  expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+  expect(screen.getByText("Reconnect required")).toBeInTheDocument();
+  await expect(menuItem("Disconnect")).resolves.not.toHaveAttribute(
     "aria-disabled",
     "true",
   );
   expect(
     queryAllByRoleFast("menuitem").some((item) => {
-      return item.textContent?.trim() === "Disconnect";
+      return item.textContent?.trim() === "Reconnect";
     }),
-  ).toBeTruthy();
+  ).toBeFalsy();
 });
 
 test("offers Disconnect for a previously unfinished provider revocation", async () => {
@@ -447,42 +445,6 @@ test("shows a transaction error separately from connection status and retries to
   fail = false;
   click(await button("Retry"));
   await within(list).findByText("No purchase requests yet");
-});
-
-test("opens scope review from the reconnect menu without starting consent immediately", async () => {
-  const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
-  context.mocks.api(walletUserContract.status, ({ respond }) => {
-    return respond(200, {
-      ...connection(true),
-      connectionStatus: "scope-mismatch",
-      scopeChange: {
-        reason: "permissions_changed",
-        addedScopes: ["userinfo:read"],
-        removedScopes: [],
-        currentScopes: ["userinfo:read"],
-        storedScopes: [],
-      },
-    });
-  });
-  await openWallet();
-  await screen.findByText("Update permissions");
-  click(await menuItem("Reconnect"));
-  await screen.findByRole("dialog", { name: "Link permissions update" });
-  expect(screen.getByText("userinfo:read")).toBeInTheDocument();
-  expect(opened.calls).toHaveLength(0);
-  click(await button("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Link permissions update" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(screen.getByText("Update permissions")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(document.activeElement).toHaveAttribute(
-      "aria-label",
-      "More options",
-    );
-  });
 });
 
 test("replaces recorded approvals with actual Link activity after permission is granted", async () => {

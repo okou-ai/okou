@@ -36,12 +36,14 @@ import { waitForOperation, waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
   readConnectorAccountCount,
+  resolveCustomConnectorAccountMutation,
   readConnectorOAuthCompletion,
 } from "./connector-accounts.ts";
 import type { ConnectorConnectSuccess } from "./connectors.ts";
 import type {
   ConnectorAccountConnectMode,
-  ConnectorAccountMutationOptions,
+  CustomConnectorAccountMutationIntent,
+  CustomConnectorAccountMutationOptions,
 } from "./connector-account-dialogs.ts";
 
 const internalReload$ = state(0);
@@ -488,7 +490,7 @@ export const setCustomConnectorValuesForAgent$ = command(
 interface CustomConnectorAuthorizationTargetArgs {
   readonly id: string;
   readonly authorizationTarget: CustomConnectorAuthorizationTarget;
-  readonly account: PlatformConnectorAccountMutationIntent;
+  readonly account: CustomConnectorAccountMutationIntent;
   readonly useDefaultConnectorProjection?: boolean;
   readonly onSuccess?: (
     result: CustomConnectorConnectionResult,
@@ -597,12 +599,19 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
     );
     let navigated = false;
     let initialAccountCount: number | undefined;
-    const startResult = await withCleanup(
+    const { startResult, account } = await withCleanup(
       (async () => {
         const createClient = get(apiClient$);
+        const account = await resolveCustomConnectorAccountMutation(
+          createClient,
+          args.id,
+          args.account,
+          signal,
+        );
+        signal.throwIfAborted();
         initialAccountCount =
           args.authorizationTarget.kind === "visible-agents" &&
-          args.account.intent === "add"
+          account.intent === "add"
             ? await readConnectorAccountCount(
                 createClient,
                 { kind: "custom", customConnectorId: args.id },
@@ -611,16 +620,15 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
             : undefined;
         const result = await set(
           startCustomConnectorAuthorization$,
-          args,
+          { id: args.id, account },
           signal,
         );
         signal.throwIfAborted();
-        if (result.body.result === "connected") {
-          return result.body;
+        if (result.body.result === "authorization") {
+          authWindow.location.href = result.body.authorizationUrl;
+          navigated = true;
         }
-        authWindow.location.href = result.body.authorizationUrl;
-        navigated = true;
-        return result.body;
+        return { startResult: result.body, account };
       })(),
       () => {
         if (!navigated) {
@@ -664,7 +672,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
     const connectionId = await readConnectorOAuthCompletion(
       get(apiClient$),
       { kind: "custom", customConnectorId: args.id },
-      args.account,
+      account,
       startResult.oauthAttemptId,
       signal,
     );
@@ -727,7 +735,7 @@ export const connectCustomConnectorAuthorization$ = command(
     { set },
     args: {
       readonly id: string;
-      readonly account: PlatformConnectorAccountMutationIntent;
+      readonly account: CustomConnectorAccountMutationIntent;
       readonly useDefaultConnectorProjection?: boolean;
       readonly onSuccess?: CustomConnectorAuthorizationTargetArgs["onSuccess"];
     },
@@ -777,7 +785,7 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
     args: {
       readonly id: string;
       readonly agentId: string;
-      readonly account: PlatformConnectorAccountMutationIntent;
+      readonly account: CustomConnectorAccountMutationIntent;
       readonly useDefaultConnectorProjection?: boolean;
       readonly onSuccess?: CustomConnectorAuthorizationTargetArgs["onSuccess"];
     },
@@ -801,12 +809,12 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
 
 const submitCustomConnectorConnectionCommand$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly connector: CustomConnectorResponse;
       readonly agentId?: string;
       readonly values: readonly CustomConnectorValueInput[];
-      readonly accountOptions: ConnectorAccountMutationOptions;
+      readonly accountOptions: CustomConnectorAccountMutationOptions;
       readonly accountMode?: ConnectorAccountConnectMode;
     },
     onSuccess: ConnectorConnectSuccess | undefined,
@@ -839,10 +847,17 @@ const submitCustomConnectorConnectionCommand$ = command(
         : await set(connectCustomConnectorAuthorization$, options, signal);
       return result.connected;
     }
+    const account = await resolveCustomConnectorAccountMutation(
+      get(apiClient$),
+      args.connector.id,
+      args.accountOptions.account,
+      signal,
+    );
+    signal.throwIfAborted();
     const options = {
       id: args.connector.id,
       values: args.values,
-      account: args.accountOptions.account,
+      account,
     };
     const result = args.agentId
       ? await set(

@@ -606,17 +606,21 @@ impl ApiProvider {
         error: &ProviderError,
         now: Instant,
     ) {
-        let Some(api_error) = eligible_poll_transport_error(error) else {
-            log_poll_failure(reason, error);
-            return;
+        let retryable = match error {
+            ProviderError::ApiStatus(api_error) => is_transient_http_status(api_error.status),
+            _ => eligible_poll_transport_error(error).is_some(),
+        };
+        let observation = if retryable {
+            Some(
+                self.poll_degradation_tracker
+                    .observe_failure(now, POLL_DEGRADED_AFTER)
+                    .await,
+            )
+        } else {
+            None
         };
 
-        let observation = self
-            .poll_degradation_tracker
-            .observe_failure(now, POLL_DEGRADED_AFTER)
-            .await;
-
-        log_retryable_poll_failure(reason, api_error, observation);
+        log_poll_failure(reason, error, observation);
     }
 
     async fn record_poll_success_at(&self, reason: PollReason, now: Instant) {
@@ -995,20 +999,11 @@ impl JobProvider for ApiProvider {
                 Ok(()) => return,
                 Err(e) => {
                     let (retryable, status, failure_kind) = match &e {
-                        ProviderError::ApiStatus(api_error) => {
-                            let status = api_error.status;
-                            (
-                                matches!(
-                                    status,
-                                    StatusCode::REQUEST_TIMEOUT
-                                        | StatusCode::MISDIRECTED_REQUEST
-                                        | StatusCode::TOO_EARLY
-                                        | StatusCode::TOO_MANY_REQUESTS
-                                ) || status.is_server_error(),
-                                api_error.status.as_str(),
-                                "http_status",
-                            )
-                        }
+                        ProviderError::ApiStatus(api_error) => (
+                            is_transient_http_status(api_error.status),
+                            api_error.status.as_str(),
+                            "http_status",
+                        ),
                         ProviderError::ApiTransport(api_error) => {
                             (true, "", api_error.failure_kind.as_str())
                         }
@@ -1061,17 +1056,21 @@ impl JobProvider for ApiProvider {
     }
 }
 
+fn is_transient_http_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::REQUEST_TIMEOUT
+            | StatusCode::MISDIRECTED_REQUEST
+            | StatusCode::TOO_EARLY
+            | StatusCode::TOO_MANY_REQUESTS
+    ) || status.is_server_error()
+}
+
 fn classify_claim_failure(error: &ClaimApiError) -> ClaimFailureDecision {
     match error {
         ClaimApiError::Request(ProviderError::ApiStatus(api_error)) => {
             let status = api_error.status;
-            let transient = matches!(
-                status,
-                StatusCode::REQUEST_TIMEOUT
-                    | StatusCode::MISDIRECTED_REQUEST
-                    | StatusCode::TOO_EARLY
-                    | StatusCode::TOO_MANY_REQUESTS
-            ) || status.is_server_error();
+            let transient = is_transient_http_status(status);
             ClaimFailureDecision {
                 class: if transient {
                     ClaimFailureClass::HttpTransient
@@ -1189,10 +1188,18 @@ fn log_retryable_poll_failure(
     );
 }
 
-fn log_poll_failure(reason: PollReason, error: &ProviderError) {
+fn log_poll_failure(
+    reason: PollReason,
+    error: &ProviderError,
+    observation: Option<DegradationObservation>,
+) {
     let poll_reason = poll_reason_value(reason);
     match error {
         ProviderError::ApiTransport(api_error) => {
+            if let Some(observation) = observation {
+                log_retryable_poll_failure(reason, api_error, observation);
+                return;
+            }
             let request = &api_error.request;
             error!(
                 endpoint = request.endpoint_label,
@@ -1210,6 +1217,35 @@ fn log_poll_failure(reason: PollReason, error: &ProviderError) {
             );
         }
         ProviderError::ApiStatus(api_error) => {
+            if let Some(observation) = observation {
+                let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
+                if observation.emit_degradation {
+                    error!(
+                        endpoint = api_error.endpoint_label,
+                        status = api_error.status.as_u16(),
+                        failure_kind = "http_status",
+                        poll_reason,
+                        consecutive_failures = observation.consecutive_failures,
+                        failure_elapsed_ms,
+                        will_retry = true,
+                        degraded = observation.degraded,
+                        "poll fallback degraded"
+                    );
+                } else {
+                    info!(
+                        endpoint = api_error.endpoint_label,
+                        status = api_error.status.as_u16(),
+                        failure_kind = "http_status",
+                        poll_reason,
+                        consecutive_failures = observation.consecutive_failures,
+                        failure_elapsed_ms,
+                        will_retry = true,
+                        degraded = observation.degraded,
+                        "poll failed, will retry"
+                    );
+                }
+                return;
+            }
             error!(
                 endpoint = api_error.endpoint_label,
                 status = api_error.status.as_u16(),
@@ -3467,6 +3503,154 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn poll_transient_http_failures_log_retry_without_response_bodies() {
+        const STATUS_BODY: &str = "sensitive-transient-poll-status-body";
+
+        for status in [408, 421, 425, 429, 500, 502, 503, 504, 599] {
+            for (reason, expected_reason) in [
+                (PollReason::Immediate, "immediate"),
+                (PollReason::Deferred, "deferred"),
+                (PollReason::WakeupRetry, "wakeup_retry"),
+                (PollReason::Slow, "slow"),
+                (PollReason::Fast, "fast"),
+            ] {
+                let provider = idle_api_provider_for_test();
+                let error = ProviderError::ApiStatus(Box::new(ApiStatusError {
+                    endpoint_label: "poll",
+                    status: StatusCode::from_u16(status).unwrap(),
+                    body: STATUS_BODY.to_string(),
+                }));
+                let (_, events) = capture_api_provider_events(provider.record_poll_failure_at(
+                    reason,
+                    &error,
+                    Instant::now(),
+                ))
+                .await;
+                let retry = captured_event(&events, "poll failed, will retry");
+
+                assert_eq!(retry.level, Level::INFO, "status={status}");
+                assert_eq!(event_field(retry, "endpoint"), "poll");
+                assert_eq!(event_field(retry, "status"), status.to_string());
+                assert_eq!(event_field(retry, "failure_kind"), "http_status");
+                assert_eq!(event_field(retry, "poll_reason"), expected_reason);
+                assert_eq!(event_field(retry, "consecutive_failures"), "1");
+                assert_eq!(event_field(retry, "failure_elapsed_ms"), "0");
+                assert_eq!(event_field(retry, "will_retry"), "true");
+                assert_eq!(event_field(retry, "degraded"), "false");
+                assert!(
+                    events
+                        .iter()
+                        .all(|event| event.level != Level::ERROR && event.level != Level::WARN),
+                    "a transient status must not immediately escalate: {events:#?}"
+                );
+                assert!(!format!("{events:#?}").contains(STATUS_BODY));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_http_and_transport_failures_share_degradation_and_reset() {
+        const STATUS_BODY: &str = "sensitive-degraded-poll-status-body";
+        let http_error = || {
+            ProviderError::ApiStatus(Box::new(ApiStatusError {
+                endpoint_label: "poll",
+                status: StatusCode::BAD_GATEWAY,
+                body: STATUS_BODY.to_string(),
+            }))
+        };
+
+        for (first, second) in [
+            (http_error(), http_error()),
+            (http_error(), poll_transport_error(ApiFailureKind::Timeout)),
+            (poll_transport_error(ApiFailureKind::Timeout), http_error()),
+        ] {
+            let provider = idle_api_provider_for_test();
+            let started_at = Instant::now();
+            let (_, events) = capture_api_provider_events(async {
+                for (error, elapsed) in [
+                    (&first, Duration::ZERO),
+                    (&second, POLL_DEGRADED_AFTER - Duration::from_secs(1)),
+                    (&second, POLL_DEGRADED_AFTER),
+                    (&first, POLL_DEGRADED_AFTER + Duration::from_secs(1)),
+                ] {
+                    provider
+                        .record_poll_failure_at(PollReason::Fast, error, started_at + elapsed)
+                        .await;
+                }
+                provider
+                    .record_poll_success_at(
+                        PollReason::Fast,
+                        started_at + POLL_DEGRADED_AFTER + Duration::from_secs(2),
+                    )
+                    .await;
+                let later_started_at = started_at + POLL_DEGRADED_AFTER + Duration::from_secs(3);
+                provider
+                    .record_poll_failure_at(PollReason::Fast, &second, later_started_at)
+                    .await;
+                provider
+                    .record_poll_failure_at(
+                        PollReason::Fast,
+                        &first,
+                        later_started_at + POLL_DEGRADED_AFTER,
+                    )
+                    .await;
+            })
+            .await;
+            let failures = events
+                .iter()
+                .filter(|event| event.fields.contains_key("consecutive_failures"))
+                .collect::<Vec<_>>();
+
+            assert_eq!(failures.len(), 6, "{events:#?}");
+            for ((event, count), (level, elapsed, degraded)) in
+                failures.iter().zip([1, 2, 3, 4, 1, 2]).zip([
+                    (Level::INFO, 0, "false"),
+                    (Level::INFO, 59_000, "false"),
+                    (Level::ERROR, 60_000, "true"),
+                    (Level::INFO, 61_000, "true"),
+                    (Level::INFO, 0, "false"),
+                    (Level::ERROR, 60_000, "true"),
+                ])
+            {
+                assert_eq!(event.level, level, "{events:#?}");
+                assert_eq!(
+                    event_field(event, "consecutive_failures"),
+                    count.to_string()
+                );
+                assert_eq!(
+                    event_field(event, "failure_elapsed_ms"),
+                    elapsed.to_string()
+                );
+                assert_eq!(event_field(event, "degraded"), degraded);
+                assert_eq!(event_field(event, "will_retry"), "true");
+                let message = if level == Level::ERROR {
+                    "poll fallback degraded"
+                } else {
+                    "poll failed, will retry"
+                };
+                assert_eq!(event_field(event, "message"), message);
+                if event_field(event, "failure_kind") == "http_status" {
+                    assert_eq!(event_field(event, "status"), "502");
+                }
+            }
+            let recovery = captured_event(&events, "poll fallback recovered");
+            assert_eq!(recovery.level, Level::INFO);
+            assert_eq!(event_field(recovery, "recovered_after_failures"), "4");
+            assert_eq!(event_field(recovery, "failure_elapsed_ms"), "62000");
+            assert_eq!(event_field(recovery, "was_degraded"), "true");
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event.level == Level::ERROR)
+                    .count(),
+                2,
+                "each episode should emit only one degradation error: {events:#?}"
+            );
+            assert!(!format!("{events:#?}").contains(STATUS_BODY));
+        }
+    }
+
+    #[tokio::test]
     async fn poll_non_retryable_failures_remain_errors_without_mutating_episode() {
         const STATUS_BODY: &str = "sensitive-poll-status-body";
 
@@ -3476,7 +3660,7 @@ mod tests {
         provider
             .record_poll_failure_at(PollReason::Immediate, &retryable_error, started_at)
             .await;
-        let unsupported_errors = [
+        let mut unsupported_errors = vec![
             poll_transport_error(ApiFailureKind::Request),
             poll_transport_error_with_cause(ApiFailureKind::Request, ApiTransportCause::HttpParse),
             poll_transport_error_with_cause(
@@ -3496,12 +3680,19 @@ mod tests {
             ),
             ProviderError::ApiStatus(Box::new(ApiStatusError {
                 endpoint_label: "poll",
-                status: StatusCode::SERVICE_UNAVAILABLE,
+                status: StatusCode::UNAUTHORIZED,
                 body: STATUS_BODY.to_string(),
             })),
             ProviderError::Api("poll decode: failed at job.runId".to_string()),
             ProviderError::Internal("synthetic poll invariant".to_string()),
         ];
+        unsupported_errors.extend([400, 403, 404, 422].map(|status| {
+            ProviderError::ApiStatus(Box::new(ApiStatusError {
+                endpoint_label: "poll",
+                status: StatusCode::from_u16(status).unwrap(),
+                body: STATUS_BODY.to_string(),
+            }))
+        }));
 
         let (_, events) = capture_api_provider_events(async {
             for error in &unsupported_errors {
@@ -3541,7 +3732,7 @@ mod tests {
             })
             .expect("status error event");
         assert_eq!(event_field(status_event, "endpoint"), "poll");
-        assert_eq!(event_field(status_event, "status"), "503");
+        assert_eq!(event_field(status_event, "status"), "401");
         assert!(
             !format!("{events:#?}").contains(STATUS_BODY),
             "poll status response body must not be logged: {events:#?}"
@@ -4052,74 +4243,90 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discover_recovers_after_incomplete_http_response() {
-        let run_id = RunId::new_v4();
-        let server = RawHttpTestServer::spawn(vec![
-            RawHttpAction::Disconnect,
-            RawHttpAction::Respond(poll_job_response(run_id)),
-        ])
-        .await;
-        let provider = api_provider_for_test(
-            server.url(),
-            CancellationToken::new(),
-            Arc::new(PollWakeups::new(false)),
-        );
+    async fn discover_recovers_after_retryable_poll_failure() {
+        const STATUS_BODY: &str = "sensitive-http-502-poll-response";
 
-        let captured = CapturedEvents::default();
-        let subscriber = tracing_subscriber::registry().with(captured.clone());
-        let discovery = tokio::time::timeout(Duration::from_secs(10), provider.discover())
-            .with_subscriber(subscriber);
-        tokio::pin!(discovery);
-        advance_pending_discovery_retry(
-            discovery.as_mut(),
-            &captured,
-            "poll failed, will retry",
-            POLL_WAKEUP_RETRY,
-        )
-        .await;
-        let discovered = discovery
-            .await
-            .expect("discovery should recover on the existing wakeup retry")
-            .expect("poll candidate after incomplete response");
-        let events = captured.entries();
-        let requests = server.assert_finished_with_requests().await;
+        for (action, failure_kind, status) in [
+            (RawHttpAction::Disconnect, "request", None),
+            (
+                RawHttpAction::Respond(http_response("502 Bad Gateway", STATUS_BODY.as_bytes())),
+                "http_status",
+                Some("502"),
+            ),
+        ] {
+            let run_id = RunId::new_v4();
+            let server = RawHttpTestServer::spawn(vec![
+                action,
+                RawHttpAction::Respond(poll_job_response(run_id)),
+            ])
+            .await;
+            let provider = api_provider_for_test(
+                server.url(),
+                CancellationToken::new(),
+                Arc::new(PollWakeups::new(false)),
+            );
 
-        assert_eq!(discovered.run_id(), run_id);
-        assert_eq!(
-            discovered.discovery_source(),
-            Some(JobDiscoverySource::Poll)
-        );
-        assert_eq!(requests.len(), 2);
-        for (request, reason) in requests.iter().zip(["immediate", "wakeup_retry"]) {
-            assert!(request.starts_with("POST /api/runners/poll "));
-            let (_, body) = request.split_once("\r\n\r\n").expect("poll request body");
-            let body: Value = serde_json::from_str(body).unwrap();
-            assert_eq!(body["telemetry"]["pollReason"], reason);
+            let captured = CapturedEvents::default();
+            let subscriber = tracing_subscriber::registry().with(captured.clone());
+            let discovery = tokio::time::timeout(Duration::from_secs(10), provider.discover())
+                .with_subscriber(subscriber);
+            tokio::pin!(discovery);
+            advance_pending_discovery_retry(
+                discovery.as_mut(),
+                &captured,
+                "poll failed, will retry",
+                POLL_WAKEUP_RETRY,
+            )
+            .await;
+            let discovered = discovery
+                .await
+                .expect("discovery should recover on the existing wakeup retry")
+                .expect("poll candidate after retryable failure");
+            let events = captured.entries();
+            let requests = server.assert_finished_with_requests().await;
+
+            assert_eq!(discovered.run_id(), run_id);
+            assert_eq!(
+                discovered.discovery_source(),
+                Some(JobDiscoverySource::Poll)
+            );
+            assert_eq!(requests.len(), 2);
+            for (request, reason) in requests.iter().zip(["immediate", "wakeup_retry"]) {
+                assert!(request.starts_with("POST /api/runners/poll "));
+                let (_, body) = request.split_once("\r\n\r\n").expect("poll request body");
+                let body: Value = serde_json::from_str(body).unwrap();
+                assert_eq!(body["telemetry"]["pollReason"], reason);
+            }
+            let retry = captured_event(&events, "poll failed, will retry");
+            assert_eq!(retry.level, Level::INFO);
+            assert_eq!(event_field(retry, "failure_kind"), failure_kind);
+            if let Some(status) = status {
+                assert_eq!(event_field(retry, "status"), status);
+            } else {
+                assert_eq!(
+                    event_field(retry, "failure_cause"),
+                    "http_incomplete_message"
+                );
+            }
+            assert_eq!(event_field(retry, "poll_reason"), "immediate");
+            assert_eq!(event_field(retry, "will_retry"), "true");
+            assert_eq!(event_field(retry, "degraded"), "false");
+            let recovery = captured_event(&events, "poll fallback recovered");
+            assert_eq!(recovery.level, Level::INFO);
+            assert_eq!(event_field(recovery, "poll_reason"), "wakeup_retry");
+            assert_eq!(event_field(recovery, "recovered_after_failures"), "1");
+            assert_eq!(event_field(recovery, "was_degraded"), "false");
+            assert!(
+                events
+                    .iter()
+                    .all(|event| event.level != Level::ERROR && event.level != Level::WARN)
+            );
+            assert!(!format!("{events:#?}").contains(STATUS_BODY));
         }
-        let retry = captured_event(&events, "poll failed, will retry");
-        assert_eq!(retry.level, Level::INFO);
-        assert_eq!(event_field(retry, "failure_kind"), "request");
-        assert_eq!(
-            event_field(retry, "failure_cause"),
-            "http_incomplete_message"
-        );
-        assert_eq!(event_field(retry, "poll_reason"), "immediate");
-        assert_eq!(event_field(retry, "will_retry"), "true");
-        assert_eq!(event_field(retry, "degraded"), "false");
-        let recovery = captured_event(&events, "poll fallback recovered");
-        assert_eq!(recovery.level, Level::INFO);
-        assert_eq!(event_field(recovery, "poll_reason"), "wakeup_retry");
-        assert_eq!(event_field(recovery, "recovered_after_failures"), "1");
-        assert_eq!(event_field(recovery, "was_degraded"), "false");
-        assert!(
-            events
-                .iter()
-                .all(|event| event.level != Level::ERROR && event.level != Level::WARN)
-        );
     }
 
     #[tokio::test]
-    async fn discover_status_error_preserves_episode_until_empty_poll_recovers() {
+    async fn discover_transient_status_extends_episode_until_empty_poll_recovers() {
         const STATUS_BODY: &str = "sensitive-poll-status-response";
 
         let run_id = RunId::new_v4();
@@ -4176,7 +4383,7 @@ mod tests {
                             .as_ref()
                             .expect("status failure must not reset the poll episode");
                         assert_eq!(episode.started_at, started_at);
-                        assert_eq!(episode.consecutive_failures, 1);
+                        assert_eq!(episode.consecutive_failures, 2);
                     }
                     wakeups.request_immediate_poll();
                     release_empty_tx.send(()).unwrap();
@@ -4196,11 +4403,12 @@ mod tests {
                 .await
                 .is_none()
         );
-        let status_event = captured_event(&events, "poll failed");
-        assert_eq!(status_event.level, Level::ERROR);
+        let status_event = captured_event(&events, "poll failed, will retry");
+        assert_eq!(status_event.level, Level::INFO);
         assert_eq!(event_field(status_event, "status"), "503");
         assert_eq!(event_field(status_event, "failure_kind"), "http_status");
         assert_eq!(event_field(status_event, "poll_reason"), "immediate");
+        assert_eq!(event_field(status_event, "consecutive_failures"), "2");
         assert!(
             !format!("{status_event:#?}").contains(STATUS_BODY),
             "status response body must not be logged: {status_event:#?}"
@@ -4208,8 +4416,13 @@ mod tests {
         let recovery = captured_event(&events, "poll fallback recovered");
         assert_eq!(recovery.level, Level::INFO);
         assert_eq!(event_field(recovery, "poll_reason"), "immediate");
-        assert_eq!(event_field(recovery, "recovered_after_failures"), "1");
+        assert_eq!(event_field(recovery, "recovered_after_failures"), "2");
         assert_eq!(event_field(recovery, "was_degraded"), "false");
+        assert!(
+            events
+                .iter()
+                .all(|event| event.level != Level::ERROR && event.level != Level::WARN)
+        );
         server.assert_finished().await;
     }
 

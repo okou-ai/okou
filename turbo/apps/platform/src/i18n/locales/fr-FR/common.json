@@ -1573,13 +1573,17 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
-      "continueChat": "Continuer la discussion",
       "dismiss": "Ignorer",
       "label": "Suggestions",
-      "newChat": "Nouvelle discussion",
       "next": "Suggestion suivante",
       "position": "{{current}} sur {{total}}",
-      "previous": "Suggestion précédente"
+      "previous": "Suggestion précédente",
+      "recoveryHint": "Vérifiez la conversation avant de renvoyer. Vous pouvez restaurer la suggestion dans votre brouillon.",
+      "restoreDraft": "Restaurer le brouillon",
+      "runFailed": "Impossible de lancer la suggestion",
+      "runInChat": "Exécuter dans cette conversation",
+      "runNewChat": "Exécuter dans une nouvelle conversation",
+      "starting": "Démarrage…"
     },
     "attachments": {
       "attach": "Joindre",
@@ -1820,6 +1824,7 @@
       "selectedModelUnavailableToast": "Le modèle sélectionné n'est pas disponible",
       "selectModel": "Sélectionner le modèle",
       "slashActions": {
+        "actions": "Actions",
         "archive": "Archiver la discussion",
         "back": "Retour",
         "connect": "Connecter un outil",
@@ -1833,6 +1838,11 @@
         "pin": "Épingler la discussion",
         "rename": "Renommer la discussion",
         "schedule": "Planifier",
+        "scheduleCustom": "Planification personnalisée",
+        "scheduleEveryMonday": "Chaque lundi",
+        "scheduleEveryMonth": "Le premier jour de chaque mois",
+        "scheduleEveryMorning": "Chaque matin",
+        "scheduleEveryWeekday": "Chaque jour ouvré",
         "scheduleHint": "Exécuter selon un calendrier",
         "share": "Partager la discussion",
         "shareHint": "Partager un lien vers cette conversation",
@@ -2142,14 +2152,10 @@
       "communications": "Messages",
       "idle": "Inactive",
       "loadFailed": "Échec du chargement",
-      "loading": "Chargement…",
       "messageUnavailable": "Message indisponible",
-      "more": "Plus",
-      "noMessages": "Aucun message pour le moment",
       "origin": "Depuis",
       "queued": "En attente",
       "received": "Reçu",
-      "refresh": "Actualiser",
       "running": "En cours",
       "sent": "Envoyé",
       "toggleMessages": "Messages avec {{title}}",
@@ -2176,15 +2182,13 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyArtifacts": "Aucun artefact pour le moment",
       "emptyLinks": "Aucun lien dans ce chat pour le moment",
       "expand": "Développer",
       "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
       "loadingLinks": "Chargement des liens",
       "retry": "Réessayer",
-      "title": "Ressources du chat",
-      "viewAll": "Tout voir"
+      "title": "Ressources du chat"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
@@ -4034,7 +4038,6 @@
     "retry": "Réessayer",
     "samplePages": "Pages d’exemple : {{total}}",
     "title": "Document",
-    "use": "Utiliser ce modèle",
     "useNamed": "Utiliser {{title}}"
   },
   "global": {
@@ -5207,6 +5210,15 @@
         "retryMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour. Réessayez pour continuer.",
         "title": "Résumé du matin"
       },
+      "proactiveSuggestions": {
+        "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
+        "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
+        "preparationFailed": "La configuration n’a pas pu aboutir. Réessayez.",
+        "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",
+        "retry": "Réessayer",
+        "retryMessage": "Impossible de charger ou de modifier ces paramètres. Réessayez.",
+        "title": "Suggestions proactives"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Appuyez sur ⌘/Ctrl+Entrée pour envoyer, Entrée pour une nouvelle ligne",
@@ -5264,7 +5276,6 @@
       "description": "Vos agents peuvent demander des achats et consulter les transactions Link. Vous approuvez chaque achat.",
       "disconnect": "Déconnecter",
       "loadError": "Impossible de charger ton portefeuille.",
-      "permissionsUnknown": "Reconnectez Link pour examiner et confirmer ses autorisations actuelles.",
       "retry": "Réessayer",
       "scope": "Laissez Okou effectuer des achats et consulter votre activité Link.",
       "title": "Portefeuille",
@@ -5294,8 +5305,7 @@
         "statusLabel": "Statut",
         "title": "Transactions Link",
         "unknownStatus": "Statut indisponible"
-      },
-      "workspaceScopeChanged": "Votre portefeuille Link peut désormais être utilisé par tous vos agents dans cet espace de travail. Reconnectez-le pour approuver ce changement."
+      }
     },
     "workspace": {
       "danger": {
@@ -6761,6 +6771,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Compte",
+      "agentLabel": "Agent",
       "code": "Code de vérification",
       "connect": "Connecter",
       "connected": "Connecté",
@@ -6770,11 +6782,15 @@
       "expired": "Ce code QR a expiré. Créez-en un nouveau.",
       "failed": "Impossible de se connecter à WeChat. Réessayez.",
       "instructions": "Scannez ce code QR avec WeChat, puis confirmez sur votre téléphone.",
+      "linkUnavailable": "Ce lien n’est pas disponible. Utilisez le compte et l’espace de travail d’origine et envoyez un autre message sur WeChat pour obtenir un nouveau lien. Vous pouvez aussi scanner un nouveau code QR.",
       "name": "WeChat",
+      "newQr": "Connecter avec un nouveau code QR",
       "reconnect": "Reconnecter",
       "reconnect_required": "Scannez à nouveau pour vous reconnecter.",
       "restart_required": "Ce compte WeChat est déjà associé. Créez un nouveau code QR pour le reconnecter.",
+      "restoreDescription": "Reconnectez WeChat au compte et à l’espace de travail ci-dessous.",
       "retry": "Créer un nouveau code QR",
+      "returnToWechat": "Revenez sur WeChat et envoyez un message pour commencer la conversation.",
       "scanned": "Code scanné. Confirmez sur votre téléphone.",
       "scope": "Seuls vos messages directs à cet agent sont connectés. Les messages texte sont pris en charge.",
       "title": "Connecter WeChat",
@@ -6782,7 +6798,8 @@
       "verification_blocked": "Trop de tentatives. Créez un nouveau code QR.",
       "verification_required": "Saisissez le code de vérification affiché dans WeChat.",
       "verify": "Vérifier",
-      "waiting": "En attente du scan…"
+      "waiting": "En attente du scan…",
+      "workspaceLabel": "Espace de travail"
     }
   }
 }

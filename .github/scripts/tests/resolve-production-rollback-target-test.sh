@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
+    if [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
+      [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
       [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
@@ -301,6 +303,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor e01702c7d762b5d2a76d557db77ccaf19c4f95c8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must accept structured-only disk telemetry"
 grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "eligible API artifact must satisfy the canonical VNC producer floor"
 grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
@@ -363,6 +366,15 @@ assert_failure "Rollback target predates the model execution capture writer" \
 [ ! -s "${tmp_dir}/model-execution-capture-floor.output" ] || fail "pre-capture writer must not publish rollback outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-capture writer must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the structured-only disk telemetry reader" \
+  run_resolver "${tmp_dir}/structured-disk-reader-floor.output" MOCK_STRUCTURED_DISK_READER_FLOOR_VALID=0
+grep -Fq 'e01702c7d762b5d2a76d557db77ccaf19c4f95c8' "${tmp_dir}/failure.err" || fail "disk telemetry rejection must identify the receiving preparation commit"
+[ ! -s "${tmp_dir}/structured-disk-reader-floor.output" ] || fail "required-pair API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "required-pair API must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

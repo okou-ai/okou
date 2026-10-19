@@ -17,6 +17,19 @@ import {
 import {
   ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
   AGENT_EXECUTION_TIMEOUT_SECONDS,
+  AGENT_TELEMETRY_HTTP_TIMEOUT_MS,
+  AGENT_TELEMETRY_INCIDENT_ATTEMPTS,
+  AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS,
+  AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS,
+  RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
+  RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+  RUNNER_JOB_TERMINAL_GRACE_MS,
+  RUNNER_JOB_TERMINAL_HOST_SLACK_MS,
+  GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS,
+  GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS,
+  GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS,
+  GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS,
+  GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS,
   BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -37,12 +50,9 @@ import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
   RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
   RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
-  SESSION_HISTORY_GZIP_MIN_BYTES,
 } from "../contracts/runners";
 import {
   STORAGE_MANIFEST_MAX_FILES,
@@ -332,6 +342,106 @@ export const rustConstantBindings = [
   },
   {
     rustModulePath: ["runners"],
+    rustConstName: "AGENT_TELEMETRY_HTTP_TIMEOUT_MS",
+    value: rustU64(AGENT_TELEMETRY_HTTP_TIMEOUT_MS),
+    rustDoc: [
+      "Ordinary telemetry HTTP budget including downstream ingest and API/transport headroom.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_TELEMETRY_INCIDENT_ATTEMPTS",
+    value: rustU64(AGENT_TELEMETRY_INCIDENT_ATTEMPTS),
+    rustDoc: [
+      "Maximum best-effort attempts for each changed emergency incident set.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS",
+    value: rustU64(AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS),
+    rustDoc: [
+      "Per-attempt emergency incident budget backed by local evidence and independent host recovery.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS",
+    value: rustU64(AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS),
+    rustDoc: [
+      "Aggregate final telemetry budget: in-flight and final HTTP/incident delivery plus local settling.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS",
+    value: rustU64(RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS),
+    rustDoc: [
+      "Active completed predecessor preference: final telemetry plus guest terminal cleanup and host observation grace.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_JOB_TERMINAL_GRACE_MS",
+    value: rustU64(RUNNER_JOB_TERMINAL_GRACE_MS),
+    rustDoc: [
+      "Terminal observation grace, compile-time checked against Guest cleanup plus executor host slack.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_JOB_TERMINAL_HOST_SLACK_MS",
+    value: rustU64(RUNNER_JOB_TERMINAL_HOST_SLACK_MS),
+    rustDoc: [
+      "Host scheduling, observation, and terminal proof delivery allowance.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS",
+    value: rustU64(GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS),
+    rustDoc: ["Maximum Guest stdout/stderr drain time after child exit."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS",
+    value: rustU64(GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS),
+    rustDoc: [
+      "Maximum wait for a contained Guest cgroup to become empty after kill.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS",
+    value: rustU64(GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS),
+    rustDoc: ["Maximum retry window for removing an empty Guest exec cgroup."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS",
+    value: rustU64(GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS),
+    rustDoc: [
+      "Grace after signaling contained Guest descendants with SIGTERM.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS",
+    value: rustU64(GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS),
+    rustDoc: [
+      "Guest terminal cleanup: TERM grace plus kill, removal, and output drain.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS",
+    value: rustU64(RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS),
+    rustDoc: [
+      "Handoff acceptance grace after both predecessor finalization and successor waiting begin.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
     rustConstName: "BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION",
     value: rustU32(BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION),
     rustDoc: [
@@ -461,35 +571,6 @@ export const rustConstantBindings = [
     rustDoc: [
       "Wire and blob metadata value for zstd-compressed resume session history.",
       "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT",
-    value: rustString(
-      SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-    ),
-    rustDoc: [
-      "Telemetry value for session history downloads signed with a configured S3 endpoint.",
-      "Rust and TypeScript components use this shared contract value when attributing runner download latency.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT",
-    value: rustString(SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT),
-    rustDoc: [
-      "Telemetry value for session history downloads signed with the default R2 endpoint.",
-      "Rust and TypeScript components use this shared contract value when attributing runner download latency.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_GZIP_MIN_BYTES",
-    value: rustU64(SESSION_HISTORY_GZIP_MIN_BYTES),
-    rustDoc: [
-      "Minimum raw resume session history size before the guest attempts gzip upload negotiation.",
-      "Smaller histories stay identity-encoded to avoid gzip work when it cannot materially reduce transport size.",
     ],
   },
   {

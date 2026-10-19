@@ -994,9 +994,15 @@ async fn handle_renewal_result(
         p.timing.token_renewal_retry_delay,
     );
     let failures = match failure {
-        TokenRenewalFailure::Retry { failures } | TokenRenewalFailure::Fatal { failures } => {
-            failures
+        TokenRenewalFailure::Retry { failures } => {
+            tracing::info!(
+                "{failure_reason} ({}/{})",
+                failures,
+                p.timing.max_token_renewal_failures,
+            );
+            return false;
         }
+        TokenRenewalFailure::Fatal { failures } => failures,
     };
     tracing::error!(
         "{failure_reason} ({}/{})",
@@ -1004,19 +1010,15 @@ async fn handle_renewal_result(
         p.timing.max_token_renewal_failures,
     );
 
-    if matches!(failure, TokenRenewalFailure::Fatal { .. }) {
-        let event = Event::Error {
-            code: error_code::FAILED,
-            message: format!(
-                "Token renewal failed {} consecutive times",
-                p.timing.max_token_renewal_failures
-            ),
-        };
-        let _ = send_terminal_status_event(p, close_rx, event, "error").await;
-        return true;
-    }
-
-    false
+    let event = Event::Error {
+        code: error_code::FAILED,
+        message: format!(
+            "Token renewal failed {} consecutive times",
+            p.timing.max_token_renewal_failures
+        ),
+    };
+    let _ = send_terminal_status_event(p, close_rx, event, "error").await;
+    true
 }
 
 /// Send AUTH and commit the token within the acquisition's original deadline.

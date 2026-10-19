@@ -5,6 +5,25 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { env } from "../../lib/env";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+export const loadWechatWorkspace$ = command(
+  async ({ get }, orgId: string, signal: AbortSignal) => {
+    const result = await settle(
+      get(clerk$).organizations.getOrganization(
+        { organizationId: orgId },
+        undefined,
+        signal,
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      if (isClerkResourceNotFound(result.error)) {
+        return null;
+      }
+      throw result.error;
+    }
+    return { id: result.value.id, name: result.value.name };
+  },
+);
 export const wechatEnabled$ = command(
   async ({ get, set }, orgId: string, userId: string, signal: AbortSignal) => {
     if (
@@ -43,8 +62,19 @@ export function wechatConfigured() {
     env("WECHAT_GATEWAY_CONTROL_SECRET")
   );
 }
-export async function startWechatPoller(
+export function startWechatPoller(
   connectionId: string,
+  generation: string,
+  signal: AbortSignal,
+) {
+  return controlWechatPoller("/start", { connectionId, generation }, signal);
+}
+export function stopWechatPoller(connectionId: string, signal: AbortSignal) {
+  return controlWechatPoller("/stop", { connectionId }, signal);
+}
+async function controlWechatPoller(
+  path: string,
+  body: unknown,
   signal: AbortSignal,
 ) {
   const url = env("WECHAT_GATEWAY_URL");
@@ -52,14 +82,14 @@ export async function startWechatPoller(
   if (!url || !secret) {
     throw new Error("WeChat receiver is not configured");
   }
-  const response = await fetch(new URL("/start", url), {
+  const response = await fetch(new URL(path, url), {
     method: "POST",
     redirect: "error",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${secret}`,
     },
-    body: JSON.stringify({ connectionId }),
+    body: JSON.stringify(body),
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
   });
   if (!response.ok) {

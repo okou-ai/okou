@@ -27,32 +27,6 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("enables Slack Open Graph only for Bingjie by default and honors personal overrides", () => {
-    const key = FeatureSwitchKey.SlackOpenGraphPreviews;
-    for (const orgId of [
-      undefined,
-      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      "external-org",
-    ]) {
-      const context = { email: "BINGJIE@OKOU.AI", orgId };
-      expect(isFeatureEnabled(key, context)).toBe(true);
-      expect(
-        isFeatureEnabled(key, { ...context, overrides: { [key]: false } }),
-      ).toBe(false);
-    }
-    for (const context of [
-      {},
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { email: "ethan@okou.ai", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { userId: "external-user", orgId: "external-org" },
-    ]) {
-      expect(isFeatureEnabled(key, context)).toBe(false);
-      expect(
-        isFeatureEnabled(key, { ...context, overrides: { [key]: true } }),
-      ).toBe(true);
-    }
-  });
-
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");

@@ -80,10 +80,16 @@ export const setJobsAvatarUrl$ = command(({ set }, url: string) => {
 
 // -- Create a fresh dialog draft --------------------------------------------
 
-export const resetJobsDialog$ = command(({ set }) => {
+const resetJobsDialog$ = command(({ set }) => {
   set(closeAvatarMaker$);
   set(internalNewName$, "");
   set(internalResponsibility$, "");
   set(internalVisibility$, "private");
   set(internalAvatarUrl$, randomSvgAvatarUrl());
+});
+
+/** Open the create-agent dialog with a fresh draft, from any page. */
+export const openCreateAgentDialog$ = command(({ set }) => {
+  set(resetJobsDialog$);
+  set(setJobsDialogOpen$, true);
 });

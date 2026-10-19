@@ -1,0 +1,1 @@
+ALTER TABLE "org_members_metadata" ADD COLUMN "proactive_suggestions_enabled" boolean;

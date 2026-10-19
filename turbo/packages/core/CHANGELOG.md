@@ -1,5 +1,76 @@
 # Changelog
 
+## [8.769.2](https://github.com/okou-ai/okou/compare/core-v8.769.1...core-v8.769.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **app:** unify custom templates behind one feature switch ([#41304](https://github.com/okou-ai/okou/issues/41304)) ([cb96699](https://github.com/okou-ai/okou/commit/cb966995a4749e6c374ca624720bf89ba6bfea09))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.574.0
+
+## [8.769.1](https://github.com/okou-ai/okou/compare/core-v8.769.0...core-v8.769.1) (2026-10-19)
+
+
+### Performance Improvements
+
+* move wechat receiving to cloudflare workflows ([#41269](https://github.com/okou-ai/okou/issues/41269)) ([0c9a663](https://github.com/okou-ai/okou/commit/0c9a663d0c368cdbb489a0829a99642b12546905))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.4
+
+## [8.769.0](https://github.com/okou-ai/okou/compare/core-v8.768.0...core-v8.769.0) (2026-10-19)
+
+
+### Features
+
+* enable document templates for staff and polish picker ([#41210](https://github.com/okou-ai/okou/issues/41210)) ([8a7aa72](https://github.com/okou-ai/okou/commit/8a7aa72fbb7542083fb2358f09e1e8e32b3da10b))
+
+
+### Bug Fixes
+
+* gate chat relationships with chat resources ([#41222](https://github.com/okou-ai/okou/issues/41222)) ([70fb95a](https://github.com/okou-ai/okou/commit/70fb95a14daf3ba4ce7995ab188f9a57e616a01d))
+* send wechat welcome on connection and add reconnect page ([#41211](https://github.com/okou-ai/okou/issues/41211)) ([14f9545](https://github.com/okou-ai/okou/commit/14f95457d99c5b3dfa98918de4e888f94095217a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.3
+
+## [8.768.0](https://github.com/okou-ai/okou/compare/core-v8.767.1...core-v8.768.0) (2026-10-19)
+
+
+### Features
+
+* **core:** enable remote connection diagnostics for staff ([#41203](https://github.com/okou-ai/okou/issues/41203)) ([1e46381](https://github.com/okou-ai/okou/commit/1e46381d05aa4ea4bb1fcac664bbd1accd16cdfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.2
+
+## [8.767.1](https://github.com/okou-ai/okou/compare/core-v8.767.0...core-v8.767.1) (2026-10-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.1
+
 ## [8.767.0](https://github.com/okou-ai/okou/compare/core-v8.766.1...core-v8.767.0) (2026-10-17)
 
 

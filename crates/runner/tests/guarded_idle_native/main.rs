@@ -2,6 +2,9 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod batch_aba;
+mod batch_repark;
+mod cleanup_progress;
 mod continuation;
 mod continuation_api;
 mod create_cancellation;
@@ -18,6 +21,7 @@ mod foreground_probe;
 mod guarded_readers;
 mod incoming_progress;
 mod incoming_work;
+mod later_parking;
 mod logical_progress;
 mod logical_work;
 mod observer_loss;
@@ -35,6 +39,7 @@ mod returned_guest_probe;
 mod shared_reads;
 mod snapshot_preparation;
 mod startup;
+mod status_failure;
 mod tail;
 mod transitions;
 
@@ -83,6 +88,10 @@ enum Corpus {
     CreateCancellation,
     ReturnedGuest(sandbox_firecracker::GuestPreparationStage),
     ObserverLoss(bool),
+    StatusFailure,
+    LaterParking(bool),
+    BatchAba,
+    BatchRepark,
 }
 
 enum PreparationProbe<'a> {
@@ -323,6 +332,7 @@ enum NativeScope {
     FinalizingParked,
     FinalizingRunning,
     Pressure,
+    LaterParking,
 }
 
 fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
@@ -332,9 +342,10 @@ fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
         // ResourceBudget's host CPU reservation. This is logical fixture
         // capacity, not a measurement of available physical host CPUs.
         NativeScope::Critical => (10, 16384),
-        NativeScope::Replacement | NativeScope::Restore | NativeScope::ForegroundFresh => {
-            (6, 12288)
-        }
+        NativeScope::Replacement
+        | NativeScope::Restore
+        | NativeScope::ForegroundFresh
+        | NativeScope::LaterParking => (6, 12288),
         NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
             (12, 24576)
         }
@@ -542,6 +553,110 @@ fn native_observer_loss_report_requires_joined_saving_and_independent_progress()
         "observer loss report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn native_status_failure_report_requires_saved_data_and_current_retry() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/status_failure_report_test.py"
+        ))
+        .output()
+        .expect("native status failure report requires Python3");
+    assert!(
+        output.status.success(),
+        "status failure report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_later_parking_report_requires_fixed_selection_and_current_inventory() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/later_parking_report_test.py"
+        ))
+        .output()
+        .expect("native later parking report requires Python3");
+    assert!(
+        output.status.success(),
+        "later parking report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source later-parking P1 proof"]
+async fn native_fixed_batch_preserves_later_exact_and_blank_inventory() -> TestResult<()> {
+    measured_selected_corpora(
+        &[NativeScope::LaterParking],
+        &[Corpus::LaterParking(false), Corpus::LaterParking(true)],
+    )
+    .await
+}
+
+#[test]
+fn native_batch_aba_report_requires_old_refusal_and_new_guarded_recovery() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/batch_aba_report_test.py"
+        ))
+        .output()
+        .expect("native batch ABA report requires Python3");
+    assert!(
+        output.status.success(),
+        "batch ABA report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source insertion-ABA P1 proof"]
+async fn native_fixed_batch_refuses_restored_insertion_and_recovers_original() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::BatchAba,
+    )
+    .await
+}
+
+#[test]
+fn native_repark_report_requires_physical_history_and_guarded_recovery() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/batch_repark_report_test.py"
+        ))
+        .output()
+        .expect("native repark report requires Python3");
+    assert!(
+        output.status.success(),
+        "repark report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source physical repark P1 proof"]
+async fn native_speculative_repark_preserves_history_and_batch_recovery() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::BatchRepark,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
+async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::StatusFailure,
+    )
+    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -859,6 +974,14 @@ async fn exercise_selected_factories(
                                 "CreateCancellation".into()
                             } else if let Corpus::ObserverLoss(panic) = corpus {
                                 format!("Observer{}", if panic { "Panic" } else { "Drop" })
+                            } else if corpus == Corpus::StatusFailure {
+                                "StatusFailure".into()
+                            } else if let Corpus::LaterParking(blank) = corpus {
+                                format!("Later{}", if blank { "Blank" } else { "Exact" })
+                            } else if corpus == Corpus::BatchAba {
+                                "BatchAba".into()
+                            } else if corpus == Corpus::BatchRepark {
+                                "BatchRepark".into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1007,6 +1130,8 @@ async fn exercise_retirement(
             | Corpus::IncomingProgress
             | Corpus::CreateCancellation
             | Corpus::ReturnedGuest(_)
+            | Corpus::BatchAba
+            | Corpus::BatchRepark
     ) || matches!(
         scope,
         NativeScope::Recovery
@@ -1197,6 +1322,10 @@ async fn exercise_retirement(
             | Corpus::CreateCancellation
             | Corpus::ReturnedGuest(_)
             | Corpus::ObserverLoss(_)
+            | Corpus::StatusFailure
+            | Corpus::LaterParking(_)
+            | Corpus::BatchAba
+            | Corpus::BatchRepark
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1287,6 +1416,18 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::LaterParking => {
+                let Corpus::LaterParking(blank) = corpus else {
+                    return Err(io::Error::other("later parking corpus missing").into());
+                };
+                later_parking::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, proof.ok_or_else(|| io::Error::other("later parking proof missing"))?,
+                    paths.base_dir(), backing.clone(), blank).await?;
+                Ok(None)
+            }
             NativeScope::ForegroundFresh | NativeScope::ForegroundReuse => {
                 foreground::exercise(foreground::Request { context: transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
@@ -1510,6 +1651,31 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if matches!(corpus, Corpus::BatchAba | Corpus::BatchRepark) {
+                    batch_aba::exercise(
+                        transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs,
+                        recovery_source.as_ref().ok_or_else(|| io::Error::other("batch ABA source missing"))?,
+                        proof.ok_or_else(|| io::Error::other("batch ABA proof missing"))?,
+                        paths.base_dir(), backing.clone(),
+                        (corpus == Corpus::BatchRepark).then_some(run_id),
+                    ).await?;
+                    return Ok(None);
+                }
+                if corpus == Corpus::StatusFailure {
+                    status_failure::exercise(
+                        transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs, proof.ok_or_else(|| io::Error::other("status failure proof missing"))?,
+                        paths.base_dir(),
+                    ).await?;
+                    return Ok(None);
+                }
                 if let Corpus::ObserverLoss(panic) = corpus {
                     observer_loss::exercise(
                         transitions::Context {

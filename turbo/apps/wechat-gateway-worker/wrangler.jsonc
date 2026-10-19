@@ -3,15 +3,33 @@
   "name": "okou-wechat-gateway-unconfigured",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-03",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  "vars": { "WECHAT_GATEWAY_ENABLED": "false" },
+  "vars": {
+    "WECHAT_GATEWAY_ENABLED": "false",
+    "WECHAT_WORKFLOWS_ENABLED": "false",
+  },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WechatReceiver"] }],
   "env": {
     "test": {
       "name": "okou-wechat-gateway-test",
+      "workflows": [
+        {
+          "name": "okou-wechat-poll-test",
+          "binding": "WECHAT_POLL_WORKFLOW",
+          "class_name": "WechatPollWorkflow",
+          "default_retention": {
+            "success_retention": "1 day",
+            "error_retention": "7 days",
+          },
+        },
+      ],
       "workers_dev": true,
-      "vars": { "WECHAT_GATEWAY_ENABLED": "false" },
+      "vars": {
+        "WECHAT_GATEWAY_ENABLED": "false",
+        "WECHAT_WORKFLOWS_ENABLED": "false",
+      },
       "durable_objects": {
         "bindings": [
           { "name": "WECHAT_RECEIVER", "class_name": "WechatReceiver" },
@@ -20,8 +38,22 @@
     },
     "production": {
       "name": "okou-wechat-gateway-production",
+      "workflows": [
+        {
+          "name": "okou-wechat-poll-production",
+          "binding": "WECHAT_POLL_WORKFLOW",
+          "class_name": "WechatPollWorkflow",
+          "default_retention": {
+            "success_retention": "1 day",
+            "error_retention": "7 days",
+          },
+        },
+      ],
       "workers_dev": true,
-      "vars": { "WECHAT_GATEWAY_ENABLED": "false" },
+      "vars": {
+        "WECHAT_GATEWAY_ENABLED": "false",
+        "WECHAT_WORKFLOWS_ENABLED": "false",
+      },
       "durable_objects": {
         "bindings": [
           { "name": "WECHAT_RECEIVER", "class_name": "WechatReceiver" },

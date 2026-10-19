@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.58](https://github.com/okou-ai/okou/compare/runner-network-v0.2.57...runner-network-v0.2.58) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share connector registry command values ([#41271](https://github.com/okou-ai/okou/issues/41271)) ([e3346f3](https://github.com/okou-ai/okou/commit/e3346f3c0448090e9c4a00fa12745f248d051233))
+
+## [0.2.57](https://github.com/okou-ai/okou/compare/runner-network-v0.2.56...runner-network-v0.2.57) (2026-10-19)
+
+## [0.2.56](https://github.com/okou-ai/okou/compare/runner-network-v0.2.55...runner-network-v0.2.56) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-network:** converge completed drain acknowledgement ([#41124](https://github.com/okou-ai/okou/issues/41124)) ([f9a5bf4](https://github.com/okou-ai/okou/commit/f9a5bf48c179d058dc6d43cafcfb40c26c59c388))
+
 ## [0.2.55](https://github.com/okou-ai/okou/compare/runner-network-v0.2.54...runner-network-v0.2.55) (2026-10-17)
 
 ## [0.2.54](https://github.com/okou-ai/okou/compare/runner-network-v0.2.53...runner-network-v0.2.54) (2026-10-17)

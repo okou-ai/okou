@@ -32,6 +32,9 @@ import {
   openPinAgentDialog$,
   pinAgentDialogOpen$,
   setPinAgentDialogOpen$,
+  pinAgentDialogHandoff$,
+  handOffPinAgentDialogToCreateAgent$,
+  completePinAgentDialogClose$,
   draggingPinnedAgentId$,
   pinnedAgentDropTargetId$,
   startPinnedAgentDrag$,
@@ -423,20 +426,35 @@ export function PinAgentDialogContainer() {
   const subagents = useLastResolved(subagents$) ?? [];
   const pageSignal = useGet(pageSignal$);
   const [pinLoadable, saveAgentPinned] = useLoadableSet(setAgentPinned$);
+  const handingOff = useGet(pinAgentDialogHandoff$);
+  const handOffToCreateAgent = useSet(handOffPinAgentDialogToCreateAgent$);
+  const completeClose = useSet(completePinAgentDialogClose$);
 
-  if (!open) {
+  // A hand-off keeps the dialog mounted through its exit, without returning
+  // focus, so the create dialog opens from onOpenChangeComplete and keeps its
+  // own initial focus.
+  if (!open && !handingOff) {
     return null;
   }
 
   return (
     <PinAgentDialog
-      open
+      open={open}
       onOpenChange={onOpenChange}
       subagents={subagents}
       saving={pinLoadable.state === "loading"}
       onSetAgentPinned={(agentId, pinned) => {
         return saveAgentPinned({ agentId, pinned }, pageSignal);
       }}
+      onCreateAgent={() => {
+        handOffToCreateAgent();
+      }}
+      onOpenChangeComplete={(nextOpen) => {
+        if (!nextOpen) {
+          completeClose();
+        }
+      }}
+      handingOff={handingOff}
     />
   );
 }

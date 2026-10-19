@@ -68,21 +68,16 @@ pub async fn run_bounded(
 ) -> Result<BoundedCommandOutcome<ExitStatus>, BoundedCommandError> {
     let mut child = BoundedChild::spawn(&mut command).map_err(BoundedCommandError::Spawn)?;
 
-    match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(Ok(status)) => Ok(BoundedCommandOutcome::Exited(status)),
-        Ok(Err(error)) => {
-            kill_and_reap_child(program, &mut child)
-                .await
-                .map_err(BoundedCommandError::Lifecycle)?;
-            Err(BoundedCommandError::Wait(error))
-        }
-        Err(_) => {
-            kill_and_reap_child(program, &mut child)
-                .await
-                .map_err(BoundedCommandError::Lifecycle)?;
-            Ok(BoundedCommandOutcome::TimedOut)
-        }
-    }
+    let terminal_result = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => return Ok(BoundedCommandOutcome::Exited(status)),
+        Ok(Err(error)) => Err(BoundedCommandError::Wait(error)),
+        Err(_) => Ok(BoundedCommandOutcome::TimedOut),
+    };
+
+    kill_and_reap_child(program, &mut child)
+        .await
+        .map_err(BoundedCommandError::Lifecycle)?;
+    terminal_result
 }
 
 pub async fn run_output_bounded(
@@ -539,6 +534,43 @@ mod tests {
             .unwrap();
 
         assert!(matches!(outcome, BoundedCommandOutcome::TimedOut));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(start_paused = true)]
+    async fn status_command_timeout_reaps_recorded_child() -> io::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let pid_path = temp_dir.path().join("pid");
+        let command = pid_recording_command(&pid_path);
+        let command_timeout = Duration::from_secs(1);
+        let mut command_future = Box::pin(run_bounded(command, "sh", command_timeout));
+        // Observe the real child before advancing the paused command deadline.
+        assert!(futures_util::poll!(command_future.as_mut()).is_pending());
+        let process = wait_for_recorded_process(&pid_path).await;
+
+        tokio::time::advance(command_timeout).await;
+        // Physical kill/reap needs real OS scheduling under its cleanup bound.
+        tokio::time::resume();
+        let task = tokio::spawn(command_future);
+        let (pid, starttime) = match process {
+            Ok(process) => process,
+            Err(error) => {
+                task.abort();
+                let _ = task.await;
+                return Err(error);
+            }
+        };
+
+        let outcome = task.await.unwrap().unwrap();
+
+        assert!(matches!(outcome, BoundedCommandOutcome::TimedOut));
+        assert!(
+            read_process_stat(pid)
+                .await
+                .is_none_or(|stat| stat.starttime != starttime),
+            "timed-out status command must be physically reaped before returning"
+        );
+        Ok(())
     }
 
     #[tokio::test]

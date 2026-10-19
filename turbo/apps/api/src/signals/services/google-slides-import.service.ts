@@ -129,6 +129,199 @@ function bounds(shape: XmlNode): Bounds | undefined {
     : undefined;
 }
 
+function cropSide(node: XmlNode | undefined, side: string): number {
+  const value = node?.attributes[side];
+  return value === undefined
+    ? 0
+    : /^\d+$/u.test(value)
+      ? Number(value)
+      : Number.NaN;
+}
+
+function plainPictureRectangle(props: XmlNode): boolean {
+  const geometry = child(props, DRAWING, "prstGeom");
+  const line = child(props, DRAWING, "ln");
+  // Resizing another mask, a visible stroke, or an effect would change its
+  // appearance inside the page, not merely clip its overflow.
+  return (
+    geometry?.attributes.prst === "rect" &&
+    nodes(props).length === (line ? 3 : 2) &&
+    nodes(props).every((node) => {
+      return (
+        node.uri === DRAWING && ["xfrm", "prstGeom", "ln"].includes(node.local)
+      );
+    }) &&
+    (!line || child(line, DRAWING, "noFill") !== undefined)
+  );
+}
+
+function plainPictureFrame(picture: XmlNode) {
+  const box = bounds(picture);
+  const props = child(picture, PRESENTATION, "spPr");
+  const nonvisual = child(picture, PRESENTATION, "nvPicPr");
+  if (!box || !props || !nonvisual || nodes(picture).length !== 3) {
+    return undefined;
+  }
+  const application = child(nonvisual, PRESENTATION, "nvPr");
+  if (
+    !plainPictureRectangle(props) ||
+    (application && nodes(application).length > 0)
+  ) {
+    return undefined;
+  }
+  const transform = child(props, DRAWING, "xfrm")!;
+  const offset = child(transform, DRAWING, "off")!;
+  const extent = child(transform, DRAWING, "ext")!;
+  if (
+    [
+      offset.attributes.x,
+      offset.attributes.y,
+      extent.attributes.cx,
+      extent.attributes.cy,
+    ].some((value) => {
+      return value === undefined || !/^-?\d+$/u.test(value);
+    }) ||
+    !Number.isSafeInteger(box.x + box.width) ||
+    !Number.isSafeInteger(box.y + box.height)
+  ) {
+    return undefined;
+  }
+  return { box, offset, extent };
+}
+
+function stretchedPictureFill(picture: XmlNode) {
+  const fill = child(picture, PRESENTATION, "blipFill");
+  if (!fill) {
+    return undefined;
+  }
+  const blip = child(fill, DRAWING, "blip");
+  const stretch = child(fill, DRAWING, "stretch");
+  const destination = stretch && child(stretch, DRAWING, "fillRect");
+  const crop = child(fill, DRAWING, "srcRect");
+  if (
+    !blip ||
+    !stretch ||
+    nodes(fill).length !== (crop ? 3 : 2) ||
+    ["l", "t", "r", "b"].some((side) => {
+      return cropSide(destination, side) !== 0;
+    })
+  ) {
+    return undefined;
+  }
+  return { node: fill, blip, crop };
+}
+
+function cropPicture(picture: XmlNode, width: number, height: number): boolean {
+  const frame = plainPictureFrame(picture);
+  const fill = stretchedPictureFill(picture);
+  if (!frame || !fill) {
+    return false;
+  }
+  const { box, offset, extent } = frame;
+  const { blip, crop } = fill;
+  const left = Math.max(0, box.x);
+  const top = Math.max(0, box.y);
+  const right = Math.min(width, box.x + box.width);
+  const bottom = Math.min(height, box.y + box.height);
+  if (
+    right <= left ||
+    bottom <= top ||
+    (left === box.x &&
+      top === box.y &&
+      right === box.x + box.width &&
+      bottom === box.y + box.height)
+  ) {
+    return false;
+  }
+  const source = {
+    l: cropSide(crop, "l"),
+    t: cropSide(crop, "t"),
+    r: cropSide(crop, "r"),
+    b: cropSide(crop, "b"),
+  };
+  if (
+    !Object.values(source).every(Number.isSafeInteger) ||
+    source.l + source.r >= 100_000 ||
+    source.t + source.b >= 100_000
+  ) {
+    return false;
+  }
+  const horizontal = 100_000 - source.l - source.r;
+  const vertical = 100_000 - source.t - source.b;
+  const clipped = {
+    l: Math.round(source.l + ((left - box.x) / box.width) * horizontal),
+    t: Math.round(source.t + ((top - box.y) / box.height) * vertical),
+    r: Math.round(
+      source.r + ((box.x + box.width - right) / box.width) * horizontal,
+    ),
+    b: Math.round(
+      source.b + ((box.y + box.height - bottom) / box.height) * vertical,
+    ),
+  };
+  if (clipped.l + clipped.r >= 100_000 || clipped.t + clipped.b >= 100_000) {
+    return false;
+  }
+  // A prefix declared on blip alone is not in scope for its new sibling.
+  const prefix = blip.name.slice(0, -blip.local.length);
+  const prepared: XmlNode = crop ?? {
+    name: `${prefix}srcRect`,
+    local: "srcRect",
+    uri: DRAWING,
+    attributes: {
+      [prefix ? `xmlns:${prefix.slice(0, -1)}` : "xmlns"]: DRAWING,
+    },
+    children: [],
+  };
+  for (const [side, value] of Object.entries(clipped)) {
+    prepared.attributes[side] = String(value);
+  }
+  if (!crop) {
+    fill.node.children.splice(
+      fill.node.children.indexOf(blip) + 1,
+      0,
+      prepared,
+    );
+  }
+  offset.attributes.x = String(left);
+  offset.attributes.y = String(top);
+  extent.attributes.cx = String(right - left);
+  extent.attributes.cy = String(bottom - top);
+  return true;
+}
+
+function cropSlidePictures(
+  root: XmlNode,
+  width: number,
+  height: number,
+): boolean {
+  const content = child(root, PRESENTATION, "cSld");
+  const tree = content && child(content, PRESENTATION, "spTree");
+  const groupProps = tree && child(tree, PRESENTATION, "grpSpPr");
+  // Animation can bring the clipped source area back onto the page. Group
+  // coordinates and inherited geometry also remain owned by Google's importer.
+  if (
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    !tree ||
+    (groupProps && nodes(groupProps).length > 0) ||
+    child(root, PRESENTATION, "timing") ||
+    child(root, PRESENTATION, "transition")
+  ) {
+    return false;
+  }
+  let changed = false;
+  for (const picture of nodes(tree)) {
+    if (
+      picture.uri === PRESENTATION &&
+      picture.local === "pic" &&
+      cropPicture(picture, width, height)
+    ) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 interface TextRun {
   readonly node: XmlNode;
   readonly text: string;
@@ -411,7 +604,7 @@ function readPresentation(file: Buffer) {
     .map(([name, data]) => {
       return { name, root: readXml(data) };
     });
-  return { archive, slides, slideWidth };
+  return { archive, slides, slideWidth, slideHeight: number(size, "cy") };
 }
 
 function inlineGroups(elements: readonly XmlNode[]): TextFrame[][] {
@@ -630,7 +823,7 @@ async function prepareSlide(
   return changed;
 }
 
-/** Prepare only the supported, explicit single-line text subset. Other
+/** Prepare supported editable text and static picture crops for import. Other
  * shapes/archives stay owned by Google's importer; never invent a font. */
 export async function prepareGoogleSlidesImport(
   source: { readonly filename: string; readonly file: Buffer },
@@ -656,7 +849,7 @@ export async function prepareGoogleSlidesImport(
         "This presentation is damaged or too large to prepare for Google Slides",
     };
   }
-  const { archive, slides, slideWidth } = parsed.ok;
+  const { archive, slides, slideWidth, slideHeight } = parsed.ok;
   if (!Number.isSafeInteger(slideWidth) || slideWidth <= 0) {
     return { ok: true, file: source.file };
   }
@@ -675,7 +868,12 @@ export async function prepareGoogleSlidesImport(
           "Could not load the fonts needed for Google Slides conversion. Please try again.",
       };
     }
-    if (prepared.value) {
+    const picturesCropped = cropSlidePictures(
+      slide.root,
+      slideWidth,
+      slideHeight,
+    );
+    if (prepared.value || picturesCropped) {
       archive[slide.name] = strToU8(xml(slide.root));
       changed = true;
     }

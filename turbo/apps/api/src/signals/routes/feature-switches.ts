@@ -28,17 +28,11 @@ function featureSwitchResponseBody(params: {
 }) {
   return {
     switches: params.switches,
-    effectiveSwitches: {
-      ...getAllFeatureStates({
-        orgId: params.orgId,
-        userId: params.userId,
-        overrides: params.switches,
-      }),
-      // Captured CLI packages treat a missing key as disabled and skip covers.
-      // Remove this wire-only value after those queued/active runs drain and
-      // supported package-selection/rollback paths exclude them (#39754).
-      artifactPreviews: true,
-    },
+    effectiveSwitches: getAllFeatureStates({
+      orgId: params.orgId,
+      userId: params.userId,
+      overrides: params.switches,
+    }),
   };
 }
 

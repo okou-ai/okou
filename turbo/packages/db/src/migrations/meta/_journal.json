@@ -2339,6 +2339,34 @@
       "when": 1792312718251,
       "tag": "1411_runner_discovery_protection_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 1412,
+      "version": "7",
+      "when": 1792378877107,
+      "tag": "1412_wechat_resume_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 1413,
+      "version": "7",
+      "when": 1792384165457,
+      "tag": "1413_wechat_workflow_receiver",
+      "breakpoints": true
+    },
+    {
+      "idx": 1414,
+      "version": "7",
+      "when": 1792389668875,
+      "tag": "1414_proactive_suggestions_preference",
+      "breakpoints": true
+    },
+    {
+      "idx": 1415,
+      "version": "7",
+      "when": 1792392279071,
+      "tag": "1415_prepare_billing_run_lifecycle",
+      "breakpoints": true
     }
   ]
 }

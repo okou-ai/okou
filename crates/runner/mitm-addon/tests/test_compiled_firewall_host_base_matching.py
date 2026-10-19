@@ -7,6 +7,72 @@ from tests.firewall_helpers import compile_firewalls_or_fail, wrap_firewalls
 
 
 @pytest.mark.parametrize(
+    ("host", "runtime_host", "host_params"),
+    [
+        ("{sub}.example.com", "api.example.com", {"sub": "api"}),
+        ("api-{region}.example.com", "api-us.example.com", {"region": "us"}),
+        ("{sub+}.example.com", "a.b.example.com", {"sub": "a.b"}),
+        ("{sub*}.example.com", "example.com", {"sub": ""}),
+    ],
+)
+@pytest.mark.parametrize(
+    ("base_path", "request_path", "relative_path"),
+    [
+        ("", "/foo", "/foo"),
+        ("/", "/foo", "/foo"),
+        ("", "//foo", "//foo"),
+        ("/", "//foo", "//foo"),
+        ("//", "/foo", None),
+        ("//", "//foo", "/foo"),
+        ("//", "///foo", "//foo"),
+        ("//", "/", "/"),
+        ("//", "//", "/"),
+        ("///", "//foo", None),
+        ("///", "///foo", "/foo"),
+        ("///", "////foo", "//foo"),
+        ("///", "//", "/"),
+    ],
+)
+def test_parameterized_host_root_slash_scope_selects_compiled_permission(
+    host, runtime_host, host_params, base_path, request_path, relative_path
+):
+    base = f"https://{host}{base_path}"
+    url = f"https://{runtime_host}{request_path}"
+    firewalls = wrap_firewalls(
+        [
+            {
+                "base": base,
+                "auth": {"headers": {"Authorization": "Bearer token"}},
+                "permissions": [{"name": "read", "rules": ["GET /foo"]}],
+            }
+        ],
+        name="example",
+    )
+    policies = {"example": {"allow": ["read"], "deny": [], "unknownPolicy": "deny"}}
+
+    assert matching.firewall_base_config_is_valid(base)
+    expected_match = None if relative_path is None else (relative_path, host_params)
+    assert matching.match_base_url(url, base) == expected_match
+
+    result = matching.match_compiled_firewall_request(
+        url, "GET", compile_firewalls_or_fail(firewalls), policies
+    )
+
+    if relative_path is None:
+        assert result is None
+    elif relative_path == "/foo":
+        assert isinstance(result, matching.FirewallAllow)
+        assert result.permission == "read"
+        assert result.rel_path == "/foo"
+        assert result.params == host_params
+        assert result.api_entry["base"] == base
+    else:
+        assert isinstance(result, matching.FirewallBlock)
+        assert result.reason == "unknown_endpoint"
+        assert result.path == relative_path
+
+
+@pytest.mark.parametrize(
     ("base", "url", "expected_host_params"),
     [
         ("https://{sub}.123.example.com", "https://api.123.example.com", {"sub": "api"}),

@@ -74,14 +74,9 @@ async function setupResourceNavigation() {
   return { current, newer, user: userEvent.setup() };
 }
 
-test.each([
-  { pendingSource: "messages", relationsEnabled: false },
-  { pendingSource: "artifacts", relationsEnabled: false },
-  { pendingSource: "messages", relationsEnabled: true },
-  { pendingSource: "artifacts", relationsEnabled: true },
-])(
-  "Show no previous resources while the next chat's $pendingSource load (relationships enabled: $relationsEnabled)",
-  async ({ pendingSource, relationsEnabled }) => {
+test.each(["messages", "artifacts"])(
+  "Show no previous resources while the next chat's %s load",
+  async (pendingSource) => {
     installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
     const first = continuityThread(92, 1, "First resources");
@@ -108,10 +103,10 @@ test.each([
       threads: [first, second],
     });
     context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-      return respond(200, { items: [], nextCursor: null });
+      return respond(200, { items: [] });
     });
     context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
-      return respond(200, { items: [], nextCursor: null });
+      return respond(200, { items: [] });
     });
     context.mocks.api(
       chatThreadEventsContract.rows,
@@ -193,7 +188,6 @@ test.each([
       path: `/chats/${first.id}`,
       featureSwitches: {
         [FeatureSwitchKey.ChatResourcePanel]: true,
-        [FeatureSwitchKey.ChatRelations]: relationsEnabled,
       },
     });
     const previousPanel = await screen.findByRole("region", {
@@ -214,16 +208,10 @@ test.each([
         "Second resources",
       );
     });
-    const loadingPanel = await screen.findByRole("region", {
-      name: "Resources",
-    });
-    expect(resourceButton()).toBeInTheDocument();
     expect(
-      within(loadingPanel).queryByText("First resources guide"),
+      screen.queryByRole("region", { name: "Resources" }),
     ).not.toBeInTheDocument();
-    expect(
-      within(loadingPanel).queryByText("first.pdf"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
     resourcesResponse.resolve();
     await waitFor(() => {
       expect(

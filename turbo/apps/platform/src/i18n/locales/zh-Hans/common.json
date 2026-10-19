@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
-      "continueChat": "继续聊天",
       "dismiss": "忽略",
       "label": "建议",
-      "newChat": "新建聊天",
       "next": "下一条建议",
       "position": "{{current}} / {{total}}",
-      "previous": "上一条建议"
+      "previous": "上一条建议",
+      "recoveryHint": "重新发送前请先检查聊天。你可以将建议恢复到草稿。",
+      "restoreDraft": "恢复到草稿",
+      "runFailed": "无法启动建议",
+      "runInChat": "在原聊天运行",
+      "runNewChat": "在新聊天运行",
+      "starting": "正在启动…"
     },
     "attachments": {
       "attach": "添加附件",
@@ -1788,6 +1792,7 @@
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
       "slashActions": {
+        "actions": "操作",
         "archive": "归档对话",
         "back": "返回",
         "connect": "连接工具",
@@ -1801,6 +1806,11 @@
         "pin": "置顶对话",
         "rename": "重命名对话",
         "schedule": "定时运行",
+        "scheduleCustom": "自定义时间",
+        "scheduleEveryMonday": "每周一",
+        "scheduleEveryMonth": "每月 1 日",
+        "scheduleEveryMorning": "每天早上",
+        "scheduleEveryWeekday": "每个工作日",
         "scheduleHint": "按计划自动运行",
         "share": "分享对话",
         "shareHint": "分享这段对话的链接",
@@ -2095,14 +2105,10 @@
       "communications": "消息",
       "idle": "空闲",
       "loadFailed": "加载失败",
-      "loading": "加载中…",
       "messageUnavailable": "消息不可用",
-      "more": "更多",
-      "noMessages": "暂无消息",
       "origin": "发起自",
       "queued": "排队中",
       "received": "收到",
-      "refresh": "刷新",
       "running": "运行中",
       "sent": "发出",
       "toggleMessages": "与 {{title}} 的消息往来",
@@ -2127,15 +2133,13 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "emptyArtifacts": "目前还没有 artifact",
       "emptyLinks": "此聊天中暂无链接",
       "expand": "展开",
       "links": "链接",
       "loadFailed": "无法加载聊天资源",
       "loadingLinks": "正在加载链接",
       "retry": "重试",
-      "title": "聊天资源",
-      "viewAll": "查看全部"
+      "title": "聊天资源"
     },
     "run": {
       "collapseWorkHistory": "收起工作记录",
@@ -3957,7 +3961,6 @@
     "retry": "重试",
     "samplePages": "样张页数：{{total}}",
     "title": "文档",
-    "use": "使用模板",
     "useNamed": "使用 {{title}}"
   },
   "global": {
@@ -5120,6 +5123,15 @@
         "retryMessage": "晨报设置无法加载或更新，请重试以继续。",
         "title": "晨报"
       },
+      "proactiveSuggestions": {
+        "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
+        "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
+        "preparationFailed": "主动建议设置未能完成，请重试。",
+        "preparing": "正在准备每小时建议，你可以随时关闭。",
+        "retry": "重试",
+        "retryMessage": "无法加载或更新主动建议设置，请重试。",
+        "title": "主动建议"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "按⌘/Ctrl+Enter 发送，按 Enter 换行",
@@ -5177,7 +5189,6 @@
       "description": "让智能体发起购买请求并查看 Link 交易。每笔购买均由你批准。",
       "disconnect": "断开连接",
       "loadError": "无法加载钱包。",
-      "permissionsUnknown": "请重新连接 Link，查看并确认当前授权权限。",
       "retry": "重试",
       "scope": "让 Okou 代你购买并查看 Link 交易。",
       "title": "钱包",
@@ -5207,8 +5218,7 @@
         "statusLabel": "状态",
         "title": "Link 交易记录",
         "unknownStatus": "状态不可用"
-      },
-      "workspaceScopeChanged": "你的 Link 钱包现在可供此工作区内你的所有 Agent 使用。请重新连接以确认此变更。"
+      }
     },
     "workspace": {
       "danger": {
@@ -6651,6 +6661,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "账号",
+      "agentLabel": "Agent",
       "code": "验证码",
       "connect": "连接",
       "connected": "已连接",
@@ -6660,11 +6672,15 @@
       "expired": "二维码已过期，请重新生成。",
       "failed": "连接微信失败，请重试。",
       "instructions": "使用微信扫描二维码，然后在手机上确认。",
+      "linkUnavailable": "此链接不可用。请使用原账号和工作区，并在微信中再发一条消息获取新链接。也可以重新扫码连接。",
       "name": "微信",
+      "newQr": "使用新二维码连接",
       "reconnect": "重新连接",
       "reconnect_required": "请重新扫码连接。",
       "restart_required": "该微信已绑定，请重新生成二维码以连接。",
+      "restoreDescription": "将微信恢复连接到以下账号和工作区。",
       "retry": "重新生成二维码",
+      "returnToWechat": "返回微信，发送消息即可开始对话。",
       "scanned": "已扫码，请在手机上确认。",
       "scope": "只连接你与此智能体的单聊，目前支持文字消息。",
       "title": "连接微信",
@@ -6672,7 +6688,8 @@
       "verification_blocked": "验证码尝试次数过多，请重新生成二维码。",
       "verification_required": "输入微信中显示的验证码。",
       "verify": "验证",
-      "waiting": "等待扫码…"
+      "waiting": "等待扫码…",
+      "workspaceLabel": "工作区"
     }
   }
 }

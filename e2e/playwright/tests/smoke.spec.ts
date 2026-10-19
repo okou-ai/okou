@@ -25,16 +25,12 @@ test("send a message and receive the assistant reply", async ({ page }) => {
   });
 
   // The onboarding prompt handoff sends the message as the first chat.
-  const expectedAnswer = "RESULT=3";
   await completePromptOnboarding(page, {
     appUrl,
-    prompt: "1 + 2. Reply only RESULT=<answer>.",
+    prompt: "What is 1 + 2? Reply with only the number.",
   });
 
   await expect(
-    page
-      .locator('[data-role="assistant"]')
-      .filter({ hasText: expectedAnswer })
-      .first(),
-  ).toContainText(expectedAnswer, { timeout: 90_000 });
+    page.locator('[data-role="assistant"] [data-chat-selection-source]').last(),
+  ).toHaveText(/^\s*3\s*$/, { timeout: 90_000 });
 });

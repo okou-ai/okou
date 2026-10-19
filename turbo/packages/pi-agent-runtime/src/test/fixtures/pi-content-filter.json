@@ -1,0 +1,19 @@
+{
+  "role": "assistant",
+  "api": "openai-completions",
+  "provider": "openrouter",
+  "model": "@preset/okou-1-0",
+  "content": [],
+  "stopReason": "error",
+  "errorMessage": "Provider finish_reason: content_filter",
+  "diagnostics": [
+    {
+      "type": "okou_model_request",
+      "details": {
+        "httpStatus": 200,
+        "transportAttempts": 1,
+        "failureReason": "safety_policy_refusal"
+      }
+    }
+  ]
+}

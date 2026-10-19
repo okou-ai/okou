@@ -1,5 +1,25 @@
 [
   {
+    "message": "Provider finish_reason: content_filter",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Provider finish_reason: network_error",
+    "reason": null
+  },
+  {
+    "message": "Provider finish_reason: content_filter is an example.",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: Provider finish_reason: content_filter",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"server_error\",\"message\":\"Provider finish_reason: content_filter\"}}",
+    "reason": "provider_server_error"
+  },
+  {
     "message": "An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.",
     "reason": "provider_server_error"
   },

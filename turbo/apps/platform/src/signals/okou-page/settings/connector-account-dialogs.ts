@@ -1,6 +1,9 @@
 import { command, computed, state } from "ccstate";
 import { withConnectorConnectionProgress } from "../../connector-connection-progress.ts";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -50,6 +53,18 @@ export interface DefaultConnectorAccountMutationOptions {
   readonly useDefaultConnectorProjection: true;
 }
 
+export type CustomConnectorAccountMutationIntent =
+  PlatformConnectorAccountMutationIntent | { readonly intent: "default" };
+
+export interface DefaultCustomConnectorAccountMutationOptions {
+  readonly account: CustomConnectorAccountMutationIntent;
+  readonly useDefaultConnectorProjection: true;
+}
+
+export type CustomConnectorAccountMutationOptions =
+  | ConnectorAccountMutationOptions
+  | DefaultCustomConnectorAccountMutationOptions;
+
 export function defaultBuiltinConnectorAccountOptions(
   connector: PlatformConnectorCatalogConnectItem | undefined,
 ): DefaultConnectorAccountMutationOptions | null {
@@ -75,9 +90,17 @@ export function defaultBuiltinConnectorAccountOptions(
 
 export function defaultCustomConnectorAccountOptions(
   connector: CustomConnectorResponse | undefined,
-): DefaultConnectorAccountMutationOptions | null {
+): DefaultCustomConnectorAccountMutationOptions | null {
   if (!connector) {
     return null;
+  }
+  if (!isIntegrationManagedCustomConnector(connector)) {
+    // Resolve the current default once per submission, before any account
+    // mutation or provider authorization. Readiness does not identify it.
+    return {
+      account: { intent: "default" },
+      useDefaultConnectorProjection: true,
+    };
   }
   if (!connector.connected) {
     return {

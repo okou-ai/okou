@@ -1,5 +1,150 @@
 # Guarded idle terminal fixture
 
+## Physical speculative rollback and batch recovery
+
+`native_speculative_repark_preserves_history_and_batch_recovery` runs fresh and
+matching-snapshot cases. While an original fixed batch waits at the pre-read
+admission gate, `GuardedSpeculativeIdleOwner` performs two actual unpark, Guest
+RPC and repark cycles, outside held pool/status locks. The second RPC verifies
+that the first repark retained the original private runtime marker, ordinary
+home bytes and complete original 64 KiB payload. Each speculative run differs
+from the original history and the other speculative run. The original backing,
+claim metadata and full lease remain owned throughout; repark uses the original
+16 GiB home identity.
+
+Only a verified parked owner restores into the vacant pool. Its insertion must
+already differ from the captured selection before the subsequent shared logical
+reserve/restore race. The shared batch checks below still require exact old
+refusal/current inventory, independent observer and acknowledged heartbeat
+progress, separate new guarded recovery, held real durable IO, original backing
+exit, complete original home restoration/private-runtime removal and every
+accepted cleanup join. Borrowed physical owners survive the scenario timeout;
+failure attempts covered required cleanup before tracker teardown and preserves
+unresolved ownership rather than producing successful proof.
+
+Compile from the exact committed source and prepare a new matching snapshot as
+described below. Retain the unchanged P1 guards and supplied policy, adding its
+exact raw JSON as `native_batch_repark_policy_json` in collector metadata. Run
+the frozen native test executable with:
+
+```sh
+<native-test-binary> native_speculative_repark_preserves_history_and_batch_recovery \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/batch_repark_report.py <p1-directory>
+```
+
+The dedicated reader requires both physical cycles and the complete shared batch
+proof. Its ordinary real-file/CLI regressions are synthetic consumer tests. This
+is physical speculative rollback followed by a logical insertion race; actual
+API claim loss, all cancellation points, physical RAM relief, complete residency,
+calibrated envelopes and parent C/D/P4 completion remain separate gates.
+
+## Fixed-batch insertion ABA and new-batch recovery
+
+`native_fixed_batch_refuses_restored_insertion_and_recovers_original` runs fresh
+and matching-snapshot cases. A production fixed batch waits at the existing
+pre-read observation scheduling gate with two unused queued cleanup claims.
+Reserving and restoring the same parked Guest preserves its physical identity,
+full lease and home while changing its pool insertion identity. Independent
+memory observation and HTTP 204 acknowledged heartbeats progress through held
+pool/status boundaries. Fresh real reads resume before the old batch must
+report exactly one original `ResourceChanged` refusal, zero physical completion
+and current status retaining the restored original.
+
+A separately captured guarded batch must then retire that insertion. Its
+accepted durable tail IO retains the exact original full lease/cleanup growth
+while independent observation and acknowledged heartbeat progress. Success
+requires complete saving, positive original backing exit, joined dependencies,
+zero ownership/accounting/allocation and the common full original home restore.
+Refusal releases owned gates and joins accepted work, retaining uncertainty.
+
+Select this exact ignored entry through the supplied-artifact bounded P1
+invocation below. Include exact raw `native_batch_aba_policy_json`,
+`native_terminal_artifacts` and the matching `snapshot-preparation.json`.
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/batch_aba_report.py <p1-directory>
+```
+
+Default Cargo runs real-file/CLI refusal checks and an ordinary owner regression
+with complete original home bytes. Actual KVM/NBD execution remains opt-in and
+requires verified committed source, frozen Host and matching inputs. This is a
+logical reserve/restore insertion ABA of an already physically parked Guest;
+it does not prove physical resume/repark, claim loss, another Guest replacement,
+blocked proc IO, numerical pressure, complete residency, calibrated envelopes,
+physical relief, OOM or production protection. Other C/D/P4 gates remain open.
+
+## Later parking after a fixed batch capture
+
+`native_fixed_batch_preserves_later_exact_and_blank_inventory` runs four cases:
+fresh/snapshot factories, each with a distinct later exact or blank Guest. The
+incoming Guest is prepared through actual GuestRPC and physically parked before
+the original batch starts, retaining its separate full lease outside the pool.
+Only after the original captured entry reaches held accepted durable tail IO is
+the incoming owner inserted through guarded pool insertion.
+
+Both full leases and required cleanup growth remain owned while the pool/status
+locks and original IO are held. An independent actual memory read completes;
+pool release permits an HTTP 204 acknowledged heartbeat with both allocations.
+Releasing only IO permits complete durable 64-MiB saving and positive original
+backing exit. Another heartbeat observes only the later lease while original
+batch completion still waits for status. After status release, the original
+report completes exactly one selection, and the actual regular status file
+contains only the later live exact identity/key or blank identity. A separate
+guarded batch must retire that later entry before joined shutdown and zero
+accounting. Complete original required-home restoration remains mandatory.
+
+Use the existing supplied artifacts/policy and bounded P1 collector to invoke
+this exact ignored entry. Include the exact raw
+`native_later_parking_policy_json` and `native_terminal_artifacts` in metadata,
+and retain the original matching `snapshot-preparation.json`. Validate with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/later_parking_report.py <p1-directory>
+```
+
+Default Cargo runs synthetic real-file/CLI refusal regressions and an ordinary
+owner test preserving both required homes. Actual KVM/NBD execution is opt-in
+and requires verified committed source, frozen Host and matching inputs. The
+blank wire status contains only its sandbox identity; profile compatibility is
+checked through the prepared fixture. This corpus does not cover same-key/ABA
+replacement, concurrent preparation cancellation, complete residency, calibrated
+bounds, physical relief, OOM or production protection. Other C/D acceptance
+remains in #39998.
+
+## Final status write failure
+
+`native_status_failure_preserves_saving_and_retries_current_inventory` runs fresh
+and matching-snapshot factories. It first publishes the original parked inventory,
+then positively observes held accepted saving and pool/status contention. An
+independent host-memory read and acknowledged heartbeat must progress while the
+original full lease and required IO remain owned.
+
+After complete durable 64-MiB tail IO, the final status write must positively wait
+for the held status lock while accounting is joined/zero and another heartbeat
+completes. Only the invocation's private `status.json` destination is then replaced
+with a directory. The original batch must return an actual `Write` error with all
+physical work completed and `is_complete=false`. Repairing that private fault and
+calling the existing current-snapshot retry must publish empty inventory without
+resurrecting the original parked sandbox or rewriting the failed report. Complete
+original home restoration and joined dependencies remain required.
+
+Use the existing supplied artifacts/policy and bounded P1 collector with this exact
+ignored entry. Metadata must include `native_status_failure_policy_json` as the
+raw policy text and `native_terminal_artifacts`; retain the original
+`snapshot-preparation.json`. Validate the original files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/status_failure_report.py <p1-directory>
+```
+
+Default Cargo runs synthetic real-file/CLI consumer regressions. Actual KVM/NBD
+execution is opt-in, requires submitted-source/Host/input verification and uses
+only owned disposable resources. This is a deterministic private status-write
+failure, not a status timeout, stalled storage or provider panic. It does not
+establish complete residency, calibrated resource bounds, physical relief, OOM or
+production protection. Remaining C/D acceptance stays in #39998.
+
 ## Cleanup observer loss
 
 `native_observer_loss_keeps_required_saving_and_independent_progress` runs four

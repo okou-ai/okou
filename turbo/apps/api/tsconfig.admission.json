@@ -195,6 +195,7 @@
     "src/signals/services/wechat-context.service.ts",
     "src/lib/wechat-conversation-context.ts",
     "src/signals/services/wechat-delivery.service.ts",
+    "src/signals/services/wechat-delivery-timing.service.ts",
     "src/signals/services/wechat-thread-typing.service.ts",
     "src/signals/services/wechat-access.service.ts",
     "src/signals/services/wechat-message-send.service.ts",

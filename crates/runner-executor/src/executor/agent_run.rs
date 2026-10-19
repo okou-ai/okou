@@ -22,9 +22,9 @@ use super::diagnostics::{
     AgentBootstrapAbnormalExitLogContext, AgentEnvDiagnostics, AgentStdoutStreamDiagnostics,
     StdoutDrainReport, build_agent_env_diagnostics, build_agent_env_key_diagnostics,
     check_host_oom, collect_agent_abnormal_exit_diagnostics, drain_stdout_to_file,
-    explicit_enospc_evidence, host_oom_evidence_since_now, log_agent_abnormal_exit_env_diagnostics,
-    log_agent_bootstrap_abnormal_exit_diagnostics, log_agent_process_exit_summary,
-    read_guest_error_file, read_guest_failure_diagnostic_file,
+    enrich_codex_workspace_reconnect, explicit_enospc_evidence, host_oom_evidence_since_now,
+    log_agent_abnormal_exit_env_diagnostics, log_agent_bootstrap_abnormal_exit_diagnostics,
+    log_agent_process_exit_summary, read_guest_error_file, read_guest_failure_diagnostic_file,
     should_collect_agent_abnormal_exit_diagnostics,
     should_collect_unattributed_sigkill_resource_diagnostics,
     should_log_agent_bootstrap_abnormal_exit_diagnostics,
@@ -2017,7 +2017,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // uploaded above, independently of workload counters. An unscoped dmesg
     // tail cannot attribute this operation or override its terminal outcome.
 
-    let failure = if cancellation_observed {
+    let mut failure = if cancellation_observed {
         // Cancellation remains authoritative over guest failure files. Hard
         // fallback may also leave the guest process without terminal proof.
         Some(ExecutionFailure::cancelled())
@@ -2129,6 +2129,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     } else {
         None
     };
+
+    if let Some(failure) = failure.as_mut() {
+        enrich_codex_workspace_reconnect(failure, &config.log_paths.network_log(context.run_id))
+            .await;
+    }
 
     // Finalize reusable session identity only after successful execution. A
     // pre-run identity proves only what was restored, so verify the current

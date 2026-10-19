@@ -18,6 +18,74 @@ pub(in crate::tailscale) enum Flow {
     RelayQueued,
     RelayFlushed,
     LabelledInput,
+    WireGuard { received: bool, kind: WireKind },
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::tailscale) enum WireKind {
+    Initiation,
+    Response,
+    Cookie,
+    Transport,
+}
+
+impl WireKind {
+    /// Shape/header observations only. The SDK alone authenticates these frames.
+    pub(in crate::tailscale) fn observed(bytes: &[u8]) -> Option<Self> {
+        match (bytes.get(..4)?, bytes.len()) {
+            ([1, 0, 0, 0], 148) => Some(Self::Initiation),
+            ([2, 0, 0, 0], 92) => Some(Self::Response),
+            ([3, 0, 0, 0], 64) => Some(Self::Cookie),
+            ([4, 0, 0, 0], length) if length >= 32 => Some(Self::Transport),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize)]
+struct WireProgress {
+    produced: WireCounts,
+    received: WireCounts,
+}
+
+#[derive(Clone, Default, Serialize)]
+struct WireCounts {
+    #[serde(skip_serializing_if = "Count::empty")]
+    initiation: Count,
+    #[serde(skip_serializing_if = "Count::empty")]
+    response: Count,
+    #[serde(skip_serializing_if = "Count::empty")]
+    cookie: Count,
+    #[serde(skip_serializing_if = "Count::empty")]
+    transport: Count,
+}
+
+impl WireCounts {
+    fn empty(&self) -> bool {
+        [
+            &self.initiation,
+            &self.response,
+            &self.cookie,
+            &self.transport,
+        ]
+        .into_iter()
+        .all(Count::empty)
+    }
+
+    fn count_mut(&mut self, kind: WireKind) -> &mut Count {
+        match kind {
+            WireKind::Initiation => &mut self.initiation,
+            WireKind::Response => &mut self.response,
+            WireKind::Cookie => &mut self.cookie,
+            WireKind::Transport => &mut self.transport,
+        }
+    }
+}
+
+impl WireProgress {
+    fn empty(&self) -> bool {
+        self.produced.empty() && self.received.empty()
+    }
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -51,6 +119,8 @@ pub(crate) struct Progress {
     flushed: Count,
     #[serde(skip_serializing_if = "Count::empty")]
     labelled: Count,
+    #[serde(skip_serializing_if = "WireProgress::empty")]
+    wireguard: WireProgress,
     #[serde(skip)]
     started: Instant,
 }
@@ -67,6 +137,7 @@ impl Default for Progress {
             queued: Count::default(),
             flushed: Count::default(),
             labelled: Count::default(),
+            wireguard: WireProgress::default(),
             started: Instant::now(),
         }
     }
@@ -89,6 +160,14 @@ impl Progress {
             Flow::RelayQueued => &mut self.queued,
             Flow::RelayFlushed => &mut self.flushed,
             Flow::LabelledInput => &mut self.labelled,
+            Flow::WireGuard { received, kind } => {
+                let counts = if received {
+                    &mut self.wireguard.received
+                } else {
+                    &mut self.wireguard.produced
+                };
+                counts.count_mut(kind)
+            }
         };
         value.count = value
             .count
@@ -96,7 +175,7 @@ impl Progress {
         value.last_ms = self.started.elapsed().as_millis().min(u64::MAX as u128) as u64;
     }
 
-    pub(crate) fn observations(&self) -> [(&'static str, &Count, bool); 8] {
+    pub(crate) fn observations(&self) -> [(&'static str, &Count, bool); 16] {
         [
             ("TCP SYN produced", &self.syn, false),
             ("authenticated TCP packets received", &self.replies, false),
@@ -106,7 +185,52 @@ impl Progress {
             ("relay frames queued", &self.queued, true),
             ("relay frames flushed locally", &self.flushed, true),
             ("peer-labelled frames received", &self.labelled, true),
+            (
+                "WireGuard initiation produced",
+                &self.wireguard.produced.initiation,
+                true,
+            ),
+            (
+                "WireGuard response produced",
+                &self.wireguard.produced.response,
+                true,
+            ),
+            (
+                "WireGuard cookie produced",
+                &self.wireguard.produced.cookie,
+                true,
+            ),
+            (
+                "WireGuard transport-data produced",
+                &self.wireguard.produced.transport,
+                true,
+            ),
+            (
+                "WireGuard initiation header received",
+                &self.wireguard.received.initiation,
+                true,
+            ),
+            (
+                "WireGuard response header received",
+                &self.wireguard.received.response,
+                true,
+            ),
+            (
+                "WireGuard cookie header received",
+                &self.wireguard.received.cookie,
+                true,
+            ),
+            (
+                "WireGuard transport-data header received",
+                &self.wireguard.received.transport,
+                true,
+            ),
         ]
+    }
+
+    pub(crate) fn handshake_only_output(&self) -> bool {
+        self.wireguard.produced.initiation.count != 0
+            && self.wireguard.produced.transport.count == 0
     }
 }
 
