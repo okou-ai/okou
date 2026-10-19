@@ -2,9 +2,9 @@ import { command, computed, state } from "ccstate";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 
 import {
-  personalModelProviders$,
-  reloadPersonalModelProviders$,
-} from "../external/personal-model-providers.ts";
+  thirdPartySubscriptions$,
+  reloadThirdPartySubscriptions$,
+} from "../external/third-party-subscriptions.ts";
 import {
   claudeCodeDeviceAuthDialogStatePersonal$,
   openClaudeCodeDeviceAuthDialogPersonal$,
@@ -23,7 +23,7 @@ import {
  * The AI-experience step connects the plan the person already pays for, through
  * the same personal device-auth dialogs Settings uses.
  *
- * What the step reports comes from `/api/me/model-providers`: a dialog that
+ * What the step reports comes from `/api/me/3rd-party-subscriptions`: a dialog that
  * says it finished is not the account, so only a provider the API lists counts
  * as connected. An attempt that fails or is called off says so instead.
  */
@@ -106,9 +106,9 @@ export const onboardingSubscriptionStatus$ = computed(
     // opens or an attempt settles rather than only when the list reloads.
     const dialogOpen = get(personalDeviceAuthOpen$)[provider];
     const attempt = get(internalAttempt$);
-    const { modelProviders } = await get(personalModelProviders$);
+    const { subscriptions } = await get(thirdPartySubscriptions$);
 
-    if (hasConnectedAccount(modelProviders, provider)) {
+    if (hasConnectedAccount(subscriptions, provider)) {
       return "connected";
     }
     return dialogOpen ? "connecting" : statusOfAttempt(attempt, provider);
@@ -153,7 +153,7 @@ export const connectOnboardingSubscription$ = command(
         settle("ended");
         // Finished, failed or called off, the account is whatever the API
         // lists: read it again instead of trusting the dialog's own result.
-        set(reloadPersonalModelProviders$);
+        set(reloadThirdPartySubscriptions$);
       },
     );
   },

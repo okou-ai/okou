@@ -1,6 +1,8 @@
 """Shared fixtures for model-provider JSON response usage tests."""
 
+import asyncio
 import json
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -120,9 +122,15 @@ def expected_event_quantities(
     }
 
 
+async def _join_completion(completion: Awaitable[None]) -> None:
+    await completion
+
+
 def run_response(flow, usage_webhook_api):
     with usage_webhook_api() as webhook:
-        mitm_addon.response(flow)
+        completion = mitm_addon.response(flow)
+        if completion is not None:
+            asyncio.run(_join_completion(completion))
         usage.flush_usage_events(trigger="test")
     return webhook
 

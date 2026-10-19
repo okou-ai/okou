@@ -62,6 +62,10 @@ async fn concurrent_failures_return_their_own_committed_report_and_exact_query()
         assert_eq!(reply["failure_reason"], "exec_rejected");
         assert_eq!(reply["effects"], "not_started");
         let text = diagnostic_text(reply);
+        assert!(
+            text.contains("Runner-observed command effects: not started."),
+            "{text}"
+        );
         assert!(text.contains(&format!("Connection: {id}\n")));
         assert!(reply["diagnostic_text"].as_str().unwrap().len() <= 8192);
         assert!(text.contains(&format!("Configuration: created at {CREATED_AT};")));
@@ -294,6 +298,10 @@ async fn retained_process_status_uses_its_receipt_after_another_host_failure() {
     let session = started["session_id"].as_str().unwrap();
     super::sessions::state(&h, &started["session_id"], "failed").await;
     let first = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
+    assert_eq!(first["session"]["effects"], "not_started");
+    assert!(
+        diagnostic_text(&first).contains("Runner-observed session program effects: not started.")
+    );
     assert!(diagnostic_text(&first).contains(&format!("Session: {session}\n")));
     let unrelated = rpc(&h, "ssh.exec", params()).await;
     assert_ne!(diagnostic_attempt(&first), diagnostic_attempt(&unrelated));
@@ -308,6 +316,38 @@ async fn retained_process_status_uses_its_receipt_after_another_host_failure() {
     assert_eq!(read["session"], first["session"]);
     assert_eq!(read["diagnostic_text"], first["diagnostic_text"]);
     assert_eq!(read["wait_expired"], false);
+    h.shutdown().await;
+}
+
+#[tokio::test]
+async fn disconnected_exec_retains_unknown_effects_without_inventing_non_execution() {
+    let mut h = Harness::new(Reply::Disconnect).await;
+    h.enable_diagnostics().await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let _inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
+        })
+        .await;
+    let reply = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(reply["effects"], "unknown");
+    let text = diagnostic_text(&reply);
+    assert!(
+        text.contains("Runner-observed command effects: unknown."),
+        "{text}"
+    );
+    assert!(text.contains("independently of CLI/helper delivery uncertainty"));
+    let retained = rpc(
+        &h,
+        "ssh.diagnose",
+        json!({"attemptId":diagnostic_attempt(&reply)}),
+    )
+    .await;
+    assert_eq!(diagnostic_text(&retained), text);
+    assert_eq!(h.observed.commands.lock().unwrap().len(), 1);
     h.shutdown().await;
 }
 

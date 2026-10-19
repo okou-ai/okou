@@ -45,10 +45,7 @@ import type {
   ConnectorDefaultAccountBrief,
   CustomConnectorBrief,
 } from "@okouai/api-contracts/contracts/connector-overview";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   UserTemplateCatalogEntry,
   UserTemplateKind,
@@ -8382,10 +8379,6 @@ interface ResolvedComposerConnectorCollections {
     ConnectorSlug,
     PlatformConnectorCatalogStatusItem
   >;
-  readonly unconnectedConnectors: PlatformConnectorCatalogStatusItem[];
-  readonly unconnectedCustomConnectors: CustomConnectorResponse[];
-  readonly directoryConnected: PlatformConnectorCatalogStatusItem[];
-  readonly directoryConnectedCustom: CustomConnectorResponse[];
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
 }
 
@@ -8406,24 +8399,6 @@ function resolveComposerConnectorCollections({
       return [connector.slug, connector];
     }),
   );
-  const unconnectedConnectors = addDialogCatalogItems.filter((connector) => {
-    return !connector.connected;
-  });
-  const unconnectedCustomConnectors = addDialogCustomConnectors.filter(
-    (connector) => {
-      return (
-        !connector.connected && !isIntegrationManagedCustomConnector(connector)
-      );
-    },
-  );
-  const directoryConnected = addDialogCatalogItems.filter((connector) => {
-    return connector.connected;
-  });
-  const directoryConnectedCustom = addDialogCustomConnectors.filter(
-    (connector) => {
-      return connector.connected;
-    },
-  );
   const selectedCustomConnector = selectedCustomConnectorId
     ? addDialogCustomConnectors.find((connector) => {
         return connector.id === selectedCustomConnectorId;
@@ -8432,10 +8407,6 @@ function resolveComposerConnectorCollections({
   return {
     authorizedSet,
     connectorMap,
-    unconnectedConnectors,
-    unconnectedCustomConnectors,
-    directoryConnected,
-    directoryConnectedCustom,
     selectedCustomConnector,
   };
 }
@@ -8666,6 +8637,9 @@ function ComposerConnectorDialogsSlot({
     useLastResolved(signals.connector.addDialogCatalogItems$) ?? [];
   const addDialogCustomConnectors =
     useLastResolved(signals.connector.addDialogCustomConnectors$) ?? [];
+  const customConnectorState = useLoadable(
+    signals.connector.addDialogCustomConnectors$,
+  ).state;
   const directoryBrowse = composerDirectoryBrowseData(
     addDialogBrowseCatalog,
     addDialogCatalogItems,
@@ -8689,21 +8663,14 @@ function ComposerConnectorDialogsSlot({
       return agent.agentId === agentRecordId;
     })?.displayName ?? "";
 
-  const {
-    authorizedSet,
-    connectorMap,
-    unconnectedConnectors,
-    unconnectedCustomConnectors,
-    directoryConnected,
-    directoryConnectedCustom,
-    selectedCustomConnector,
-  } = resolveComposerConnectorCollections({
-    addDialogCatalogItems,
-    addDialogCustomConnectors,
-    authorizedConnectorSlugs:
-      connectorData?.authorization.enabledConnectorSlugs ?? null,
-    selectedCustomConnectorId,
-  });
+  const { authorizedSet, connectorMap, selectedCustomConnector } =
+    resolveComposerConnectorCollections({
+      addDialogCatalogItems,
+      addDialogCustomConnectors,
+      authorizedConnectorSlugs:
+        connectorData?.authorization.enabledConnectorSlugs ?? null,
+      selectedCustomConnectorId,
+    });
   const selectedConnector = connectorUi.selectedConnector ?? undefined;
   const selectedConnectorAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
@@ -8849,10 +8816,9 @@ function ComposerConnectorDialogsSlot({
           categoryCounts={directoryBrowse.categoryCounts}
           loading={addDialogCatalog === undefined || addDialogCatalog === null}
           chipCatalog={directoryBrowse.chipCatalog}
-          connected={directoryConnected}
-          unconnected={unconnectedConnectors}
-          connectedCustom={directoryConnectedCustom}
-          unconnectedCustom={unconnectedCustomConnectors}
+          connectors={addDialogCatalogItems}
+          customConnectors={addDialogCustomConnectors}
+          customConnectorState={customConnectorState}
           connecting={actions.connecting}
           isConnectorConnecting={actions.isConnectorConnecting}
           connectHandlers={connectorConnectHandlers}

@@ -44,6 +44,15 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  // Enable only after canonical Host Worker delivery authority and compatible
+  // serving/rollback API writers support public address changes.
+  [FeatureSwitchKey.HostedSiteUrlEditing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Website URL editing",
+    description: "Customize a published website address from its Share menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerSlashHint]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Composer slash hint",
@@ -106,7 +115,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
-    maintainer: "bingjie@okou.ai",
+    maintainer: "tongx@okou.ai",
     description:
       "Expose personal subscription linking in the composer model slot and the account menu.",
     enabled: false,
@@ -291,6 +300,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
     enabled: true,
+  },
+  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
+    enabled: false,
   },
   [FeatureSwitchKey.WalletSettings]: {
     maintainer: "yuma@okou.ai",

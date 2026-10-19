@@ -8,6 +8,7 @@ import type {
   WalletActionDescriptor,
   WalletActionSignals,
   WalletConnectSignals,
+  WalletApprovalSignals,
 } from "../../signals/chat-page/wallet-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -189,6 +190,71 @@ function WalletConnectCard({
   );
 }
 
+function WalletApprovalCard({
+  descriptor,
+  approval,
+}: {
+  readonly descriptor: WalletActionDescriptor;
+  readonly approval: WalletApprovalSignals;
+}) {
+  const { t } = useTranslation();
+  const current = useLastLoadable(approval.status$);
+  const status =
+    current.state === "hasData" ? current.data.status : "unavailable";
+  const mounted = useSet(approval.mounted$);
+  const title = t(($) => {
+    return $.chat.walletAction.approveTitle;
+  });
+  const descriptions = {
+    pending: t(($) => {
+      return $.chat.walletAction.approvalWaiting;
+    }),
+    approved: t(($) => {
+      return $.chat.walletAction.approvalApproved;
+    }),
+    continued: t(($) => {
+      return $.chat.walletAction.approvalContinued;
+    }),
+    stopped: t(($) => {
+      return $.chat.walletAction.approvalStopped;
+    }),
+    unavailable: descriptor.hostname,
+  };
+  return (
+    <div ref={mounted}>
+      <WalletCard title={title} description={descriptions[status]}>
+        {status === "pending" ||
+        status === "unavailable" ||
+        status === "stopped" ? (
+          <WalletActionLink
+            descriptor={descriptor}
+            title={title}
+            label={t(($) => {
+              return $.chat.walletAction.approveButton;
+            })}
+          />
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 w-full shrink-0 gap-1.5 @[640px]:w-auto"
+            disabled
+          >
+            {status === "approved" ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Check size={14} />
+            )}
+            {t(($) => {
+              return $.chat.walletAction.approvalRecorded;
+            })}
+          </Button>
+        )}
+      </WalletCard>
+    </div>
+  );
+}
+
 export function WalletActionCard({
   signals,
 }: {
@@ -224,6 +290,11 @@ export function WalletActionCard({
 
   if (signals.connect) {
     return <WalletConnectCard descriptor={signals} connect={signals.connect} />;
+  }
+  if (signals.approval) {
+    return (
+      <WalletApprovalCard descriptor={signals} approval={signals.approval} />
+    );
   }
 
   return (

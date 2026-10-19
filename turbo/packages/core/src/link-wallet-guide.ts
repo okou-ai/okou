@@ -75,8 +75,11 @@ approval. Existing read-only authorizations remain usable for permitted reads.
    programmatically; Link requests the user's approval.
 4. Share the exact approvalUrl with a concise merchant/amount/item summary and
    end the turn. Do not open, click, or approve it on behalf of the user. Do not
-   promise an automatic callback for Link's hosted spend-approval page.
-5. After the user returns, run okou wallet spend get <id> --json once. The user's
+   poll from the run. When the response has autoContinue=true, Okou watches this
+   request for up to 30 minutes from creation and sends a continuation message
+   to this same chat after approval. The user can continue manually sooner.
+   If autoContinue is absent/false, do not promise an automatic callback.
+5. After the user returns or the approval continuation arrives, run okou wallet spend get <id> --json once. The user's
    message or a visited URL is not approval: rely on Link's actual request status.
    Pending means wait; denied/expired/canceled/failed means stop. For
    requires_action, show only its returned action URL and follow its resolution.

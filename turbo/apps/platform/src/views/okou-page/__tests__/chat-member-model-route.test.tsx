@@ -1,6 +1,6 @@
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -88,9 +88,9 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
 test("Reconnects the personal subscription used by the selected model", async () => {
   installRunChat({ selectedModel: "gpt-5.6-sol" });
   context.mocks.data.availableRunModels([runModel("reconnect_required")]);
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
+  context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
     return respond(200, {
-      modelProviders: [
+      subscriptions: [
         {
           id: ACCOUNT_ID,
           type: "codex-oauth-token",
@@ -154,10 +154,10 @@ test("Refreshes the account target on explicit reconnect after a remote account 
       models: [currentModel],
     });
   });
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
+  context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
     accountReads += 1;
     return respond(200, {
-      modelProviders: [
+      subscriptions: [
         {
           id: switched ? secondAccountId : ACCOUNT_ID,
           type: "codex-oauth-token",

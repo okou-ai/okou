@@ -4062,21 +4062,19 @@ async function handleSubscriptionScheduleReleased(
   return orgIds;
 }
 
-async function handleSubscriptionScheduleEnded(
-  db: Db,
-  schedule: SubscriptionScheduleInput,
-): Promise<readonly string[]> {
-  const rows = await db
-    .update(orgMetadata)
-    .set({
-      pendingSubscriptionScheduleId: null,
-      pendingSubscriptionTargetTier: null,
-      pendingSubscriptionChangeAt: null,
-      updatedAt: nowDate(),
-    })
-    .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
-    .returning({ orgId: orgMetadata.orgId });
+function endedScheduleUpdateValues() {
+  return {
+    pendingSubscriptionScheduleId: null,
+    pendingSubscriptionTargetTier: null,
+    pendingSubscriptionChangeAt: null,
+    updatedAt: nowDate(),
+  };
+}
 
+function endedScheduleOrgIds(
+  schedule: SubscriptionScheduleInput,
+  rows: readonly { orgId: string }[],
+): readonly string[] {
   if (rows.length > 0) {
     L.debug("subscription schedule ended; cleared pending billing change", {
       scheduleId: schedule.id,
@@ -4471,6 +4469,13 @@ export const reconcilePaidStripeInvoice$ = command(
   },
 );
 
+function logIgnoredStripeBillingEvent(event: StripeWebhookEvent): void {
+  L.debug("ignoring Stripe event outside the active billing scope", {
+    type: event.type,
+    id: event.id,
+  });
+}
+
 export const handleStripeWebhookEvent$ = command(
   async (
     { set },
@@ -4483,10 +4488,7 @@ export const handleStripeWebhookEvent$ = command(
     L.debug("stripe webhook received", { type: event.type, id: event.id });
 
     if (!shouldHandleStripeBillingEvent(event)) {
-      L.debug("ignoring Stripe event outside the active billing scope", {
-        type: event.type,
-        id: event.id,
-      });
+      logIgnoredStripeBillingEvent(event);
       return;
     }
 
@@ -4577,7 +4579,16 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "subscription_schedule.ended": {
-        const orgIds = await handleSubscriptionScheduleEnded(db, event.object);
+        const scheduleDb = db;
+        const schedule = event.object;
+        const orgIds = await (async (): Promise<readonly string[]> => {
+          const rows = await scheduleDb
+            .update(orgMetadata)
+            .set(endedScheduleUpdateValues())
+            .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
+            .returning({ orgId: orgMetadata.orgId });
+          return endedScheduleOrgIds(schedule, rows);
+        })();
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
         break;

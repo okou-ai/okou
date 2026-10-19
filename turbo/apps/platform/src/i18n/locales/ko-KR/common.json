@@ -565,7 +565,7 @@
       "agentLoading": "에이전트가 아직 로딩 중입니다",
       "connect": "Google Drive 연결",
       "connectTooltip": "아티팩트 업로드를 위해 Google Drive를 연결하세요",
-      "conversionNotice": "편집 가능한 사본을 만듭니다. 서식이 변경될 수 있으며 원본 파일은 유지됩니다.",
+      "conversionNotice": "편집 가능한 사본을 만듭니다. 서식이 달라질 수 있습니다.",
       "conversionUnconfirmed": "Google 변환 결과를 확인할 수 없습니다. 다시 시도하기 전에 Drive를 확인하세요.",
       "noArtifacts": "동기화할 아티팩트가 없습니다",
       "openDocs": "Google Docs에서 열기",
@@ -651,6 +651,23 @@
       "panelTitle": "아티팩트",
       "singularTitle": "아티팩트",
       "unavailable": "이 아티팩트는 더 이상 사용할 수 없습니다."
+    },
+    "siteUrl": {
+      "available": "사용 가능",
+      "cancel": "취소",
+      "checkFailed": "주소를 확인할 수 없습니다. 수정 후 다시 시도하세요.",
+      "checking": "확인 중…",
+      "customize": "URL 맞춤 설정",
+      "hint": "짧고 기억하기 쉬운 이름을 선택하세요",
+      "invalid": "소문자, 숫자, 하이픈 3~63자 사용 (예약된 접두사 제외)",
+      "label": "웹사이트 URL",
+      "loadFailed": "웹사이트 설정을 불러오지 못했습니다",
+      "oldUrlWarning": "기존 URL은 작동하지 않습니다. 공유한 링크를 업데이트하세요.",
+      "published": "게시됨",
+      "save": "저장",
+      "saveFailed": "저장하지 못했습니다. 주소가 사용 중이거나 변경되었을 수 있습니다. 새로고침 후 다시 시도하세요.",
+      "taken": "이미 사용 중인 주소입니다",
+      "updated": "웹사이트 URL이 업데이트되었습니다"
     },
     "templates": {
       "activeHtmlPreview": "{{title}} 활성 HTML 미리보기",
@@ -2916,6 +2933,11 @@
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
     "walletAction": {
+      "approvalApproved": "승인됨, 계속 진행 대기 중",
+      "approvalContinued": "구매 요청을 이어서 진행합니다",
+      "approvalRecorded": "상태 업데이트됨",
+      "approvalStopped": "자동 대기가 종료되었습니다. 직접 계속할 수 있습니다",
+      "approvalWaiting": "구매 승인 대기 중",
       "approveButton": "검토",
       "approveTitle": "구매 검토",
       "authorized": "승인됨",
@@ -5186,6 +5208,16 @@
     },
     "wallet": {
       "actionError": "작업을 완료하지 못했습니다. 연결을 확인하고 팝업을 허용한 후 다시 시도하세요.",
+      "cards": {
+        "default": "기본",
+        "description": "Link 지갑에서 카드를 추가하거나 기본 카드를 변경하세요.",
+        "empty": "Link 지갑에 아직 카드가 없습니다",
+        "expires": "만료일 {{date}}",
+        "loadError": "카드를 불러오지 못했습니다. 다시 시도해 주세요.",
+        "loading": "카드 불러오는 중",
+        "manage": "카드 관리",
+        "title": "Link의 내 카드"
+      },
       "connect": "연결",
       "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",

@@ -22,7 +22,17 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
+    if [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_RUN_STORAGE_OUTPUT_READER_FLOOR_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
+      [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
+      [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
       [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
@@ -88,6 +98,8 @@ case "${1:-}" in
       [ "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
+      [ "${MOCK_HOSTED_SITE_URL_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
       [ "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
@@ -135,7 +147,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
+    if [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
+      printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
+    elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
     elif [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
       printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
@@ -201,6 +215,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *hosted-site-url-routing* ]]; then
+      printf '%s\n' "${MOCK_HOSTED_SITE_URL_ROUTING_COMMIT-5858585858585858585858585858585858585858}"
     elif [[ "$*" == *computer-use-command-notifications* ]]; then
       printf '%s\n' "${MOCK_COMPUTER_USE_COMMAND_NOTIFICATIONS_COMMIT-4343434343434343434343434343434343434343}"
     elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
@@ -213,6 +229,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/run-storage-output-reader" ]; then
+      [ "${MOCK_RUN_STORAGE_OUTPUT_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_RUN_STORAGE_OUTPUT_READER_COMMIT-c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de}"
+      exit 0
+    fi
     printf '[package]\nversion = "1.2.3"\n'
     ;;
   rev-list)
@@ -301,6 +322,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor e01702c7d762b5d2a76d557db77ccaf19c4f95c8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must accept structured-only disk telemetry"
 grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "eligible API artifact must satisfy the canonical VNC producer floor"
 grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
@@ -364,6 +386,38 @@ assert_failure "Rollback target predates the model execution capture writer" \
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-capture writer must fail before artifact or host access"
 fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the structured-only disk telemetry reader" \
+  run_resolver "${tmp_dir}/structured-disk-reader-floor.output" MOCK_STRUCTURED_DISK_READER_FLOOR_VALID=0
+grep -Fq 'e01702c7d762b5d2a76d557db77ccaf19c4f95c8' "${tmp_dir}/failure.err" || fail "disk telemetry rejection must identify the receiving preparation commit"
+[ ! -s "${tmp_dir}/structured-disk-reader-floor.output" ] || fail "required-pair API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "required-pair API must fail before artifact or host access"
+fi
+
+for storage_reader_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Missing or invalid Run Storage-output reader rollback floor" \
+    run_resolver "${tmp_dir}/storage-reader-policy.output" "MOCK_RUN_STORAGE_OUTPUT_READER_COMMIT=${storage_reader_commit}"
+  [ ! -s "${tmp_dir}/storage-reader-policy.output" ] || fail "invalid Storage reader policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Storage reader policy must fail before artifact or host access"
+  fi
+done
+
+for storage_reader_case in \
+  "MOCK_RUN_STORAGE_OUTPUT_READER_AVAILABLE=0|Cannot read the Run Storage-output reader rollback floor from main" \
+  "MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN=0|Run Storage-output reader rollback floor is not on main" \
+  "MOCK_RUN_STORAGE_OUTPUT_READER_FLOOR_VALID=0|Rollback target predates the Run Storage-output log reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${storage_reader_case#*|}" \
+    run_resolver "${tmp_dir}/storage-reader-floor.output" "${storage_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/storage-reader-floor.output" ] || fail "unsupported Storage reader must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "unsupported Storage reader must fail before artifact or host access"
+  fi
+done
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates the versioned Pi OpenRouter writer" \
@@ -875,6 +929,26 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "VNC floor must fail before artifact or host access"
 fi
 
+# WeChat retirement rejects incompatible artifacts before provider or host access.
+for producer_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged WeChat Workflows-only receiver" \
+    run_resolver "${tmp_dir}/wechat-history.output" "MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT=${producer_commit}"
+  [ ! -s "${tmp_dir}/wechat-history.output" ] || fail "invalid WeChat history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "WeChat history must be validated before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the WeChat Workflows-only receiver" \
+  run_resolver "${tmp_dir}/wechat-floor.output" MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/wechat-floor.output" ] || fail "legacy WeChat API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "WeChat floor must fail before artifact or host access"
+fi
+run_resolver "${tmp_dir}/wechat-exact.output" "MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT=${target_commit}" >"${tmp_dir}/wechat-exact.log"
+[ -s "${tmp_dir}/wechat-exact.output" ] || fail "exact WeChat cutover artifact must remain eligible"
+
 # A native producer excludes Session-dependent rollback artifacts before any
 # deployment/artifact side effects are attempted.
 : >"${tmp_dir}/boundaries.log"
@@ -944,6 +1018,20 @@ assert_failure "Rollback target predates the Browser session mutation contract" 
 [ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Browser mutation floor must fail before artifact or host access"
+fi
+
+for routing_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged hosted-site URL routing contract" \
+    run_resolver "${tmp_dir}/hosted-site-url-history.output" "MOCK_HOSTED_SITE_URL_ROUTING_COMMIT=${routing_commit}"
+  [ ! -s "${tmp_dir}/hosted-site-url-history.output" ] || fail "invalid hosted-site URL history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the hosted-site URL routing contract" \
+  run_resolver "${tmp_dir}/hosted-site-url-floor.output" MOCK_HOSTED_SITE_URL_ROUTING_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/hosted-site-url-floor.output" ] || fail "incompatible hosted-site API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "hosted-site URL routing floor must fail before artifact or host access"
 fi
 
 for migration_hop_commit in "" invalid; do
@@ -1377,6 +1465,11 @@ ruby - \
 
   host_worker_step = release.fetch("detect-host-worker-deploy-inputs").fetch("steps").find { |step| step["id"] == "detect" }
   raise "Host Worker detection must use the resolved release target" unless host_worker_step.fetch("run").include?("HEAD_SHA=\"#{expected_target}\"")
+  host_worker = release.fetch("deploy-host-worker-production")
+  unless Array(host_worker.fetch("needs")).include?("promote-api-production") &&
+      host_worker.fetch("if").include?("needs.promote-api-production.result == \x27success\x27")
+    raise "Host Worker authority must wait for successful API promotion"
+  end
   schema_step = release.fetch("deploy-api-schema").fetch("steps").find { |step| step["name"] == "Publish Runtime API Schema" }
   raise "Runtime API Schema must use the resolved release target" unless schema_step.fetch("env").fetch("RELEASE_SHA") == expected_target
   dashboard_step = release.fetch("update-rollback-dashboard").fetch("steps").find { |step| step["name"] == "Update rollback dashboard issue" }

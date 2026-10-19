@@ -157,6 +157,7 @@ export const walletPaymentMethodSchema = z.object({
     .nullable()
     .optional(),
 });
+export type WalletPaymentMethod = z.infer<typeof walletPaymentMethodSchema>;
 
 const walletLimitSchema = z.object({
   limit: z.number().int().nullable(),
@@ -198,6 +199,8 @@ export const walletSpendSchema = z.object({
   paymentHistory: z.array(walletPaymentSchema).optional(),
   approvalUrl: z.url().nullable(),
   expiresAt: z.iso.datetime(),
+  // Absent on older APIs. A watch is bounded by expiresAt, never a payment promise.
+  autoContinue: z.boolean().optional(),
   nextAction: z.enum([
     "wait_for_user",
     "check_status",
@@ -520,6 +523,34 @@ export const walletCallbackContract = c.router({
 });
 
 export const walletUserContract = c.router({
+  paymentMethods: {
+    ...walletContract.paymentMethods,
+    path: "/api/wallet/connection/payment-methods",
+  },
+  spendStatus: {
+    method: "POST",
+    path: "/api/wallet/spend/status",
+    headers: authHeadersSchema,
+    body: z.object({
+      agentId: z.uuid(),
+      threadId: z.uuid(),
+      approvalUrl: z.url().max(8192),
+    }),
+    responses: {
+      200: z.object({
+        status: z.enum([
+          "pending",
+          "approved",
+          "continued",
+          "stopped",
+          "unavailable",
+        ]),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+  },
   activity: {
     ...walletContract.transactions,
     path: "/api/wallet/connection/transactions",

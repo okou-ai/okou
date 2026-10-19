@@ -2,10 +2,8 @@ import type {
   AvailableRunModel,
   ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  personalModelProviderAccountsByIdContract,
-  personalModelProvidersMainContract,
-} from "@okouai/api-contracts/contracts/personal-model-providers";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -212,12 +210,9 @@ test("A local active-account change refreshes the member projection", async () =
       models: [runModelFixture(personal)],
     });
   });
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
+  context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
     return respond(200, {
-      modelProviders: [
-        account(firstId, !personal),
-        account(secondId, personal),
-      ],
+      subscriptions: [account(firstId, !personal), account(secondId, personal)],
     });
   });
   context.mocks.api(

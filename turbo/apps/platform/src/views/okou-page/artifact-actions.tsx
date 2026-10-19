@@ -9,6 +9,12 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
+import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "../../signals/hosted-site-url-changes.ts";
+import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { MouseEvent, ReactElement, ReactNode } from "react";
 import {
   ChevronLeft,
@@ -185,6 +191,7 @@ export function ArtifactShareButton({
   url: string;
 }) {
   const { t } = useTranslation();
+  const switches = useGet(featureSwitch$);
   const label =
     ariaLabel ??
     t(($) => {
@@ -206,6 +213,20 @@ export function ArtifactShareButton({
     // Private artifacts have no public address. Keep the action hidden while
     // resolving, and until explicit publication provides a share URL.
     return null;
+  }
+  if (
+    switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
+    isHostedSiteUrl(shareUrl)
+  ) {
+    return (
+      <HostedSiteShareMenu
+        url={url}
+        surface={surface}
+        ariaLabel={label}
+        className={className}
+        iconSize={iconSize}
+      />
+    );
   }
   return (
     <ArtifactActionTooltip label={label}>
@@ -229,6 +250,17 @@ export function ArtifactShareButton({
       </a>
     </ArtifactActionTooltip>
   );
+}
+
+function useGoogleDriveCompletedOperation(
+  syncTarget: ArtifactDownloadSyncTarget | undefined,
+) {
+  const operation = useGet(googleDriveSyncAccount$);
+  return operation &&
+    operation.artifactId === syncTarget?.artifactId &&
+    operation.agentId === syncTarget.agentId
+    ? operation
+    : undefined;
 }
 
 function useGoogleDriveAvailability(
@@ -262,13 +294,10 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const completedAccount = useGet(googleDriveSyncAccount$);
-  const selectedAccount =
-    completedAccount &&
-    completedAccount.artifactId === syncTarget?.artifactId &&
-    completedAccount.agentId === syncTarget.agentId
-      ? completedAccount
-      : undefined;
+  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
+  const selectedAccount = completedOperation?.ready
+    ? completedOperation
+    : undefined;
   const accountReady =
     selectedAccount !== undefined || syncTarget?.accountReady === true;
 
@@ -281,6 +310,7 @@ function useGoogleDriveAvailability(
     googleDriveConnected,
     googleDriveConnector,
     googleDriveReady: accountReady,
+    googleImport: completedOperation?.googleImport,
     googleDriveConnectionId: selectedAccount
       ? selectedAccount.connectionId
       : syncTarget?.connectionId,
@@ -643,6 +673,17 @@ function GoogleDriveMenuItem({
     );
   }
 
+  const imported = availability.googleImport;
+  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
+    if (!imported.webViewLink) {
+      throw new Error("Converted Google file is missing its editor URL");
+    }
+    return (
+      <GoogleDriveCompletedMenuItem
+        action={{ kind: "open", target, url: imported.webViewLink }}
+      />
+    );
+  }
   const completed = googleDriveCompletedAction(syncTarget, target);
   if (completed) {
     return <GoogleDriveCompletedMenuItem action={completed} />;
@@ -751,9 +792,10 @@ export function ArtifactDownloadMenu({
   iconSize = 16,
   showGoogleDriveAction = true,
   syncTarget,
-  url,
+  url: sourceUrl,
 }: ArtifactDownloadMenuProps) {
   const { t } = useTranslation();
+  const url = currentHostedSiteUrl(sourceUrl, useGet(hostedSiteUrlChanges$));
   const label =
     ariaLabel ??
     t(($) => {

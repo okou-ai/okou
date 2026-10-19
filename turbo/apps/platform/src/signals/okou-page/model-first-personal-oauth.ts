@@ -7,9 +7,9 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { command, computed, state } from "ccstate";
 import {
-  personalModelProviders$,
-  reloadPersonalModelProviders$,
-} from "../external/personal-model-providers.ts";
+  thirdPartySubscriptions$,
+  reloadThirdPartySubscriptions$,
+} from "../external/third-party-subscriptions.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { memberRunModelAllowedForPlan } from "./model-plan-capabilities.ts";
 
@@ -38,7 +38,7 @@ type PersonalModelProviderStatusByModel = Readonly<
 const internalReloadPersonalModelProvider$ = state(0);
 
 export const reloadPersonalModelProvider$ = command(({ set }) => {
-  set(reloadPersonalModelProviders$);
+  set(reloadThirdPartySubscriptions$);
   set(internalReloadPersonalModelProvider$, (value) => {
     return value + 1;
   });
@@ -83,14 +83,14 @@ export const personalModelProvider$ = computed(
     get(internalReloadPersonalModelProvider$);
     const [models, personal] = await Promise.all([
       get(availableRunModels$),
-      get(personalModelProviders$),
+      get(thirdPartySubscriptions$),
     ]);
 
     const statuses: Record<string, PersonalModelProviderStatus> = {};
     for (const runModel of models.models) {
       const status = personalStatusForRunModel(
         runModel,
-        personal.modelProviders,
+        personal.subscriptions,
       );
       if (status && runModel.model !== null) {
         statuses[runModel.model] = status;

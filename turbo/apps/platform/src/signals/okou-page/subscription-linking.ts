@@ -4,7 +4,7 @@ import { command, computed } from "ccstate";
 import { captureSubscriptionLinkingEvent } from "../../lib/posthog.ts";
 import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { personalModelProviders$ } from "../external/personal-model-providers.ts";
+import { thirdPartySubscriptions$ } from "../external/third-party-subscriptions.ts";
 import { setSidebarExpanded$ } from "./nav.ts";
 import { openSettingsDialogAt$ } from "./settings/settings-dialog.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
@@ -17,9 +17,8 @@ export type SubscriptionLinkingSource =
 export const SUBSCRIPTION_PROVIDERS: readonly PersonalSubscriptionProviderType[] =
   ["codex-oauth-token", "claude-code-oauth-token"];
 
-export interface SubscriptionPlanStatus {
+interface SubscriptionPlanUsage {
   readonly type: PersonalSubscriptionProviderType;
-  readonly linked: boolean;
   /** The tighter usage window of the active account, when it is reported. */
   readonly remainingPercent: number | null;
   /** Which window `remainingPercent` belongs to, so the caption can name it. */
@@ -34,31 +33,21 @@ export const subscriptionLinkingUnlinked$ = computed(async (get) => {
   if (!get(subscriptionLinkingEnabled$)) {
     return null;
   }
-  const { modelProviders } = await get(personalModelProviders$);
-  return modelProviders.length === 0;
+  const { subscriptions } = await get(thirdPartySubscriptions$);
+  return subscriptions.length === 0;
 });
 
-/**
- * Each subscription, linked or not, so the model panel can keep an entry for
- * the one still missing instead of reading as if only one can be linked.
- */
-export const subscriptionPlanStatuses$ = computed(async (get) => {
-  if (!get(subscriptionLinkingEnabled$)) {
-    return null;
-  }
-  const { modelProviders } = await get(personalModelProviders$);
-  return SUBSCRIPTION_PROVIDERS.map((type): SubscriptionPlanStatus => {
-    const accounts = modelProviders.filter((account) => {
-      return account.type === type;
-    });
-    const active = accounts.find((account) => {
-      return account.isActive !== false;
+/** Usage is read only by the model panel's quota leaves, never its structure. */
+export const subscriptionPlanUsage$ = computed(async (get) => {
+  const { subscriptions } = await get(thirdPartySubscriptions$);
+  return SUBSCRIPTION_PROVIDERS.map((type): SubscriptionPlanUsage => {
+    const active = subscriptions.find((account) => {
+      return account.type === type && account.isActive !== false;
     });
     const limiting = limitingSubscriptionUsageWindow(active?.subscriptionUsage);
     const remainingPercent = limiting?.remainingPercent ?? null;
     return {
       type,
-      linked: accounts.length > 0,
       remainingPercent,
       limitingWindow:
         limiting !== null && remainingPercent !== null ? limiting.kind : null,

@@ -21,6 +21,37 @@ export const walletSettingsEnabled$ = computed((get) => {
 });
 
 const version$ = state(0);
+const cardsVersion$ = state(0);
+export const walletCards$ = computed(async (get) => {
+  get(cardsVersion$);
+  if (!get(walletSettingsEnabled$)) {
+    return [];
+  }
+  const connection = await get(walletConnection$);
+  if (
+    !connection.connected ||
+    connection.revocationPending ||
+    !connection.authorization?.capabilities.paymentMethods
+  ) {
+    return [];
+  }
+  const result = await accept(
+    get(apiClient$)(walletUserContract).paymentMethods({ query: {} }),
+    [200],
+  );
+  return result.body.data
+    .filter((method) => {
+      return method.type === "CARD";
+    })
+    .sort((a, b) => {
+      return Number(b.isDefault) - Number(a.isDefault);
+    });
+});
+export const refreshWalletCards$ = command(({ set }) => {
+  set(cardsVersion$, (version) => {
+    return version + 1;
+  });
+});
 const transactionsVersion$ = state(0);
 export const walletTransactions$ = computed(async (get) => {
   get(transactionsVersion$);

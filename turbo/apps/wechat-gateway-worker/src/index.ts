@@ -10,7 +10,6 @@ import { controlAuthorized } from "./auth";
 import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { saveReceiver, readPendingBatch } from "./pending";
 import { seal } from "./crypto";
-import { pollLegacyReceiver } from "./legacy";
 import {
   LEASE_MS,
   type Env,
@@ -18,24 +17,26 @@ import {
   type ReceiverParams,
 } from "./types";
 
-const startSchema = z.object({
+const stopSchema = z.object({
   connectionId: z.uuid(),
-  generation: z.uuid().optional(),
 });
+const startSchema = stopSchema.extend({ generation: z.uuid() });
 export class WechatReceiver extends DurableObject<Env> {
   async fetch(request: Request) {
-    const body = startSchema.parse(await request.json());
+    const raw: unknown = await request.json();
     return this.ctx.blockConcurrencyWhile(async () => {
       if (new URL(request.url).pathname === "/stop") {
+        stopSchema.parse(raw);
         await this.ctx.storage.deleteAll();
         await this.ctx.storage.deleteAlarm();
         return Response.json({ ok: true });
       }
+      const body = startSchema.parse(raw);
       await this.ctx.storage.transaction(async (txn) => {
         await txn.put("connectionId", body.connectionId);
         const state = await txn.get<ReceiverState>("receiver");
         const hint = await txn.get<string>("generationHint");
-        if (body.generation && body.generation !== hint) {
+        if (body.generation !== hint) {
           await txn.put("generationHint", body.generation);
           if (state) await txn.put("receiver", { ...state, leaseUntil: 0 });
           await txn.setAlarm(Date.now() + 1);
@@ -48,13 +49,6 @@ export class WechatReceiver extends DurableObject<Env> {
   }
   async alarm() {
     if (this.env.WECHAT_GATEWAY_ENABLED !== "true") return;
-    if (this.env.WECHAT_WORKFLOWS_ENABLED !== "true") {
-      // API/Worker rollout bridge: remove after every live binding migrates and
-      // old artifacts are excluded as rollback targets (okou-ai/okou#41268).
-      const connectionId = await this.ctx.storage.get<string>("connectionId");
-      if (!connectionId || (await this.ctx.storage.get("receiver"))) return;
-      return pollLegacyReceiver(this.ctx.storage, this.env, connectionId);
-    }
     const launch = await this.ctx.blockConcurrencyWhile(async () => {
       const connectionId = await this.ctx.storage.get<string>("connectionId");
       if (!connectionId) return null;
@@ -109,7 +103,6 @@ export class WechatReceiver extends DurableObject<Env> {
   ): state is ReceiverState {
     return (
       this.env.WECHAT_GATEWAY_ENABLED === "true" &&
-      this.env.WECHAT_WORKFLOWS_ENABLED === "true" &&
       state?.ownerId === ownerId &&
       state.leaseUntil > Date.now()
     );
@@ -253,7 +246,7 @@ export default {
     } catch {
       return new Response("Bad request", { status: 400 });
     }
-    const parsed = startSchema.safeParse(raw);
+    const parsed = (path === "/stop" ? stopSchema : startSchema).safeParse(raw);
     if (!parsed.success) return new Response("Bad request", { status: 400 });
     const actor = env.WECHAT_RECEIVER.get(
       env.WECHAT_RECEIVER.idFromName(parsed.data.connectionId),

@@ -215,6 +215,7 @@
     "src/signals/services/custom-connector-permission-bundle.service.ts",
     "src/signals/services/custom-connector-skill-volume.service.ts",
     "src/signals/services/custom-connector.service.ts",
+    "src/signals/services/custom-mcp-endpoint.ts",
     "src/signals/services/data-export-ready-email-renderer.ts",
     "src/signals/services/effective-model-route.service.ts",
     "src/signals/services/email-common.service.ts",

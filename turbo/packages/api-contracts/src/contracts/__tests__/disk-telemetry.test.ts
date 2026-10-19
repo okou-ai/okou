@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import {
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   formatRunErrorForExternalSurface,
@@ -92,20 +91,6 @@ describe("independent filesystem telemetry compatibility", () => {
     });
     expect(body.systemLog).toBe("preserved");
     expect(body.metrics).toStrictEqual(metrics);
-  });
-
-  it("new writers retain the legacy fields accepted by the outgoing tolerant reader", () => {
-    const outgoingMetric = z.object({
-      ts: z.string(),
-      cpu: z.number(),
-      mem_used: z.number(),
-      mem_total: z.number(),
-      disk_used: z.number(),
-      disk_total: z.number(),
-    });
-    expect(
-      outgoingMetric.parse({ ...legacyMetric, rootfs, home }),
-    ).toStrictEqual(legacyMetric);
   });
 
   it.each([

@@ -15,6 +15,7 @@ import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { LinkWalletError } from "../services/link-wallet-provider.service";
 import { walletTransactions$ } from "../services/link-wallet-transactions.service";
+import { walletApprovalStatus$ } from "../services/link-wallet-approval-status.service";
 import {
   completeWalletOAuth$,
   createWalletSpend$,
@@ -29,7 +30,10 @@ import {
   listWalletSpends$,
   readWallet$,
 } from "../services/link-wallet.service";
-import { settle } from "../utils";
+import { settle, tapError } from "../utils";
+import { waitUntil } from "../context/wait-until";
+import { logger } from "../../lib/log";
+import { startLinkApprovalWorkflow } from "../services/link-approval-config.service";
 
 const walletEnabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -102,6 +106,25 @@ const credentialsParams$ = pathParamsOf(walletContract.spendCredentials);
 const callbackQuery$ = queryOf(walletCallbackContract.callback);
 const userConnectBody$ = bodyResultOf(walletUserContract.connect);
 const connectStatusBody$ = bodyResultOf(walletUserContract.connectStatus);
+const spendStatusBody$ = bodyResultOf(walletUserContract.spendStatus);
+
+const spendStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const input = await get(spendStatusBody$);
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const owner = get(organizationAuthContext$);
+  const body = await set(walletApprovalStatus$, owner, input.data, signal);
+  signal.throwIfAborted();
+  return { status: 200 as const, body };
+});
 
 const connectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   const enabled = await settle(get(walletEnabled$), signal);
@@ -238,6 +261,36 @@ const userActivity$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: walletUserContract.activity.responses[200].parse(result.value),
   };
 });
+const userPaymentMethods$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const enabled = await settle(get(walletEnabled$), signal);
+    signal.throwIfAborted();
+    if (!enabled.ok) {
+      return walletError(enabled.error);
+    }
+    const { orgId, userId } = get(organizationAuthContext$);
+    const result = await settle(
+      set(
+        readWallet$,
+        { orgId, userId },
+        { operation: "payment_methods_read" },
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      return walletError(result.error);
+    }
+    return {
+      status: 200 as const,
+      body: walletUserContract.paymentMethods.responses[200].parse(
+        result.value,
+      ),
+    };
+  },
+);
 const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const enabled = await settle(get(walletEnabled$), signal);
   signal.throwIfAborted();
@@ -287,6 +340,30 @@ const createSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  if (
+    result.ok &&
+    result.value.autoContinue &&
+    ["wait_for_user", "retrieve_credentials"].includes(result.value.nextAction)
+  ) {
+    const spend = result.value;
+    waitUntil(
+      tapError(
+        startLinkApprovalWorkflow(
+          {
+            spendId: spend.id,
+            deadline: spend.expiresAt,
+          },
+          AbortSignal.timeout(10_000),
+        ),
+        (error) => {
+          logger("LinkApproval").warn(
+            "Workflow start will be repaired by cron",
+            { spendId: spend.id, error },
+          );
+        },
+      ),
+    );
+  }
   return walletResponse(result);
 });
 const getSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -512,6 +589,14 @@ const userAuth = {
 } as const;
 
 export const walletRoutes: readonly RouteEntry[] = [
+  {
+    route: walletUserContract.paymentMethods,
+    handler: authRoute(userAuth, userPaymentMethods$),
+  },
+  {
+    route: walletUserContract.spendStatus,
+    handler: authRoute(userAuth, spendStatus$),
+  },
   {
     route: walletUserContract.activity,
     handler: authRoute(userAuth, userActivity$),

@@ -160,6 +160,7 @@ impl sandbox::HomeDrivePressurePolicy for FileReclaimer {
         &self,
         destination_device: u64,
         _required: u64,
+        _deadline: tokio::time::Instant,
     ) -> sandbox::HomeDrivePressureFuture<'_> {
         let victim = self.victim.clone();
         let entered = self.entered.clone();
@@ -183,7 +184,12 @@ impl sandbox::HomeDrivePressurePolicy for FileReclaimer {
 
 struct NoProgress;
 impl sandbox::HomeDrivePressurePolicy for NoProgress {
-    fn reclaim(&self, _device: u64, _required: u64) -> sandbox::HomeDrivePressureFuture<'_> {
+    fn reclaim(
+        &self,
+        _device: u64,
+        _required: u64,
+        _deadline: tokio::time::Instant,
+    ) -> sandbox::HomeDrivePressureFuture<'_> {
         Box::pin(async {})
     }
 }
@@ -204,7 +210,12 @@ fn assert_observed_insufficient(error: &SandboxError) {
 
 struct UnavailableReclaimer;
 impl sandbox::HomeDrivePressurePolicy for UnavailableReclaimer {
-    fn reclaim(&self, _device: u64, _required: u64) -> sandbox::HomeDrivePressureFuture<'_> {
+    fn reclaim(
+        &self,
+        _device: u64,
+        _required: u64,
+        _deadline: tokio::time::Instant,
+    ) -> sandbox::HomeDrivePressureFuture<'_> {
         Box::pin(async { panic!("healthy preparation must not depend on reclamation") })
     }
 }
@@ -330,7 +341,7 @@ async fn provider_observation_expires_without_aborting_accepted_reclamation() {
     // The accepted file reclaimer is now parked at its explicit release gate.
     // Advance the observation deadline without advancing physical IO.
     tokio::time::pause();
-    tokio::time::advance(Duration::from_millis(250)).await;
+    tokio::time::advance(sandbox::HOME_DRIVE_RECLAIM_OBSERVATION).await;
     tokio::time::resume();
     assert!(
         prepare

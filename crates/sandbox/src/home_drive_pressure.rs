@@ -3,6 +3,12 @@
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use std::time::Duration;
+
+/// Default foreground observation allowance. The caller creates one absolute
+/// deadline for both provider and cache; accepted IO and the final space reread
+/// are not bounded by this allowance.
+pub const HOME_DRIVE_RECLAIM_OBSERVATION: Duration = Duration::from_millis(250);
 
 /// Bounded observation of accepted reclamation. Dropping the observer must not
 /// cancel physical work or release the work's locks before its IO completes.
@@ -12,10 +18,13 @@ pub type HomeDrivePressureFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 
 pub trait HomeDrivePressurePolicy: Send + Sync {
     /// Offer reclamation only on `destination_device`. The caller supplies its
     /// reserve plus additional peak and must reread actual space afterward.
+    /// Observe only until the caller's `deadline`, without restarting its budget.
+    /// Expiry or cancellation must leave accepted physical work owned.
     fn reclaim(
         &self,
         destination_device: u64,
         required_available_bytes: u64,
+        deadline: tokio::time::Instant,
     ) -> HomeDrivePressureFuture<'_>;
 }
 

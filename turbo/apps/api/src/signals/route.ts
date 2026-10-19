@@ -13,6 +13,7 @@ import { artifactOgRoutes } from "./routes/artifact-og";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { authMeRoutes } from "./routes/auth-me";
 import { bankingRoutes } from "./routes/banking";
+import { linkApprovalWorkflowRoutes } from "./routes/link-approval-workflow";
 import { walletRoutes } from "./routes/wallet";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -88,7 +89,6 @@ import { cronTelegramCleanupRoutes } from "./routes/cron-telegram-cleanup";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
 import { wechatReceiverRoutes } from "./routes/wechat-receiver";
-import { wechatGatewayRoutes } from "./routes/wechat-gateway";
 import { integrationsWechatRoutes } from "./routes/integrations-wechat";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { discordInteractionsRoutes } from "./routes/discord-interactions";
@@ -146,7 +146,10 @@ import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata
 import { mcpServerRoutes } from "./routes/mcp-server";
 import { meModelProviderAccountRoutes } from "./routes/me-model-provider-accounts";
 import { meModelProvidersDeleteRoutes } from "./routes/me-model-providers-delete";
-import { meModelProvidersListRoutes } from "./routes/me-model-providers-list";
+import {
+  meModelProvidersListRoutes,
+  meThirdPartySubscriptionsListRoutes,
+} from "./routes/me-model-providers-list";
 import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
@@ -268,6 +271,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentStorageRoutes,
   ...builtinConnectorsAutomaticRoutes,
   ...walletRoutes,
+  ...linkApprovalWorkflowRoutes,
   ...builtinConnectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
   ...cronReconcileArtifactCatalogRoutes,
@@ -379,6 +383,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,
+  ...meThirdPartySubscriptionsListRoutes,
   ...meModelProvidersResetSubscriptionRoutes,
   ...meModelProvidersUpsertRoutes,
   ...voiceIoQuotaRoutes,
@@ -425,7 +430,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsWechatRoutes,
   ...integrationsWechatMessagesRoutes,
   ...integrationsWechatFileRoutes,
-  ...wechatGatewayRoutes,
   ...wechatReceiverRoutes,
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,

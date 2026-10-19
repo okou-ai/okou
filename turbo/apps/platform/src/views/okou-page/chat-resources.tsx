@@ -27,6 +27,13 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { artifactTitleLink } from "./artifact-display.ts";
+import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "../../signals/hosted-site-url-changes.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -194,6 +201,13 @@ function ResourceOutputRow({
   readonly threadId: string;
 }) {
   const openArtifact = useSet(openArtifactSidebar$);
+  const changes = useGet(hostedSiteUrlChanges$);
+  const titleLink = artifactTitleLink(classifyChatAttachment(file), {
+    ...file,
+    aliasUrl: file.aliasUrl
+      ? currentHostedSiteUrl(file.aliasUrl, changes)
+      : undefined,
+  });
   return (
     <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
@@ -216,7 +230,7 @@ function ResourceOutputRow({
           size="sm"
           className="shrink-0"
         />
-        <span className="truncate">{file.filename}</span>
+        <HoverScrollTitle title={titleLink?.label ?? file.filename} />
       </Button>
       <CopyResourceLink url={file.aliasUrl ?? file.url} />
     </li>
@@ -250,7 +264,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               title={t(($) => {
                 return $.artifacts.sidebar.panelTitle;
               })}
-              count={data.artifacts.length}
             />
             <ul id={artifactsId} className="m-0 list-none p-0">
               {data.artifacts

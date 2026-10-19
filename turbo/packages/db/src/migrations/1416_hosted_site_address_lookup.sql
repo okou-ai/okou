@@ -1,0 +1,2 @@
+CREATE INDEX "idx_hosted_deployments_public_slug" ON "hosted_deployments" USING btree (("manifest"->>'publicSlug'),"site_id");--> statement-breakpoint
+CREATE INDEX "idx_hosted_sites_slug" ON "hosted_sites" USING btree ("slug");

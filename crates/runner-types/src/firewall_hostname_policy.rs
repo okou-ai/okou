@@ -240,7 +240,9 @@ fn validate_hostname_policy_label(label: &str, subject: &str) -> Result<(), Stri
             "{subject} host contains unsafe IDNA compatibility mappings"
         ));
     }
-    if label.chars().any(is_post_policy_assignment) || alabel_uses_post_policy_assignment(label) {
+    if label.chars().any(is_unsupported_policy_character)
+        || alabel_uses_unsupported_policy_character(label)
+    {
         return Err(format!(
             "{subject} host exceeds the supported Unicode policy"
         ));
@@ -261,13 +263,13 @@ fn validate_hostname_policy_label(label: &str, subject: &str) -> Result<(), Stri
     Ok(())
 }
 
-fn alabel_uses_post_policy_assignment(label: &str) -> bool {
+fn alabel_uses_unsupported_policy_character(label: &str) -> bool {
     let lower = label.to_ascii_lowercase();
     let Some(payload) = lower.strip_prefix("xn--") else {
         return false;
     };
     idna::punycode::decode_to_string(payload)
-        .is_some_and(|decoded| decoded.chars().any(is_post_policy_assignment))
+        .is_some_and(|decoded| decoded.chars().any(is_unsupported_policy_character))
 }
 
 fn has_unsafe_uts46_mapping(ch: char) -> bool {
@@ -278,8 +280,10 @@ fn has_unsafe_uts46_mapping(ch: char) -> bool {
         || codepoint_in_range(codepoint, UNSAFE_UTS46_SUPPLEMENTARY_IGNORABLE_RANGE)
 }
 
-fn is_post_policy_assignment(ch: char) -> bool {
-    codepoint_in_ranges(u32::from(ch), &UNICODE_17_ASSIGNMENT_RANGES)
+fn is_unsupported_policy_character(ch: char) -> bool {
+    // The Python consumer rejects both joiners, including context-valid A-labels.
+    matches!(ch, '\u{200c}' | '\u{200d}')
+        || codepoint_in_ranges(u32::from(ch), &UNICODE_17_ASSIGNMENT_RANGES)
 }
 
 fn codepoint_in_ranges(codepoint: u32, ranges: &[(u32, u32)]) -> bool {

@@ -66,44 +66,30 @@ const bootstrap$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!parsed.success) {
     return createErrorResponse("BAD_REQUEST", "Invalid receiver body");
   }
-  const row = await set(connection$, parsed.data.connectionId, signal);
-  if (!row) {
+  const connection = await set(connection$, parsed.data.connectionId, signal);
+  if (!connection) {
     return Response.json({ active: false });
   }
-  // This CAS excludes concurrent legacy polls before transferring their cursor
-  // and pending batch. Old API artifacts must drain before Worker activation.
-  const [claimed] = row.workflowReceiver
-    ? [row]
-    : await set(writeDb$)
-        .update(wechatConnections)
-        .set({ workflowReceiver: true })
-        .where(
-          and(
-            eq(wechatConnections.id, row.id),
-            eq(wechatConnections.generation, row.generation),
-          ),
-        )
-        .returning();
-  signal.throwIfAborted();
-  if (!claimed) {
-    return Response.json({ active: false });
-  }
-  if (claimed.status === "active") {
+  if (connection.status === "active") {
     // Normal callbacks send replies immediately. This bounded renewal is the
     // backstop for a callback interrupted before durable delivery registration.
     waitUntil(
-      set(recoverWechatChatDeliveries$, claimed, AbortSignal.timeout(300_000)),
+      set(
+        recoverWechatChatDeliveries$,
+        connection,
+        AbortSignal.timeout(300_000),
+      ),
     );
   }
-  if (parsed.data.generation === claimed.generation) {
-    return Response.json({ active: true, generation: claimed.generation });
+  if (parsed.data.generation === connection.generation) {
+    return Response.json({ active: true, generation: connection.generation });
   }
-  const token = await decryptStoredSecretValue(claimed.tokenCiphertext);
+  const token = await decryptStoredSecretValue(connection.tokenCiphertext);
   signal.throwIfAborted();
-  const pending = claimed.pendingBatchCiphertext
+  const pending = connection.pendingBatchCiphertext
     ? wechatUpdatesSchema.parse(
         safeJsonParse(
-          await decryptStoredSecretValue(claimed.pendingBatchCiphertext),
+          await decryptStoredSecretValue(connection.pendingBatchCiphertext),
         ),
       )
     : null;
@@ -111,13 +97,13 @@ const bootstrap$ = command(async ({ get, set }, signal: AbortSignal) => {
   return Response.json(
     {
       active: true,
-      generation: claimed.generation,
+      generation: connection.generation,
       session: {
-        baseUrl: claimed.baseUrl,
+        baseUrl: connection.baseUrl,
         token,
-        cursor: claimed.updatesCursor,
+        cursor: connection.updatesCursor,
         preserveCursor:
-          claimed.status === "disconnected" || claimed.resumedAt !== null,
+          connection.status === "disconnected" || connection.resumedAt !== null,
         pending,
       },
     },
@@ -141,12 +127,6 @@ const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (connection.generation !== body.generation) {
     return Response.json({ active: true, refresh: true });
-  }
-  if (!connection.workflowReceiver) {
-    return createErrorResponse(
-      "CONFLICT",
-      "Receiver has not claimed this binding",
-    );
   }
   if (connection.status === "active") {
     waitUntil(
@@ -176,7 +156,6 @@ const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
           eq(wechatConnections.id, connection.id),
           eq(wechatConnections.generation, body.generation),
           eq(wechatConnections.status, connection.status),
-          eq(wechatConnections.workflowReceiver, true),
           isNull(wechatConnections.pendingBatchCiphertext),
         ),
       )

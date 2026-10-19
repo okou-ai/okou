@@ -27,6 +27,8 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
+import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { mcpConnectorsRoutes } from "../mcp-connectors";
 import {
   getModelProviderFirewall,
   type ModelProviderType,
@@ -7144,7 +7146,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
-          endpoint: "https://mcp-runtime.example.test/api/mcp",
+          endpoint:
+            "https://mcp-runtime.example.test/api/mcp?hl=en&tag=one&tag=two&empty=&encoded=a%20b",
           skillMarkdown: "Use the admitted MCP server.",
         });
         const mcp = await connectors.createCustomConnector(
@@ -7179,6 +7182,27 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(run.runId);
         const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
+        const mcpClient = setupApp({ context, routes: mcpConnectorsRoutes })(
+          mcpConnectorsContract,
+        );
+        const mcpToken = claim.platformEnvironment.OKOU_TOKEN;
+        if (!mcpToken) {
+          throw new Error("Expected the Run's MCP client token");
+        }
+        const mcpHeaders = {
+          authorization: `Bearer ${mcpToken}`,
+        };
+        const listedMcp = await accept(
+          mcpClient.list({ headers: mcpHeaders }),
+          [200],
+        );
+        expect(listedMcp.body.connectors).toContainEqual(
+          expect.objectContaining({
+            endpoint: mcpDefinition.endpoint,
+            target: { kind: "custom", customConnectorId: mcp.id },
+            connectionId: expect.any(String),
+          }),
+        );
         const admittedIds = [http.id, mcp.id].sort();
         expect(
           claim.connectorRuntimeTargets
@@ -7292,7 +7316,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const movedDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime Moved",
-          endpoint: "https://mcp-runtime.example.test/v2/mcp/",
+          endpoint: "https://mcp-runtime.example.test/v2/mcp/?hl=de&tag=two",
           skillMarkdown: "Use the moved MCP server.",
         });
         await connectors.updateCustomConnector(actor, mcp.id, movedDefinition);
@@ -7310,6 +7334,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ask: [],
           unknownPolicy: "allow",
         });
+        const movedMcp = await accept(
+          mcpClient.list({ headers: mcpHeaders }),
+          [200],
+        );
+        expect(movedMcp.body.connectors).toContainEqual(
+          expect.objectContaining({
+            endpoint: movedDefinition.endpoint,
+            target: { kind: "custom", customConnectorId: mcp.id },
+            connectionId: mcpTarget.sourceId,
+          }),
+        );
 
         const [mismatchedRoutingResult] = await api.syncConnectorRuntime(
           run.runId,
@@ -7706,7 +7741,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
       });
 
-      it("reads a publicly configured canonical connector through runtime auth", async () => {
+      it("renders a publicly configured canonical IDN connector through runtime auth", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
@@ -7759,12 +7794,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         };
         onTestFinished(cleanup);
         const suffix = randomUUID().slice(0, 8);
-        const prefixTemplate = `https://canonical-${suffix}.example.test/api/`;
+        const prefixTemplate = `https://{{variables.host}}.tenant-${suffix}.example.test/api/`;
+        const hostname = "xn--mgba3gch31f";
         const runtimeConnector = await connectors.createCustomConnector(actor, {
           slug: `_bdd-canonical-${suffix}`,
           displayName: "BDD Canonical Runtime",
           prefixTemplates: [prefixTemplate],
           fields: [
+            {
+              key: "host",
+              label: "Host",
+              kind: "variable",
+              required: true,
+            },
             {
               key: "optional_secret",
               label: "Optional secret",
@@ -7782,11 +7824,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           authMode: "manual",
         });
         owned.connectorId = runtimeConnector.id;
-        await connectors.setCustomConnectorValues(
-          actor,
-          runtimeConnector.id,
-          [],
-        );
+        await connectors.setCustomConnectorValues(actor, runtimeConnector.id, [
+          { key: "host", kind: "variable", value: hostname },
+        ]);
         const runtimeConnectionId = await defaultCustomConnectorAccountId(
           connectors,
           actor,
@@ -7814,6 +7854,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           actor,
           runtimeConnector.id,
           [
+            { key: "host", kind: "variable", value: hostname },
             {
               key: "optional_secret",
               kind: "secret",
@@ -7835,10 +7876,38 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           claim,
           runtimeConnector.id,
         );
+        for (const unsupportedHostname of [
+          "xn--mgba3gch31f060k",
+          "xn--11b2ezcw70k",
+        ]) {
+          const [rejectedRuntime] = await api.syncConnectorRuntime(run.runId, {
+            targets: [
+              {
+                ...runtimeTarget,
+                baseUrlVars: { host: unsupportedHostname },
+              },
+            ],
+          });
+          expect(rejectedRuntime).toStrictEqual({
+            target: {
+              kind: "custom",
+              customConnectorId: runtimeConnector.id,
+            },
+            state: "unresolved",
+            reason: "runtime-configuration-unavailable",
+          });
+        }
         const [runtimeResult] = await api.syncConnectorRuntime(run.runId, {
           targets: [runtimeTarget],
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
+        expect(
+          runtime.firewall.firewall.apis.map((api) => {
+            return api.base;
+          }),
+        ).toStrictEqual([
+          `https://${hostname}.tenant-${suffix}.example.test/api/`,
+        ]);
         const { body: authBody } = customConnectorRuntimeAuthBody(
           runtime,
           fw.encryptedSecretsBody({}),
@@ -12558,11 +12627,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           const completed = await api.readRun(actor, created.runId);
           expect(completed.status).toBe("completed");
-          expect(completed.result?.artifact).toStrictEqual({
-            memory: memoryArtifact.versionId,
-          });
-          expect(completed.result?.volumes).toStrictEqual({
-            [cacheVolume]: cachePrepared.versionId,
+          expect(completed.result?.storageOutputs).toStrictEqual(
+            artifactSnapshots,
+          );
+          const log = await createRunReadsApi(context).requestReadLogById(
+            actor,
+            created.runId,
+            [200],
+          );
+          expect(log.body.artifact).toStrictEqual({
+            name: memoryArtifact.name,
+            version: memoryArtifact.versionId,
           });
 
           // A late duplicate report cannot flip the settled run.

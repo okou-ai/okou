@@ -219,6 +219,10 @@ for (const state of ["allowed", "denied", "redirect"]) {
               })
             : Response.json({ allowed: state === "allowed" });
         }
+        if (url.pathname === "/api/host/aliases/demo") {
+          assert.equal(url.searchParams.get("publicBrand"), "okou");
+          return Response.json({ pointer: null });
+        }
         assert.equal(url.pathname, "/api/artifact-og/metadata");
         return Response.json(metadata);
       },

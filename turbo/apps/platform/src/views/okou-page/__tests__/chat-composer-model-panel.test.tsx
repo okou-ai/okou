@@ -1,7 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { buildRunModel } from "./chat-composer-test-helpers.ts";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { buildProvider, buildRunModel } from "./chat-composer-test-helpers.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import {
@@ -108,6 +110,59 @@ test("Auto shows the model picker once a subscription adds models", async () => 
   await waitFor(() => {
     expect(hasAutoModelTrigger()).toBeTruthy();
   });
+});
+
+test("Show the final model groups before subscription usage resolves", async () => {
+  const usage = context.mocks.deferred<void>();
+  context.mocks.api(
+    thirdPartySubscriptionsMainContract.list,
+    async ({ respond, withSignal }) => {
+      await withSignal(usage.promise);
+      return respond(200, {
+        subscriptions: [
+          buildProvider({
+            id: "e8000000-0000-4000-a000-000000000001",
+            type: "codex-oauth-token",
+            framework: "codex",
+            isActive: true,
+            subscriptionUsage: {
+              fiveHour: null,
+              weekly: {
+                usedPercent: 12,
+                remainingPercent: 88,
+                resetAt: "2026-10-26T00:00:00Z",
+                windowSeconds: 604_800,
+              },
+            },
+          }),
+        ],
+      });
+    },
+  );
+  installRunChat({ selectedModel: null });
+  context.mocks.data.availableRunModels([
+    buildRunModel({ model: "gpt-6-astra", providerType: "codex-oauth-token" }),
+  ]);
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.SubscriptionLinkingEntry]: true },
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  const panel = await openModelPanel("Auto");
+  const title = within(panel).getByText("Your ChatGPT plan");
+  expect(within(panel).getByText("Your Claude plan")).toBeInTheDocument();
+  expect(within(panel).getByText("Connect")).toBeInTheDocument();
+  expect(within(panel).getByText("Manage plans")).toBeInTheDocument();
+  expect(within(panel).getByLabelText("Loading")).toBeInTheDocument();
+  const models = within(panel).getAllByRole("radio");
+  expect(modelOption(/^GPT 6 Astra/u, panel)).toBeInTheDocument();
+
+  usage.resolve();
+  await within(panel).findByText("88% left");
+  expect(within(panel).getByText("Your ChatGPT plan")).toBe(title);
+  expect(within(panel).getAllByRole("radio")).toStrictEqual(models);
+  expect(within(panel).queryByLabelText("Loading")).not.toBeInTheDocument();
 });
 
 test("Choose a connected subscription model, return to Auto and send Auto", async () => {

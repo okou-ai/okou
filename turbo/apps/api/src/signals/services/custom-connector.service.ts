@@ -23,7 +23,6 @@ import {
 import {
   canonicalizeFirewallBaseUrl,
   expandHostWildcardsInBaseUrl,
-  validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
@@ -75,6 +74,7 @@ import {
   publishConnectorRuntimeSyncWakeups$,
 } from "./connector-runtime-wakeup.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
+import { parseCustomMcpEndpoint } from "./custom-mcp-endpoint";
 import {
   customConnectorDefinitionConnectedAccount,
   customConnectorConnectedConnections,
@@ -122,7 +122,6 @@ const TEMPLATE_EXPRESSION_REGEX = /\{\{[^{}]*\}\}/;
 const VARIABLE_REFERENCE_REGEX = /\{\{\s*variables\.[a-z][a-z0-9_]*\s*\}\}/;
 const TEMPLATE_PLACEHOLDER_VALUE = "placeholder";
 const HOST_TEMPLATE_VALUE_UNSAFE_REGEX = /[/?#\\@:]/;
-const MCP_ENDPOINT_TEMPLATE_CHARACTER_REGEX = /[{}]/;
 const MCP_PROTECTED_HEADER_NAMES = Object.freeze([
   "accept",
   "accept-encoding",
@@ -1108,34 +1107,13 @@ function validateAndNormalizePrefixTemplate(args: {
 function validateAndNormalizeMcpEndpoint(
   raw: string,
 ): string | BadRequestResponse {
-  const endpoint = raw.trim();
-  if (MCP_ENDPOINT_TEMPLATE_CHARACTER_REGEX.test(endpoint)) {
-    return badRequestMessage("MCP endpoint must not contain templates");
-  }
-  const validation = safeSync(() => {
-    const canonical = canonicalizeFirewallBaseUrl(
-      endpoint,
-      "MCP custom connector",
-    );
-    const url = new URL(canonical);
-    if (url.protocol !== "https:") {
-      throw new Error("MCP endpoint must use https://");
-    }
-    validateBaseUrlHostPolicy({
-      base: canonical,
-      serviceName: "MCP custom connector",
-      hostPolicy: { kind: "publicDestination" },
-    });
-    return canonical;
-  });
+  const validation = parseCustomMcpEndpoint(raw);
   if ("error" in validation) {
     return badRequestMessage(
-      validation.error instanceof Error
-        ? validation.error.message
-        : "Invalid MCP endpoint",
+      "MCP endpoint must be a valid public HTTPS URL without credentials, fragments, or templates",
     );
   }
-  return validation.ok;
+  return validation.ok.endpoint;
 }
 
 function validateFields(
@@ -1721,10 +1699,13 @@ function protocolColumns(definition: ValidatedDefinition): {
 
 function hostSlugFromCanonicalUrl(canonicalUrl: string): string {
   const authorityStart = canonicalUrl.indexOf("://") + 3;
-  const pathStart = canonicalUrl.indexOf("/", authorityStart);
-  const authorityEnd = pathStart === -1 ? canonicalUrl.length : pathStart;
-  const host = canonicalUrl
-    .slice(authorityStart, authorityEnd)
+  const authorityAndSuffix = canonicalUrl.slice(authorityStart);
+  const authorityEnd = authorityAndSuffix.search(/[/?#]/u);
+  const host = (
+    authorityEnd === -1
+      ? authorityAndSuffix
+      : authorityAndSuffix.slice(0, authorityEnd)
+  )
     .replace(/\{hostWildcard[0-9]+\}/g, "")
     .toLowerCase();
   return host

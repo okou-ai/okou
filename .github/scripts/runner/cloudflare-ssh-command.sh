@@ -404,6 +404,32 @@ if [[ ! "$OPERATION_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+caller_events=()
+caller_started_cs=""
+selected_master_id=unselected
+caller_id="${BASHPID}-${EPOCHREALTIME:-unavailable}"
+
+caller_event() {
+  local event=$1 status=${2:-unknown} uptime=unavailable current_cs elapsed_cs=unavailable utc
+  if [ -r /proc/uptime ]; then
+    read -r uptime _ < /proc/uptime || uptime=unavailable
+  fi
+  if [[ "$uptime" =~ ^([0-9]+)\.([0-9]{2})$ ]]; then
+    current_cs=$((10#${BASH_REMATCH[1]} * 100 + 10#${BASH_REMATCH[2]}))
+    if [ -z "$caller_started_cs" ]; then
+      caller_started_cs=$current_cs
+    fi
+    elapsed_cs=$((current_cs - caller_started_cs))
+  fi
+  utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) || utc=unavailable
+  caller_events+=("event=${event} utc=${utc} epoch=${EPOCHREALTIME:-unavailable} uptime_seconds=${uptime} elapsed_centiseconds=${elapsed_cs} call=${caller_id} tool=${TOOL} master=${selected_master_id} status=${status}")
+}
+
+emit_caller_events() {
+  printf '%s\n' '----- Client operation phases (source event times) -----' >&2
+  printf '%s\n' "${caller_events[@]}" >&2
+}
+
 is_transient_probe_status() {
   local status=$1
   case "$status" in
@@ -424,6 +450,7 @@ emit_probe_failure() {
   local master_diagnostics_file=${5:-}
 
   echo "::${annotation} title=Cloudflare SSH command-channel probe failed::Unable to open a command channel to ${TARGET_HOST} on attempt ${attempt}/2 (exit ${status})" >&2
+  emit_caller_events || true
   if [ -s "$diagnostics_file" ]; then
     echo "----- SSH command-channel probe stderr (last 20 lines, redacted) -----" >&2
     cloudflare_ssh_sanitize_diagnostics "$diagnostics_file" \
@@ -507,12 +534,15 @@ fi
 probe_dir=$(mktemp -d "${STATE_DIR}/${target_key}.probe.XXXXXX")
 first_probe_stderr="${probe_dir}/attempt-1.stderr"
 probe_status=0
-probe_transport "$current_control_path" "$first_probe_stderr" \
-  || probe_status=$?
-
-selected_control_path="$current_control_path"
 master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
   "$TARGET_USER" "$TARGET_HOST" "$current_control_path")
+selected_master_id=$(printf '%s' "$master_diagnostics_file" | sha256sum | cut -c1-24)
+caller_event probe-start
+probe_transport "$current_control_path" "$first_probe_stderr" \
+  || probe_status=$?
+caller_event probe-result "$probe_status"
+
+selected_control_path="$current_control_path"
 if [ "$probe_status" -ne 0 ]; then
   if ! is_transient_probe_status "$probe_status" \
     || cloudflare_ssh_is_permanent_failure "$first_probe_stderr"; then
@@ -532,12 +562,16 @@ if [ "$probe_status" -ne 0 ]; then
   recovery_dir=$(mktemp -d "${STATE_DIR}/r.XXXXXX")
   recovery_control_path="${recovery_dir}/master.sock"
   recovery_status=0
+  selected_master_id=$(printf '%s' "${recovery_control_path}.stderr" | sha256sum | cut -c1-24)
+  caller_event recovery-start
   CLOUDFLARE_SSH_BIN="$REAL_SSH" \
     "${SCRIPTS_DIR}/cloudflare-ssh-preconnect.sh" \
     --control-path "$recovery_control_path" \
     "$TARGET_USER" "$TARGET_HOST" \
     >&2 || recovery_status=$?
+  caller_event recovery-result "$recovery_status"
   if [ "$recovery_status" -ne 0 ]; then
+    emit_caller_events || true
     rm -rf "$probe_dir"
     # A failed/closed proxy's native evidence still belongs to this job.
     if [ ! -d "${recovery_control_path}.stderr.proxies" ]; then
@@ -549,8 +583,10 @@ if [ "$probe_status" -ne 0 ]; then
 
   second_probe_stderr="${probe_dir}/attempt-2.stderr"
   probe_status=0
+  caller_event probe-start
   probe_transport "$recovery_control_path" "$second_probe_stderr" \
     || probe_status=$?
+  caller_event probe-result "$probe_status"
   if [ "$probe_status" -ne 0 ]; then
     emit_probe_failure \
       2 "$probe_status" "$second_probe_stderr" error \
@@ -574,6 +610,7 @@ if [ "$probe_status" -ne 0 ]; then
   printf '%s\n' "$selected_control_path" > "$state_file_tmp"
   mv "$state_file_tmp" "$state_file"
 fi
+caller_event transport-selected 0
 
 rm -rf "$probe_dir"
 release_transport_lock
@@ -596,6 +633,7 @@ cleanup_pid=""
 operation_signal=none
 operation_signal_epoch=unavailable
 operation_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+caller_event caller-start
 # GNU timeout creates a separate process group for the caller. Keep this shell
 # alive so GitHub cancellation can terminate that group and its ProxyCommand.
 trap '
@@ -603,6 +641,7 @@ trap '
   trap "" HUP INT TERM
 
   if [ "$operation_signal" != none ]; then
+    caller_event caller-signal "$operation_signal" || true
     printf "Cloudflare SSH caller signal: tool=%s host=%s signal=%s epoch=%s utc=%s\n" \
       "$TOOL" "$TARGET_HOST" "$operation_signal" "$operation_signal_epoch" \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2 || true
@@ -618,6 +657,7 @@ trap '
     wait "$cleanup_pid" 2>/dev/null || true
   fi
   if [ "$operation_signal" != none ]; then
+    emit_caller_events || true
     cloudflare_ssh_emit_master_diagnostics "$master_diagnostics_file" || true
   fi
 ' EXIT
@@ -634,6 +674,7 @@ OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR="${master_diagnostics_file}.proxies" \
 operation_pid=$!
 operation_status=0
 wait "$operation_pid" || operation_status=$?
+caller_event caller-result "$operation_status"
 trap - EXIT HUP INT TERM
 operation_pid=""
 if [ "$operation_status" -ne 0 ]; then
@@ -642,6 +683,8 @@ if [ "$operation_status" -ne 0 ]; then
   {
     echo "::group::Cloudflare SSH caller diagnostics" >&2
     echo "Tool: ${TOOL}; host: ${TARGET_HOST}; exit: ${operation_status}; started: ${operation_started_at}; finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+    echo "Run: ${GITHUB_RUN_ID:-unavailable}; attempt: ${GITHUB_RUN_ATTEMPT:-unavailable}; call: ${caller_id}; master: ${selected_master_id}" >&2
+    emit_caller_events
     cloudflare_ssh_emit_master_diagnostics "$master_diagnostics_file"
     echo "::endgroup::" >&2
   } || true

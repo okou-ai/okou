@@ -344,6 +344,35 @@ def _configure_response_inspection_stream(
         inspection: usage.ModelJsonResponseInspection | None = None
         decode_error: str | None = None
         finished = False
+        json_inspection: response_inspection.CooperativeResponseInspection | None = None
+        if decode_session is not None:
+
+            def fail_json_inspection(error: str) -> None:
+                nonlocal decode_error, finished
+                # A selected prefix is never authoritative for a JSON document.
+                # Do not finish it after closing the pending decoder/parser iterator.
+                decode_error = error
+                finished = True
+                run_usage.mark(flow, "parse_error")
+                run_usage.mark(flow, "interrupted")
+                log_usage_underbilling(
+                    flow_metadata.proxy_log_path(flow.metadata),
+                    "Deferred model JSON response inspection was interrupted",
+                    "response_inspection_interrupted",
+                    "risk",
+                    run_id=flow_metadata.run_id(flow.metadata),
+                    firewall_name=flow_metadata.firewall_name(flow.metadata),
+                    usage_protocol=model_protocol,
+                    parse_error=error,
+                )
+
+            json_inspection = response_inspection.CooperativeResponseInspection(
+                lambda chunk: response_inspection.decoded_steps(
+                    decode_session.iter_chunks, extractor.feed_steps, chunk
+                ),
+                fail_json_inspection,
+            )
+            flow.metadata[_RESPONSE_INSPECTION] = json_inspection
 
         def finish_json_response() -> None:
             nonlocal decode_error, finished, inspection
@@ -383,7 +412,7 @@ def _configure_response_inspection_stream(
 
         flow.metadata[_MODEL_JSON_USAGE_FINISH] = finish_json_usage
         return _ResponseStreamSetup(
-            decode_session.feed if decode_session is not None else None,
+            json_inspection.feed if json_inspection is not None else None,
             needs_buffered_fallback,
         )
 

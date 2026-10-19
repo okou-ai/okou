@@ -288,7 +288,7 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       result: {
-        artifact: { memory: publishedMemory.versionId },
+        storageOutputs: memoryArtifactSnapshots,
       },
     });
     const committedOutputs = await webhooks.requestAgentRunOutputs(
