@@ -8,6 +8,7 @@ import {
   context,
   pinnedAgentNames,
   prepareAgents,
+  prepareDefaultAgent,
   setupSidebarPage,
 } from "./sidebar-test-helpers.tsx";
 
@@ -57,4 +58,38 @@ test("Pin one highlighted search result with Enter and preserve the query", asyn
   expect(
     within(dialog).getByRole("option", { name: "Support Agent Unpin" }),
   ).not.toHaveAttribute("aria-disabled", "true");
+});
+
+test("Open the create-agent dialog from the pin manager", async () => {
+  const { dialog } = await openPinManager();
+
+  click(within(dialog).getByRole("option", { name: "New agent" }));
+
+  await expect(
+    screen.findByRole("dialog", { name: "Create a new agent" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Pin an agent" }),
+  ).not.toBeInTheDocument();
+});
+
+test("Create the first agent from an empty pin manager with Enter", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareDefaultAgent();
+  context.mocks.data.userPreferences({ pinnedAgentIds: [] });
+  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await screen.findByTestId("pinned-agents-grid");
+
+  click(screen.getByLabelText("Pin an agent"));
+  const dialog = await screen.findByRole("dialog", { name: "Pin an agent" });
+  expect(
+    within(dialog).getByText("You do not have any other agents yet."),
+  ).toBeInTheDocument();
+  const search = within(dialog).getByRole("combobox");
+  await user.click(search);
+  await user.keyboard("{ArrowDown}{Enter}");
+
+  await expect(
+    screen.findByRole("dialog", { name: "Create a new agent" }),
+  ).resolves.toBeInTheDocument();
 });

@@ -16,6 +16,7 @@ import {
   MessagesSquare,
   Pin,
   PinOff,
+  Plus,
   Presentation,
   Route,
   Search,
@@ -83,6 +84,18 @@ import {
   type ThreeColumnArtifactSearchItem,
 } from "../../signals/okou-page/three-column-search-resources.ts";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
+
+/** Command value of the pin manager's create row; never an agent id. */
+const CREATE_AGENT_ITEM_VALUE = "create-agent";
+
+/**
+ * The pin manager's list bleeds 8px past the dialog's 20px text column, and
+ * each row pads 8px back in. A highlighted row keeps the same 8px on all four
+ * sides, while resting avatars, labels and section headings still line up
+ * with the title and the search field.
+ */
+const AGENT_COMMAND_LIST_INSET = "px-3";
+const AGENT_COMMAND_ROW_CLASS = "w-full gap-2 px-2 py-2";
 
 interface AgentDialogItem {
   readonly agentId: string;
@@ -251,7 +264,7 @@ function AgentCommandSection({
   return (
     <CommandGroup
       heading={label}
-      className={`px-5 ${className} [&_[data-slot=command-group-items]]:mt-1 [&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col`}
+      className={`${AGENT_COMMAND_LIST_INSET} ${className} [&_[data-slot=command-group-heading]]:px-2 [&_[data-slot=command-group-items]]:mt-1 [&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col`}
     >
       {children}
     </CommandGroup>
@@ -307,13 +320,44 @@ function AgentCommandPinRow({
       value={agent.agentId}
       disabled={disabled}
       onClick={onToggle}
-      className="group w-full gap-2 px-1 py-2"
+      className={`group ${AGENT_COMMAND_ROW_CLASS}`}
     >
       <AgentCommandAgentContent agent={agent} />
       <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs opacity-0 group-data-[highlighted]:opacity-100">
         {icon}
         {label}
       </span>
+    </CommandItem>
+  );
+}
+
+/**
+ * The pin manager's way out when the agent the user wants does not exist yet.
+ * It always sits last, so the dialog's auto-highlight keeps landing on the
+ * first agent and Enter still pins; with no agents or no matches it is the only
+ * row, and Enter opens the create dialog instead. The dashed tile repeats the
+ * sidebar's Pin tile in the dialog's square avatar shape.
+ */
+function AgentCommandCreateRow({
+  label,
+  onSelect,
+}: {
+  readonly label: string;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <CommandItem
+      value={CREATE_AGENT_ITEM_VALUE}
+      onClick={onSelect}
+      className={`${AGENT_COMMAND_ROW_CLASS} text-muted-foreground`}
+    >
+      <span
+        aria-hidden="true"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed border-[hsl(var(--gray-300))]"
+      >
+        <Plus size={16} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
     </CommandItem>
   );
 }
@@ -1395,12 +1439,14 @@ export function PinAgentDialog({
   subagents,
   saving,
   onSetAgentPinned,
+  onCreateAgent,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subagents: SubagentInfo[];
   saving: boolean;
   onSetAgentPinned: (agentId: string, pinned: boolean) => Promise<void>;
+  onCreateAgent: () => void;
 }) {
   const { t } = useTranslation("agents");
   const query = useGet(pinAgentDialogQuery$);
@@ -1501,7 +1547,7 @@ export function PinAgentDialog({
 
       <CommandList data-testid="pin-agent-dialog-list">
         {matches.length === 0 && (
-          <p className="px-6 py-3 text-xs text-muted-foreground">
+          <p className="px-5 py-3 text-xs text-muted-foreground">
             {trimmedQuery
               ? t(($) => {
                   return $.sidebar.noResults;
@@ -1556,6 +1602,14 @@ export function PinAgentDialog({
             })}
           </AgentCommandSection>
         )}
+        <div className={`${AGENT_COMMAND_LIST_INSET} pb-3`}>
+          <AgentCommandCreateRow
+            label={t(($) => {
+              return $.list.actions.new;
+            })}
+            onSelect={onCreateAgent}
+          />
+        </div>
       </CommandList>
     </CommandDialog>
   );

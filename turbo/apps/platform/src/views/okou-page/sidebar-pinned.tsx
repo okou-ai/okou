@@ -55,6 +55,7 @@ import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { PinAgentDialog } from "./sidebar-dialogs.tsx";
+import { openCreateAgentDialog$ } from "../../signals/okou-page/jobs-page.ts";
 import {
   AgentUnreadIndicator,
   AgentRowContextActions,
@@ -423,6 +424,7 @@ export function PinAgentDialogContainer() {
   const subagents = useLastResolved(subagents$) ?? [];
   const pageSignal = useGet(pageSignal$);
   const [pinLoadable, saveAgentPinned] = useLoadableSet(setAgentPinned$);
+  const openCreateAgentDialog = useSet(openCreateAgentDialog$);
 
   if (!open) {
     return null;
@@ -436,6 +438,10 @@ export function PinAgentDialogContainer() {
       saving={pinLoadable.state === "loading"}
       onSetAgentPinned={(agentId, pinned) => {
         return saveAgentPinned({ agentId, pinned }, pageSignal);
+      }}
+      onCreateAgent={() => {
+        onOpenChange(false);
+        openCreateAgentDialog();
       }}
     />
   );
