@@ -794,6 +794,90 @@ class TestDecodeRequestBodyForNetworkLogCapture:
         hdrs = headers(("Content-Encoding", encoding))
         assert decode_request_body_for_network_log_capture(compressed, hdrs) == b""
 
+    @pytest.mark.parametrize("extra_input", [0, 1], ids=["at-budget", "over-budget"])
+    def test_zstd_compressed_input_budget_precedes_initial_reader(
+        self, headers, monkeypatch, extra_input
+    ):
+        input_budget = 128 * 1024
+        # An incompressible single raw block has 12 bytes of frame/block overhead.
+        body = hashlib.shake_256(b"zstd capture boundary").digest(input_budget - 12 + extra_input)
+        compressed = _compress_one_shot_body("zstd", body)
+        assert len(compressed) == input_budget + extra_input
+        hdrs = headers(("Content-Encoding", "zstd"))
+        stats = track_zstd_reader(monkeypatch, max_output=33)
+
+        decoded = decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
+
+        if extra_input:
+            assert decoded is None
+            assert stats["readers"] == 0
+            assert stats["input_bytes"] == 0
+        else:
+            assert decoded == body[:32]
+            assert stats["readers"] == 1
+            assert stats["input_bytes"] == input_budget
+        assert stats["validation_objects"] == 0
+
+    def test_zstd_incompressible_capture_with_frame_overhead(self, headers):
+        body = hashlib.shake_256(b"zstd ordinary capture").digest(DEFAULT_BODY_DECODE_LIMIT)
+        compressed = _compress_one_shot_body("zstd", body)
+        assert DEFAULT_BODY_DECODE_LIMIT < len(compressed) < 128 * 1024
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        assert decode_request_body_for_network_log_capture(compressed, hdrs) == body
+
+    def test_zstd_large_input_policy_is_specific_to_request_capture(self, headers):
+        body = hashlib.shake_256(b"zstd capture consumers").digest(128 * 1024)
+        compressed = _compress_one_shot_body("zstd", body)
+        assert len(compressed) > 128 * 1024
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        assert decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32) is None
+        assert (
+            decode_response_body_for_network_log_capture(compressed, hdrs, max_output=32)
+            == body[:32]
+        )
+        decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=32)
+        assert decoded == body[:32]
+        assert error == "decoded body limit exceeded"
+
+    @pytest.mark.parametrize("frame_count", [64, 65])
+    @pytest.mark.parametrize("body", [b"", b"A" * 32], ids=["empty", "exact-output-limit"])
+    def test_zstd_input_budget_preserves_strict_frame_budget(
+        self, headers, monkeypatch, frame_count, body
+    ):
+        compressed = _compress_one_shot_body("zstd", body) + _compress_one_shot_body(
+            "zstd", b""
+        ) * (frame_count - 1)
+        hdrs = headers(("Content-Encoding", "zstd"))
+        max_output = max(1, len(body))
+        stats = track_zstd_reader(monkeypatch, max_output=max_output + 1)
+
+        decoded = decode_request_body_for_network_log_capture(
+            compressed, hdrs, max_output=max_output
+        )
+
+        assert decoded == (body if frame_count == 64 else None)
+        assert stats["input_bytes"] == len(compressed)
+        assert stats["validation_objects"] == 64
+
+    @pytest.mark.parametrize("tail_kind", ["invalid", "incomplete", "overflow"])
+    def test_zstd_last_allowed_frame_preserves_failure_policy(self, headers, tail_kind):
+        body = b"A" * 32
+        empty_frame = _compress_one_shot_body("zstd", b"")
+        if tail_kind == "invalid":
+            tail = b"not compressed"
+        elif tail_kind == "incomplete":
+            tail = empty_frame[:-1]
+        else:
+            tail = _compress_one_shot_body("zstd", b"B")
+        compressed = _compress_one_shot_body("zstd", body) + empty_frame * 62 + tail
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        decoded = decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
+
+        assert decoded == (body if tail_kind == "overflow" else None)
+
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     @pytest.mark.parametrize("member_count", [64, 65, 4096])
     @pytest.mark.parametrize("body", [b"", b"A" * 32], ids=["empty", "exact-output-limit"])
