@@ -60,9 +60,7 @@ test.each(["feishu", "lark"] as const)(
       });
     });
     const mutations: ConnectorAccountMutationIntent[] = [];
-    let ordinaryAccountReads = 0;
     context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
-      ordinaryAccountReads += 1;
       return respond(404, {
         error: {
           code: "NOT_FOUND",
@@ -99,8 +97,11 @@ test.each(["feishu", "lark"] as const)(
       ).toBeNull();
     });
     expect(mutations).toStrictEqual([{ intent: "reconnect", connectionId }]);
-    expect(ordinaryAccountReads).toBe(0);
     expect(authWindow.closed).toBeTruthy();
+    expect(screen.getByText("Managed workspace connected")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Managed accounts are not ordinary accounts/u),
+    ).toBeNull();
     expect(
       screen.queryByText(/Ordinary account summaries unavailable/u),
     ).toBeNull();

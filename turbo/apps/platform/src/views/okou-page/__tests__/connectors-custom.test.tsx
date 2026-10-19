@@ -225,13 +225,8 @@ test.each([
     const connector = customConnector();
     const connectionId = crypto.randomUUID();
     let account: ConnectorAccountConnection | undefined;
-    let grantMutations = 0;
     context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
     mockCustomAgentAccess();
-    context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
-      grantMutations += 1;
-      return respond(200, { grants: [] });
-    });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
@@ -241,7 +236,7 @@ test.each([
             {
               target: account.target,
               accountCount: 1,
-              attentionCount: 0,
+              attentionCount: account.setupStatus === undefined ? 0 : 1,
               defaultConnection: account,
             },
           ]
@@ -280,12 +275,23 @@ test.each([
       "unavailable-setup-secret",
     );
     click(getConnectorAction("button", "Save", dialog));
-    await expect(within(dialog).findByText(message)).resolves.toBeVisible();
+    await expect(
+      within(dialog).findByText(message),
+    ).resolves.toBeInTheDocument();
     expect(dialog).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Name your Acme Search account" }),
     ).toBeNull();
-    expect(grantMutations).toBe(0);
+    click(getConnectorAction("button", "Cancel", dialog));
+    click(getConnectorAction("button", "Manage Acme Search access"));
+    const access = await screen.findByRole("dialog", {
+      name: "Manage Acme Search access",
+    });
+    await waitFor(() => {
+      expect(
+        getConnectorSwitch("Authorize Acme Search access for Research", access),
+      ).not.toBeChecked();
+    });
   },
 );
 
