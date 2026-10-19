@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.26.0...runner-remote-v0.27.0) (2026-10-19)
+
+
+### Features
+
+* **remote:** explain native tcp waits with correlated path evidence ([#41012](https://github.com/okou-ai/okou/issues/41012)) ([2ab7476](https://github.com/okou-ai/okou/commit/2ab7476b8fc882bd6530fa88308ca1b656ac54d4))
+
+
+### Bug Fixes
+
+* **runner:** finish relay dialing when the only enabled family fails ([#41025](https://github.com/okou-ai/okou/issues/41025)) ([b247bd3](https://github.com/okou-ai/okou/commit/b247bd34bf84b78e6378a7e603de75ed5a8f7abb))
+
 ## [0.26.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.25.0...runner-remote-v0.26.0) (2026-10-17)
 
 

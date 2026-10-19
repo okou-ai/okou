@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.0](https://github.com/okou-ai/okou/compare/app-worker-v1.9.56...app-worker-v1.10.0) (2026-10-19)
+
+
+### Features
+
+* **activity:** stream sandbox file downloads over wss ([#40955](https://github.com/okou-ai/okou/issues/40955)) ([2276bff](https://github.com/okou-ai/okou/commit/2276bff830145270100a7ae1cadc9fa8175ec6ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.1
+    * @okouai/core bumped to 8.767.1
+
 ## [1.9.56](https://github.com/okou-ai/okou/compare/app-worker-v1.9.55...app-worker-v1.9.56) (2026-10-17)
 
 
