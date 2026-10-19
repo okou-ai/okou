@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 
 import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
 
@@ -656,16 +655,23 @@ describe("agent completion failure reasons", () => {
 describe("webhook telemetry contract", () => {
   it("preserves metric payload compatibility across Guest and API rollout", () => {
     const runId = "00000000-0000-4000-8000-000000000000";
-    const oldMetric = {
+    const metric = {
       ts: "2026-09-01T00:00:00.000Z",
       cpu: 91.25,
       mem_used: 1024,
       mem_total: 2048,
-      disk_used: 4096,
-      disk_total: 8192,
     };
+    const oldMetric = { ...metric, disk_used: 4096, disk_total: 8192 };
     const fullMetric = {
-      ...oldMetric,
+      ...metric,
+      rootfs: {
+        used_bytes: 4096,
+        total_bytes: 8192,
+        available_bytes: 3072,
+        used_inodes: 4,
+        total_inodes: 8,
+        available_inodes: 3,
+      },
       cpu_steal_percent: 12.5,
       scheduled_lag_ms: 17,
       control_cpu_usage_usec: 101,
@@ -676,7 +682,7 @@ describe("webhook telemetry contract", () => {
       workload_cpu_throttled_usec: 5,
     };
     const partialMetric = {
-      ...oldMetric,
+      ...metric,
       scheduled_lag_ms: 29,
       workload_cpu_usage_usec: 301,
     };
@@ -700,15 +706,6 @@ describe("webhook telemetry contract", () => {
       }).metrics,
     ).toStrictEqual([partialMetric]);
 
-    const legacyMetricSchema = z.object({
-      ts: z.string(),
-      cpu: z.number(),
-      mem_used: z.number(),
-      mem_total: z.number(),
-      disk_used: z.number(),
-      disk_total: z.number(),
-    });
-    expect(legacyMetricSchema.parse(fullMetric)).toStrictEqual(oldMetric);
     expect(
       webhookTelemetryContract.send.body.parse({
         runId,

@@ -10,6 +10,9 @@ readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 # #40206 migrates encrypted Link grants before requiring their metadata. Old
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
+# Pair-free Guest telemetry can outlive Runner rollback. The receiving API must
+# retain #41242's structured-only reader during independent Runner/API rollback.
+readonly STRUCTURED_DISK_TELEMETRY_READER_COMMIT=e01702c7d762b5d2a76d557db77ccaf19c4f95c8
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -139,6 +142,10 @@ fi
 release_tags=$(git tag --points-at "$TARGET_COMMIT" | grep -E -- '-v[0-9]' || true)
 if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
+fi
+
+if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the structured-only disk telemetry reader: ${STRUCTURED_DISK_TELEMETRY_READER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$LINK_WALLET_GRANT_WRITER_COMMIT" "$TARGET_COMMIT"; then
