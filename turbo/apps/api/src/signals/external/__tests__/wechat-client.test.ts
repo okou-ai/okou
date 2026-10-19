@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
+import { testContext } from "../../../__tests__/test-context";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import {
   getWechatUpdates,
   sendWechatText,
@@ -8,6 +10,7 @@ import {
   WechatSessionExpiredError,
 } from "@okouai/core/wechat-client";
 const origin = "https://ilinkai.weixin.qq.com";
+const context = testContext();
 describe("WeChat protocol boundaries", () => {
   it("preserves uint64 IDs and does not rewrite message text", async () => {
     server.use(
@@ -62,6 +65,73 @@ describe("WeChat protocol boundaries", () => {
       getWechatUpdates(origin, "test-token", "", new AbortController().signal),
     ).rejects.toBeInstanceOf(WechatSessionExpiredError);
   });
+  it.each([
+    [
+      "transport failure",
+      () => {
+        return HttpResponse.error();
+      },
+      "Failed to fetch",
+    ],
+    [
+      "upstream timeout response",
+      () => {
+        return new HttpResponse(null, { status: 504 });
+      },
+      "WeChat request failed (504)",
+    ],
+    [
+      "provider rejection",
+      () => {
+        return HttpResponse.json({ ret: -1 });
+      },
+      "WeChat rejected the request",
+    ],
+  ] as const)(
+    "keeps a %s visible to the receiver",
+    async (_name, response, error) => {
+      server.use(http.post(`${origin}/ilink/bot/getupdates`, response));
+      await expect(
+        getWechatUpdates(origin, "test-token", "saved-cursor", context.signal),
+      ).rejects.toThrow(error);
+    },
+  );
+  it.each(["AbortError", "TimeoutError"])(
+    "propagates a caller-owned %s instead of reporting an idle receive",
+    async (name) => {
+      const entered = createDeferredPromise<void>(context.signal);
+      const aborted = createDeferredPromise<void>(context.signal);
+      const controller = new AbortController();
+      const signal = AbortSignal.any([context.signal, controller.signal]);
+      server.use(
+        http.post(`${origin}/ilink/bot/getupdates`, async ({ request }) => {
+          const resolve = () => {
+            if (!aborted.settled()) {
+              aborted.resolve();
+            }
+          };
+          if (request.signal.aborted) {
+            resolve();
+          } else {
+            request.signal.addEventListener("abort", resolve, { once: true });
+          }
+          entered.resolve();
+          await aborted.promise;
+          return HttpResponse.json({ msgs: [] });
+        }),
+      );
+      const reason = new DOMException("Receiver stopped", name);
+      const pending = settleIncludingAbort(
+        getWechatUpdates(origin, "test-token", "saved-cursor", signal),
+      );
+      await entered.promise;
+      controller.abort(reason);
+      await expect(pending).resolves.toStrictEqual({
+        ok: false,
+        error: reason,
+      });
+    },
+  );
   it("rejects provider redirects without forwarding credentials", async () => {
     server.use(
       http.post(`${origin}/ilink/bot/getupdates`, () => {

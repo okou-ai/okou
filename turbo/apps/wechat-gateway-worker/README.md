@@ -33,37 +33,34 @@ A failed step retries with backoff; exhausted retries schedule recovery after
 Only the current owner may checkpoint, acknowledge or renew state. Workflow
 parameters/results contain identifiers and booleans, never credentials/messages.
 
-## Activate Workflows
+## Deploy and operate
 
-1. Deploy the additive database migration and API first, keeping
-   `enable_workflows=false`. The legacy Worker remains compatible. Verify the
-   new API serves all production traffic, then allow the outgoing API's full
-   five-minute request limit to drain before activating the new receiver.
-2. Provision a distinct random `WECHAT_RECEIVER_ENCRYPTION_KEY` of at least
-   32 characters in the matching GitHub environment. Keep it stable across
+1. Deploy the database migration and API before the gateway. The receiver uses
+   only the Workflows bootstrap, delivery and expiry endpoints. All `/start`
+   requests must include the current binding generation; `/stop` needs only the
+   connection ID and remains available while startup is disabled.
+2. Provision distinct `WECHAT_GATEWAY_SECRET`, `WECHAT_GATEWAY_CONTROL_SECRET`
+   and `WECHAT_RECEIVER_ENCRYPTION_KEY` values of at least 32 characters in the
+   matching GitHub environment. Keep the encryption key stable across
    deployments; HMAC/control secret rotation does not rotate stored encryption.
-   Replacing this key requires draining or re-encrypting pending state first.
-3. Run **Deploy WeChat Gateway** with both `enable_gateway=true` and
-   `enable_workflows=true`, first in test. Existing alarms migrate receivers;
-   opening Works or completing a verified QR also calls authenticated `/start`.
-   The deploy creates the environment's Workflow binding in the same Worker.
-4. Confirm reception with Works closed, replay after failed delivery, reconnect,
-   disconnect, owner deletion and provider expiry. Before widening rollout,
+   Replacing it requires draining or re-encrypting pending state first.
+3. Run **Deploy WeChat Gateway** from current main, first in test. Set
+   `enable_gateway=true` to allow reception. Opening Works or completing a
+   verified QR calls authenticated `/start`. Existing receivers retain their
+   Durable Object identity and encrypted replay state across deployments.
+4. Confirm background reception, failed-delivery replay, reconnect, disconnect,
+   owner deletion and provider expiry. Before widening the internal rollout,
    measure CPU, DO active duration, cursor-change frequency and concurrent
    instance startup/recovery in Cloudflare. Local workerd tests are not cloud
    capacity or invoice measurements. Long-polling instances consume concurrency.
 
-Activation marks each binding `workflow_receiver=true` and fences the legacy API
-poll's writes. Its current cursor and any encrypted pending legacy batch transfer
-to the DO. The old endpoint and disabled-by-default mode are a deployment bridge:
-remove them after all live receivers have migrated and older API/Worker rollback
-targets are excluded. Do not roll back to the legacy receiver after transfer or
-clear DO state: the freshest cursor/pending batch is now in Cloudflare. Setting
-`enable_workflows=false` pauses migrated objects while retaining their state;
-roll forward and call `/start` to resume paused objects. The SQL marker prevents
-an old poller from silently taking reception back.
-
-Bridge retirement is tracked in [#41268](https://github.com/okou-ai/okou/issues/41268).
+The existing DO owns the authoritative polling cursor and pending replay batch.
+The API's encrypted SQL batch still owns per-input retry progress and supplies
+bootstrap recovery; it must not be deleted as obsolete polling state. Do not
+clear DO state or restore an old gateway artifact. API rollback enforces the
+[Workflows-only floor](../../../.github/rollback-floors/wechat-workflows-only).
+Roll forward to recover. `enable_gateway=false` pauses reception while retaining
+DO state; re-enable and call `/start` to resume it.
 
 There is no per-poll success logging. Successful Workflow history retains one
 day; failed history retains seven days. The DO contains the durable replay state,
@@ -72,15 +69,16 @@ so pruning completed Workflow history does not discard pending deliveries.
 ## Deployment for an internal scan test
 
 1. Deploy the schema migration and API/app changes with the feature disabled.
-2. Provision two distinct random secrets of at least 32 characters:
-   `WECHAT_GATEWAY_SECRET` (worker-to-API HMAC) and
-   `WECHAT_GATEWAY_CONTROL_SECRET` (API-to-worker control authorization).
-3. Configure the API with those secrets and `WECHAT_GATEWAY_URL` pointing to the
-   receiver origin. The API deployment reads the URL from GitHub variables and
+2. Provision three distinct random secrets of at least 32 characters:
+   `WECHAT_GATEWAY_SECRET` (worker-to-API HMAC),
+   `WECHAT_GATEWAY_CONTROL_SECRET` (API-to-worker control authorization), and
+   `WECHAT_RECEIVER_ENCRYPTION_KEY` (Durable Object replay encryption).
+3. Configure the API with the HMAC/control secrets and `WECHAT_GATEWAY_URL`
+   pointing to the receiver origin. The API deployment reads the URL from GitHub variables and
    both credentials from GitHub secrets, matching the gateway deployment below.
    Use a receiver whose `WECHAT_API_ORIGIN` targets that same API environment.
 4. The **Deploy WeChat Gateway** workflow reads the matching GitHub environment's
-   two secrets, `CF_API_WORKER_DEPLOY_API_TOKEN`, `CF_ACCOUNT_ID`, and the
+   three secrets, `CF_API_WORKER_DEPLOY_API_TOKEN`, `CF_ACCOUNT_ID`, and the
    `WECHAT_API_ORIGIN` variable (canonical HTTPS API origin). It deploys only
    from main. Choose the test environment first and explicitly enable the
    gateway when API configuration is ready. Startup otherwise stays disabled.
@@ -114,5 +112,5 @@ Tencent CDN references can expire; ask the sender to resend an unavailable attac
 
 The receiver requires a paid Cloudflare Workers plan, SQLite Durable Objects and
 Workflows. Each receiving binding has one outstanding Tencent request. The
-legacy mode keeps its API request open; Workflows mode contacts the API only for
-authorization renewal, message delivery and provider-session expiry.
+receiver contacts the API only for authorization renewal, message delivery and
+provider-session expiry.
