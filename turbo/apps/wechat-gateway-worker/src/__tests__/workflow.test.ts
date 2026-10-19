@@ -316,3 +316,60 @@ it("continues with the saved cursor when a provider long poll reaches its own de
   expect(polls).toBe(2);
   expect(renewals).toBe(1);
 }, 60_000);
+
+it("retains a batch while the API retries an individual input and polls only after acknowledgement", async () => {
+  const completed = Promise.withResolvers<void>();
+  let polls = 0;
+  let deliveries = 0;
+  const runtime = fixture(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/internal/wechat/receiver") return bootstrap();
+    if (path === "/ilink/bot/getupdates") {
+      polls++;
+      if (polls === 2) {
+        expect(deliveries).toBe(3);
+        const body = z
+          .object({ get_updates_buf: z.string() })
+          .parse(await request.json());
+        expect(body.get_updates_buf).toBe("retry-cursor");
+        return Response.json({ ret: -14 });
+      }
+      return Response.json({
+        get_updates_buf: "retry-cursor",
+        msgs: [
+          { message_id: "malformed" },
+          {
+            message_id: "retry-message",
+            from_user_id: "scanner",
+            message_type: 1,
+            item_list: [{ type: 1, text_item: { text: "hello" } }],
+          },
+        ],
+      });
+    }
+    if (path === "/api/internal/wechat/deliver") {
+      const body = updatesSchema.parse(await request.json());
+      expect(
+        body.updates.msgs.map((message) => {
+          return message.message_id;
+        }),
+      ).toEqual(["retry-message"]);
+      expect(polls).toBe(1);
+      deliveries++;
+      return Response.json(
+        deliveries < 3
+          ? { active: true, retryAfterMs: 1_000 }
+          : { active: true },
+      );
+    }
+    if (path === "/api/internal/wechat/expire") {
+      completed.resolve();
+      return Response.json({ active: false });
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  expect((await runtime.start()).status).toBe(200);
+  await completed.promise;
+  expect(deliveries).toBe(3);
+  expect(polls).toBe(2);
+}, 30_000);

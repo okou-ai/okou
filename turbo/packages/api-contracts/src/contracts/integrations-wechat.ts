@@ -11,8 +11,13 @@ const errors = {
   409: apiErrorSchema,
   503: apiErrorSchema,
 };
+export const wechatBindingSchema = z.object({
+  workspace: z.object({ id: z.string(), name: z.string() }),
+  accountId: z.string(),
+});
 export const wechatStatusSchema = z.object({
   configured: z.boolean(),
+  binding: wechatBindingSchema.nullable(),
   status: z.enum(["disconnected", "active", "reconnect_required"]),
 });
 export const wechatAttemptSchema = z.object({
@@ -152,7 +157,11 @@ export const wechatReceiverContract = c.router({
       updates: wechatUpdatesSchema,
     }),
     responses: {
-      200: z.object({ active: z.boolean(), refresh: z.boolean().optional() }),
+      200: z.object({
+        active: z.boolean(),
+        refresh: z.boolean().optional(),
+        retryAfterMs: z.number().int().min(1).max(5_000).optional(),
+      }),
       ...errors,
     },
     summary: "Dispatch a durably saved WeChat batch",

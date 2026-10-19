@@ -118,6 +118,11 @@ export async function receiveWechatBlock(env: Env, params: ReceiverParams) {
         await actor.finish(ownerId, !!result.refresh);
         return false;
       }
+      if (result.retryAfterMs) {
+        await setTimeout(result.retryAfterMs, undefined, { signal });
+        state = await actor.open(ownerId);
+        continue;
+      }
       state = await actor.acknowledge(ownerId, state.pending.id);
       continue;
     }

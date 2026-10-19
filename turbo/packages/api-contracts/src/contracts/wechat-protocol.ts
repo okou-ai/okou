@@ -46,7 +46,7 @@ export const wechatItemSchema = z.object({
     })
     .optional(),
 });
-const wechatMessageSchema = z.object({
+export const wechatMessageSchema = z.object({
   message_id: z.string().min(1),
   from_user_id: z.string(),
   to_user_id: z.string().optional(),

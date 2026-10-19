@@ -12,11 +12,19 @@ network waits. Empty rounds write only when the cursor changes. Batches are
 saved atomically with the cursor before delivery, encrypted in bounded chunks
 and streamed across RPC so the provider's 2 MB response limit remains usable.
 The API retains authorization, reconnect notices, message-ID deduplication,
-canonical Chat/Run processing and the KMS-encrypted source credential.
+canonical Chat/Run processing and the KMS-encrypted source credential. Actual
+message batches retain per-input retry progress in the existing encrypted SQL
+pending field; the DO retains the original replay batch until the API confirms
+that every input is admitted or terminal. Failed attachments do not block later
+inputs, and malformed provider messages are isolated from valid messages.
 
 At each step boundary the Workflow renews authorization through the API; it
 receives credentials only for initial bootstrap or a changed binding generation.
-Every real delivery checks live authorization again. Disconnect and link-based reconnect push the new generation while preserving
+Every real delivery checks live authorization again. Normal completion callbacks
+send replies immediately. The interrupted-callback recovery backstop runs on
+message delivery and authorization renewal; without incoming messages its scan
+cadence is about ten minutes (plus infrastructure retry/recovery delay), rather
+than the legacy per-poll cadence. Disconnect and link-based reconnect push the new generation while preserving
 the transport cursor; the API keeps the reconnect message-time boundary. Owner
 deletion requests authenticated `/stop`, which also works while startup is
 disabled. If that request fails, the next authorization renewal stops reception.

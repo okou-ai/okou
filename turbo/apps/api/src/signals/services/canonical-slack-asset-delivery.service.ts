@@ -432,18 +432,7 @@ export const completeCanonicalSlackDelivery$ = command(
       CanonicalSlackDeliveryRow | undefined
     > => {
       const [row] = await db
-        .select({
-          assetId: runUploadedFiles.id,
-          filename: runUploadedFiles.filename,
-          sizeBytes: runUploadedFiles.sizeBytes,
-          assetUrl: runUploadedFiles.url,
-          operationId: canonicalAssetDeliveries.operationId,
-          status: canonicalAssetDeliveries.status,
-          destination: canonicalAssetDeliveries.destination,
-          externalId: canonicalAssetDeliveries.externalId,
-          deliveryUrl: canonicalAssetDeliveries.url,
-          lastError: canonicalAssetDeliveries.lastError,
-        })
+        .select(slackDeliverySelection())
         .from(canonicalAssetDeliveries)
         .innerJoin(
           runUploadedFiles,
@@ -478,6 +467,22 @@ export const completeCanonicalSlackDelivery$ = command(
     const completeDelivery = async (
       deliverySignal: AbortSignal,
     ): Promise<CanonicalSlackDeliveryResult> => {
+      const recordDeliveryFailure = async (
+        error: CanonicalSlackDeliveryFailure,
+      ): Promise<CanonicalSlackDeliveryResult> => {
+        const [failed] = await db
+          .update(canonicalAssetDeliveries)
+          .set({
+            status: "failed",
+            lastError: error,
+            updatedAt: sql`now()`,
+          })
+          .where(deliveryTransitionCondition(row))
+          .returning({ id: canonicalAssetDeliveries.id });
+        return failed
+          ? failedResult(error)
+          : await deliveryResultAfterTransitionConflict(db, row);
+      };
       if (row.status === "delivered") {
         return deliveredResult(row);
       }
@@ -485,7 +490,7 @@ export const completeCanonicalSlackDelivery$ = command(
         return await deliveryResultAfterTransitionConflict(db, row);
       }
       if (args.uploadError) {
-        return await markDeliveryFailed(db, row, {
+        return await recordDeliveryFailure({
           code: "slack-upload-failed",
           message: args.uploadError,
           retryable: true,
@@ -504,7 +509,7 @@ export const completeCanonicalSlackDelivery$ = command(
       );
       deliverySignal.throwIfAborted();
       if (!completion.ok) {
-        return await markDeliveryFailed(db, row, {
+        return await recordDeliveryFailure({
           code: "slack-request-failed",
           message: providerFailureMessage(completion.error),
           retryable: true,
@@ -512,7 +517,7 @@ export const completeCanonicalSlackDelivery$ = command(
       }
       const completed = completion.value;
       if (completed.kind === "slack_error") {
-        return await markDeliveryFailed(db, row, {
+        return await recordDeliveryFailure({
           code: completed.error,
           message: `Slack delivery failed: ${completed.error}`,
           retryable: true,
@@ -525,7 +530,7 @@ export const completeCanonicalSlackDelivery$ = command(
       );
       deliverySignal.throwIfAborted();
       if (!infoResult.ok) {
-        return await markDeliveryFailed(db, row, {
+        return await recordDeliveryFailure({
           code: "slack-request-failed",
           message: providerFailureMessage(infoResult.error),
           retryable: true,
@@ -534,7 +539,7 @@ export const completeCanonicalSlackDelivery$ = command(
       const info = infoResult.value;
       const permalinkResult = resolveSlackFilePermalink(info);
       if (!permalinkResult.ok) {
-        return await markDeliveryFailed(db, row, permalinkResult.error);
+        return await recordDeliveryFailure(permalinkResult.error);
       }
       return await markDeliveryDelivered(db, row, permalinkResult.permalink);
     };

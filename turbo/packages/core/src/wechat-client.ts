@@ -1,4 +1,7 @@
-import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
+import {
+  wechatUpdatesSchema,
+  wechatMessageSchema,
+} from "@okouai/api-contracts/contracts/wechat-protocol";
 import { z } from "zod";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
@@ -159,6 +162,18 @@ export async function pollWechatQr(
     ),
   );
 }
+const providerUpdatesSchema = wechatUpdatesSchema.extend({
+  // One malformed provider input must not discard the rest of its batch.
+  msgs: z
+    .array(z.unknown())
+    .transform((values) => {
+      return values.flatMap((value) => {
+        const parsed = wechatMessageSchema.safeParse(value);
+        return parsed.success ? [parsed.data] : [];
+      });
+    })
+    .optional(),
+});
 export async function getWechatUpdates(
   baseUrl: string,
   token: string,
@@ -175,7 +190,7 @@ export async function getWechatUpdates(
       AbortSignal.any([signal, timeoutSignal]),
     );
     signal.throwIfAborted();
-    return wechatUpdatesSchema.parse(result);
+    return providerUpdatesSchema.parse(result);
   } catch (error) {
     signal.throwIfAborted();
     if (

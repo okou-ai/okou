@@ -171,3 +171,41 @@ export const sendWechatReconnectNotice$ = command(
     );
   },
 );
+
+/** A terminal input notice also records the disposition across redelivery. */
+export const sendWechatInputFailureNotice$ = command(
+  async (
+    { set },
+    args: {
+      readonly connection: Connection;
+      readonly message: WechatMessage;
+      readonly failure: "default_agent_unavailable" | "processing_failed";
+    },
+    signal: AbortSignal,
+  ) => {
+    const { connection, message, failure } = args;
+    if (
+      connection.status !== "active" ||
+      !isWechatOwnerMessage(connection, message)
+    ) {
+      return;
+    }
+    await set(
+      sendNotice$,
+      {
+        connection,
+        id: wechatEventId(
+          connection.id,
+          connection.generation,
+          `ingress-failed:${message.message_id}`,
+        ),
+        text:
+          failure === "default_agent_unavailable"
+            ? `Your workspace's agent is unavailable. Ask a workspace admin to configure it in ${BRAND_PRESENTATION.assistantName}, then send your message again.`
+            : "I couldn't process this message after retrying. Please send it again. If it includes a file, try sending the text separately.",
+        contextToken: message.context_token,
+      },
+      signal,
+    );
+  },
+);

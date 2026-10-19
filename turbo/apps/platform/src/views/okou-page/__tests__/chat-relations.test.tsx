@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -106,6 +106,63 @@ function mockCommunications(
     });
   });
 }
+function installResourceIntersections() {
+  const observers = new Map<
+    IntersectionObserver,
+    { callback: IntersectionObserverCallback; targets: Set<Element> }
+  >();
+  vi.spyOn(globalThis, "IntersectionObserver").mockImplementation(
+    function (callback, options) {
+      const targets = new Set<Element>();
+      const observer: IntersectionObserver = {
+        root: options?.root ?? null,
+        rootMargin: options?.rootMargin ?? "0px",
+        scrollMargin: "0px",
+        thresholds: [0],
+        observe: (target) => {
+          targets.add(target);
+        },
+        unobserve: (target) => {
+          targets.delete(target);
+        },
+        disconnect: () => {
+          for (const target of targets) {
+            targets.delete(target);
+          }
+        },
+        takeRecords: () => {
+          return [];
+        },
+      };
+      observers.set(observer, { callback, targets });
+      return observer;
+    },
+  );
+  return () => {
+    act(() => {
+      for (const [observer, { callback, targets }] of observers) {
+        if (targets.size === 0) {
+          continue;
+        }
+        callback(
+          [...targets].map((target) => {
+            return {
+              target,
+              isIntersecting: true,
+              intersectionRatio: 1,
+              time: 0,
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRect: target.getBoundingClientRect(),
+              rootBounds: null,
+            };
+          }),
+          observer,
+        );
+      }
+    });
+  };
+}
+
 function installRelationsGeometry(narrow = false) {
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
@@ -127,7 +184,6 @@ async function setupRelations(
     readonly events?: MockChatEventInput[];
     readonly enabled?: boolean;
     readonly narrow?: boolean;
-    readonly locale?: "de-DE";
     readonly mock?: () => void;
   } = {},
 ) {
@@ -146,7 +202,6 @@ async function setupRelations(
   await setupPage({
     context,
     path: `/chats/${THREAD}`,
-    locale: options.locale,
     featureSwitches: {
       [FeatureSwitchKey.ChatResourcePanel]: options.enabled ?? true,
     },
@@ -195,9 +250,10 @@ test.each(["children", "communications"] as const)(
     expect(
       within(sourcePanel).getByRole("region", { name: "From" }),
     ).toHaveTextContent("Slack");
+    expect(within(sourcePanel).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(sourcePanel).getByRole("status", { name: "Loading…" }),
-    ).toBeInTheDocument();
+      within(sourcePanel).queryByRole("region", { name: "Messages" }),
+    ).not.toBeInTheDocument();
 
     response.resolve();
     const panel = await screen.findByRole("region", { name: "Resources" });
@@ -210,14 +266,14 @@ test.each(["children", "communications"] as const)(
   },
 );
 
-test("Keep loaded relationships visible while refreshing", async () => {
+test("Keep loaded relationships visible while retrying a failed source", async () => {
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
-  let refreshing = false;
+  let retrying = false;
   await setupRelations({
     mock: () => {
       context.mocks.api(chatRelationsContract.children, async ({ respond }) => {
-        if (refreshing) {
+        if (retrying) {
           if (!requested.settled()) {
             requested.resolve();
           }
@@ -225,17 +281,28 @@ test("Keep loaded relationships visible while refreshing", async () => {
         }
         return respond(200, {
           items: [
-            createdChat(CHILD, refreshing ? "Updated child" : "Research child"),
+            createdChat(CHILD, retrying ? "Updated child" : "Research child"),
           ],
           nextCursor: null,
         });
+      });
+      context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+        return retrying
+          ? respond(200, { items: [], nextCursor: null })
+          : respond(500, {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Temporarily unavailable",
+              },
+            });
       });
     },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
-  refreshing = true;
-  click(buttonNamed("Refresh", panel));
+  expect(within(panel).queryByLabelText("Refresh")).not.toBeInTheDocument();
+  retrying = true;
+  click(buttonNamed("Try again", panel));
   await requested.promise;
   expect(within(panel).getByText("Research child")).toBeInTheDocument();
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
@@ -243,7 +310,7 @@ test("Keep loaded relationships visible while refreshing", async () => {
   await within(panel).findByText("Updated child");
 });
 
-test("Keep the resources popup open when refreshed relationships are empty", async () => {
+test("Hide the resources popup and trigger when the last resource disappears", async () => {
   let empty = false;
   await setupRelations({
     mock: () => {
@@ -253,22 +320,33 @@ test("Keep the resources popup open when refreshed relationships are empty", asy
           nextCursor: null,
         });
       });
+      context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+        return empty
+          ? respond(200, { items: [], nextCursor: null })
+          : respond(500, {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Temporarily unavailable",
+              },
+            });
+      });
     },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
-  click(buttonNamed("Refresh", panel));
+  click(buttonNamed("Try again", panel));
   await waitFor(() => {
     expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
   });
-  await within(panel).findByText("No artifacts yet");
-  expect(screen.getByRole("region", { name: "Resources" })).toBeInTheDocument();
-  expect(buttonNamed("Open artifacts")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("region", { name: "Resources" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
 });
 
-test("Keep the next chat's popup open while its relationships load", async () => {
+test("Hide the next chat's popup while its relationships load", async () => {
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
@@ -311,9 +389,8 @@ test("Keep the next chat's popup open while its relationships load", async () =>
       "Next related chat",
     );
   });
-  const loadingPanel = await screen.findByRole("region", { name: "Resources" });
   expect(
-    within(loadingPanel).queryByText("Next related chat"),
+    screen.queryByRole("region", { name: "Resources" }),
   ).not.toBeInTheDocument();
   response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
@@ -322,6 +399,7 @@ test("Keep the next chat's popup open while its relationships load", async () =>
 });
 
 test("Show the first source and created chats, then open message rows in their receiving chat", async () => {
+  const revealEnd = installResourceIntersections();
   await setupRelations({
     events: [prompt({ type: "source", kind: "slack", href: SLACK })],
     mock: () => {
@@ -375,7 +453,7 @@ test("Show the first source and created chats, then open message rows in their r
       within(panel).getByRole("region", { name: "Messages" }),
     ),
   );
-  await userEvent.click(buttonNamed("More", panel));
+  revealEnd();
   await expect(
     within(panel).findByText("Older child"),
   ).resolves.toBeInTheDocument();
@@ -504,26 +582,6 @@ test("Retry a failed relationship list without hiding the other sections", async
   ).resolves.toBeInTheDocument();
 });
 
-test("Format the related chat count using the German locale", async () => {
-  await setupRelations({
-    locale: "de-DE",
-    mock: () => {
-      context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-        return respond(200, {
-          items: Array.from({ length: 1000 }, (_, index) => {
-            const id = `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`;
-            return { ...createdChat(id, `Child ${index}`), id };
-          }),
-          nextCursor: null,
-        });
-      });
-    },
-  });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  await expect(within(panel).findByText("1.000")).resolves.toBeInTheDocument();
-  expect(document.documentElement).toHaveAttribute("lang", "de-DE");
-});
-
 test("Keep resources and relationships hidden while chat resources are disabled", async () => {
   await setupRelations({ enabled: false });
   await screen.findByText("Plan the launch");
@@ -620,6 +678,7 @@ test("Keep received messages accessible when the peer is unavailable and avoid l
 });
 
 test("Show metadata once per message, retain queued status, and page through history", async () => {
+  const revealEnd = installResourceIntersections();
   await setupRelations({
     mock: () => {
       mockCommunications(0, { status: "queued", receivedCount: 21 });
@@ -670,7 +729,7 @@ test("Show metadata once per message, retain queued status, and page through his
   expect(
     within(panel).queryByText("Received", { exact: true }),
   ).not.toBeInTheDocument();
-  click(buttonNamed("More", panel));
+  revealEnd();
   const pending = await within(panel).findByText(
     "Waiting in the receiving chat",
   );
@@ -749,7 +808,14 @@ test("Preview three unique chats and expand the remaining chat", async () => {
   click(buttonNamed("Messages with Child 1", messages));
   await within(messages).findByText("Please check the launch plan");
   click(buttonNamed("Messages with Child 2", messages));
-  await within(messages).findByText("No messages yet");
+  await waitFor(() => {
+    expect(
+      within(messages).queryByLabelText("Messages with Child 2"),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    within(messages).queryByText("No messages yet"),
+  ).not.toBeInTheDocument();
   expect(
     within(messages).queryByText("Please check the launch plan"),
   ).not.toBeInTheDocument();
@@ -758,7 +824,8 @@ test("Preview three unique chats and expand the remaining chat", async () => {
   );
 });
 
-test("Deduplicate later relationship pages and keep their count marked as incomplete until exhausted", async () => {
+test("Deduplicate related chats while automatically loading subsequent pages", async () => {
+  const revealEnd = installResourceIntersections();
   await setupRelations({
     mock: () => {
       context.mocks.api(
@@ -785,15 +852,15 @@ test("Deduplicate later relationship pages and keep their count marked as incomp
     },
   });
   const messages = await screen.findByRole("region", { name: "Messages" });
-  expect(within(messages).getByText("2+")).toBeInTheDocument();
+  expect(within(messages).getAllByRole("listitem")).toHaveLength(2);
   click(buttonNamed("Expand", messages));
-  click(buttonNamed("More", messages));
+  revealEnd();
   await within(messages).findByText("Older child");
   expect(within(messages).getAllByText("Existing planning chat")).toHaveLength(
     1,
   );
   expect(within(messages).queryByText("Created peer")).not.toBeInTheDocument();
-  expect(within(messages).getByText("3")).toBeInTheDocument();
+  expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).queryByText("More")).not.toBeInTheDocument();
 });
 
@@ -816,3 +883,221 @@ test("Show exactly three related chats without an expand control", async () => {
   expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).queryByText("Expand")).not.toBeInTheDocument();
 });
+
+test("Keep an empty or pending message preview out of the resource layout", async () => {
+  const response = createDeferredPromise<void>(context.signal);
+  await setupRelations({
+    mock: () => {
+      mockCommunications();
+      context.mocks.api(chatRelationsContract.messages, async ({ respond }) => {
+        await response.promise;
+        return respond(200, { items: [], nextCursor: null });
+      });
+    },
+  });
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  await within(panel).findByText("Existing planning chat");
+  click(buttonNamed("Messages with Existing planning chat", panel));
+  expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
+  expect(within(panel).getAllByRole("list")).toHaveLength(1);
+  response.resolve();
+  await waitFor(() => {
+    expect(
+      within(panel).queryByLabelText("Messages with Existing planning chat"),
+    ).not.toBeInTheDocument();
+  });
+  expect(within(panel).getAllByRole("list")).toHaveLength(1);
+  expect(within(panel).queryByText("No messages yet")).not.toBeInTheDocument();
+});
+
+test("Retry automatic pagination while keeping loaded chats and one collapse control", async () => {
+  const revealEnd = installResourceIntersections();
+  let fail = true;
+  await setupRelations({
+    mock: () => {
+      context.mocks.api(
+        chatRelationsContract.children,
+        ({ query, respond }) => {
+          if (query.beforeId) {
+            return fail
+              ? respond(500, {
+                  error: {
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: "Temporarily unavailable",
+                  },
+                })
+              : respond(200, {
+                  items: [{ ...createdChat(EVENT, "Older child"), id: EVENT }],
+                  nextCursor: null,
+                });
+          }
+          return respond(200, {
+            items: [createdChat()],
+            nextCursor: { createdAt: WHEN, id: RELATION },
+          });
+        },
+      );
+    },
+  });
+  const messages = await screen.findByRole("region", { name: "Messages" });
+  click(buttonNamed("Expand", messages));
+  revealEnd();
+  await within(messages).findByRole("alert");
+  expect(within(messages).getByText("Research child")).toBeInTheDocument();
+  expect(buttonNamed("Collapse", messages)).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(within(messages).queryByText("More")).not.toBeInTheDocument();
+  fail = false;
+  click(buttonNamed("Try again", messages));
+  await within(messages).findByText("Older child");
+  expect(within(messages).queryByRole("alert")).not.toBeInTheDocument();
+  click(buttonNamed("Collapse", messages));
+  expect(within(messages).getByText("Research child")).toBeInTheDocument();
+  expect(within(messages).queryByText("Collapse")).not.toBeInTheDocument();
+});
+
+test.each(["automatic", "retried"])(
+  "Cancel %s pagination when the category is collapsed",
+  async (mode) => {
+    const revealEnd = installResourceIntersections();
+    const requested = createDeferredPromise<void>(context.signal);
+    const cancelled = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<void>(context.signal);
+    let fail = mode === "retried";
+    await setupRelations({
+      mock: () => {
+        context.mocks.api(
+          chatRelationsContract.children,
+          async ({ query, request, respond }) => {
+            if (query.beforeId) {
+              if (fail) {
+                return respond(500, {
+                  error: {
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: "Temporarily unavailable",
+                  },
+                });
+              }
+              request.signal.addEventListener(
+                "abort",
+                () => {
+                  return cancelled.resolve();
+                },
+                { once: true },
+              );
+              requested.resolve();
+              await response.promise;
+              return respond(200, {
+                items: [{ ...createdChat(EVENT, "Older child"), id: EVENT }],
+                nextCursor: null,
+              });
+            }
+            return respond(200, {
+              items: [createdChat()],
+              nextCursor: { createdAt: WHEN, id: RELATION },
+            });
+          },
+        );
+      },
+    });
+    const messages = await screen.findByRole("region", { name: "Messages" });
+    click(buttonNamed("Expand", messages));
+    revealEnd();
+    if (mode === "retried") {
+      await within(messages).findByRole("alert");
+      fail = false;
+      click(buttonNamed("Try again", messages));
+    }
+    await requested.promise;
+    click(buttonNamed("Collapse", messages));
+    await cancelled.promise;
+    response.resolve();
+    click(buttonNamed("Expand", messages));
+    expect(within(messages).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(messages).queryByText("Older child")).not.toBeInTheDocument();
+    expect(within(messages).getByText("Research child")).toBeInTheDocument();
+  },
+);
+
+test.each(["automatic", "retried"])(
+  "Cancel %s pagination when the peer message history is closed",
+  async (mode) => {
+    const revealEnd = installResourceIntersections();
+    const requested = createDeferredPromise<void>(context.signal);
+    const cancelled = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<void>(context.signal);
+    let fail = mode === "retried";
+    await setupRelations({
+      mock: () => {
+        mockCommunications();
+        context.mocks.api(
+          chatRelationsContract.messages,
+          async ({ query, request, respond }) => {
+            if (query.beforeId) {
+              if (fail) {
+                return respond(500, {
+                  error: {
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: "Temporarily unavailable",
+                  },
+                });
+              }
+              request.signal.addEventListener(
+                "abort",
+                () => {
+                  return cancelled.resolve();
+                },
+                { once: true },
+              );
+              requested.resolve();
+              await response.promise;
+              return respond(200, {
+                items: [
+                  message({
+                    id: EVENT,
+                    userMessage: {
+                      version: 1,
+                      parts: [{ type: "text", text: "Older planning message" }],
+                    },
+                  }),
+                ],
+                nextCursor: null,
+              });
+            }
+            return respond(200, {
+              items: [message()],
+              nextCursor: { createdAt: WHEN, id: RELATION },
+            });
+          },
+        );
+      },
+    });
+    const messages = await screen.findByRole("region", { name: "Messages" });
+    click(buttonNamed("Messages with Existing planning chat", messages));
+    await within(messages).findByText("Please check the launch plan");
+    revealEnd();
+    if (mode === "retried") {
+      await within(messages).findByRole("alert");
+      fail = false;
+      click(buttonNamed("Try again", messages));
+    }
+    await requested.promise;
+    click(buttonNamed("Messages with Existing planning chat", messages));
+    await cancelled.promise;
+    response.resolve();
+    expect(
+      buttonNamed("Messages with Existing planning chat", messages),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(messages).queryByText("Please check the launch plan"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(messages).queryByText("Older planning message"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(messages).getByText("Existing planning chat"),
+    ).toBeInTheDocument();
+  },
+);

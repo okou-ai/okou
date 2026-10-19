@@ -78,10 +78,16 @@ export function SlashWorkflowName({
 export function SlashWorkflowMenu({
   menuRef,
   anchor,
+  bare = false,
   children,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
+  /**
+   * Draw no surface: the menu is a positioning box for cards of its own, and
+   * the space between and beside them lets the pointer through.
+   */
+  readonly bare?: boolean;
   readonly children: ReactNode;
 }) {
   return (
@@ -101,7 +107,11 @@ export function SlashWorkflowMenu({
       finalFocus={false}
       // The preview never affects the menu's width. Base UI tracks the card's
       // width and available space when the composer or visual viewport resizes.
-      className="flex max-h-[min(380px,var(--available-height))] w-(--anchor-width) flex-col overflow-hidden p-0"
+      className={cn(
+        "flex max-h-[min(380px,var(--available-height))] w-(--anchor-width) flex-col overflow-hidden p-0",
+        bare &&
+          "pointer-events-none overflow-visible rounded-none border-0 bg-transparent shadow-none",
+      )}
       data-testid="slash-workflow-menu"
     >
       {children}

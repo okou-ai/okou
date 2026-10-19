@@ -28,11 +28,13 @@ import {
   wechatEnabled$,
   wechatConfigured,
   startWechatPoller,
+  loadWechatWorkspace$,
 } from "../services/wechat-config";
 import type { RouteEntry } from "../route-entry";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
+import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { sendWechatWelcome$ } from "../services/wechat-notice.service";
 import { verifyWechatConnectToken } from "../services/wechat-connect-token";
@@ -56,6 +58,8 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
       id: wechatConnections.id,
       status: wechatConnections.status,
       generation: wechatConnections.generation,
+      accountId: wechatConnections.senderId,
+      workspaceId: wechatConnections.orgId,
     })
     .from(wechatConnections)
     .where(
@@ -70,10 +74,27 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (row && row.status !== "reconnect_required" && wechatConfigured()) {
     await startWechatPoller(row.id, row.generation, signal);
   }
+  const workspace =
+    row && row.status !== "disconnected"
+      ? await set(loadWechatWorkspace$, auth.orgId, signal)
+      : null;
+  if (row && row.status !== "disconnected" && !workspace) {
+    return notFound("This workspace is unavailable.");
+  }
   return {
     status: 200 as const,
     body: {
       configured: wechatConfigured(),
+      binding:
+        row && workspace
+          ? {
+              workspace: {
+                id: row.workspaceId,
+                name: workspace.name,
+              },
+              accountId: row.accountId,
+            }
+          : null,
       status: row?.status ?? ("disconnected" as const),
     },
   };

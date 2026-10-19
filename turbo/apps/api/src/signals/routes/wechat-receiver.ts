@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { wechatReceiverContract as contract } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
@@ -8,10 +8,15 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { verifyWechatGatewaySignature } from "../../lib/wechat-gateway-verification";
 import { request$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
+import { recoverWechatChatDeliveries$ } from "../services/wechat-delivery-recovery.service";
 import { writeDb$ } from "../external/db";
-import { decryptStoredSecretValue } from "../services/crypto.utils";
+import {
+  decryptStoredSecretValue,
+  encryptStoredSecretValue,
+} from "../services/crypto.utils";
 import { wechatEnabled$ } from "../services/wechat-config";
-import { dispatchWechatBatch$ } from "../services/wechat-gateway-batch.service";
+import { processPendingBatch$ } from "../services/wechat-gateway-batch.service";
 import { safeJsonParse } from "../utils";
 import type { RouteEntry } from "../route-entry";
 
@@ -83,6 +88,13 @@ const bootstrap$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!claimed) {
     return Response.json({ active: false });
   }
+  if (claimed.status === "active") {
+    // Normal callbacks send replies immediately. This bounded renewal is the
+    // backstop for a callback interrupted before durable delivery registration.
+    waitUntil(
+      set(recoverWechatChatDeliveries$, claimed, AbortSignal.timeout(300_000)),
+    );
+  }
   if (parsed.data.generation === claimed.generation) {
     return Response.json({ active: true, generation: claimed.generation });
   }
@@ -136,26 +148,68 @@ const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Receiver has not claimed this binding",
     );
   }
-  await set(
-    dispatchWechatBatch$,
-    { connection, messages: body.updates.msgs ?? [] },
-    signal,
-  );
-  await set(writeDb$)
-    .update(wechatConnections)
-    .set({
-      pendingBatchCiphertext: null,
-      updatesCursor: body.updates.get_updates_buf ?? connection.updatesCursor,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(wechatConnections.id, connection.id),
-        eq(wechatConnections.generation, body.generation),
+  if (connection.status === "active") {
+    waitUntil(
+      set(
+        recoverWechatChatDeliveries$,
+        connection,
+        AbortSignal.timeout(300_000),
       ),
     );
+  }
+  const db = set(writeDb$);
+  let batchCiphertext = connection.pendingBatchCiphertext;
+  if (!batchCiphertext) {
+    batchCiphertext = await encryptStoredSecretValue(
+      JSON.stringify({ ...body.updates, retries: {} }),
+    );
+    signal.throwIfAborted();
+    const [saved] = await db
+      .update(wechatConnections)
+      .set({
+        pendingBatchCiphertext: batchCiphertext,
+        updatesCursor: body.updates.get_updates_buf ?? connection.updatesCursor,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(wechatConnections.id, connection.id),
+          eq(wechatConnections.generation, body.generation),
+          eq(wechatConnections.status, connection.status),
+          eq(wechatConnections.workflowReceiver, true),
+          isNull(wechatConnections.pendingBatchCiphertext),
+        ),
+      )
+      .returning({ id: wechatConnections.id });
+    signal.throwIfAborted();
+    if (!saved) {
+      // Another request owns this batch, or the binding changed. Retain the
+      // Workflows checkpoint until its next attempt observes the live binding.
+      return Response.json({ active: true, retryAfterMs: 1000 });
+    }
+  }
+  await set(processPendingBatch$, { connection, batchCiphertext }, signal);
+  const [current] = await db
+    .select({
+      generation: wechatConnections.generation,
+      pending: wechatConnections.pendingBatchCiphertext,
+      status: wechatConnections.status,
+    })
+    .from(wechatConnections)
+    .where(eq(wechatConnections.id, connection.id))
+    .limit(1);
   signal.throwIfAborted();
-  return Response.json({ active: true });
+  if (!current || current.status === "reconnect_required") {
+    return Response.json({ active: false });
+  }
+  if (current.generation !== body.generation) {
+    return Response.json({ active: true, refresh: true });
+  }
+  // A failed input retains its persisted retry budget; later inputs have already
+  // been admitted. The receiver must not acknowledge this batch prematurely.
+  return Response.json(
+    current.pending ? { active: true, retryAfterMs: 1000 } : { active: true },
+  );
 });
 const expire$ = command(async ({ get, set }, signal: AbortSignal) => {
   const raw = await get(authenticatedBody$);

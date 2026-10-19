@@ -1,6 +1,6 @@
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -27,7 +27,7 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Explain an empty resources dropdown without hiding its button", async () => {
+test("Hide the resource trigger and panel when there is no content", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -43,18 +43,12 @@ test("Explain an empty resources dropdown without hiding its button", async () =
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  expect(resourceButton()).toBeInTheDocument();
+  await screen.findByTestId("chat-thread-header-title");
+  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
   expect(resourcePanel()).not.toBeInTheDocument();
-
-  click(resourceButton());
-
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
-  await within(panel).findByText("No artifacts yet");
-  expect(within(panel).queryByRole("listitem")).not.toBeInTheDocument();
 });
 
-test("Open the dropdown before its resources finish loading", async () => {
+test("Hide the resource trigger until content has loaded", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -78,36 +72,48 @@ test("Open the dropdown before its resources finish loading", async () => {
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  expect(resourceButton()).toBeInTheDocument();
+  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
   expect(resourcePanel()).not.toBeInTheDocument();
-
-  click(resourceButton());
-
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
-  expect(within(panel).queryByText("report.pdf")).not.toBeInTheDocument();
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   response.resolve();
+  await waitFor(() => {
+    expect(resourceButton()).toBeInTheDocument();
+  });
+  click(resourceButton());
+  const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("report.pdf");
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
-test("Show resource loading errors distinctly from empty results in the popup and Links tab", async () => {
+test("Retry a resource loading error without showing an empty state", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  let failed = true;
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(500, {
-      error: { message: "Attachments are unavailable" },
-    });
+    return failed
+      ? respond(500, {
+          error: { message: "Attachments are unavailable" },
+        })
+      : respond(200, {
+          runs: [
+            artifactRun({
+              fileId: "b0000000-0000-4000-a000-000000000999",
+              filename: "recovered.pdf",
+              contentType: "application/pdf",
+              url: "https://files.example.test/recovered.pdf",
+            }),
+          ],
+        });
   });
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  expect(resourceButton()).toBeInTheDocument();
+  await waitFor(() => {
+    expect(resourceButton()).toBeInTheDocument();
+  });
 
   click(resourceButton());
 
@@ -117,23 +123,10 @@ test("Show resource loading errors distinctly from empty results in the popup an
   ).resolves.toBeInTheDocument();
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 
-  click(buttonNamed("View all", panel));
-
-  const all = await screen.findByRole("complementary", { name: "Resources" });
-  const linksTab = queryAllByRoleFast("tab", all).find((tab) => {
-    return tab.textContent?.trim() === "Links";
-  });
-  expect(linksTab).toBeInTheDocument();
-  click(linksTab!);
-
-  const links = within(all).getByRole("tabpanel");
-  await expect(
-    within(links).findByText("Could not load resources"),
-  ).resolves.toBeInTheDocument();
-  expect(linksTab).toHaveAttribute("aria-selected", "true");
-  expect(
-    within(links).queryByText("No links in this chat yet"),
-  ).not.toBeInTheDocument();
+  failed = false;
+  click(buttonNamed("Try again", panel));
+  await within(panel).findByText("recovered.pdf");
+  expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("Show all three resources without an overflow control at the limit", async () => {
@@ -147,7 +140,7 @@ test("Show all three resources without an overflow control at the limit", async 
       }),
     ).toBeUndefined();
   }
-  expect(buttonNamed("View all", panel)).toBeInTheDocument();
+  expect(within(panel).queryByText("View all")).not.toBeInTheDocument();
 });
 
 test.each(["Artifacts", "Links"] as const)(
@@ -239,79 +232,6 @@ test.each(["Artifacts", "Links"] as const)(
   },
 );
 
-test("Browse complete artifacts and links in separate tabs from View all", async () => {
-  const { panel } = await setupOverflowResources(7);
-  click(within(panel).getByText("View all"));
-  const all = await screen.findByRole("complementary", { name: "Resources" });
-  await within(all).findByText("report-7.pdf");
-  expect(within(all).queryByText("Reference 7")).not.toBeInTheDocument();
-  const tabs = queryAllByRoleFast("tab", all);
-  expect(tabs).toHaveLength(2);
-  expect(tabs[0]).toHaveTextContent("Artifacts7");
-  expect(tabs[0]).toHaveAttribute("aria-selected", "true");
-  expect(tabs[1]).toHaveTextContent("Links7");
-  expect(within(all).queryByRole("searchbox")).not.toBeInTheDocument();
-  click(tabs[1]!);
-  await within(all).findByText("Reference 7");
-  expect(within(all).queryByText("report-7.pdf")).not.toBeInTheDocument();
-  expect(tabs[1]).toHaveAttribute("aria-selected", "true");
-  tabs[1]!.focus();
-  await userEvent.keyboard("{ArrowLeft}{Enter}");
-  expect(tabs[0]).toHaveAttribute("aria-selected", "true");
-  await within(all).findByText("report-7.pdf");
-});
-
-test("Keep loaded gallery pages and fullscreen when switching resource tabs", async () => {
-  const { panel } = await setupOverflowResources(2, { paginated: true });
-  click(buttonNamed("View all", panel));
-  const all = await screen.findByTestId("thread-sidebar-artifacts");
-  await within(all).findByText("report-1.pdf");
-  expect(queryAllByRoleFast("tab", all)[0]).toHaveTextContent("Artifacts1+");
-  const viewport = within(all).getByRole("tabpanel");
-  Object.defineProperties(viewport, {
-    scrollHeight: { configurable: true, value: 2000 },
-    clientHeight: { configurable: true, value: 1000 },
-    scrollTop: { configurable: true, value: 900 },
-  });
-  fireEvent.scroll(viewport);
-  await within(all).findByText("report-2.pdf");
-  expect(queryAllByRoleFast("tab", all)[0]).toHaveTextContent("Artifacts2");
-  expect(queryAllByRoleFast("tab", all)[0]).not.toHaveTextContent("+");
-
-  click(buttonNamed("Enter fullscreen", all));
-  const fullscreen = await screen.findByTestId("thread-sidebar-artifacts");
-  click(queryAllByRoleFast("tab", fullscreen)[1]!);
-  await within(fullscreen).findByText("Reference 2");
-  expect(buttonNamed("Exit fullscreen", fullscreen)).toBeInTheDocument();
-  click(queryAllByRoleFast("tab", fullscreen)[0]!);
-  await within(fullscreen).findByText("report-2.pdf");
-  expect(within(fullscreen).getByText("report-1.pdf")).toBeInTheDocument();
-  expect(buttonNamed("Exit fullscreen", fullscreen)).toBeInTheDocument();
-});
-
-test("Explain an empty Links tab and return from an unavailable gallery preview", async () => {
-  const { panel } = await setupOverflowResources(1, { withLinks: false });
-  click(buttonNamed("View all", panel));
-  const all = await screen.findByTestId("thread-sidebar-artifacts");
-  await within(all).findByText("report-1.pdf");
-  click(queryAllByRoleFast("tab", all)[1]!);
-  expect(queryAllByRoleFast("tab", all)[1]).toHaveTextContent("Links0");
-  await within(all).findByText("No links in this chat yet");
-  click(queryAllByRoleFast("tab", all)[0]!);
-  click(buttonNamed("Preview report-1.pdf", all));
-  const unavailable = await screen.findByTestId(
-    "thread-sidebar-artifact-unavailable",
-  );
-  click(buttonNamed("Back to artifacts", unavailable));
-  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
-  await within(gallery).findByText("report-1.pdf");
-  expect(gallery).toHaveAccessibleName("Resources");
-  expect(queryAllByRoleFast("tab", gallery)[0]).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-});
-
 test("Open in the actual right gutter and preserve links while removing duplicates and output URLs", async () => {
   await setupResources();
   await waitFor(() => {
@@ -349,7 +269,7 @@ test("Open in the actual right gutter and preserve links while removing duplicat
   ).not.toBeInTheDocument();
 });
 
-test("Copy the original link and open the complete artifact panel", async () => {
+test("Copy the original link without opening it", async () => {
   await setupResources();
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -364,12 +284,6 @@ test("Copy the original link and open the complete artifact panel", async () => 
       "https://example.test/guide?q=one#section",
     );
   });
-  click(buttonNamed("View all", panel));
-  const all = await screen.findByTestId("thread-sidebar-artifacts");
-  click(queryAllByRoleFast("tab", all)[1]!);
-  await within(all).findByText("Current guide");
-  expect(all).toHaveAccessibleName("Resources");
-  expect(buttonNamed("Close resources", all)).toBeInTheDocument();
 });
 
 test("Include links from older messages outside the transcript render window", async () => {

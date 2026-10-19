@@ -3,22 +3,23 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { wechatGatewayContract } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { wechatConnections } from "@okouai/db/schema/wechat";
-import { env } from "../../lib/env";
-import { nowDate } from "../../lib/time";
-import { verifyWechatGatewaySignature } from "../../lib/wechat-gateway-verification";
-import { request$ } from "../context/hono";
-import { writeDb$ } from "../external/db";
-import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
   getWechatUpdates,
   WechatSessionExpiredError,
 } from "@okouai/core/wechat-client";
+import { env } from "../../lib/env";
+import { nowDate } from "../../lib/time";
+import { verifyWechatGatewaySignature } from "../../lib/wechat-gateway-verification";
+import { request$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
+import { writeDb$ } from "../external/db";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "../services/crypto.utils";
 import { wechatEnabled$ } from "../services/wechat-config";
-import { dispatchWechatBatch$ } from "../services/wechat-gateway-batch.service";
+import { recoverWechatChatDeliveries$ } from "../services/wechat-delivery-recovery.service";
+import { processPendingBatch$ } from "../services/wechat-gateway-batch.service";
 import type { RouteEntry } from "../route-entry";
 
 const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -61,18 +62,30 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (
     !connection ||
-    connection.workflowReceiver ||
     connection.status === "reconnect_required" ||
+    connection.workflowReceiver ||
     !(await set(wechatEnabled$, connection.orgId, connection.userId, signal))
   ) {
     return Response.json({ active: false });
   }
 
+  if (connection.status === "active") {
+    // Recovery belongs to this API invocation, independently of the receiver's
+    // 80-second HTTP poll. Slow replies must not hold up incoming messages.
+    waitUntil(
+      set(
+        recoverWechatChatDeliveries$,
+        connection,
+        AbortSignal.timeout(300_000),
+      ),
+    );
+  }
+
   const live = and(
     eq(wechatConnections.id, connection.id),
-    eq(wechatConnections.workflowReceiver, false),
     eq(wechatConnections.generation, connection.generation),
     eq(wechatConnections.status, connection.status),
+    eq(wechatConnections.workflowReceiver, false),
   );
   let batchCiphertext = connection.pendingBatchCiphertext;
   if (!batchCiphertext) {
@@ -105,7 +118,10 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (updates === null) {
       return Response.json({ active: true });
     }
-    batchCiphertext = await encryptStoredSecretValue(JSON.stringify(updates));
+    batchCiphertext = await encryptStoredSecretValue(
+      JSON.stringify({ ...updates, retries: {} }),
+    );
+    signal.throwIfAborted();
 
     const [saved] = await db
       .update(wechatConnections)
@@ -127,22 +143,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
       return Response.json({ active: true });
     }
   }
-  const batch = wechatUpdatesSchema.parse(
-    JSON.parse(await decryptStoredSecretValue(batchCiphertext)) as unknown,
-  );
-
-  await set(
-    dispatchWechatBatch$,
-    { connection, messages: batch.msgs ?? [] },
-    signal,
-  );
-  await db
-    .update(wechatConnections)
-    .set({ pendingBatchCiphertext: null, updatedAt: nowDate() })
-    .where(
-      and(live, eq(wechatConnections.pendingBatchCiphertext, batchCiphertext)),
-    );
-  signal.throwIfAborted();
+  await set(processPendingBatch$, { connection, batchCiphertext }, signal);
   return Response.json({ active: true });
 });
 export const wechatGatewayRoutes: readonly RouteEntry[] = [
