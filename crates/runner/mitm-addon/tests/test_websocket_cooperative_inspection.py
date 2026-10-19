@@ -146,6 +146,26 @@ async def test_documented_non_usage_message_keeps_synchronous_fast_path(real_flo
     mitm_addon.websocket_end(flow)
 
 
+@pytest.mark.parametrize("from_client", [False, True], ids=["server", "client"])
+async def test_empty_message_invalidates_prewarm_correlation(
+    real_flow, tmp_path, sync_usage_executor, usage_webhook_api, from_client
+):
+    flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
+    mitm_addon.responseheaders(flow)
+    with usage_webhook_api() as webhook:
+        await deliver(flow, b'{"type":"response.create","generate":false}', from_client=True)
+        await deliver(flow, b"", from_client=from_client)
+        await deliver(flow, b'{"type":"response.created","response":{"id":"resp_after_empty"}}')
+        await deliver(flow, openai_websocket_usage_frame("resp_after_empty"))
+        mitm_addon.websocket_end(flow)
+        usage.flush_usage_events(trigger="test")
+    assert_usage_event_rows(
+        webhook.usage_events(),
+        "provider",
+        [("gpt-5.5", "tokens.input", 10), ("gpt-5.5", "tokens.output", 4)],
+    )
+
+
 @pytest.mark.parametrize("extra_space", [0, 1], ids=["exact-budget", "one-unit-over"])
 def test_client_total_work_budget_remains_exact(extra_space):
     # Six structural/scalar work units plus one unit per leading space.
