@@ -63,8 +63,10 @@ from .openai_responses import (
     create_openai_responses_sse_usage_extractor,
     extract_openai_responses_usage_from_event,
     inspect_openai_responses_client_event_json,
+    inspect_openai_responses_client_event_steps,
     inspect_openai_responses_event_json,
     inspect_openai_responses_server_event,
+    inspect_openai_responses_server_event_steps,
     merge_openai_responses_usage_result,
 )
 from .providers.connectors import (
@@ -110,8 +112,10 @@ __all__ = [
     "has_positive_model_provider_usage",
     "increment_in_flight_flows",
     "inspect_openai_responses_client_event_json",
+    "inspect_openai_responses_client_event_steps",
     "inspect_openai_responses_event_json",
     "inspect_openai_responses_server_event",
+    "inspect_openai_responses_server_event_steps",
     "is_model_provider_usage_billable",
     "log_ignored_model_provider_usage_source",
     "log_terminal_model_provider_usage_sources",

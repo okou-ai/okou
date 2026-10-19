@@ -1,6 +1,7 @@
 """Shared WebSocket helpers for model-provider usage tests."""
 
 import json
+from collections.abc import Awaitable
 
 import pytest
 from mitmproxy import http, websocket
@@ -103,16 +104,16 @@ def _assert_model_websocket_usage_started(flow: http.HTTPFlow) -> None:
     assert model_websocket_usage.is_enabled(flow)
 
 
-def feed_websocket_server_message(flow: http.HTTPFlow, content: bytes) -> None:
+def feed_websocket_server_message(flow: http.HTTPFlow, content: bytes) -> Awaitable[None] | None:
     _assert_model_websocket_usage_started(flow)
     set_websocket_message(flow, from_client=False, content=content)
-    mitm_addon.websocket_message(flow)
+    return mitm_addon.websocket_message(flow)
 
 
-def feed_websocket_client_message(flow: http.HTTPFlow, content: bytes) -> None:
+def feed_websocket_client_message(flow: http.HTTPFlow, content: bytes) -> Awaitable[None] | None:
     _assert_model_websocket_usage_started(flow)
     set_websocket_message(flow, from_client=True, content=content)
-    mitm_addon.websocket_message(flow)
+    return mitm_addon.websocket_message(flow)
 
 
 def feed_websocket_server_text_message(flow: http.HTTPFlow, content: str) -> None:
