@@ -2318,6 +2318,34 @@ function deferredSubscriptionChangeTarget(
   return { targetPlanPriceId, quantities, effectiveAt };
 }
 
+function storedAllocationChangeCondition(
+  root: UsagePackSubscriptionChangeRow,
+): ReturnType<typeof eq> {
+  return eq(usagePackAllocationChanges.subscriptionChangeId, root.id);
+}
+
+function storedAllocationCondition(
+  root: UsagePackSubscriptionChangeRow,
+): ReturnType<typeof eq> {
+  return eq(
+    usagePackAllocations.usagePackSubscriptionId,
+    root.usagePackSubscriptionId,
+  );
+}
+
+function storedSubscriptionChangeResult(
+  rows: Omit<StoredSubscriptionChange, "subscription"> & {
+    readonly subscriptions: readonly UsagePackSubscriptionRow[];
+  },
+): StoredSubscriptionChange {
+  const { root, allocationChanges, subscriptions, allocations } = rows;
+  const subscription = subscriptions[0];
+  if (!subscription) {
+    throw new Error(`Subscription change ${root.id} lost its subscription`);
+  }
+  return { root, allocationChanges, subscription, allocations };
+}
+
 const scheduleDeferredSubscriptionChange$ = command(
   async (
     { set },
@@ -2326,7 +2354,36 @@ const scheduleDeferredSubscriptionChange$ = command(
     providerSignal: AbortSignal | undefined,
   ): Promise<Date> => {
     const db = set(writeDb$);
-    const stored = await loadStoredSubscriptionChange(db, original.root.id);
+    const changeId = original.root.id;
+    const stored: StoredSubscriptionChange | null = await (async () => {
+      const [root] = await db
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(eq(usagePackSubscriptionChanges.id, changeId))
+        .limit(1);
+      if (!root) {
+        return null;
+      }
+      const [allocationChanges, subscriptions, allocations] = await Promise.all(
+        [
+          db
+            .select()
+            .from(usagePackAllocationChanges)
+            .where(storedAllocationChangeCondition(root)),
+          db
+            .select()
+            .from(usagePackSubscriptions)
+            .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
+            .limit(1),
+          db
+            .select()
+            .from(usagePackAllocations)
+            .where(storedAllocationCondition(root)),
+        ],
+      );
+      const rows = { root, allocationChanges, subscriptions, allocations };
+      return storedSubscriptionChangeResult(rows);
+    })();
     if (!stored || stored.root.status === "failed") {
       throw new Error("Deferred subscription change is no longer applicable");
     }
