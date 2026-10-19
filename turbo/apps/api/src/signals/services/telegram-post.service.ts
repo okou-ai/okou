@@ -1451,18 +1451,6 @@ const handleTelegramAgentMessage$ = command(
   },
 );
 
-async function resolveOfficialComposeId(
-  db: Db,
-  userLink: OfficialTelegramUserLink,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, userLink.orgId))
-    .limit(1);
-  return metadata?.defaultAgentId ?? null;
-}
-
 const handleOfficialCommand$ = command(
   async (
     { set },
@@ -1690,7 +1678,14 @@ const processOfficialWebhookMessage$ = command(
       return;
     }
 
-    const composeId = await resolveOfficialComposeId(db, userLink);
+    const composeId = await (async () => {
+      const [metadata] = await db
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, userLink.orgId))
+        .limit(1);
+      return metadata?.defaultAgentId ?? null;
+    })();
     signal.throwIfAborted();
     if (!composeId) {
       await postTelegramMessage({
