@@ -74,6 +74,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
         and(
           eq(wechatMessages.id, query.before),
           eq(wechatMessages.connectionId, query.channelId),
+          eq(wechatMessages.generation, access.connection.generation),
         ),
       )
       .limit(1);
@@ -104,6 +105,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(wechatMessages.connectionId, query.channelId),
+        eq(wechatMessages.generation, wechatConnections.generation),
         eq(wechatConnections.userId, auth.userId),
         eq(wechatConnections.orgId, auth.orgId),
         ne(wechatConnections.status, "disconnected"),

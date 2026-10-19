@@ -4,4 +4,5 @@ export const INTEGRATION_SETTINGS_PATHS = {
   discord: "/settings/discord",
   teams: "/settings/teams",
   telegram: "/settings/telegram",
+  wechat: "/settings/wechat",
 } as const;

@@ -201,3 +201,141 @@ test("a failed QR request can be retried from the dialog", async () => {
   ).resolves.toBeInTheDocument();
   expect(queryAction("button", "Create a new QR code")).not.toBeInTheDocument();
 });
+
+test("a reconnect link shows the signed-in identity and restores only after confirmation", async () => {
+  let restored = false;
+  let reconnects = 0;
+  let qrRequests = 0;
+  context.mocks.api(contract.status, ({ respond }) => {
+    return respond(200, {
+      configured: true,
+      status: restored ? "active" : "disconnected",
+    });
+  });
+  context.mocks.api(contract.reconnectStatus, ({ query, respond }) => {
+    expect(query.token).toBe("signed-link");
+    return respond(200, { available: true });
+  });
+  context.mocks.api(contract.reconnect, ({ body, respond }) => {
+    expect(body.token).toBe("signed-link");
+    reconnects++;
+    restored = true;
+    return respond(204);
+  });
+  context.mocks.api(contract.connect, ({ respond }) => {
+    qrRequests++;
+    return respond(200, attempt);
+  });
+  await setupPage({
+    context,
+    path: "/settings/wechat?token=signed-link",
+    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+  });
+  await expect(
+    screen.findByText(
+      "Restore this WeChat connection to the account and workspace below.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(reconnects).toBe(0);
+  expect(qrRequests).toBe(0);
+  click(getAction("button", "Reconnect"));
+  await expect(
+    screen.findByText("Return to WeChat and send a message to start chatting."),
+  ).resolves.toBeInTheDocument();
+  expect(reconnects).toBe(1);
+  expect(qrRequests).toBe(0);
+  expect(window.location.search).toBe("");
+});
+
+test("an unavailable reconnect link offers the same QR connection flow on the settings page", async () => {
+  let connected = false;
+  context.mocks.api(contract.status, ({ respond }) => {
+    return respond(200, {
+      configured: true,
+      status: connected ? "active" : "reconnect_required",
+    });
+  });
+  context.mocks.api(contract.reconnectStatus, ({ respond }) => {
+    return respond(200, { available: false });
+  });
+  context.mocks.api(contract.connect, ({ respond }) => {
+    return respond(200, attempt);
+  });
+  context.mocks.api(contract.poll, ({ body, respond }) => {
+    connected = body.verifyCode === "123456";
+    return respond(200, {
+      status: connected ? "connected" : "verification_required",
+    });
+  });
+  await setupPage({
+    context,
+    path: "/settings/wechat?token=expired",
+    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+  });
+  await expect(
+    screen.findByText(/This link is unavailable/),
+  ).resolves.toBeInTheDocument();
+  expect(queryAction("button", "Reconnect")).not.toBeInTheDocument();
+  click(getAction("link", "Connect with a new QR code"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  click(getAction("button", "Connect with a new QR code"));
+  await expect(
+    screen.findByTestId("wechat-connect-qr"),
+  ).resolves.toBeInTheDocument();
+  await fill(
+    await screen.findByRole("textbox", { name: "Verification code" }),
+    "123456",
+  );
+  click(getAction("button", "Verify"));
+  await expect(
+    screen.findByText("Return to WeChat and send a message to start chatting."),
+  ).resolves.toBeInTheDocument();
+});
+
+test("a rejected reconnect remains unconnected and shows recovery guidance", async () => {
+  context.mocks.api(contract.status, ({ respond }) => {
+    return respond(200, { configured: true, status: "disconnected" });
+  });
+  context.mocks.api(contract.reconnectStatus, ({ respond }) => {
+    return respond(200, { available: true });
+  });
+  context.mocks.api(contract.reconnect, ({ respond }) => {
+    return respond(409, {
+      error: { code: "CONFLICT", message: "Link expired" },
+    });
+  });
+  await setupPage({
+    context,
+    path: "/settings/wechat?token=expired-after-load",
+    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+  });
+  await expect(
+    screen.findByText(
+      "Restore this WeChat connection to the account and workspace below.",
+    ),
+  ).resolves.toBeInTheDocument();
+  click(getAction("button", "Reconnect"));
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "This link is unavailable",
+  );
+  expect(
+    screen.queryByText(
+      "Return to WeChat and send a message to start chatting.",
+    ),
+  ).not.toBeInTheDocument();
+  expect(window.location.search).toBe("?token=expired-after-load");
+});
+
+test("the WeChat settings page cannot connect with the feature disabled", async () => {
+  await setupPage({
+    context,
+    path: "/settings/wechat?token=signed-link",
+    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: false },
+  });
+  await expect(
+    screen.findByText("Connection is not configured yet."),
+  ).resolves.toBeInTheDocument();
+  expect(queryAction("button", "Reconnect")).not.toBeInTheDocument();
+});

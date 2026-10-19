@@ -33,6 +33,8 @@ export const wechatConnections = pgTable(
     // A fetched batch and its cursor are saved together before dispatch. A retry
     // finishes this encrypted batch before fetching more messages.
     pendingBatchCiphertext: text("pending_batch_ciphertext"),
+    // Reusing a disconnected transport must not turn its backlog into new prompts.
+    resumedAt: timestamp("resumed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

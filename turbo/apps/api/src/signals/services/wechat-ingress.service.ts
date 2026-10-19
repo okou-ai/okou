@@ -344,6 +344,15 @@ export const receiveWechatMessage$ = command(
     ) {
       return;
     }
+    // A provider can redeliver an old long-poll batch after reconnection. Only
+    // messages demonstrably created after consent belong to this new binding.
+    if (
+      connection.resumedAt &&
+      (message.create_time_ms === undefined ||
+        message.create_time_ms <= connection.resumedAt.getTime())
+    ) {
+      return;
+    }
     const id = wechatEventId(
       connection.id,
       connection.generation,
