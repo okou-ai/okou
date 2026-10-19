@@ -180,7 +180,9 @@ export interface SlashActionsOverview {
    */
   readonly side: SlashMenuSide;
   /** A ref for the panel, which measures `side` once it mounts. */
-  readonly measureSide: (element: HTMLElement | null) => void;
+  readonly measureSide: (
+    element: HTMLElement | null,
+  ) => (() => void) | undefined;
 }
 
 /** The DOM option an index names, for scrolling it into view. */

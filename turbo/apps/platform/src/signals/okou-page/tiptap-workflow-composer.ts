@@ -245,7 +245,10 @@ export interface WorkflowComposerSignals {
   /** The composer edge the open slash menu hugs: the half its `/` is in. */
   readonly slashMenuSide$: Computed<SlashMenuSide>;
   /** A ref for the slash menu: measures which half its `/` was typed in. */
-  readonly measureSlashMenuSide$: Command<void, [HTMLElement | null]>;
+  readonly measureSlashMenuSide$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
     (() => void) | undefined,
@@ -3089,14 +3092,13 @@ function createSlashMenuSideSignals(
         ? measured.side
         : "start";
     }),
-    measureSlashMenuSide$: command(
-      ({ get, set }, element: HTMLElement | null) => {
+    measureSlashMenuSide$: onRef(
+      command(({ get, set }) => {
         const range = get(activeSlashRange$);
-        if (element === null || range === null) {
-          return;
+        if (range !== null) {
+          set(sideState$, { range, side: slashTokenSide(editor, range) });
         }
-        set(sideState$, { range, side: slashTokenSide(editor, range) });
-      },
+      }),
     ),
   };
 }
