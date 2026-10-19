@@ -1,4 +1,3 @@
-import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
@@ -22,7 +21,6 @@ import {
   discoverExternalPublicConnectorCatalogStatus,
   ExternalConnectorCatalogUnavailableError,
   publicConnectorCatalogPermissionDetailFromSource,
-  searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
 import {
   connectorCatalogCurrentWhere,
@@ -37,16 +35,6 @@ export function isConnectorCatalogUnavailableError(error: unknown): boolean {
 interface ConnectorCatalogReadArgs {
   readonly db: ReadonlyDb;
   readonly featureStates: ConnectorFeatureStates;
-}
-
-interface ConnectorCatalogSearchArgs extends ConnectorCatalogReadArgs {
-  readonly keyword: string | undefined;
-}
-
-export async function searchConnectorCatalog(
-  args: ConnectorCatalogSearchArgs,
-): Promise<BuiltinConnectorSearchItem[]> {
-  return await searchExternalConnectorCatalog(args);
 }
 
 export function connectorBriefsFromRows(args: {
