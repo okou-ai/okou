@@ -3,7 +3,7 @@
 use std::{future::Future, io, time::Duration};
 
 use runner_rpc_proto::{
-    Delivery, ErrorCode, MAX_REQUEST_BYTES, Response,
+    Delivery, ErrorCode, Response,
     stream::{Frame, MAX_DURATION_MS, Reader, Writer},
 };
 use tokio::{
@@ -11,7 +11,7 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
-use crate::{TERMINAL_BUDGET, connect_vsock};
+use crate::{TERMINAL_BUDGET, connect_vsock, dispatch_request};
 
 pub async fn run() -> io::Result<bool> {
     run_with_io(tokio::io::stdin(), tokio::io::stdout(), connect_vsock).await
@@ -82,30 +82,10 @@ where
     C: FnOnce() -> F,
     F: Future<Output = io::Result<S>>,
 {
-    let mut request = runner_rpc_proto::read_request(input)
+    let request = runner_rpc_proto::read_request(input)
         .await
         .map_err(|_| ErrorCode::InvalidRequest)?;
-    if request.remaining_ms.is_some() {
-        return Err(ErrorCode::InvalidRequest);
-    }
-    let mut stream = connect().await.map_err(|_| ErrorCode::Unavailable)?;
-    request.remaining_ms = Some(
-        deadline
-            .saturating_duration_since(Instant::now())
-            .as_millis()
-            .min(u128::from(MAX_DURATION_MS)) as u64,
-    );
-    if serde_json::to_vec(&request)
-        .map_err(|_| ErrorCode::InvalidRequest)?
-        .len()
-        > MAX_REQUEST_BYTES
-    {
-        return Err(ErrorCode::InvalidRequest);
-    }
-    *sent = true;
-    runner_rpc_proto::write_request(&mut stream, &request)
-        .await
-        .map_err(|_| ErrorCode::Transport)?;
+    let stream = dispatch_request(request, connect, sent, deadline, MAX_DURATION_MS).await?;
     let (read, write) = tokio::io::split(stream);
     let send = async {
         let mut reader = Reader::input(input);
