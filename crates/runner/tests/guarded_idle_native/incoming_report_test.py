@@ -35,6 +35,8 @@ class IncomingReportTests(unittest.TestCase):
                     monotonic_ns=event["monotonic_ns"]+shift, unix_ns=event["unix_ns"]+shift)
             for sample in observations:
                 sample["monotonic_ns"] += shift
+                for process in sample["processes"]:
+                    process["observed_monotonic_ns"] = sample["monotonic_ns"]
             self.events.extend(events); self.samples.extend(observations)
             start, tail, tail_done = [events[n]["monotonic_ns"] for n in (1,3,4)]
             allocated = [2,4096,1] if aged else [4,8192,2]

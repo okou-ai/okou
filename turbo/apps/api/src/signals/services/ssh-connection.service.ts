@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { enteringNetworkConfig } from "./network-config-binding";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { isIP } from "node:net";
@@ -28,7 +29,6 @@ import {
   createSshCreationReads,
   createSshUpdateReads,
   selectedSshNetworkConfig,
-  enteringSshNetworkConfig,
   stampedSshCredential,
   ownedSshConnection,
   visibleSshAccessConfig,
@@ -417,7 +417,7 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
   if (predicate === undefined) {
     throw new Error("SSH Tailscale admission predicate is missing");
   }
-  const stamp = enteringSshNetworkConfig(
+  const stamp = enteringNetworkConfig(
     reads.qb,
     "stamped_ssh_creation_tailscale",
     "tailscale",

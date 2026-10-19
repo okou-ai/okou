@@ -137,3 +137,101 @@ test("Sent user attachments open in the sidebar and retain their private sharing
   ).not.toBeInTheDocument();
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
 });
+
+async function openCsvSidebar(source: string) {
+  const url = "https://files.example.test/review.csv";
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+    return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
+      url,
+      publicUrl: null,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+  });
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text(source);
+  });
+  mockArtifactConversation(context, {
+    catalog: [],
+    chatEvents: [
+      {
+        id: "sidebar-csv-message",
+        createdAt: "2026-09-01T12:00:00.000Z",
+        role: "user",
+        content: "Review this CSV",
+        fileParts: [
+          {
+            type: "file",
+            fileId: "sidebar-csv-file",
+            filenameSnapshot: "review.csv",
+            contentType: "text/csv",
+          },
+        ],
+        runId: "sidebar-csv-run",
+        seqId: 1,
+      },
+      {
+        id: "sidebar-csv-completed",
+        createdAt: "2026-09-01T12:00:01.000Z",
+        role: "assistant",
+        content: null,
+        runId: "sidebar-csv-run",
+        runLifecycleEvent: "completed",
+        seqId: 2,
+      },
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
+  });
+  click(await screen.findByLabelText("Open csv preview for review.csv"));
+  return screen.findByTestId("artifact-sidebar");
+}
+
+test("The CSV sidebar preserves quoted fields and duplicate records", async () => {
+  const source =
+    'name,name,,\r\n"Doe, Jane","first\r\nsecond ""quoted"" line",,\r\n"Doe, Jane","first\r\nsecond ""quoted"" line",,\r\n';
+  const preview = await openCsvSidebar(source);
+  const table = await within(preview).findByRole("table");
+  expect(
+    Array.from(table.querySelectorAll("tbody td"), (cell) => {
+      return cell.textContent;
+    }),
+  ).toStrictEqual([
+    "Doe, Jane",
+    'first\r\nsecond "quoted" line',
+    "",
+    "",
+    "Doe, Jane",
+    'first\r\nsecond "quoted" line',
+    "",
+    "",
+  ]);
+});
+
+test.each([
+  {
+    shape: "malformed",
+    source: 'name,note\nvalue,"unfinished',
+  },
+  {
+    shape: "oversized",
+    source: [
+      Array.from({ length: 101 }, (_, index) => {
+        return `column${index}`;
+      }).join(","),
+      ...Array.from({ length: 100 }, () => {
+        return "value" + ",".repeat(100);
+      }),
+    ].join("\n"),
+  },
+])("The CSV sidebar preserves $shape content as source", async ({ source }) => {
+  const preview = await openCsvSidebar(source);
+  await waitFor(() => {
+    expect(preview.querySelector("pre")?.textContent).toBe(source);
+  });
+  expect(preview.querySelector("table")).toBeNull();
+});

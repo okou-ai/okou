@@ -20,9 +20,11 @@ const github = createGithubBddApi(context);
 
 async function givenRemoteInstallActors() {
   const foreign = bdd.user();
-  const foreignAgent = await bdd.createAgent(foreign, {
-    displayName: `Foreign GitHub installation ${randomUUID()}`,
-  });
+  const foreignAgent = await bdd.createAgent(
+    foreign,
+    { displayName: `Foreign GitHub installation ${randomUUID()}` },
+    { isolatePg: true },
+  );
   const foreignInstallation = await github.installGithubApp(
     foreign,
     foreignAgent.agentId,

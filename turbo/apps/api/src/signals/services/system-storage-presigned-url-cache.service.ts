@@ -10,7 +10,7 @@ import {
   type PgPoolAcquisition,
   type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -647,66 +647,6 @@ async function upsertCacheValues(
     });
 }
 
-async function pruneExpiredCacheRows(
-  args: {
-    readonly db: Db;
-    readonly scope: StoragePresignedUrlCacheScope;
-    readonly issuedAt: Date;
-    readonly limit: number;
-    readonly objectKeyPrefix: string | undefined;
-  },
-  signal?: AbortSignal,
-): Promise<number> {
-  const issuedAtTimestamp = timestampWithoutTimeZone(args.issuedAt);
-  const deletedRows = await executeRawRows(
-    args.db,
-    sql`
-      WITH candidates AS (
-      SELECT ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
-      FROM ${systemStoragePresignedUrlCache}
-      WHERE ${and(
-        eq(systemStoragePresignedUrlCache.scope, args.scope),
-        lte(
-          systemStoragePresignedUrlCache.expiresAt,
-          sql`${issuedAtTimestamp}::timestamp`,
-        ),
-        objectKeyPrefixCondition(args.objectKeyPrefix),
-      )}
-      ORDER BY
-        ${systemStoragePresignedUrlCache.expiresAt},
-        ${systemStoragePresignedUrlCache.cacheKey}
-      LIMIT ${args.limit}
-    ),
-    locked AS (
-      SELECT ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
-      FROM ${systemStoragePresignedUrlCache}
-      INNER JOIN candidates
-        ON ${eq(
-          systemStoragePresignedUrlCache.cacheKey,
-          sql`candidates."cacheKey"`,
-        )}
-      WHERE ${and(
-        eq(systemStoragePresignedUrlCache.scope, args.scope),
-        lte(
-          systemStoragePresignedUrlCache.expiresAt,
-          sql`${issuedAtTimestamp}::timestamp`,
-        ),
-        objectKeyPrefixCondition(args.objectKeyPrefix),
-      )}
-      ORDER BY ${systemStoragePresignedUrlCache.cacheKey}
-      FOR UPDATE OF ${systemStoragePresignedUrlCache}
-    )
-    DELETE FROM ${systemStoragePresignedUrlCache}
-    USING locked
-    WHERE ${eq(systemStoragePresignedUrlCache.cacheKey, sql`locked."cacheKey"`)}
-      RETURNING ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
-    `,
-    deletedCacheRowSchema,
-  );
-  signal?.throwIfAborted();
-  return deletedRows.length;
-}
-
 export interface SelectedStoragePresignedUrlCacheRow {
   readonly cacheKey: string;
   readonly presignedUrl: string;
@@ -860,26 +800,6 @@ export function storageManifestPresignedUrlCacheLookupPairs(
   return { pairs, cacheKeysByRequest };
 }
 
-async function lookupStoragePresignedUrlCacheRows(args: {
-  readonly db: ReadonlyDb;
-  readonly scope: StoragePresignedUrlCacheScope;
-  readonly cacheKeys: readonly string[];
-}): Promise<readonly SelectedStoragePresignedUrlCacheRow[]> {
-  return await args.db
-    .select({
-      cacheKey: systemStoragePresignedUrlCache.cacheKey,
-      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-      expiresAt: systemStoragePresignedUrlCache.expiresAt,
-    })
-    .from(systemStoragePresignedUrlCache)
-    .where(
-      and(
-        eq(systemStoragePresignedUrlCache.scope, args.scope),
-        inArray(systemStoragePresignedUrlCache.cacheKey, args.cacheKeys),
-      ),
-    );
-}
-
 async function storagePresignedUrlCacheRows(args: {
   readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
@@ -898,11 +818,24 @@ async function storagePresignedUrlCacheRows(args: {
   }
   const lookup = async () => {
     const query = async () => {
-      return await lookupStoragePresignedUrlCacheRows({
-        db: args.db,
-        scope: args.scope,
-        cacheKeys: args.cacheKeys,
-      });
+      const db = args.db;
+      const scope = args.scope;
+      const cacheKeys = args.cacheKeys;
+      return await (async () => {
+        return await db
+          .select({
+            cacheKey: systemStoragePresignedUrlCache.cacheKey,
+            presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+            expiresAt: systemStoragePresignedUrlCache.expiresAt,
+          })
+          .from(systemStoragePresignedUrlCache)
+          .where(
+            and(
+              eq(systemStoragePresignedUrlCache.scope, scope),
+              inArray(systemStoragePresignedUrlCache.cacheKey, cacheKeys),
+            ),
+          );
+      })();
     };
     const timing = args.timing;
     if (!timing) {
@@ -1448,19 +1381,70 @@ export const resolvePrivateArtifactPreviewPresignedUrls$ = command(
 
 export const pruneStoragePresignedUrls$ = command(
   async (
-    _,
-    args: {
-      readonly db: Db;
+    { set },
+    input: {
       readonly scope: StoragePresignedUrlCacheScope;
       readonly limit: number;
       readonly objectKeyPrefix?: string;
     },
     signal: AbortSignal,
   ) => {
-    const pruned = await pruneExpiredCacheRows(
-      { ...args, objectKeyPrefix: args.objectKeyPrefix, issuedAt: nowDate() },
-      signal,
-    );
+    const args = {
+      ...input,
+      objectKeyPrefix: input.objectKeyPrefix,
+      issuedAt: nowDate(),
+    };
+    const pruned = await (async (signal?: AbortSignal) => {
+      const issuedAtTimestamp = timestampWithoutTimeZone(args.issuedAt);
+      const db = set(writeDb$);
+      const pruneQuery = sql`
+      WITH candidates AS (
+      SELECT ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
+      FROM ${systemStoragePresignedUrlCache}
+      WHERE ${and(
+        eq(systemStoragePresignedUrlCache.scope, args.scope),
+        lte(
+          systemStoragePresignedUrlCache.expiresAt,
+          sql`${issuedAtTimestamp}::timestamp`,
+        ),
+        objectKeyPrefixCondition(args.objectKeyPrefix),
+      )}
+      ORDER BY
+        ${systemStoragePresignedUrlCache.expiresAt},
+        ${systemStoragePresignedUrlCache.cacheKey}
+      LIMIT ${args.limit}
+    ),
+    locked AS (
+      SELECT ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
+      FROM ${systemStoragePresignedUrlCache}
+      INNER JOIN candidates
+        ON ${eq(
+          systemStoragePresignedUrlCache.cacheKey,
+          sql`candidates."cacheKey"`,
+        )}
+      WHERE ${and(
+        eq(systemStoragePresignedUrlCache.scope, args.scope),
+        lte(
+          systemStoragePresignedUrlCache.expiresAt,
+          sql`${issuedAtTimestamp}::timestamp`,
+        ),
+        objectKeyPrefixCondition(args.objectKeyPrefix),
+      )}
+      ORDER BY ${systemStoragePresignedUrlCache.cacheKey}
+      FOR UPDATE OF ${systemStoragePresignedUrlCache}
+    )
+    DELETE FROM ${systemStoragePresignedUrlCache}
+    USING locked
+    WHERE ${eq(systemStoragePresignedUrlCache.cacheKey, sql`locked."cacheKey"`)}
+      RETURNING ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
+    `;
+      const rowSchema = deletedCacheRowSchema;
+      const deletedRows = await (async () => {
+        return parseRawRows(rowSchema, await db.execute(pruneQuery));
+      })();
+      signal?.throwIfAborted();
+      return deletedRows.length;
+    })(signal);
     return { pruned };
   },
 );

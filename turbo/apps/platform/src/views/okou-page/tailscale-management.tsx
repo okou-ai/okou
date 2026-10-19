@@ -38,7 +38,7 @@ import {
   tailscaleAcknowledged$,
   tailscaleConfigs$,
   tailscaleDialog$,
-  tailscaleEnabled$,
+  tailscaleSettingsEnabled$,
   tailscaleError$,
   tailscaleImpact$,
   tailscaleLatestConfig$,
@@ -691,7 +691,7 @@ function TailscaleSection({
 
 export function TailscaleManagement() {
   const { t } = useTranslation();
-  const enabled = useGet(tailscaleEnabled$);
+  const enabled = useGet(tailscaleSettingsEnabled$);
   const configs = useLoadable(tailscaleConfigs$);
   const admin = useLoadable(isOrgAdmin$);
   const open = useSet(openTailscaleDialog$);

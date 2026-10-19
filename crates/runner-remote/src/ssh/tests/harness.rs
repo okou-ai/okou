@@ -31,6 +31,9 @@ use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
 use crate::test_fixtures::http::{HttpClientConfig, http_client};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
+use sandbox::Sandbox;
+use sandbox_mock::MockSandbox;
 
 pub(crate) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 pub(crate) const CREATED_AT: &str = "2026-09-01T00:00:00.123456Z";
@@ -456,7 +459,7 @@ impl Harness {
         }).await
     }
 
-    pub(super) async fn restart_with_vnc(&mut self, vnc: Arc<crate::vnc::VncRuntime>) {
+    pub(crate) async fn restart_with_vnc(&mut self, vnc: Arc<crate::vnc::VncRuntime>) {
         self.shutdown().await;
         self.rpc.vnc = Some(vnc);
         let (incoming, receiver) = mpsc::channel(32);
@@ -513,6 +516,10 @@ impl Harness {
         super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
+    pub(crate) fn native(&self) -> Arc<crate::native::Run> {
+        self.dispatcher.as_ref().unwrap().native()
+    }
+
     pub(crate) fn take_dispatcher(&mut self) -> RpcRun {
         self.dispatcher.take().unwrap()
     }
@@ -541,20 +548,19 @@ impl Harness {
     }
 
     async fn enable_diagnostics_token(&mut self, token: &str) {
+        let context =
+            crate::test_fixtures::execution_context::diagnostic_context_for_test(self.run, token);
+        self.install_context(&context).await;
+    }
+
+    pub(crate) async fn install_context(&mut self, context: &ExecutionContext) {
         self.shutdown().await;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
-        self.dispatcher = Some(self.rpc.start_with_diagnostics(
-            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
-            "sandbox-authoritative".into(),
-            self.run,
-            &self.cancel,
-            None,
-            Some(Arc::new(crate::diagnostics::Authority::new(
-                self.runtime.http_client(),
-                token,
-            ))),
-        ));
+        let mut sandbox = MockSandbox::new("sandbox-authoritative")
+            .with_guest_rpc(Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))));
+        sandbox.bind_run_control(&self.run.to_string()).unwrap();
+        self.dispatcher = Some(self.rpc.install(&sandbox, context, &self.cancel).unwrap());
     }
 }
 

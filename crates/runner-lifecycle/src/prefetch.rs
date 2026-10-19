@@ -10,8 +10,12 @@ use tokio_util::task::TaskTracker;
 
 mod guarded;
 #[cfg(any(test, feature = "test-support"))]
+mod read_checkpoint;
+#[cfg(any(test, feature = "test-support"))]
 mod startup_observation;
 pub use guarded::{GuardedPrefetchConfig, GuardedPrefetchSnapshot};
+#[cfg(any(test, feature = "test-support"))]
+pub use read_checkpoint::PrefetchReadCheckpoint;
 #[cfg(any(test, feature = "test-support"))]
 pub use startup_observation::StartupPrefetchSnapshot;
 use tracing::{info, warn};
@@ -45,6 +49,19 @@ impl MemoryPrefetchTasks {
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
     ) -> Self {
+        Self::spawn_startup(
+            candidates,
+            budget_mb,
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+    }
+
+    fn spawn_startup(
+        candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
+        budget_mb: u64,
+        #[cfg(any(test, feature = "test-support"))] checkpoint: Option<PrefetchReadCheckpoint>,
+    ) -> Self {
         #[cfg(any(test, feature = "test-support"))]
         let observer = startup_observation::Observer::default();
         #[cfg(any(test, feature = "test-support"))]
@@ -56,7 +73,12 @@ impl MemoryPrefetchTasks {
             move |path, cancel| {
                 #[cfg(any(test, feature = "test-support"))]
                 worker_observer.started();
-                let outcome = prefetch_memory_with_cancel(path, cancel);
+                let outcome = prefetch_memory_observed(
+                    path,
+                    cancel,
+                    #[cfg(any(test, feature = "test-support"))]
+                    checkpoint.as_ref(),
+                );
                 #[cfg(any(test, feature = "test-support"))]
                 worker_observer.finished(&outcome);
                 #[cfg(not(any(test, feature = "test-support")))]
@@ -264,11 +286,29 @@ pub fn prefetch_memory(path: &Path) {
 }
 
 fn prefetch_memory_with_cancel(path: &Path, cancel: &CancellationToken) -> PrefetchOutcome {
+    prefetch_memory_observed(
+        path,
+        cancel,
+        #[cfg(any(test, feature = "test-support"))]
+        None,
+    )
+}
+
+fn prefetch_memory_observed(
+    path: &Path,
+    cancel: &CancellationToken,
+    #[cfg(any(test, feature = "test-support"))] checkpoint: Option<&PrefetchReadCheckpoint>,
+) -> PrefetchOutcome {
     let outcome = if cancel.is_cancelled() {
         PrefetchOutcome::Cancelled { bytes: 0 }
     } else {
         match std::fs::File::open(path) {
-            Ok(mut file) => prefetch_reader(&mut file, cancel),
+            Ok(mut file) => prefetch_reader_observed(
+                &mut file,
+                cancel,
+                #[cfg(any(test, feature = "test-support"))]
+                checkpoint,
+            ),
             Err(error) => PrefetchOutcome::OpenFailed { error },
         }
     };
@@ -291,7 +331,16 @@ fn prefetch_memory_with_cancel(path: &Path, cancel: &CancellationToken) -> Prefe
     outcome
 }
 
+#[cfg(test)]
 fn prefetch_reader<R: Read>(reader: &mut R, cancel: &CancellationToken) -> PrefetchOutcome {
+    prefetch_reader_observed(reader, cancel, None)
+}
+
+fn prefetch_reader_observed<R: Read>(
+    reader: &mut R,
+    cancel: &CancellationToken,
+    #[cfg(any(test, feature = "test-support"))] checkpoint: Option<&PrefetchReadCheckpoint>,
+) -> PrefetchOutcome {
     let mut buf = vec![0u8; MEMORY_PREFETCH_CHUNK_BYTES];
     let mut total: u64 = 0;
     loop {
@@ -312,6 +361,16 @@ fn prefetch_reader<R: Read>(reader: &mut R, cancel: &CancellationToken) -> Prefe
             return PrefetchOutcome::Complete { bytes: total };
         }
         total += n as u64;
+
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(checkpoint) = checkpoint
+            && let Err(error) = checkpoint(total)
+        {
+            return PrefetchOutcome::ReadFailed {
+                bytes: total,
+                error,
+            };
+        }
 
         if cancel.is_cancelled() {
             return PrefetchOutcome::Cancelled { bytes: total };

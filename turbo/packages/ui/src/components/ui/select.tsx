@@ -7,7 +7,7 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
-import { resolveCollisionPadding } from "../../lib/safe-area";
+import { SafeAreaCollisionPadding } from "../../lib/safe-area";
 
 const Select = SelectPrimitive.Root;
 
@@ -144,39 +144,45 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
   ) => {
     return (
       <SelectPrimitive.Portal>
-        <SelectPrimitive.Positioner
-          align={align}
-          alignItemWithTrigger={alignItemWithTrigger}
-          alignOffset={alignOffset}
-          anchor={anchor}
-          collisionAvoidance={collisionAvoidance}
-          collisionBoundary={collisionBoundary}
-          collisionPadding={resolveCollisionPadding(collisionPadding)}
-          positionMethod={positionMethod}
-          side={side}
-          sideOffset={sideOffset}
-          sticky={sticky}
-        >
-          <SelectPrimitive.Popup
-            ref={ref}
-            data-slot="select-content"
-            className={cn(
-              anchoredPopupTransitionClassName,
-              "relative max-h-[min(24rem,var(--available-height))] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden overflow-y-auto rounded-xl border border-[hsl(var(--gray-400))] bg-card text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)] outline-none data-[side=none]:data-starting-style:opacity-100 data-[side=none]:data-starting-style:[transform:scale(1)] data-[side=none]:transition-none",
-              className,
-            )}
-            {...props}
-          >
-            {!hideScrollButtons && <SelectScrollUpButton />}
-            <SelectPrimitive.List
-              data-slot="select-list"
-              className={cn("flex flex-col gap-1 p-1", viewportClassName)}
-            >
-              {children}
-            </SelectPrimitive.List>
-            {!hideScrollButtons && <SelectScrollDownButton />}
-          </SelectPrimitive.Popup>
-        </SelectPrimitive.Positioner>
+        <SafeAreaCollisionPadding requested={collisionPadding}>
+          {(padding) => {
+            return (
+              <SelectPrimitive.Positioner
+                align={align}
+                alignItemWithTrigger={alignItemWithTrigger}
+                alignOffset={alignOffset}
+                anchor={anchor}
+                collisionAvoidance={collisionAvoidance}
+                collisionBoundary={collisionBoundary}
+                collisionPadding={padding}
+                positionMethod={positionMethod}
+                side={side}
+                sideOffset={sideOffset}
+                sticky={sticky}
+              >
+                <SelectPrimitive.Popup
+                  ref={ref}
+                  data-slot="select-content"
+                  className={cn(
+                    anchoredPopupTransitionClassName,
+                    "relative max-h-[min(24rem,var(--available-height))] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden overflow-y-auto rounded-xl border border-[hsl(var(--gray-400))] bg-card text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)] outline-none data-[side=none]:data-starting-style:opacity-100 data-[side=none]:data-starting-style:[transform:scale(1)] data-[side=none]:transition-none",
+                    className,
+                  )}
+                  {...props}
+                >
+                  {!hideScrollButtons && <SelectScrollUpButton />}
+                  <SelectPrimitive.List
+                    data-slot="select-list"
+                    className={cn("flex flex-col gap-1 p-1", viewportClassName)}
+                  >
+                    {children}
+                  </SelectPrimitive.List>
+                  {!hideScrollButtons && <SelectScrollDownButton />}
+                </SelectPrimitive.Popup>
+              </SelectPrimitive.Positioner>
+            );
+          }}
+        </SafeAreaCollisionPadding>
       </SelectPrimitive.Portal>
     );
   },

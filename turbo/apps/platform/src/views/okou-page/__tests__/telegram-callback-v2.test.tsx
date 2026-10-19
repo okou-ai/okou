@@ -230,33 +230,6 @@ test("Native identity can bind first and deliver the owned result when the callb
   expect({ value: bridge.popup.closed }).toStrictEqual({ value: false });
 });
 
-test("An opted-in operation accepts the old API callback once when propagation closes its tab", async () => {
-  let posts = 0;
-  context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
-    posts++;
-    connected();
-    return respond(200, {
-      botUsername: "support_bot",
-      telegramUserId: identity.id,
-    });
-  });
-  const bridge = await begin();
-  act(() => {
-    context.mocks.browser.message(
-      { type: "telegram-auth", data: identity },
-      { origin: bridge.callback.origin, source: bridge.popup },
-    );
-    bridge.popup.close();
-  });
-  await expect(
-    screen.findByText("Connected (@ada)"),
-  ).resolves.toBeInTheDocument();
-  expect(posts).toBe(1);
-  expect(bridge.opened.calls).toHaveLength(1);
-  expect({ value: bridge.popup.closed }).toStrictEqual({ value: true });
-  expect(window.location.pathname).toBe("/works");
-});
-
 test("Wrong protocol, operation, product bot, origin and window cannot authorize the active operation", async () => {
   const requested = context.mocks.deferred<void>();
   const ids: number[] = [];

@@ -3441,6 +3441,7 @@ function TemplatePickerCategoryNav({
           }}
         >
           <SelectTrigger
+            data-template-picker-category-select=""
             aria-label={t(($) => {
               return $.artifacts.templates.category;
             })}
@@ -4981,7 +4982,6 @@ function PptTemplateGrid({
 }
 
 function TemplatePickerDialogFrame({
-  open,
   signals,
   presentationItems,
   gallery,
@@ -4992,7 +4992,6 @@ function TemplatePickerDialogFrame({
   handleSelectPresentation,
   handleSelectImportedPresentation,
 }: {
-  open: boolean;
   signals: ComposerSignals;
   presentationItems: readonly PresentationTemplateItem[];
   gallery: (
@@ -5011,6 +5010,10 @@ function TemplatePickerDialogFrame({
   ) => void;
 }) {
   const { t } = useTranslation();
+  // Visibility stays below the gallery's built-in card construction.
+  const open = useGet(signals.template.templatePickerOpen$);
+  const initialFocus = useSet(signals.template.templatePickerInitialFocus$);
+  const setPopup = useSet(signals.template.setTemplatePickerPopup$);
   const previewSlug = useGet(signals.template.openedTemplateId$);
   const importedPreviewId = useGet(
     signals.template.importedPresentationTemplatePreviewId$,
@@ -5069,6 +5072,8 @@ function TemplatePickerDialogFrame({
       }}
     >
       <DialogContent
+        ref={setPopup}
+        initialFocus={initialFocus}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
@@ -5121,7 +5126,6 @@ function TemplatePickerDialog({
   onChange,
   onClose,
   onCloseComplete,
-  open,
   presentationItems,
   runtime,
   signals,
@@ -5130,7 +5134,6 @@ function TemplatePickerDialog({
   onChange: (value: GenerationTemplateRequest | undefined) => void;
   onClose: () => void;
   onCloseComplete: () => void;
-  open: boolean;
   presentationItems: readonly PresentationTemplateItem[];
   runtime: TemplatePreviewRuntime;
   signals: ComposerSignals;
@@ -5320,7 +5323,6 @@ function TemplatePickerDialog({
 
   return (
     <TemplatePickerDialogFrame
-      open={open}
       signals={signals}
       presentationItems={presentationItems}
       onChange={onChange}
@@ -5712,7 +5714,6 @@ function TemplatePickerDialogSlot({
   signals: ComposerSignals;
 }) {
   const mounted = useGet(signals.template.templatePickerMounted$);
-  const open = useGet(signals.template.templatePickerOpen$);
   const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
   const setOpen = useSet(signals.template.setTemplatePickerOpen$);
   const completeClose = useSet(signals.template.completeTemplatePickerClose$);
@@ -5726,7 +5727,6 @@ function TemplatePickerDialogSlot({
     <TemplatePickerDialog
       value={referenceValue ?? undefined}
       onChange={picker.onChange}
-      open={open}
       onClose={() => {
         setOpen(false);
       }}

@@ -20,17 +20,16 @@ describe("low-credit membership cache public authority", () => {
     expect(omitted.headers.get("cache-control")).toBe("no-store");
   });
 
-  it.each(["member", "admin"] as const)(
-    "removes cached %s authority when the low-credit refresh receives no memberships",
-    async (role) => {
-      const scenario = await createPublicCreditAlertScenario(context);
-      const observation = await scenario.debitWithMemberships("empty");
-      const response =
-        role === "member"
-          ? await observation.memberAuthority()
-          : await observation.adminAuthority();
-      expect(response.status).toBe(503);
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    },
-  );
+  it("removes both cached roles when the low-credit refresh receives no memberships", async () => {
+    const scenario = await createPublicCreditAlertScenario(context);
+    const observation = await scenario.debitWithMemberships("empty");
+    const [member, admin] = await Promise.all([
+      observation.memberAuthority(),
+      observation.adminAuthority(),
+    ]);
+    expect(member.status).toBe(503);
+    expect(member.headers.get("cache-control")).toBe("no-store");
+    expect(admin.status).toBe(503);
+    expect(admin.headers.get("cache-control")).toBe("no-store");
+  });
 });

@@ -8,7 +8,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { updateDisabledPaidTool } from "../services/paid-tools.service";
+import { updateDisabledPaidTool$ } from "../services/paid-tools.service";
 
 const getPaidTools$ = computed(async (get) => {
   const { orgId, userId } = get(organizationAuthContext$);
@@ -40,7 +40,9 @@ const updatePaidTool$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { toolId } = get(updateParams$);
   const { orgId, userId } = get(organizationAuthContext$);
-  await updateDisabledPaidTool(set(writeDb$), {
+  // Keep database initialization before evaluating the write action inputs.
+  set(writeDb$);
+  await set(updateDisabledPaidTool$, {
     orgId,
     userId,
     toolId,

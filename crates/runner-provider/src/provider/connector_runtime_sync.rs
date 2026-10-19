@@ -2450,6 +2450,7 @@ mod tests {
                         billable_firewalls: &billable_firewalls,
                         model_usage_provider: None,
                         model_usage_long_context_min_total_input_tokens: None,
+                        pi_model_config: None,
                     },
                 )
                 .await
@@ -2823,6 +2824,7 @@ mod tests {
                     billable_firewalls: &[],
                     model_usage_provider: None,
                     model_usage_long_context_min_total_input_tokens: None,
+                    pi_model_config: None,
                 },
             )
             .await
@@ -2922,6 +2924,7 @@ mod tests {
                     billable_firewalls: &[],
                     model_usage_provider: None,
                     model_usage_long_context_min_total_input_tokens: None,
+                    pi_model_config: None,
                 },
             )
             .await

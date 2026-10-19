@@ -7,8 +7,11 @@ import { and, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { invalidateGmailAutomationResolvedLabelIds } from "./gmail-automation-account.service";
-import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
+import { gmailAutomationResolvedLabelInvalidationWrite } from "./gmail-automation-account.service";
+import {
+  notionPendingEventsReconnectScope,
+  notionPendingEventsSkipWrite,
+} from "./notion-automation-account.service";
 
 /**
  * Reconciles account-bound state while keeping the logical connector row and
@@ -48,9 +51,26 @@ export async function reconcileConnectorAccountState(
     return;
   }
 
-  await invalidateGmailAutomationResolvedLabelIds(db, args.connectorId);
+  const labelDb = db;
+  const labelConnectorId = args.connectorId;
+  await (async () => {
+    const write =
+      gmailAutomationResolvedLabelInvalidationWrite(labelConnectorId);
+    await labelDb.update(write.table).set(write.values).where(write.where);
+  })();
   signal.throwIfAborted();
-  await invalidateNotionPendingEventsForConnector(db, args.connectorId);
+  const pendingEventDb = db;
+  const invalidatedConnectorId = args.connectorId;
+  await (async () => {
+    const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
+    await (async () => {
+      const write = notionPendingEventsSkipWrite(scope.condition, scope.reason);
+      await pendingEventDb
+        .update(write.table)
+        .set(write.values)
+        .where(write.where);
+    })();
+  })();
   signal.throwIfAborted();
   await db
     .delete(gmailWatchStates)

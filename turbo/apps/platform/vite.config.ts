@@ -25,6 +25,7 @@ import {
   VENDOR_GROUP_IDS,
 } from "./scripts/vendor-chunks.ts";
 import { workerDomGlobalsPlugin } from "./scripts/worker-dom-globals.ts";
+import { sandboxFileDownloadWorkerPlugin } from "./scripts/sandbox-file-download-worker.ts";
 import { SENTRY_APPLICATION_KEY } from "./src/lib/sentry-application-key.ts";
 
 const APP_ASSET_BASE = "https://static.okou.io/okou-app/";
@@ -92,22 +93,19 @@ export default defineConfig(({ command }) => ({
     clerkUiAssetPlugin(),
     runtimeBuildInfoHtmlPlugin,
     vendor.plugin,
-    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
+    sandboxFileDownloadWorkerPlugin(),
+    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length, true),
     applicationResourcePriorityHtmlPlugin(),
     sharedDatabaseWorkerHtmlPlugin(),
-    // Sentry source map upload (production builds only)
-    Boolean(process.env.SENTRY_AUTH_TOKEN) &&
-      sentryVitePlugin({
-        applicationKey: SENTRY_APPLICATION_KEY,
-        org: process.env.SENTRY_ORG,
-        project: process.env.SENTRY_PROJECT,
-        authToken: process.env.SENTRY_AUTH_TOKEN,
-        telemetry: false,
-        sourcemaps: {
-          filesToDeleteAfterUpload: ["./dist/**/*.map"],
-        },
-      }),
-  ].filter(Boolean),
+    // Tags bundles with the application key for the runtime third-party filter.
+    // Uploads happen only in release-please.yml, so the build never uploads.
+    sentryVitePlugin({
+      applicationKey: SENTRY_APPLICATION_KEY,
+      telemetry: false,
+      release: { create: false },
+      sourcemaps: { disable: "disable-upload" },
+    }),
+  ],
   server: {
     port: 3002,
     strictPort: true,
@@ -116,8 +114,8 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     outDir: "dist",
-    // Generate source maps for Sentry (uploaded and removed by plugin)
-    sourcemap: !!process.env.SENTRY_AUTH_TOKEN,
+    // Source maps feed `sentry-cli sourcemaps inject` and the release upload.
+    sourcemap: true,
     rolldownOptions: {
       preserveEntrySignatures: false,
       output: {

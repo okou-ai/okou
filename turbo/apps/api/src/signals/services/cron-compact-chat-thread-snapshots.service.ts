@@ -624,77 +624,71 @@ async function pruneCompactedEvents(
   return deleted.length;
 }
 
-async function compactChatThreadSnapshots(
-  db: Db,
-  storage: SnapshotStorage,
-  signal?: AbortSignal,
-): Promise<SnapshotCompactionStats> {
-  const candidates = await findSnapshotCandidates(
-    db,
-    chatThreadSnapshotBatchSize(),
-  );
-  const published = await mapConcurrent(
-    candidates,
-    CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY,
-    async (candidate) => {
-      return (await compactCandidate(db, candidate, storage, signal))
-        ? candidate
-        : null;
-    },
-  );
-  let scopes = 0;
-  let eventsApplied = 0;
-  for (const candidate of published) {
-    if (candidate === null) {
-      continue;
-    }
-    scopes += 1;
-    // Sequence positions advanced; id-conflict gaps make this an upper bound.
-    eventsApplied += Math.max(
-      0,
-      (candidate.latestSeqId ?? 0) -
-        (candidate.previous?.latestEventSeqId ?? 0),
-    );
-  }
-
-  signal?.throwIfAborted();
-  const eventsPruned = await pruneCompactedEvents(
-    db,
-    chatThreadEventPruneBatchSize(),
-  );
-
-  await collectChatThreadSnapshotGarbage(db, storage, signal);
-
-  return { scopes, eventsApplied, eventsPruned };
-}
-
 export const compactChatThreadSnapshots$ = command(
   async (
     { get, set },
     signal: AbortSignal,
   ): Promise<SnapshotCompactionStats> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    return await compactChatThreadSnapshots(
-      set(writeDb$),
-      {
-        upload: async (objectKey, body) => {
-          await get(
-            putImmutableS3Object(bucket, objectKey, body, "application/json", {
-              signal,
-              contentEncoding: "gzip",
-            }),
-          );
-        },
-        list: async (prefix) => {
-          return await get(
-            listS3ObjectsPage(bucket, prefix, SNAPSHOT_GC_PAGE_SIZE),
-          );
-        },
-        delete: async (objectKeys) => {
-          await get(deleteS3Objects(bucket, objectKeys, signal));
-        },
+    const db = set(writeDb$);
+    const storage: SnapshotStorage = {
+      upload: async (objectKey, body) => {
+        await get(
+          putImmutableS3Object(bucket, objectKey, body, "application/json", {
+            signal,
+            contentEncoding: "gzip",
+          }),
+        );
       },
-      signal,
-    );
+      list: async (prefix) => {
+        return await get(
+          listS3ObjectsPage(bucket, prefix, SNAPSHOT_GC_PAGE_SIZE),
+        );
+      },
+      delete: async (objectKeys) => {
+        await get(deleteS3Objects(bucket, objectKeys, signal));
+      },
+    };
+    return await (async (
+      signal?: AbortSignal,
+    ): Promise<SnapshotCompactionStats> => {
+      const candidates = await findSnapshotCandidates(
+        db,
+        chatThreadSnapshotBatchSize(),
+      );
+      const published = await mapConcurrent(
+        candidates,
+        CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY,
+        async (candidate) => {
+          return (await compactCandidate(db, candidate, storage, signal))
+            ? candidate
+            : null;
+        },
+      );
+      let scopes = 0;
+      let eventsApplied = 0;
+      for (const candidate of published) {
+        if (candidate === null) {
+          continue;
+        }
+        scopes += 1;
+        // Sequence positions advanced; id-conflict gaps make this an upper bound.
+        eventsApplied += Math.max(
+          0,
+          (candidate.latestSeqId ?? 0) -
+            (candidate.previous?.latestEventSeqId ?? 0),
+        );
+      }
+
+      signal?.throwIfAborted();
+      const eventsPruned = await pruneCompactedEvents(
+        db,
+        chatThreadEventPruneBatchSize(),
+      );
+
+      await collectChatThreadSnapshotGarbage(db, storage, signal);
+
+      return { scopes, eventsApplied, eventsPruned };
+    })(signal);
   },
 );

@@ -1,4 +1,7 @@
+mod activation_custody;
+mod activation_progress;
 mod admission;
+mod blank_status_publication;
 mod drain_resume;
 mod exact_reuse_speculation;
 mod heartbeat;

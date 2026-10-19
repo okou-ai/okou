@@ -489,6 +489,28 @@ describe("createApp", () => {
   });
 
   describe("web client compatibility", () => {
+    it.each(["0.1028.0", "0.1031.1"])(
+      "force-upgrades App %s before native VNC metadata route matching",
+      async (version) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("/api/vnc/connections", {
+          headers: {
+            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+            [CLIENT_VERSION_HEADER]: version,
+          },
+        });
+
+        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        await expect(response.json()).resolves.toStrictEqual({
+          error: "Client update required",
+        });
+      },
+    );
+
     it.each(["GET", "POST"])(
       "force-upgrades App bundles that gate artifact sharing before %s feature-switch responses",
       async (method) => {

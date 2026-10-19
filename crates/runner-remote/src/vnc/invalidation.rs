@@ -28,7 +28,7 @@ struct Pending {
 
 fn ssh_connection(transport: Transport) -> Option<Uuid> {
     match transport {
-        Transport::Direct => None,
+        Transport::Direct | Transport::Cloudflare { .. } | Transport::Tailscale { .. } => None,
         Transport::Ssh { connection, .. } => Some(connection),
     }
 }

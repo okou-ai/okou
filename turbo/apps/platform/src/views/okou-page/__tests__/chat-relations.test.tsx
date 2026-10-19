@@ -244,7 +244,7 @@ test("Keep loaded relationships visible while refreshing", async () => {
   await within(panel).findByText("Updated child");
 });
 
-test("Hide the resources popup when refreshed relationships are empty", async () => {
+test("Keep the resources popup open when refreshed relationships are empty", async () => {
   let empty = false;
   await setupRelations({
     mock: () => {
@@ -258,16 +258,18 @@ test("Hide the resources popup when refreshed relationships are empty", async ()
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
   click(buttonNamed("Refresh", panel));
   await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Resources" }),
-    ).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
   });
+  await within(panel).findByText("No artifacts yet");
+  expect(screen.getByRole("region", { name: "Resources" })).toBeInTheDocument();
+  expect(buttonNamed("Open artifacts")).toBeInTheDocument();
 });
 
-test("Hide the previous chat's popup until the next chat's relationships load", async () => {
+test("Keep the next chat's popup open while its relationships load", async () => {
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
@@ -311,8 +313,9 @@ test("Hide the previous chat's popup until the next chat's relationships load", 
       "Next related chat",
     );
   });
+  const loadingPanel = await screen.findByRole("region", { name: "Resources" });
   expect(
-    screen.queryByRole("region", { name: "Resources" }),
+    within(loadingPanel).queryByText("Next related chat"),
   ).not.toBeInTheDocument();
   response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
@@ -526,8 +529,12 @@ test("Format the related chat count using the German locale", async () => {
 test("Keep the relationship panel hidden while the feature is disabled", async () => {
   await setupRelations({ enabled: false });
   await screen.findByText("Plan the launch");
+  const panel = await screen.findByRole("region", { name: "Resources" });
   expect(
-    screen.queryByRole("region", { name: "Resources" }),
+    within(panel).queryByRole("region", { name: "Messages" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
 });
 

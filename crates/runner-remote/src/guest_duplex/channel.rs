@@ -24,20 +24,20 @@ impl Channel {
     ) -> Self {
         let (read, write) = tokio::io::split(stream);
         let lease = Arc::new(permit);
-        let broken = CancellationToken::new();
+        let cancellation = ChannelCancellation {
+            run_cancelled,
+            assignment_cancelled,
+            broken: CancellationToken::new(),
+        };
         Self {
             rx: Receiver {
                 read,
-                run_cancelled: run_cancelled.clone(),
-                assignment_cancelled: assignment_cancelled.clone(),
-                broken: broken.clone(),
+                cancellation: cancellation.clone(),
                 _lease: Arc::clone(&lease),
             },
             tx: Sender {
                 write,
-                run_cancelled,
-                assignment_cancelled,
-                broken,
+                cancellation,
                 finished: false,
                 _lease: lease,
             },
@@ -59,11 +59,7 @@ impl Channel {
     /// Retain this observer before splitting the two independently owned halves.
     /// The WSS owner must select it even when both directions await client I/O.
     pub fn cancellation(&self) -> ChannelCancellation {
-        ChannelCancellation {
-            run_cancelled: self.tx.run_cancelled.clone(),
-            assignment_cancelled: self.tx.assignment_cancelled.clone(),
-            broken: self.tx.broken.clone(),
-        }
+        self.tx.cancellation.clone()
     }
 
     pub async fn cancelled(&self) {
@@ -90,9 +86,7 @@ impl ChannelCancellation {
 
 pub struct Sender {
     write: WriteHalf<Box<dyn GuestDuplexStream>>,
-    run_cancelled: CancellationToken,
-    assignment_cancelled: CancellationToken,
-    broken: CancellationToken,
+    cancellation: ChannelCancellation,
     finished: bool,
     _lease: Arc<OwnedSemaphorePermit>,
 }
@@ -114,16 +108,14 @@ impl Sender {
         let header = (bytes.len() as u32).to_be_bytes();
         let result = tokio::select! {
             biased;
-            () = self.broken.cancelled() => Err(unavailable()),
-            () = self.run_cancelled.cancelled() => Err(unavailable()),
-            () = self.assignment_cancelled.cancelled() => Err(unavailable()),
+            () = self.cancellation.cancelled() => Err(unavailable()),
             result = async {
                 self.write.write_all(&header).await?;
                 self.write.write_all(bytes).await
             } => result,
         };
         if result.is_err() {
-            self.broken.cancel();
+            self.cancellation.broken.cancel();
         }
         result
     }
@@ -134,13 +126,11 @@ impl Sender {
         }
         let result = tokio::select! {
             biased;
-            () = self.run_cancelled.cancelled() => Err(unavailable()),
-            () = self.assignment_cancelled.cancelled() => Err(unavailable()),
-            () = self.broken.cancelled() => Err(unavailable()),
+            () = self.cancellation.cancelled() => Err(unavailable()),
             result = self.write.shutdown() => result,
         };
         if result.is_err() {
-            self.broken.cancel();
+            self.cancellation.broken.cancel();
         } else {
             self.finished = true;
         }
@@ -150,18 +140,14 @@ impl Sender {
 
 pub struct Receiver {
     read: ReadHalf<Box<dyn GuestDuplexStream>>,
-    run_cancelled: CancellationToken,
-    assignment_cancelled: CancellationToken,
-    broken: CancellationToken,
+    cancellation: ChannelCancellation,
     _lease: Arc<OwnedSemaphorePermit>,
 }
 impl Receiver {
     pub async fn recv(&mut self) -> io::Result<Option<Vec<u8>>> {
         let result = tokio::select! {
             biased;
-            () = self.broken.cancelled() => Err(unavailable()),
-            () = self.run_cancelled.cancelled() => Err(unavailable()),
-            () = self.assignment_cancelled.cancelled() => Err(unavailable()),
+            () = self.cancellation.cancelled() => Err(unavailable()),
             result = async {
                 let mut first = [0u8; 1];
                 if self.read.read(&mut first).await? == 0 { return Ok(None); }
@@ -177,7 +163,7 @@ impl Receiver {
             } => result,
         };
         if result.is_err() {
-            self.broken.cancel();
+            self.cancellation.broken.cancel();
         }
         result
     }

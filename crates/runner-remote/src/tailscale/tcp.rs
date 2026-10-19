@@ -7,7 +7,7 @@ use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Weak},
     task::{Context, Poll},
     time::Instant,
 };
@@ -114,11 +114,11 @@ impl Connection {
         if let Some(connect) = self.connecting.as_mut() {
             match connect.as_mut().poll(cx) {
                 Poll::Pending => {}
-                Poll::Ready(Err(_)) => {
+                Poll::Ready(Err(error)) => {
                     self.trace.set(
                         super::evidence::Stage::PrivateTcp,
                         super::evidence::Status::Failed,
-                        super::evidence::Detail::NotExposed,
+                        super::evidence::Detail::netstack(error),
                     );
                     self.trace.seal();
                     self.retire();
@@ -180,6 +180,7 @@ impl Connection {
         if packet.len() > MTU || self.device.incoming.len() >= FRAME_CAPACITY {
             return Err(Failure::ResourceExhausted);
         }
+        self.trace.tcp_packet(packet.as_ref(), true);
         self.device.incoming.push_back(packet);
         Ok(())
     }
@@ -189,12 +190,18 @@ impl Connection {
             self.retire();
             return Err(Failure::Cancelled);
         }
-        Ok(self
+        let packets: Vec<PacketMut> = self
             .device
             .outgoing
             .drain(..)
             .map(|bytes| PacketMut::from(bytes.as_slice()))
-            .collect())
+            .collect();
+        if self.trace.enabled() {
+            for packet in &packets {
+                self.trace.tcp_packet(packet.as_ref(), false);
+            }
+        }
+        Ok(packets)
     }
 
     pub(super) fn retire(&mut self) {
@@ -232,7 +239,32 @@ pub(crate) struct Stream {
     trace: super::evidence::Trace,
 }
 
+/// Opaque liveness of the actual authenticated peer/address/TCP binding.
+/// Higher protocol layers retain this to fence their own decrypted buffers.
+/// Observing it must not extend the physical TCP tuple's reservation.
+#[derive(Clone)]
+pub(crate) struct StreamGuard(Weak<Binding>);
+
+impl StreamGuard {
+    pub(crate) fn is_live(&self) -> bool {
+        self.0.upgrade().is_some_and(|binding| binding.live())
+    }
+    pub(crate) async fn retired(&self) {
+        let cancellation = self.0.upgrade().map(|binding| binding.cancelled());
+        if let Some(cancellation) = cancellation {
+            cancellation.cancelled().await;
+        }
+    }
+}
+
 impl Stream {
+    pub(crate) fn guard(&self) -> StreamGuard {
+        StreamGuard(Arc::downgrade(&self.binding))
+    }
+    /// This stream can only be created by the exact authenticated peer/tuple dial.
+    pub(crate) fn is_live(&self) -> bool {
+        self.binding.live()
+    }
     #[cfg(test)]
     pub(super) fn evidence(&self) -> Option<super::evidence::Snapshot> {
         self.trace.snapshot()

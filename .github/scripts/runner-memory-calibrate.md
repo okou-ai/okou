@@ -47,6 +47,9 @@ they do not authorize dropping captured ownership or claiming relief.
 
 ## Outputs and completion
 
+- The current report format is `runner-memory-calibration-v2`. Use the matching
+  current native reader for new receipts. Historical v1 archives retain their
+  original frozen readers and execution identities; they are not v2 evidence.
 - `samples.jsonl`: monotonic/wall timestamps, host `MemAvailable`, read/age costs,
   and PID/start-generation-bound RSS/PSS. Missing or raced residency is null, not
   zero resident bytes.
@@ -54,6 +57,25 @@ they do not authorize dropping captured ownership or claiming relief.
   reports discarded records; truncated logs cannot prove a phase they omit.
 - `report.json`: metadata, driver exit/wait status, adopted-child waits, remaining
   children, pressure/timeout/error flags, and cleanup intervention/uncertainty.
+
+Each process row also records `residency_state`, `residency_reason`,
+`observed_monotonic_ns` and `exit_observed_monotonic_ns`. Measured rows name
+`smaps_rollup`; unavailable rows distinguish missing/changed identity, zombie,
+missing/denied/incomplete smaps and a raced identity after the read. A zombie or
+missing PID alone supplies no positive exit evidence. The `exited` state requires
+readiness from a pidfd captured and revalidated against that owned generation;
+its first positive observation time is retained after the process is reaped.
+These bounded diagnostic descriptors are closed independently of cleanup custody.
+
+Unknown and positively exited rows both keep null RSS/PSS and count toward the
+existing incomplete-sample/lower-bound decision. Exit diagnostics never delete
+the captured cleanup identity, settle a Runner/P2 allowance, prove accepted I/O
+completion or imply zero memory or physical RAM relief. The current native reader
+rejects missing or contradictory diagnostic fields, identities and clocks, and
+rejects dropped captured process rows, changed generations, revoked exit proof
+or changed first exit clocks across samples. Every later sample must retain all
+previously captured identities, including unknown and exited processes. It
+summarizes missing reasons per phase while retaining conservative completeness.
 
 Exit status is zero only for a successful command with confirmed cleanup and no
 pressure stop, timeout, error or descendant cleanup intervention. Unsupported

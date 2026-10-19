@@ -5,7 +5,7 @@ import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
-import { resolveCollisionPadding } from "../../lib/safe-area";
+import { SafeAreaCollisionPadding } from "../../lib/safe-area";
 
 function Popover(props: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
@@ -78,33 +78,39 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
   ) => {
     return (
       <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Positioner
-          align={align}
-          alignOffset={alignOffset}
-          anchor={anchor}
-          className={positionerClassName}
-          collisionAvoidance={collisionAvoidance}
-          collisionBoundary={collisionBoundary}
-          collisionPadding={resolveCollisionPadding(collisionPadding)}
-          disableAnchorTracking={disableAnchorTracking}
-          positionMethod={positionMethod}
-          side={side}
-          sideOffset={sideOffset}
-          sticky={sticky}
-        >
-          <PopoverPrimitive.Popup
-            ref={ref}
-            data-slot="popover-content"
-            className={cn(
-              anchoredPopupTransitionClassName,
-              "w-72 rounded-xl border border-[hsl(var(--gray-400))] bg-card p-4 text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)] outline-none",
-              className,
-            )}
-            {...props}
-          >
-            {children}
-          </PopoverPrimitive.Popup>
-        </PopoverPrimitive.Positioner>
+        <SafeAreaCollisionPadding requested={collisionPadding}>
+          {(padding) => {
+            return (
+              <PopoverPrimitive.Positioner
+                align={align}
+                alignOffset={alignOffset}
+                anchor={anchor}
+                className={positionerClassName}
+                collisionAvoidance={collisionAvoidance}
+                collisionBoundary={collisionBoundary}
+                collisionPadding={padding}
+                disableAnchorTracking={disableAnchorTracking}
+                positionMethod={positionMethod}
+                side={side}
+                sideOffset={sideOffset}
+                sticky={sticky}
+              >
+                <PopoverPrimitive.Popup
+                  ref={ref}
+                  data-slot="popover-content"
+                  className={cn(
+                    anchoredPopupTransitionClassName,
+                    "w-72 rounded-xl border border-[hsl(var(--gray-400))] bg-card p-4 text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)] outline-none",
+                    className,
+                  )}
+                  {...props}
+                >
+                  {children}
+                </PopoverPrimitive.Popup>
+              </PopoverPrimitive.Positioner>
+            );
+          }}
+        </SafeAreaCollisionPadding>
       </PopoverPrimitive.Portal>
     );
   },

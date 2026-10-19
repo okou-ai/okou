@@ -1,6 +1,13 @@
 //! Finite application facts; no SDK object, IO, credential or physical lease.
 
+use crate::diagnostics::trace::Timing;
 use serde::Serialize;
+
+mod path;
+#[cfg(test)]
+mod tests;
+pub(super) use path::Flow;
+pub(crate) use path::Progress;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -56,6 +63,7 @@ pub(crate) enum Stage {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Status {
     Running,
+    Pending,
     Passed,
     Failed,
     Unknown,
@@ -75,6 +83,13 @@ pub(crate) enum Detail {
     MachineUnauthorized,
     AuthenticationRequired,
     TimedOut,
+    ResetOrClosed,
+    InvalidRequest,
+    Internal,
+    Refused,
+    Reset,
+    Unreachable,
+    Protocol,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -116,6 +131,8 @@ pub(crate) struct Step {
     pub(crate) stage: Stage,
     pub(crate) status: Status,
     pub(crate) detail: Detail,
+    #[serde(flatten)]
+    pub(crate) timing: Timing,
 }
 
 #[derive(Clone, Serialize)]
@@ -127,10 +144,23 @@ pub(crate) struct Endpoint {
 #[derive(Clone, Serialize)]
 pub(crate) struct Snapshot {
     pub(crate) attempt_id: uuid::Uuid,
+    pub(crate) started_at: chrono::DateTime<chrono::Utc>,
     pub(crate) root: Option<Root>,
     pub(crate) region: Option<u32>,
     pub(crate) steps: Vec<Step>,
     pub(crate) endpoints: Vec<Endpoint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) relay: Option<Box<Snapshot>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) relay_reused: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) progress: Option<Progress>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) dial: Vec<Snapshot>,
+    #[serde(skip)]
+    relay_source: Option<(Trace, Option<uuid::Uuid>)>,
+    #[serde(skip)]
+    dial_sources: Vec<Trace>,
     #[serde(skip)]
     sealed: bool,
 }
@@ -142,15 +172,25 @@ pub(crate) struct Trace {
 }
 
 impl Trace {
+    pub(super) fn enabled(&self) -> bool {
+        self.state.is_some()
+    }
     pub(crate) fn new(enabled: bool) -> Self {
         Self {
             state: enabled.then(|| {
                 Arc::new(Mutex::new(Snapshot {
                     attempt_id: uuid::Uuid::new_v4(),
+                    started_at: chrono::Utc::now(),
                     root: None,
                     region: None,
                     steps: Vec::new(),
                     endpoints: Vec::new(),
+                    relay: None,
+                    relay_reused: false,
+                    progress: None,
+                    relay_source: None,
+                    dial: Vec::new(),
+                    dial_sources: Vec::new(),
                     sealed: false,
                 }))
             }),
@@ -199,18 +239,33 @@ impl Trace {
         self.update(|state| {
             if let Some(step) = state.steps.iter_mut().find(|s| s.stage == stage) {
                 // A generic wrapper must not erase a more precise inner failure.
-                if step.status != Status::Failed || status != Status::Failed {
+                if step.status != Status::Failed
+                    || status != Status::Failed
+                    || step.detail == Detail::NotExposed
+                {
+                    let mut timing = step.timing.clone();
+                    if status == Status::Running && step.status != Status::Running {
+                        timing.start();
+                    } else if status != Status::Running {
+                        timing.freeze();
+                    }
                     *step = Step {
                         stage,
                         status,
                         detail,
+                        timing,
                     };
                 }
             } else {
+                let mut timing = Timing::default();
+                if status == Status::Running {
+                    timing.start();
+                }
                 state.steps.push(Step {
                     stage,
                     status,
                     detail,
+                    timing,
                 });
             }
         });
@@ -226,6 +281,7 @@ impl Trace {
                 && step.status == Status::Running
             {
                 step.status = Status::Unknown;
+                step.timing.freeze();
             }
         });
     }
@@ -247,7 +303,18 @@ impl Trace {
     pub(super) fn adopt(&self, other: &Self) {
         if let Some(other) = other.snapshot() {
             for step in other.steps {
-                self.set(step.stage, step.status, step.detail);
+                self.update(|state| {
+                    if let Some(old) = state.steps.iter_mut().find(|old| old.stage == step.stage) {
+                        if old.status != Status::Failed
+                            || step.status != Status::Failed
+                            || old.detail == Detail::NotExposed
+                        {
+                            *old = step;
+                        }
+                    } else {
+                        state.steps.push(step);
+                    }
+                });
             }
             for endpoint in other.endpoints {
                 self.clone()
@@ -278,11 +345,78 @@ impl Trace {
             .unwrap_or_else(|p| p.into_inner())
             .clone();
         for step in &mut state.steps {
+            step.timing.freeze();
             if step.status == Status::Running {
-                step.status = Status::Unknown;
+                step.status = Status::Pending;
             }
         }
+        if let Some((source, previous)) = state.relay_source.take() {
+            state.relay = source.snapshot().map(Box::new);
+            state.relay_reused = state
+                .relay
+                .as_ref()
+                .is_some_and(|relay| Some(relay.attempt_id) == previous);
+        }
+        if let Some(progress) = &mut state.progress {
+            progress.freeze();
+        }
+        if !state.dial_sources.is_empty() {
+            state.dial = std::mem::take(&mut state.dial_sources)
+                .into_iter()
+                .filter_map(|source| source.snapshot())
+                .collect();
+        }
         Some(state)
+    }
+
+    /// Only regional pure state is linked; no IO or physical owner is retained.
+    pub(super) fn relay(&self, source: Self) {
+        if let (Some(own), Some(other)) = (&self.state, &source.state)
+            && !Arc::ptr_eq(own, other)
+        {
+            // An unchanged map must not turn new setup into reused setup.
+            if own
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .relay_source
+                .as_ref()
+                .is_some_and(|(previous, _)| {
+                    previous
+                        .state
+                        .as_ref()
+                        .is_some_and(|previous| Arc::ptr_eq(previous, other))
+                })
+            {
+                return;
+            }
+            let previous = source
+                .snapshot()
+                .filter(|snapshot| !snapshot.steps.is_empty())
+                .map(|snapshot| snapshot.attempt_id);
+            self.update(|state| state.relay_source = Some((source, previous)));
+        }
+    }
+
+    pub(super) fn flow(&self, flow: Flow, count: usize) {
+        self.update(|state| {
+            state
+                .progress
+                .get_or_insert_with(Progress::default)
+                .record(flow, count)
+        });
+    }
+
+    pub(super) fn dial_branches(&self, sources: [Self; 2]) {
+        self.update(|state| state.dial_sources = sources.into_iter().collect());
+    }
+    pub(crate) fn id(&self) -> Option<uuid::Uuid> {
+        Some(
+            self.state
+                .as_ref()?
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .attempt_id,
+        )
     }
 }
 

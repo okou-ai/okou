@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { wechatConnections, wechatMessages } from "@okouai/db/schema/wechat";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -54,14 +54,14 @@ export const sendWechatNotice$ = command(
     const db = set(writeDb$);
     // One welcome per binding, or one reconnect reply per incoming message.
     // Claim before the provider call: an ambiguous result must never be resent.
-    const [claimed] = await executeRawRows(
-      db,
-      sql`INSERT INTO ${wechatMessages} (id,connection_id,generation,direction,status,content)
+    const noticeClaimQuery = sql`INSERT INTO ${wechatMessages} (id,connection_id,generation,direction,status,content)
         SELECT ${id}::uuid,id,generation,'outbound','unknown',${text}
         FROM ${wechatConnections} WHERE ${live}
-        ON CONFLICT (id) DO NOTHING RETURNING id`,
-      z.object({ id: z.uuid() }),
-    );
+        ON CONFLICT (id) DO NOTHING RETURNING id`;
+    const rowSchema = z.object({ id: z.uuid() });
+    const [claimed] = await (async () => {
+      return parseRawRows(rowSchema, await db.execute(noticeClaimQuery));
+    })();
     signal.throwIfAborted();
     if (!claimed) {
       return;

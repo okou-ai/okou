@@ -1,0 +1,1 @@
+ALTER TABLE "runner_job_queue" ADD COLUMN "discovery_started_at" timestamp;

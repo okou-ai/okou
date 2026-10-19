@@ -69,6 +69,8 @@ impl Attempt {
             transport: match transport {
                 Transport::Direct => "direct",
                 Transport::Ssh { .. } => "ssh",
+                Transport::Cloudflare { .. } => "cloudflare_access",
+                Transport::Tailscale { .. } => "tailscale",
             },
             stage: "transport",
             rfb_error_code: None,

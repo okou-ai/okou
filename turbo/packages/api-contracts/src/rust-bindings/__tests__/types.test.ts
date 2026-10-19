@@ -26,6 +26,36 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "OpenParams",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "OpenResult",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ReadParams",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ReadResult",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "HandleParams",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ReleaseResult",
+    direction: "response",
+  },
+  {
     rustModulePath: ["runners", "runs", "startup"],
     rustTypeName: "Request",
     direction: "request",

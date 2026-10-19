@@ -132,16 +132,15 @@ export const notifyRunnerJob$ = command(
     timing: RunnerJobNotificationTiming,
   ): Promise<boolean> => {
     const notificationEnteredAt = now();
-    const currentDate = new Date(notificationEnteredAt);
     let preferenceLookupSucceeded = true;
     const resolution = await tapError(
       set(resolveRunnerReusePreference$, {
+        runId: args.runId,
         runnerGroup: args.runnerGroup,
         profile: args.profile,
         reuseKey: args.reuseKey,
         historyGenerationRunId: args.historyGenerationRunId,
-        createdAt: args.createdAt,
-        currentDate,
+        discoveryStartedAt: null,
       }),
       (error) => {
         preferenceLookupSucceeded = false;

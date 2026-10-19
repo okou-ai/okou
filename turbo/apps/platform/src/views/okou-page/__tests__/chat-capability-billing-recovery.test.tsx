@@ -396,7 +396,7 @@ test("Show a new credit rejection with the current balance", async () => {
       },
     );
     createChatEvent(RUN_THREAD_ID);
-    return respond(201, { runId: null, threadId: RUN_THREAD_ID, createdAt });
+    return respond(201, { threadId: RUN_THREAD_ID, createdAt });
   });
 
   await setupPage({ context, path: RUN_PATH });
@@ -481,7 +481,7 @@ test("Show a first-message credit rejection in a new chat with the current balan
       },
     );
     createChatEvent(threadId);
-    return respond(201, { runId: null, threadId, createdAt });
+    return respond(201, { threadId, createdAt });
   });
 
   await setupPage({ context, path: NEW_CHAT_PATH });

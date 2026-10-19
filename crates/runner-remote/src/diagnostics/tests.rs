@@ -183,13 +183,13 @@ fn shared_native_cause_is_pinned_for_both_consumers_and_cleanup_cannot_replace_i
                 vnc,
                 Identity::default(),
                 &source,
-                Dependency {
+                Some(Dependency {
                     protocol: Protocol::Ssh,
                     connection_id: ssh,
                     cause: None,
                     configuration_created_at: None,
                     configuration_generation: None,
-                },
+                }),
                 &active,
             )
             .unwrap(),
@@ -261,7 +261,7 @@ fn intentional_session_retirement_cannot_receive_or_overwrite_a_later_native_fai
                         ..Identity::default()
                     },
                     &source,
-                    dependency.clone(),
+                    Some(dependency.clone()),
                     active,
                 )
                 .unwrap(),

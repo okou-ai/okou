@@ -11,7 +11,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 
 export type AgentPhoneChannel = "imessage" | "sms" | "mms";
@@ -164,50 +164,6 @@ export const resolveAgentPhoneConversationVisibilityRecipients$ = command(
     return recipients;
   },
 );
-
-export async function touchAgentPhoneUserLink(
-  db: Db,
-  userLink: AgentPhoneUserLink,
-  phoneHandle: string,
-  channel: AgentPhoneChannel,
-): Promise<AgentPhoneUserLink> {
-  const normalized = normalizeAgentPhoneHandle(phoneHandle, channel);
-  if (userLink.phoneHandle === normalized) {
-    return userLink;
-  }
-
-  const [updated] = await db
-    .update(agentphoneUserLinks)
-    .set({
-      phoneHandle: normalized,
-      updatedAt: nowDate(),
-    })
-    .where(eq(agentphoneUserLinks.id, userLink.id))
-    .returning();
-
-  return updated ?? userLink;
-}
-
-export async function resolveAgentPhoneUserLink(
-  db: Db,
-  phoneHandle: string,
-  channel: AgentPhoneChannel,
-): Promise<AgentPhoneUserLink | null> {
-  const normalized = normalizeAgentPhoneHandle(phoneHandle, channel);
-  if (!normalized) {
-    return null;
-  }
-  const [userLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.phoneHandle, normalized))
-    .limit(1);
-
-  if (!userLink) {
-    return null;
-  }
-  return touchAgentPhoneUserLink(db, userLink, normalized, channel);
-}
 
 // The provider has already sent this message. Finish archival once entered,
 // even if the caller is cancelled while the database statement is in flight.

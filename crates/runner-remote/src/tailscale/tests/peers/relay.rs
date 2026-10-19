@@ -1,4 +1,6 @@
 //! Final raw IO admission through the real unchanged SDK HTTP/DERP buffers.
+mod tcp;
+
 use super::{bounded, inside, local, node, own, remote, update, wire};
 use crate::tailscale::tests::derp::fixture::{self, PausedTcp, Server, WriteGate};
 use crate::tailscale::{

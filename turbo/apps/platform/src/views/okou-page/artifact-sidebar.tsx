@@ -9,12 +9,7 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import {
-  useLastLoadable,
-  useLastResolved,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { useLastLoadable, useLastResolved, useLoadable } from "ccstate-react";
 import {
   Button,
   DropdownMenu,
@@ -28,7 +23,7 @@ import { useTranslation } from "react-i18next";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
   CsvPreviewTable,
-  parseCsvRows,
+  parseCsvPreviewRows,
   TextPreviewLoader,
 } from "./attachment-chips.tsx";
 import {
@@ -108,7 +103,7 @@ type ArtifactSidebarContentProps = {
   markdownTree$?: MarkdownPreviewTreeComputed;
   onBack?: () => void;
   onClose: () => void;
-  onSyncSuccess: () => void;
+  onSyncSuccess?: () => void;
   text$?: TextPreviewComputed;
   threadId?: string;
 };
@@ -128,7 +123,6 @@ export function ArtifactSidebar({
   const eventGroups = useLastResolved(thread.eventImageGroups$, {
     equalityFn: equalEventImageGroups,
   });
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
   const text$ = providedText$ ?? artifactRef.text$;
   const markdownTree$ = providedMarkdownTree$ ?? artifactRef.markdownTree$;
   const item =
@@ -169,9 +163,6 @@ export function ArtifactSidebar({
         markdownTree$={markdownTree$}
         onBack={onBack}
         onClose={onClose}
-        onSyncSuccess={() => {
-          reloadArtifacts();
-        }}
         text$={text$}
         threadId={thread.threadId}
       />
@@ -187,7 +178,7 @@ function artifactSidebarSyncTargetForItem({
 }: {
   agentId?: string | null;
   item?: ArtifactSidebarItem;
-  onSyncSuccess: () => void;
+  onSyncSuccess?: () => void;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
   return item
@@ -372,7 +363,7 @@ function findArtifactItemForUrl(
 function artifactSidebarSyncTarget(params: {
   agentId: string | null | undefined;
   item: ArtifactSidebarItem;
-  onSyncSuccess: () => void;
+  onSyncSuccess?: () => void;
 }): ArtifactDownloadSyncTarget | undefined {
   const artifactId = params.item.file.artifactId;
   if (!artifactId) {
@@ -1061,7 +1052,18 @@ function ArtifactCsvBody({ text$ }: { text$: TextPreviewComputed }) {
             </ArtifactStageShell>
           );
         }
-        const rows = parseCsvRows(text);
+        const rows = parseCsvPreviewRows(text);
+        if (rows === null) {
+          return (
+            <ArtifactStageShell>
+              <ArtifactStageCard>
+                <pre className="m-0 h-full overflow-auto whitespace-pre-wrap break-words p-6 text-sm text-foreground">
+                  {text}
+                </pre>
+              </ArtifactStageCard>
+            </ArtifactStageShell>
+          );
+        }
         if (rows.length === 0) {
           return (
             <ArtifactStageShell>

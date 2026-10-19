@@ -1,10 +1,8 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { animationFrame } from "signal-timers";
-import {
-  createFixedVirtualScrollSignals,
-  getFixedVirtualRange,
-} from "../fixed-virtual-list.ts";
+import { getFixedVirtualRange } from "../fixed-virtual-list.ts";
 import type { FilesDirectory, FilesEntry } from "./sandbox-files.ts";
+import { createSandboxFilesScrollSignals } from "./sandbox-files-scroll.ts";
 
 export function filesDirectoryKey(path: readonly string[]): string {
   return JSON.stringify(path);
@@ -86,7 +84,7 @@ function buildFilesRows(directories: ReadonlyMap<string, FilesDirectory>) {
 export function createSandboxFilesVirtualListSignals(
   directories$: Computed<ReadonlyMap<string, FilesDirectory>>,
 ) {
-  const scroll = createFixedVirtualScrollSignals(false);
+  const scroll = createSandboxFilesScrollSignals();
   const focusedKey$ = state<string | null>(null);
   const rows$ = computed((get) => {
     return buildFilesRows(get(directories$));
@@ -94,13 +92,11 @@ export function createSandboxFilesVirtualListSignals(
   const window$ = computed((get) => {
     const { rows, height } = get(rows$);
     const metrics = get(scroll.scrollMetrics$);
-    const viewport = get(scroll.scrollViewport$);
     const range = getFixedVirtualRange({
       itemCount: rows.length,
       rowHeight: FILES_ROW_HEIGHT,
       scrollTop: metrics.scrollTop,
-      viewportHeight:
-        metrics.clientHeight || viewport?.clientHeight || FILES_ROW_HEIGHT * 12,
+      viewportHeight: metrics.clientHeight,
     });
     const focusedKey = get(focusedKey$);
     const visibleRows = rows.filter((row) => {
@@ -120,15 +116,8 @@ export function createSandboxFilesVirtualListSignals(
       ),
     };
   });
-  const reset$ = command(({ get, set }) => {
-    const viewport = get(scroll.scrollViewport$);
-    if (viewport) {
-      viewport.scrollTop = 0;
-    }
-    set(scroll.setScrollMetrics$, {
-      scrollTop: 0,
-      clientHeight: viewport?.clientHeight ?? 0,
-    });
+  const reset$ = command(({ set }) => {
+    set(scroll.scrollTo$, 0);
     set(focusedKey$, null);
   });
   return {
@@ -144,28 +133,24 @@ export function createSandboxFilesVirtualListSignals(
       ) => {
         const rootId = get(directories$).get(filesDirectoryKey([]))?.id;
         const viewport = get(scroll.scrollViewport$);
-        const initialScrollTop = get(scroll.scrollMetrics$).scrollTop;
+        const initialScrollTop = viewport?.scrollTop;
         animationFrame(
           () => {
             if (
               !viewport ||
               viewport !== get(scroll.scrollViewport$) ||
-              initialScrollTop !== get(scroll.scrollMetrics$).scrollTop ||
+              initialScrollTop !== viewport.scrollTop ||
               rootId !== get(directories$).get(filesDirectoryKey([]))?.id
             ) {
               return;
             }
-            viewport.scrollTop = scrollTop;
-            set(scroll.setScrollMetrics$, {
-              scrollTop: viewport.scrollTop,
-              clientHeight: viewport.clientHeight,
-            });
+            set(scroll.scrollTo$, scrollTop);
             if (
               focus &&
               (document.activeElement === document.body ||
-                viewport.contains(document.activeElement))
+                get(scroll.focusTarget$)?.contains(document.activeElement))
             ) {
-              viewport.focus({ preventScroll: true });
+              get(scroll.focusTarget$)?.focus({ preventScroll: true });
             }
           },
           { signal },
@@ -185,9 +170,8 @@ export function createSandboxFilesVirtualListSignals(
       ) {
         return;
       }
-      const viewport = get(scroll.scrollViewport$);
-      if (viewport?.contains(document.activeElement)) {
-        viewport.focus({ preventScroll: true });
+      if (get(scroll.focusTarget$)?.contains(document.activeElement)) {
+        get(scroll.focusTarget$)?.focus({ preventScroll: true });
       }
       set(focusedKey$, null);
     }),

@@ -95,6 +95,7 @@ async fn unexpected_finalizing_provider_states_keep_original_data_and_full_lease
                 policy_sha256: "0".repeat(64),
                 snapshot_id: "ordinary-fixture".into(),
                 snapshot_files: BTreeMap::new(),
+                snapshot_preparation_sha256: "0".repeat(64),
             },
         )?;
         let result = finalizing::exercise(

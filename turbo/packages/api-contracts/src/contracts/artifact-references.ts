@@ -134,7 +134,7 @@ export const artifactReferencesContract = c.router({
         sharedThreadSnapshot: z.literal(true).optional(),
         filename: z.string(),
         contentType: z.string(),
-        previewImageUrl: z.url().optional(),
+        previewImageUrl: artifactUrlSchema.optional(),
         target: z.object({ kind: z.enum(["file", "html"]), id: z.uuid() }),
       }),
       400: apiErrorSchema,

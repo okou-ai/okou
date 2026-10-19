@@ -9,7 +9,7 @@ import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { bestEffort, onDomEventFn, setLoop, settle } from "../utils.ts";
-import { DiscordPopupBlockedError, refreshDiscordOrg$ } from "./discord.ts";
+import { refreshDiscordOrg$ } from "./discord.ts";
 import { discordConnectParams } from "./discord-connect-params.ts";
 import {
   discordOauthResultSchema,
@@ -23,11 +23,6 @@ type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
 const approvalProof$ = state<DiscordApprovalProof | null>(null);
 const approvalSucceeded$ = state(false);
 const approvalRequest$ = state<Promise<void> | null>(null);
-const approvalContinuation$ = state(false);
-
-export const discordApprovalContinuation$ = computed((get) => {
-  return get(approvalContinuation$);
-});
 
 export const discordApprovalAvailable$ = computed((get) => {
   return get(approvalProof$) !== null;
@@ -110,7 +105,6 @@ const showDiscordApprovalResult$ = command(
     // be in flight, and must not overwrite the result or offer an obsolete retry.
     set(approvalProof$, null);
     set(approvalRequest$, null);
-    set(approvalContinuation$, false);
     set(approvalSucceeded$, status === "connected");
     if (status === "connected") {
       // Keep the checking card visible until the authenticated status is ready.
@@ -126,7 +120,6 @@ const showDiscordApprovalResult$ = command(
 const interruptDiscordApproval$ = command(({ get, set }) => {
   set(approvalProof$, null);
   set(approvalSucceeded$, false);
-  set(approvalContinuation$, false);
   set(approvalRequest$, null);
   const params = discordConnectParams(get(searchParams$));
   params.set("status", "pending");
@@ -142,7 +135,6 @@ export const ownDiscordApprovalRoute$ = command(
         set(approvalProof$, null);
         set(approvalSucceeded$, false);
         set(approvalRequest$, null);
-        set(approvalContinuation$, false);
       },
       { once: true },
     );
@@ -216,34 +208,8 @@ const verifyDiscordAuthorization$ = command(
     }
     set(approvalProof$, null);
     set(approvalSucceeded$, true);
-    set(approvalContinuation$, true);
     // Keep the authorization tab open while the original tab completes with
     // its separately retained proof and notifies this page of completion.
-  },
-);
-
-// App 0.1018 waits for consent-tab closure. Only this explicit, post-approval
-// action releases it, and only after opening a clean status page successfully.
-// #40196: remove when the deployed reader and web floor exclude 0.1018.
-export const continueDiscordApproval$ = command(
-  ({ get, set }, signal: AbortSignal): Promise<void> => {
-    signal.throwIfAborted();
-    if (!get(approvalContinuation$)) {
-      return Promise.resolve();
-    }
-    const opener: Window | null = window.opener;
-    if (!opener || opener.closed) {
-      set(interruptDiscordApproval$);
-      return Promise.resolve();
-    }
-    const statusTab = window.open(INTEGRATION_SETTINGS_PATHS.discord, "_blank");
-    if (!statusTab) {
-      return Promise.reject(new DiscordPopupBlockedError());
-    }
-    statusTab.opener = null;
-    set(approvalContinuation$, false);
-    window.close();
-    return Promise.resolve();
   },
 );
 

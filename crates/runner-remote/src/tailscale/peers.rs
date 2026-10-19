@@ -47,6 +47,7 @@ struct Generation {
 }
 
 pub(super) struct FrameStamp {
+    diagnostics: bool,
     generation: Weak<Generation>,
     epoch: u64,
     expires: Option<chrono::DateTime<chrono::Utc>>,
@@ -57,6 +58,13 @@ pub(super) struct FrameStamp {
 }
 
 impl FrameStamp {
+    pub(super) fn observe(&self, flow: super::evidence::Flow) {
+        if self.diagnostics && self.current() {
+            for binding in self.bindings.iter().filter_map(Weak::upgrade) {
+                binding.trace.flow(flow, 1);
+            }
+        }
+    }
     pub(super) fn poll_current(&mut self, cx: &mut Context<'_>, writing: bool) -> bool {
         // Completion seals the frame even if a wall-clock adjustment makes
         // the absolute key expiry appear future again. Never repoll a finished
@@ -232,6 +240,8 @@ struct HeldBinding {
     binding: Weak<Binding>,
     handle: PeerId,
     retired: bool,
+    // Conservative until this peer's SDK output proves the queue drained.
+    pending_plaintext: bool,
 }
 
 pub(super) struct Binding {
@@ -242,9 +252,13 @@ pub(super) struct Binding {
     remote: SocketAddr,
     cancelled: CancellationToken,
     started: AtomicBool,
+    trace: super::evidence::Trace,
 }
 
 impl Binding {
+    pub(super) fn trace(&self) -> &super::evidence::Trace {
+        &self.trace
+    }
     pub(super) fn peer_key(&self) -> NodePublicKey {
         self.identity.key
     }
@@ -268,6 +282,7 @@ impl Drop for Binding {
 }
 
 pub(super) struct Peers {
+    diagnostics: bool,
     owner: Arc<()>,
     local: Identity,
     peers: HashMap<NodeId, Peer>,
@@ -325,6 +340,7 @@ impl Peers {
         plane.or_in.swap(incoming);
         Ok(Self {
             owner: Arc::new(()),
+            diagnostics: super::evidence::Trace::current().enabled(),
             local,
             peers: HashMap::new(),
             next_handle: 0,
@@ -630,11 +646,13 @@ impl Peers {
             remote: SocketAddr::new(remote_ip, port),
             cancelled,
             started: AtomicBool::new(false),
+            trace: super::evidence::Trace::current(),
         });
         self.bindings.push(HeldBinding {
             binding: Arc::downgrade(&binding),
             handle: binding.handle,
             retired: false,
+            pending_plaintext: false,
         });
         Ok(binding)
     }
@@ -690,6 +708,11 @@ impl Peers {
         }
         if !packets.is_empty() {
             binding.started.store(true, Ordering::Relaxed);
+            self.bindings
+                .iter_mut()
+                .find(|item| std::ptr::eq(item.binding.as_ptr(), binding))
+                .ok_or(Failure::Cancelled)?
+                .pending_plaintext = true;
         }
         let output = self.plane.process_outbound(packets);
         if !output.loopback.is_empty() {
@@ -797,6 +820,7 @@ impl Peers {
         }) {
             return Ok(None);
         }
+        self.observe_peer(source, super::evidence::Flow::LabelledInput, 1);
         let (mut frames, mut received) = self.incoming(vec![packet])?;
         // DERP's source label is not a substitute for authenticated WireGuard
         // identity. Require both before an exact TCP stack adopts plaintext or
@@ -859,6 +883,40 @@ impl Peers {
         let count = output.values().map(Vec::len).sum::<usize>();
         if count > MAX_PACKETS || output.values().flatten().any(|packet| packet.len() > 2048) {
             return self.fail();
+        }
+        if self.diagnostics {
+            for ((_, endpoint), packets) in &output {
+                if let Some(peer) = endpoint.as_derp() {
+                    self.observe_peer(peer, super::evidence::Flow::EncryptedOutput, packets.len());
+                }
+            }
+        }
+        for (destination, packets) in &output {
+            if !packets.iter().any(|packet| {
+                // Trusted SDK output: WireGuard type 4 has a 16-byte header
+                // and a 16-byte authentication tag, including keepalives.
+                packet.len() >= 32 && packet.as_ref().starts_with(&[4, 0, 0, 0])
+            }) {
+                continue;
+            }
+            let mut peers = self
+                .plane
+                .ur_out
+                .table
+                .iter()
+                .filter(|(_, route)| *route == destination);
+            if let Some((&handle, _)) = peers.next()
+                && peers.next().is_none()
+            {
+                // The pinned SDK queues plaintext only without active crypto;
+                // activation drains the whole queue before emitting transport
+                // data. Only uniquely routed SDK output proves that peer drained.
+                for item in &mut self.bindings {
+                    if item.handle == handle {
+                        item.pending_plaintext = false;
+                    }
+                }
+            }
         }
         let permit = Arc::clone(&self.frame_budget)
             .try_acquire_many_owned(count as u32)
@@ -934,6 +992,7 @@ impl Peers {
             bytes,
             permit,
             stamp: FrameStamp {
+                diagnostics: self.diagnostics,
                 generation: Arc::downgrade(&self.generation),
                 epoch: self.frame_epoch,
                 expires,
@@ -1011,6 +1070,21 @@ impl Peers {
         Ok(count)
     }
 
+    fn observe_peer(&self, peer: NodePublicKey, flow: super::evidence::Flow, count: usize) {
+        if !self.diagnostics {
+            return;
+        }
+        for binding in self
+            .bindings
+            .iter()
+            .filter_map(|held| held.binding.upgrade())
+        {
+            if binding.peer_key() == peer && self.current(&binding).is_ok() {
+                binding.trace.flow(flow, count);
+            }
+        }
+    }
+
     fn invalidate_frames(&mut self) {
         self.frame_cancelled.cancel();
         self.frame_cancelled = CancellationToken::new();
@@ -1047,6 +1121,7 @@ impl Peers {
 
     fn reap_bindings(&mut self) {
         let mut reset = HashSet::new();
+        let mut retired = HashSet::new();
         for item in &mut self.bindings {
             let binding = item.binding.upgrade();
             if !item.retired && binding.as_ref().is_none_or(|binding| !binding.live()) {
@@ -1054,7 +1129,10 @@ impl Peers {
                     binding.cancelled.cancel();
                 }
                 item.retired = true;
-                reset.insert(item.handle);
+                retired.insert(item.handle);
+                if item.pending_plaintext {
+                    reset.insert(item.handle);
+                }
             }
         }
         // Expired peers with no active binding must not retain crypto timers or
@@ -1065,15 +1143,29 @@ impl Peers {
                 .remove_peer(ts_tunnel::PeerId(peer.handle.0));
             self.plane.ur_out.table.remove(&peer.handle);
         }
-        if !reset.is_empty() {
+        if !retired.is_empty() {
             self.invalidate_frames();
         }
+        for handle in retired {
+            if !self
+                .bindings
+                .iter()
+                .any(|item| item.handle == handle && !item.retired)
+            {
+                reset.insert(handle);
+            }
+        }
         for handle in reset {
-            // Public upsert alone preserves sessions and queued packets. Actual
-            // removal is required, including when a dropped binding queued a SYN.
+            // Removal purges SDK-held plaintext, or releases an unused peer's
+            // sessions. Established siblings otherwise keep their receiver IDs.
             self.plane
                 .wireguard
                 .remove_peer(ts_tunnel::PeerId(handle.0));
+            for item in &mut self.bindings {
+                if item.handle == handle {
+                    item.pending_plaintext = false;
+                }
+            }
             if let Some(peer) = self.peers.values().find(|peer| {
                 peer.handle == handle
                     && peer.identity.tailnet == self.local.tailnet

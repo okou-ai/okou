@@ -1,4 +1,4 @@
-import type { agentRuns } from "@okouai/db/schema/agent-run";
+import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import type {
   ChatEventUserMessage,
   chatEvents,

@@ -417,6 +417,10 @@ test("A failed account link can be retried from Works", async () => {
   await expect(
     screen.findByText("This Telegram account is already connected elsewhere."),
   ).resolves.toBeInTheDocument();
+  // The callback tab waits for its terminal result; closing it ends the attempt.
+  act(() => {
+    popup.close();
+  });
   await waitFor(() => {
     expect(
       getAction("button", "Connect", getIntegrationCard("Telegram")),

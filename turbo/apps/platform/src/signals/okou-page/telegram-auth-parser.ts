@@ -82,12 +82,11 @@ interface TelegramDeliveryContext {
   nativeOrigin: string;
   operationId: string;
   bot: string;
-  protocol2: boolean;
 }
 
 type TelegramDelivery =
   | { kind: "ready" | "result-ack" }
-  | { kind: "v2-identity" | "legacy-identity"; auth: TelegramAuthResult }
+  | { kind: "v2-identity"; auth: TelegramAuthResult }
   | { kind: "native-identity"; auth: TelegramAuthResult | null };
 
 function parseV2Delivery(
@@ -96,7 +95,6 @@ function parseV2Delivery(
   context: TelegramDeliveryContext,
 ): TelegramDelivery | null {
   if (
-    !context.protocol2 ||
     origin !== context.callbackOrigin ||
     message.protocol !== 2 ||
     message.operationId !== context.operationId ||
@@ -129,17 +127,8 @@ export function parseTelegramDelivery(
   if ("protocol" in message || "operationId" in message || "bot" in message) {
     return parseV2Delivery(message, event.origin, context);
   }
-  // New App can reach legacy readiness/callbacks during propagation or rollback.
-  // Remove this branch only after those APIs are neither serving nor retained
-  // for rollback; owning follow-up: #40196. Native Telegram cannot echo an
-  // operation, so its exact window/origin and owner lifetime remain mandatory.
-  if (
-    event.origin === context.callbackOrigin &&
-    message.type === "telegram-auth"
-  ) {
-    const auth = parseTelegramIdentity(message.data);
-    return auth ? { kind: "legacy-identity", auth } : null;
-  }
+  // Native Telegram cannot echo an operation, so its exact window/origin and
+  // owner lifetime remain mandatory.
   if (
     event.origin === context.nativeOrigin &&
     message.event === "auth_result"

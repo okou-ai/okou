@@ -597,14 +597,9 @@ impl LocalQueue {
             RunId::new_v4()
         ));
         let final_path = super::active_input_path(&self.group_dir, entry.run_id, entry.sequence);
-        if let Err(e) =
-            super::write_private_file(&tmp_path, &bytes, "local active-input temporary file")
-        {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(e);
-        }
+        let _temporary_cleanup = super::fs::TemporaryFileCleanup::new(&tmp_path);
+        super::write_private_file(&tmp_path, &bytes, "local active-input temporary file")?;
         if let Err(e) = std::fs::hard_link(&tmp_path, &final_path) {
-            let _ = std::fs::remove_file(&tmp_path);
             return Err(std::io::Error::new(
                 e.kind(),
                 format!(
@@ -613,7 +608,6 @@ impl LocalQueue {
                 ),
             ));
         }
-        let _ = std::fs::remove_file(&tmp_path);
         Ok(())
     }
 
@@ -863,16 +857,16 @@ impl LocalQueue {
         // Atomic write: tmp then rename, so submit never reads a partial file.
         let tmp_file = result_dir.join(format!("{run_id}.{}.result.tmp", RunId::new_v4()));
         let result_file = super::result_path(&self.group_dir, run_id);
+        let temporary_cleanup = super::fs::TemporaryFileCleanup::new(&tmp_file);
         if let Err(e) = super::write_private_file(&tmp_file, &json, "local result temporary file") {
             warn!(run_id = %run_id, error = %e, "local: failed to write result file");
-            let _ = std::fs::remove_file(&tmp_file);
             return false;
         }
         if let Err(e) = std::fs::rename(&tmp_file, &result_file) {
             warn!(run_id = %run_id, error = %e, "local: failed to rename result file");
-            let _ = std::fs::remove_file(&tmp_file);
             return false;
         }
+        temporary_cleanup.disarm();
         true
     }
 

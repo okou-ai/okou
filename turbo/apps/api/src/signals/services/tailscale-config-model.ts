@@ -97,6 +97,7 @@ export function tailscaleConfigResponse(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     sshHosts,
+    vncHosts: [],
   };
 }
 export function selectedTailscaleBindingId(

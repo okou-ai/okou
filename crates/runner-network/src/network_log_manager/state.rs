@@ -18,57 +18,17 @@ struct State {
     next_generation: u64,
 }
 
-enum SourceState {
-    Active {
-        path: Arc<Path>,
-        generation: u64,
-        writer_backpressure_observed: bool,
-        writer_failed: Arc<AtomicBool>,
-    },
-    Draining {
-        path: Arc<Path>,
-        generation: u64,
-        writer_backpressure_observed: bool,
-        writer_failed: Arc<AtomicBool>,
-    },
+// The session owns the producer drain; a registration accepts rows until removed.
+struct SourceState {
+    path: Arc<Path>,
+    generation: u64,
+    writer_backpressure_observed: bool,
+    writer_failed: Arc<AtomicBool>,
 }
 
 impl SourceState {
-    fn writer_failed(&self) -> &Arc<AtomicBool> {
-        match self {
-            Self::Active { writer_failed, .. } | Self::Draining { writer_failed, .. } => {
-                writer_failed
-            }
-        }
-    }
-
-    fn path(&self) -> &Arc<Path> {
-        match self {
-            Self::Active { path, .. } | Self::Draining { path, .. } => path,
-        }
-    }
-
-    fn generation(&self) -> u64 {
-        match self {
-            Self::Active { generation, .. } | Self::Draining { generation, .. } => *generation,
-        }
-    }
-
     fn matches(&self, path: &Path, generation: u64) -> bool {
-        self.generation() == generation && self.path().as_ref() == path
-    }
-
-    fn writer_backpressure_observed(&self) -> bool {
-        match self {
-            Self::Active {
-                writer_backpressure_observed,
-                ..
-            }
-            | Self::Draining {
-                writer_backpressure_observed,
-                ..
-            } => *writer_backpressure_observed,
-        }
+        self.generation == generation && self.path.as_ref() == path
     }
 }
 
@@ -182,7 +142,7 @@ impl NetworkLogState {
         let writer_failed = Arc::new(AtomicBool::new(false));
         state.source_paths.insert(
             source_ip.clone(),
-            SourceState::Active {
+            SourceState {
                 path: Arc::clone(&path),
                 generation,
                 writer_backpressure_observed: false,
@@ -221,7 +181,7 @@ impl NetworkLogState {
         let Some((pending_path, _)) = state.pending_paths.get_key_value(path) else {
             return false;
         };
-        Arc::ptr_eq(source.path(), pending_path)
+        Arc::ptr_eq(&source.path, pending_path)
     }
 
     pub(super) fn source_snapshot(&self, source_ip: &str) -> Option<SourceSnapshot> {
@@ -230,9 +190,9 @@ impl NetworkLogState {
             .source_paths
             .get(source_ip)
             .map(|source| SourceSnapshot {
-                path: Arc::clone(source.path()),
-                generation: source.generation(),
-                writer_failed: Arc::clone(source.writer_failed()),
+                path: Arc::clone(&source.path),
+                generation: source.generation,
+                writer_failed: Arc::clone(&source.writer_failed),
             })
     }
 
@@ -272,44 +232,14 @@ impl NetworkLogState {
         if !source_state.matches(snapshot.path.as_ref(), snapshot.generation) {
             return;
         }
-        match source_state {
-            SourceState::Active {
-                writer_backpressure_observed,
-                ..
-            }
-            | SourceState::Draining {
-                writer_backpressure_observed,
-                ..
-            } => *writer_backpressure_observed = true,
-        }
+        source_state.writer_backpressure_observed = true;
     }
 
-    pub(super) fn begin_session_drain(
-        &self,
-        source_ip: &str,
-        path: &Path,
-        generation: u64,
-    ) -> bool {
-        let mut state = self.lock();
-        let Some(source_state) = state.source_paths.get(source_ip) else {
-            return false;
-        };
-        if !source_state.matches(path, generation) {
-            return false;
-        }
-        let path = Arc::clone(source_state.path());
-        let writer_backpressure_observed = source_state.writer_backpressure_observed();
-        let writer_failed = Arc::clone(source_state.writer_failed());
-        state.source_paths.insert(
-            source_ip.to_string(),
-            SourceState::Draining {
-                path,
-                generation,
-                writer_backpressure_observed,
-                writer_failed,
-            },
-        );
-        true
+    pub(super) fn is_current_session(&self, source_ip: &str, path: &Path, generation: u64) -> bool {
+        self.lock()
+            .source_paths
+            .get(source_ip)
+            .is_some_and(|source| source.matches(path, generation))
     }
 
     pub(super) fn finalize_session(&self, source_ip: &str, path: &Path, generation: u64) -> bool {
@@ -320,7 +250,7 @@ impl NetworkLogState {
         if !source_state.matches(path, generation) {
             return false;
         }
-        let writer_backpressure_observed = source_state.writer_backpressure_observed();
+        let writer_backpressure_observed = source_state.writer_backpressure_observed;
         state.source_paths.remove(source_ip);
         writer_backpressure_observed
     }

@@ -112,6 +112,12 @@
       "files": {
         "connecting": "正在連線至檔案…",
         "currentFolder": "目前資料夾",
+        "download": "下載 {{name}}",
+        "downloadChanged": "檔案在下載時發生變更，請重新下載。",
+        "downloadFailed": "下載失敗，請重試。",
+        "downloadFrame": "檔案下載",
+        "downloadUnsupported": "此瀏覽器不支援檔案下載。",
+        "downloadUpdateRequired": "請重新整理頁面後重試。如果仍無法下載，請開始新的執行。",
         "empty": "此資料夾為空。",
         "enterFolder": "進入 {{name}}",
         "goHome": "返回主目錄",
@@ -124,6 +130,17 @@
         "other": "其他",
         "parentFolders": "上層資料夾",
         "pending": "排隊中的執行開始後即可瀏覽檔案。",
+        "preview": "預覽 {{name}}",
+        "previewChanged": "檔案已變更，請關閉預覽後重新開啟。",
+        "previewDecode": "無法解碼此檔案，你仍可下載它。",
+        "previewEmpty": "此檔案為空。",
+        "previewInvalid": "無法預覽此檔案，你仍可下載它。",
+        "previewLoading": "正在載入預覽…",
+        "previewSize": "檔案過大，無法預覽，你仍可下載它。",
+        "previewTruncated": "僅顯示前 64 KiB，下載檔案可查看完整內容。",
+        "previewUnavailable": "預覽無法使用，請關閉後重試，或下載檔案。",
+        "previewUnsupported": "此檔案類型暫不支援預覽，你仍可下載它。",
+        "previewUpdateRequired": "請重新整理頁面後重試。如果仍無法預覽，請開始新的執行。",
         "readonly": "僅瀏覽目前執行的檔案。",
         "refresh": "重新整理",
         "retry": "重試",
@@ -134,7 +151,7 @@
         "updateRequired": "此執行不支援檔案瀏覽。請在沙箱更新後開始新的執行。"
       },
       "log": "日誌",
-      "manualReloadNotice": "重新整理頁面即可檢視最新的活動日誌。",
+      "manualReloadNotice": "日誌不會自動更新。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次執行沒有記錄到網路流量。",
@@ -145,6 +162,7 @@
         "description": "該日誌不存在，或者你在當前工作區沒有檢視權限。",
         "title": "未找到日誌"
       },
+      "refresh": "重新整理",
       "runner": {
         "environment": "環境",
         "framework": "框架",
@@ -1792,6 +1810,7 @@
       },
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
+        "hint": "搜尋工作流程或選擇範本…",
         "make": "製作",
         "useTemplate": "使用模板 {{title}}"
       },
@@ -2109,6 +2128,7 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
+      "emptyArtifacts": "目前還沒有 artifact",
       "emptyLinks": "此聊天中暫無連結",
       "expand": "展開",
       "links": "連結",
@@ -3506,7 +3526,6 @@
         "connectedDescription": "你的 Teams 帳號已連線。",
         "connectTitle": "連線 Microsoft Teams",
         "identityMismatch": "此連結指定的 Teams 帳號或工作區與目前連線不一致。",
-        "identityUnknown": "無法確認此連結中的 Teams 帳號。請開啟 Teams 檢查帳號。",
         "install": "在 Teams 中安裝",
         "invalidContext": "此連結缺少 Teams 帳號資訊。請從 Teams 取得新的連線連結。",
         "open": "開啟 Teams",
@@ -3939,7 +3958,6 @@
     "retry": "重試",
     "samplePages": "樣張頁數：{{total}}",
     "title": "文件",
-    "use": "使用範本",
     "useNamed": "使用 {{title}}"
   },
   "global": {
@@ -5159,7 +5177,6 @@
       "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
-      "permissionsUnknown": "請重新連線 Link，查看並確認目前的授權權限。",
       "retry": "重試",
       "scope": "讓 Okou 代你購買並查看 Link 交易。",
       "title": "錢包",
@@ -5189,8 +5206,7 @@
         "statusLabel": "狀態",
         "title": "Link 交易紀錄",
         "unknownStatus": "狀態無法取得"
-      },
-      "workspaceScopeChanged": "你的 Link 錢包現在可供此工作區內你的所有 Agent 使用。請重新連線以確認此變更。"
+      }
     },
     "workspace": {
       "danger": {
@@ -5771,16 +5787,27 @@
     "loading": "正在載入 VNC 配置…",
     "manage": "管理 VNC",
     "native": {
-      "editPending": "目前尚不支援編輯此私有網路路由。",
+      "configuration": "網路設定",
+      "empty": "先在 Cloudflare Access 或 Tailscale 設定中新增可重用網路，再回到此處選取。",
+      "gatewayHelp": "使用 Cloudflare TCP 應用程式的主機名稱和連接埠 443。通道負責選取目的連接埠；VNC 憑證身分和 Kerberos 服務身分須分別設定。",
       "hostCount_other": "{{count}} 台主機",
       "impactConfirm": "我了解這些成員的主機會保留，但在其擁有者重新綁定之前無法連線。",
       "impactSummary": "受影響：{{members}}和{{hosts}}。主機會保留，但在其擁有者重新綁定之前無法連線。任何主機都不會自動切換為直接連線。",
       "inUse": "你的 SSH 或 VNC 主機仍在使用此網路。請先重新綁定或刪除這些主機。",
       "kdcRole": "驗證伺服器",
+      "loadFailed": "無法載入網路設定。",
+      "loading": "正在載入網路設定…",
+      "macHelp": "所選模式與獨立 macOS 螢幕共享的相容性仍需驗證。保護此連線並不能阻止其他用戶端存取 Mac 的 VNC 監聽連接埠。",
       "needsRebind": "此私有網路路由需要新的設定，重新綁定後才能連線。",
+      "originCaBundle": "來源伺服器 TLS CA 憑證",
+      "originServerName": "來源伺服器 TLS 名稱",
       "originTls": "來源站台 TLS",
+      "originTlsHelp": "Mac 和僅驗證的 RSA-AES 模式需要在所選伺服器上執行經憑證驗證的 TLS 服務，且只能轉送至本機 VNC。其身分與信任設定獨立於 Cloudflare 閘道及內層 VNC 憑證。",
+      "originTrust": "來源伺服器 TLS 憑證信任",
+      "peerHelp": "使用所選網路允許的確切 Tailscale 節點 IP 或名稱及服務連接埠。不需要 SSH 服務或 SSH 授權。",
       "protectionHelp": "此驗證模式不會加密桌面流量。所選私有網路路由必須保護到此伺服器的完整連線。",
-      "rfbRole": "桌面"
+      "rfbRole": "桌面",
+      "select": "選取已儲存的網路設定"
     },
     "port": "埠",
     "retry": "重試",
@@ -5840,7 +5867,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
       "qemuX509SaslHelp": "僅支援 QEMU 子類型 263。TLS 會在 SCRAM 之前驗證伺服器；不降級至 PLAIN 或子類型 264。",
       "serverName": "TLS 憑證身分",
-      "serverNameHelp": "選填。留空時將依據 RFB 目標主機驗證憑證。僅當憑證使用其他 DNS 名稱時才填寫。",
+      "serverNameHelp": "Cloudflare Access 必須明確填寫 RFB 伺服器的憑證身分。其他路由可留空，此時將依據 RFB 目標主機驗證憑證。",
       "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系統證書頒發機構",
       "title": "伺服器證書信任",
@@ -5864,7 +5891,7 @@
       "empty": "沒有可用的已儲存 SSH 主機。使用此路由前，請先在 SSH 設定中新增主機。",
       "loadFailed": "無法載入已儲存的 SSH 主機。",
       "loading": "正在載入已儲存的 SSH 主機…",
-      "privateDirectHelp": "私有或迴環 IP 位址必須透過已儲存的 SSH 主機存取。請主動選擇上方的 SSH 路由；連線方式不會自動變更。",
+      "privateDirectHelp": "私有 IP 位址需要受支援的私有網路路由或已儲存的 SSH 主機。請明確選擇路由。",
       "select": "選擇已儲存的 SSH 主機",
       "selectionUnavailable": "所選 SSH 主機已無法使用。請選擇其他主機，或明確切換為直接連線。",
       "ssh": "透過已儲存的 SSH 主機",
@@ -6566,7 +6593,6 @@
       "connectDescription": "連接 Discord 帳號，與智慧代理聊天。",
       "connectedTitle": "已連接 Discord",
       "connectTitle": "連接 Discord",
-      "continueInNewTab": "在新分頁繼續",
       "defaultWorkspace": "Discord 預設工作區",
       "description": "在伺服器中提及 Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷 Discord 連線",

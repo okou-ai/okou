@@ -8,17 +8,30 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
+import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
+import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
+import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { and, eq, inArray } from "drizzle-orm";
+import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
 
 import type { Db } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
 import { loadAgentPhoneQueuedLaunchMaterial } from "./agentphone-queued-launch-context.service";
-import { loadFeishuQueuedLaunchMaterial } from "./feishu-queued-launch-context.service";
+import {
+  feishuQueuedLaunchContextReadPlan,
+  feishuQueuedLaunchMaterialFromContext,
+  requiredFeishuLaunchContext,
+} from "./feishu-queued-launch-context.service";
+import {
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "./feishu-config";
 import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
 import {
   DiscordQueuedLaunchUnavailableError,
@@ -91,36 +104,24 @@ function activeInputControlPayloadFits(payload: object): boolean {
   );
 }
 
-/** Load active-input source events of one thread by id, without locks. */
-export function activeInputRowsByIds(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-  eventIds: readonly string[],
-) {
-  return db
-    .select({
-      id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      userMessage: canonicalChatEventUserMessage(),
-      modelSelection: canonicalChatInputModelSelection(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        inArray(chatEvents.id, eventIds),
-      ),
-    );
+/** Mapped fields for an active-input source read. */
+export function activeInputSourceFields() {
+  return {
+    id: chatEvents.id,
+    chatThreadId: chatEvents.chatThreadId,
+    createdAt: chatEvents.createdAt,
+    runId: chatEvents.runId,
+    eventType: chatEvents.eventType,
+    contextType: chatEvents.contextType,
+    contextId: chatEvents.contextId,
+    userMessage: canonicalChatEventUserMessage(),
+    modelSelection: canonicalChatInputModelSelection(),
+  };
 }
 
-export type ActiveInputSourceRow = Awaited<
-  ReturnType<typeof activeInputRowsByIds>
->[number];
+export type ActiveInputSourceRow = SelectResultFields<
+  ReturnType<typeof activeInputSourceFields>
+>;
 
 /** Render one pending active input for steering. */
 export const materializeActiveInputSource$ = command(
@@ -229,7 +230,47 @@ const loadIntegrationPromptMaterial$ = command(
         return await loadSlackQueuedLaunchMaterial(db, loaderArgs);
       }
       case "feishu": {
-        return await loadFeishuQueuedLaunchMaterial(db, loaderArgs);
+        return await (async () => {
+          const context = await (async () => {
+            const plan = feishuQueuedLaunchContextReadPlan(loaderArgs);
+            const [row] = await db
+              .select(plan.columns)
+              .from(chatEvents)
+              .innerJoin(chatFeishuContext, plan.contextJoin)
+              .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
+              .innerJoin(feishuOrgConnections, plan.connectionJoin)
+              .innerJoin(feishuOrgInstallations, plan.installationJoin)
+              .where(plan.condition)
+              .limit(1);
+            if (
+              row &&
+              !(await (async () => {
+                const availability = feishuInstallationAvailabilityReadPlan({
+                  ...row,
+                  orgId: loaderArgs.orgId,
+                });
+                if (availability.kind === "resolved") {
+                  return availability.enabled;
+                }
+                const rows = await db
+                  .select(availability.columns)
+                  .from(userFeatureSwitches)
+                  .where(availability.condition);
+                return feishuInstallationEnabledFromRows(
+                  availability.scope,
+                  rows,
+                );
+              })())
+            ) {
+              return null;
+            }
+            return requiredFeishuLaunchContext(row);
+          })();
+          return feishuQueuedLaunchMaterialFromContext(
+            context,
+            loaderArgs.featureSwitchContext,
+          );
+        })();
       }
       case "wechat": {
         return await set(loadWechatQueuedLaunchMaterial$, loaderArgs, signal);

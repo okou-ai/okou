@@ -8,9 +8,12 @@ import type { WorkflowAutomationEventConfig } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
+import {
+  workflowAutomationDefaultAccountReadPlan,
+  workflowAutomationSelectedAccountReadPlan,
+} from "./workflow-automation-account.service";
 
 const NOTION_EVENT_TYPES = [
   "notion-child-page-created",
@@ -22,20 +25,6 @@ const NOTION_ACCOUNT_CHANGED_SKIP_REASON =
   "Notion account selection changed before the event was processed";
 const NOTION_ACCOUNT_RECONNECTED_SKIP_REASON =
   "Notion account identity changed before the event was processed";
-export async function resolveNotionAutomationConnectorId(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-): Promise<string | null> {
-  return await resolveWorkflowAutomationConnectorId(db, {
-    ...args,
-    connectorSlug: "notion",
-  });
-}
-
 export function notionConfigWithConnectorId(
   eventType: string | null,
   eventConfig: unknown,
@@ -81,37 +70,31 @@ export function notionConfigConnectorId(
   return null;
 }
 
-async function skipActivePendingEvents(
-  db: Db,
+export function notionPendingEventsSkipWrite(
   condition: ReturnType<typeof eq>,
   reason: string,
-): Promise<void> {
+) {
   const currentTime = nowDate();
-  await db
-    .update(notionWorkflowPendingEvents)
-    .set({
-      status: "skipped",
+  return {
+    table: notionWorkflowPendingEvents,
+    values: {
+      status: "skipped" as const,
       skipReason: reason,
       processedAt: currentTime,
       updatedAt: currentTime,
-    })
-    .where(
-      and(
-        condition,
-        inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
-      ),
-    );
+    },
+    where: and(
+      condition,
+      inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+    ),
+  };
 }
 
-export async function invalidateNotionPendingEventsForConnector(
-  db: Db,
-  connectorId: string,
-): Promise<void> {
-  await skipActivePendingEvents(
-    db,
-    eq(notionWorkflowPendingEvents.connectorId, connectorId),
-    NOTION_ACCOUNT_RECONNECTED_SKIP_REASON,
-  );
+export function notionPendingEventsReconnectScope(connectorId: string) {
+  return {
+    condition: eq(notionWorkflowPendingEvents.connectorId, connectorId),
+    reason: NOTION_ACCOUNT_RECONNECTED_SKIP_REASON,
+  };
 }
 
 export async function reprojectNotionAutomationsForOwner(
@@ -140,10 +123,36 @@ export async function reprojectNotionAutomationsForOwner(
     );
 
   for (const automation of automations) {
-    const eventConnectorId = await resolveNotionAutomationConnectorId(db, {
+    const workflowScope = {
       ...args,
       workflowId: automation.workflowId,
-    });
+    };
+    const eventConnectorId = await (async () => {
+      const accountScope = {
+        ...workflowScope,
+        connectorSlug: "notion" as const,
+      };
+      return await (async () => {
+        const selected =
+          workflowAutomationSelectedAccountReadPlan(accountScope);
+        const [selection] = await db
+          .select(selected.columns)
+          .from(selected.from)
+          .innerJoin(selected.join.table, selected.join.on)
+          .where(selected.where)
+          .limit(selected.limit);
+        if (selection) {
+          return selection.connectorId;
+        }
+        const fallback = workflowAutomationDefaultAccountReadPlan(accountScope);
+        const [defaultAccount] = await db
+          .select(fallback.columns)
+          .from(fallback.from)
+          .where(fallback.where)
+          .limit(fallback.limit);
+        return defaultAccount?.connectorId ?? null;
+      })();
+    })();
     if (
       automation.eventConnectorId === eventConnectorId &&
       (eventConnectorId === null ||
@@ -169,10 +178,21 @@ export async function reprojectNotionAutomationsForOwner(
         ...(eventConfig === null ? {} : { eventConfig }),
       })
       .where(eq(workflowAutomations.id, automation.id));
-    await skipActivePendingEvents(
-      db,
-      eq(notionWorkflowPendingEvents.automationId, automation.id),
-      NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+    const pendingEventDb = db;
+    const pendingEventCondition = eq(
+      notionWorkflowPendingEvents.automationId,
+      automation.id,
     );
+    const pendingEventReason = NOTION_ACCOUNT_CHANGED_SKIP_REASON;
+    await (async () => {
+      const write = notionPendingEventsSkipWrite(
+        pendingEventCondition,
+        pendingEventReason,
+      );
+      await pendingEventDb
+        .update(write.table)
+        .set(write.values)
+        .where(write.where);
+    })();
   }
 }

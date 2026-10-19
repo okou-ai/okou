@@ -10,6 +10,7 @@ import {
   updateVncConnectionRequestSchema,
   type VncConnectionResponse,
   type VncSecurity,
+  type VncTransport,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
   vncCredentialsContract,
@@ -58,6 +59,8 @@ import {
   vncObservationConfigurationRevision$,
 } from "./remote-access-refresh.ts";
 import { invalidateSsh$ } from "./ssh.ts";
+import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
+import { invalidateTailscale$ } from "./tailscale.ts";
 import {
   onRef,
   resetSignal,
@@ -116,6 +119,8 @@ export const invalidateVnc$ = command(({ set }) => {
   });
   set(invalidateVncObservationConfiguration$);
   set(invalidateRemoteAccess$);
+  set(invalidateCloudflareAccess$);
+  set(invalidateTailscale$);
 });
 
 export const retryVnc$ = command(({ set }) => {
@@ -341,7 +346,7 @@ export function vncSshConnectionId(connection: VncConnectionResponse) {
     : null;
 }
 
-/** Temporary owner-input subset until G (#40228) supplies the native editor. */
+/** Presentation helper; native routes retain independent RFB/KDC bindings. */
 export function hasNativeVncRoute(connection: VncConnectionResponse) {
   const native = (type: string | undefined) => {
     return type === "cloudflare_access" || type === "tailscale";
@@ -398,7 +403,7 @@ function initialVncProfile(
       : "x509_vnc";
 }
 
-function requiresSshLoopback(profile: VncProfile): boolean {
+export function requiresVncProtectiveRoute(profile: VncProfile): boolean {
   if (isRsaAesProfile(profile)) {
     return isVncRsaAesAuthenticationOnly(RSA_AES_PROFILES[profile].type);
   }
@@ -410,20 +415,27 @@ function requiresSshLoopback(profile: VncProfile): boolean {
   );
 }
 
-const editor$ = state({
+const editor$ = state<Editor>({
   selection: "",
-  profile: "x509_vnc" as VncProfile,
-  trust: "system" as "system" | "custom_ca",
-  transport: "direct" as "direct" | "ssh",
+  profile: "x509_vnc",
+  trust: "system",
+  transport: "direct",
+  networkConfigId: "",
+  kdcTransport: "direct",
+  kdcNetworkConfigId: "",
+  originTlsEnabled: false,
+  originTlsTrust: "system",
+  originTlsServerName: "",
+  originTlsCaBundle: "",
   sshConnectionId: "",
   kdcSshConnectionId: "",
   kdcHost: "",
-  loopbackHost: "127.0.0.1" as "127.0.0.1" | "::1",
+  loopbackHost: "127.0.0.1",
   destinationHost: "",
   tlsServerName: "",
   caBundle: "",
   rsaServerKeySha256: "",
-  rsaImportedModulusBits: null as number | null,
+  rsaImportedModulusBits: null,
   replace: false,
 });
 const uncertain$ = state(false);
@@ -447,6 +459,9 @@ export const vncDialog$ = computed(async (get) => {
 });
 export const vncEditor$ = computed((get) => {
   return get(editor$);
+});
+export const vncProfile$ = computed((get) => {
+  return get(editor$).profile;
 });
 export const vncSaveUncertain$ = computed((get) => {
   return get(uncertain$);
@@ -552,7 +567,6 @@ export const acceptVncConflictReview$ = command(
         reviewed.credential?.authMethod !== current.credential?.authMethod) ||
       (reviewed.kind === "delete-credential" &&
         reviewed.credential.hosts.length > 0) ||
-      (reviewed.kind === "edit" && hasNativeVncRoute(reviewed.connection)) ||
       !isVncReviewableConflict(current, message)
     ) {
       return;
@@ -605,9 +619,15 @@ export const chooseVncProfile$ = command(
               ...current,
               profile,
               selection: "",
-              transport: requiresSshLoopback(profile)
-                ? "ssh"
-                : current.transport,
+              transport:
+                requiresVncProtectiveRoute(profile) &&
+                current.transport === "direct"
+                  ? "ssh"
+                  : current.transport,
+              originTlsEnabled:
+                current.originTlsEnabled ||
+                (current.transport === "cloudflare_access" &&
+                  requiresVncProtectiveRoute(profile)),
             };
       });
     }
@@ -727,11 +747,23 @@ export const chooseVncTransport$ = command(
   ({ get, set }, transport: string | null) => {
     if (
       !get(editorLocked$) &&
-      (transport === "direct" || transport === "ssh") &&
-      (transport !== "direct" || !requiresSshLoopback(get(editor$).profile))
+      (transport === "direct" ||
+        transport === "ssh" ||
+        transport === "cloudflare_access" ||
+        transport === "tailscale") &&
+      (transport !== "direct" ||
+        !requiresVncProtectiveRoute(get(editor$).profile))
     ) {
       set(editor$, (current): Editor => {
-        return { ...current, transport };
+        return {
+          ...current,
+          transport,
+          networkConfigId: "",
+          originTlsEnabled:
+            current.originTlsEnabled ||
+            (transport === "cloudflare_access" &&
+              requiresVncProtectiveRoute(current.profile)),
+        };
       });
     }
   },
@@ -749,14 +781,61 @@ export const chooseVncKdcSsh$ = command(({ get, set }, id: string | null) => {
   if (id === null || get(editorLocked$)) {
     return;
   }
-  set(editor$, (current) => {
+  set(editor$, (current): Editor => {
     return {
       ...current,
-      kdcSshConnectionId: id === "direct" ? "" : id,
-      kdcHost: id === "direct" ? "" : "127.0.0.1",
+      kdcSshConnectionId: id,
+      kdcTransport: "ssh",
+      kdcHost: "127.0.0.1",
     };
   });
 });
+export const chooseVncKdcTransport$ = command(
+  ({ get, set }, transport: string | null) => {
+    if (
+      !get(editorLocked$) &&
+      (transport === "direct" ||
+        transport === "ssh" ||
+        transport === "cloudflare_access" ||
+        transport === "tailscale")
+    ) {
+      set(editor$, (current): Editor => {
+        return { ...current, kdcTransport: transport, kdcNetworkConfigId: "" };
+      });
+    }
+  },
+);
+export const chooseVncNetworkConfig$ = command(
+  ({ get, set }, role: "rfb" | "kdc", id: string | null) => {
+    if (id !== null && !get(editorLocked$)) {
+      set(editor$, (current) => {
+        return role === "rfb"
+          ? { ...current, networkConfigId: id }
+          : { ...current, kdcNetworkConfigId: id };
+      });
+    }
+  },
+);
+export const editVncOriginTls$ = command(
+  (
+    { get, set },
+    fields: Partial<
+      Pick<
+        Editor,
+        | "originTlsEnabled"
+        | "originTlsTrust"
+        | "originTlsServerName"
+        | "originTlsCaBundle"
+      >
+    >,
+  ) => {
+    if (!get(editorLocked$)) {
+      set(editor$, (current) => {
+        return { ...current, ...fields };
+      });
+    }
+  },
+);
 export const editVncKdcHost$ = command(({ get, set }, host: string) => {
   if (!get(editorLocked$)) {
     set(editor$, (current) => {
@@ -790,6 +869,13 @@ export const closeVncDialog$ = command(({ set }) => {
     profile: "x509_vnc",
     trust: "system",
     transport: "direct",
+    networkConfigId: "",
+    kdcTransport: "direct",
+    kdcNetworkConfigId: "",
+    originTlsEnabled: false,
+    originTlsTrust: "system",
+    originTlsServerName: "",
+    originTlsCaBundle: "",
     sshConnectionId: "",
     kdcSshConnectionId: "",
     kdcHost: "",
@@ -963,6 +1049,48 @@ function initialVncSecurityFields(
   };
 }
 
+function initialVncOriginTlsFields(
+  connection: VncConnectionResponse | null,
+): Pick<
+  Editor,
+  | "originTlsEnabled"
+  | "originTlsTrust"
+  | "originTlsServerName"
+  | "originTlsCaBundle"
+> {
+  const origin =
+    connection?.transport?.type === "cloudflare_access"
+      ? connection.transport.originTls
+      : undefined;
+  return {
+    originTlsEnabled: origin !== undefined,
+    originTlsTrust: origin?.trust.mode ?? "system",
+    originTlsServerName: origin?.serverName ?? "",
+    originTlsCaBundle:
+      origin?.trust.mode === "custom_ca" ? origin.trust.caBundle : "",
+  };
+}
+
+function initialVncKdcFields(
+  connection: VncConnectionResponse | null,
+): Pick<
+  Editor,
+  "kdcTransport" | "kdcNetworkConfigId" | "kdcSshConnectionId" | "kdcHost"
+> {
+  const kdc =
+    connection?.security.type === "qemu_x509_gssapi"
+      ? connection.security.kdc
+      : undefined;
+  const transport = kdc?.transport;
+  return {
+    kdcTransport: transport?.type ?? "direct",
+    kdcNetworkConfigId:
+      transport && "configId" in transport ? transport.configId : "",
+    kdcSshConnectionId: transport?.type === "ssh" ? transport.connectionId : "",
+    kdcHost: kdc?.host ?? "",
+  };
+}
+
 function initialVncEditor(
   kind: VncDialogState["kind"],
   connection: VncConnectionResponse | null,
@@ -980,17 +1108,15 @@ function initialVncEditor(
     profile,
     ...initialVncSecurityFields(connection),
     transport:
-      sshConnectionId || requiresSshLoopback(profile) ? "ssh" : "direct",
+      connection?.transport?.type ??
+      (requiresVncProtectiveRoute(profile) ? "ssh" : "direct"),
+    networkConfigId:
+      connection?.transport && "configId" in connection.transport
+        ? connection.transport.configId
+        : "",
+    ...initialVncOriginTlsFields(connection),
+    ...initialVncKdcFields(connection),
     sshConnectionId: sshConnectionId ?? "",
-    kdcSshConnectionId:
-      connection?.security.type === "qemu_x509_gssapi" &&
-      connection.security.kdc?.transport.type === "ssh"
-        ? connection.security.kdc.transport.connectionId
-        : "",
-    kdcHost:
-      connection?.security.type === "qemu_x509_gssapi"
-        ? (connection.security.kdc?.host ?? "")
-        : "",
     loopbackHost: connection?.host === "::1" ? "::1" : "127.0.0.1",
     destinationHost: connection?.host ?? "",
     rsaImportedModulusBits: null,
@@ -1013,9 +1139,6 @@ export const openVncDialog$ = command(
     }
     const connection = resource && "host" in resource ? resource : null;
     const credential = resource && "authMethod" in resource ? resource : null;
-    if (kind === "edit" && connection && hasNativeVncRoute(connection)) {
-      return;
-    }
     set(closeVncDialog$);
     set(editor$, initialVncEditor(kind, connection, credential));
     const dialog: VncDialogState = {
@@ -1226,7 +1349,14 @@ interface Editor {
   readonly selection: string;
   readonly profile: VncProfile;
   readonly trust: "system" | "custom_ca";
-  readonly transport: "direct" | "ssh";
+  readonly transport: VncTransport["type"];
+  readonly networkConfigId: string;
+  readonly kdcTransport: VncTransport["type"];
+  readonly kdcNetworkConfigId: string;
+  readonly originTlsEnabled: boolean;
+  readonly originTlsTrust: "system" | "custom_ca";
+  readonly originTlsServerName: string;
+  readonly originTlsCaBundle: string;
   readonly sshConnectionId: string;
   readonly kdcSshConnectionId: string;
   readonly kdcHost: string;
@@ -1239,21 +1369,50 @@ interface Editor {
   readonly replace: boolean;
 }
 
+function connectionTransport(editor: Editor): VncTransport {
+  if (editor.transport === "ssh") {
+    return { type: "ssh", connectionId: editor.sshConnectionId };
+  }
+  if (editor.transport === "direct") {
+    return { type: "direct" };
+  }
+  if (editor.transport === "tailscale") {
+    return { type: "tailscale", configId: editor.networkConfigId };
+  }
+  return {
+    type: "cloudflare_access",
+    configId: editor.networkConfigId,
+    ...(editor.originTlsEnabled || requiresVncProtectiveRoute(editor.profile)
+      ? {
+          originTls: {
+            serverName: editor.originTlsServerName,
+            trust:
+              editor.originTlsTrust === "system"
+                ? { mode: "system" as const }
+                : {
+                    mode: "custom_ca" as const,
+                    caBundle: editor.originTlsCaBundle,
+                  },
+          },
+        }
+      : {}),
+  };
+}
+
 function connectionFields(form: HTMLFormElement, editor: Editor) {
   const serverName =
-    requiresSshLoopback(editor.profile) || isRsaAesProfile(editor.profile)
+    requiresVncProtectiveRoute(editor.profile) ||
+    isRsaAesProfile(editor.profile)
       ? ""
       : editor.tlsServerName.trim();
   return {
     displayName: textField(form, "displayName"),
-    host: requiresSshLoopback(editor.profile)
-      ? editor.loopbackHost
-      : editor.destinationHost,
+    host:
+      requiresVncProtectiveRoute(editor.profile) && editor.transport === "ssh"
+        ? editor.loopbackHost
+        : editor.destinationHost,
     port: Number(textField(form, "port")),
-    transport:
-      editor.transport === "ssh"
-        ? { type: "ssh" as const, connectionId: editor.sshConnectionId }
-        : { type: "direct" as const },
+    transport: connectionTransport(editor),
     credential:
       editor.profile === "x509_none"
         ? { type: "none" as const }
@@ -1265,7 +1424,7 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
           type: RSA_AES_PROFILES[editor.profile].type,
           serverKeySha256: editor.rsaServerKeySha256,
         }
-      : requiresSshLoopback(editor.profile)
+      : requiresVncProtectiveRoute(editor.profile)
         ? { type: editor.profile }
         : {
             type:
@@ -1291,15 +1450,21 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
                         kdc: {
                           host: textField(form, "kdcHost"),
                           port: Number(textField(form, "kdcPort")),
-                          transport: textField(form, "kdcSshConnectionId")
-                            ? {
-                                type: "ssh" as const,
-                                connectionId: textField(
-                                  form,
-                                  "kdcSshConnectionId",
-                                ),
-                              }
-                            : { type: "direct" as const },
+                          transport:
+                            editor.kdcTransport === "ssh"
+                              ? {
+                                  type: "ssh" as const,
+                                  connectionId: textField(
+                                    form,
+                                    "kdcSshConnectionId",
+                                  ),
+                                }
+                              : editor.kdcTransport === "direct"
+                                ? { type: "direct" as const }
+                                : {
+                                    type: editor.kdcTransport,
+                                    configId: editor.kdcNetworkConfigId,
+                                  },
                           ticketLifetimeSeconds: Number(
                             textField(form, "kerberosLifetime"),
                           ),
@@ -1362,9 +1527,6 @@ function connectionRequest(
         fetchOptions: { signal },
       });
     };
-  }
-  if (hasNativeVncRoute(connection)) {
-    return null;
   }
   const body = updateVncConnectionRequestSchema.safeParse({
     ...connectionFields(form, editor),
@@ -1440,6 +1602,17 @@ function credentialRequest(
     : null;
 }
 
+function hasNativeVncDraft(editor: Editor) {
+  return (
+    editor.transport === "cloudflare_access" ||
+    editor.transport === "tailscale" ||
+    (isVncKerberosMethod(editor.profile) &&
+      editor.profile !== "qemu_kerberos_ticket" &&
+      (editor.kdcTransport === "cloudflare_access" ||
+        editor.kdcTransport === "tailscale"))
+  );
+}
+
 export const saveVnc$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
     const signal = set(resetSave$, parentSignal);
@@ -1500,6 +1673,16 @@ export const saveVnc$ = command(
     }
     set(uncertain$, false);
     set(saveMessage$, result.body.error.code);
+    if (
+      result.status === 404 &&
+      result.body.error.code === VNC_ERROR_CODES.UNAVAILABLE &&
+      hasNativeVncDraft(editor)
+    ) {
+      // A rejected first publication can be repaired with an available config.
+      // The earlier retrying guard still protects an ambiguous prior write.
+      set(invalidateVnc$);
+      return;
+    }
     if (result.status !== 400) {
       set(resetRsaImport$);
       set(resetKerberosImport$);

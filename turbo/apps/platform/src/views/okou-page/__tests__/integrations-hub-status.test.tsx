@@ -203,6 +203,7 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
           id: "official",
           botUsername: "okou_bot",
           loginBotId: "987654321",
+          authCallbackProtocol: 2,
           domainConfigured: true,
         },
       });
@@ -237,9 +238,19 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
     return url;
   });
   const callbackUrl = new URL(authUrl.searchParams.get("return_to") ?? "");
+  const callback = {
+    protocol: 2,
+    operationId: callbackUrl.searchParams.get("operationId"),
+    bot: "official",
+  };
   act(() => {
     context.mocks.browser.message(
+      { ...callback, type: "telegram-auth-bridge-ready" },
+      { source: authorizationWindow, origin: callbackUrl.origin },
+    );
+    context.mocks.browser.message(
       {
+        ...callback,
         type: "telegram-auth",
         data: {
           id: "99001",

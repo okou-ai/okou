@@ -380,8 +380,6 @@ function createPickObjects() {
       }
       const claimed = await get(captured);
       signal.throwIfAborted();
-      set(preloadAgentRunContext$, claimed.context, signal);
-      signal.throwIfAborted();
       const [hasCapacity, hasInput] = await Promise.all([
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
@@ -401,6 +399,9 @@ function createPickObjects() {
         await set(deleteEmptyQueue$, claim, signal);
         return { kind: "none" };
       }
+      // Load the run context only when this claim has work and capacity.
+      set(preloadAgentRunContext$, claimed.context, signal);
+      signal.throwIfAborted();
       const runId = await set(claimed.startRun$, signal);
       if (runId === null) {
         await set(releaseClaim$, claim, signal);

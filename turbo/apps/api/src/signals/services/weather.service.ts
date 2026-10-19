@@ -193,7 +193,6 @@ const weatherRequest$ = command(
       {
         orgId: args.auth.orgId,
         userId: args.auth.userId,
-        runId: runIdForUsage(args.auth),
         resource: {
           kind: USAGE_KIND,
           provider: PROVIDER,

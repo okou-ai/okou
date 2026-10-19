@@ -91,6 +91,36 @@ fn proxy_register_failure_warns_with_error() {
 }
 
 #[tokio::test]
+async fn proxy_registration_projects_captured_model_policy_without_reselection() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let mut context = minimal_context();
+    context.cli_agent_type = "pi".into();
+    let captured = serde_json::json!({
+        "schemaVersion": 5,
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "dialect": "openai-completions",
+        "transport": "sse",
+        "model": "@preset/custom-captured-preset"
+    });
+    context.pi_model_config = Some(captured.clone());
+    let _session = register_proxy(&config, &context, "10.200.0.3")
+        .await
+        .unwrap();
+    let registry: serde_json::Value = serde_json::from_str(
+        &tokio::fs::read_to_string(dir.path().join("proxy-registry.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        registry["sandboxes"]["10.200.0.3"]["piModelConfig"],
+        captured
+    );
+}
+
+#[tokio::test]
 async fn proxy_registration_accepts_canonical_targets() {
     let canonical_dir = tempfile::tempdir().unwrap();
     let canonical_config = test_executor_config(canonical_dir.path()).await;

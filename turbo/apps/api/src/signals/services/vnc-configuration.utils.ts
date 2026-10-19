@@ -21,6 +21,7 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-errors";
 import { safeSync } from "../utils";
 import type { vncConnections } from "@okouai/db/schema/vnc-connection";
+import { canonicalTailscaleDestination } from "./tailscale-destination";
 
 export type VncResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -42,34 +43,47 @@ const failures = {
     code: VNC_ERROR_CODES.INVALID_HOST,
     message: "Invalid VNC host",
   },
+  invalidCloudflareDestination: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_HOST,
+    message:
+      "Cloudflare VNC and KDC routes require a gateway hostname and port 443; the TCP application selects the origin port",
+  },
+  invalidTailscaleDestination: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_HOST,
+    message:
+      "Use a Tailscale peer IP or DNS name; loopback, private LAN and other non-Tailscale IP addresses are not native peer targets",
+  },
   invalidAppleVncPasswordRoute: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_APPLE_VNC_PASSWORD_ROUTE,
     message:
-      "Mac classic VNC password requires saved SSH to the Mac's loopback VNC service",
+      "Mac classic VNC password requires SSH loopback, Tailscale, or Cloudflare with verified origin TLS",
   },
   invalidAppleDhRoute: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_APPLE_DH_ROUTE,
-    message: "Apple DH requires saved SSH to the Mac's loopback VNC service",
+    message:
+      "Apple DH requires SSH loopback, Tailscale, or Cloudflare with verified origin TLS",
   },
   invalidAppleSrpRoute: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_APPLE_SRP_ROUTE,
     message:
-      "Apple Direct SRP requires saved SSH to the Mac's loopback VNC service",
+      "Apple Direct SRP requires SSH loopback, Tailscale, or Cloudflare with verified origin TLS",
   },
   invalidAppleRsaSrpRoute: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_APPLE_RSA_SRP_ROUTE,
     message:
-      "Apple RSA/SRP requires saved SSH to the Mac's loopback VNC service",
+      "Apple RSA/SRP requires SSH loopback, Tailscale, or Cloudflare with verified origin TLS",
   },
   invalidRsaAesRoute: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_INPUT,
     message:
-      "RSA-AES authentication-only modes require saved SSH to literal server loopback",
+      "RSA-AES authentication-only modes require SSH loopback, Tailscale, or Cloudflare with verified origin TLS",
   },
   invalidServerName: {
     kind: "bad_request",
@@ -110,6 +124,17 @@ const failures = {
     kind: "not_found",
     code: VNC_ERROR_CODES.SSH_CONNECTION_NOT_FOUND,
     message: "VNC SSH connection not found",
+  },
+  networkConfigUnavailable: {
+    kind: "not_found",
+    code: VNC_ERROR_CODES.UNAVAILABLE,
+    message:
+      "VNC network configuration is not available; select an available configuration",
+  },
+  rebindRequired: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_INPUT,
+    message: "Choose a network configuration to rebind this VNC host",
   },
   credentialConflict: {
     kind: "conflict",
@@ -246,17 +271,72 @@ function isPrivateOrLoopbackHost(host: string): boolean {
     : version === 6 && isPrivateIpv6(host);
 }
 
+const emptyVncTransport = Object.freeze({
+  sshConnectionId: null,
+  cloudflareAccessId: null,
+  tailscaleId: null,
+  originTlsServerName: null,
+  originTlsTrustMode: null,
+  originTlsCaBundle: null,
+});
+
+function prepareCloudflareVncTransport(
+  transport: Extract<VncTransport, { type: "cloudflare_access" }>,
+  host: string,
+  port: number,
+): VncResult<PreparedVncTransport> {
+  if (isIP(host) !== 0 || !host.includes(".") || port !== 443) {
+    return vncFailure("invalidCloudflareDestination");
+  }
+  const origin = transport.originTls;
+  const name = origin
+    ? canonicalizeVncServerName(origin.serverName)
+    : undefined;
+  const trust = origin ? prepareVncTrust(origin.trust) : undefined;
+  if (name && !name.ok) {
+    return name;
+  }
+  if (trust && !trust.ok) {
+    return trust;
+  }
+  return {
+    ok: true,
+    value: {
+      ...emptyVncTransport,
+      transportType: "cloudflare_access",
+      cloudflareAccessId: transport.configId,
+      originTlsServerName: name?.value ?? null,
+      originTlsTrustMode: trust?.value.trustMode ?? null,
+      originTlsCaBundle: trust?.value.caBundle ?? null,
+    },
+  };
+}
+
 export function prepareVncTransport(
   transport: VncTransport | undefined,
   host: string,
-): VncResult<{
-  readonly transportType: "direct" | "ssh";
-  readonly sshConnectionId: string | null;
-}> {
+  port = 5900,
+): VncResult<PreparedVncTransport> {
+  if (transport?.type === "cloudflare_access") {
+    return prepareCloudflareVncTransport(transport, host, port);
+  }
+  if (transport?.type === "tailscale") {
+    return canonicalTailscaleDestination(host) !== host
+      ? vncFailure("invalidTailscaleDestination")
+      : {
+          ok: true,
+          value: {
+            ...emptyVncTransport,
+            transportType: "tailscale",
+            tailscaleId: transport.configId,
+          },
+        };
+  }
   if (transport?.type === "ssh") {
     return {
       ok: true,
       value: {
+        ...emptyVncTransport,
         transportType: "ssh",
         sshConnectionId: transport.connectionId,
       },
@@ -266,9 +346,20 @@ export function prepareVncTransport(
     ? vncFailure("invalidHost")
     : {
         ok: true,
-        value: { transportType: "direct", sshConnectionId: null },
+        value: { ...emptyVncTransport, transportType: "direct" },
       };
 }
+
+export type PreparedVncTransport = Pick<
+  typeof vncConnections.$inferSelect,
+  | "transportType"
+  | "sshConnectionId"
+  | "cloudflareAccessId"
+  | "tailscaleId"
+  | "originTlsServerName"
+  | "originTlsTrustMode"
+  | "originTlsCaBundle"
+>;
 
 export type PreparedVncSecurity = {
   readonly securityType: VncSecurity["type"];
@@ -283,6 +374,8 @@ export type PreparedVncSecurity = {
   | "kdcHost"
   | "kdcPort"
   | "kdcSshConnectionId"
+  | "kdcCloudflareAccessId"
+  | "kdcTailscaleId"
   | "kerberosTicketLifetimeSeconds"
   | "kerberosRenewableLifetimeSeconds"
 >;
@@ -292,6 +385,8 @@ const noKerberos = {
   kdcHost: null,
   kdcPort: null,
   kdcSshConnectionId: null,
+  kdcCloudflareAccessId: null,
+  kdcTailscaleId: null,
   kerberosTicketLifetimeSeconds: null,
   kerberosRenewableLifetimeSeconds: null,
 } as const;
@@ -351,12 +446,15 @@ export function prepareVncSecurity(
       const kdcTransport = prepareVncTransport(
         security.kdc.transport,
         kdcHost.value,
+        security.kdc.port,
       );
+      if (!kdcTransport.ok) {
+        return kdcTransport;
+      }
       if (
-        !kdcTransport.ok ||
-        (security.kdc.transport.type === "ssh" &&
-          kdcHost.value !== "127.0.0.1" &&
-          kdcHost.value !== "::1")
+        security.kdc.transport.type === "ssh" &&
+        kdcHost.value !== "127.0.0.1" &&
+        kdcHost.value !== "::1"
       ) {
         return vncFailure("invalidHost");
       }
@@ -366,6 +464,8 @@ export function prepareVncSecurity(
         kdcPort: security.kdc.port,
         kdcTransportType: kdcTransport.value.transportType,
         kdcSshConnectionId: kdcTransport.value.sshConnectionId,
+        kdcCloudflareAccessId: kdcTransport.value.cloudflareAccessId,
+        kdcTailscaleId: kdcTransport.value.tailscaleId,
         kerberosTicketLifetimeSeconds: security.kdc.ticketLifetimeSeconds,
         kerberosRenewableLifetimeSeconds: security.kdc.renewableLifetimeSeconds,
       };
@@ -414,15 +514,40 @@ export function isVncProfileCompatible(
   );
 }
 
+function isProtectedVncRoute(
+  host: string,
+  transportType: PreparedVncTransport["transportType"],
+  originTlsServerName: string | null,
+) {
+  return (
+    transportType === "tailscale" ||
+    (transportType === "cloudflare_access" && originTlsServerName !== null) ||
+    (transportType === "ssh" && (host === "127.0.0.1" || host === "::1"))
+  );
+}
+
 export function validateVncProfileRoute(
   securityType: VncSecurity["type"],
   host: string,
-  transportType: "direct" | "ssh",
+  transportType: PreparedVncTransport["transportType"],
+  originTlsServerName: string | null = null,
+  x509ServerName: string | null = null,
 ): VncResult<undefined> {
   if (
-    isVncRsaAesAuthenticationOnly(securityType) &&
-    (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
+    transportType === "cloudflare_access" &&
+    (securityType.startsWith("x509_") ||
+      securityType === "qemu_x509_sasl" ||
+      securityType === "qemu_x509_gssapi") &&
+    x509ServerName === null
   ) {
+    return vncFailure("invalidServerName");
+  }
+  const protectedRoute = isProtectedVncRoute(
+    host,
+    transportType,
+    originTlsServerName,
+  );
+  if (isVncRsaAesAuthenticationOnly(securityType) && !protectedRoute) {
     return vncFailure("invalidRsaAesRoute");
   }
   if (
@@ -430,7 +555,7 @@ export function validateVncProfileRoute(
       securityType === "apple_dh" ||
       securityType === "apple_srp" ||
       securityType === "apple_rsa_srp") &&
-    (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
+    !protectedRoute
   ) {
     return vncFailure(
       securityType === "apple_vnc_password"
@@ -445,7 +570,7 @@ export function validateVncProfileRoute(
   return { ok: true, value: undefined };
 }
 
-function prepareVncTrust(trust: VncTrust): VncResult<{
+export function prepareVncTrust(trust: VncTrust): VncResult<{
   readonly trustMode: "system" | "custom_ca";
   readonly caBundle: string | null;
 }> {

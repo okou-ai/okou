@@ -1,3 +1,4 @@
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,10 +9,13 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
+  artifactRun,
   buttonNamed,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
+
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 import {
   context,
@@ -22,6 +26,115 @@ import {
   setupOverflowResources,
   setupResources,
 } from "./chat-resources-test-helpers.ts";
+
+test("Explain an empty resources dropdown without hiding its button", async () => {
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  mockArtifactConversation(context, {
+    catalog: [],
+    artifactRuns: () => {
+      return [];
+    },
+    chatEvents: [],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  expect(resourceButton()).toBeInTheDocument();
+  expect(resourcePanel()).not.toBeInTheDocument();
+
+  click(resourceButton());
+
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
+  await within(panel).findByText("No artifacts yet");
+  expect(within(panel).queryByRole("listitem")).not.toBeInTheDocument();
+});
+
+test("Open the dropdown before its resources finish loading", async () => {
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(chatThreadArtifactsContract.list, async ({ respond }) => {
+    await response.promise;
+    return respond(200, {
+      runs: [
+        artifactRun({
+          fileId: "b0000000-0000-4000-a000-000000000999",
+          filename: "report.pdf",
+          contentType: "application/pdf",
+          url: "https://files.example.test/report.pdf",
+        }),
+      ],
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  expect(resourceButton()).toBeInTheDocument();
+  expect(resourcePanel()).not.toBeInTheDocument();
+
+  click(resourceButton());
+
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).queryByText("report.pdf")).not.toBeInTheDocument();
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
+  response.resolve();
+  await within(panel).findByText("report.pdf");
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
+});
+
+test("Show resource loading errors distinctly from empty results in the popup and Links tab", async () => {
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(500, {
+      error: { message: "Attachments are unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  expect(resourceButton()).toBeInTheDocument();
+
+  click(resourceButton());
+
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(
+    within(panel).findByText("Could not load resources"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
+
+  click(buttonNamed("View all", panel));
+
+  const all = await screen.findByRole("complementary", { name: "Resources" });
+  const linksTab = queryAllByRoleFast("tab", all).find((tab) => {
+    return tab.textContent?.trim() === "Links";
+  });
+  expect(linksTab).toBeInTheDocument();
+  click(linksTab!);
+
+  const links = within(all).getByRole("tabpanel");
+  await expect(
+    within(links).findByText("Could not load resources"),
+  ).resolves.toBeInTheDocument();
+  expect(linksTab).toHaveAttribute("aria-selected", "true");
+  expect(
+    within(links).queryByText("No links in this chat yet"),
+  ).not.toBeInTheDocument();
+});
 
 test("Show all three resources without an overflow control at the limit", async () => {
   const { panel } = await setupOverflowResources(3);

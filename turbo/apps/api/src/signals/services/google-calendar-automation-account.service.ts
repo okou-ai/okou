@@ -5,8 +5,11 @@ import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
+import { writeDb$, type Db } from "../external/db";
+import {
+  workflowAutomationDefaultAccountReadPlan,
+  workflowAutomationSelectedAccountReadPlan,
+} from "./workflow-automation-account.service";
 
 export const GOOGLE_CALENDAR_EVENT_TYPES = [
   "google-calendar-event-created",
@@ -15,20 +18,6 @@ export const GOOGLE_CALENDAR_EVENT_TYPES = [
 ] as const;
 
 export const GOOGLE_CALENDAR_PRIMARY_ID = "primary";
-
-export async function resolveGoogleCalendarAutomationConnectorId(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-): Promise<string | null> {
-  return await resolveWorkflowAutomationConnectorId(db, {
-    ...args,
-    connectorSlug: "google-calendar",
-  });
-}
 
 export async function reprojectGoogleCalendarAutomationsForOwner(
   db: Db,
@@ -56,13 +45,36 @@ export async function reprojectGoogleCalendarAutomationsForOwner(
     );
 
   for (const automation of automations) {
-    const eventConnectorId = await resolveGoogleCalendarAutomationConnectorId(
-      db,
-      {
-        ...args,
-        workflowId: automation.workflowId,
-      },
-    );
+    const workflowScope = {
+      ...args,
+      workflowId: automation.workflowId,
+    };
+    const eventConnectorId = await (async () => {
+      const accountScope = {
+        ...workflowScope,
+        connectorSlug: "google-calendar" as const,
+      };
+      return await (async () => {
+        const selected =
+          workflowAutomationSelectedAccountReadPlan(accountScope);
+        const [selection] = await db
+          .select(selected.columns)
+          .from(selected.from)
+          .innerJoin(selected.join.table, selected.join.on)
+          .where(selected.where)
+          .limit(selected.limit);
+        if (selection) {
+          return selection.connectorId;
+        }
+        const fallback = workflowAutomationDefaultAccountReadPlan(accountScope);
+        const [defaultAccount] = await db
+          .select(fallback.columns)
+          .from(fallback.from)
+          .where(fallback.where)
+          .limit(fallback.limit);
+        return defaultAccount?.connectorId ?? null;
+      })();
+    })();
     if (automation.eventConnectorId === eventConnectorId) {
       continue;
     }

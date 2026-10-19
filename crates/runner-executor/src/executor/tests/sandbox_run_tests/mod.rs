@@ -55,6 +55,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 
 mod blank_prefetch;
+mod codex_reconnect;
 mod execution_diagnostics;
 mod fresh_sandbox;
 mod home_cache;
@@ -64,6 +65,7 @@ mod registry_observation;
 mod reuse;
 mod ssh;
 mod startup;
+mod stdout_scope;
 
 fn storage_archive(content: &[u8]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());

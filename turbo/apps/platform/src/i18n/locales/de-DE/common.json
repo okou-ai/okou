@@ -112,6 +112,12 @@
       "files": {
         "connecting": "Verbindung zu Dateien wird hergestellt…",
         "currentFolder": "Aktueller Ordner",
+        "download": "{{name}} herunterladen",
+        "downloadChanged": "Die Datei wurde während des Downloads geändert. Laden Sie sie erneut herunter.",
+        "downloadFailed": "Download fehlgeschlagen. Versuchen Sie es erneut.",
+        "downloadFrame": "Dateidownload",
+        "downloadUnsupported": "Dieser Browser unterstützt keine Dateidownloads.",
+        "downloadUpdateRequired": "Laden Sie die Seite neu und versuchen Sie es erneut. Falls Downloads weiter nicht verfügbar sind, starten Sie einen neuen Lauf.",
         "empty": "Dieser Ordner ist leer.",
         "enterFolder": "{{name}} als aktuellen Ordner öffnen",
         "goHome": "Zum Home-Verzeichnis",
@@ -124,6 +130,17 @@
         "other": "Sonstige",
         "parentFolders": "Übergeordnete Ordner",
         "pending": "Dateien sind verfügbar, sobald der wartende Lauf startet.",
+        "preview": "{{name}} ansehen",
+        "previewChanged": "Diese Datei wurde geändert. Schließe die Vorschau und öffne sie erneut.",
+        "previewDecode": "Diese Datei konnte nicht dekodiert werden. Du kannst sie weiterhin herunterladen.",
+        "previewEmpty": "Diese Datei ist leer.",
+        "previewInvalid": "Diese Datei kann nicht angezeigt werden. Du kannst sie weiterhin herunterladen.",
+        "previewLoading": "Vorschau wird geladen…",
+        "previewSize": "Diese Datei ist zu groß für die Vorschau. Du kannst sie weiterhin herunterladen.",
+        "previewTruncated": "Die ersten 64 KiB werden angezeigt. Lade die Datei für den vollständigen Inhalt herunter.",
+        "previewUnavailable": "Vorschau nicht verfügbar. Schließe sie und versuche es erneut oder lade die Datei herunter.",
+        "previewUnsupported": "Für diesen Dateityp ist keine Vorschau verfügbar. Du kannst ihn weiterhin herunterladen.",
+        "previewUpdateRequired": "Lade die Seite neu und versuche es erneut. Wenn die Vorschau weiterhin nicht verfügbar ist, starte einen neuen Lauf.",
         "readonly": "Schreibgeschützte Dateien des aktuellen Laufs.",
         "refresh": "Aktualisieren",
         "retry": "Erneut versuchen",
@@ -134,7 +151,7 @@
         "updateRequired": "Dieser Lauf unterstützt keine Dateien. Starte nach der Sandbox-Aktualisierung einen neuen Lauf."
       },
       "log": "Log",
-      "manualReloadNotice": "Laden Sie diese Seite neu, um die neuesten Aktivitätsprotokolle zu sehen.",
+      "manualReloadNotice": "Protokolle werden nicht automatisch aktualisiert.",
       "modelProvidedBy": "{{model}} bereitgestellt von {{provider}}",
       "networkEmpty": {
         "description": "Für diese Ausführung wurde kein Netzwerkverkehr aufgezeichnet.",
@@ -145,6 +162,7 @@
         "description": "Dieses Protokoll existiert nicht oder Sie haben keine Berechtigung, es im aktuellen Arbeitsbereich anzuzeigen.",
         "title": "Protokoll nicht gefunden"
       },
+      "refresh": "Aktualisieren",
       "runner": {
         "environment": "Umgebung",
         "framework": "Framework",
@@ -1795,6 +1813,7 @@
       },
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
+        "hint": "Workflows suchen oder eine Vorlage auswählen…",
         "make": "Erstellen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
@@ -2117,6 +2136,7 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
+      "emptyArtifacts": "Noch keine Artefakte",
       "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
       "links": "Links",
@@ -3524,7 +3544,6 @@
         "connectedDescription": "Ihr Teams-Konto ist verbunden.",
         "connectTitle": "Verbinden Sie Microsoft Teams",
         "identityMismatch": "Das angeforderte Teams-Konto oder der Arbeitsbereich entspricht nicht der aktuellen Verbindung.",
-        "identityUnknown": "Das Teams-Konto in diesem Link kann nicht bestätigt werden. Öffne Teams, um dein Konto zu prüfen.",
         "install": "In Teams installieren",
         "invalidContext": "Diesem Link fehlen Teams-Kontodaten. Öffnen Sie einen neuen Verbindungslink aus Teams.",
         "open": "Offene Teams",
@@ -3957,7 +3976,6 @@
     "retry": "Erneut versuchen",
     "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
-    "use": "Vorlage verwenden",
     "useNamed": "{{title}} verwenden"
   },
   "global": {
@@ -5179,7 +5197,6 @@
       "description": "Deine Agenten können Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
       "disconnect": "Trennen",
       "loadError": "Dein Wallet konnte nicht geladen werden.",
-      "permissionsUnknown": "Verbinde Link erneut, um die aktuellen Berechtigungen zu prüfen und zu bestätigen.",
       "retry": "Erneut versuchen",
       "scope": "Lass Okou für dich einkaufen und deine Link-Transaktionen einsehen.",
       "title": "Wallet",
@@ -5209,8 +5226,7 @@
         "statusLabel": "Status",
         "title": "Link-Transaktionen",
         "unknownStatus": "Status nicht verfügbar"
-      },
-      "workspaceScopeChanged": "Dein Link-Wallet kann jetzt von all deinen Agenten in diesem Workspace genutzt werden. Verbinde es erneut, um diese Änderung zu bestätigen."
+      }
     },
     "workspace": {
       "danger": {
@@ -5797,17 +5813,28 @@
     "loading": "VNC-Konfiguration wird geladen…",
     "manage": "VNC verwalten",
     "native": {
-      "editPending": "Diese private Netzwerkroute kann noch nicht bearbeitet werden.",
+      "configuration": "Netzwerkkonfiguration",
+      "empty": "Fügen Sie in den Cloudflare-Access- oder Tailscale-Einstellungen ein wiederverwendbares Netzwerk hinzu und wählen Sie es anschließend hier aus.",
+      "gatewayHelp": "Verwenden Sie den Hostnamen der Cloudflare-TCP-Anwendung und Port 443. Der Tunnel wählt den Zielport; VNC-Zertifikat und Kerberos-Dienstidentität werden unabhängig konfiguriert.",
       "hostCount_one": "{{count}} Host",
       "hostCount_other": "{{count}} Hosts",
       "impactConfirm": "Ich verstehe, dass die Hosts dieser Mitglieder gespeichert bleiben, aber erst wieder eine Verbindung herstellen können, wenn ihre Besitzer sie neu zuordnen.",
       "impactSummary": "Betroffen: {{members}} und {{hosts}}. Die Hosts bleiben gespeichert, können aber erst nach erneuter Zuordnung durch ihre Besitzer wieder eine Verbindung herstellen. Kein Host wechselt automatisch zur Direktverbindung.",
       "inUse": "Ihre SSH- oder VNC-Hosts verwenden dieses Netzwerk noch. Ordnen Sie diese Hosts zuerst neu zu oder löschen Sie sie.",
       "kdcRole": "Authentifizierungsserver",
+      "loadFailed": "Netzwerkkonfigurationen konnten nicht geladen werden.",
+      "loading": "Netzwerkkonfigurationen werden geladen…",
+      "macHelp": "Die Kompatibilität des gewählten Modus mit der eigenständigen macOS-Bildschirmfreigabe muss noch geprüft werden. Der Schutz dieser Verbindung hindert andere Clients nicht daran, den VNC-Dienst des Macs zu erreichen.",
       "needsRebind": "Diese private Netzwerkroute benötigt eine neue Konfiguration. Eine Verbindung ist erst nach erneuter Zuordnung möglich.",
+      "originCaBundle": "CA-Zertifikate für Ursprungsserver-TLS",
+      "originServerName": "TLS-Servername des Ursprungsservers",
       "originTls": "Ursprungsserver-TLS",
+      "originTlsHelp": "Mac und RSA-AES mit reiner Authentifizierung erfordern auf dem ausgewählten Server einen zertifikatsgeprüften TLS-Dienst, der ausschließlich an den lokalen VNC-Dienst weiterleitet. Seine Identität und Vertrauenseinstellungen sind vom Cloudflare-Gateway und dem inneren VNC-Zertifikat unabhängig.",
+      "originTrust": "Zertifikatsvertrauen für Ursprungsserver-TLS",
+      "peerHelp": "Verwenden Sie die genaue Tailscale-Peer-IP oder den Namen und den vom ausgewählten Netzwerk erlaubten Dienstport. Weder ein SSH-Dienst noch eine SSH-Freigabe ist erforderlich.",
       "protectionHelp": "Dieser Authentifizierungsmodus verschlüsselt den Desktop-Datenverkehr nicht. Die ausgewählte private Netzwerkroute muss die gesamte Verbindung zu diesem Server schützen.",
-      "rfbRole": "Desktop"
+      "rfbRole": "Desktop",
+      "select": "Gespeicherte Netzwerkkonfiguration auswählen"
     },
     "port": "Port",
     "retry": "Erneut versuchen",
@@ -5867,7 +5894,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "Nur QEMU-Untertyp 263. TLS prüft den Server vor SCRAM; kein Fallback auf PLAIN oder Untertyp 264.",
       "serverName": "TLS-Zertifikatsidentität",
-      "serverNameHelp": "Optional. Leer lassen, um das Zertifikat anhand des RFB-Zielhosts zu prüfen. Nur festlegen, wenn das Zertifikat einen anderen DNS-Namen verwendet.",
+      "serverNameHelp": "Cloudflare Access erfordert die Zertifikatsidentität des RFB-Servers. Bei anderen Routen kann dieses Feld leer bleiben, um anhand des RFB-Zielhosts zu prüfen.",
       "serverNameHint": "z. B. desktop.internal.example.com",
       "system": "Zertifizierungsstellen des Systems",
       "title": "Vertrauen in Serverzertifikate",
@@ -5891,7 +5918,7 @@
       "empty": "Keine gespeicherten SSH-Hosts verfügbar. Füge zuerst einen in den SSH-Einstellungen hinzu.",
       "loadFailed": "Gespeicherte SSH-Hosts konnten nicht geladen werden.",
       "loading": "Gespeicherte SSH-Hosts werden geladen…",
-      "privateDirectHelp": "Private und Loopback-IP-Adressen erfordern einen gespeicherten SSH-Host. Wählen Sie oben die SSH-Route; die Verbindung wird nicht automatisch geändert.",
+      "privateDirectHelp": "Private IP-Adressen erfordern eine unterstützte private Netzwerkroute oder einen gespeicherten SSH-Host. Wählen Sie die Route ausdrücklich aus.",
       "select": "Gespeicherten SSH-Host auswählen",
       "selectionUnavailable": "Der ausgewählte SSH-Host ist nicht mehr verfügbar. Wähle einen anderen Host oder stelle ausdrücklich auf Direkt um.",
       "ssh": "Über gespeicherten SSH-Host",
@@ -6593,7 +6620,6 @@
       "connectDescription": "Verbinde dein Discord-Konto, um mit deinem Agenten zu chatten.",
       "connectedTitle": "Mit Discord verbunden",
       "connectTitle": "Mit Discord verbinden",
-      "continueInNewTab": "In neuem Tab fortfahren",
       "defaultWorkspace": "Standard-Workspace für Discord",
       "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
       "disconnect": "Verbindung zu Discord trennen",

@@ -33,6 +33,27 @@ pub(super) struct Stamp {
     changed: (i64, i64),
 }
 
+impl Stamp {
+    pub(super) fn same_identity(&self, other: &Self) -> bool {
+        self.device == other.device && self.inode == other.inode
+    }
+
+    fn from_stat(stat: &libc::stat) -> Self {
+        Self {
+            device: stat.st_dev,
+            inode: stat.st_ino,
+            modified: (stat.st_mtime, stat.st_mtime_nsec),
+            changed: (stat.st_ctime, stat.st_ctime_nsec),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct FileStamp {
+    identity: Stamp,
+    pub(super) size: u64,
+}
+
 fn error(errno: i32) -> Error {
     match errno {
         libc::ENOENT => Error::NotFound,
@@ -110,7 +131,7 @@ pub(super) fn capture(path: &Path, scope: &mut Scope<'_>) -> Result<File, Error>
     open(libc::AT_FDCWD, &path, NO_SYMLINKS | NO_MAGICLINKS, scope).map_err(|_| Error::Unavailable)
 }
 
-pub(super) fn stamp(file: &File, scope: &mut Scope<'_>) -> Result<Stamp, Error> {
+fn metadata(file: &File, scope: &mut Scope<'_>) -> Result<libc::stat, Error> {
     scope.step()?;
     let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
     // SAFETY: owned live descriptor and valid storage for one stat.
@@ -118,13 +139,97 @@ pub(super) fn stamp(file: &File, scope: &mut Scope<'_>) -> Result<Stamp, Error> 
         return Err(Error::Unavailable);
     }
     // SAFETY: successful fstat initialized all fields.
-    let stat = unsafe { stat.assume_init() };
-    Ok(Stamp {
-        device: stat.st_dev,
-        inode: stat.st_ino,
-        modified: (stat.st_mtime, stat.st_mtime_nsec),
-        changed: (stat.st_ctime, stat.st_ctime_nsec),
+    Ok(unsafe { stat.assume_init() })
+}
+
+pub(super) fn stamp(file: &File, scope: &mut Scope<'_>) -> Result<Stamp, Error> {
+    Ok(Stamp::from_stat(&metadata(file, scope)?))
+}
+
+pub(super) fn file_stamp(file: &File, scope: &mut Scope<'_>) -> Result<FileStamp, Error> {
+    let stat = metadata(file, scope)?;
+    match stat.st_mode & libc::S_IFMT {
+        libc::S_IFREG => (),
+        libc::S_IFLNK => return Err(Error::LinkNotExpandable),
+        _ => return Err(Error::NotRegularFile),
+    }
+    let size = u64::try_from(stat.st_size).map_err(|_| Error::Unavailable)?;
+    Ok(FileStamp {
+        identity: Stamp::from_stat(&stat),
+        size,
     })
+}
+
+/// Pin only metadata first: opening FIFO/device contents to discover their type
+/// would already violate the regular-file boundary, even with nonblocking IO.
+pub(super) fn pin_regular(
+    parent: &File,
+    name: &[u8],
+    scope: &mut Scope<'_>,
+) -> Result<(File, FileStamp), Error> {
+    let name = CString::new(name).map_err(|_| Error::Unavailable)?;
+    let how = OpenHow {
+        flags: (libc::O_PATH | libc::O_NOFOLLOW | libc::O_CLOEXEC) as u64,
+        mode: 0,
+        resolve: BENEATH | NO_SYMLINKS | NO_MAGICLINKS | NO_XDEV,
+    };
+    scope.step()?;
+    // SAFETY: live held parent, single raw basename and initialized UAPI. O_PATH
+    // obtains metadata without opening the target's contents or special device.
+    let raw = unsafe {
+        libc::syscall(
+            libc::SYS_openat2,
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            std::ptr::from_ref(&how),
+            std::mem::size_of::<OpenHow>(),
+        )
+    };
+    if raw < 0 {
+        return Err(error(
+            io::Error::last_os_error().raw_os_error().unwrap_or(0),
+        ));
+    }
+    // SAFETY: successful openat2 returns one newly owned descriptor.
+    let file = unsafe { File::from_raw_fd(raw as RawFd) };
+    let stamp = file_stamp(&file, scope)?;
+    Ok((file, stamp))
+}
+
+/// Reopen the held, already classified inode through the kernel's fd link.
+/// This intentional magic-link operation never resolves a caller's path.
+pub(super) fn readable(
+    pinned: &File,
+    expected: FileStamp,
+    scope: &mut Scope<'_>,
+) -> Result<File, Error> {
+    #[cfg(test)]
+    {
+        let hook = scope.job.owner.hooks.lock().unwrap().after_file_pin.take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+    let path = CString::new(format!("/proc/self/fd/{}", pinned.as_raw_fd()))
+        .map_err(|_| Error::Unavailable)?;
+    scope.step()?;
+    // SAFETY: the O_PATH descriptor remains owned/live, and the kernel fd path
+    // is generated here. No user basename can select the link or its fd number.
+    let raw = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NONBLOCK | libc::O_NOCTTY,
+        )
+    };
+    if raw < 0 {
+        return Err(Error::Unavailable);
+    }
+    // SAFETY: successful open returns one newly owned descriptor.
+    let file = unsafe { File::from_raw_fd(raw) };
+    if file_stamp(&file, scope)? != expected {
+        return Err(Error::FileChanged);
+    }
+    Ok(file)
 }
 
 pub(super) fn path(tokens: &[String]) -> Result<Vec<u8>, Error> {

@@ -401,7 +401,6 @@ test("Send the current version of a restored draft and clear it", async () => {
       return part.type === "file" ? [part.filenameSnapshot] : [];
     });
     return respond(201, {
-      runId: "a7000000-0000-4000-a000-000000000005",
       threadId: body.threadId ?? thread.id,
       createdAt: "2026-08-05T04:00:00.000Z",
     });

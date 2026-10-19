@@ -311,6 +311,7 @@ impl Root {
         super::diagnostics::Stage::LocalNode.record();
         let mut core = evidence::check(Stage::LocalNode, || Core::new(keys, local, port))?;
         core.set_regions(home, regions);
+        core.observe_relays(routes.clone());
         super::diagnostics::Stage::Peers.record();
         evidence::check(Stage::Peers, || core.update(first))?;
         evidence::check(Stage::Peers, || routes.update(None, core.relay_peers()))?;
@@ -363,62 +364,71 @@ impl Root {
         let source = Trace::current();
         let mut announced = false;
         let mut completing = FuturesUnordered::<Completing>::new();
-        loop {
-            if self.cancelled.is_cancelled() {
-                return Err(Failure::Cancelled);
-            }
-            // No branch awaits work that requires another branch to progress.
-            // Map changes and cancellation remain live during relay/bridge IO.
-            tokio::select! {
-                _ = self.cancelled.cancelled() => return Err(Failure::Cancelled),
-                result = &mut driver => {
-                    if result.is_err() { source.adopt(&trace); source.root(Boundary::Relay); }
-                    return result;
-                },
-                _ = async {
-                    if let Some(changed) = changed { changed.notified().await; }
-                    else { std::future::pending::<()>().await; }
-                } => {},
-                result = &mut ready, if !announced => {
-                    result.map_err(|_| { source.root(Boundary::Readiness); Failure::DomainFailed })?;
-                    announced = true;
-                    // Carrier readiness precedes each host's SSH trust and login.
-                    super::diagnostics::Stage::Ready.record();
-                    control.ready();
+        let result = async {
+            loop {
+                if self.cancelled.is_cancelled() {
+                    return Err(Failure::Cancelled);
                 }
-                update = maps.next() => {
-                    let update = update.ok_or_else(|| { source.root(Boundary::MapStream); evidence::failed(Stage::MapRead, Detail::NotExposed); Failure::DomainFailed })?;
-                    source.set(Stage::MapRead, evidence::Status::Passed, Detail::NotExposed);
-                    source.set(Stage::MapDecode, evidence::Status::Passed, Detail::NotExposed);
-                    if update.pop_browser_url.is_some() { source.root(Boundary::MapStream); evidence::failed(Stage::MapAuthority, Detail::AuthenticationRequired); return Err(Failure::DomainFailed); }
-                    update_core(&mut core, Some(update)).inspect_err(|_| source.root(Boundary::MapStream))?;
-                }
-                command = self.commands.recv(), if completing.len() < CONNECTIONS => {
-                    let mut command = command.ok_or(Failure::Cancelled)?;
-                    if command.answer.is_closed() || command.cancelled.is_cancelled() {
-                        command.cancelled.cancel();
-                    } else { match command.trace.sync(|| core.dial(&command.target, command.port, command.cancelled.clone(), command.lease.take())) {
-                        Err(failure) => { let _ = command.answer.send(Err(failure)); }
-                        Ok(response) => {
-                            completing.push(Box::pin(async move {
-                                tokio::select! { biased;
-                                    _ = command.answer.closed() => {},
-                                    result = response => {
-                                        let _ = command.answer.send(result.unwrap_or(Err(Failure::Cancelled)));
+                // No branch awaits work that requires another branch to progress.
+                // Map changes and cancellation remain live during relay/bridge IO.
+                tokio::select! {
+                    _ = self.cancelled.cancelled() => return Err(Failure::Cancelled),
+                    result = &mut driver => {
+                        if result.is_err() { source.adopt(&trace); source.root(Boundary::Relay); }
+                        return result;
+                    },
+                    _ = async {
+                        if let Some(changed) = changed { changed.notified().await; }
+                        else { std::future::pending::<()>().await; }
+                    } => {},
+                    result = &mut ready, if !announced => {
+                        result.map_err(|_| { source.root(Boundary::Readiness); Failure::DomainFailed })?;
+                        announced = true;
+                        // Carrier readiness precedes each host's SSH trust and login.
+                        super::diagnostics::Stage::Ready.record();
+                        control.ready();
+                    }
+                    update = maps.next() => {
+                        let update = update.ok_or_else(|| { source.root(Boundary::MapStream); evidence::failed(Stage::MapRead, Detail::NotExposed); Failure::DomainFailed })?;
+                        source.set(Stage::MapRead, evidence::Status::Passed, Detail::NotExposed);
+                        source.set(Stage::MapDecode, evidence::Status::Passed, Detail::NotExposed);
+                        if update.pop_browser_url.is_some() { source.root(Boundary::MapStream); evidence::failed(Stage::MapAuthority, Detail::AuthenticationRequired); return Err(Failure::DomainFailed); }
+                        update_core(&mut core, Some(update)).inspect_err(|_| source.root(Boundary::MapStream))?;
+                    }
+                    command = self.commands.recv(), if completing.len() < CONNECTIONS => {
+                        let mut command = command.ok_or(Failure::Cancelled)?;
+                        if command.answer.is_closed() || command.cancelled.is_cancelled() {
+                            command.cancelled.cancel();
+                        } else { match command.trace.sync(|| core.dial(&command.target, command.port, command.cancelled.clone(), command.lease.take())) {
+                            Err(failure) => { let _ = command.answer.send(Err(failure)); }
+                            Ok(response) => {
+                                completing.push(Box::pin(async move {
+                                    tokio::select! { biased;
+                                        _ = command.answer.closed() => {},
+                                        result = response => {
+                                            let _ = command.answer.send(result.unwrap_or(Err(Failure::Cancelled)));
+                                        }
                                     }
-                                }
-                            }));
+                                }));
+                            }
+                        }
                         }
                     }
-                    }
+                    _ = completing.next(), if !completing.is_empty() => {},
+                    result = core.wait() => { result.inspect_err(|_| source.root(Boundary::DataPlane))?; },
                 }
-                _ = completing.next(), if !completing.is_empty() => {},
-                result = core.wait() => { result.inspect_err(|_| source.root(Boundary::DataPlane))?; },
+                update_core(&mut core, None).inspect_err(|_| source.root(Boundary::DataPlane))?;
+                // Public synchronous SDK work and immediately ready map/dial work
+                // must return control to the runtime between bounded owner turns.
+                tokio::task::yield_now().await;
             }
-            update_core(&mut core, None).inspect_err(|_| source.root(Boundary::DataPlane))?;
-            // Public synchronous SDK work and immediately ready map/dial work
-            // must return control to the runtime between bounded owner turns.
-            tokio::task::yield_now().await;
         }
+        .await;
+        if let Err(failure) = result {
+            // Keep source publication ahead of Core Drop: retiring a binding
+            // can otherwise retire VNC consumers and disable their observers.
+            control.record_failure(failure);
+        }
+        result
     }
 }

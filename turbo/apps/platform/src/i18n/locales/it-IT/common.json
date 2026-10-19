@@ -114,6 +114,12 @@
       "files": {
         "connecting": "Connessione ai file…",
         "currentFolder": "Cartella attuale",
+        "download": "Scarica {{name}}",
+        "downloadChanged": "Il file è cambiato durante il download. Scaricalo di nuovo.",
+        "downloadFailed": "Download non riuscito. Riprova.",
+        "downloadFrame": "Download del file",
+        "downloadUnsupported": "Questo browser non supporta il download dei file.",
+        "downloadUpdateRequired": "Aggiorna la pagina e riprova. Se i download non sono ancora disponibili, avvia una nuova esecuzione.",
         "empty": "Questa cartella è vuota.",
         "enterFolder": "Apri la cartella {{name}}",
         "goHome": "Vai alla cartella home",
@@ -126,6 +132,17 @@
         "other": "Altro",
         "parentFolders": "Cartelle superiori",
         "pending": "I file saranno disponibili all’avvio dell’esecuzione in coda.",
+        "preview": "Anteprima di {{name}}",
+        "previewChanged": "Questo file è cambiato. Chiudi l’anteprima e riaprila.",
+        "previewDecode": "Impossibile decodificare questo file. Puoi comunque scaricarlo.",
+        "previewEmpty": "Questo file è vuoto.",
+        "previewInvalid": "Impossibile visualizzare questo file. Puoi comunque scaricarlo.",
+        "previewLoading": "Caricamento dell’anteprima…",
+        "previewSize": "Questo file è troppo grande per l’anteprima. Puoi comunque scaricarlo.",
+        "previewTruncated": "Sono mostrati i primi 64 KiB. Scarica il file per vedere il contenuto completo.",
+        "previewUnavailable": "Anteprima non disponibile. Chiudila e riprova oppure scarica il file.",
+        "previewUnsupported": "Anteprima non disponibile per questo tipo di file. Puoi comunque scaricarlo.",
+        "previewUpdateRequired": "Aggiorna la pagina e riprova. Se l’anteprima non è ancora disponibile, avvia una nuova esecuzione.",
         "readonly": "File di sola lettura dell’esecuzione corrente.",
         "refresh": "Aggiorna",
         "retry": "Riprova",
@@ -136,7 +153,7 @@
         "updateRequired": "Questa esecuzione non supporta i file. Avvia una nuova esecuzione dopo l’aggiornamento della sandbox."
       },
       "log": "Log",
-      "manualReloadNotice": "Ricarica questa pagina per vedere i registri delle attività più recenti.",
+      "manualReloadNotice": "I registri non si aggiornano automaticamente.",
       "modelProvidedBy": "{{model}} fornito da {{provider}}",
       "networkEmpty": {
         "description": "Nessun traffico di rete registrato per questa esecuzione.",
@@ -147,6 +164,7 @@
         "description": "Questo log non esiste oppure non disponi dell'autorizzazione per visualizzarlo nell'area di lavoro corrente.",
         "title": "Log non trovato"
       },
+      "refresh": "Aggiorna",
       "runner": {
         "environment": "Ambiente",
         "framework": "Framework",
@@ -1824,6 +1842,7 @@
       },
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
+        "hint": "Cerca flussi di lavoro o scegli un modello…",
         "make": "Crea",
         "useTemplate": "Usa il modello {{title}}"
       },
@@ -2158,6 +2177,7 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
+      "emptyArtifacts": "Non ci sono ancora artefatti",
       "emptyLinks": "Non ci sono ancora link in questa chat",
       "expand": "Espandi",
       "links": "Link",
@@ -3583,7 +3603,6 @@
         "connectedDescription": "Il tuo account Teams è connesso.",
         "connectTitle": "Connetti Microsoft Teams",
         "identityMismatch": "L’account o l’area di lavoro Teams richiesti non corrispondono alla connessione attuale.",
-        "identityUnknown": "Non possiamo confermare l’account Teams di questo link. Apri Teams per verificare il tuo account.",
         "install": "Installa in Teams",
         "invalidContext": "Il link non contiene tutti i dati dell’account Teams. Apri un nuovo link di connessione da Teams.",
         "open": "Apri Microsoft Teams",
@@ -4016,7 +4035,6 @@
     "retry": "Riprova",
     "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
-    "use": "Usa modello",
     "useNamed": "Usa {{title}}"
   },
   "global": {
@@ -5246,7 +5264,6 @@
       "description": "I tuoi agenti possono richiedere acquisti e consultare le transazioni Link. Tu approvi ogni acquisto.",
       "disconnect": "Scollega",
       "loadError": "Impossibile caricare il tuo portafoglio.",
-      "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
       "retry": "Riprova",
       "scope": "Consenti a Okou di fare acquisti e consultare la tua attività Link.",
       "title": "Portafoglio",
@@ -5276,8 +5293,7 @@
         "statusLabel": "Stato",
         "title": "Transazioni Link",
         "unknownStatus": "Stato non disponibile"
-      },
-      "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
+      }
     },
     "workspace": {
       "danger": {
@@ -5874,7 +5890,9 @@
     "loading": "Caricamento della configurazione VNC…",
     "manage": "Gestisci VNC",
     "native": {
-      "editPending": "La modifica di questo percorso di rete privata non è ancora disponibile.",
+      "configuration": "Configurazione di rete",
+      "empty": "Aggiungi una rete riutilizzabile nelle impostazioni di Cloudflare Access o Tailscale, poi torna qui per selezionarla.",
+      "gatewayHelp": "Usa il nome host dell’applicazione TCP di Cloudflare e la porta 443. Il tunnel seleziona la porta di destinazione; configura separatamente l’identità del certificato VNC e quella del servizio Kerberos.",
       "hostCount_one": "{{count}} host",
       "hostCount_many": "{{count}} host",
       "hostCount_other": "{{count}} host",
@@ -5882,10 +5900,19 @@
       "impactSummary": "Elementi interessati: {{members}} e {{hosts}}. Gli host resteranno salvati, ma non potranno connettersi finché i proprietari non li avranno associati nuovamente. Nessun host passerà automaticamente alla connessione diretta.",
       "inUse": "I tuoi host SSH o VNC utilizzano ancora questa rete. Associali nuovamente o eliminali prima.",
       "kdcRole": "Server di autenticazione",
+      "loadFailed": "Impossibile caricare le configurazioni di rete.",
+      "loading": "Caricamento delle configurazioni di rete…",
+      "macHelp": "La compatibilità della modalità selezionata con la condivisione schermo autonoma di macOS deve ancora essere verificata. Proteggere questa connessione non impedisce ad altri client di raggiungere il servizio VNC del Mac.",
       "needsRebind": "Questo percorso di rete privata richiede una nuova configurazione. Non potrà connettersi finché non verrà associato nuovamente.",
+      "originCaBundle": "Certificati CA del TLS di origine",
+      "originServerName": "Nome del server TLS di origine",
       "originTls": "TLS di origine",
+      "originTlsHelp": "Mac e le modalità RSA-AES con sola autenticazione richiedono sul server selezionato un servizio TLS con certificato verificato che inoltri esclusivamente al VNC locale. Identità e attendibilità sono indipendenti dal gateway Cloudflare e dal certificato VNC interno.",
+      "originTrust": "Attendibilità del certificato TLS di origine",
+      "peerHelp": "Usa l’IP o il nome esatti del peer Tailscale e la porta del servizio consentiti dalla rete selezionata. Non sono necessari un servizio o un’autorizzazione SSH.",
       "protectionHelp": "Questa modalità di autenticazione non cifra il traffico del desktop. Il percorso di rete privata selezionato deve proteggere l’intera connessione a questo server.",
-      "rfbRole": "Desktop"
+      "rfbRole": "Desktop",
+      "select": "Seleziona una configurazione di rete salvata"
     },
     "port": "Porta",
     "retry": "Riprova",
@@ -5945,7 +5972,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "Solo sottotipo QEMU 263. TLS verifica il server prima di SCRAM; nessun fallback a PLAIN o al sottotipo 264.",
       "serverName": "Identità del certificato TLS",
-      "serverNameHelp": "Facoltativo. Lascia vuoto per verificare il certificato rispetto all’host di destinazione RFB. Impostalo solo se il certificato usa un nome DNS diverso.",
+      "serverNameHelp": "Cloudflare Access richiede l’identità del certificato del server RFB. Per le altre route, puoi lasciare vuoto questo campo per verificare rispetto all’host di destinazione RFB.",
       "serverNameHint": "es. desktop.internal.example.com",
       "system": "Autorità di certificazione del sistema",
       "title": "Attendibilità del certificato del server",
@@ -5970,7 +5997,7 @@
       "empty": "Non sono disponibili host SSH salvati. Aggiungine uno nelle impostazioni SSH prima di usare questo percorso.",
       "loadFailed": "Impossibile caricare gli host SSH salvati.",
       "loading": "Caricamento degli host SSH salvati…",
-      "privateDirectHelp": "Gli indirizzi IP privati o di loopback richiedono un host SSH salvato. Scegli il percorso SSH sopra; la connessione non cambierà automaticamente.",
+      "privateDirectHelp": "Gli indirizzi IP privati richiedono un percorso di rete privata supportato o un host SSH salvato. Scegli esplicitamente il percorso.",
       "select": "Seleziona un host SSH salvato",
       "selectionUnavailable": "L’host SSH selezionato non è più disponibile. Selezionane un altro o passa esplicitamente a Diretto.",
       "ssh": "Tramite host SSH salvato",
@@ -6676,7 +6703,6 @@
       "connectDescription": "Collega il tuo account Discord per chattare con il tuo agente.",
       "connectedTitle": "Connesso a Discord",
       "connectTitle": "Connetti a Discord",
-      "continueInNewTab": "Continua in una nuova scheda",
       "defaultWorkspace": "Spazio di lavoro predefinito per Discord",
       "description": "Menziona Okou in un server o invia un messaggio diretto al bot.",
       "disconnect": "Disconnetti Discord",

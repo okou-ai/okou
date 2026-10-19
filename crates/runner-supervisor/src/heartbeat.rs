@@ -500,6 +500,7 @@ fn filter_current_held_sandbox_states(
 fn admittable_profiles_for_heartbeat(
     profiles: &BTreeMap<String, HeartbeatProfile>,
     budget: &ResourceBudget,
+    idle_pool: &IdlePool,
     mode: RunnerMode,
 ) -> Vec<String> {
     if mode != RunnerMode::Running {
@@ -508,7 +509,9 @@ fn admittable_profiles_for_heartbeat(
 
     profiles
         .iter()
-        .filter(|(_, profile)| budget.can_afford(profile.vcpu, profile.memory_mb))
+        .filter(|(_, profile)| {
+            idle_pool.can_admit_after_reclaiming(budget, profile.vcpu, profile.memory_mb)
+        })
         .map(|(name, _)| name.clone())
         .collect()
 }
@@ -543,7 +546,7 @@ pub fn collect_heartbeat_state(
     // Report only actively running jobs so the scheduler sees real capacity.
     let idle_count = idle_pool.len();
     let running_count = budget_running.saturating_sub(idle_count);
-    let admittable_profiles = admittable_profiles_for_heartbeat(profiles, budget, mode);
+    let admittable_profiles = admittable_profiles_for_heartbeat(profiles, budget, idle_pool, mode);
     HeartbeatState {
         runner_id: snapshot.runner_identity.runner_id().to_string(),
         group: snapshot.group.to_string(),
@@ -650,11 +653,10 @@ mod tests {
         }
     }
 
-    fn make_synthetic_parked_candidate(reuse_key: &str) -> ParkedIdleCandidate {
-        let budget = Arc::new(ResourceBudget::new(1, 1, 1.0, 0));
+    fn make_parked_candidate(reuse_key: &str, budget: &Arc<ResourceBudget>) -> ParkedIdleCandidate {
         ParkedIdleCandidateBuilder::new(
             reuse_key,
-            ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
+            ResourceBudget::try_reserve_lease(budget, 2, 4096).unwrap(),
         )
         .with_mock_sandbox_name("test")
         .build()
@@ -939,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_admittable_profiles_exclude_unaffordable_parked_profiles() {
+    fn heartbeat_admittable_profiles_include_reclaimable_but_not_reserved_inventory() {
         let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 1));
         let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
         let candidate = ParkedIdleCandidateBuilder::new(
@@ -959,7 +961,88 @@ mod tests {
             RunnerMode::Running,
         );
 
+        assert_eq!(state.admittable_profiles, vec!["vm0/default"]);
+        assert_eq!(state.allocated_vcpu, 2);
+        assert_eq!(state.allocated_memory_mb, 4096);
+        assert_eq!(state.running_count, 0);
+
+        let reserved = pool
+            .reserve_reusable("sess-idle", "vm0/default", &None)
+            .unwrap();
+        let state = collect_heartbeat_state(
+            test_snapshot_metadata(),
+            &profiles,
+            &budget,
+            &pool,
+            RunnerMode::Running,
+        );
         assert!(state.admittable_profiles.is_empty());
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        assert!(matches!(
+            pool.restore_reserved(reserved),
+            runner_lifecycle::idle_pool::RestoreReservedIdleResult::Restored
+        ));
+    }
+
+    #[test]
+    fn heartbeat_reclaimable_profiles_respect_active_capacity_for_all_parked_kinds() {
+        for blank_count in 0..=2 {
+            let budget = Arc::new(ResourceBudget::new(4, 6144, 1.0, 3));
+            let _active = ResourceBudget::try_reserve_lease(&budget, 1, 2048).unwrap();
+            let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
+            for index in 0..2 {
+                let lease = ResourceBudget::try_reserve_lease(&budget, 1, 2048).unwrap();
+                let candidate = if index < blank_count {
+                    let sandbox_id = SandboxId::new_v4();
+                    ParkedIdleCandidate::blank(
+                        Box::new(sandbox_mock::MockSandbox::new(sandbox_id.to_string())),
+                        Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new())),
+                        lease,
+                        sandbox_id,
+                        "vm0/small".into(),
+                        "test-rootfs".into(),
+                        None,
+                    )
+                } else {
+                    ParkedIdleCandidateBuilder::new(format!("idle-{index}"), lease)
+                        .with_profile_name("vm0/small")
+                        .build()
+                };
+                assert!(matches!(pool.park(candidate), ParkResult::Parked));
+            }
+            let mut profiles = test_profiles();
+            profiles.insert(
+                "vm0/small".into(),
+                HeartbeatProfile {
+                    vcpu: 1,
+                    memory_mb: 2048,
+                    rootfs_hash: "test-rootfs".into(),
+                    home_disk_mb: 10240,
+                },
+            );
+            profiles.insert(
+                "vm0/large".into(),
+                HeartbeatProfile {
+                    vcpu: 4,
+                    memory_mb: 8192,
+                    rootfs_hash: "test-rootfs".into(),
+                    home_disk_mb: 10240,
+                },
+            );
+
+            let state = collect_heartbeat_state(
+                test_snapshot_metadata(),
+                &profiles,
+                &budget,
+                &pool,
+                RunnerMode::Running,
+            );
+            assert_eq!(state.admittable_profiles, vec!["vm0/default", "vm0/small"]);
+            assert_eq!(state.running_count, 1);
+            assert_eq!(state.allocated_vcpu, 3);
+            assert_eq!(state.allocated_memory_mb, 6144);
+            assert!(ResourceBudget::try_reserve_lease(&budget, 2, 4096).is_none());
+        }
     }
 
     #[test]
@@ -1486,11 +1569,10 @@ mod tests {
         let _leases = [
             ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
             ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
-            ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
         ];
         let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
         assert!(matches!(
-            pool.park(make_synthetic_parked_candidate("sess-1")),
+            pool.park(make_parked_candidate("sess-1", &budget)),
             ParkResult::Parked,
         ));
         let profiles = test_profiles();
@@ -1509,17 +1591,13 @@ mod tests {
     #[test]
     fn heartbeat_running_count_all_idle() {
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
-        let _leases = [
-            ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
-            ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
-        ];
         let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
         assert!(matches!(
-            pool.park(make_synthetic_parked_candidate("sess-1")),
+            pool.park(make_parked_candidate("sess-1", &budget)),
             ParkResult::Parked,
         ));
         assert!(matches!(
-            pool.park(make_synthetic_parked_candidate("sess-2")),
+            pool.park(make_parked_candidate("sess-2", &budget)),
             ParkResult::Parked,
         ));
         let profiles = test_profiles();
@@ -1535,23 +1613,24 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_running_count_saturates_on_transient_inconsistency() {
+    #[should_panic(expected = "substituted leases must belong to the target resource budget")]
+    fn heartbeat_rejects_foreign_pool_budget() {
         let budget = ResourceBudget::new(8, 32768, 1.0, 4);
+        let foreign_budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
         let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
         assert!(matches!(
-            pool.park(make_synthetic_parked_candidate("sess-1")),
+            pool.park(make_parked_candidate("sess-1", &foreign_budget)),
             ParkResult::Parked,
         ));
         assert_eq!(pool.len(), 1);
         let profiles = test_profiles();
 
-        let state = collect_heartbeat_state(
+        collect_heartbeat_state(
             test_snapshot_metadata(),
             &profiles,
             &budget,
             &pool,
             RunnerMode::Running,
         );
-        assert_eq!(state.running_count, 0);
     }
 }

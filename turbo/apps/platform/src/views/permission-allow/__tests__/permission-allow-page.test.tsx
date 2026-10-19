@@ -251,7 +251,6 @@ test("A user grants a time-limited connector permission and resumes the chat", a
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     resumedChat = body;
     return respond(201, {
-      runId: "30000000-0000-4000-a000-000000000001",
       threadId: THREAD_ID,
     });
   });
@@ -325,7 +324,6 @@ test("Permission confirmation stays pending until its chat callback completes", 
     callbackStarted.resolve(undefined);
     await callbackResponse.promise;
     return respond(201, {
-      runId: "30000000-0000-4000-a000-000000000001",
       threadId: THREAD_ID,
     });
   });
@@ -368,7 +366,6 @@ test("A failed chat callback remains a retryable permission action error after t
       });
     }
     return respond(201, {
-      runId: "30000000-0000-4000-a000-000000000001",
       threadId: THREAD_ID,
     });
   });

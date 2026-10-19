@@ -176,27 +176,9 @@ async fn read_private_file_contents(
     path: &Path,
     max_bytes: u64,
 ) -> HostResult<String> {
-    use tokio::io::AsyncReadExt;
-
-    let read_limit = max_bytes.checked_add(1).ok_or_else(|| {
-        HostError::Config(format!(
-            "private file {} read limit is too large",
-            path.display()
-        ))
-    })?;
-    let mut limited = file.take(read_limit);
-    let mut contents = Vec::new();
-    limited
-        .read_to_end(&mut contents)
+    let contents = crate::host_file::read_bounded_contents(file, path, max_bytes, "private file")
         .await
-        .map_err(|e| HostError::Config(format!("read private file {}: {e}", path.display())))?;
-    if contents.len() as u64 > max_bytes {
-        return Err(HostError::Config(format!(
-            "private file {} exceeds {} bytes",
-            path.display(),
-            max_bytes
-        )));
-    }
+        .map_err(|error| HostError::Config(error.to_string()))?;
     String::from_utf8(contents).map_err(|e| {
         HostError::Config(format!(
             "read private file {} as UTF-8: {e}",

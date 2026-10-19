@@ -112,6 +112,12 @@
       "files": {
         "connecting": "Connecting to files…",
         "currentFolder": "Current folder",
+        "download": "Download {{name}}",
+        "downloadChanged": "This file changed during download. Download it again.",
+        "downloadFailed": "Download failed. Try again.",
+        "downloadFrame": "File download",
+        "downloadUnsupported": "File downloads aren't supported in this browser.",
+        "downloadUpdateRequired": "Refresh this page and try again. If downloads remain unavailable, start a new run.",
         "empty": "This folder is empty.",
         "enterFolder": "Open {{name}} as current folder",
         "goHome": "Go to home folder",
@@ -124,6 +130,17 @@
         "other": "Other",
         "parentFolders": "Parent folders",
         "pending": "Files will be available when the queued run starts.",
+        "preview": "Preview {{name}}",
+        "previewChanged": "This file changed. Close the preview and open it again.",
+        "previewDecode": "This file couldn't be decoded. You can still download it.",
+        "previewEmpty": "This file is empty.",
+        "previewInvalid": "This file isn't a valid preview. You can still download it.",
+        "previewLoading": "Loading preview…",
+        "previewSize": "This file is too large to preview. You can still download it.",
+        "previewTruncated": "Showing the first 64 KiB. Download the file for its full contents.",
+        "previewUnavailable": "Preview unavailable. Close it and try again, or download the file.",
+        "previewUnsupported": "Preview isn't available for this file type. You can still download it.",
+        "previewUpdateRequired": "Refresh this page and try again. If previews remain unavailable, start a new run.",
         "readonly": "Read-only files from the current run.",
         "refresh": "Refresh",
         "retry": "Retry",
@@ -134,7 +151,7 @@
         "updateRequired": "This run does not support files. Start a new run after the sandbox is updated."
       },
       "log": "Log",
-      "manualReloadNotice": "Reload this page to see the latest activity logs.",
+      "manualReloadNotice": "Logs do not update automatically.",
       "modelProvidedBy": "{{model}} provided by {{provider}}",
       "networkEmpty": {
         "description": "No network traffic was recorded for this run.",
@@ -145,6 +162,7 @@
         "description": "This log doesn't exist or you don't have permission to view it in the current workspace.",
         "title": "Log not found"
       },
+      "refresh": "Refresh",
       "runner": {
         "environment": "Environment",
         "framework": "Framework",
@@ -1795,6 +1813,7 @@
       },
       "slashPanel": {
         "browseAll": "Browse all templates",
+        "hint": "Search workflows or choose a template…",
         "make": "Make",
         "useTemplate": "Use template {{title}}"
       },
@@ -2117,6 +2136,7 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
+      "emptyArtifacts": "No artifacts yet",
       "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
       "links": "Links",
@@ -3516,7 +3536,6 @@
         "connectedDescription": "Your Teams account is connected.",
         "connectTitle": "Connect Microsoft Teams",
         "identityMismatch": "The requested Teams account or workspace does not match the current connection.",
-        "identityUnknown": "We cannot confirm the Teams account in this link. Open Teams to check your account.",
         "install": "Install in Teams",
         "invalidContext": "This link has incomplete Teams account context. Open a new connect link from Teams.",
         "open": "Open Teams",
@@ -3949,7 +3968,6 @@
     "retry": "Retry",
     "samplePages": "Sample pages: {{total}}",
     "title": "Document",
-    "use": "Use template",
     "useNamed": "Use {{title}}"
   },
   "global": {
@@ -5171,7 +5189,6 @@
       "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
       "loadError": "Couldn’t load your wallet.",
-      "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
       "retry": "Retry",
       "scope": "Let Okou make purchases and view your Link activity.",
       "title": "Wallet",
@@ -5201,8 +5218,7 @@
         "statusLabel": "Status",
         "title": "Link transactions",
         "unknownStatus": "Status unavailable"
-      },
-      "workspaceScopeChanged": "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change."
+      }
     },
     "workspace": {
       "danger": {
@@ -5789,17 +5805,28 @@
     "loading": "Loading VNC configuration…",
     "manage": "Manage VNC",
     "native": {
-      "editPending": "Editing this private-network route is not available yet.",
+      "configuration": "Network configuration",
+      "empty": "Add a reusable network in Cloudflare Access or Tailscale settings, then return here to select it.",
+      "gatewayHelp": "Use the Cloudflare TCP application hostname and port 443. Its tunnel selects the destination port; keep the VNC certificate and Kerberos service identity separate.",
       "hostCount_one": "{{count}} host",
       "hostCount_other": "{{count}} hosts",
       "impactConfirm": "I understand these members' hosts will remain saved but cannot connect until their owners rebind them.",
       "impactSummary": "Affected: {{members}} and {{hosts}}. Their hosts will stay saved but cannot connect until their owners rebind them. No host switches to Direct automatically.",
       "inUse": "Your SSH or VNC hosts still use this network. Rebind or delete those hosts first.",
       "kdcRole": "Authentication server",
+      "loadFailed": "Could not load network configurations.",
+      "loading": "Loading network configurations…",
+      "macHelp": "Standalone macOS Screen Sharing compatibility still needs verification for the selected mode. Protecting this connection does not prevent other clients from reaching the Mac's VNC listener.",
       "needsRebind": "This private-network route needs a new configuration. It cannot connect until it is rebound.",
+      "originCaBundle": "Origin TLS CA certificates",
+      "originServerName": "Origin TLS server name",
       "originTls": "Origin TLS",
+      "originTlsHelp": "Mac and authentication-only RSA-AES require a certificate-verified TLS service on the selected server that forwards only to local VNC. Its identity and trust are separate from the Cloudflare gateway and inner VNC certificate.",
+      "originTrust": "Origin TLS certificate trust",
+      "peerHelp": "Use the exact Tailscale peer IP or name and service port, allowed by the selected network. No SSH service or SSH grant is needed.",
       "protectionHelp": "This authentication mode does not encrypt desktop traffic. The selected private-network route must protect the entire connection to this server.",
-      "rfbRole": "Desktop"
+      "rfbRole": "Desktop",
+      "select": "Select a saved network configuration"
     },
     "port": "RFB destination port",
     "retry": "Retry",
@@ -5859,7 +5886,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "QEMU subtype 263 only. TLS verifies the server before SCRAM; no fallback to PLAIN or subtype 264.",
       "serverName": "TLS certificate identity",
-      "serverNameHelp": "Optional. Leave blank to verify the certificate against the RFB destination host. Set this only when the certificate uses a different DNS name.",
+      "serverNameHelp": "Cloudflare Access requires the RFB server's certificate identity. For other routes, you can leave this blank to verify against the RFB destination host.",
       "serverNameHint": "e.g. desktop.internal.example.com",
       "system": "System certificate authorities",
       "title": "Server certificate trust",
@@ -5883,7 +5910,7 @@
       "empty": "No saved SSH hosts are available. Add one in SSH settings before using this route.",
       "loadFailed": "Could not load saved SSH hosts.",
       "loading": "Loading saved SSH hosts…",
-      "privateDirectHelp": "Private and loopback IP addresses require a saved SSH host. Choose the SSH route above; the connection will not change automatically.",
+      "privateDirectHelp": "Private IP addresses require a supported private-network route or saved SSH host. Choose the route explicitly.",
       "select": "Select a saved SSH host",
       "selectionUnavailable": "The selected SSH host is no longer available. Select another host or switch explicitly to Direct.",
       "ssh": "Through saved SSH host",
@@ -6585,7 +6612,6 @@
       "connectDescription": "Connect your Discord account to chat with your agent.",
       "connectedTitle": "Connected to Discord",
       "connectTitle": "Connect to Discord",
-      "continueInNewTab": "Continue in a new tab",
       "defaultWorkspace": "Default workspace for Discord",
       "description": "Mention Okou in a server or send the bot a direct message.",
       "disconnect": "Disconnect Discord",

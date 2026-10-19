@@ -1,6 +1,8 @@
 //! Saved-host RPC and forwarding over genuine SDK encrypted DERP/TCP.
 //! Only external OAuth/control/DERP/SSH peers are synthetic.
 
+mod precision;
+
 use super::*;
 use crate::ssh::tests::{
     files,
@@ -273,9 +275,19 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let after_check = h
         .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
         .await;
+    // Lifecycle/cleanup observations remain live, while the operation identity
+    // and captured stage facts must remain unchanged by the blocked check.
+    let captured_stages = |text: &str| {
+        text.lines()
+            .filter(|line| !line.starts_with("- Native observations:"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     assert_eq!(
-        crate::test_fixtures::diagnostic_text(&after_check.last().unwrap()["data"]),
-        retained
+        captured_stages(crate::test_fixtures::diagnostic_text(
+            &after_check.last().unwrap()["data"]
+        )),
+        captured_stages(retained)
     );
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
     assert!(h.observed.commands.lock().unwrap().is_empty());

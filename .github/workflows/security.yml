@@ -178,6 +178,9 @@ jobs:
     if: needs.detect-release.outputs.skip != 'true' && github.event_name != 'merge_group' && needs.detect-native-only.outputs.ios-only == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Avoid per-run database snapshots competing with dependency caches.
+      CODEQL_OVERLAY_DATABASE_MODE: none
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -185,6 +188,8 @@ jobs:
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: javascript-typescript
+          # Disable the extraction cache as well when overlay analysis is off.
+          trap-caching: false
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
@@ -285,6 +290,8 @@ jobs:
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
             .github/scripts/checks/check-pr-ci-capacity.sh \
             .github/scripts/checks/check-workflow-shell-compatibility.sh \
+            .github/scripts/checks/crates-coverage-needed.sh \
+            .github/scripts/tests/crates-coverage-workflow-test.sh \
             .github/scripts/runner/cleanup-pr-runner-namespace.sh \
             .github/scripts/runner/discover-runner-pr-namespaces.sh \
             .github/scripts/checks/detect-native-only.sh \
@@ -303,7 +310,6 @@ jobs:
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
             .github/scripts/release/resolve-desktop-version-change.sh \
-            .github/scripts/release/migrate-link-wallet-grants.sh \
             .github/scripts/checks/run-semgrep.sh \
             crates/nbd-cow/tests/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \
@@ -339,7 +345,6 @@ jobs:
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
-            .github/scripts/tests/migrate-link-wallet-grants-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \
@@ -368,6 +373,8 @@ jobs:
             crates/runner/tests/behavior/tests/runner-behavior-process-containment-submit-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-durable-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-exec-inventory-test.sh \
+            crates/runner/tests/behavior/tests/runner-behavior-chromium-https-test.sh \
+            crates/runner/tests/behavior/tests/runner-behavior-caller-isolation-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-upgrade-local-test.sh \
             .github/scripts/tests/workflow-script-test-shards-test.sh \
             e2e/scripts/ensure-stripe-cli.sh \

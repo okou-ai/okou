@@ -1,5 +1,67 @@
 # Changelog
 
+## [8.768.0](https://github.com/okou-ai/okou/compare/core-v8.767.1...core-v8.768.0) (2026-10-19)
+
+
+### Features
+
+* **core:** enable remote connection diagnostics for staff ([#41203](https://github.com/okou-ai/okou/issues/41203)) ([1e46381](https://github.com/okou-ai/okou/commit/1e46381d05aa4ea4bb1fcac664bbd1accd16cdfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.2
+
+## [8.767.1](https://github.com/okou-ai/okou/compare/core-v8.767.0...core-v8.767.1) (2026-10-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.1
+
+## [8.767.0](https://github.com/okou-ai/okou/compare/core-v8.766.1...core-v8.767.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.0
+
+## [8.766.1](https://github.com/okou-ai/okou/compare/core-v8.766.0...core-v8.766.1) (2026-10-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.5
+
+## [8.766.0](https://github.com/okou-ai/okou/compare/core-v8.765.2...core-v8.766.0) (2026-10-17)
+
+
+### Features
+
+* **app:** add a gated inline slash hint to the composer ([#40673](https://github.com/okou-ai/okou/issues/40673)) ([8ff3d51](https://github.com/okou-ai/okou/commit/8ff3d518c92a7c43e196716712d32a78984d994b))
+
+## [8.765.2](https://github.com/okou-ai/okou/compare/core-v8.765.1...core-v8.765.2) (2026-10-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+
 ## [8.765.1](https://github.com/okou-ai/okou/compare/core-v8.765.0...core-v8.765.1) (2026-10-16)
 
 

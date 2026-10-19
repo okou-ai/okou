@@ -35,6 +35,7 @@ import {
   type UserMessageInputDocument,
   type Indicators,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -390,6 +391,10 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function threadArtifactsClient() {
     return chatFilesApp(context)(chatThreadArtifactsContract);
+  }
+
+  function artifactGoogleDriveClient() {
+    return chatFilesApp(context)(artifactGoogleDriveContract);
   }
 
   function artifactCatalogClient() {
@@ -1553,33 +1558,66 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async requestSyncThreadArtifact(
-      actor: ApiTestUser | null,
+    /**
+     * Resolve the catalog artifact id behind an uploaded file's external id.
+     * The upload URL contains that id as its object-key segment. Hosted
+     * publications use the catalog id returned by their thread listing instead.
+     * Only catalog routes are used so no Drive status lookup is triggered.
+     */
+    async resolveCatalogArtifactId(
+      actor: ApiTestUser,
       threadId: string,
-      body: { readonly runId: string; readonly fileId: string },
+      listedFileId: string,
+    ): Promise<string> {
+      const catalog = await this.listArtifactCatalog(actor, {
+        chatThreadId: threadId,
+        limit: 200,
+      });
+      const matches: string[] = [];
+      for (const summary of catalog.artifacts) {
+        const entry = await this.getArtifactCatalogEntry(actor, summary.id);
+        const matched =
+          "file" in entry &&
+          new URL(entry.file.url).pathname.split("/").includes(listedFileId);
+        if (matched) {
+          matches.push(summary.id);
+        }
+      }
+      if (matches.length === 1) {
+        return matches[0]!;
+      }
+      throw new Error(
+        `Expected one catalog artifact in thread ${threadId} for ${listedFileId}, found ${matches.length} of ${catalog.artifacts.length}`,
+      );
+    },
+
+    async requestUploadArtifactToGoogleDrive(
+      actor: ApiTestUser | null,
+      artifactId: string,
+      body: { readonly agentId: string; readonly connectionId?: string },
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
     ) {
       return await accept(
-        threadArtifactsClient().syncGoogleDrive({
+        artifactGoogleDriveClient().upload({
           headers: authenticate(context, actor),
-          params: { threadId },
+          params: { artifactId },
           body,
         }),
         statuses,
       );
     },
 
-    async requestSyncThreadArtifactUnchecked(
+    async requestUploadArtifactToGoogleDriveUnchecked(
       actor: ApiTestUser,
-      threadId: string,
+      artifactId: string,
       body: unknown,
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
     ) {
       return await accept(
-        threadArtifactsClient().syncGoogleDrive({
+        artifactGoogleDriveClient().upload({
           headers: authenticate(context, actor),
-          params: { threadId },
-          body: body as { runId: string; fileId: string },
+          params: { artifactId },
+          body: body as { agentId: string },
         }),
         statuses,
       );

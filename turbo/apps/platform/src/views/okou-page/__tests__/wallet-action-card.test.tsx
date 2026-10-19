@@ -129,7 +129,6 @@ test.each(["agent", "workspace"] as const)(
       });
       prompts.push(body.prompt ?? "");
       return respond(201, {
-        runId: crypto.randomUUID(),
         threadId: context.resourceId,
       });
     });
@@ -162,7 +161,6 @@ function captureContinuation() {
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     prompts.push(body.prompt ?? "");
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: context.resourceId,
     });
   });
@@ -232,7 +230,6 @@ test("retrying a wallet continuation preserves the accepted event identity", asy
       });
     }
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: context.resourceId,
     });
   });
@@ -259,7 +256,6 @@ test("an already authorized wallet card waits for an explicit continuation", asy
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     prompts.push(body.prompt ?? "");
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: context.resourceId,
     });
   });
@@ -283,7 +279,6 @@ test.each([
     context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
       prompts.push(body.prompt ?? "");
       return respond(201, {
-        runId: crypto.randomUUID(),
         threadId: context.resourceId,
       });
     });

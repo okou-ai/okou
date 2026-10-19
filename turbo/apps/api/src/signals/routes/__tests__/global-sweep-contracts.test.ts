@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { randomUUID } from "node:crypto";
+import { cronCompactChatThreadSnapshotsContract } from "@okouai/api-contracts/contracts/cron";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { cronComputerUseScreenshotCleanupRoutes } from "../cron-computer-use-screenshot-cleanup";
 import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
@@ -57,6 +60,33 @@ describe("production-global sweep route contracts", () => {
       cronCleanupXResourceReadsRoutes,
       "/api/cron/cleanup-x-resource-reads",
     );
+  });
+
+  it("reports no work when compacting an empty isolated snapshot scope", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronCompactChatThreadSnapshotsRoutes,
+      isolatePg: true,
+    });
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", `snapshot-empty-${randomUUID()}`);
+    context.mocks.s3.send.mockResolvedValue({
+      Contents: [],
+      IsTruncated: false,
+    });
+    const response = await accept(
+      app(cronCompactChatThreadSnapshotsContract).compact({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toStrictEqual({
+      success: true,
+      scopes: 0,
+      eventsApplied: 0,
+      eventsPruned: 0,
+    });
   });
 
   it("rejects snapshot compaction requests without authorization", async () => {

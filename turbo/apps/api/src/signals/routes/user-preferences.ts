@@ -9,7 +9,7 @@ import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { synchronizeMorningBriefTimezone$ } from "../services/morning-brief-timezone.service";
 
@@ -109,60 +109,63 @@ const updateUserPreferencesInner$ = command(
 const initializeUserPreferencesBody$ = bodyResultOf(
   userPreferencesContract.initialize,
 );
-async function fillMissingUserPreferenceFields(
-  db: Db,
-  identity: { readonly orgId: string; readonly userId: string },
-  existing:
-    | Pick<typeof orgMembersMetadata.$inferSelect, "timezone" | "locale">
-    | undefined,
-  requested: { readonly timezone?: string; readonly locale: UserLocale },
-): Promise<
-  | {
-      readonly kind: "unchanged";
-      readonly timezone: string;
-      readonly locale: UserLocale;
+const fillMissingUserPreferenceFields$ = command(
+  async (
+    { set },
+    identity: { readonly orgId: string; readonly userId: string },
+    existing:
+      | Pick<typeof orgMembersMetadata.$inferSelect, "timezone" | "locale">
+      | undefined,
+    requested: { readonly timezone?: string; readonly locale: UserLocale },
+  ): Promise<
+    | {
+        readonly kind: "unchanged";
+        readonly timezone: string;
+        readonly locale: UserLocale;
+      }
+    | { readonly kind: "invalid-timezone" }
+    | { readonly kind: "written" }
+  > => {
+    const db = set(writeDb$);
+    const existingTimezone = existing?.timezone ?? null;
+    const existingLocale = existing?.locale ?? null;
+    if (
+      existingTimezone !== null &&
+      isValidTimeZone(existingTimezone) &&
+      isValidUserLocale(existingLocale)
+    ) {
+      return {
+        kind: "unchanged",
+        timezone: existingTimezone,
+        locale: existingLocale,
+      };
     }
-  | { readonly kind: "invalid-timezone" }
-  | { readonly kind: "written" }
-> {
-  const existingTimezone = existing?.timezone ?? null;
-  const existingLocale = existing?.locale ?? null;
-  if (
-    existingTimezone !== null &&
-    isValidTimeZone(existingTimezone) &&
-    isValidUserLocale(existingLocale)
-  ) {
-    return {
-      kind: "unchanged",
-      timezone: existingTimezone,
-      locale: existingLocale,
-    };
-  }
-  const timezoneMissing =
-    !existingTimezone || !isValidTimeZone(existingTimezone);
-  const localeMissing = !isValidUserLocale(existingLocale);
-  const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
-  const locale = requested.locale;
-  if (!isValidTimeZone(timezone)) {
-    return { kind: "invalid-timezone" };
-  }
-  await db
-    .insert(orgMembersMetadata)
-    .values({
-      ...identity,
-      selectedModel: AUTO_SELECTED_MODEL,
-      timezone: timezoneMissing ? timezone : existingTimezone,
-      locale: localeMissing ? locale : existingLocale,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: {
-        ...(timezoneMissing && { timezone }),
-        ...(localeMissing && { locale }),
-      },
-    });
-  return { kind: "written" };
-}
+    const timezoneMissing =
+      !existingTimezone || !isValidTimeZone(existingTimezone);
+    const localeMissing = !isValidUserLocale(existingLocale);
+    const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
+    const locale = requested.locale;
+    if (!isValidTimeZone(timezone)) {
+      return { kind: "invalid-timezone" };
+    }
+    await db
+      .insert(orgMembersMetadata)
+      .values({
+        ...identity,
+        selectedModel: AUTO_SELECTED_MODEL,
+        timezone: timezoneMissing ? timezone : existingTimezone,
+        locale: localeMissing ? locale : existingLocale,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: {
+          ...(timezoneMissing && { timezone }),
+          ...(localeMissing && { locale }),
+        },
+      });
+    return { kind: "written" };
+  },
+);
 
 const initializeUserPreferencesInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
@@ -188,8 +191,8 @@ const initializeUserPreferencesInner$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    const writeOutcome = await fillMissingUserPreferenceFields(
-      db,
+    const writeOutcome = await set(
+      fillMissingUserPreferenceFields$,
       identity,
       existing,
       body.data,

@@ -4,6 +4,8 @@ use sandbox::AcceptedGuestDuplex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
+mod cancellation;
+
 struct FakeAcceptor {
     rx: AsyncMutex<mpsc::Receiver<io::Result<AcceptedGuestDuplex>>>,
 }
@@ -28,12 +30,16 @@ impl Fixture {
         }
     }
     async fn guest(&self, sandbox: &str) -> DuplexStream {
+        self.guest_with_cancel(sandbox, CancellationToken::new())
+            .await
+    }
+    async fn guest_with_cancel(&self, sandbox: &str, cancelled: CancellationToken) -> DuplexStream {
         let (host, guest) = tokio::io::duplex(128 * 1024);
         self.tx
             .send(Ok(AcceptedGuestDuplex {
                 sandbox_id: sandbox.to_owned(),
                 stream: Box::new(host),
-                cancelled: CancellationToken::new(),
+                cancelled,
             }))
             .await
             .unwrap();
@@ -46,7 +52,10 @@ impl Fixture {
         sandbox: &str,
         cancel: &CancellationToken,
     ) -> Registration {
-        registry.register_acceptor(run, sandbox.to_owned(), self.acceptor.clone(), cancel)
+        let mut provider =
+            sandbox_mock::MockSandbox::new(sandbox).with_guest_duplex(self.acceptor.clone());
+        provider.bind_run_control(&run.to_string()).unwrap();
+        registry.register(run, &provider, cancel).unwrap()
     }
 }
 
@@ -261,6 +270,7 @@ async fn concurrent_streams_and_malformed_frame_fail_only_its_stream() {
     let mut second = fixture.guest("a").await;
     let mut a = registry.open(run).await.unwrap();
     let mut b = registry.open(run).await.unwrap();
+    let observer = a.cancellation();
     first
         .write_all(&((MAX_FRAME_BYTES + 1) as u32).to_be_bytes())
         .await
@@ -269,6 +279,9 @@ async fn concurrent_streams_and_malformed_frame_fail_only_its_stream() {
         a.recv().await.err().unwrap().kind(),
         io::ErrorKind::InvalidData
     );
+    tokio::time::timeout(std::time::Duration::from_secs(5), observer.cancelled())
+        .await
+        .expect("framing failure must reach the independently retained observer");
     assert_eq!(
         a.send(b"not allowed").await.err().unwrap().kind(),
         io::ErrorKind::NotConnected

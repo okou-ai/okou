@@ -19,7 +19,7 @@ export function teamsCompletionUrl(
 }
 
 export function teamsEntryUrl(status: TeamsConnectStatus): string | null {
-  if (status.pendingInstallation === true) {
+  if (status.pendingInstallation) {
     return INTEGRATION_SETTINGS_PATHS.teams;
   }
   return (
@@ -70,7 +70,7 @@ export function teamsConnectBody(
 }
 
 type TeamsTargetState =
-  "invalid" | "orgMismatch" | "none" | "different" | "unknown" | "match";
+  "invalid" | "orgMismatch" | "none" | "different" | "match";
 
 export function teamsTargetState(
   params: URLSearchParams,
@@ -112,12 +112,6 @@ export function teamsTargetState(
     (team && status.teamId !== team)
   ) {
     return "different";
-  }
-  // New App -> old API: its broad boolean cannot identify the requested
-  // account. Remove this unknown branch only when pre-D01 APIs are neither
-  // serving nor supported rollback targets (tracked by #40196).
-  if (!status.linkedAccounts) {
-    return "unknown";
   }
   return status.linkedAccounts.some((account) => {
     return (

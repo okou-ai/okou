@@ -41,10 +41,7 @@ describe("MCP OAuth foundations", () => {
   const oauthCleanups: (() => Promise<void>)[] = [];
 
   async function automaticOAuthFixture(
-    options: Omit<
-      Parameters<typeof mockAutomaticMcpOAuthProvider>[1],
-      "registration"
-    > = {},
+    options: Partial<Parameters<typeof mockAutomaticMcpOAuthProvider>[1]> = {},
   ) {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -126,6 +123,113 @@ describe("MCP OAuth foundations", () => {
     for (const cleanup of oauthCleanups.splice(0).reverse()) {
       await cleanup();
     }
+  });
+
+  it.each([
+    {
+      name: "adds AS-only offline access without other AS permissions",
+      registration: "cimd",
+      challengeScope: "graph:read",
+      authorizationServerScopes: [
+        "graph:read",
+        "media:read",
+        "offline_access",
+        "admin",
+      ],
+      grantTypesSupported: ["authorization_code", "refresh_token"],
+      expectedScope: "graph:read offline_access",
+    },
+    {
+      name: "uses resource scopes when the challenge has no scope",
+      registration: "cimd",
+      challengeScope: null,
+      authorizationServerScopes: ["graph:read", "media:read", "offline_access"],
+      grantTypesSupported: ["authorization_code", "refresh_token"],
+      expectedScope: "graph:read media:read offline_access",
+    },
+    {
+      name: "does not duplicate offline access already requested",
+      registration: "cimd",
+      challengeScope: "graph:read offline_access graph:read",
+      authorizationServerScopes: ["graph:read", "offline_access"],
+      grantTypesSupported: ["authorization_code", "refresh_token"],
+      expectedScope: "graph:read offline_access",
+    },
+    {
+      name: "does not add offline access without AS scope support",
+      registration: "cimd",
+      challengeScope: "graph:read",
+      authorizationServerScopes: ["graph:read", "admin"],
+      grantTypesSupported: ["authorization_code", "refresh_token"],
+      expectedScope: "graph:read",
+    },
+    {
+      name: "does not add offline access when AS scopes are omitted",
+      registration: "cimd",
+      challengeScope: "graph:read",
+      authorizationServerScopes: undefined,
+      grantTypesSupported: ["authorization_code", "refresh_token"],
+      expectedScope: "graph:read",
+    },
+    {
+      name: "does not add offline access without refresh grant support",
+      registration: "cimd",
+      challengeScope: "graph:read",
+      authorizationServerScopes: ["graph:read", "offline_access"],
+      grantTypesSupported: ["authorization_code"],
+      expectedScope: "graph:read",
+    },
+    {
+      name: "respects the non-refresh default for omitted grant types",
+      registration: "cimd",
+      challengeScope: "graph:read",
+      authorizationServerScopes: ["graph:read", "offline_access"],
+      grantTypesSupported: null,
+      expectedScope: "graph:read",
+    },
+    {
+      name: "requests offline access in DCR as well as authorization",
+      registration: "dcr",
+      challengeScope: "graph:read",
+      authorizationServerScopes: ["graph:read", "offline_access", "admin"],
+      grantTypesSupported: ["authorization_code", "refresh_token"],
+      expectedScope: "graph:read offline_access",
+    },
+  ] as const)("$name", async ({ name: _name, expectedScope, ...options }) => {
+    const oauth = await automaticOAuthFixture({
+      ...options,
+      metadataScopes: ["graph:read", "media:read"],
+    });
+    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      oauth.agent.agentId,
+    );
+
+    expect(new URL(authorizationUrl).searchParams.get("scope")).toBe(
+      expectedScope,
+    );
+    if (options.registration === "dcr") {
+      expect(oauth.provider.registrationBodies).toHaveLength(1);
+      expect(oauth.provider.registrationBodies[0]).toMatchObject({
+        scope: expectedScope,
+      });
+    }
+  });
+
+  it("preserves provider defaults when no resource scopes are advertised", async () => {
+    const oauth = await automaticOAuthFixture({
+      challengeScope: null,
+      metadataScopes: [],
+      authorizationServerScopes: ["offline_access", "admin"],
+    });
+    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      oauth.agent.agentId,
+    );
+
+    expect(new URL(authorizationUrl).searchParams.get("scope")).toBeNull();
   });
 
   it("publishes exact public Okou client metadata from configured origins", async () => {

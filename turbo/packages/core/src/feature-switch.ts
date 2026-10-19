@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ComposerSlashHint]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Composer slash hint",
+    description:
+      "Show an inline hint after / to search workflows or choose a template.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SlackOpenGraphPreviews]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Slack Open Graph previews",
@@ -98,6 +106,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Retain and query safe SSH and VNC failure evidence in the same Run.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
@@ -133,6 +142,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
@@ -408,6 +418,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "yuma@okou.ai",

@@ -61,7 +61,7 @@ import {
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -96,6 +96,7 @@ import {
   usagePackCheckoutAllocationsMatch,
   usagePackCheckoutConfigurationMatches,
   pendingUsagePackCheckoutFingerprint,
+  UsagePackPendingSnapshotConflict,
 } from "./usage-pack-pending-snapshot-plan";
 import {
   PLAN_PURCHASE_CLAIM_STALE_MS,
@@ -2986,20 +2987,11 @@ const usagePackInvoiceAlreadyFulfilled$ = command(
 /** Another live subscription already holds the organization entitlement. */
 class DuplicateUsagePackEntitlement extends Error {}
 
-async function requireOrgBillingRecord(
-  tx: Pick<Db, "select">,
+function throwUsagePackOrgBillingMismatch(
+  org: { readonly orgId: string } | undefined,
   orgId: string,
   subscription: UsagePackSubscriptionRow,
-): Promise<never> {
-  const [org] = await tx
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(
-      and(
-        eq(orgMetadata.orgId, orgId),
-        eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
-      ),
-    );
+): never {
   if (org) {
     throw new DuplicateUsagePackEntitlement(
       `Organization ${orgId} entitlement belongs to another live subscription`,
@@ -3098,7 +3090,21 @@ const commitUsagePackPlanActivation$ = command(
           )
           .returning({ orgId: orgMetadata.orgId });
         if (orgRows.length !== 1) {
-          await requireOrgBillingRecord(tx, orgId, subscription);
+          await (async (): Promise<never> => {
+            const [org] = await tx
+              .select({ orgId: orgMetadata.orgId })
+              .from(orgMetadata)
+              .where(
+                and(
+                  eq(orgMetadata.orgId, orgId),
+                  eq(
+                    orgMetadata.stripeCustomerId,
+                    subscription.stripeCustomerId,
+                  ),
+                ),
+              );
+            return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
+          })();
         }
         const [owner] = await tx
           .select({ orgId: orgPlanEntitlements.orgId })
@@ -3316,7 +3322,21 @@ const commitUsagePackFulfillment$ = command(
           .where(projection.orgWhere)
           .returning({ orgId: orgMetadata.orgId });
         if (orgs.length !== 1) {
-          await requireOrgBillingRecord(tx, orgId, subscription);
+          await (async (): Promise<never> => {
+            const [org] = await tx
+              .select({ orgId: orgMetadata.orgId })
+              .from(orgMetadata)
+              .where(
+                and(
+                  eq(orgMetadata.orgId, orgId),
+                  eq(
+                    orgMetadata.stripeCustomerId,
+                    subscription.stripeCustomerId,
+                  ),
+                ),
+              );
+            return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
+          })();
         }
         const [owner] = await tx
           .select({ orgId: orgPlanEntitlements.orgId })
@@ -3606,12 +3626,32 @@ const retireReconciledUsagePackSnapshot$ = command(
             ),
           );
       }
-      await publishUsagePackPendingSnapshotCount(
-        tx,
-        args.orgId,
-        pendingCount,
-        pendingCount - retired.length,
-      );
+      const publicationOrgId = args.orgId;
+      const publicationBefore = pendingCount;
+      const publicationAfter = pendingCount - retired.length;
+      await (async (): Promise<void> => {
+        if (publicationBefore === publicationAfter) {
+          return;
+        }
+        const [published] = await tx
+          .update(usagePackPendingSnapshotGuards)
+          .set({ pendingSnapshotCount: publicationAfter })
+          .where(
+            and(
+              eq(usagePackPendingSnapshotGuards.orgId, publicationOrgId),
+              eq(
+                usagePackPendingSnapshotGuards.pendingSnapshotCount,
+                publicationBefore,
+              ),
+            ),
+          )
+          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+        if (!published) {
+          throw new UsagePackPendingSnapshotConflict(
+            "Usage pack pending snapshot count changed during publication",
+          );
+        }
+      })();
     });
   },
 );

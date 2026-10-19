@@ -69,5 +69,6 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
+  ComposerSlashHint = "composerSlashHint",
   SlashActions = "slashActions",
 }

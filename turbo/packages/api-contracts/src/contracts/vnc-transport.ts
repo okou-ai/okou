@@ -42,7 +42,20 @@ const detachedTailscale = z
   .object({ type: z.literal("tailscale"), needsRebind: z.literal(true) })
   .strict();
 
-/** Read contracts only. Public owner input remains Direct/SSH until #40228. */
+/** Owner input requires an explicit binding; detached shapes are metadata only. */
+export const vncKdcTransportSchema = z.discriminatedUnion("type", [
+  direct,
+  ssh,
+  access,
+  tailscale,
+]);
+export const vncTransportSchema = z.discriminatedUnion("type", [
+  direct,
+  ssh,
+  access.extend({ originTls: vncOriginTlsSchema.optional() }),
+  tailscale,
+]);
+
 export const vncKdcTransportMetadataSchema = z.union([
   direct,
   ssh,

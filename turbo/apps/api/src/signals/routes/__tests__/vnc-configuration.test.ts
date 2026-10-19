@@ -63,6 +63,71 @@ describe("explicit Owner Kerberos sources", () => {
       },
     };
   }
+  it.each(["cloudflare_access", "tailscale"] as const)(
+    "rejects unavailable %s RFB and KDC bindings before encryption without changing saved data",
+    async (type) => {
+      const kms = useSecretKmsProbe();
+      await owner({ isolatePg: true });
+      const original = await accept(
+        connections().create({ headers, body: hostBody() }),
+        [201],
+      );
+      const generated = kms.generateDataKeyCalls;
+      const transport = { type, configId: randomUUID() };
+      const nativeRfb = {
+        ...hostBody(),
+        security: { ...security, serverName: "vnc.example.com" },
+        port: type === "cloudflare_access" ? 443 : 5900,
+        transport,
+      };
+      const kerberos = onlineBody();
+      const nativeKdc = {
+        ...kerberos,
+        security: {
+          ...onlineSecurity,
+          kdc: {
+            ...onlineSecurity.kdc,
+            port: type === "cloudflare_access" ? 443 : 88,
+            transport,
+          },
+        },
+      };
+      for (const body of [nativeRfb, nativeKdc]) {
+        expect((await rawRequest("/api/vnc/connections", body)).status).toBe(
+          404,
+        );
+        expect(
+          (
+            await rawRequest(
+              `/api/vnc/connections/${original.body.id}`,
+              {
+                expectedGeneration: original.body.generation,
+                ...(body === nativeRfb
+                  ? {
+                      transport,
+                      host: nativeRfb.host,
+                      port: nativeRfb.port,
+                      credential: body.credential,
+                      security: body.security,
+                    }
+                  : { security: body.security, credential: body.credential }),
+              },
+              "PATCH",
+            )
+          ).status,
+        ).toBe(404);
+      }
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([original.body]);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toHaveLength(1);
+      expect(kms.generateDataKeyCalls).toBe(generated);
+      expect(kms.decryptCalls).toBe(0);
+    },
+  );
+
   it.each(["saved", "inline"] as const)(
     "selects one concurrent Kerberos rebind using a %s credential without orphaning the loser",
     async (selection) => {
@@ -325,16 +390,22 @@ function sshConnectionsClient() {
   );
 }
 async function owner(
-  overrides: Partial<{ orgId: string; userId: string }> = {},
+  options: Partial<{ orgId: string; userId: string }> & {
+    readonly isolatePg?: true;
+  } = {},
 ) {
+  const { isolatePg, ...overrides } = options;
   const value = {
     orgId: `org_vnc_${randomUUID()}`,
     userId: `user_vnc_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
+  await updateFeatureSwitchesForUser(
+    context,
+    value,
+    { [FeatureSwitchKey.VncAccess]: true },
+    { isolatePg },
+  );
   mocks.clerk.session(value.userId, value.orgId);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {

@@ -17,11 +17,8 @@ import {
   userFeatureSwitchOverrides,
 } from "../services/feature-switches.service";
 import {
-  discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
-  listPublicConnectorCatalog,
-  listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
 import {
   connectorCatalogDisplayColumns,
@@ -30,7 +27,10 @@ import {
 } from "../services/connector-catalog-columns";
 import {
   catalogSource,
+  listExternalPublicConnectorCatalogStatus,
   connectorCatalogConnectItemsFromSource,
+  listExternalPublicConnectorCatalog,
+  discoverExternalPublicConnectorCatalogStatus,
   loadAcceptedConnectorCatalogSnapshot,
   publicConnectorCatalogStatusFromSource,
   type ConnectorCatalogSlugSource,
@@ -93,11 +93,15 @@ const listConnectorCatalogInner$ = command(
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
 
+    const catalogReadDb = context.db;
+    const catalogReadFeatureStates = context.featureStates;
     const catalog = await settleConnectorCatalogRead(
-      listPublicConnectorCatalog({
-        db: context.db,
-        featureStates: context.featureStates,
-      }),
+      (async () => {
+        return await listExternalPublicConnectorCatalog({
+          db: catalogReadDb,
+          featureStates: catalogReadFeatureStates,
+        });
+      })(),
       signal,
     );
     if (!catalog.ok) {
@@ -128,12 +132,19 @@ const listConnectorCatalogStatusInner$ = command(
     }
     signal.throwIfAborted();
 
+    const catalogStatusDb = context.db;
+    const catalogStatusFeatureStates = context.featureStates;
+    const catalogStatusConnections = connectorState.value;
     const catalog = await settleConnectorCatalogRead(
-      listPublicConnectorCatalogStatus({
-        db: context.db,
-        featureStates: context.featureStates,
-        connections: connectorState.value,
-      }),
+      (async () => {
+        const read = await listExternalPublicConnectorCatalogStatus({
+          db: catalogStatusDb,
+          featureStates: catalogStatusFeatureStates,
+          connections: catalogStatusConnections,
+          referenceConnectorSlugs: [],
+        });
+        return read.status;
+      })(),
       signal,
     );
     if (!catalog.ok) {
@@ -272,14 +283,23 @@ const discoverConnectorCatalogInner$ = command(
     }
     signal.throwIfAborted();
 
+    const catalogDiscoveryDb = context.db;
+    const catalogDiscoveryFeatureStates = context.featureStates;
+    const catalogDiscoveryConnections = connectorState.value;
+    const catalogDiscoveryKeyword = query.keyword;
+    const catalogDiscoveryCategory = query.category;
     const catalog = await settleConnectorCatalogRead(
-      discoverPublicConnectorCatalogStatus({
-        db: context.db,
-        featureStates: context.featureStates,
-        connections: connectorState.value,
-        keyword: query.keyword,
-        category: query.category,
-      }),
+      (async () => {
+        const read = await discoverExternalPublicConnectorCatalogStatus({
+          db: catalogDiscoveryDb,
+          featureStates: catalogDiscoveryFeatureStates,
+          connections: catalogDiscoveryConnections,
+          keyword: catalogDiscoveryKeyword,
+          category: catalogDiscoveryCategory,
+          referenceConnectorSlugs: [],
+        });
+        return read.status;
+      })(),
       signal,
     );
     if (!catalog.ok) {

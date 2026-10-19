@@ -17,7 +17,6 @@ CASES = {f"Continuation{scope}-{mode}" for scope in
          for mode in ("fresh", "snapshot")}
 PHASES = ("original_executor_completed", "scenario_observed",
           "continued_executor_completed", "continued_saving_completed")
-THREAD = "019e9154-c304-70f0-adde-36efb1be1701"
 SEED = b""
 SEED_HASH = hashlib.sha256(SEED).hexdigest()
 
@@ -115,7 +114,7 @@ def validate(directory):
         if (type(original.get("exit_code")) is not int or original["exit_code"] != expected_exit
                 or type(continued.get("exit_code")) is not int or continued["exit_code"] != 0
                 or continued.get("home_cache_hit") is not True
-                or continued.get("history_proof_bound") is not (expected_exit == 0)
+                or continued.get("history_proof_bound") is not True
                 or saved != {"required_cleanup_joined": True, "complete_continued_bytes_restored": True,
                              "verified_final_identity_preserved": True}):
             raise ValueError("native continuation/required saving did not positively complete")
@@ -129,7 +128,7 @@ def validate(directory):
                 or not cost <= age < policy["max_sample_age_millis"]*1_000_000):
             raise ValueError("actual fitting continuation input condition missing")
         result["cases"][case]["continuation"] = {
-            "thread_id": THREAD, "original_run_id": run, "continued_run_id": next_run,
+            "thread_id": original["thread_id"], "original_run_id": run, "continued_run_id": next_run,
             "original_history_bytes": size, "continued_history_bytes": final_size,
             "original_history_sha256": original["original_history_sha256"],
             "continued_history_sha256": continued["continued_history_sha256"],

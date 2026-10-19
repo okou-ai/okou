@@ -199,31 +199,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_correlated_result_and_unknown_remote_error_are_call_local() {
+    async fn malformed_correlated_result_and_remote_error_codes_are_call_local() {
         let mut f = Fixture::new(Arc::new(Diagnostics)).await;
-        for (n, invalid) in [(2, true), (3, false)] {
+        for (n, code, expected) in [
+            (2, None, "invalid_request"),
+            (3, Some("future_failure"), "unavailable"),
+            (4, Some("not_regular_file"), "not_regular_file"),
+            (5, Some("file_changed"), "file_changed"),
+            (6, Some("handle_expired"), "handle_expired"),
+        ] {
             f.send(request(n, "peer.echo", "")).await;
             let reverse = f.recv().await;
-            if invalid {
+            if let Some(code) = code {
+                f.send(json!({"schemaVersion":1,"type":"response","id":id(100+n),"requestId":reverse["id"],"error":{"code":code}})).await;
+            } else {
                 f.reply(
                     100 + n,
                     reverse["id"].as_str().unwrap(),
                     json!({"payload":"not base64"}),
                 )
                 .await;
-            } else {
-                f.send(json!({"schemaVersion":1,"type":"response","id":id(100+n),"requestId":reverse["id"],"error":{"code":"future_failure"}})).await;
             }
             let result = f.recv().await;
             assert_eq!(result["requestId"], id(n));
-            assert_eq!(
-                result["error"]["code"],
-                if invalid {
-                    "invalid_request"
-                } else {
-                    "unavailable"
-                }
-            );
+            assert_eq!(result["error"]["code"], expected);
             assert!(result.get("result").is_none());
             f.healthy(10 + n).await;
         }

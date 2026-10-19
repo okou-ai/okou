@@ -222,15 +222,6 @@ function TargetNotice({ page }: PageProps) {
         />
       );
     }
-    case "unknown": {
-      return (
-        <p role="status" className="text-center text-sm text-muted-foreground">
-          {t(($) => {
-            return $.connectors.providerConnect.teams.identityUnknown;
-          })}
-        </p>
-      );
-    }
     case "different": {
       return (
         <p role="status" className="text-center text-sm text-muted-foreground">

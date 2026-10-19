@@ -494,6 +494,10 @@ describe("Stage 1 result publication", () => {
   );
 
   it("retries a provider failure only after its ordinary retry deadline, then publishes once", async () => {
+    // A future UTC noon keeps auth valid and the retry in the admitted day.
+    const daytime = new Date(now() + 24 * 60 * 60 * 1000);
+    daytime.setUTCHours(12, 0, 0, 0);
+    mockNow(daytime);
     const source = await prepareSources();
     extractionResponse({ status: 400 });
     const failed = await accept(
@@ -581,6 +585,10 @@ describe("Stage 1 result publication", () => {
   );
 
   it("discards an extraction whose lease expires while the provider is responding, then reclaims it", async () => {
+    // A future UTC noon keeps auth valid and lease recovery in the admitted day.
+    const daytime = new Date(now() + 24 * 60 * 60 * 1000);
+    daytime.setUTCHours(12, 0, 0, 0);
+    mockNow(daytime);
     const source = await prepareSources();
     extractionResponse({
       beforeResponse: () => {

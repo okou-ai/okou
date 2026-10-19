@@ -213,7 +213,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the steer message to be accepted");
     }
-    expect(sent.body.runId).toBeNull();
 
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
@@ -298,7 +297,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (later.status !== 201) {
       throw new Error("Expected later input to remain queued");
     }
-    expect(later.body.runId).toBeNull();
 
     await completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
@@ -456,7 +454,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the queued send to be accepted");
     }
-    expect(queued.body.runId).toBeNull();
     await api.updateUserModelPreference(actor, "claude-opus-5-5");
     const queuedRetry = await chat.requestSendEvent(
       actor,
@@ -469,7 +466,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       [201],
     );
     expect(queuedRetry.body).toStrictEqual({
-      runId: null,
       threadId: first.threadId,
       createdAt: expect.any(String),
     });
@@ -498,7 +494,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       [201],
     );
     expect(crossUser.body).toStrictEqual({
-      runId: null,
       threadId: strangerThread.id,
       createdAt: expect.any(String),
     });
@@ -535,7 +530,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (recalled.status !== 201) {
       throw new Error("Expected the recall send to be accepted");
     }
-    expect(recalled.body.runId).toBeNull();
 
     const repeatedRecall = await chat.requestSendEvent(
       actor,
@@ -548,7 +542,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       [201],
     );
     expect(repeatedRecall.body).toMatchObject({
-      runId: null,
       threadId: first.threadId,
     });
     const afterRepeated = await chat.listThreadEvents(actor, first.threadId);
@@ -588,7 +581,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       prompt: "cross-thread recall anchor",
     });
     const queuedMessageId = randomUUID();
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -598,7 +591,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
 
     const otherThread = await chat.createThread(actor, {
       agentId,

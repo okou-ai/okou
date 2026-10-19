@@ -61,12 +61,15 @@ def read_usage(control, run_id="run-1"):
 
 
 def write_registration(tmp_path, *, run_id="run-1", billable=False, generation="generation-1"):
+    # A synthetic, credential-free source exercises cumulative usage across
+    # HTTP and WebSocket protocols independently of managed-preset admission.
+    firewall_name = "model-provider:usage-test"
     return _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
             run_id=run_id,
-            firewall_name="model-provider:openrouter-codex",
+            firewall_name=firewall_name,
             api_entry={
                 "base": "https://openrouter.ai",
                 "auth": {"headers": {}},
@@ -82,7 +85,7 @@ def write_registration(tmp_path, *, run_id="run-1", billable=False, generation="
                 ],
             },
             network_policy={"allow": ["inference"], "deny": [], "ask": [], "unknownPolicy": "deny"},
-            billable_firewalls=["model-provider:openrouter-codex"] if billable else [],
+            billable_firewalls=[firewall_name] if billable else [],
             sandbox_fields={
                 "usageGeneration": generation,
                 "cliAgentType": "codex",

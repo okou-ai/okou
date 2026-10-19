@@ -489,7 +489,6 @@ describe("CHAT-02: model-first routing", () => {
       throw new Error("Expected the delegated Pi prompt to be accepted");
     }
     expect(delegated.body).toStrictEqual({
-      runId: null,
       threadId: targetThread.id,
       createdAt: expect.any(String),
     });

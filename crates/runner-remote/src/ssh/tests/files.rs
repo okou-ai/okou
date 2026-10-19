@@ -462,23 +462,97 @@ async fn sftp_failures_are_typed_and_never_publish_partial_files() {
 
 #[tokio::test]
 async fn lost_acknowledgements_and_cleanup_failure_preserve_honest_effects_and_residue() {
-    for (mode, effects, completed, published) in [
-        ("lost-create", "not_started", false, false),
-        ("lost-publish", "unknown", false, true),
-        ("cleanup-denied", "completed", true, true),
+    for (mode, overwrite, effects, completed, published, staged_file) in [
+        ("lost-create", false, "not_started", false, false, false),
+        ("lost-publish", false, "unknown", false, true, true),
+        ("lost-publish", true, "unknown", false, true, false),
+        ("cleanup-denied", false, "completed", true, true, true),
+        ("cleanup-denied", true, "completed", true, true, false),
     ] {
         let h = Harness::new(Reply::Sftp(mode)).await;
         let _resolve = h.resolve(h.credential(true)).await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("file");
-        let outcome = upload(&h, &path, b"bytes", false).await;
+        let outcome = upload(&h, &path, b"bytes", overwrite).await;
         assert_eq!(outcome["effects"], effects, "{mode}: {outcome}");
         assert_eq!(outcome["type"] == "completed", completed);
         assert_eq!(path.exists(), published);
-        assert!(Path::new(outcome["residue"].as_str().unwrap()).is_dir());
+        let residue = Path::new(outcome["residue"].as_str().unwrap());
+        assert!(residue.is_dir());
+        assert_eq!(residue.join("data").is_file(), staged_file);
         if published {
             assert_eq!(std::fs::read(path).unwrap(), b"bytes");
         }
+    }
+}
+
+#[tokio::test]
+async fn unacknowledged_sftp_open_and_close_never_publish_or_clear_uncertain_residue() {
+    for (mode, reason, acknowledged, remaining) in [
+        ("open-denied", "permission_denied", 0, None),
+        ("lost-open", "disconnected", 0, Some(b"".as_slice())),
+        ("lost-close", "disconnected", 5, Some(b"bytes".as_slice())),
+        (
+            "close-denied",
+            "permission_denied",
+            5,
+            Some(b"bytes".as_slice()),
+        ),
+    ] {
+        let mut h = Harness::new(Reply::Sftp(mode)).await;
+        let _resolve = h.resolve(h.credential(true)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        let sentinel = dir.path().join("unrelated");
+        std::fs::write(&sentinel, b"keep").unwrap();
+
+        let outcome = upload(&h, &path, b"bytes", false).await;
+        assert_eq!(outcome["type"], "failed", "{mode}: {outcome}");
+        assert_eq!(outcome["failure_reason"], reason, "{mode}: {outcome}");
+        assert_eq!(outcome["effects"], "not_started");
+        assert_eq!(outcome["bytes"], acknowledged);
+        assert!(outcome["sha256"].is_null());
+        assert!(!path.exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        if let Some(bytes) = remaining {
+            let residue = Path::new(outcome["residue"].as_str().unwrap());
+            assert_eq!(residue.parent(), Some(dir.path()));
+            assert_eq!(std::fs::read(residue.join("data")).unwrap(), bytes);
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+        } else {
+            assert!(outcome["residue"].is_null(), "{mode}: {outcome}");
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+        h.shutdown().await;
+        assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn failed_sftp_cleanup_close_preserves_primary_failure_and_residue() {
+    for mode in ["close-denied", "lost-close"] {
+        let mut h = Harness::new(Reply::Sftp(mode)).await;
+        let _resolve = h.resolve(h.credential(true)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        let guest = open(&h, "upload", upload_params(&path, 6, false), 900_000).await;
+        let (read, write) = tokio::io::split(guest);
+        let mut writer = Writer::input(write);
+        writer.send(&Frame::Data(b"bytes".to_vec())).await.unwrap();
+        writer.send(&Frame::End).await.unwrap();
+
+        let outcome = response(read).await.0;
+        assert_eq!(outcome["type"], "failed", "{mode}: {outcome}");
+        assert_eq!(outcome["failure_reason"], "source_changed");
+        assert_eq!(outcome["effects"], "not_started");
+        assert_eq!(outcome["bytes"], 5);
+        assert!(outcome["sha256"].is_null());
+        assert!(!path.exists());
+        let residue = Path::new(outcome["residue"].as_str().unwrap());
+        assert_eq!(std::fs::read(residue.join("data")).unwrap(), b"bytes");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        h.shutdown().await;
+        assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
     }
 }
 

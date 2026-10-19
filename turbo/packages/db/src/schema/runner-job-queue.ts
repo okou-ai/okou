@@ -48,6 +48,9 @@ export const runnerJobQueue = pgTable(
     // Lifecycle management. Current API writers provide an application-clock
     // insertion time; the default keeps older writers compatible.
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // Initialized once by discovery after enqueue commits. Separate from FIFO
+    // and latency provenance so uncommitted work cannot consume reuse protection.
+    discoveryStartedAt: timestamp("discovery_started_at"),
     // Current API writers use the database clock during the insert statement.
     expiresAt: timestamp("expires_at").notNull(), // TTL for auto-cleanup
   },

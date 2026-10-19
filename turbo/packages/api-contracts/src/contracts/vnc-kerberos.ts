@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { vncKdcTransportMetadataSchema } from "./vnc-transport";
+import {
+  vncKdcTransportMetadataSchema,
+  vncKdcTransportSchema,
+} from "./vnc-transport";
 
 export const KERBEROS_INPUT_MAX_BYTES = 65_536;
 export const KERBEROS_INPUT_MAX_BASE64 = 87_384;
@@ -115,10 +118,7 @@ export function isVncKerberosMethod(
   );
 }
 
-export const kerberosKdcTransportSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("direct") }).strict(),
-  z.object({ type: z.literal("ssh"), connectionId: z.uuid() }).strict(),
-]);
+export const kerberosKdcTransportSchema = vncKdcTransportSchema;
 export const kerberosKdcSchema = z
   .object({
     host: z.string().min(1).max(253),

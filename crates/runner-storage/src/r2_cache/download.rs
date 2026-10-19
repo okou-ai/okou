@@ -123,75 +123,60 @@ impl R2ImageCache {
         let (body_reader, body_read_failure) =
             TrackedBodyReader::new(resp.body.into_async_read(), key, started, deadline);
 
-        if let Err(e) = tokio::fs::create_dir_all(&staging).await {
-            return Err(finish_file_staging_error(
-                &staging,
-                R2DownloadError::Local(R2Error::Io(e)),
-            )
-            .await);
-        }
+        let attempt: Result<(), R2DownloadError> = async {
+            tokio::fs::create_dir_all(&staging)
+                .await
+                .map_err(|e| R2DownloadError::Local(R2Error::Io(e)))?;
 
-        if let Err(error) =
             unpack_template_into_staging(body_reader, &staging, expected_template_bytes, limits)
                 .await
-        {
-            let error = match body_read_failure.request_error(key) {
-                Some(error) => error,
-                None => match error {
-                    TemplateUnpackError::Invalid(error) => R2DownloadError::InvalidObject(error),
-                    TemplateUnpackError::Local(error) => R2DownloadError::Local(error),
-                },
-            };
-            return Err(finish_file_staging_error(&staging, error).await);
-        }
+                .map_err(|error| match body_read_failure.request_error(key) {
+                    Some(error) => error,
+                    None => match error {
+                        TemplateUnpackError::Invalid(error) => R2DownloadError::InvalidObject(error),
+                        TemplateUnpackError::Local(error) => R2DownloadError::Local(error),
+                    },
+                })?;
 
-        let unpacked_template = staging.join(TEMPLATE_FILE);
-        match tokio::fs::symlink_metadata(&unpacked_template).await {
-            Ok(metadata)
-                if metadata.file_type().is_file() && metadata.len() == expected_template_bytes => {}
-            Ok(metadata) if metadata.file_type().is_file() => {
-                return Err(finish_file_staging_error(
-                    &staging,
-                    R2DownloadError::InvalidObject(R2Error::Io(io_other(format!(
+            let unpacked_template = staging.join(TEMPLATE_FILE);
+            match tokio::fs::symlink_metadata(&unpacked_template).await {
+                Ok(metadata)
+                    if metadata.file_type().is_file()
+                        && metadata.len() == expected_template_bytes => {}
+                Ok(metadata) if metadata.file_type().is_file() => {
+                    return Err(R2DownloadError::InvalidObject(R2Error::Io(io_other(format!(
                         "template archive materialized {} bytes, expected {expected_template_bytes}",
                         metadata.len()
-                    )))),
-                )
-                .await);
-            }
-            Ok(_) => {
-                return Err(finish_file_staging_error(
-                    &staging,
-                    R2DownloadError::InvalidObject(R2Error::Io(io_other(
+                    )))));
+                }
+                Ok(_) => {
+                    return Err(R2DownloadError::InvalidObject(R2Error::Io(io_other(
                         "template archive template.ext4 is not a regular file",
-                    ))),
-                )
-                .await);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Err(finish_file_staging_error(
-                    &staging,
-                    R2DownloadError::InvalidObject(R2Error::Io(io_other(
+                    ))));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Err(R2DownloadError::InvalidObject(R2Error::Io(io_other(
                         "template archive missing template.ext4",
-                    ))),
-                )
-                .await);
+                    ))));
+                }
+                Err(e) => return Err(R2DownloadError::Local(R2Error::Io(e))),
             }
-            Err(e) => {
-                return Err(finish_file_staging_error(
-                    &staging,
-                    R2DownloadError::Local(R2Error::Io(e)),
-                )
-                .await);
-            }
-        }
 
-        if let Err(e) = tokio::fs::rename(&unpacked_template, destination).await {
-            return Err(finish_file_staging_error(
-                &staging,
-                R2DownloadError::Local(R2Error::Io(e)),
-            )
-            .await);
+            tokio::fs::rename(&unpacked_template, destination)
+                .await
+                .map_err(|e| R2DownloadError::Local(R2Error::Io(e)))?;
+            Ok(())
+        }
+        .await;
+
+        if let Err(original) = attempt {
+            if let Err(cleanup_err) = remove_dir_all_if_exists(&staging).await {
+                tracing::warn!(
+                    "failed to remove download staging {} after an earlier error ({original}): {cleanup_err}",
+                    staging.display()
+                );
+            }
+            return Err(original);
         }
         remove_dir_all_if_exists(&staging)
             .await
@@ -333,21 +318,5 @@ async fn remove_dir_all_if_exists(path: &Path) -> Result<(), R2Error> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(R2Error::Io(e)),
-    }
-}
-
-pub(super) async fn finish_file_staging_error(
-    staging: &Path,
-    original: R2DownloadError,
-) -> R2DownloadError {
-    match remove_dir_all_if_exists(staging).await {
-        Ok(()) => original,
-        Err(cleanup_err) => {
-            tracing::warn!(
-                "failed to remove download staging {} after an earlier error ({original}): {cleanup_err}",
-                staging.display()
-            );
-            original
-        }
     }
 }

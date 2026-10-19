@@ -957,6 +957,9 @@ function ComposerSuggestionMenu({
   const setSuggestionMenuRef = useSet(
     composer.suggestion.setSuggestionMenuRef$,
   );
+  const setSlashHintMenuRef = useSet(composer.suggestion.setSlashHintMenuRef$);
+  const slashHintEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashHint];
 
   return (
     <Popover
@@ -981,7 +984,9 @@ function ComposerSuggestionMenu({
       </div>
       {suggestionMenu.showWorkflows && (
         <SlashWorkflowMenu
-          menuRef={setSuggestionMenuRef}
+          menuRef={
+            slashHintEnabled ? setSlashHintMenuRef : setSuggestionMenuRef
+          }
           anchor={suggestionAnchor}
         >
           {suggestionMenu.actionsOverview ? (

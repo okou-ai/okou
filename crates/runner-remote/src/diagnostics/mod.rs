@@ -1,5 +1,6 @@
 //! Bounded, typed evidence without credentials, streams, leases or native owners.
 
+mod budget;
 pub(crate) mod check;
 mod rpc;
 #[cfg(test)]
@@ -275,9 +276,20 @@ pub(crate) struct NativeWatch {
     protocol: Protocol,
     ssh_dependency: Option<Dependency>,
     active: Weak<AtomicBool>,
+    vnc: Option<crate::vnc::evidence::Snapshot>,
+    native_connection: Option<crate::tailscale::evidence::Trace>,
 }
 
 impl NativeWatch {
+    pub(crate) fn with_vnc(
+        mut self,
+        vnc: Option<crate::vnc::evidence::Snapshot>,
+        connection: Option<crate::tailscale::evidence::Trace>,
+    ) -> Self {
+        self.vnc = vnc;
+        self.native_connection = connection;
+        self
+    }
     fn active(&self) -> bool {
         self.store.strong_count() > 0
             && self
@@ -292,6 +304,14 @@ impl NativeWatch {
             && self.identity.created_at == other.identity.created_at
             && self.identity.generation == other.identity.generation
             && self.identity.session == other.identity.session
+            && self
+                .native_connection
+                .as_ref()
+                .and_then(crate::tailscale::evidence::Trace::id)
+                == other
+                    .native_connection
+                    .as_ref()
+                    .and_then(crate::tailscale::evidence::Trace::id)
     }
     pub(crate) fn failed(
         &self,
@@ -322,10 +342,13 @@ impl NativeWatch {
                     generation: self.generation,
                     resource_id: evidence.resource_id,
                     evidence: Arc::clone(evidence),
-                    connection: None,
+                    connection: self.native_connection.clone(),
                 }),
                 ssh: None,
-                vnc: None,
+                vnc: self
+                    .vnc
+                    .as_ref()
+                    .map(|snapshot| snapshot.native_failure(evidence.resource_id)),
             });
         }
     }
@@ -402,6 +425,8 @@ impl Handle {
             protocol: Protocol::Ssh,
             ssh_dependency: None,
             active: Arc::downgrade(active),
+            vnc: None,
+            native_connection: None,
         })
     }
     pub(crate) fn watch_vnc(
@@ -409,7 +434,7 @@ impl Handle {
         connection: Uuid,
         identity: Identity,
         source: &NativeSource,
-        ssh: Dependency,
+        ssh: Option<Dependency>,
         active: &Arc<AtomicBool>,
     ) -> Option<NativeWatch> {
         let mut watch = self.watch(
@@ -420,7 +445,7 @@ impl Handle {
             active,
         )?;
         watch.protocol = Protocol::Vnc;
-        watch.ssh_dependency = Some(ssh);
+        watch.ssh_dependency = ssh;
         Some(watch)
     }
     pub(crate) fn record(&self, record: Record) -> Option<Report> {
@@ -452,7 +477,7 @@ impl Handle {
             .as_ref()
             .and_then(|source| source.connection.as_ref())
             .and_then(crate::tailscale::evidence::Trace::snapshot);
-        let report = Report {
+        let mut report = Report {
             run_id: self.store.run,
             assignment_id: self
                 .store
@@ -489,6 +514,17 @@ impl Handle {
             vnc,
             truncated: false,
         };
+        // Keep the incident and critical path when optional completed detail grows.
+        for minimal in [false, true] {
+            if report
+                .evidence()
+                .and_then(|value| serde_json::to_vec(&value).ok())
+                .is_some_and(|bytes| bytes.len() <= MAX_REPORT_BYTES)
+            {
+                break;
+            }
+            report.compact(minimal);
+        }
         // The schema has no unbounded strings or collections; keep a hard guard as it evolves.
         if !report
             .evidence()

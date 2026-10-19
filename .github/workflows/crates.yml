@@ -65,6 +65,7 @@ jobs:
     outputs:
       any-changed: ${{ steps.detect.outputs.any-changed }}
       ci-changed: ${{ steps.detect.outputs.ci-changed }}
+      coverage-needed: ${{ steps.detect.outputs.coverage-needed }}
       native-kerberos-needed: ${{ steps.detect.outputs.native-kerberos-needed }}
       native-gssapi-peer-needed: ${{ steps.detect.outputs.native-gssapi-peer-needed }}
       mitm-addon-test-inputs-changed: ${{ steps.detect.outputs.mitm-addon-test-inputs-changed }}
@@ -129,6 +130,10 @@ jobs:
           else
             echo "any-changed=false" >> "$GITHUB_OUTPUT"
           fi
+
+          # Coverage has narrower inputs than generic CI/native checks.
+          coverage_needed=$(bash .github/scripts/checks/crates-coverage-needed.sh "$BASE_REF")
+          echo "coverage-needed=$coverage_needed" >> "$GITHUB_OUTPUT"
 
           # The api-contracts cross-language bindings are generated from
           # selected TypeScript contract files. Keep this legacy-named output
@@ -567,7 +572,7 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
-    if: needs.detect.outputs.any-changed == 'true'
+    if: needs.detect.outputs.coverage-needed == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -614,7 +619,7 @@ jobs:
           done
 
       - name: Install coverage tools
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
 
@@ -747,7 +752,7 @@ jobs:
     needs: [detect]
     # Full coverage already runs this assertion; keep only the fixture-only path.
     if: |
-      needs.detect.outputs.any-changed != 'true' &&
+      needs.detect.outputs.coverage-needed == 'false' &&
       needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1703,7 +1708,7 @@ jobs:
           CI_CHANGED: ${{ needs.detect.outputs.ci-changed }}
           GUEST_CONTROL_CHANGED: ${{ needs.detect.outputs.guest-control-tests-changed }}
           ABLY_CHANGED: ${{ needs.detect.outputs.ably-subscriber-changed }}
-          COVERAGE_NEEDED: ${{ needs.detect.outputs.any-changed == 'true' }}
+          COVERAGE_NEEDED: ${{ needs.detect.outputs.coverage-needed }}
           NATIVE_KERBEROS_NEEDED: ${{ needs.detect.outputs.native-kerberos-needed }}
           NATIVE_GSSAPI_PEER_NEEDED: ${{ needs.detect.outputs.native-gssapi-peer-needed }}
           FIREWALL_CONTRACT_NEEDED: ${{ needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true' }}
@@ -1751,7 +1756,7 @@ jobs:
           CHECK_ALLOW_SKIP=""
           GUEST_CONTROL_ALLOW_SKIP=""
           ABLY_ALLOW_SKIP=""
-          for selection in "$CHECKS_NEEDED" "$CI_CHANGED" "$GUEST_CONTROL_CHANGED" "$ABLY_CHANGED"; do
+          for selection in "$CHECKS_NEEDED" "$CI_CHANGED" "$GUEST_CONTROL_CHANGED" "$ABLY_CHANGED" "$COVERAGE_NEEDED"; do
             if [ "$selection" != "true" ] && [ "$selection" != "false" ]; then
               echo "::error::Missing or invalid check selection"
               FAILED=1

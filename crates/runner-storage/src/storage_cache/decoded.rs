@@ -222,8 +222,7 @@ impl DecodedCache {
                         READ_AHEAD_BYTES - ready_bytes,
                         READ_AHEAD_FILES - ready_files,
                         &inner.cancel,
-                    )?
-                    .flatten();
+                    )?;
                     if let Some(entry) = &files {
                         ready_bytes += entry
                             .files

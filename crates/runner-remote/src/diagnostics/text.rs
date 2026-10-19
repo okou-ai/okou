@@ -3,6 +3,7 @@
 use super::{Cause, Handle, Report};
 use serde::Serialize;
 use serde_json::{Value, value::RawValue};
+mod native;
 
 impl Report {
     pub(crate) fn evidence(&self) -> Option<Value> {
@@ -14,6 +15,22 @@ impl Report {
     }
 
     pub(crate) fn message(&self) -> Option<String> {
+        let text = self.render()?;
+        if text.len() <= super::MAX_REPORT_BYTES {
+            return Some(text);
+        }
+        let mut compact = self.clone();
+        for minimal in [false, true] {
+            compact.compact(minimal);
+            let text = compact.render()?;
+            if text.len() <= super::MAX_REPORT_BYTES {
+                return Some(text);
+            }
+        }
+        None
+    }
+
+    fn render(&self) -> Option<String> {
         let summary = match self.cause {
             Some(failure) => format!(
                 "Failure: {} during {}.",
@@ -25,11 +42,13 @@ impl Report {
                 words(self.protocol)?
             ),
         };
-        let mut text = format!(
-            "{summary}\n\nEvidence:\n- Source boundary: {}; detail: {}.\n",
+        let mut text = format!("{summary}\n");
+        self.native_path(&mut text)?;
+        text.push_str(&format!(
+            "\nEvidence:\n- Source boundary: {}; detail: {}.\n",
             words(self.stage)?,
             words(self.detail)?,
-        );
+        ));
         if let Some(ssh) = &self.ssh {
             text.push_str(&format!(
                 "- Route: {}; transport: {}.\n",
@@ -49,11 +68,25 @@ impl Report {
                 ));
             }
             for step in &ssh.stages {
+                if matches!(ssh.route, super::trace::Route::Tailscale)
+                    && matches!(
+                        step.stage,
+                        super::trace::Stage::Dns
+                            | super::trace::Stage::DestinationPolicy
+                            | super::trace::Stage::AccessTls
+                            | super::trace::Stage::AccessWebsocket
+                    )
+                {
+                    continue;
+                }
                 text.push_str(&format!(
                     "- {}: {}.\n",
                     words(step.stage)?,
                     words(step.status)?,
                 ));
+                if step.timing.elapsed_ms != 0 {
+                    text.push_str(&format!("  Elapsed: {} ms.\n", step.timing.elapsed_ms));
+                }
             }
         }
         if let Some(vnc) = &self.vnc {
@@ -66,6 +99,32 @@ impl Report {
                 observed(vnc.profile),
                 observed(vnc.kdc_route)
             ));
+            for (role, carrier) in [("RFB", &vnc.rfb_carrier), ("KDC", &vnc.kdc_carrier)] {
+                if let Some(carrier) = carrier {
+                    text.push_str(&format!(
+                        "- VNC {role} carrier: configuration {}; generation {}; attempt {}; resource {}; private connection {}; stream {}; node setup {}; origin TLS {}.\n",
+                        carrier.configuration_id, carrier.generation, carrier.attempt_id,
+                        observed(carrier.resource_id), observed(carrier.connection_id), words(carrier.status)?,
+                        carrier.node_setup.and_then(words).unwrap_or_else(|| "not observed".into()),
+                        carrier.origin_tls.and_then(words).unwrap_or_else(|| "not observed".into()),
+                    ));
+                    if let Some(access) = &carrier.access {
+                        if let Some(failure) = access.access_failure {
+                            text.push_str(&format!(
+                                "- VNC {role} first Cloudflare Access failure: {}.\n",
+                                words(failure)?
+                            ));
+                        }
+                        for step in &access.stages {
+                            text.push_str(&format!(
+                                "- VNC {role} carrier {}: {}.\n",
+                                words(step.stage)?,
+                                words(step.status)?
+                            ));
+                        }
+                    }
+                }
+            }
             for (subject, address) in [("VNC RFB", vnc.address), ("VNC KDC", vnc.kdc_address)] {
                 if let Some(address) = address {
                     text.push_str(&format!(
@@ -133,8 +192,11 @@ impl Report {
         } else {
             "This is retained evidence; current connectivity has not been checked."
         };
+        if self.truncated {
+            text.push_str("\nDetail omitted to retain the incident and critical path within the report budget.\n");
+        }
         text.push_str(&format!(
-            "\nUnknown: Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
+            "\nUnknown: Pending means still waiting at observation, not a proven remote cause. Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
             self.guidance(),
             self.run_id,
             self.assignment_id,
@@ -148,7 +210,7 @@ impl Report {
         if let Some(session) = self.session_id {
             text.push_str(&format!("Session: {session}\n"));
         }
-        (text.len() <= super::MAX_REPORT_BYTES).then_some(text)
+        Some(text)
     }
 
     fn guidance(&self) -> &'static str {
@@ -185,6 +247,11 @@ impl Report {
             cause,
             Cause::Native(crate::tailscale::Failure::DomainFailed)
                 | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure)
+                | Cause::Vnc(
+                    crate::vnc::Failure::Network
+                        | crate::vnc::Failure::Cancelled
+                        | crate::vnc::Failure::Unavailable
+                )
         ) && let Some(root) = self.native_layers.as_ref().and_then(|s| s.root)
         {
             return match root {
@@ -202,20 +269,44 @@ impl Report {
                 }
             };
         }
-        if matches!(cause, Cause::Ssh(S::NetworkFailure))
-            && self.native_connection.as_ref().is_some_and(|snapshot| {
-                snapshot.steps.iter().any(|s| {
-                    matches!(
-                        s.stage,
-                        crate::tailscale::evidence::Stage::PeerSelection
-                            | crate::tailscale::evidence::Stage::PrivateTcp
-                    ) && s.status == crate::tailscale::evidence::Status::Failed
-                })
-            })
+        if matches!(
+            cause,
+            Cause::Ssh(S::TimedOut | S::Cancelled | S::NetworkFailure)
+                | Cause::Vnc(
+                    crate::vnc::Failure::TimedOut
+                        | crate::vnc::Failure::Cancelled
+                        | crate::vnc::Failure::Network
+                )
+        ) && let Some(guidance) = self.native_guidance()
         {
+            return guidance;
+        }
+        if matches!(
+            cause,
+            Cause::Ssh(S::NetworkFailure) | Cause::Vnc(crate::vnc::Failure::Network)
+        ) && self.native_connection.as_ref().is_some_and(|snapshot| {
+            snapshot.steps.iter().any(|s| {
+                matches!(
+                    s.stage,
+                    crate::tailscale::evidence::Stage::PeerSelection
+                        | crate::tailscale::evidence::Stage::PrivateTcp
+                ) && s.status == crate::tailscale::evidence::Status::Failed
+            })
+        }) {
             return "Inspect the selected private TCP peer/region and map authority; prior native readiness does not establish target service health.";
         }
-        if let Some(failure) = self.ssh.as_ref().and_then(|s| s.access_failure) {
+        if let Some(failure) = self
+            .ssh
+            .as_ref()
+            .and_then(|s| s.access_failure)
+            .or_else(|| {
+                let vnc = self.vnc.as_ref()?;
+                [&vnc.kdc_carrier, &vnc.rfb_carrier]
+                    .into_iter()
+                    .flatten()
+                    .find_map(|carrier| carrier.access.as_ref()?.access_failure)
+            })
+        {
             return match failure {
                 crate::cloudflare::Failure::Tls => {
                     "Check the Access gateway certificate and TLS trust."

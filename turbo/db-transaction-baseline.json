@@ -397,16 +397,6 @@
       "owner": "reserveDormantIdentity$"
     },
     {
-      "id": "TX-0205",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "retainDormantIdentity$"
-    },
-    {
-      "id": "TX-0206",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "deleteReservedCreationOrphan$"
-    },
-    {
       "id": "TX-0208",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeDormantMaterialization$"
@@ -420,11 +410,6 @@
       "id": "TX-0210",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "discardDormantMaterialization$"
-    },
-    {
-      "id": "TX-0211",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "pauseRemovedAutomationConfiguration$"
     },
     {
       "id": "TX-0216",

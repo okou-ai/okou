@@ -26,6 +26,7 @@ const config: ScopedCloudflareAccessConfig = Object.freeze({
   revision: 1,
   generation: 1,
   sshHosts: [],
+  vncHosts: [],
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -219,6 +220,7 @@ test("A network-only removal refreshes SSH rebind requirements and preserves def
             {
               ...shared,
               sshHosts: [{ id: host.id, displayName: host.displayName }],
+              vncHosts: [],
             },
           ],
     });

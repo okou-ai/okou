@@ -37,10 +37,7 @@ export function createSharedThreadArtifactSignals(
   descriptor: ArtifactDescriptor,
   viewer: PublicArtifactPreviewSignals,
 ): SharedThreadArtifactSignals {
-  const previewImageUrlsByUrl$ = computed(() => {
-    return Promise.resolve(new Map<string, string>());
-  });
-  const artifact = createArtifactSignals(descriptor, previewImageUrlsByUrl$);
+  const artifact = createArtifactSignals(descriptor);
   return {
     ...artifact,
     openPreview$: command(({ set }, label: string, signal: AbortSignal) => {

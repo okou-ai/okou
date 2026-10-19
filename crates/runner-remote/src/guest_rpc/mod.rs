@@ -105,15 +105,13 @@ impl Runtime {
             .as_ref()
             .is_some_and(|flags| flags.get("remoteConnectionDiagnostics") == Some(&true))
             .then(|| {
+                let token = context.platform_environment.get("OKOU_TOKEN")?;
                 let http = self
                     .ssh
                     .as_ref()
                     .map(|s| s.http_client())
                     .or_else(|| self.vnc.as_ref().map(|v| v.http_client()))?;
-                Some(Arc::new(crate::diagnostics::Authority::new(
-                    http,
-                    &context.sandbox_token,
-                )))
+                Some(Arc::new(crate::diagnostics::Authority::new(http, token)))
             })
             .flatten();
         Some(self.start_with_diagnostics(
@@ -169,7 +167,7 @@ impl Runtime {
         let vnc = self
             .vnc
             .as_ref()
-            .map(|runtime| runtime.for_run(run, &cancel, ssh.clone()));
+            .map(|runtime| runtime.for_run(run, &cancel, ssh.clone(), Arc::clone(&native)));
         if let Some(vnc) = &vnc {
             vnc.set_diagnostics(native.diagnostics.clone());
         }

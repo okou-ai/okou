@@ -1,13 +1,10 @@
-import type { ReactNode } from "react";
-import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import {
-  PreserveScrollAnchor,
-  Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  cn,
-} from "@okouai/ui";
+  ArtifactPreviewCloseButton,
+  ArtifactPreviewDialogFrame,
+  DialogIconButton,
+} from "./artifact-preview-dialog-frame.tsx";
+import type { ReactNode } from "react";
+import { Button, DialogBody, cn } from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -43,8 +40,6 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   connectorConnectionProgressActive$,
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
@@ -60,15 +55,10 @@ import { ArtifactMarkdownDocument } from "../components/artifact-markdown-docume
 import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
-  attachmentDiagramPreview,
   lightboxUrl$,
   closeLightboxImmediately$,
   closeLightboxWithDialogExit$,
   lightboxDialogFullscreen$,
-  lightboxDialogVisible$,
-  lightboxDialogMountRef$,
-  completeLightboxDialogExit$,
-  lightboxDialogInitialFocus$,
   navigateImageLightbox$,
   openAudioLightbox$,
   openDocumentLightbox$,
@@ -80,7 +70,6 @@ import {
 } from "../../signals/okou-page/attachment-chips.ts";
 import { openThreadArtifactSplitView$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
-import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import {
   artifactPreviewUrlsMatch,
@@ -183,55 +172,124 @@ function formatPlainPreviewText(
   return text;
 }
 
-export function parseCsvRows(text: string): string[][] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
-      return line.trimEnd();
-    })
-    .filter((line) => {
-      return line.length > 0;
-    })
-    .map((line) => {
-      return line.split(",").map((cell) => {
-        return cell.trim();
-      });
-    });
+/** Null keeps source visible when CSV cannot form a faithful, bounded table. */
+export function parseCsvPreviewRows(text: string): string[][] | null {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  let closedQuote = false;
+  const finishCell = () => {
+    row.push(cell);
+    cell = "";
+    closedQuote = false;
+  };
+  const finishRow = () => {
+    finishCell();
+    rows.push(row);
+    row = [];
+  };
+  for (let index = 0; index < text.length; index++) {
+    const character = text.charAt(index);
+    if (quoted) {
+      if (character === '"') {
+        if (text.charAt(index + 1) === '"') {
+          cell += '"';
+          index++;
+        } else {
+          quoted = false;
+          closedQuote = true;
+        }
+      } else {
+        cell += character;
+      }
+    } else if (character === ",") {
+      finishCell();
+    } else if (character === "\r" || character === "\n") {
+      finishRow();
+      if (character === "\r" && text.charAt(index + 1) === "\n") {
+        index++;
+      }
+    } else if (closedQuote) {
+      return null;
+    } else if (character === '"') {
+      if (cell !== "") {
+        return null;
+      }
+      quoted = true;
+    } else {
+      cell += character;
+    }
+  }
+  if (quoted) {
+    return null;
+  }
+  if (cell !== "" || closedQuote || row.length > 0) {
+    finishRow();
+  }
+  const [header] = rows;
+  if (
+    header &&
+    (rows.length * header.length > 10_000 ||
+      rows.some((record) => {
+        return record.length !== header.length;
+      }))
+  ) {
+    return null;
+  }
+  return rows;
+}
+
+/** CSV may repeat header labels, cell values and entire records. */
+function keyedCsvItems<T>(items: readonly T[], identity: (item: T) => string) {
+  const occurrences = new Map<string, number>();
+  return items.map((value) => {
+    const content = identity(value);
+    const occurrence = occurrences.get(content) ?? 0;
+    occurrences.set(content, occurrence + 1);
+    return { key: JSON.stringify([content, occurrence]), value };
+  });
 }
 
 export function CsvPreviewTable({ rows }: { rows: string[][] }) {
   const [header, ...body] = rows;
+  const columns = keyedCsvItems(header, (value) => {
+    return value;
+  });
+  const records = keyedCsvItems(body, (value) => {
+    return JSON.stringify(value);
+  });
 
   return (
     <div className="overflow-auto rounded-lg border border-foreground/10">
       <table className="min-w-full divide-y divide-foreground/10 text-sm">
         <thead className="bg-muted/40">
           <tr>
-            {header.map((cell) => {
+            {columns.map((column) => {
               return (
                 <th
-                  key={`header-${cell}`}
-                  className="whitespace-nowrap px-3 py-2 text-left font-medium text-foreground"
+                  key={column.key}
+                  className="whitespace-pre-wrap px-3 py-2 text-left font-medium text-foreground"
                 >
-                  {cell}
+                  {column.value}
                 </th>
               );
             })}
           </tr>
         </thead>
         <tbody className="divide-y divide-foreground/10 bg-background">
-          {body.map((row) => {
-            const rowKey = `row-${row.join("\u0001")}`;
+          {records.map((record) => {
             return (
-              <tr key={rowKey}>
-                {header.map((column, cellIndex) => {
-                  const value = row[cellIndex] ?? "";
+              <tr key={record.key}>
+                {keyedCsvItems(record.value, (value) => {
+                  return value;
+                }).map((cell) => {
                   return (
                     <td
-                      key={`${rowKey}-${column}-${value}`}
-                      className="whitespace-nowrap px-3 py-2 text-foreground"
+                      key={cell.key}
+                      className="whitespace-pre-wrap px-3 py-2 text-foreground"
                     >
-                      {value}
+                      {cell.value}
                     </td>
                   );
                 })}
@@ -241,31 +299,6 @@ export function CsvPreviewTable({ rows }: { rows: string[][] }) {
         </tbody>
       </table>
     </div>
-  );
-}
-
-function DialogIconButton({
-  ariaLabel,
-  children,
-  onClick,
-}: {
-  ariaLabel: string;
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      showTooltip
-      type="button"
-      onClick={onClick}
-      variant="quiet"
-      size="icon-sm"
-      className="shrink-0"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      {children}
-    </Button>
   );
 }
 
@@ -349,11 +382,7 @@ function artifactDialogSyncTarget(
     artifactId: artifact.artifactId,
     connectionId: artifact.googleDriveConnectionId,
     filename: artifact.filename,
-    onSyncSuccess:
-      artifact.onSyncSuccess ??
-      (() => {
-        return undefined;
-      }),
+    onSyncSuccess: artifact.onSyncSuccess,
     synced: artifact.googleDriveSynced,
     mimeType: artifact.googleDriveMimeType,
     originalUploaded: artifact.googleDriveOriginalUploaded,
@@ -383,7 +412,6 @@ function findArtifactDialogItemForUrl(
 function artifactDialogMetadataFromItem(params: {
   agentId: string | null | undefined;
   item: ArtifactDialogItem;
-  onSyncSuccess: () => void;
   threadId: string;
 }): AttachmentArtifactMetadata {
   const connectionId = params.item.file.googleDriveConnectionId;
@@ -421,7 +449,6 @@ function artifactDialogMetadataFromItem(params: {
       params.item.file.googleDriveSync?.status === "synced"
         ? params.item.file.googleDriveSync.webViewLink
         : undefined,
-    onSyncSuccess: params.onSyncSuccess,
     runId: params.item.runId,
     size: params.item.file.size,
     threadId: params.threadId,
@@ -545,9 +572,11 @@ function ArtifactDialogMarkdownBody({
 function ArtifactDialogTextBody({
   kind,
   text$,
+  maxCharacters,
 }: {
   kind: "text" | "json" | "csv";
   text$: TextPreviewComputed;
+  maxCharacters: number;
 }) {
   const { t } = useTranslation();
   const kindLabel =
@@ -585,8 +614,8 @@ function ArtifactDialogTextBody({
           );
         }
 
-        if (kind === "csv") {
-          const rows = parseCsvRows(text);
+        const rows = kind === "csv" ? parseCsvPreviewRows(text) : null;
+        if (rows) {
           return (
             <ArtifactDialogStage>
               <ArtifactDialogCard>
@@ -613,8 +642,8 @@ function ArtifactDialogTextBody({
 
         const formatted = formatPlainPreviewText(kind, text);
         const display =
-          formatted.length > 16_000
-            ? `${formatted.slice(0, 16_000)}\n\n…`
+          formatted.length > maxCharacters
+            ? `${formatted.slice(0, maxCharacters)}\n\n…`
             : formatted;
 
         return (
@@ -965,6 +994,7 @@ export function ArtifactPreviewBody({
   imageCanvasSignals,
   imageNavigation,
   preview,
+  textMaxCharacters = 16_000,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
   focusHtmlOnMount?: boolean;
@@ -972,6 +1002,7 @@ export function ArtifactPreviewBody({
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
+  textMaxCharacters?: number;
 }) {
   const filename = artifactDialogFilename(preview);
 
@@ -1018,7 +1049,13 @@ export function ArtifactPreviewBody({
     preview.kind === "json" ||
     preview.kind === "csv"
   ) {
-    return <ArtifactDialogTextBody kind={preview.kind} text$={preview.text$} />;
+    return (
+      <ArtifactDialogTextBody
+        kind={preview.kind}
+        text$={preview.text$}
+        maxCharacters={textMaxCharacters}
+      />
+    );
   }
 
   if (preview.kind === "html") {
@@ -1188,7 +1225,6 @@ function ArtifactPreviewDialogThreadResolver({
     equalityFn: equalEventImageGroups,
   });
   const navigateImageLightbox = useSet(navigateImageLightbox$);
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
   const item =
     loadable.state === "hasData"
       ? findArtifactDialogItemForUrl(loadable.data, preview.url)
@@ -1213,9 +1249,6 @@ function ArtifactPreviewDialogThreadResolver({
         ? artifactDialogMetadataFromItem({
             agentId,
             item: navigationItem.artifact,
-            onSyncSuccess: () => {
-              reloadArtifacts();
-            },
             threadId: thread.threadId,
           })
         : undefined,
@@ -1245,9 +1278,6 @@ function ArtifactPreviewDialogThreadResolver({
         artifact={artifactDialogMetadataFromItem({
           agentId,
           item,
-          onSyncSuccess: () => {
-            reloadArtifacts();
-          },
           threadId: thread.threadId,
         })}
         imageNavigation={{
@@ -1280,32 +1310,6 @@ function ArtifactPreviewDialogThreadResolver({
       }}
       preview={preview}
     />
-  );
-}
-
-function useCloseArtifactPreview() {
-  const rootSignal = useGet(rootSignal$);
-  const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
-  return () => {
-    cancelConnection(connectionAttempt);
-    closeArtifactCatalogPreview(rootSignal);
-  };
-}
-
-function ArtifactPreviewCloseButton() {
-  const { t } = useTranslation();
-  const close = useCloseArtifactPreview();
-  return (
-    <DialogIconButton
-      ariaLabel={t(($) => {
-        return $.artifacts.actions.close;
-      })}
-      onClick={close}
-    >
-      <X size={18} />
-    </DialogIconButton>
   );
 }
 
@@ -1401,6 +1405,54 @@ function ArtifactPreviewDialogActions({
   );
 }
 
+function ArtifactPreviewDialogHeaderActions({
+  artifact,
+  preview,
+}: {
+  artifact: AttachmentArtifactMetadata | undefined;
+  preview: AttachmentLightboxState;
+}) {
+  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
+  const fullscreen = useGet(lightboxDialogFullscreen$);
+
+  return connectionProgressActive ? (
+    <ArtifactPreviewCloseButton />
+  ) : (
+    <ArtifactPreviewDialogActions
+      artifact={artifact}
+      fullscreen={fullscreen}
+      preview={preview}
+    />
+  );
+}
+
+function ArtifactPreviewDialogBody({
+  artifact,
+  imageNavigation,
+  preview,
+}: {
+  artifact: AttachmentArtifactMetadata | undefined;
+  imageNavigation?: ArtifactImageNavigationActions;
+  preview: AttachmentLightboxState;
+}) {
+  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
+  const fullscreen = useGet(lightboxDialogFullscreen$);
+
+  return connectionProgressActive ? (
+    <div className="flex h-full items-center justify-center p-6">
+      <ConnectorConnectionStatus />
+    </div>
+  ) : (
+    <ArtifactPreviewBody
+      artifact={artifact}
+      fullscreen={fullscreen}
+      imageCanvasSignals={attachmentLightboxImageCanvasSignals}
+      imageNavigation={imageNavigation}
+      preview={preview}
+    />
+  );
+}
+
 function ArtifactPreviewDialogContent({
   artifact,
   imageNavigation,
@@ -1411,111 +1463,49 @@ function ArtifactPreviewDialogContent({
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const dialogMountRef = useSet(lightboxDialogMountRef$);
-  const initialFocus = useSet(lightboxDialogInitialFocus$);
-  const completeDialogExit = useSet(completeLightboxDialogExit$);
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
-  const closeWithAnimation = useCloseArtifactPreview();
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const subtitle = artifactDialogKindLabel(preview, artifact);
   const titleLink = artifact ? artifactTitleLink(preview.kind, artifact) : null;
-  const visible = useGet(lightboxDialogVisible$);
-  const fullscreen = useGet(lightboxDialogFullscreen$);
 
   return (
-    <Dialog
-      open={visible}
-      onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen, details) => {
-        if (
-          !nextOpen &&
-          connectionProgressActive &&
-          details.reason === "outside-press"
-        ) {
-          details.cancel();
-          return;
-        }
-        if (!nextOpen && visible) {
-          closeWithAnimation();
-        }
-      }}
+    <ArtifactPreviewDialogFrame
+      ariaLabel={t(
+        ($) => {
+          return $.artifacts.preview.dialogLabel;
+        },
+        { filename },
+      )}
+      kind={preview.kind}
     >
-      <DialogContent
-        ref={dialogMountRef}
-        initialFocus={initialFocus}
-        showCloseButton={false}
-        // The backdrop is fixed, so a standalone PWA clips it above the bottom
-        // safe inset; extending `bottom` keeps it covering the screen edge.
-        overlayClassName="[@media(display-mode:standalone)]:-bottom-safe bg-gray-900/45 dark:bg-gray-900/45"
-        maxWidth={1440}
-        height={1000}
-        surface="canvas"
-        mode={fullscreen ? "fullscreen" : "windowed"}
-        contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
-        aria-label={t(
-          ($) => {
-            return $.artifacts.preview.dialogLabel;
-          },
-          { filename },
-        )}
-        data-testid="attachment-lightbox"
+      <div
+        ref={registerConnectionDialog}
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
+        data-testid="attachment-lightbox-panel"
       >
-        <PreserveScrollAnchor
-          layoutKey={fullscreen}
-          anchor={
-            preview.kind === "markdown"
-              ? {
-                  viewportSelector: '[data-testid="artifact-dialog-stage"]',
-                  anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
-                }
-              : undefined
-          }
-        >
-          <div
-            ref={registerConnectionDialog}
-            className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
-            data-testid="attachment-lightbox-panel"
-          >
-            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
-                  <ArtifactTitle filename={filename} link={titleLink} />
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {subtitle}
-                </div>
-              </div>
-              {connectionProgressActive ? (
-                <ArtifactPreviewCloseButton />
-              ) : (
-                <ArtifactPreviewDialogActions
-                  artifact={artifact}
-                  fullscreen={fullscreen}
-                  preview={preview}
-                />
-              )}
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">
+              <ArtifactTitle filename={filename} link={titleLink} />
             </div>
-            <DialogBody className="overflow-hidden bg-background">
-              {connectionProgressActive ? (
-                <div className="flex h-full items-center justify-center p-6">
-                  <ConnectorConnectionStatus />
-                </div>
-              ) : (
-                <ArtifactPreviewBody
-                  artifact={artifact}
-                  fullscreen={fullscreen}
-                  imageCanvasSignals={attachmentLightboxImageCanvasSignals}
-                  imageNavigation={imageNavigation}
-                  preview={preview}
-                />
-              )}
-            </DialogBody>
+            <div className="truncate text-xs text-muted-foreground">
+              {subtitle}
+            </div>
           </div>
-        </PreserveScrollAnchor>
-      </DialogContent>
-      <ArtifactDiagramLightbox signals={attachmentDiagramPreview} />
-    </Dialog>
+          <ArtifactPreviewDialogHeaderActions
+            artifact={artifact}
+            preview={preview}
+          />
+        </div>
+        <DialogBody className="overflow-hidden bg-background">
+          <ArtifactPreviewDialogBody
+            artifact={artifact}
+            imageNavigation={imageNavigation}
+            preview={preview}
+          />
+        </DialogBody>
+      </div>
+    </ArtifactPreviewDialogFrame>
   );
 }
 

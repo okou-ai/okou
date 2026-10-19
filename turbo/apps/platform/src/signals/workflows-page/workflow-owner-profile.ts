@@ -38,8 +38,8 @@ async function readOwnerProfile(
   workflowId: string,
   signal: AbortSignal,
 ): Promise<WorkflowOwnerProfile> {
-  // An older API's missing route is an ordinary retryable author-row error,
-  // never an authoritative missing user. Only 200 responses enter the cache.
+  // A failed profile read is retried on the next request; only 200 responses
+  // enter the cache.
   const response = await accept(
     createClient(workflowsDetailContract).ownerProfile({
       params: { workflowId },

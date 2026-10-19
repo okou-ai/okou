@@ -76,9 +76,6 @@ export const LINK_WALLET_OAUTH_SCOPES = [
 
 export const LINK_WALLET_SOURCE_ACTIONS = ["read_link_transactions"] as const;
 
-// Persisted credentials from the preceding API omit scope/readOnly. Require
-// them after old writers are neither serving nor rollback targets AND existing
-// credentials have refreshed, reauthorized or been invalidated; cleanup #40206.
 export const linkCredentialsSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),

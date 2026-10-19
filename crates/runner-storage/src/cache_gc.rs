@@ -73,17 +73,16 @@ impl From<&std::fs::Metadata> for StorageDirectoryIdentity {
     }
 }
 
-struct StorageEvictionResult {
-    freed: u64,
-    /// Candidate contribution to keep in `total_size` after this attempt.
-    /// `None` removes the scan-time size from this pass's measured accounting.
-    remaining_size: Option<u64>,
-    /// Candidate contribution to keep in `total_entries` after this attempt.
-    /// Dry-runs set this to false to model the real deletion while leaving
-    /// the filesystem untouched.
-    remaining_entry: bool,
-    /// True when a real run deleted the cache entry, or a dry-run would have.
-    evicted: bool,
+#[derive(Debug, Eq, PartialEq)]
+enum StorageEvictionOutcome {
+    /// One entry remains with this contribution to measured byte accounting.
+    Retained { accounted_bytes: u64 },
+    /// One entry remains, but its bytes could not be safely measured.
+    Unmeasured,
+    /// The path no longer represents a cache entry; a file or symlink may remain.
+    NoLongerEntry,
+    /// A real deletion, or its dry-run projection, including zero-byte entries.
+    Evicted { freed_bytes: u64 },
 }
 
 /// Best-effort eviction for `/var/lib/vm0-runner/storages/` using storage
@@ -260,18 +259,22 @@ pub async fn gc_storage_cache(
             break;
         }
         let result = evict_storage_candidate_with_age(home, &c, now, dry_run, min_age).await;
-        freed = freed.saturating_add(result.freed);
-        if result.evicted {
-            evicted_entries = evicted_entries.saturating_add(1);
-            activity_count = activity_count.saturating_add(1);
-        }
         total_size = total_size.saturating_sub(c.size);
-        if let Some(remaining_size) = result.remaining_size {
-            total_size = total_size.saturating_add(remaining_size);
-        }
         total_entries = total_entries.saturating_sub(1);
-        if result.remaining_entry {
-            total_entries = total_entries.saturating_add(1);
+        match result {
+            StorageEvictionOutcome::Retained { accounted_bytes } => {
+                total_size = total_size.saturating_add(accounted_bytes);
+                total_entries = total_entries.saturating_add(1);
+            }
+            StorageEvictionOutcome::Unmeasured => {
+                total_entries = total_entries.saturating_add(1);
+            }
+            StorageEvictionOutcome::NoLongerEntry => {}
+            StorageEvictionOutcome::Evicted { freed_bytes } => {
+                freed = freed.saturating_add(freed_bytes);
+                evicted_entries = evicted_entries.saturating_add(1);
+                activity_count = activity_count.saturating_add(1);
+            }
         }
     }
 
@@ -298,7 +301,7 @@ async fn evict_storage_candidate_with_age(
     now: SystemTime,
     dry_run: bool,
     min_age: Duration,
-) -> StorageEvictionResult {
+) -> StorageEvictionOutcome {
     let lock_path = home.storage_lock_for_cache_key(&candidate.name, &candidate.version);
     let lock = match probe_lock(&lock_path) {
         LockProbe::Free(lock) => lock,
@@ -309,24 +312,14 @@ async fn evict_storage_candidate_with_age(
                     candidate.name, candidate.version
                 );
             }
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: true,
-                evicted: false,
-            };
+            return StorageEvictionOutcome::Unmeasured;
         }
         LockProbe::Error(e) => {
             warn!(
                 "storages/{}/{}: lock probe failed ({e}), skipping",
                 candidate.name, candidate.version
             );
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: true,
-                evicted: false,
-            };
+            return StorageEvictionOutcome::Unmeasured;
         }
     };
 
@@ -337,31 +330,18 @@ async fn evict_storage_candidate_with_age(
                 "storages/{}/{}: no longer a directory, skipping",
                 candidate.name, candidate.version
             );
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: false,
-                evicted: false,
-            };
+            return StorageEvictionOutcome::NoLongerEntry;
         }
         Ok(GcDirStatus::Missing) => {
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: None,
-                remaining_entry: false,
-                evicted: false,
-            };
+            return StorageEvictionOutcome::NoLongerEntry;
         }
         Err(e) => {
             warn!(
                 "storages/{}/{}: stat failed ({e}), skipping",
                 candidate.name, candidate.version
             );
-            return StorageEvictionResult {
-                freed: 0,
-                remaining_size: Some(candidate.size),
-                remaining_entry: true,
-                evicted: false,
+            return StorageEvictionOutcome::Retained {
+                accounted_bytes: candidate.size,
             };
         }
     };
@@ -384,21 +364,13 @@ async fn evict_storage_candidate_with_age(
                 age.as_secs()
             );
         }
-        return StorageEvictionResult {
-            freed: 0,
-            remaining_size: Some(size),
-            remaining_entry: true,
-            evicted: false,
+        return StorageEvictionOutcome::Retained {
+            accounted_bytes: size,
         };
     }
 
     if dry_run {
-        return StorageEvictionResult {
-            freed: size,
-            remaining_size: None,
-            remaining_entry: false,
-            evicted: true,
-        };
+        return StorageEvictionOutcome::Evicted { freed_bytes: size };
     }
 
     match tokio::fs::remove_dir_all(&candidate.path).await {
@@ -406,29 +378,16 @@ async fn evict_storage_candidate_with_age(
             let lock_name = lock_path.to_string_lossy();
             remove_unused_lock_after_probe(&lock_path, &lock, &lock_name, false).await;
             remove_empty_storage_name_dir_after_eviction(&candidate.path, &candidate.name).await;
-            StorageEvictionResult {
-                freed: size,
-                remaining_size: None,
-                remaining_entry: false,
-                evicted: true,
-            }
+            StorageEvictionOutcome::Evicted { freed_bytes: size }
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StorageEvictionResult {
-            freed: 0,
-            remaining_size: None,
-            remaining_entry: false,
-            evicted: false,
-        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StorageEvictionOutcome::NoLongerEntry,
         Err(e) => {
             warn!(
                 "failed to remove storages/{}/{}: {e}",
                 candidate.name, candidate.version
             );
-            StorageEvictionResult {
-                freed: 0,
-                remaining_size: Some(size),
-                remaining_entry: true,
-                evicted: false,
+            StorageEvictionOutcome::Retained {
+                accounted_bytes: size,
             }
         }
     }
@@ -550,7 +509,7 @@ async fn evict_storage_candidate(
     candidate: &StorageCandidate,
     now: SystemTime,
     dry_run: bool,
-) -> StorageEvictionResult {
+) -> StorageEvictionOutcome {
     evict_storage_candidate_with_age(home, candidate, now, dry_run, GC_MIN_AGE).await
 }
 

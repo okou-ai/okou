@@ -20,7 +20,7 @@ import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
-import { preparedVncRoutePredicate } from "./vnc-prepared-route";
+import { visibleVncNativeRole } from "./vnc-network-authority";
 import {
   runThreadExists,
   runThreadSshAccess,
@@ -42,6 +42,10 @@ const loadRunVncHostRows$ = command(
         ),
         generation: vncConnections.generation,
         transportType: vncConnections.transportType,
+        cloudflareAccessId: vncConnections.cloudflareAccessId,
+        tailscaleId: vncConnections.tailscaleId,
+        kdcCloudflareAccessId: vncConnections.kdcCloudflareAccessId,
+        kdcTailscaleId: vncConnections.kdcTailscaleId,
         sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
           nullableDriverValueDecoder(pgBooleanDecoder),
         ),
@@ -75,7 +79,8 @@ const loadRunVncHostRows$ = command(
           eq(vncConnections.orgId, agentRuns.orgId),
           eq(vncConnections.userId, agentRuns.userId),
           runThreadVncAccess(),
-          preparedVncRoutePredicate,
+          visibleVncNativeRole("rfb"),
+          visibleVncNativeRole("kdc"),
         ),
       )
       .leftJoin(
@@ -106,6 +111,17 @@ const loadRunVncHostRows$ = command(
       .orderBy(asc(vncConnections.displayName), asc(vncConnections.id));
   },
 );
+
+function hasDetachedNativeRole(
+  type: (typeof vncConnections.$inferSelect)["transportType"] | null,
+  accessId: string | null,
+  tailscaleId: string | null,
+) {
+  return (
+    (type === "cloudflare_access" && accessId === null) ||
+    (type === "tailscale" && tailscaleId === null)
+  );
+}
 
 export const listRunVncHosts$ = command(
   async (
@@ -146,7 +162,17 @@ export const listRunVncHosts$ = command(
             securityType: row.securityType,
             availability:
               (row.transportType === "ssh" && row.sshNeedsRebind) ||
-              (row.kdcTransportType === "ssh" && row.kdcNeedsRebind)
+              (row.kdcTransportType === "ssh" && row.kdcNeedsRebind) ||
+              hasDetachedNativeRole(
+                row.transportType,
+                row.cloudflareAccessId,
+                row.tailscaleId,
+              ) ||
+              hasDetachedNativeRole(
+                row.kdcTransportType,
+                row.kdcCloudflareAccessId,
+                row.kdcTailscaleId,
+              )
                 ? { status: "blocked", reason: "needs_rebind" }
                 : { status: "ready" },
           }),

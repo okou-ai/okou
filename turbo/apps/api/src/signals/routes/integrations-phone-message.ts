@@ -1,3 +1,6 @@
+import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
+import { and, desc, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 
@@ -5,15 +8,14 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
 } from "../external/agentphone-client";
 import {
   agentPhoneChannelForLinkedHandle,
-  resolveAgentPhoneAgentIdForUserLink,
-  resolveAgentPhoneUserLinkForMember,
+  normalizeAgentPhoneHandle,
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import { settle } from "../utils";
@@ -48,12 +50,19 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const body = bodyResult.data;
-  const db = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForMember(db, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-  });
+  const db = get(db$);
+  const [link] = await db
+    .select()
+    .from(agentphoneUserLinks)
+    .where(
+      and(
+        eq(agentphoneUserLinks.userId, auth.userId),
+        eq(agentphoneUserLinks.orgId, auth.orgId),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const userLink = link ?? null;
   if (!userLink) {
     return routeError(
       404,
@@ -64,13 +73,26 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   const phoneHandle = userLink.phoneHandle;
   const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
-  const agentphoneAgentId = await resolveAgentPhoneAgentIdForUserLink(db, {
-    userLinkId: userLink.id,
-    phoneHandle,
-    channel: userChannel,
-    agentphoneAgentId: body.agentphoneAgentId,
-  });
+  const agentRows = body.agentphoneAgentId
+    ? Promise.resolve([])
+    : db
+        .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
+        .from(agentphoneMessages)
+        .where(
+          and(
+            eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
+            eq(
+              agentphoneMessages.phoneHandle,
+              normalizeAgentPhoneHandle(phoneHandle, userChannel),
+            ),
+          ),
+        )
+        .orderBy(desc(agentphoneMessages.createdAt))
+        .limit(1);
+  const [message] = await agentRows;
   signal.throwIfAborted();
+  const agentphoneAgentId =
+    body.agentphoneAgentId || (message?.agentphoneAgentId ?? null);
   if (!agentphoneAgentId) {
     return routeError(404, "Phone agent not found", "NOT_FOUND");
   }

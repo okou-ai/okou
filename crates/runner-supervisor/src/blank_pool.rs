@@ -177,6 +177,8 @@ impl BlankPoolDiagnostics {
 }
 
 pub struct BlankPoolReplenisher {
+    #[cfg(feature = "test-support")]
+    optional_pool_wait: Option<tokio::sync::watch::Sender<bool>>,
     plan: Option<BlankPoolPlan>,
     diagnostics: BlankPoolDiagnostics,
     preparation: Option<BlankPreparation>,
@@ -299,6 +301,8 @@ impl BlankPoolReplenisher {
         }
         let diagnostics = BlankPoolDiagnostics::new(plan.as_ref());
         Self {
+            #[cfg(feature = "test-support")]
+            optional_pool_wait: None,
             plan,
             diagnostics,
             preparation: None,
@@ -335,7 +339,7 @@ impl BlankPoolReplenisher {
         idle_pool: &SharedIdlePool,
         budget: &Arc<ResourceBudget>,
         admission: &PreSpawnAdmission,
-        status: &StatusTracker,
+        status: &Arc<StatusTracker>,
         idle_destroy_tracker: &IdleDestroyTracker,
     ) {
         if !self.attempt_requested
@@ -485,7 +489,11 @@ impl BlankPoolReplenisher {
             }
         };
         if let Some(snapshot) = retired_snapshot {
-            set_idle_status_snapshot(status, snapshot).await;
+            let status = Arc::clone(status);
+            idle_destroy_tracker.spawn_cleanup(
+                async move { set_idle_status_snapshot(&status, snapshot).await },
+                "blank_pool_aged_exact_status",
+            );
         }
 
         let task_cancel = pre_spawn_lease.cancellation_token();
@@ -530,7 +538,7 @@ impl BlankPoolReplenisher {
         &mut self,
         result: BlankPrepareResult,
         idle_pool: &SharedIdlePool,
-        status: &StatusTracker,
+        status: &Arc<StatusTracker>,
         idle_destroy_tracker: &IdleDestroyTracker,
     ) {
         let Some(plan) = self.plan.as_ref() else {
@@ -572,7 +580,11 @@ impl BlankPoolReplenisher {
                     (result, snapshot, pool.blank_len())
                 };
                 if let Some(snapshot) = snapshot {
-                    set_idle_status_snapshot(status, snapshot).await;
+                    let status = Arc::clone(status);
+                    idle_destroy_tracker.spawn_cleanup(
+                        async move { set_idle_status_snapshot(&status, snapshot).await },
+                        "blank_pool_prepared_status",
+                    );
                 }
                 match park_result {
                     BlankParkOutcome::Parked => {
@@ -1011,7 +1023,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aged_exact_cleanup_is_owned_before_status_publication_or_preparation() {
+    async fn aged_exact_cleanup_and_publication_remain_owned_until_shutdown() {
         let profiles = BTreeMap::from([("vm0/default".to_owned(), profile(2, 4096))]);
         let factory: SharedFactory = Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new()));
         let factories = BTreeMap::from([("vm0/default".to_owned(), (factory, true))]);
@@ -1035,40 +1047,56 @@ mod tests {
         ));
         let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
         let dir = tempfile::tempdir().unwrap();
-        let status = StatusTracker::new(dir.path().join("status.json"), 1, None, None);
+        let status = Arc::new(StatusTracker::new(
+            dir.path().join("status.json"),
+            1,
+            None,
+            None,
+        ));
         status.write_initial().await.unwrap();
         let held = status.hold_state_for_test().await;
         let tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
         let admission = PreSpawnAdmission::new(2).unwrap();
         let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 1, None);
-        {
-            let starting = replenisher.maybe_start(
+        replenisher
+            .maybe_start(
                 RunnerMode::Running,
                 &idle_pool,
                 &budget,
                 &admission,
                 &status,
                 &tracker,
-            );
-            tokio::pin!(starting);
-            tokio::select! {
-                result = gate.wait_entered(1, Duration::from_secs(5)) => { result.unwrap(); }
-                () = &mut starting => panic!("status should remain blocked"),
-            }
-        }
-        assert!(!replenisher.is_preparing());
+            )
+            .await;
+        assert!(replenisher.is_preparing());
+        gate.wait_entered(1, Duration::from_secs(5)).await.unwrap();
         assert_eq!(budget.allocated().2, 1);
+        let preparation_shutdown = replenisher.shutdown(&tracker);
+        tokio::pin!(preparation_shutdown);
+        assert!(preparation_shutdown.as_mut().now_or_never().is_none());
+        gate.release_one();
+        tokio::time::timeout(Duration::from_secs(5), preparation_shutdown)
+            .await
+            .unwrap();
+        assert_eq!(budget.allocated(), (0, 0, 0));
         let shutdown = tracker.close_and_wait();
         tokio::pin!(shutdown);
         let retained = shutdown.as_mut().now_or_never().is_none();
-        gate.release_one();
+        drop(held);
         tokio::time::timeout(Duration::from_secs(5), shutdown)
             .await
             .unwrap();
-        drop(held);
         assert!(retained);
         assert_eq!(budget.allocated(), (0, 0, 0));
         assert!(idle_pool.lock().await.is_empty());
+        let persisted: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(dir.path().join("status.json"))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(persisted.get("idle_sandboxes").is_none());
+        assert!(persisted.get("blank_sandboxes").is_none());
     }
 
     fn enabled_diagnostics() -> BlankPoolDiagnostics {
@@ -1190,7 +1218,12 @@ mod tests {
         let mut factories = BTreeMap::new();
         factories.insert("vm0/default".to_owned(), (factory, true));
         let temp = tempfile::tempdir().unwrap();
-        let status = StatusTracker::new(temp.path().join("status.json"), 1, None, None);
+        let status = Arc::new(StatusTracker::new(
+            temp.path().join("status.json"),
+            1,
+            None,
+            None,
+        ));
         let tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
 
         let budget = Arc::new(ResourceBudget::new(20, 40_960, 1.0, 0));
@@ -1320,7 +1353,12 @@ mod tests {
             ParkingGate::new_open(),
         )));
         let temp = tempfile::tempdir().unwrap();
-        let status = StatusTracker::new(temp.path().join("status.json"), 7, None, None);
+        let status = Arc::new(StatusTracker::new(
+            temp.path().join("status.json"),
+            7,
+            None,
+            None,
+        ));
         let idle_destroy_tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
         let admission = PreSpawnAdmission::new(4).unwrap();
         let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 0, None);
@@ -1416,7 +1454,7 @@ mod tests {
         let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
         let temp = tempfile::tempdir().unwrap();
         let status_path = temp.path().join("status.json");
-        let status = StatusTracker::new(status_path.clone(), 2, None, None);
+        let status = Arc::new(StatusTracker::new(status_path.clone(), 2, None, None));
         let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
         let idle_destroy_tracker = IdleDestroyTracker::new(Arc::clone(&reuse_state_notify));
         let admission = PreSpawnAdmission::new(2).unwrap();
@@ -1440,7 +1478,19 @@ mod tests {
             .await
             .expect("exact removal should request an immediate heartbeat");
         assert_eq!(idle_pool.lock().await.held_reuse_keys(), ["newer-exact"]);
-        let status_json = tokio::fs::read_to_string(status_path).await.unwrap();
+        let status_json = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match tokio::fs::read_to_string(&status_path).await {
+                    Ok(status) => break status,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        tokio::task::yield_now().await;
+                    }
+                    Err(error) => panic!("read published idle inventory: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("accepted retirement inventory must be published");
         assert!(!status_json.contains("older-exact"));
         assert!(status_json.contains("newer-exact"));
 
@@ -1528,7 +1578,12 @@ mod tests {
         ));
         let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
         let temp = tempfile::tempdir().unwrap();
-        let status = StatusTracker::new(temp.path().join("status.json"), 1, None, None);
+        let status = Arc::new(StatusTracker::new(
+            temp.path().join("status.json"),
+            1,
+            None,
+            None,
+        ));
         let idle_destroy_tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
         let admission = PreSpawnAdmission::new(2).unwrap();
         let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 1, None);
@@ -1587,7 +1642,12 @@ mod tests {
         ));
         let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
         let temp = tempfile::tempdir().unwrap();
-        let status = StatusTracker::new(temp.path().join("status.json"), 1, None, None);
+        let status = Arc::new(StatusTracker::new(
+            temp.path().join("status.json"),
+            1,
+            None,
+            None,
+        ));
         let idle_destroy_tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
         let admission = PreSpawnAdmission::new(2).unwrap();
         let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 1, None);

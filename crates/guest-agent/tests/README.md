@@ -1,14 +1,23 @@
 # Guest-agent integration tests
 
-Use native module directories to share compilation within a domain. Each domain
-target imports `common` once; its case modules import `crate::common`.
+Integration executables live in `guest-agent` and the private
+[`guest-agent-tests`](../../guest-agent-tests/README.md) workspace package.
+The latter owns targets without original-package binary, version or source-path
+bindings. Each remains a separate executable, including process-global fixtures.
+Native case modules retain their existing `crate::common` imports and identities.
 
 Neutral command/session cleanup, file readiness, HTTP recording, mock builds and
-JSON/image fixtures compile in `cli-test-support`, enabled only as a development
-dependency through its `test-support` feature. `common` re-exports those helpers
-and retains guest runtime adapters, manifest-derived workspace lookup and
-process-global environment/cwd, log and resource-limit setup. Sharing compiled
-helpers does not combine the executables or relax their isolation requirements.
+JSON/image fixtures compile in `cli-test-support` through its opt-in `test-support`
+feature. Production crates keep that edge in development dependencies; the private
+test-owner library enables it for its own build. The canonical `common/mod.rs`
+re-exports those helpers and owns guest runtime adapters, manifest-derived workspace
+lookup and process-global environment/cwd, log and resource-limit setup.
+`guest-agent-tests` explicitly declares that source as its Cargo library root;
+its executables use the compiled library as `common`. Original-package-bound
+targets retain `mod common` against the same source, avoiding a reverse dependency
+or a second implementation. Both manifests live directly under `crates/`, so
+their workspace-parent lookup is identical. Sharing compiled helpers does not
+combine executables or relax isolation requirements.
 
 | Target                   | Ownership                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------- |
@@ -21,6 +30,11 @@ helpers does not combine the executables or relax their isolation requirements.
 | `fixture_contracts`      | Native command cleanup, readiness, JSON/image observation, masking and mock builds |
 | `pi_delivery_contracts`  | Pi startup, oversized drain controls and isolated RPC overload                     |
 | `runtime_contracts`      | Native continuation, reasoning, cancellation, deadlines and process control        |
+
+`codex_input_contracts` and `fixture_contracts` belong to `guest-agent-tests`;
+the other listed domains and `integration` retain their original package bindings.
+Package moves retain target/case names and child `--exact` filters;
+package-qualified nextest identities use the owning package above.
 
 The existing `integration` target owns `integration_cases/`. Other top-level
 roots remain separate when they change process environment, cwd, the shared
@@ -48,15 +62,16 @@ From the repository root:
 
 ```bash
 # Complete package selection, including retained isolated targets
-cargo test --manifest-path crates/Cargo.toml --profile local --locked -p guest-agent
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -p guest-agent -p guest-agent-tests
 
 # One shared domain, with ordinary Cargo case concurrency
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
-  -p guest-agent --test fixture_contracts
+  -p guest-agent-tests --test fixture_contracts
 
 # One exact ordinary parent, which invokes its own guarded child
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
-  -p guest-agent --test fixture_contracts \
+  -p guest-agent-tests --test fixture_contracts \
   fixture_cases::mock_build_lock::mock_build_lock_recovers_after_holder_exit -- --exact
 ```
 
@@ -65,3 +80,8 @@ Use one compilation job on a constrained host, as described in the
 `--test-threads=1` to justify grouping process-global fixtures. Target count alone
 does not prove a speedup: compare equivalent instrumented builds, complete
 coverage jobs, peak memory and disk under matching runner/cache conditions.
+
+Linux session-history fixtures require temporary files on the `/home/user` mount.
+When `/tmp` is on another mount, supply a short, test-owned `TMPDIR` on the home
+mount and remove it after execution. Keep paths short enough for the native Unix
+socket path limit; deeply nested temporary roots can exceed that limit.

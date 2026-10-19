@@ -53,8 +53,7 @@ export const tailscaleConfigSchema = z
     sshHosts: z.array(
       z.object({ id: z.uuid(), displayName: z.string() }).strict(),
     ),
-    // B reader preparation; G emits this canonically and H (#40229) requires it.
-    vncHosts: z.array(vncNetworkHostReferenceSchema).optional(),
+    vncHosts: z.array(vncNetworkHostReferenceSchema),
   })
   .strict();
 const updateBody = z
