@@ -1819,6 +1819,7 @@
       },
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
+        "hint": "搜尋工作流程或選擇範本…",
         "make": "製作",
         "useTemplate": "使用模板 {{title}}"
       },

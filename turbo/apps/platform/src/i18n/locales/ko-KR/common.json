@@ -1819,6 +1819,7 @@
       },
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
+        "hint": "워크플로를 검색하거나 템플릿 선택…",
         "make": "만들기",
         "useTemplate": "템플릿 {{title}} 사용"
       },
