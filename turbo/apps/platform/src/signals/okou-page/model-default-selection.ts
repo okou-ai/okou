@@ -14,6 +14,7 @@ import type { ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { memberRunModelAllowedForPlan } from "./model-plan-capabilities.ts";
 import { withChatModelSettings } from "./model-reasoning-effort.ts";
+import { openSettingsBillingPlansDialog$ } from "./settings/settings-dialog.ts";
 
 interface UserModelDefaultSource {
   selectedModel: string | null;
@@ -149,11 +150,28 @@ export function resolveModelFirstStoredUserSelection(params: {
   return userSelection;
 }
 
+export const selectExplicitModel$ = command(
+  async (
+    { set },
+    params: {
+      selection: ModelProviderSelection | null;
+      previousSelection: ModelProviderSelection | null;
+    },
+    signal: AbortSignal,
+  ) => {
+    const result = await set(resolveExplicitModelSelection$, params, signal);
+    if (result.kind === "compare-plans") {
+      await set(openSettingsBillingPlansDialog$, signal);
+    }
+    return result;
+  },
+);
+
 type ExplicitModelSelectionResult =
   | { kind: "compare-plans" }
   | { kind: "select"; selection: ModelProviderSelection | null };
 
-export const resolveExplicitModelSelection$ = command(
+const resolveExplicitModelSelection$ = command(
   async (
     { get },
     params: {

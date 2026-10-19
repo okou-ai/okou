@@ -1,11 +1,13 @@
+mod active_check;
 mod authority_cache;
 mod boundaries;
 mod delivery;
 mod diagnostics;
-mod harness;
+pub(crate) mod harness;
 mod history;
 mod list;
 mod list_lifecycle;
+pub(crate) mod native;
 mod notifications;
 mod observations;
 pub(crate) mod peer;
@@ -316,7 +318,7 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
 }
 
 #[tokio::test]
-async fn prepared_native_routes_fail_before_network_or_session_admission() {
+async fn malformed_native_rfb_and_kdc_fail_before_network_or_session_admission() {
     for (kind, kdc) in [
         ("cloudflare_access", false),
         ("tailscale", false),
@@ -333,6 +335,7 @@ async fn prepared_native_routes_fail_before_network_or_session_admission() {
         } else if !kdc {
             transport["originTls"] = serde_json::Value::Null;
         }
+        transport["configId"] = json!("invalid-config-id");
         let mut response = json!({
             "outcome":"resolved_transport", "host":"vnc.example.test", "port":5900,
             "generation":7, "serverName":"vnc.example.test", "transport":transport,
@@ -355,7 +358,7 @@ async fn prepared_native_routes_fail_before_network_or_session_admission() {
                     "ticketLifetimeSeconds":1200,"renewableLifetimeSeconds":7200}
             });
         }
-        // The mock also verifies that only installed Direct/SSH profiles were advertised.
+        // The exact installed declaration includes independently authorized native KDC tuples.
         let resolve = h.resolve_response(response).await;
         assert_eq!(
             h.start("shared").await.result(),

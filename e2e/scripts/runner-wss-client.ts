@@ -7,6 +7,7 @@ import {
   sandboxChannelHelloResultSchema,
   type SandboxChannelMessage,
   type SandboxChannelPayloadSchema,
+  type SandboxChannelOperation,
 } from "@okouai/api-contracts/contracts/sandbox-channel";
 import {
   sandboxDiagnosticsEchoSchema,
@@ -269,7 +270,10 @@ export class RunnerWssClient {
         schemaVersion: limits.schemaVersion,
         type: "hello",
         id: randomUUID(),
-        categories: { diagnostics: 1, fs: SANDBOX_FS_VERSION },
+        categories: {
+          diagnostics: 1,
+          fs: SANDBOX_FS_VERSION,
+        },
       },
       sandboxChannelHelloResultSchema,
       (hello) => {
@@ -391,14 +395,68 @@ export class RunnerWssClient {
     code: string,
   ): Promise<void> {
     if (!this.filesystemReady) throw new Error("Filesystem role unavailable");
+    return this.rejectOperation(
+      "fs",
+      SANDBOX_FS_VERSION,
+      operation,
+      params,
+      code,
+    );
+  }
+
+  async fileCall<P extends Record<string, unknown>, R>(
+    operation: SandboxChannelOperation<P, R>,
+    params: P,
+  ): Promise<R> {
+    if (!this.filesystemReady)
+      throw new Error("Filesystem version mismatch; refresh required");
+    const parsed = operation.params.safeParse(params);
+    if (!parsed.success) throw new Error("Invalid file read probe parameters");
+    return this.call(
+      {
+        schemaVersion: 1,
+        type: "request",
+        id: randomUUID(),
+        category: operation.category,
+        categoryVersion: operation.categoryVersion,
+        operation: operation.operation,
+        params: parsed.data,
+      },
+      operation.result,
+    );
+  }
+
+  async rejectFileRead(
+    operation: string,
+    params: Record<string, unknown>,
+    code: string,
+  ): Promise<void> {
+    if (!this.filesystemReady)
+      throw new Error("Filesystem version mismatch; refresh required");
+    return this.rejectOperation(
+      "fs",
+      SANDBOX_FS_VERSION,
+      operation,
+      params,
+      code,
+    );
+  }
+
+  private async rejectOperation(
+    category: string,
+    categoryVersion: number,
+    operation: string,
+    params: Record<string, unknown>,
+    code: string,
+  ): Promise<void> {
     try {
       await this.call(
         {
           schemaVersion: 1,
           type: "request",
           id: randomUUID(),
-          category: "fs",
-          categoryVersion: SANDBOX_FS_VERSION,
+          category,
+          categoryVersion,
           operation,
           params,
         },

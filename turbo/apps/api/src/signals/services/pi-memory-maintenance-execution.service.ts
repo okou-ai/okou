@@ -83,6 +83,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunLifecycleConflictSet } from "@okouai/db/operations/billing-run-lifecycle";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -555,13 +556,16 @@ const failedMaintenancePublicationRowSchema = z.discriminatedUnion("outcome", [
 
 /** Actual RETURNING relations gate every dependent insert. */
 function failedMaintenancePublicationWrites(): SQL {
+  const lifecycle = billingRunLifecycleConflictSet();
   return sql`
       written_attribution AS (
         INSERT INTO ${billingRunAttribution}
           ("run_id", "org_id", "user_id", "run_started_at", "source",
-           "thread_id", "thread_context")
+           "thread_id", "thread_context", "run_terminal_status",
+           "run_completed_at", "run_lifecycle_context")
         SELECT input.run_id, input.run_org_id, input.run_user_id,
-          input.attribution_started_at, 'agent', NULL, 'threadless'
+          input.attribution_started_at, 'agent', NULL, 'threadless',
+          'failed', input.created_at, 'captured'
         FROM input CROSS JOIN allowed
         WHERE true
         ON CONFLICT ("run_id") DO UPDATE SET
@@ -571,7 +575,10 @@ function failedMaintenancePublicationWrites(): SQL {
             THEN excluded.thread_id ELSE ${billingRunAttribution.threadId} END,
           "thread_context" = CASE
             WHEN ${billingRunAttribution.threadContext} = 'unknown'
-            THEN excluded.thread_context ELSE ${billingRunAttribution.threadContext} END
+            THEN excluded.thread_context ELSE ${billingRunAttribution.threadContext} END,
+          "run_terminal_status" = ${lifecycle.runTerminalStatus},
+          "run_completed_at" = ${lifecycle.runCompletedAt},
+          "run_lifecycle_context" = ${lifecycle.runLifecycleContext}
         WHERE (${eq(billingRunAttribution.orgId, sql`excluded.org_id`)}
           AND ${eq(billingRunAttribution.userId, sql`excluded.user_id`)}
           AND ${eq(billingRunAttribution.runStartedAt, sql`excluded.run_started_at`)}
@@ -583,7 +590,7 @@ function failedMaintenancePublicationWrites(): SQL {
           "id", "user_id", "agent_id", "status", "prompt", "append_system_prompt",
           "vars", "secret_names", "storage_mounts", "launch_snapshot",
           "official_workflow_provenance", "error", "org_id", "created_at",
-          "credit_admitted", "completed_at", "runner_group", "trigger_source",
+          "completed_at", "runner_group", "trigger_source",
           "autonomy_budget", "workflow_automation_id", "model_provider",
           "model_provider_id", "model_provider_account_identity",
           "model_provider_credential_scope", "selected_model",
@@ -597,7 +604,7 @@ function failedMaintenancePublicationWrites(): SQL {
           written_attribution.run_id, input.run_user_id, NULL, 'failed',
           input.prompt, input.append_system_prompt, NULL, input.secret_names,
           NULL, input.launch_snapshot, NULL, input.error, input.run_org_id,
-          input.created_at, false, input.created_at, NULL, input.trigger_source,
+          input.created_at, input.created_at, NULL, input.trigger_source,
           input.autonomy_budget, NULL, input.model_provider, input.model_provider_id,
           NULL, input.model_provider_credential_scope, input.selected_model,
           input.model_runtime_provider, input.model_runtime_model, NULL, NULL,
@@ -801,7 +808,11 @@ const persistMaintenanceRun$ = command(
       const rowInput = maintenancePendingRunInput(args, createdAt);
       await tx.insert(agentRuns).values(maintenanceRunValues(rowInput));
       await tx.insert(agentRunCallbacks).values(rowInput.callback);
-      const capture = maintenanceBillingAttribution(record, rowInput.createdAt);
+      const capture = maintenanceBillingAttribution(
+        record,
+        rowInput.createdAt,
+        rowInput.status,
+      );
       const [attribution] = await tx
         .insert(billingRunAttribution)
         .values(capture.values)
@@ -1332,7 +1343,6 @@ function maintenanceRunValues(args: {
   readonly status: "pending" | "failed";
   readonly runStorageMounts: readonly PersistedStorageMount[] | null;
   readonly runnerGroup: string | null;
-  readonly creditAdmitted: boolean;
   readonly accountIdentity: string | null;
   readonly error: string | null;
 }): typeof agentRuns.$inferInsert {
@@ -1344,7 +1354,6 @@ function maintenanceRunValues(args: {
     orgId: record.orgId,
     status: args.status,
     agentId: null,
-    creditAdmitted: args.creditAdmitted,
     prompt: record.prompt,
     appendSystemPrompt: record.appendSystemPrompt,
     vars: null,
@@ -1374,6 +1383,7 @@ function maintenanceCallbackValues(record: MaintenanceRunRecord) {
 function maintenanceBillingAttribution(
   record: MaintenanceRunRecord,
   createdAt: Date,
+  status: string,
 ) {
   return billingRunAttributionWrite({
     id: record.runId,
@@ -1382,6 +1392,8 @@ function maintenanceBillingAttribution(
     startedAt: createdAt.toISOString(),
     triggerSource: "agent",
     threadId: null,
+    status,
+    billingCompletedAt: status === "failed" ? createdAt.toISOString() : null,
   });
 }
 
@@ -1450,7 +1462,6 @@ function maintenancePendingRunInput(
     status: "pending" as const,
     runStorageMounts: args.launch.runStorageMounts,
     runnerGroup: args.launch.runnerGroup,
-    creditAdmitted: false,
     accountIdentity: null,
     error: null,
   };

@@ -565,6 +565,8 @@ pub struct FirecrackerSandbox {
     runtime_cancel: CancellationToken,
     /// Optional managed host CPU placement for the Firecracker process.
     host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+    #[cfg(feature = "test-support")]
+    pub(crate) preparation_checkpoint: Option<crate::GuestPreparationCheckpoint>,
 }
 
 pub(crate) struct FirecrackerSandboxInit {
@@ -684,6 +686,8 @@ impl FirecrackerSandbox {
             guest_duplex_endpoint: None,
             runtime_cancel: CancellationToken::new(),
             host_cpu_cgroup,
+            #[cfg(feature = "test-support")]
+            preparation_checkpoint: None,
         }
     }
 
@@ -2593,7 +2597,13 @@ impl Sandbox for FirecrackerSandbox {
     // -- lifecycle --
 
     async fn start(&mut self) -> sandbox::Result<()> {
-        self.start_with_optional_observer(None).await
+        let result = self.start_with_optional_observer(None).await;
+        #[cfg(feature = "test-support")]
+        if result.is_ok() {
+            self.run_preparation_checkpoint(crate::GuestPreparationStage::Start)
+                .await?;
+        }
+        result
     }
 
     async fn start_with_observer(
@@ -2771,8 +2781,15 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn park_for_blank_pool(&mut self) -> sandbox::Result<SandboxParkOutcome> {
-        self.park_with_memory_policy(ParkMemoryPolicy::Preserve)
-            .await
+        let result = self
+            .park_with_memory_policy(ParkMemoryPolicy::Preserve)
+            .await;
+        #[cfg(feature = "test-support")]
+        if matches!(result, Ok(SandboxParkOutcome::Reusable)) {
+            self.run_preparation_checkpoint(crate::GuestPreparationStage::Park)
+                .await?;
+        }
+        result
     }
 
     async fn final_exec_and_park(
@@ -2889,13 +2906,23 @@ impl Sandbox for FirecrackerSandbox {
     async fn mount_home_drive(&self) -> sandbox::Result<ExecResult> {
         let operation = SandboxOperation::MountHomeDrive;
 
-        self.run_bounded_guest_operation(operation, |guest| async move {
-            guest
-                .mount_home_drive(HOME_DRIVE_MOUNT_REQUEST_DEADLINE)
-                .await
-                .map(home_drive_mount_exec_result)
-        })
-        .await
+        let result = self
+            .run_bounded_guest_operation(operation, |guest| async move {
+                guest
+                    .mount_home_drive(HOME_DRIVE_MOUNT_REQUEST_DEADLINE)
+                    .await
+                    .map(home_drive_mount_exec_result)
+            })
+            .await;
+        #[cfg(feature = "test-support")]
+        if result
+            .as_ref()
+            .is_ok_and(sandbox::helper_exec::helper_exec_succeeded)
+        {
+            self.run_preparation_checkpoint(crate::GuestPreparationStage::Mount)
+                .await?;
+        }
+        result
     }
 
     async fn verify_session_history_identity(

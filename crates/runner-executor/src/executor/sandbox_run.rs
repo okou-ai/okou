@@ -1204,148 +1204,107 @@ async fn create_started_sandbox(
     );
     telemetry.record("sandbox_create", t.elapsed(), true, None);
 
-    let mut prepared_guest_runtime = if codex_model_catalog_prefetch {
-        PreparedGuestRuntime::prepare_for_codex_model_catalog_prefetch(
-            sandbox.as_ref(),
-            context,
-            params.restore_guest_state,
-            reuse_result,
-            cancel,
-            telemetry,
-        )
-        .await
-    } else {
-        Some(
-            PreparedGuestRuntime::prepare_without_codex_model_catalog_prefetch(
+    let (mut error, unregister_warning) = 'prepare: {
+        let mut prepared_guest_runtime = if codex_model_catalog_prefetch {
+            PreparedGuestRuntime::prepare_for_codex_model_catalog_prefetch(
                 sandbox.as_ref(),
                 context,
                 params.restore_guest_state,
+                reuse_result,
                 cancel,
                 telemetry,
             )
-            .await,
-        )
-    };
-    prepared_guest_runtime = match prepared_guest_runtime {
-        Some(PreparedGuestRuntime::SandboxUnusable(error)) => {
-            let unregister_completed = match unregister_proxy_registry(
-                config,
-                &source_ip,
-                context.run_id,
-            )
             .await
-            {
-                Ok(()) => true,
-                Err(unregister_error) => {
-                    warn!(
-                        run_id = %context.run_id,
-                        error = %unregister_error,
-                        "failed to unregister sandbox from proxy after unsafe Codex prefetch start failure"
-                    );
-                    false
-                }
-            };
-            network_log_session
-                .close_for_upload(context.run_id, &config.network_log_drain)
-                .await;
-            let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
-                .await
-                .is_completed();
-            return Err(SandboxPrepareError::without_codex_model_catalog_prefetch(
-                error,
-                unregister_completed && destroy_completed,
-            ));
-        }
-        prepared_guest_runtime => prepared_guest_runtime,
-    };
+        } else {
+            Some(
+                PreparedGuestRuntime::prepare_without_codex_model_catalog_prefetch(
+                    sandbox.as_ref(),
+                    context,
+                    params.restore_guest_state,
+                    cancel,
+                    telemetry,
+                )
+                .await,
+            )
+        };
+        prepared_guest_runtime = match prepared_guest_runtime {
+            Some(PreparedGuestRuntime::SandboxUnusable(error)) => {
+                break 'prepare (
+                    SandboxPrepareError::without_codex_model_catalog_prefetch(error, false),
+                    "failed to unregister sandbox from proxy after unsafe Codex prefetch start failure",
+                );
+            }
+            prepared_guest_runtime => prepared_guest_runtime,
+        };
 
-    let mount_started = Instant::now();
-    let mount_result = ensure_home_drive_mounted(sandbox.as_ref(), context.run_id).await;
-    let mount_duration = mount_started.elapsed();
-    let guest_duration = match mount_result {
-        Ok(guest_duration) => guest_duration,
-        Err(e) => {
-            telemetry.record(
-                HOME_DRIVE_MOUNT,
-                mount_duration,
-                false,
-                Some(&e.error.to_string()),
-            );
-            record_home_drive_mount_guest_exec(telemetry, e.guest_duration, false);
+        let mount_started = Instant::now();
+        let mount_result = ensure_home_drive_mounted(sandbox.as_ref(), context.run_id).await;
+        let mount_duration = mount_started.elapsed();
+        let guest_duration = match mount_result {
+            Ok(guest_duration) => guest_duration,
+            Err(e) => {
+                telemetry.record(
+                    HOME_DRIVE_MOUNT,
+                    mount_duration,
+                    false,
+                    Some(&e.error.to_string()),
+                );
+                record_home_drive_mount_guest_exec(telemetry, e.guest_duration, false);
+                if let Some(prepared_guest_runtime) = prepared_guest_runtime.take() {
+                    prepared_guest_runtime
+                        .finish(sandbox.as_ref(), telemetry)
+                        .await;
+                }
+                break 'prepare (
+                    SandboxPrepareError::retry_without_home_image(e.error.into(), false),
+                    "failed to unregister sandbox from proxy after home mount failure",
+                );
+            }
+        };
+        telemetry.record(HOME_DRIVE_MOUNT, mount_duration, true, None);
+        record_home_drive_mount_guest_exec(telemetry, guest_duration, true);
+        if let Some(notifier) = sandbox_prepared
+            && let Err(error) = notifier.notify(context.run_id, sandbox_id).await
+        {
             if let Some(prepared_guest_runtime) = prepared_guest_runtime.take() {
                 prepared_guest_runtime
                     .finish(sandbox.as_ref(), telemetry)
                     .await;
             }
-            let unregister_completed =
-                match unregister_proxy_registry(config, &source_ip, context.run_id).await {
-                    Ok(()) => true,
-                    Err(unregister_error) => {
-                        warn!(
-                            run_id = %context.run_id,
-                            error = %unregister_error,
-                            "failed to unregister sandbox from proxy after home mount failure"
-                        );
-                        false
-                    }
-                };
-            network_log_session
-                .close_for_upload(context.run_id, &config.network_log_drain)
-                .await;
-            let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
-                .await
-                .is_completed();
-            return Err(SandboxPrepareError::retry_without_home_image(
-                e.error.into(),
-                unregister_completed && destroy_completed,
-            ));
+            break 'prepare (
+                SandboxPrepareError::fatal_after_cleanup(error, false),
+                "failed to unregister sandbox from proxy after ownership publication failure",
+            );
         }
+
+        return Ok(PreparedSandboxRun {
+            sandbox,
+            source_ip,
+            network_log_session,
+            prepared_guest_runtime,
+        });
     };
-    telemetry.record(HOME_DRIVE_MOUNT, mount_duration, true, None);
-    record_home_drive_mount_guest_exec(telemetry, guest_duration, true);
-    if let Some(notifier) = sandbox_prepared
-        && let Err(error) = notifier.notify(context.run_id, sandbox_id).await
-    {
-        if let Some(prepared_guest_runtime) = prepared_guest_runtime.take() {
-            prepared_guest_runtime
-                .finish(sandbox.as_ref(), telemetry)
-                .await;
-        }
-        let unregister_completed = match unregister_proxy_registry(
-            config,
-            &source_ip,
-            context.run_id,
-        )
-        .await
-        {
+
+    let unregister_completed =
+        match unregister_proxy_registry(config, &source_ip, context.run_id).await {
             Ok(()) => true,
             Err(unregister_error) => {
                 warn!(
                     run_id = %context.run_id,
                     error = %unregister_error,
-                    "failed to unregister sandbox from proxy after ownership publication failure"
+                    "{unregister_warning}"
                 );
                 false
             }
         };
-        network_log_session
-            .close_for_upload(context.run_id, &config.network_log_drain)
-            .await;
-        let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
-            .await
-            .is_completed();
-        return Err(SandboxPrepareError::fatal_after_cleanup(
-            error,
-            unregister_completed && destroy_completed,
-        ));
-    }
-
-    Ok(PreparedSandboxRun {
-        sandbox,
-        source_ip,
-        network_log_session,
-        prepared_guest_runtime,
-    })
+    network_log_session
+        .close_for_upload(context.run_id, &config.network_log_drain)
+        .await;
+    let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
+        .await
+        .is_completed();
+    error.cleanup_completed = unregister_completed && destroy_completed;
+    Err(error)
 }
 
 fn record_home_drive_mount_guest_exec(
@@ -1653,6 +1612,7 @@ pub(super) async fn register_proxy(
         model_usage_provider: context.model_usage_provider.as_deref(),
         model_usage_long_context_min_total_input_tokens: context
             .model_usage_long_context_min_total_input_tokens,
+        pi_model_config: context.pi_model_config.as_ref(),
     };
     let publication = config
         .registry

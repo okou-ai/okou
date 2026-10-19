@@ -10,7 +10,11 @@ import {
   skillImportSkillsContract,
   type SkillImportRequest,
 } from "@okouai/api-contracts/contracts/skill-import";
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
+import { and, count, eq, gte, isNull, or } from "drizzle-orm";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -26,11 +30,6 @@ import { authorization$, request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import {
-  countSkillsImportedInSession,
-  findOwnPrivateWorkflowIdByName,
-  resolveSkillImportAgentId,
-} from "../services/skill-import.service";
 import { safeSync } from "../utils";
 import { createWorkflowRecord$ } from "./workflows";
 
@@ -93,11 +92,25 @@ const createSessionInner$ = command(
       return bodyResult.response;
     }
 
-    const agentId = await resolveSkillImportAgentId(get(db$), {
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
+    const [selectedAgent] = await get(db$)
+      .select({ agentId: agents.id })
+      .from(orgMetadata)
+      .innerJoin(
+        agents,
+        and(
+          eq(agents.id, orgMetadata.defaultAgentId),
+          eq(agents.orgId, orgMetadata.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orgMetadata.orgId, auth.orgId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, auth.userId)),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
+    const agentId = selectedAgent?.agentId ?? null;
     if (!agentId) {
       return notFound("This organization has no default agent to import into");
     }
@@ -287,12 +300,19 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const imported = await countSkillsImportedInSession(get(db$), {
-    agentId: session.agentId,
-    userId: session.userId,
-    since: new Date(session.issuedAtSeconds * 1000),
-  });
+  const [selectedCount] = await get(db$)
+    .select({ imported: count() })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.agentId, session.agentId),
+        eq(workflows.createdBy, session.userId),
+        gte(workflows.createdAt, new Date(session.issuedAtSeconds * 1000)),
+        isNull(workflows.officialDefinitionName),
+      ),
+    );
   signal.throwIfAborted();
+  const imported = selectedCount?.imported ?? 0;
   if (imported >= SKILL_IMPORT_LIMITS.maxSkillsPerSession) {
     return sessionLimitReached(
       `This session already imported ${String(
@@ -301,13 +321,22 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const existingId = await findOwnPrivateWorkflowIdByName(get(db$), {
-    orgId: session.orgId,
-    agentId: session.agentId,
-    ownerUserId: session.userId,
-    name,
-  });
+  const [selectedWorkflow] = await get(db$)
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.orgId, session.orgId),
+        eq(workflows.agentId, session.agentId),
+        eq(workflows.ownerUserId, session.userId),
+        eq(workflows.name, name),
+        eq(workflows.visibility, "private"),
+        isNull(workflows.officialDefinitionName),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const existingId = selectedWorkflow?.id ?? null;
   if (existingId) {
     return {
       status: 200 as const,

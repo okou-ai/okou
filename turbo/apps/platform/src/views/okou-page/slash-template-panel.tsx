@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { useGet, useLastLoadable } from "ccstate-react";
+import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
+import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
@@ -24,13 +25,15 @@ import {
   projectCustomTemplate$,
   slashCustomTemplatesEnabled$,
 } from "../../signals/okou-page/custom-template-library.ts";
-import { SlashWorkflowName } from "./slash-workflow.tsx";
+import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
 import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import { Link } from "../router/link.tsx";
+import { slashCustomTemplateCounts$ } from "../../signals/okou-page/slash-actions.ts";
+import type { SlashAction } from "./slash-actions.ts";
 import {
   isSlashTemplateNativeAspectCategory,
   customSlashTemplatePreview,
@@ -88,6 +91,11 @@ function workflowSummary(description: string): string {
 interface SlashTemplatePanelProps {
   /** Already filtered by the typed slash query. */
   readonly categories: readonly SlashTemplateCategory[];
+  /**
+   * The chat actions the typed query names, indexed after the categories and
+   * before the workflows. Empty unless the slash-actions switch is on.
+   */
+  readonly actions: readonly SlashAction[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
   readonly collapseWorkflows: boolean;
@@ -102,10 +110,13 @@ interface SlashTemplatePanelProps {
   readonly onNewWorkflow: () => void;
   /** Runs before the Manage workflows link navigates. */
   readonly onManageWorkflows: () => void;
-  /** The menu opens above the composer, so its most relevant row is last. */
+  /** Keep overview categories anchored nearest the composer on desktop. */
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
-  /** Categories precede workflows in the editor's shared suggestion index. */
+  /**
+   * Categories, then actions, precede workflows in the editor's shared
+   * suggestion index.
+   */
   readonly selectedIndex: number;
   /** The row the pointer is previewing, or null while the keyboard leads. */
   readonly previewIndex: number | null;
@@ -227,6 +238,44 @@ function SlashTemplateCover({
   );
 }
 
+/** The custom templates a category lists; websites have none. */
+function customTemplateKind(
+  category: Exclude<SlashTemplateCategory, "website">,
+): UserTemplateKind {
+  return category === "slides" ? "presentation" : category;
+}
+
+/** The built-in covers a category shows; Document's wait for their switch. */
+function useBuiltInSlashTemplates(): (
+  category: SlashTemplateCategory,
+) => readonly SlashTemplatePreview[] {
+  const documentTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
+  return (category) => {
+    return category === "document" && !documentTemplatesEnabled
+      ? []
+      : slashTemplatePreviews(category);
+  };
+}
+
+/**
+ * How many covers a category shows: its built-in templates plus the custom
+ * ones listed beside them, so a count matches the covers it opens.
+ */
+export function useSlashTemplateCount(): (
+  category: SlashTemplateCategory,
+) => number {
+  const builtIn = useBuiltInSlashTemplates();
+  const customCounts = useLastResolved(slashCustomTemplateCounts$);
+  return (category) => {
+    const custom =
+      category === "website"
+        ? 0
+        : (customCounts?.get(customTemplateKind(category)) ?? 0);
+    return builtIn(category).length + custom;
+  };
+}
+
 /** Mounted only while a category can show custom templates. */
 function SlashCustomTemplateCovers({
   category,
@@ -237,7 +286,7 @@ function SlashCustomTemplateCovers({
 }) {
   const catalog = useLastLoadable(customTemplateCatalog$);
   const project = useGet(projectCustomTemplate$);
-  const kind = category === "slides" ? "presentation" : category;
+  const kind = customTemplateKind(category);
   if (catalog.state === "hasError") {
     return (
       <div className="col-span-full break-inside-avoid pb-2.5">
@@ -282,12 +331,7 @@ export function SlashTemplateCovers({
   ) => void;
 }) {
   const customTemplatesEnabled = useGet(slashCustomTemplatesEnabled$);
-  const documentTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
-  const previews =
-    category === "document" && !documentTemplatesEnabled
-      ? []
-      : slashTemplatePreviews(category);
+  const previews = useBuiltInSlashTemplates()(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <>
@@ -450,7 +494,7 @@ function SlashPanelWorkflowList({
               key={workflow.id}
               id={workflowOptionId(workflow.id)}
               ref={
-                reversed && selectedIndex === index
+                selectedIndex === index
                   ? scrollSelectedSlashOptionOnMount
                   : undefined
               }
@@ -734,7 +778,7 @@ function SlashPanelCategoryList({
                 key={category}
                 id={categoryOptionId(category)}
                 ref={
-                  reversed && selectedIndex === index
+                  selectedIndex === index
                     ? scrollSelectedSlashOptionOnMount
                     : undefined
                 }
@@ -761,6 +805,123 @@ function SlashPanelCategoryList({
                 />
                 <span className="min-w-0 flex-1 truncate">{label}</span>
               </button>
+            );
+          },
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function slashActionOptionId(id: string): string {
+  return `action-${id}`;
+}
+
+/** A command reads like GPT's: its name, then what it does, quieter. */
+export function SlashActionRow({
+  action,
+  index,
+  marked,
+  scrollOnMount = false,
+  expanded,
+  onOpen,
+  onPreview,
+}: {
+  readonly action: SlashAction;
+  readonly index: number;
+  readonly marked: boolean;
+  /** Bring the keyboard's row into view when the list opens on it. */
+  readonly scrollOnMount?: boolean;
+  /**
+   * Whether the second level this row opens is showing. Set only where the
+   * row opens one, which also draws its chevron.
+   */
+  readonly expanded?: boolean;
+  /** Opens the second level instead of running the action. */
+  readonly onOpen?: () => void;
+  readonly onPreview: (index: number) => void;
+}) {
+  const { Icon } = action;
+  return (
+    <button
+      id={slashWorkflowOptionId(slashActionOptionId(action.id))}
+      ref={scrollOnMount ? scrollSelectedSlashOptionOnMount : undefined}
+      type="button"
+      aria-expanded={expanded}
+      data-active={marked ? "true" : undefined}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
+        marked ? SLASH_ROW_MARKED : "hover:bg-state-hover",
+      )}
+      onMouseMove={() => {
+        onPreview(index);
+      }}
+      onClick={onOpen ?? action.run}
+    >
+      <Icon size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">
+        {action.label}
+        {action.hint && (
+          <>
+            {" "}
+            <span className="ml-1 text-[13px] text-muted-foreground/50">
+              {action.hint}
+            </span>
+          </>
+        )}
+      </span>
+      {expanded !== undefined && (
+        <ChevronRight
+          size={16}
+          className="shrink-0 text-muted-foreground/50"
+          aria-hidden
+        />
+      )}
+    </button>
+  );
+}
+
+function SlashPanelActionList({
+  actions,
+  firstIndex,
+  markedIndex,
+  selectedIndex,
+  reversed,
+  onPreview,
+}: Pick<
+  SlashTemplatePanelProps,
+  "actions" | "selectedIndex" | "reversed" | "onPreview"
+> & {
+  /** Where the first action sits in the shared suggestion index. */
+  readonly firstIndex: number;
+  readonly markedIndex: number;
+}) {
+  const { t } = useTranslation();
+  if (actions.length === 0) {
+    return null;
+  }
+  return (
+    <div>
+      <SectionLabel>
+        {t(($) => {
+          return $.chat.composer.slashActions.actions;
+        })}
+      </SectionLabel>
+      <div className="px-1">
+        {(reversed ? [...actions].reverse() : actions).map(
+          (action, visualIndex) => {
+            const index =
+              firstIndex +
+              (reversed ? actions.length - 1 - visualIndex : visualIndex);
+            return (
+              <SlashActionRow
+                key={action.id}
+                action={action}
+                index={index}
+                marked={markedIndex === index}
+                scrollOnMount={selectedIndex === index}
+                onPreview={onPreview}
+              />
             );
           },
         )}
@@ -807,6 +968,7 @@ function SlashPanelBrowseAll({
 
 export function SlashTemplatePanel({
   categories,
+  actions,
   workflows,
   workflowsLoading,
   collapseWorkflows,
@@ -835,6 +997,12 @@ export function SlashTemplatePanel({
   // A workflow row indexes past the categories, so it previews nothing and the
   // preview closes.
   const detailCategory = categories[markedIndex] ?? null;
+  // The list owns the menu height and the covers fill it, so a query that
+  // leaves one type and no workflow would be shorter than one row of covers.
+  // The floor follows whether any type can be previewed, not the marked row:
+  // the menu grows upward from the composer, so a height that changed with the
+  // pointer would move the row under it.
+  const previewFloor = isDesktop && categories.length > 0;
   const makeSection = (
     <SlashPanelCategoryList
       key="make"
@@ -847,6 +1015,18 @@ export function SlashTemplatePanel({
       categoryOptionId={categoryOptionId}
     />
   );
+  const actionSection = (
+    <SlashPanelActionList
+      key="actions"
+      actions={actions}
+      firstIndex={categories.length}
+      markedIndex={markedIndex}
+      selectedIndex={selectedIndex}
+      reversed={reversed}
+      onPreview={onPreview}
+    />
+  );
+  const headCount = categories.length + actions.length;
   const workflowSection = (
     <SlashPanelWorkflowSection
       key="workflows"
@@ -857,11 +1037,11 @@ export function SlashTemplatePanel({
       showWorkflowActions={showWorkflowActions}
       onNewWorkflow={onNewWorkflow}
       onManageWorkflows={onManageWorkflows}
-      markedIndex={markedIndex - categories.length}
-      selectedIndex={selectedIndex - categories.length}
+      markedIndex={markedIndex - headCount}
+      selectedIndex={selectedIndex - headCount}
       reversed={reverseWorkflows}
       onPreview={(index) => {
-        onPreview(categories.length + index);
+        onPreview(headCount + index);
       }}
       onSelect={onSelectWorkflow}
       workflowOptionId={workflowOptionId}
@@ -870,7 +1050,11 @@ export function SlashTemplatePanel({
   return (
     <div
       className={cn(
-        "group/slash-panel flex min-h-0 w-full flex-row overflow-hidden",
+        "group/slash-panel flex w-full flex-row overflow-hidden",
+        // One full row of covers with their titles, and the top of the next so
+        // the pane reads as scrollable. Capped like the menu, so a short
+        // viewport still scrolls the list instead of clipping its last rows.
+        previewFloor ? "min-h-[min(11rem,var(--available-height))]" : "min-h-0",
         // Revealing the rest of the workflows keeps the menu's height, so the
         // menu never grows away from the composer and moves the row that was
         // clicked; the revealed rows scroll inside instead.
@@ -896,8 +1080,8 @@ export function SlashTemplatePanel({
         */}
         <div className="min-h-0 flex-1 overflow-y-auto pb-1">
           {reversed
-            ? [workflowSection, makeSection]
-            : [makeSection, workflowSection]}
+            ? [workflowSection, actionSection, makeSection]
+            : [makeSection, actionSection, workflowSection]}
           <SlashPanelBrowseAll onBrowseAll={onBrowseAll} />
         </div>
       </div>

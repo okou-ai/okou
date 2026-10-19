@@ -2,7 +2,7 @@
 //!
 //! `run()` owns discovery and bounded independently scheduled admission/claim tasks. This module
 //! resolves concrete profile/factory inputs and wires successful admission outcomes to the existing
-//! reactor-owned claimed-resource activation and executor dispatch.
+//! independently scheduled activation and guarded synchronous executor dispatch.
 //!
 //! ## Ownership lifecycle
 //!
@@ -41,6 +41,8 @@
 //!    cleanup and orphan-reconciliation path rather than by fabricating a completion.
 //! 5. **Activate the claimed resource.** Runner validates the resume session and registers an
 //!    active-run guard so the claimed reuse key is not advertised as available during activation.
+//!    This work stays in the bounded independently scheduled admission transaction, including
+//!    failure completion and rollback. Its result retains a slot until Reactor consumes it.
 //!    `runner_supervisor::claimed_resource_activation` owns sandbox selection and state: a fresh
 //!    admission first tries ordinary idle reuse and then fresh creation. A reserved idle entry
 //!    persists `preparing` active status before unpark. Exact speculation validates the claimed
@@ -50,8 +52,11 @@
 //! 6. **Transfer to the executor.** The supervisor's `ClaimedActivationGuard` owns the claimed
 //!    setup while active status and the spawn request are prepared. It publishes the active status
 //!    using the matching idle snapshot and takes the setup only after status publication and
-//!    request preparation. Dropping the guard before
-//!    transfer schedules recovery instead of losing the provider claim or sandbox ownership.
+//!    request preparation. A completed activation result retains this guard until Reactor
+//!    synchronously dispatches the executor; dropping the result schedules recovery.
+//!    The cancellation transfer lock is released after guarded readiness, so stopping does
+//!    not depend on Reactor consuming a result. Executor dispatch retains the same live
+//!    cancellation registration. The specialized finalizing task keeps its combined helper.
 //! 7. **Complete and reconcile.** After handoff, `job_spawn` owns executor completion, provider
 //!    reporting, and the post-executor park-or-destroy decision. If cleanup proves destruction or
 //!    an idle-pool transfer, matching active status can be removed. If destruction is uncertain,
@@ -108,7 +113,7 @@ use tracing::{info, warn};
 
 use super::RuntimeProfile as ProfileConfig;
 use super::error::{ReactorError, ReactorResult};
-use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
+use super::finalizing_claim::FinalizingClaimRequest;
 use super::job_spawn::{JobProfile, JobResult, SpawnContext, SpawnJobRequest, spawn_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
@@ -128,8 +133,7 @@ use crate::executor::{
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::lifecycle::RunnerMode;
 use crate::pre_claim_admission::{
-    AdmittedClaim, AdmittedResource, PreClaimResources, SandboxAdmittedResource,
-    rollback_sandbox_admitted_resource,
+    PreClaimResources, SandboxAdmittedResource, rollback_sandbox_admitted_resource,
 };
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
@@ -157,6 +161,15 @@ pub(super) struct DiscoveredJobProfile {
 pub(super) struct PreparedDiscoveredJob {
     pub(super) candidate: JobCandidate,
     pub(super) profile: DiscoveredJobProfile,
+}
+
+/// Ordinary claimed custody, excluding the specialized finalizing successor.
+pub(super) struct SandboxAdmittedJob {
+    pub(super) claimed: ClaimedJob,
+    pub(super) resource: SandboxAdmittedResource,
+    pub(super) cancellation: RunCancellationRegistration,
+    pub(super) claim_returned_at: Instant,
+    pub(super) blank_pool_selection: Option<BlankPoolSelection>,
 }
 
 pub(super) struct AdmissionContext {
@@ -191,16 +204,16 @@ pub(super) struct DiscoveredJobContext<'a> {
     pub(super) runner_identity: RunnerProcessIdentity,
     pub(super) budget: &'a Arc<ResourceBudget>,
     pub(super) idle_pool: &'a SharedIdlePool,
-    pub(super) status: &'a StatusTracker,
+    pub(super) status: &'a Arc<StatusTracker>,
     pub(super) mode_rx: &'a tokio::sync::watch::Receiver<RunnerMode>,
     pub(super) cancel_tokens: &'a RunCancellationRegistry,
     pub(super) spawn_ctx: &'a SpawnContext,
-    pub(super) jobs: &'a mut JoinSet<JobResult>,
 }
 
 pub(super) struct DiscoveredJobResult {
     pub(super) needs_reuse_state_refresh: bool,
     pub(super) pending_candidate: Option<JobCandidate>,
+    prepared: Option<Box<ClaimedActivationGuard>>,
 }
 
 impl DiscoveredJobResult {
@@ -208,6 +221,7 @@ impl DiscoveredJobResult {
         Self {
             needs_reuse_state_refresh,
             pending_candidate: None,
+            prepared: None,
         }
     }
 
@@ -215,7 +229,21 @@ impl DiscoveredJobResult {
         Self {
             needs_reuse_state_refresh: false,
             pending_candidate: Some(candidate),
+            prepared: None,
         }
+    }
+
+    pub(super) fn dispatch(
+        mut self,
+        ctx: &SpawnContext,
+        jobs: &mut JoinSet<JobResult>,
+    ) -> ReactorResult<Self> {
+        if let Some(mut activation) = self.prepared.take() {
+            let request = finish_spawn_job_request(&mut activation)
+                .map_err(|error| ReactorError::Internal(error.to_string()))?;
+            spawn_job(request, ctx, jobs);
+        }
+        Ok(self)
     }
 }
 
@@ -297,8 +325,8 @@ pub(super) fn prepare_discovered_job(
     })
 }
 
-pub(super) async fn handle_admitted_job(
-    admission: AdmittedClaim,
+pub(super) async fn prepare_admitted_job(
+    admission: SandboxAdmittedJob,
     profile: DiscoveredJobProfile,
     mut ctx: DiscoveredJobContext<'_>,
 ) -> ReactorResult<DiscoveredJobResult> {
@@ -315,41 +343,13 @@ pub(super) async fn handle_admitted_job(
     let restore_guest_state = &restore_guest_state;
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
-    let AdmittedClaim {
+    let SandboxAdmittedJob {
         claimed,
         resource,
         cancellation,
         claim_returned_at,
         blank_pool_selection,
     } = admission;
-    let resource = match resource {
-        AdmittedResource::Finalizing(admission) => {
-            spawn_finalizing_claim(
-                FinalizingClaimRequest {
-                    claimed,
-                    cancellation,
-                    admission,
-                    claim_returned_at,
-                    profile_name,
-                    rootfs_hash: job_rootfs_hash,
-                    vcpu: job_vcpu,
-                    memory_mb: job_memory,
-                    home_disk_mb: job_home_disk_mb,
-                    restore_guest_state: *restore_guest_state,
-                    device_rate_limits,
-                    factory: Arc::clone(factory),
-                },
-                ctx.spawn_ctx,
-                ctx.jobs,
-            );
-            return Ok(DiscoveredJobResult::completed(false));
-        }
-        AdmittedResource::Fresh(lease) => SandboxAdmittedResource::Fresh(lease),
-        AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
-        AdmittedResource::ExactSpeculation(speculation) => {
-            SandboxAdmittedResource::ExactSpeculation(speculation)
-        }
-    };
     if cancellation.handle().is_cancelled()
         && matches!(&resource, SandboxAdmittedResource::ExactSpeculation(_))
     {
@@ -635,11 +635,11 @@ pub(super) async fn handle_admitted_job(
         },
         claimed_activation_resources(ctx.spawn_ctx),
     );
-    let request = match AssertUnwindSafe(build_spawn_job_request(&mut activation, ctx.spawn_ctx))
+    match AssertUnwindSafe(prepare_spawn_job_request(&mut activation, ctx.spawn_ctx))
         .catch_unwind()
         .await
     {
-        Ok(Ok(request)) => request,
+        Ok(Ok(())) => {}
         Ok(Err(error)) => {
             activation
                 .recover(error.recovery_reason(), error.to_string())
@@ -665,9 +665,15 @@ pub(super) async fn handle_admitted_job(
             std::panic::resume_unwind(panic);
         }
     };
-    spawn_job(request, ctx.spawn_ctx, ctx.jobs);
+    let result = DiscoveredJobResult {
+        needs_reuse_state_refresh,
+        pending_candidate: None,
+        prepared: Some(Box::new(activation)),
+    };
+    // The published setup now has its own guarded result owner. Cancellation
+    // must not wait for Reactor to consume that result and release this gate.
     drop(activation_transfer_guard);
-    Ok(DiscoveredJobResult::completed(needs_reuse_state_refresh))
+    Ok(result)
 }
 
 pub(super) fn claimed_activation_resources(ctx: &SpawnContext) -> ClaimedActivationResources {
@@ -685,10 +691,17 @@ pub(super) async fn build_spawn_job_request(
     activation: &mut ClaimedActivationGuard,
     ctx: &SpawnContext,
 ) -> Result<SpawnJobRequest, ClaimedActivationError> {
+    prepare_spawn_job_request(activation, ctx).await?;
+    finish_spawn_job_request(activation)
+}
+
+async fn prepare_spawn_job_request(
+    activation: &mut ClaimedActivationGuard,
+    ctx: &SpawnContext,
+) -> Result<(), ClaimedActivationError> {
     activation.record_resource_budget_occupancy(&ctx.budget)?;
     #[cfg(test)]
     let run_id = activation.setup()?.claimed.context().run_id;
-    let sandbox_id = activation.sandbox_id();
     #[cfg(test)]
     maybe_panic_outer_job(
         ctx.outer_job_panic,
@@ -698,7 +711,13 @@ pub(super) async fn build_spawn_job_request(
     activation.publish_active_status().await?;
     #[cfg(test)]
     ctx.test_observer.notify_active_run_status_published(run_id);
+    Ok(())
+}
 
+fn finish_spawn_job_request(
+    activation: &mut ClaimedActivationGuard,
+) -> Result<SpawnJobRequest, ClaimedActivationError> {
+    let sandbox_id = activation.sandbox_id();
     let ClaimedJobSetup {
         claimed,
         rootfs_hash,
@@ -745,18 +764,17 @@ pub(super) async fn build_spawn_job_request(
     })
 }
 
-pub(super) async fn recover_unconsumed_admission(
-    admission: AdmittedClaim,
-    home_disk_mb: u32,
+pub(super) async fn recover_unconsumed_finalizing_claim(
+    request: FinalizingClaimRequest,
+    blank_pool_selection: Option<BlankPoolSelection>,
     ctx: &AdmissionContext,
 ) {
-    let AdmittedClaim {
+    let FinalizingClaimRequest {
         claimed,
-        resource,
         cancellation,
-        blank_pool_selection,
+        admission,
         ..
-    } = admission;
+    } = request;
     warn!(run_id = %claimed.context().run_id, "claim result lost its reactor owner; completing without sandbox");
     let completion = complete_claimed_failure(
         claimed,
@@ -768,25 +786,8 @@ pub(super) async fn recover_unconsumed_admission(
         &ctx.spawn_ctx,
     )
     .await;
-    let resource = match resource {
-        AdmittedResource::Fresh(lease) => Some(SandboxAdmittedResource::Fresh(lease)),
-        AdmittedResource::Reusable(reservation) => {
-            Some(SandboxAdmittedResource::Reusable(reservation))
-        }
-        AdmittedResource::ExactSpeculation(speculation) => {
-            Some(SandboxAdmittedResource::ExactSpeculation(speculation))
-        }
-        AdmittedResource::Finalizing(_) => None,
-    };
-    if let Some(resource) = resource {
-        rollback_sandbox_admitted_resource(
-            resource,
-            completion.run_id,
-            home_disk_mb,
-            &ctx.resources(),
-        )
-        .await;
-    }
+    // Keep the finalizing predecessor proof owned through provider completion.
+    drop(admission);
     completion.flush_telemetry().await;
 }
 

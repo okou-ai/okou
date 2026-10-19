@@ -3,9 +3,7 @@ import {
   useLastLoadable,
   useLastResolved,
   useSet,
-  type Loadable,
 } from "ccstate-react";
-import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -19,7 +17,6 @@ import {
 } from "@okouai/ui";
 import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import type { ChatResourceContent } from "../../signals/chat-page/chat-resources.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
@@ -29,10 +26,10 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
-import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import {
   ChatResourceSectionHeading,
+  ChatResourceSectionToggle,
   RESOURCE_PREVIEW_LIMIT,
 } from "./chat-resource-section.tsx";
 
@@ -59,12 +56,6 @@ export function ChatResourcesButton({
   ) : null;
 }
 
-function resourcePanelStyle(height: number | null): CSSProperties {
-  return {
-    "--resource-panel-height": height === null ? undefined : `${height}px`,
-  } as CSSProperties;
-}
-
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
@@ -76,34 +67,35 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
-  const requestedOpen = useLastResolved(resources.open$) ?? false;
-  const content = useLastLoadable(resources.content$);
-  const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
-  const hasRelations = useLastResolved(thread.relations.hasContent$);
-  const ready =
-    (relationsEnabled && hasRelations === true) ||
-    ((!relationsEnabled ||
-      (hasRelations !== undefined && hasRelations !== null)) &&
-      (content.state === "hasError" ||
-        (content.state === "hasData" &&
-          content.data !== null &&
-          (content.data.artifacts.length > 0 ||
-            content.data.links.length > 0))));
-  const open = requestedOpen && ready;
+  const open = useLastResolved(resources.open$) ?? false;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
-  const frozenHeight = useGet(resources.frozenHeight$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const anchorRef = useSet(resources.anchorOnRef$);
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
-
-  if (!ready) {
+  const content = useLastLoadable(resources.content$);
+  const data = useLastResolved(resources.content$);
+  const relationsEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const origin = useGet(thread.relations.origin$);
+  const chats = useLastLoadable(thread.relations.chats.data$);
+  const hasRelations =
+    relationsEnabled &&
+    (origin?.kind === "source" ||
+      chats.state === "hasError" ||
+      (chats.state === "hasData" &&
+        (chats.data.items.length > 0 || chats.data.failed)));
+  if (
+    !hasRelations &&
+    content.state !== "hasError" &&
+    !data?.artifacts.length &&
+    !data?.links.length
+  ) {
     return null;
   }
 
@@ -183,17 +175,12 @@ function ChatResourcesButtonInner({
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
-        style={resourcePanelStyle(frozenHeight)}
         className={surfaceVariants({
           className:
-            "flex h-[var(--resource-panel-height,auto)] max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
+            "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody
-          thread={thread}
-          content={content}
-          hasRelations={relationsEnabled && hasRelations === true}
-        />
+        <ChatResourcesBody thread={thread} />
       </PopoverContent>
     </Popover>
   );
@@ -236,115 +223,90 @@ function ResourceOutputRow({
   );
 }
 
-function ChatResourcesBody({
-  thread,
-  content,
-  hasRelations,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly content: Loadable<ChatResourceContent | null>;
-  readonly hasRelations: boolean;
-}) {
+function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
+  const artifactsId = `${thread.threadId}-resource-artifacts`;
   const { t } = useTranslation();
-  const retry = useSet(thread.reloadArtifacts$);
-  const openAll = useOpenThreadArtifacts(thread);
+  const content = useLastLoadable(thread.resources.content$);
+  const data = useLastResolved(thread.resources.content$);
+  const reload = useSet(thread.reloadArtifacts$);
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
-  const setOpen = useSet(thread.resources.setOpen$);
-  const data = content.state === "hasData" ? content.data : null;
   return (
     <>
-      {hasRelations && <ChatOrigin thread={thread} />}
-      {/* Sticky category controls only overlap rows inside this scroll area. */}
-      <div className="isolate min-h-0 flex-1 divide-y divide-divider overflow-y-auto overscroll-contain px-4 [overflow-anchor:none]">
-        {hasRelations && <ChatRelationships thread={thread} />}
-        {content.state === "hasError" ? (
-          <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
+      <ChatOrigin thread={thread} />
+      <div
+        data-resource-scroll
+        className="isolate min-h-0 flex-1 divide-y divide-divider overflow-y-auto overscroll-contain px-4 [overflow-anchor:none] empty:hidden"
+      >
+        <ChatRelationships thread={thread} />
+        {data && data.artifacts.length > 0 && (
+          <section
+            className="py-3"
+            aria-label={t(($) => {
+              return $.artifacts.sidebar.panelTitle;
+            })}
+          >
+            <ChatResourceSectionHeading
+              title={t(($) => {
+                return $.artifacts.sidebar.panelTitle;
+              })}
+              count={data.artifacts.length}
+            />
+            <ul id={artifactsId} className="m-0 list-none p-0">
+              {data.artifacts
+                .slice(
+                  0,
+                  expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT,
+                )
+                .map((file) => {
+                  return (
+                    <ResourceOutputRow
+                      key={file.id}
+                      file={file}
+                      threadId={thread.threadId}
+                    />
+                  );
+                })}
+            </ul>
+            {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
+              <ChatResourceSectionToggle
+                expanded={expanded.artifacts}
+                controls={artifactsId}
+                onToggle={(trigger) => {
+                  toggleSection("artifacts", trigger);
+                }}
+              />
+            )}
+          </section>
+        )}
+        <ChatResourceLinks
+          thread={thread}
+          preview={{
+            limit: RESOURCE_PREVIEW_LIMIT,
+            expanded: expanded.links,
+            onToggle: (trigger) => {
+              toggleSection("links", trigger);
+            },
+          }}
+        />
+        {content.state === "hasError" && (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-2 py-3 text-xs text-muted-foreground"
+          >
             <p>
               {t(($) => {
                 return $.chat.resources.loadFailed;
               })}
             </p>
-            <Button variant="quiet" size="sm" onClick={retry}>
+            <Button variant="quiet" size="xs" onClick={reload}>
               {t(($) => {
                 return $.chat.resources.retry;
               })}
             </Button>
           </div>
-        ) : data && (data.artifacts.length > 0 || data.links.length > 0) ? (
-          <>
-            {data.artifacts.length > 0 && (
-              <section
-                className="py-3"
-                aria-label={t(($) => {
-                  return $.artifacts.sidebar.panelTitle;
-                })}
-              >
-                <ChatResourceSectionHeading
-                  title={t(($) => {
-                    return $.artifacts.sidebar.panelTitle;
-                  })}
-                  count={data.artifacts.length}
-                  preview={
-                    data.artifacts.length > RESOURCE_PREVIEW_LIMIT
-                      ? {
-                          expanded: expanded.artifacts,
-                          onToggle: () => {
-                            toggleSection("artifacts");
-                          },
-                        }
-                      : undefined
-                  }
-                />
-                <ul className="m-0 list-none p-0">
-                  {data.artifacts
-                    .slice(
-                      0,
-                      expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT,
-                    )
-                    .map((file) => {
-                      return (
-                        <ResourceOutputRow
-                          key={file.id}
-                          file={file}
-                          threadId={thread.threadId}
-                        />
-                      );
-                    })}
-                </ul>
-              </section>
-            )}
-            <ChatResourceLinks
-              thread={thread}
-              preview={{
-                limit: RESOURCE_PREVIEW_LIMIT,
-                expanded: expanded.links,
-                onToggle: () => {
-                  toggleSection("links");
-                },
-              }}
-            />
-          </>
-        ) : null}
+        )}
       </div>
-      {(content.state === "hasError" ||
-        (data && (data.artifacts.length > 0 || data.links.length > 0))) && (
-        <div className="shrink-0 border-t border-divider px-4 py-1.5">
-          <Button
-            variant="quiet"
-            size="sm"
-            className="justify-start px-1 text-xs leading-4.5 font-normal hover:bg-gray-50 focus-visible:bg-gray-50"
-            onClick={() => {
-              setOpen(false);
-              openAll();
-            }}
-          >
-            {t(($) => {
-              return $.chat.resources.viewAll;
-            })}
-          </Button>
-        </div>
-      )}
     </>
   );
 }

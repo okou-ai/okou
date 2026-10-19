@@ -395,41 +395,200 @@ async function reprojectStripeAutomation(
   }
 }
 
+interface StripeAutomationOwnerArgs {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+function stripeAutomationOwnerColumns() {
+  return {
+    id: workflowAutomations.id,
+    workflowId: workflowAutomations.workflowId,
+    eventConfig: workflowAutomations.eventConfig,
+    eventConnectorId: workflowAutomations.eventConnectorId,
+  };
+}
+
+function stripeAutomationOwnerCondition(args: StripeAutomationOwnerArgs) {
+  return and(
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.kind, "event"),
+    eq(workflowAutomations.eventType, "stripe-invoice-paid"),
+  );
+}
+
+function stripeReadinessInput(
+  args: StripeAutomationOwnerArgs,
+  connectorId: string,
+) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorId,
+    missingMessage: STRIPE_SELECTION_CHANGED_MESSAGE,
+  };
+}
+
+function stripeConnectionInput(
+  snapshot: ReturnType<typeof connectorRuntimeAuthSelectionFromRows>,
+  input: ReturnType<typeof stripeReadinessInput>,
+) {
+  return {
+    snapshot,
+    orgId: input.orgId,
+    userId: input.userId,
+    connectorSlug: STRIPE_CONNECTOR_SLUG,
+    connectorId: input.connectorId,
+  };
+}
+
+function stripeValuesInput(connection: BuiltinConnectorCredentialConnection) {
+  return {
+    connection,
+    valueRefs: [STRIPE_LIVEMODE_VALUE_REF],
+  };
+}
+
+function stripeLiveReadyResult(
+  livemode: string | undefined,
+  connection: BuiltinConnectorCredentialConnection,
+  stripeAccountId: string,
+): ReadyStripeConnectionResult {
+  const modeError = stripeLiveModeReadinessMessage(livemode);
+  if (modeError !== null) {
+    return badRequest(modeError);
+  }
+  return { kind: "ok", connection, stripeAccountId };
+}
+
 export async function reprojectStripeInvoicePaidAutomationsForOwner(
   db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
+  args: StripeAutomationOwnerArgs,
   signal: AbortSignal,
 ): Promise<void> {
   const automations = await db
-    .select({
-      id: workflowAutomations.id,
-      workflowId: workflowAutomations.workflowId,
-      eventConfig: workflowAutomations.eventConfig,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-    })
+    .select(stripeAutomationOwnerColumns())
     .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "stripe-invoice-paid"),
-      ),
-    );
+    .where(stripeAutomationOwnerCondition(args));
   signal.throwIfAborted();
   const readinessByConnectorId = new Map<
     string,
     StripeInvoicePaidAutomationReadinessResult
   >();
   for (const automation of automations) {
-    await reprojectStripeAutomation(
-      db,
-      { ...args, automation, readinessByConnectorId },
-      signal,
-    );
+    const itemDb = db;
+    const item = { ...args, automation, readinessByConnectorId };
+    const itemSignal = signal;
+    await (async (): Promise<void> => {
+      const target = stripeAutomationProjectionTarget(item);
+      const selectionDb = itemDb;
+      const selectionInput = stripeAutomationConnectorInput(item);
+      const connectorId = await (async (): Promise<string | null> => {
+        const [selection] = await selectionDb
+          .select({ connectorId: chatThreadConnectorSelections.connectorId })
+          .from(workflowUserAutomationThreads)
+          .innerJoin(
+            chatThreadConnectorSelections,
+            stripeAutomationSelectionJoin(selectionInput),
+          )
+          .where(stripeAutomationSelectionThreadCondition(selectionInput))
+          .limit(1);
+        if (selection) {
+          return selection.connectorId;
+        }
+        const [defaultAccount] = await selectionDb
+          .select({ connectorId: connectors.id })
+          .from(connectors)
+          .where(stripeAutomationDefaultAccountCondition(selectionInput))
+          .limit(1);
+        return defaultAccount?.connectorId ?? null;
+      })();
+      itemSignal.throwIfAborted();
+
+      if (connectorId === null) {
+        if (item.automation.eventConnectorId !== null) {
+          await itemDb
+            .update(workflowAutomations)
+            .set({ eventConnectorId: null })
+            .where(target);
+        }
+        return;
+      }
+
+      let readiness = item.readinessByConnectorId.get(connectorId);
+      if (readiness === undefined) {
+        const ready = await (async (
+          readSignal: AbortSignal,
+        ): Promise<ReadyStripeConnectionResult> => {
+          const catalogDb = itemDb;
+          const input = stripeReadinessInput(item, connectorId);
+          const catalogPlan = stripeAutomationCatalogPlan();
+          const snapshot = connectorRuntimeAuthSelectionFromRows(
+            await catalogDb
+              .select(catalogPlan.columns)
+              .from(connectorCatalog)
+              .leftJoin(connectorCatalogEntries, catalogPlan.join)
+              .where(connectorCatalogCurrentWhere()),
+            catalogPlan.requestedConnectorSlugs,
+            catalogPlan.firewallConnectorSlugs,
+          );
+          readSignal.throwIfAborted();
+          const connectionInput = stripeConnectionInput(snapshot, input);
+          const connectionPlan =
+            builtinConnectorCredentialConnectionReadPlan(connectionInput);
+          const loaded = builtinConnectorCredentialConnectionFromRow(
+            connectionInput,
+            (
+              await catalogDb
+                .select(connectionPlan.columns)
+                .from(connectors)
+                .where(connectionPlan.condition)
+                .limit(1)
+            )[0],
+          );
+          readSignal.throwIfAborted();
+          const ready = stripeConnectionReadiness(loaded, input.missingMessage);
+          if (ready.kind === "bad_request") {
+            return ready;
+          }
+          const { connection, stripeAccountId } = ready;
+          const valuesInput = stripeValuesInput(connection);
+          const valuesPlan =
+            builtinConnectorCredentialValuesReadPlan(valuesInput);
+          const values =
+            valuesPlan === null
+              ? new Map<string, string>()
+              : await builtinConnectorCredentialValuesFromRows(
+                  valuesInput,
+                  await catalogDb
+                    .select(valuesPlan.secretColumns)
+                    .from(secrets)
+                    .where(valuesPlan.secretCondition)
+                    .unionAll(
+                      catalogDb
+                        .select(valuesPlan.variableColumns)
+                        .from(variables)
+                        .where(valuesPlan.variableCondition),
+                    ),
+                );
+          readSignal.throwIfAborted();
+          const livemode = values.get(STRIPE_LIVEMODE_VALUE_REF);
+          return stripeLiveReadyResult(livemode, connection, stripeAccountId);
+        })(itemSignal);
+        readiness = stripeAutomationReadinessFromConnection(ready);
+        item.readinessByConnectorId.set(connectorId, readiness);
+      }
+
+      const update = stripeAutomationProjectionUpdate(
+        item.automation,
+        connectorId,
+        readiness,
+      );
+      if (update !== null) {
+        await itemDb.update(workflowAutomations).set(update).where(target);
+      }
+    })();
     signal.throwIfAborted();
   }
 }

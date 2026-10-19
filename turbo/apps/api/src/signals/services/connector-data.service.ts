@@ -74,10 +74,8 @@ import {
 import { reconcileConnectorAccountState } from "./connector-account-state.service";
 import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
-import {
-  isConnectorCatalogUnavailableError,
-  searchConnectorCatalog,
-} from "./connector-catalog-reader.service";
+import { searchExternalConnectorCatalog } from "./connector-catalog-external-reader.service";
+import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import {
   getConnectorRuntimeConnector,
   type ConnectorRuntimeMethod,
@@ -2968,10 +2966,14 @@ export function builtinConnectorSearch(args: {
       orgId: args.orgId,
       overrides,
     });
-    return searchConnectorCatalog({
-      db: get(db$),
-      keyword: args.keyword,
-      featureStates,
-    });
+    const catalogSearchDb = get(db$);
+    const catalogSearchKeyword = args.keyword;
+    return (async () => {
+      return await searchExternalConnectorCatalog({
+        db: catalogSearchDb,
+        keyword: catalogSearchKeyword,
+        featureStates,
+      });
+    })();
   });
 }

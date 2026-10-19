@@ -994,48 +994,6 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
   });
 });
 
-describe("GET /api/integrations/telegram/auth-callback", () => {
-  it("returns the Telegram auth bridge html", async () => {
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    const response = await app.request(
-      "/api/integrations/telegram/auth-callback",
-    );
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/html");
-    const html = await response.text();
-    expect(html).toContain("<title>Telegram Auth</title>");
-    expect(html).toContain(
-      'new URLSearchParams(window.location.hash.replace(/^#/, ""))',
-    );
-    expect(html).toContain('var targetOrigin = "http://localhost:3002";');
-    expect(html).toContain(
-      '["id","first_name","last_name","username","photo_url","auth_date","hash"]',
-    );
-    expect(html).toContain('{ type: "telegram-auth", data: data }');
-    expect(html).toContain("window.close()");
-  });
-
-  it("accepts only a trusted Telegram auth callback target origin", async () => {
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    const trusted = await app.request(
-      "/api/integrations/telegram/auth-callback?targetOrigin=https%3A%2F%2Fapp.okou.ai",
-    );
-    expect(trusted.status).toBe(200);
-    await expect(trusted.text()).resolves.toContain(
-      'var targetOrigin = "https://app.okou.ai";',
-    );
-
-    const untrusted = await app.request(
-      "/api/integrations/telegram/auth-callback?targetOrigin=https%3A%2F%2Fevil.example",
-    );
-    expect(untrusted.status).toBe(400);
-    await expect(untrusted.text()).resolves.toBe("Invalid target origin");
-  });
-});
-
 describe("GET /api/integrations/telegram/download-file", () => {
   const downloadPath = "/api/integrations/telegram/download-file";
 

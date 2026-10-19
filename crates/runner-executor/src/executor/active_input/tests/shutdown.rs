@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use sandbox::GuestProcessControlHandle;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use super::super::{
@@ -69,6 +69,14 @@ async fn shutdown_expiry_has_unknown_delivery_and_never_becomes_retryable() {
 }
 
 fn queued_source(dir: &std::path::Path, run_id: RunId) -> ActiveInputSource {
+    queued_source_with_first_input(dir, run_id, "input 1".to_owned())
+}
+
+fn queued_source_with_first_input(
+    dir: &std::path::Path,
+    run_id: RunId,
+    first_input: String,
+) -> ActiveInputSource {
     let profile = runner_types::profile_name::DEFAULT_PROFILE;
     local_queue::ensure_profile_jobs_dir(dir, profile).unwrap();
     local_queue::write_private_file(
@@ -78,16 +86,127 @@ fn queued_source(dir: &std::path::Path, run_id: RunId) -> ActiveInputSource {
     )
     .unwrap();
     let queue = LocalQueue::new(dir.to_path_buf());
-    for sequence in [1, 2] {
+    for (sequence, text) in [(1, first_input), (2, "input 2".to_owned())] {
         queue
             .write_active_input_sync(&ActiveInputEntry {
                 run_id,
                 sequence,
-                text: format!("input {sequence}"),
+                text,
             })
             .unwrap();
     }
     ActiveInputSource::local_queue(queue, run_id)
+}
+
+async fn wait_for_forwarder_retirement(task: tokio::task::AbortHandle) {
+    tokio::time::timeout(TEST_TIMEOUT, async {
+        while !task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("abandoned forwarder must retire its in-flight I/O");
+}
+
+struct ControlRetirement(Arc<Notify>);
+
+impl Drop for ControlRetirement {
+    fn drop(&mut self) {
+        self.0.notify_one();
+    }
+}
+
+async fn assert_abandoned_response(cancel_stop: bool) {
+    let mut socket = GuestControlFixture::start(None).await;
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::new_v4();
+    let retired = Arc::new(Notify::new());
+    let control = GuestProcessControlHandle::new_with_outcome({
+        let control = socket.process_control.clone();
+        let retired = Arc::clone(&retired);
+        move |message_id, payload, _| {
+            let control = control.clone();
+            let retired = Arc::clone(&retired);
+            Box::pin(async move {
+                let _retirement = ControlRetirement(retired);
+                control
+                    .control_owned_outcome(message_id, payload, Duration::from_secs(60))
+                    .await
+            })
+        }
+    });
+    let forwarder = ActiveInputForwarder::start(
+        run_id,
+        Some(queued_source(dir.path(), run_id)),
+        Some(control),
+        CancellationToken::new(),
+    )
+    .unwrap();
+    let task = forwarder.task.abort_handle();
+    let message = socket.read_control().await;
+    if cancel_stop {
+        // Finish real socket setup before pausing only the graceful-stop timer.
+        // Abandonment must retire I/O before that ordinary grace can expire.
+        tokio::time::pause();
+        let mut completion = Box::pin(forwarder.stop());
+        assert!(futures_util::poll!(completion.as_mut()).is_pending());
+        drop(completion);
+        let retirement =
+            tokio::time::timeout(ACTIVE_INPUT_SHUTDOWN_GRACE / 2, retired.notified()).await;
+        tokio::time::resume();
+        retirement.expect("dropped stop must not leave a detached graceful waiter");
+    } else {
+        drop(forwarder);
+    }
+    wait_for_forwarder_retirement(task).await;
+    assert!(
+        socket.client.reserve_external_operation().is_err(),
+        "abandoning a sent control response must prevent reuse"
+    );
+    assert_eq!(
+        socket.guest.try_read(&mut [0u8; 1]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock,
+        "no later input or socket close follows a complete frame"
+    );
+    socket.acknowledge(&message).await;
+    socket.finish().await;
+    assert!(
+        socket.client.reserve_external_operation().is_err(),
+        "late acknowledgement must not restore reuse"
+    );
+}
+
+#[tokio::test]
+async fn owner_drop_retires_a_real_response_wait_without_replay_or_reuse() {
+    assert_abandoned_response(false).await;
+}
+
+#[tokio::test]
+async fn cancelled_stop_retires_a_real_response_wait_without_replay_or_reuse() {
+    assert_abandoned_response(true).await;
+}
+
+#[tokio::test]
+async fn owner_drop_retires_a_real_partial_control_write() {
+    let mut socket = GuestControlFixture::start(None).await;
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::new_v4();
+    let forwarder = ActiveInputForwarder::start(
+        run_id,
+        Some(queued_source_with_first_input(
+            dir.path(),
+            run_id,
+            "x".repeat(512 * 1024),
+        )),
+        Some(socket.process_control.clone()),
+        CancellationToken::new(),
+    )
+    .unwrap();
+    let task = forwarder.task.abort_handle();
+    let remaining = socket.observe_partial_control().await;
+    drop(forwarder);
+    wait_for_forwarder_retirement(task).await;
+    socket.assert_partial_write_closed(remaining).await;
 }
 
 #[tokio::test]

@@ -234,6 +234,68 @@ async function openAgentConnectorIsolationStory() {
   return { customSaves };
 }
 
+test("A failed built-in connector toggle rolls back its draft and can be retried", async () => {
+  const saveStarted = context.mocks.deferred<void>();
+  const saveResult = context.mocks.deferred<void>();
+  let failSave = true;
+  let enabledConnectorSlugs: string[] = [];
+  mockConnectorSurface(context, {
+    catalog: [catalogConnectorFixture("github", "GitHub")],
+  });
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+    return respond(200, { enabledConnectorSlugs });
+  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    async ({ body, respond }) => {
+      if (failSave) {
+        saveStarted.resolve();
+        await saveResult.promise;
+        return respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "GitHub access could not be saved",
+          },
+        });
+      }
+      enabledConnectorSlugs = applyStringOperation(
+        enabledConnectorSlugs,
+        body.enabledConnectorSlugs,
+        body.operation,
+      );
+      return respond(200, { enabledConnectorSlugs });
+    },
+  );
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("GitHub");
+
+  click(connectorAccessSwitch("Grant GitHub access"));
+  await saveStarted.promise;
+  await waitFor(() => {
+    expect(connectorAccessSwitch("Revoke GitHub access")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  saveResult.resolve();
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "GitHub access could not be saved",
+  );
+  await waitFor(() => {
+    expect(connectorAccessSwitch("Grant GitHub access")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(screen.queryByText("Connectors saved")).not.toBeInTheDocument();
+
+  failSave = false;
+  click(connectorAccessSwitch("Grant GitHub access"));
+  await screen.findByText("Connectors saved");
+  expect(connectorAccessSwitch("Revoke GitHub access")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 test("Cancelled custom connector permission edits do not appear on another agent", async () => {
   const { customSaves } = await openAgentConnectorIsolationStory();
   await screen.findByText("Acme Search");

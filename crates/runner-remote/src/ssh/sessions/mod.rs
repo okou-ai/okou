@@ -2,6 +2,7 @@
 
 mod buffer;
 mod diagnostics;
+mod lifecycle;
 mod process;
 mod protocol;
 mod read;
@@ -27,7 +28,8 @@ use super::{
     cache::{Access, Registration},
     io::GuestIo,
 };
-use protocol::{Effects, Info, Rejection, Response, State};
+use lifecycle::Lifecycle;
+use protocol::{Effects, Info, Rejection, Response};
 use runner_types::ids::RunId;
 
 const CAPACITY: usize = 8;
@@ -63,12 +65,9 @@ struct Entry {
 }
 
 struct Data {
-    diagnostic: Option<crate::diagnostics::Report>,
-    state: State,
-    effects: Effects,
+    lifecycle: Lifecycle,
     generation: Option<i64>,
     stdin_closed: bool,
-    completed: Option<Instant>,
     output: buffer::Buffer,
 }
 
@@ -89,8 +88,8 @@ impl Entry {
             session_id: self.id,
             ssh_connection_id: self.connection,
             generation: data.generation,
-            state: data.state.clone(),
-            effects: data.effects,
+            state: data.lifecycle.state(),
+            effects: data.lifecycle.effects(),
             stdin_closed: data.stdin_closed,
             oldest_cursor: data.output.oldest(),
             end_cursor: data.output.end,
@@ -145,8 +144,8 @@ impl Manager {
                         .data
                         .lock()
                         .unwrap_or_else(|p| p.into_inner())
-                        .completed
-                        .is_some_and(|at| now.duration_since(at) >= RETENTION);
+                        .lifecycle
+                        .expired(now);
                 if expired {
                     entry.scope.cancelled.cancel();
                 }
@@ -198,12 +197,11 @@ impl Manager {
                 commands,
                 changed: Notify::new(),
                 data: Mutex::new(Data {
-                    diagnostic: None,
-                    state: State::Starting,
-                    effects: Effects::NotStarted,
+                    lifecycle: Lifecycle::Starting {
+                        effects: Effects::NotStarted,
+                    },
                     generation: None,
                     stdin_closed: false,
-                    completed: None,
                     output: buffer::Buffer::default(),
                 }),
             });
@@ -233,7 +231,7 @@ impl Manager {
         };
         {
             let data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
-            if !matches!(data.state, State::Running) {
+            if !data.lifecycle.is_running() {
                 return Response::Rejected {
                     reason: Rejection::NotRunning,
                 };
@@ -346,7 +344,12 @@ impl Manager {
                     ));
                 };
                 entry.scope.cancelled.cancel();
-                let effects = entry.data.lock().unwrap_or_else(|p| p.into_inner()).effects;
+                let effects = entry
+                    .data
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .lifecycle
+                    .effects();
                 Ok(Response::Closed {
                     session_id: entry.id,
                     effects,

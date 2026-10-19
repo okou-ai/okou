@@ -26,27 +26,18 @@ import { useConnectorConnectionDialogClose } from "../../../components/connector
 import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
 import {
   closeCustomConnectorDialog$,
-  connectCustomConnectorAuthorization$,
-  connectCustomConnectorAuthorizationForAgent$,
+  submitCustomConnectorConnection$,
   customConnectorConnectForm$,
   resetCustomConnectorConnectInput$,
   setCustomConnectorConnectField$,
-  setCustomConnectorValues$,
-  setCustomConnectorValuesForAgent$,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
 import { sanitizeTokenInputRecord } from "../../../../signals/okou-page/settings/token-input.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
 import type {
   ConnectorAccountConnectMode,
-  ConnectorAccountMutationOptions,
+  CustomConnectorAccountMutationOptions,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
-
-interface CustomConnectorConnectionSubmission {
-  readonly connected: boolean;
-  readonly targetAuthorized: boolean;
-  readonly connectionId: string | null;
-}
 
 function formValue(
   values: Readonly<Record<string, string>>,
@@ -172,84 +163,6 @@ function CredentialFields({
   });
 }
 
-function useCustomConnectorConnectionSubmitters(
-  agentId: string | undefined,
-  accountOptions: ConnectorAccountMutationOptions,
-) {
-  const [valuesLoadable, submitValues] = useLoadableSet(
-    setCustomConnectorValues$,
-  );
-  const [agentValuesLoadable, submitAgentValues] = useLoadableSet(
-    setCustomConnectorValuesForAgent$,
-  );
-  const [authorizationLoadable, submitAuthorization] = useLoadableSet(
-    connectCustomConnectorAuthorization$,
-  );
-  const [agentAuthorizationLoadable, submitAgentAuthorization] = useLoadableSet(
-    connectCustomConnectorAuthorizationForAgent$,
-  );
-  const account = accountOptions.account;
-  const usesDefaultProjection =
-    accountOptions.useDefaultConnectorProjection === true;
-
-  const submitDeclaredValues = async (
-    args: {
-      readonly id: string;
-      readonly values: readonly CustomConnectorValueInput[];
-    },
-    signal: AbortSignal,
-  ): Promise<CustomConnectorConnectionSubmission> => {
-    if (agentId) {
-      return await submitAgentValues({ ...args, agentId, account }, signal);
-    }
-    return await submitValues({ ...args, account }, signal);
-  };
-  const submitAuthorizationMode = async (
-    connectorId: string,
-    onSuccess: (
-      result: CustomConnectorConnectionSubmission,
-      signal: AbortSignal,
-    ) => Promise<void>,
-    signal: AbortSignal,
-  ): Promise<CustomConnectorConnectionSubmission> => {
-    if (agentId) {
-      return await submitAgentAuthorization(
-        {
-          id: connectorId,
-          agentId,
-          account,
-          onSuccess,
-          ...(usesDefaultProjection
-            ? { useDefaultConnectorProjection: true as const }
-            : {}),
-        },
-        signal,
-      );
-    }
-    return await submitAuthorization(
-      {
-        id: connectorId,
-        account,
-        onSuccess,
-        ...(usesDefaultProjection
-          ? { useDefaultConnectorProjection: true as const }
-          : {}),
-      },
-      signal,
-    );
-  };
-
-  return {
-    submitting:
-      valuesLoadable.state === "loading" ||
-      agentValuesLoadable.state === "loading" ||
-      authorizationLoadable.state === "loading" ||
-      agentAuthorizationLoadable.state === "loading",
-    submitDeclaredValues,
-    submitAuthorizationMode,
-  };
-}
-
 function ConnectDialogFooter({
   authorization,
   noAuth,
@@ -313,7 +226,7 @@ interface CustomConnectorConnectDialogProps {
     connectionId: string | null,
     signal: AbortSignal,
   ) => void | Promise<void>;
-  readonly accountOptions: ConnectorAccountMutationOptions;
+  readonly accountOptions: CustomConnectorAccountMutationOptions;
   readonly accountMode?: ConnectorAccountConnectMode;
 }
 
@@ -397,11 +310,10 @@ export function CustomConnectorConnectDialog({
   const form = useGet(customConnectorConnectForm$);
   const setField = useSet(setCustomConnectorConnectField$);
   const close = useCloseCustomConnectorDialog(onClose);
-  const {
-    submitting: connectionSubmitting,
-    submitDeclaredValues,
-    submitAuthorizationMode,
-  } = useCustomConnectorConnectionSubmitters(agentId, accountOptions);
+  const [connectionLoadable, submit] = useLoadableSet(
+    submitCustomConnectorConnection$,
+  );
+  const connectionSubmitting = connectionLoadable.state === "loading";
   const pending = useGet(connectorConnectionPending$);
   const submitting = connectionSubmitting || pending;
   const signal = useGet(pageSignal$);
@@ -427,20 +339,6 @@ export function CustomConnectorConnectDialog({
     close,
   );
 
-  const finish = async (
-    result: CustomConnectorConnectionSubmission,
-    attemptSignal: AbortSignal,
-  ) => {
-    if (!result.connected) {
-      return;
-    }
-    if (result.targetAuthorized || accountMode) {
-      await onSuccess?.(result.connectionId, attemptSignal);
-      attemptSignal.throwIfAborted();
-    }
-    close();
-  };
-
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSubmit) {
@@ -448,15 +346,14 @@ export function CustomConnectorConnectDialog({
     }
     detach(
       (async () => {
-        if (authorization) {
-          await submitAuthorizationMode(connector.id, finish, signal);
-          return;
-        }
-        const result = await submitDeclaredValues(
-          { id: connector.id, values },
+        const connected = await submit(
+          { connector, agentId, values, accountOptions, accountMode },
+          onSuccess,
           signal,
         );
-        await finish(result, signal);
+        if (connected) {
+          close();
+        }
       })(),
       Reason.DomCallback,
     );
@@ -496,6 +393,11 @@ export function CustomConnectorConnectDialog({
           </p>
         )}
         <ConnectorConnectionDialogBody>
+          {connectionLoadable.state === "hasError" && (
+            <p role="alert" className="text-sm text-destructive">
+              {String(connectionLoadable.error)}
+            </p>
+          )}
           <CustomConnectorConnectForm
             connector={connector}
             accountMode={accountMode}

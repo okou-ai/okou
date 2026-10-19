@@ -40,6 +40,9 @@ Request context
   HTTP/1.1 request is a confirmed WebSocket upgrade handshake. Read by
   response streaming so only matching 101 responses defer model-provider usage
   release until ``websocket_end()``.
+- ``WEBSOCKET_INSPECTION``: opaque owner-loop parser state written while a
+  Responses message hook inspects its current message. Released on completion
+  or abandonment before terminal usage settlement.
 - ``RESPONSE_ENCODING_NEGOTIATION``: fixed ``str`` outcome written when request
   handling normalizes ``Accept-Encoding`` for response-body usage inspection.
   Read only by the fail-closed response-encoding diagnostic, restored with an
@@ -125,6 +128,9 @@ Firewall and auth context
 - ``PUBLIC_DESTINATION_BODY_ADMISSION``: opaque count/byte reservation for a
   large body kept buffered for publicDestination authorization. Written before
   buffering; released on request failure/cancellation or terminal response/error.
+- ``MANAGED_OPENROUTER_BODY_ADMISSION``: opaque count/byte reservation owned by
+  managed OpenRouter preset validation. Written before request buffering and
+  retained until cancellation, failure, or terminal flow cleanup releases it.
 - ``AWS_SIGV4_REQUEST_INSPECTION``: opaque bounded request-representation
   inspection written by managed SigV4 auth. Reused by request-header and request
   auth phases while the raw URL/header identity is unchanged, restored with an
@@ -222,6 +228,8 @@ SUPPRESS_REQUEST_BODY_CAPTURE: Final = "suppress_request_body_capture"
 CLI_AGENT_TYPE: Final = "cli_agent_type"
 BROWSER_USER_AGENT: Final = "browser_user_agent"
 WEBSOCKET_UPGRADE_REQUEST: Final = "websocket_upgrade_request"
+# Opaque owner-loop parser state, released before WebSocket terminal settlement.
+WEBSOCKET_INSPECTION: Final = "websocket_inspection"
 RESPONSE_ENCODING_NEGOTIATION: Final = "response_encoding_negotiation"
 
 # Timing metadata
@@ -254,6 +262,8 @@ AUTH_URL_REWRITE: Final = "auth_url_rewrite"
 AUTH_BASE_FORWARD_ADMISSION: Final = "auth_base_forward_admission"
 AWS_SIGV4_BODY_ADMISSION: Final = "aws_sigv4_body_admission"
 PUBLIC_DESTINATION_BODY_ADMISSION: Final = "public_destination_body_admission"
+# Owned by managed_openrouter from requestheaders admission until terminal cleanup.
+MANAGED_OPENROUTER_BODY_ADMISSION: Final = "managed_openrouter_body_admission"
 AWS_SIGV4_REQUEST_INSPECTION: Final = "aws_sigv4_request_inspection"
 TRUSTED_AUTHORITY_HOST: Final = "trusted_authority_host"
 

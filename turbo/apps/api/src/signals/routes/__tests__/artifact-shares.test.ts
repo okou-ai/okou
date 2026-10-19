@@ -579,6 +579,72 @@ test("hostless owner references authorize before signing and ignore extension hi
   expect(anonymous.headers.get("cache-control")).toBe("private, no-store");
 });
 
+test.each([
+  ["report.html", "text/html"],
+  ["demo.mp4", "video/mp4"],
+])(
+  "resolves %s without inventing a poster and preserves file share authorization",
+  async (filename, contentType) => {
+    const { members, session } = fixture();
+    const target = await file(filename, contentType);
+    const reference = artifactReferencePath(target.id, filename)
+      .split("/")
+      .at(-1)!;
+    const resolve = () => {
+      return api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+      });
+    };
+    const owned = await accept(resolve(), [200]);
+    expect(owned.body).toMatchObject({ filename, contentType, target });
+    expect(owned.body).not.toHaveProperty("previewImageUrl");
+    expect(owned.headers.get("cache-control")).toBe("private, no-store");
+
+    const peer = `user_${randomUUID()}`;
+    members.add(peer);
+    session(peer);
+    const unavailable = await accept(resolve(), [404]);
+    expect(unavailable.body).not.toHaveProperty("previewImageUrl");
+
+    session();
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "organization" },
+      }),
+      [200],
+    );
+    session(peer);
+    const shared = await accept(resolve(), [200]);
+    expect(shared.body).toMatchObject({ filename, contentType, target });
+    expect(shared.body).not.toHaveProperty("previewImageUrl");
+    // Typed resolution remains owner-only, even for an authorized recipient.
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+        query: { kind: "file" },
+      }),
+      [404],
+    );
+
+    members.delete(peer);
+    await accept(resolve(), [404]);
+    session();
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "private" },
+      }),
+      [200],
+    );
+    members.add(peer);
+    session(peer);
+    await accept(resolve(), [404]);
+  },
+);
+
 test("a private file keeps the same short reference through organization sharing and revocation", async () => {
   const { members, session } = fixture();
   const prepared = await accept(

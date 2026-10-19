@@ -259,6 +259,7 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
         billable_firewalls: &[],
         model_usage_provider: None,
         model_usage_long_context_min_total_input_tokens: None,
+        pi_model_config: None,
     };
     // #35930 escaped because the Python test hand-authored target metadata that
     // this production writer did not emit. Keep this boundary writer-owned.

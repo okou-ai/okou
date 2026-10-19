@@ -33,11 +33,11 @@ export function createRecentWorkflowIds(
 ) {
   const snapshot$ = computed(async (get) => {
     const range = get(activeSlashRange$);
-    if (range?.query !== "") {
+    if (!range) {
       return [];
     }
-    // Each open slash owns a read-only snapshot. A send from another composer
-    // updates storage without moving the rows under this menu's pointer.
+    // Each query owns a read-only snapshot. A send from another composer or tab
+    // cannot move the rows until this query changes or the menu opens again.
     const storage = localStorageSignals(
       workflowStorageKey(await get(authenticatedIdentity$)),
     );

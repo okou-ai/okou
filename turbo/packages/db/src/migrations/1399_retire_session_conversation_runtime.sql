@@ -121,7 +121,7 @@ BEGIN
   END IF;
 END $$;
 --> statement-breakpoint
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id, session_id FROM agent_runs
   WHERE ($1::uuid IS NULL OR id > $1::uuid) AND agent_id IS NULL
@@ -134,7 +134,7 @@ WITH batch AS MATERIALIZED (
 )
 SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 --> statement-breakpoint
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id FROM agent_runs
   WHERE ($1::uuid IS NULL OR id > $1::uuid) AND framework IS NULL
@@ -171,7 +171,7 @@ WHERE c.run_id = r.id AND s.id = r.session_id
 --> statement-breakpoint
 -- Historical admission bindings are not history-generation identities. Bind
 -- only the real Conversation-producing Run of the same owned Thread/Agent.
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id, user_id, agent_id, agent_session_id FROM chat_threads
   WHERE ($1::uuid IS NULL OR id > $1::uuid) AND agent_session_id IS NOT NULL

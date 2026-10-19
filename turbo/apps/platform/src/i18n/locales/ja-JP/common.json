@@ -112,6 +112,12 @@
       "files": {
         "connecting": "ファイルに接続中…",
         "currentFolder": "現在のフォルダー",
+        "download": "{{name}} をダウンロード",
+        "downloadChanged": "ダウンロード中にファイルが変更されました。もう一度ダウンロードしてください。",
+        "downloadFailed": "ダウンロードに失敗しました。もう一度お試しください。",
+        "downloadFrame": "ファイルのダウンロード",
+        "downloadUnsupported": "このブラウザーはファイルのダウンロードに対応していません。",
+        "downloadUpdateRequired": "ページを再読み込みしてお試しください。引き続き利用できない場合は、新しい実行を開始してください。",
         "empty": "このフォルダーは空です。",
         "enterFolder": "{{name}} を開く",
         "goHome": "ホームフォルダーに戻る",
@@ -124,6 +130,17 @@
         "other": "その他",
         "parentFolders": "親フォルダー",
         "pending": "待機中の実行が開始するとファイルを閲覧できます。",
+        "preview": "{{name}} をプレビュー",
+        "previewChanged": "ファイルが変更されました。プレビューを閉じて開き直してください。",
+        "previewDecode": "このファイルを読み取れません。ダウンロードは可能です。",
+        "previewEmpty": "このファイルは空です。",
+        "previewInvalid": "このファイルはプレビューできません。ダウンロードは可能です。",
+        "previewLoading": "プレビューを読み込み中…",
+        "previewSize": "ファイルが大きすぎるためプレビューできません。ダウンロードは可能です。",
+        "previewTruncated": "先頭の 64 KiB を表示しています。全内容を見るにはダウンロードしてください。",
+        "previewUnavailable": "プレビューを利用できません。閉じて再試行するか、ダウンロードしてください。",
+        "previewUnsupported": "このファイル形式はプレビューに対応していません。ダウンロードは可能です。",
+        "previewUpdateRequired": "ページを再読み込みして再試行してください。それでもプレビューできない場合は、新しい実行を開始してください。",
         "readonly": "現在の実行のファイルを読み取り専用で表示します。",
         "refresh": "更新",
         "retry": "再試行",
@@ -134,7 +151,7 @@
         "updateRequired": "この実行はファイル閲覧に対応していません。サンドボックスの更新後に新しい実行を開始してください。"
       },
       "log": "ログ",
-      "manualReloadNotice": "最新のアクティビティログを表示するには、このページを再読み込みしてください。",
+      "manualReloadNotice": "ログは自動更新されません。",
       "modelProvidedBy": "{{model}} は {{provider}} によって提供されます",
       "networkEmpty": {
         "description": "この実行ではネットワーク トラフィックは記録されませんでした。",
@@ -145,6 +162,7 @@
         "description": "このログは存在しないか、現在のワークスペースで表示する権限がありません。",
         "title": "ログが見つかりません"
       },
+      "refresh": "更新",
       "runner": {
         "environment": "環境",
         "framework": "フレームワーク",
@@ -1530,13 +1548,17 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "continueChat": "チャットを続ける",
       "dismiss": "非表示にする",
       "label": "提案",
-      "newChat": "新しいチャット",
       "next": "次の提案",
       "position": "{{current}} / {{total}}",
-      "previous": "前の提案"
+      "previous": "前の提案",
+      "recoveryHint": "再送信する前にチャットを確認してください。提案を下書きに戻せます。",
+      "restoreDraft": "下書きに戻す",
+      "runFailed": "提案を開始できませんでした",
+      "runInChat": "このチャットで実行",
+      "runNewChat": "新しいチャットで実行",
+      "starting": "開始中…"
     },
     "attachments": {
       "attach": "添付する",
@@ -1770,6 +1792,7 @@
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
       "slashActions": {
+        "actions": "アクション",
         "archive": "チャットをアーカイブ",
         "back": "戻る",
         "connect": "ツールを接続",
@@ -1783,6 +1806,11 @@
         "pin": "チャットをピン留め",
         "rename": "チャット名を変更",
         "schedule": "スケジュール",
+        "scheduleCustom": "カスタムスケジュール",
+        "scheduleEveryMonday": "毎週月曜日",
+        "scheduleEveryMonth": "毎月1日",
+        "scheduleEveryMorning": "毎朝",
+        "scheduleEveryWeekday": "平日毎日",
         "scheduleHint": "定期的に実行",
         "share": "チャットを共有",
         "shareHint": "この会話のリンクを共有",
@@ -1791,6 +1819,7 @@
       },
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
+        "hint": "ワークフローを検索するか、テンプレートを選択…",
         "make": "作成",
         "useTemplate": "テンプレート {{title}} を使う"
       },
@@ -2076,14 +2105,10 @@
       "communications": "メッセージ",
       "idle": "待機",
       "loadFailed": "読み込み失敗",
-      "loading": "読み込み中…",
       "messageUnavailable": "メッセージ取得不可",
-      "more": "もっと見る",
-      "noMessages": "まだメッセージはありません",
       "origin": "開始元",
       "queued": "待機中",
       "received": "受信",
-      "refresh": "更新",
       "running": "実行中",
       "sent": "送信",
       "toggleMessages": "{{title}} とのメッセージ",
@@ -2114,8 +2139,7 @@
       "loadFailed": "リソースを読み込めませんでした",
       "loadingLinks": "リンクを読み込み中",
       "retry": "再試行",
-      "title": "チャットのリソース",
-      "viewAll": "すべて表示"
+      "title": "チャットのリソース"
     },
     "run": {
       "collapseWorkHistory": "作業履歴を折りたたむ",
@@ -3505,7 +3529,6 @@
         "connectedDescription": "Teams アカウントは接続されています。",
         "connectTitle": "Microsoft Teams を接続します",
         "identityMismatch": "指定された Teams アカウントまたはワークスペースは現在の接続と一致しません。",
-        "identityUnknown": "このリンクの Teams アカウントを確認できません。Teams を開いてアカウントを確認してください。",
         "install": "Teams にインストール",
         "invalidContext": "このリンクには Teams アカウント情報が不足しています。Teams から新しい接続リンクを開いてください。",
         "open": "オープンチーム",
@@ -3938,7 +3961,6 @@
     "retry": "再試行",
     "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
-    "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"
   },
   "global": {
@@ -5101,6 +5123,15 @@
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
         "title": "モーニングブリーフ"
       },
+      "proactiveSuggestions": {
+        "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
+        "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "preparationFailed": "提案の設定を完了できませんでした。再試行してください。",
+        "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
+        "retry": "再試行",
+        "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",
+        "title": "先回りの提案"
+      },
       "send": {
         "cmdEnter": "⌘ 入力してください",
         "cmdEnterDescription": "⌘/Ctrl+Enter を押して送信し、Enter を押して改行します",
@@ -5158,7 +5189,6 @@
       "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
-      "permissionsUnknown": "Link に再接続して、現在の権限を確認し承認してください。",
       "retry": "再試行",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
       "title": "ウォレット",
@@ -5188,8 +5218,7 @@
         "statusLabel": "ステータス",
         "title": "Link の取引履歴",
         "unknownStatus": "ステータスを取得できません"
-      },
-      "workspaceScopeChanged": "Link ウォレットが、このワークスペース内のすべてのエージェントで使えるようになります。再接続して、この変更を承認してください。"
+      }
     },
     "workspace": {
       "danger": {
@@ -5770,16 +5799,27 @@
     "loading": "VNC 設定を読み込み中…",
     "manage": "VNC を管理",
     "native": {
-      "editPending": "このプライベートネットワーク経路の編集はまだ利用できません。",
+      "configuration": "ネットワーク設定",
+      "empty": "Cloudflare Access または Tailscale の設定で再利用可能なネットワークを追加してから、ここに戻って選択してください。",
+      "gatewayHelp": "Cloudflare TCP アプリのホスト名とポート 443 を使用してください。転送先ポートはトンネルで指定し、VNC 証明書と Kerberos サービスの識別情報は個別に設定します。",
       "hostCount_other": "{{count}} 台のホスト",
       "impactConfirm": "これらのメンバーのホストは保存されたままですが、所有者が再関連付けするまで接続できないことを理解しています。",
       "impactSummary": "影響対象: {{members}}、{{hosts}}。ホストは保存されたままですが、所有者が再関連付けするまで接続できません。直接接続に自動で切り替わるホストはありません。",
       "inUse": "SSH または VNC ホストがこのネットワークを使用しています。先にホストを再関連付けするか削除してください。",
       "kdcRole": "認証サーバー",
+      "loadFailed": "ネットワーク設定を読み込めませんでした。",
+      "loading": "ネットワーク設定を読み込み中…",
+      "macHelp": "選択したモードと単体の macOS 画面共有との互換性は、引き続き検証が必要です。この接続を保護しても、他のクライアントによる Mac の VNC 待ち受けポートへのアクセスは防げません。",
       "needsRebind": "このプライベートネットワーク経路には新しい設定が必要です。再関連付けするまで接続できません。",
+      "originCaBundle": "オリジン TLS の CA 証明書",
+      "originServerName": "オリジン TLS のサーバー名",
       "originTls": "オリジン TLS",
+      "originTlsHelp": "Mac と認証のみの RSA-AES モードには、選択したサーバー上で証明書を検証し、ローカル VNC にのみ転送する TLS サービスが必要です。その識別情報と信頼設定は、Cloudflare ゲートウェイや内部 VNC 証明書とは独立しています。",
+      "originTrust": "オリジン TLS 証明書の信頼設定",
+      "peerHelp": "選択したネットワークで許可された正確な Tailscale ピアの IP または名前とサービスポートを使用してください。SSH サービスや SSH 権限は不要です。",
       "protectionHelp": "この認証モードはデスクトップの通信を暗号化しません。選択したプライベートネットワーク経路で、このサーバーまでの接続全体を保護する必要があります。",
-      "rfbRole": "デスクトップ"
+      "rfbRole": "デスクトップ",
+      "select": "保存済みのネットワーク設定を選択"
     },
     "port": "ポート",
     "retry": "再試行",
@@ -5839,7 +5879,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
       "qemuX509SaslHelp": "QEMUサブタイプ263のみ。SCRAMの前にTLSでサーバーを検証し、PLAINやサブタイプ264にはフォールバックしません。",
       "serverName": "TLS証明書の識別名",
-      "serverNameHelp": "任意です。空欄の場合、RFB接続先ホストに対して証明書を検証します。証明書が別のDNS名を使用する場合のみ設定してください。",
+      "serverNameHelp": "Cloudflare AccessではRFBサーバーの証明書の識別情報が必須です。他の経路では空欄にすると、RFB接続先ホストに対して検証します。",
       "serverNameHint": "例: desktop.internal.example.com",
       "system": "システムの認証局",
       "title": "サーバー証明書の信頼",
@@ -5863,7 +5903,7 @@
       "empty": "保存済みSSHホストがありません。このルートを使用する前にSSH設定で追加してください。",
       "loadFailed": "保存済みSSHホストを読み込めませんでした。",
       "loading": "保存済みSSHホストを読み込み中…",
-      "privateDirectHelp": "プライベート IP またはループバック IP には保存済み SSH ホストが必要です。上で SSH 経由を選んでください。接続方法は自動では変更されません。",
+      "privateDirectHelp": "プライベート IP アドレスには、対応するプライベートネットワーク経路または保存済み SSH ホストが必要です。経路を明示的に選んでください。",
       "select": "保存済みSSHホストを選択",
       "selectionUnavailable": "選択したSSHホストは利用できません。別のホストを選択するか、明示的に直接接続へ切り替えてください。",
       "ssh": "保存済みSSHホスト経由",
@@ -6565,7 +6605,6 @@
       "connectDescription": "Discord アカウントを接続して、エージェントとチャットしましょう。",
       "connectedTitle": "Discord に接続済み",
       "connectTitle": "Discord に接続",
-      "continueInNewTab": "新しいタブで続行",
       "defaultWorkspace": "Discord の既定のワークスペース",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
@@ -6622,6 +6661,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "アカウント",
+      "agentLabel": "エージェント",
       "code": "確認コード",
       "connect": "接続",
       "connected": "接続済み",
@@ -6631,11 +6672,15 @@
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。もう一度お試しください。",
       "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
+      "linkUnavailable": "このリンクは利用できません。元のアカウントとワークスペースを使用し、WeChat で再度メッセージを送信して新しいリンクを取得してください。新しい QR コードでも接続できます。",
       "name": "WeChat",
+      "newQr": "新しい QR コードで接続",
       "reconnect": "再接続",
       "reconnect_required": "もう一度スキャンして再接続してください。",
       "restart_required": "このWeChatアカウントはすでに連携されています。再接続するには新しいQRコードを作成してください。",
+      "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
       "retry": "新しいQRコードを作成",
+      "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
       "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
       "title": "WeChatに接続",
@@ -6643,7 +6688,8 @@
       "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
       "verification_required": "WeChatに表示された確認コードを入力してください。",
       "verify": "確認",
-      "waiting": "スキャンを待っています…"
+      "waiting": "スキャンを待っています…",
+      "workspaceLabel": "ワークスペース"
     }
   }
 }

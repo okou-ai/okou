@@ -786,13 +786,32 @@ async fn gc_storage_cache_delete_recheck_skips_candidate_locked_after_scan() {
 
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), false).await;
 
-    assert_eq!(result.freed, 0);
-    assert_eq!(result.remaining_size, None);
-    assert!(result.remaining_entry);
-    assert!(!result.evicted);
+    assert_eq!(result, StorageEvictionOutcome::Unmeasured);
     assert!(
         entry.exists(),
         "candidate locked after scan must survive delete recheck"
+    );
+}
+
+#[tokio::test]
+async fn gc_storage_cache_delete_recheck_keeps_candidate_on_lock_probe_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    let entry = make_storage_entry(&home, "foo", "v1", b"retained archive", old_gc_time());
+    let candidate = storage_candidate_for(entry.clone()).await;
+    let lock_path = home.storage_lock("foo", "v1");
+    std::fs::create_dir_all(&lock_path).unwrap();
+
+    let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), false).await;
+
+    assert_eq!(result, StorageEvictionOutcome::Unmeasured);
+    assert_eq!(
+        std::fs::read(entry.join("archive.tar.gz")).unwrap(),
+        b"retained archive"
+    );
+    assert!(
+        lock_path.is_dir(),
+        "failed lock probe must preserve the path"
     );
 }
 
@@ -810,10 +829,7 @@ async fn gc_storage_cache_delete_recheck_treats_missing_candidate_as_removed() {
 
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), false).await;
 
-    assert_eq!(result.freed, 0);
-    assert_eq!(result.remaining_size, None);
-    assert!(!result.remaining_entry);
-    assert!(!result.evicted);
+    assert_eq!(result, StorageEvictionOutcome::NoLongerEntry);
 }
 
 #[tokio::test]
@@ -831,10 +847,7 @@ async fn gc_storage_cache_delete_recheck_treats_file_candidate_as_removed() {
 
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), false).await;
 
-    assert_eq!(result.freed, 0);
-    assert_eq!(result.remaining_size, None);
-    assert!(!result.remaining_entry);
-    assert!(!result.evicted);
+    assert_eq!(result, StorageEvictionOutcome::NoLongerEntry);
     assert!(
         entry.is_file(),
         "non-directory replacement must not be treated as a live cache entry"
@@ -858,10 +871,7 @@ async fn gc_storage_cache_delete_recheck_treats_symlink_candidate_as_removed() {
 
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), false).await;
 
-    assert_eq!(result.freed, 0);
-    assert_eq!(result.remaining_size, None);
-    assert!(!result.remaining_entry);
-    assert!(!result.evicted);
+    assert_eq!(result, StorageEvictionOutcome::NoLongerEntry);
     assert_is_symlink(&entry, "symlink replacement must remain untouched");
     assert!(
         outside_version.exists(),
@@ -882,18 +892,25 @@ async fn gc_storage_cache_delete_recheck_reuses_only_identified_candidate_size()
 
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), true).await;
 
-    assert_eq!(result.freed, scan_size);
-    assert_eq!(result.remaining_size, None);
-    assert!(!result.remaining_entry);
-    assert!(result.evicted);
+    assert_eq!(
+        result,
+        StorageEvictionOutcome::Evicted {
+            freed_bytes: scan_size
+        }
+    );
     assert!(entry.exists(), "dry-run must keep the unchanged candidate");
 
     candidate.identity = None;
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), true).await;
     let fresh_size = dir_stats(&entry).await.0;
 
-    assert_eq!(result.freed, fresh_size);
-    assert_ne!(result.freed, scan_size);
+    assert_eq!(
+        result,
+        StorageEvictionOutcome::Evicted {
+            freed_bytes: fresh_size
+        }
+    );
+    assert_ne!(fresh_size, scan_size);
 }
 
 #[tokio::test]
@@ -922,10 +939,12 @@ async fn gc_storage_cache_delete_recheck_reaccounts_replaced_directory() {
 
     let result = evict_storage_candidate(&home, &candidate, SystemTime::now(), true).await;
 
-    assert_eq!(result.freed, replacement_size);
-    assert_eq!(result.remaining_size, None);
-    assert!(!result.remaining_entry);
-    assert!(result.evicted);
+    assert_eq!(
+        result,
+        StorageEvictionOutcome::Evicted {
+            freed_bytes: replacement_size
+        }
+    );
     assert!(entry.exists(), "dry-run must keep the replacement");
 }
 
@@ -950,10 +969,12 @@ async fn gc_storage_cache_delete_recheck_keeps_candidate_that_became_recent() {
     let (fresh_size, _) = dir_stats(&entry).await;
 
     assert_ne!(fresh_size, scanned_size);
-    assert_eq!(result.freed, 0);
-    assert_eq!(result.remaining_size, Some(fresh_size));
-    assert!(result.remaining_entry);
-    assert!(!result.evicted);
+    assert_eq!(
+        result,
+        StorageEvictionOutcome::Retained {
+            accounted_bytes: fresh_size
+        }
+    );
     assert!(
         entry.exists(),
         "candidate that became recent after scan must survive delete recheck"

@@ -16,7 +16,7 @@ export const teamsConnectPageState$ = computed(async (get) => {
   assertCurrent();
   const target = teamsTargetState(params, data, orgId);
   const connected =
-    data.isInstalled && data.isConnected && data.pendingInstallation !== true;
+    data.isInstalled && data.isConnected && !data.pendingInstallation;
   const success = connected && (target === "none" || target === "match");
   const body = teamsConnectBody(params);
   return {

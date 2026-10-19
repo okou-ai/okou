@@ -11,6 +11,45 @@ export interface WechatOwner {
   readonly userId: string;
   readonly channelId: string;
 }
+
+export interface WechatSendAccess {
+  readonly connection: typeof wechatConnections.$inferSelect;
+  readonly contextId: string;
+  readonly token: string;
+  readonly contextToken: string;
+}
+
+/** Recheck the mutable binding without repeating this send's membership lookup. */
+export const requireLiveWechatSendConnection$ = command(
+  async (
+    { set },
+    connection: WechatSendAccess["connection"],
+    signal: AbortSignal,
+  ) => {
+    const [live] = await set(writeDb$)
+      .select({ id: wechatConnections.id })
+      .from(wechatConnections)
+      .where(
+        and(
+          eq(wechatConnections.id, connection.id),
+          eq(wechatConnections.orgId, connection.orgId),
+          eq(wechatConnections.userId, connection.userId),
+          eq(wechatConnections.generation, connection.generation),
+          eq(wechatConnections.senderId, connection.senderId),
+          eq(wechatConnections.status, "active"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return live
+      ? ({ kind: "allowed" } as const)
+      : ({
+          kind: "denied",
+          response: notFound("This WeChat connection changed before sending."),
+        } as const);
+  },
+);
+
 export const requireWechatConnection$ = command(
   async ({ set }, args: WechatOwner, signal: AbortSignal) => {
     if (!(await set(wechatEnabled$, args.orgId, args.userId, signal))) {
@@ -70,7 +109,10 @@ export const requireWechatSendAccess$ = command(
       } as const;
     }
     const [context] = await set(writeDb$)
-      .select({ ciphertext: chatWechatContext.contextTokenCiphertext })
+      .select({
+        id: chatWechatContext.id,
+        ciphertext: chatWechatContext.contextTokenCiphertext,
+      })
       .from(chatWechatContext)
       .where(
         and(
@@ -93,23 +135,25 @@ export const requireWechatSendAccess$ = command(
         ),
       } as const;
     }
-    const token = await decryptStoredSecretValue(connection.tokenCiphertext);
+    const [token, contextToken] = await Promise.all([
+      decryptStoredSecretValue(connection.tokenCiphertext),
+      decryptStoredSecretValue(context.ciphertext),
+    ]);
     signal.throwIfAborted();
-    const contextToken = await decryptStoredSecretValue(context.ciphertext);
-    signal.throwIfAborted();
-    const live = await set(requireWechatConnection$, args, signal);
+    const live = await set(
+      requireLiveWechatSendConnection$,
+      connection,
+      signal,
+    );
     if (live.kind === "denied") {
       return live;
     }
-    if (
-      live.connection.generation !== connection.generation ||
-      live.connection.status !== "active"
-    ) {
-      return {
-        kind: "denied",
-        response: notFound("This WeChat connection changed before sending."),
-      } as const;
-    }
-    return { kind: "allowed", connection, token, contextToken } as const;
+    return {
+      kind: "allowed",
+      connection,
+      contextId: context.id,
+      token,
+      contextToken,
+    } as const satisfies WechatSendAccess & { readonly kind: "allowed" };
   },
 );

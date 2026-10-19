@@ -118,6 +118,33 @@ struct ActiveRunConnectorRuntimeState {
 }
 
 impl ActiveRunConnectorRuntimeState {
+    fn for_registration(&self, registration_cancel: &CancellationToken) -> Option<&Self> {
+        (&self.cancel == registration_cancel).then_some(self)
+    }
+
+    fn for_registration_mut(
+        &mut self,
+        registration_cancel: &CancellationToken,
+    ) -> Option<&mut Self> {
+        self.for_registration(registration_cancel)?;
+        Some(self)
+    }
+
+    fn current_target(&self, target: &ConnectorSyncTarget) -> Option<&ActiveConnectorSyncState> {
+        self.connectors
+            .get(&target.target)?
+            .for_generation(target.generation)
+    }
+
+    fn current_target_mut(
+        &mut self,
+        target: &ConnectorSyncTarget,
+    ) -> Option<&mut ActiveConnectorSyncState> {
+        self.connectors
+            .get_mut(&target.target)?
+            .for_generation_mut(target.generation)
+    }
+
     fn take_sync_tasks(&mut self) -> impl Iterator<Item = ScheduledSyncTask> + '_ {
         self.connectors
             .values_mut()
@@ -132,6 +159,17 @@ struct ActiveConnectorSyncState {
     scheduled_sync: Option<ScheduledSyncTask>,
     #[cfg(test)]
     successful_generation: tokio::sync::watch::Sender<Option<u64>>,
+}
+
+impl ActiveConnectorSyncState {
+    fn for_generation(&self, generation: u64) -> Option<&Self> {
+        (self.generation == generation).then_some(self)
+    }
+
+    fn for_generation_mut(&mut self, generation: u64) -> Option<&mut Self> {
+        self.for_generation(generation)?;
+        Some(self)
+    }
 }
 
 struct ScheduledSyncTask {
@@ -587,12 +625,9 @@ impl ConnectorRuntimeSyncCore {
         // keep its own request alive until fail-close publication finishes.
         let mut old = {
             let mut active_runs = self.inner.active_runs.lock().await;
-            if active_runs
+            active_runs
                 .get(&run_id)
-                .is_none_or(|active| &active.cancel != registration_cancel)
-            {
-                return None;
-            }
+                .and_then(|active| active.for_registration(registration_cancel))?;
             active_runs.remove(&run_id)?
         };
         abort_tasks(old.take_sync_tasks().map(|task| task.handle));
@@ -1138,22 +1173,15 @@ impl ConnectorRuntimeSyncCore {
                     if self.inner.cancel.is_cancelled() || registration_cancel.is_cancelled() {
                         return false;
                     }
-                    let Some(active) = active_runs.get(&run_id) else {
+                    let Some(active) = active_runs
+                        .get(&run_id)
+                        .and_then(|active| active.for_registration(registration_cancel))
+                    else {
                         return false;
                     };
-                    if &active.cancel != registration_cancel {
-                        return false;
-                    }
                     let prepared_publications = prepared_publications
                         .into_iter()
-                        .filter(|publication| {
-                            active
-                                .connectors
-                                .get(&publication.target.target)
-                                .is_some_and(|connector| {
-                                    connector.generation == publication.target.generation
-                                })
-                        })
+                        .filter(|publication| active.current_target(&publication.target).is_some())
                         .collect::<Vec<_>>();
                     if prepared_publications.is_empty() {
                         drop(active_runs);
@@ -1353,7 +1381,8 @@ impl ConnectorRuntimeSyncCore {
             .lock()
             .await
             .get(&run_id)
-            .is_some_and(|active| &active.cancel == registration_cancel)
+            .and_then(|active| active.for_registration(registration_cancel))
+            .is_some()
     }
 
     #[cfg(test)]
@@ -1408,21 +1437,17 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> Vec<ConnectorSyncTarget> {
         let active_runs = self.inner.active_runs.lock().await;
-        let Some(active) = active_runs.get(&run_id) else {
+        let Some(active) = active_runs
+            .get(&run_id)
+            .and_then(|active| active.for_registration(registration_cancel))
+        else {
             return Vec::new();
         };
-        if &active.cancel != registration_cancel {
-            return Vec::new();
-        }
         let mut seen = HashSet::new();
         targets
             .into_iter()
             .filter(|target| {
-                active
-                    .connectors
-                    .get(&target.target)
-                    .is_some_and(|connector| connector.generation == target.generation)
-                    && seen.insert(target.target.clone())
+                active.current_target(target).is_some() && seen.insert(target.target.clone())
             })
             .collect()
     }
@@ -1434,19 +1459,16 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> Vec<(ConnectorSyncTarget, ConnectorRuntimeTargetRegistration)> {
         let active_runs = self.inner.active_runs.lock().await;
-        let Some(active) = active_runs.get(&run_id) else {
+        let Some(active) = active_runs
+            .get(&run_id)
+            .and_then(|active| active.for_registration(registration_cancel))
+        else {
             return Vec::new();
         };
-        if &active.cancel != registration_cancel {
-            return Vec::new();
-        }
         targets
             .iter()
             .filter_map(|target| {
-                let connector = active.connectors.get(&target.target)?;
-                if connector.generation != target.generation {
-                    return None;
-                }
+                let connector = active.current_target(target)?;
                 let registration = match &connector.registration {
                     ConnectorRuntimeTargetRegistration::Builtin {
                         connector_slug,
@@ -1473,13 +1495,11 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> bool {
         let active_runs = self.inner.active_runs.lock().await;
-        active_runs.get(&run_id).is_some_and(|active| {
-            &active.cancel == registration_cancel
-                && active
-                    .connectors
-                    .get(&target.target)
-                    .is_some_and(|connector| connector.generation == target.generation)
-        })
+        active_runs
+            .get(&run_id)
+            .and_then(|active| active.for_registration(registration_cancel))
+            .and_then(|active| active.current_target(target))
+            .is_some()
     }
 
     async fn current_connector_runtime_publications(
@@ -1492,18 +1512,12 @@ impl ConnectorRuntimeSyncCore {
         Vec<PreparedConnectorRuntimePublication>,
     )> {
         let active_runs = self.inner.active_runs.lock().await;
-        let active = active_runs.get(&run_id)?;
-        if &active.cancel != registration_cancel {
-            return None;
-        }
+        let active = active_runs
+            .get(&run_id)?
+            .for_registration(registration_cancel)?;
         let current = publications
             .into_iter()
-            .filter(|publication| {
-                active
-                    .connectors
-                    .get(&publication.target.target)
-                    .is_some_and(|connector| connector.generation == publication.target.generation)
-            })
+            .filter(|publication| active.current_target(&publication.target).is_some())
             .collect();
         Some((
             ActiveRunConnectorRuntimeSnapshot {
@@ -1522,10 +1536,9 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> Option<bool> {
         let active_runs = self.inner.active_runs.lock().await;
-        let active = active_runs.get(&run_id)?;
-        if &active.cancel != registration_cancel {
-            return None;
-        }
+        let active = active_runs
+            .get(&run_id)?
+            .for_registration(registration_cancel)?;
         let connector = active.connectors.get(&target.target)?;
         Some(
             connector
@@ -1542,14 +1555,10 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> Option<HashMap<String, String>> {
         let active_runs = self.inner.active_runs.lock().await;
-        let active = active_runs.get(&run_id)?;
-        if &active.cancel != registration_cancel {
-            return None;
-        }
-        let connector = active.connectors.get(&target.target)?;
-        if connector.generation != target.generation {
-            return None;
-        }
+        let active = active_runs
+            .get(&run_id)?
+            .for_registration(registration_cancel)?;
+        let connector = active.current_target(target)?;
         connector.registration.custom_base_url_vars().cloned()
     }
 
@@ -1560,14 +1569,10 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> Option<Option<String>> {
         let active_runs = self.inner.active_runs.lock().await;
-        let active = active_runs.get(&run_id)?;
-        if &active.cancel != registration_cancel {
-            return None;
-        }
-        let connector = active.connectors.get(&target.target)?;
-        if connector.generation != target.generation {
-            return None;
-        }
+        let active = active_runs
+            .get(&run_id)?
+            .for_registration(registration_cancel)?;
+        let connector = active.current_target(target)?;
         Some(connector.registration.source_id().map(str::to_string))
     }
 
@@ -1579,14 +1584,10 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> Option<u32> {
         let mut active_runs = self.inner.active_runs.lock().await;
-        let active = active_runs.get_mut(&run_id)?;
-        if &active.cancel != registration_cancel {
-            return None;
-        }
-        let connector = active.connectors.get_mut(&target.target)?;
-        if connector.generation != target.generation {
-            return None;
-        }
+        let active = active_runs
+            .get_mut(&run_id)?
+            .for_registration_mut(registration_cancel)?;
+        let connector = active.current_target_mut(target)?;
         let recovered_after_failures = connector.consecutive_failures;
         connector.consecutive_failures = 0;
         let completed = self.replace_schedule_locked(active, run_id, target, deadline);
@@ -1616,24 +1617,21 @@ impl ConnectorRuntimeSyncCore {
         let scheduling_base = tokio::time::Instant::now();
         let mut scheduled = Vec::new();
         let mut active_runs = self.inner.active_runs.lock().await;
-        let Some(active) = active_runs.get_mut(&run_id) else {
+        let Some(active) = active_runs
+            .get_mut(&run_id)
+            .and_then(|active| active.for_registration_mut(registration_cancel))
+        else {
             return SyncRetrySummary::default();
         };
-        if &active.cancel != registration_cancel {
-            return SyncRetrySummary::default();
-        }
 
         let mut seen = HashSet::new();
         for target in targets {
             if !seen.insert(&target.target) {
                 continue;
             }
-            let Some(connector) = active.connectors.get_mut(&target.target) else {
+            let Some(connector) = active.current_target_mut(target) else {
                 continue;
             };
-            if connector.generation != target.generation {
-                continue;
-            }
             let newly_degraded = connector.consecutive_failures == 0;
             connector.consecutive_failures = connector.consecutive_failures.saturating_add(1);
             let attempt = connector.consecutive_failures;
@@ -1684,12 +1682,12 @@ impl ConnectorRuntimeSyncCore {
         registration_cancel: &CancellationToken,
     ) -> bool {
         let mut active_runs = self.inner.active_runs.lock().await;
-        let Some(active) = active_runs.get_mut(&run_id) else {
+        let Some(active) = active_runs
+            .get_mut(&run_id)
+            .and_then(|active| active.for_registration_mut(registration_cancel))
+        else {
             return false;
         };
-        if &active.cancel != registration_cancel {
-            return false;
-        }
         self.replace_schedule_locked(active, run_id, target, deadline)
     }
 
@@ -1700,12 +1698,13 @@ impl ConnectorRuntimeSyncCore {
         target: &ConnectorSyncTarget,
         deadline: Option<tokio::time::Instant>,
     ) -> bool {
-        let Some(connector) = active.connectors.get_mut(&target.target) else {
+        let Some(connector) = active
+            .connectors
+            .get_mut(&target.target)
+            .and_then(|connector| connector.for_generation_mut(target.generation))
+        else {
             return false;
         };
-        if connector.generation != target.generation {
-            return false;
-        }
 
         if let Some(old) = connector.scheduled_sync.take() {
             old.handle.abort();
@@ -1768,10 +1767,9 @@ impl ConnectorRuntimeSyncCore {
         let mut handles_to_abort = Vec::new();
         let (targets, cancel) = {
             let mut active_runs = self.inner.active_runs.lock().await;
-            let active = active_runs.get_mut(&run_id)?;
-            if &active.cancel != registration_cancel {
-                return None;
-            }
+            let active = active_runs
+                .get_mut(&run_id)?
+                .for_registration_mut(registration_cancel)?;
             if active
                 .connectors
                 .get(target)
@@ -2452,6 +2450,7 @@ mod tests {
                         billable_firewalls: &billable_firewalls,
                         model_usage_provider: None,
                         model_usage_long_context_min_total_input_tokens: None,
+                        pi_model_config: None,
                     },
                 )
                 .await
@@ -2825,6 +2824,7 @@ mod tests {
                     billable_firewalls: &[],
                     model_usage_provider: None,
                     model_usage_long_context_min_total_input_tokens: None,
+                    pi_model_config: None,
                 },
             )
             .await
@@ -2924,6 +2924,7 @@ mod tests {
                     billable_firewalls: &[],
                     model_usage_provider: None,
                     model_usage_long_context_min_total_input_tokens: None,
+                    pi_model_config: None,
                 },
             )
             .await

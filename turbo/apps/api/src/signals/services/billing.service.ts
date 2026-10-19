@@ -3,7 +3,7 @@ import type { AutoRechargeConfig } from "@okouai/api-contracts/contracts/billing
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
 
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   ensurePaymentMethodPortalConfiguration,
@@ -35,18 +35,6 @@ export function autoRechargeConfig(
   });
 }
 
-async function stripeCustomerIdForOrg(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | null> {
-  const [org] = await db
-    .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return org?.stripeCustomerId ?? null;
-}
-
 /** Create either a legacy billing or restricted payment-method portal. */
 export const createBillingPortalSession$ = command(
   async (
@@ -58,7 +46,15 @@ export const createBillingPortalSession$ = command(
     signal: AbortSignal,
   ): Promise<string> => {
     const db = get(db$);
-    let stripeCustomerId = await stripeCustomerIdForOrg(db, args.orgId);
+    const portalOrgId = args.orgId;
+    let stripeCustomerId = await (async () => {
+      const [org] = await db
+        .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, portalOrgId))
+        .limit(1);
+      return org?.stripeCustomerId ?? null;
+    })();
     signal.throwIfAborted();
 
     if (!stripeCustomerId) {

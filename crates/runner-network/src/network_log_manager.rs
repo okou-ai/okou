@@ -112,9 +112,9 @@ impl NetworkLogSession {
         run_id: RunId,
         drain: &NetworkLogDrainCoordinator,
     ) -> NetworkLogCloseObservation {
-        let current =
-            self.manager
-                .begin_session_drain(&self.source_ip, &self.path, self.generation);
+        let current = self
+            .manager
+            .is_current_session(&self.source_ip, &self.path, self.generation);
         let drain = if current {
             drain
                 .drain(NetworkLogDrainContext {
@@ -335,10 +335,10 @@ impl NetworkLogManager {
         })
     }
 
-    fn begin_session_drain(&self, source_ip: &str, path: &Path, generation: u64) -> bool {
+    fn is_current_session(&self, source_ip: &str, path: &Path, generation: u64) -> bool {
         self.inner
             .state
-            .begin_session_drain(source_ip, path, generation)
+            .is_current_session(source_ip, path, generation)
     }
 
     fn finalize_session(&self, source_ip: &str, path: &Path, generation: u64) -> bool {
@@ -1294,34 +1294,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn draining_session_accepts_late_rows_until_finalized() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("network.jsonl");
-        let manager = NetworkLogManager::new();
-        let session = manager.register_source_ip("10.200.0.2", path.clone()).await;
-
-        manager.begin_session_drain(&session.source_ip, &session.path, session.generation);
-        assert!(
-            manager
-                .append_for_ip("10.200.0.2", json!({"type":"dns","host":"late.test"}))
+    async fn close_for_upload_preserves_replacement_during_producer_drain() {
+        for same_path in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let old_path = dir.path().join("old.jsonl");
+            let new_path = if same_path {
+                old_path.clone()
+            } else {
+                dir.path().join("new.jsonl")
+            };
+            let manager = NetworkLogManager::new();
+            let old = manager
+                .register_source_ip("10.200.0.2", old_path.clone())
+                .await;
+            let (producer, mut drain_rx) = NetworkLogDrainProducer::channel("test");
+            let drain = NetworkLogDrainCoordinator::new(vec![producer]);
+            let close =
+                tokio::spawn(async move { old.close_for_upload(RunId::new_v4(), &drain).await });
+            let request = tokio::time::timeout(Duration::from_secs(2), drain_rx.recv())
                 .await
-        );
-        manager.flush_path(&path).await;
+                .expect("close must request producer drain")
+                .expect("producer request");
 
-        let lines = read_json_lines(&path);
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0]["host"], "late.test");
-
-        manager.finalize_session(&session.source_ip, &session.path, session.generation);
-        assert!(
-            !manager
-                .append_for_ip("10.200.0.2", json!({"type":"dns","host":"closed.test"}))
+            let late = json!({"type":"dns","host":"late.test"});
+            assert!(manager.append_for_ip("10.200.0.2", late.clone()).await);
+            let new = manager
+                .register_source_ip("10.200.0.2", new_path.clone())
+                .await;
+            let replacement = json!({"type":"dns","host":"replacement.test"});
+            assert!(
+                manager
+                    .append_for_ip("10.200.0.2", replacement.clone())
+                    .await
+            );
+            request.ack();
+            let observation = tokio::time::timeout(Duration::from_secs(2), close)
                 .await
-        );
+                .expect("old close must finish")
+                .unwrap();
+            assert_eq!(observation.drain_status("test"), "acknowledged");
+            assert!(!observation.writer_failed());
+
+            let after_close = json!({"type":"dns","host":"after-old-close.test"});
+            assert!(
+                manager
+                    .append_for_ip("10.200.0.2", after_close.clone())
+                    .await
+            );
+            let observation = new
+                .close_for_upload(RunId::new_v4(), &NetworkLogDrainCoordinator::noop())
+                .await;
+            assert!(!observation.writer_failed());
+            if same_path {
+                assert_eq!(
+                    read_json_lines(&old_path),
+                    vec![late, replacement, after_close]
+                );
+            } else {
+                assert_eq!(read_json_lines(&old_path), vec![late]);
+                assert_eq!(read_json_lines(&new_path), vec![replacement, after_close]);
+            }
+            assert!(
+                !manager
+                    .append_for_ip("10.200.0.2", json!({"host":"after-final-close.test"}))
+                    .await
+            );
+        }
     }
 
     #[tokio::test]
-    async fn old_session_finalize_does_not_remove_new_registration() {
+    async fn stale_session_close_skips_producer_drain_and_preserves_replacement() {
         let dir = tempfile::tempdir().unwrap();
         let old_path = dir.path().join("old.jsonl");
         let new_path = dir.path().join("new.jsonl");
@@ -1330,18 +1372,30 @@ mod tests {
             .register_source_ip("10.200.0.2", old_path.clone())
             .await;
 
-        manager.begin_session_drain(&old.source_ip, &old.path, old.generation);
-        let _new_session = manager
+        let new = manager
             .register_source_ip("10.200.0.2", new_path.clone())
             .await;
-        manager.finalize_session(&old.source_ip, &old.path, old.generation);
+        let (producer, mut drain_rx) = NetworkLogDrainProducer::channel("test");
+        let drain = NetworkLogDrainCoordinator::new(vec![producer]);
+        let observation = tokio::time::timeout(
+            Duration::from_secs(2),
+            old.close_for_upload(RunId::new_v4(), &drain),
+        )
+        .await
+        .expect("stale close must finish without a producer acknowledgement");
+        assert_eq!(observation.drain_status("test"), "not_configured");
+        assert!(matches!(
+            drain_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
 
         assert!(
             manager
                 .append_for_ip("10.200.0.2", json!({"type":"dns","host":"new.test"}))
                 .await
         );
-        manager.flush_path(&new_path).await;
+        new.close_for_upload(RunId::new_v4(), &NetworkLogDrainCoordinator::noop())
+            .await;
 
         assert!(!old_path.exists());
         let lines = read_json_lines(&new_path);

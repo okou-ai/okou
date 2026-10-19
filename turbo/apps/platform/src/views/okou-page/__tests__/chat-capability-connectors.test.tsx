@@ -1,5 +1,9 @@
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
+  connectorAccountsContract,
+  type ConnectorAccountMutationIntent,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  customConnectorAccount,
   mockConnectorAgentAccess,
   mockOAuthCompletions,
 } from "./connector-page-test-helpers.ts";
@@ -308,6 +312,87 @@ describe("with an unconnected banking conversation", () => {
   });
 });
 
+async function startPendingBankingConnect(
+  outcome: "page navigation" | "session failure",
+) {
+  const popup = mockOpenedWindow();
+  const requested = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  installActionConversation({
+    lines: [
+      bankingActionUrl({
+        reason: "Review recent cash-flow activity",
+        callbackPrompt: "Continue the banking review",
+      }),
+    ],
+  });
+  context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
+    return respond(200, emptyBankingStatus());
+  });
+  context.mocks.api(
+    bankingUserContract.createConnectSession,
+    async ({ respond }) => {
+      requested.resolve(undefined);
+      await response.promise;
+      return outcome === "session failure"
+        ? respond(503, {
+            error: {
+              code: "SERVICE_UNAVAILABLE",
+              message: "Bank connection unavailable",
+            },
+          })
+        : respond(200, {
+            sessionId: BANK_SESSION_ID,
+            url: "https://bank.example.test/connect",
+          });
+    },
+  );
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
+  await readyChat();
+  const summary = await screen.findByTestId("banking-action-card");
+  click(getButton("View details", summary));
+  const card = await screen.findByRole("dialog", {
+    name: "Banking access request",
+  });
+  click(getButton("Connect a bank", card));
+  await requested.promise;
+  expect(popup.openedWindow.closed).toBeFalsy();
+  expect(popup.navigations).toStrictEqual([]);
+  expect(getButton("Connect a bank", card)).toBeDisabled();
+
+  return { popup, response, card };
+}
+
+test("Banking connect closes its blank popup on page navigation", async () => {
+  const { popup, response, card } =
+    await startPendingBankingConnect("page navigation");
+  click(getButton("Close", card));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  click(getButton("New chat"));
+  await waitFor(() => {
+    expect(location.pathname).not.toBe(RUN_PATH);
+    expect(popup.openedWindow.closed).toBeTruthy();
+  });
+  response.resolve(undefined);
+  expect(popup.navigations).toStrictEqual([]);
+});
+
+test("Banking connect closes its blank popup on session failure", async () => {
+  const { popup, response, card } =
+    await startPendingBankingConnect("session failure");
+  response.resolve(undefined);
+  await expect(
+    within(card).findByText("Bank connection unavailable"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getButton("Connect a bank", card)).toBeEnabled();
+    expect(popup.openedWindow.closed).toBeTruthy();
+  });
+  expect(popup.navigations).toStrictEqual([]);
+});
+
 describe("with connected accounts awaiting a banking grant", () => {
   async function prepareScenario() {
     const sends: CapturedChatSend[] = [];
@@ -473,8 +558,12 @@ describe("with an active banking grant", () => {
   });
 });
 
-test("Connect and authorize a custom MCP connector", async () => {
+async function attemptCustomMcpConnection(
+  hasSavedAccount: boolean,
+  complete: boolean,
+) {
   const sends: CapturedChatSend[] = [];
+  const submittedAccounts: ConnectorAccountMutationIntent[] = [];
   const authorizationUpdates: AgentCustomConnectorGrant[][] = [];
   let connected = false;
   const connector = () => {
@@ -486,11 +575,31 @@ test("Connect and authorize a custom MCP connector", async () => {
     });
   };
   installCustomConnectorApi({ connector, authorizationUpdates });
+  const account = customConnectorAccount(CUSTOM_CONNECTOR_ID, {
+    id: CONNECTOR_CONNECTION_ID,
+    connectionStatus: "reconnect-required",
+    reconnectReason: "authorization_expired_or_revoked",
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: hasSavedAccount
+        ? [
+            {
+              target: account.target,
+              accountCount: 2,
+              attentionCount: 1,
+              defaultConnection: account,
+            },
+          ]
+        : [],
+    });
+  });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
+    submittedAccounts.push(body.account);
     expect(body.values).toStrictEqual([
       { key: "apiSecret", kind: "secret", value: "secret-value" },
     ]);
-    connected = true;
+    connected = complete;
     return respond(200, connector());
   });
   installActionConversation({
@@ -502,28 +611,52 @@ test("Connect and authorize a custom MCP connector", async () => {
     ],
     sends,
   });
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: RUN_PATH,
-  });
-
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
   await readyChat();
   const card = await screen.findByTestId("connector-action-card");
   click(getButton("Connect", card));
-  const secret = await screen.findByLabelText("API secret");
-  await fill(secret, "secret-value");
-  click(getButton("Save"));
-
-  await waitFor(() => {
-    expect(getButton("Authorized", card)).toBeDisabled();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect Workspace Search",
   });
-  expect(authorizationUpdates).toStrictEqual([
-    [{ customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] }],
-  ]);
-  expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
-  expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
+  await fill(within(dialog).getByLabelText("API secret"), "secret-value");
+  click(getButton("Save", dialog));
+  await waitFor(() => {
+    expect(submittedAccounts).toStrictEqual([
+      hasSavedAccount
+        ? { intent: "reconnect", connectionId: account.id }
+        : { intent: "add" },
+    ]);
+  });
+  return { card, dialog, sends, authorizationUpdates };
+}
+
+test.each([false, true])(
+  "Connect or reconnect a custom MCP default before resuming (%s)",
+  async (hasSavedAccount) => {
+    const { card, sends, authorizationUpdates } =
+      await attemptCustomMcpConnection(hasSavedAccount, true);
+    await waitFor(() => {
+      expect(getButton("Authorized", card)).toBeDisabled();
+    });
+    expect(authorizationUpdates).toStrictEqual([
+      [{ customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] }],
+    ]);
+    expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
+    });
+  },
+);
+
+test("Keep an incomplete custom MCP reconnect unauthorized without resuming", async () => {
+  const { dialog, sends, authorizationUpdates } =
+    await attemptCustomMcpConnection(true, false);
+  await waitFor(() => {
+    expect(getButton("Save", dialog)).toBeEnabled();
+  });
+  expect(authorizationUpdates).toStrictEqual([]);
+  expect(sentPrompts(sends)).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
 });
 
 test("Connect a single available connector without an unnecessary chooser", async () => {

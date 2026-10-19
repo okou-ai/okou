@@ -117,6 +117,7 @@ pub enum HomeImagePromotionIdentityMismatch {
     ImageSizeBytes,
     ActiveImage,
     CacheKey,
+    PublicationStarted,
 }
 impl HomeImagePromotionIdentityMismatch {
     pub fn as_str(self) -> &'static str {
@@ -130,6 +131,7 @@ impl HomeImagePromotionIdentityMismatch {
             Self::ImageSizeBytes => "image size mismatch",
             Self::ActiveImage => "active image path mismatch",
             Self::CacheKey => "cache key mismatch",
+            Self::PublicationStarted => "home publication already started",
         }
     }
 }

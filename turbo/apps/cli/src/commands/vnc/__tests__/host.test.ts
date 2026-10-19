@@ -142,7 +142,10 @@ describe("okou vnc host list", () => {
     const text = output.mock.calls.flat().join("\n");
     expect(text).toContain(blocked.id);
     expect(text).toContain("blocked: needs_rebind");
-    expect(text).toContain("rebind the underlying SSH host");
+    expect(text).toContain(
+      "rebind the saved VNC route or its underlying SSH host",
+    );
+    expect(text).toContain("no automatic Direct fallback");
     expect(text).toContain("explicitly choose Direct");
   });
 
@@ -622,6 +625,50 @@ describe("okou vnc host configuration management", () => {
       JSON.stringify({ id: host.id }),
     );
   });
+
+  it.each(["cloudflare_access", "tailscale"] as const)(
+    "publishes independent native %s RFB and KDC JSON through the current owner contract",
+    async (type) => {
+      let received: unknown;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/vnc/connections",
+          async ({ request }) => {
+            received = await request.json();
+            return new HttpResponse(null, { status: 204 });
+          },
+        ),
+      );
+      const transport = { type, configId: host.id };
+      const body = {
+        id: host.id,
+        displayName: "Native desktop",
+        host: "desktop.example.com",
+        port: type === "cloudflare_access" ? 443 : 5900,
+        credential: { id: configuredHost.credentialId },
+        transport,
+        security: {
+          type: "qemu_x509_gssapi",
+          serverName: "inner.example.com",
+          trust: { mode: "system" },
+          service: {
+            realm: "EXAMPLE.COM",
+            components: ["vnc", "inner.example.com"],
+          },
+          kdc: {
+            host: "kdc.example.com",
+            port: type === "cloudflare_access" ? 443 : 88,
+            transport,
+            ticketLifetimeSeconds: 1200,
+            renewableLifetimeSeconds: 7200,
+          },
+        },
+      };
+      await manage("create", "--input", input(body), "--json");
+      expect(received).toStrictEqual(body);
+      expect(text()).not.toContain("CANARY");
+    },
+  );
 
   it("deletes with expectedGeneration without a new confirmation or self-grant", async () => {
     let body: unknown;

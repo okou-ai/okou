@@ -8,6 +8,7 @@ import {
   type ConnectorAccountConnection,
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   type CreateCustomConnectorBody,
   type CustomConnectorHttpResponse,
@@ -1439,6 +1440,113 @@ test("Create and connect an MCP server with automatic authentication", async () 
       getConnectorAction("button", "Manage Discovery MCP access"),
     ).toHaveTextContent("Used by 2 agents");
   });
+});
+
+test("Do not report an empty Connected list when account summaries are unavailable", async () => {
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, {
+      connectors: [mcpCustomConnector({ connected: false })],
+    });
+  });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(503, {
+      error: {
+        code: "PROVIDER_UNAVAILABLE",
+        message: "Connector catalog is temporarily unavailable",
+      },
+    });
+  });
+  await setupPage({ context, path: "/connectors?scope=connected" });
+  await expect(
+    screen.findByText("Accounts are unavailable for this connector."),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("No connected connectors")).not.toBeInTheDocument();
+});
+
+test("Keep saved custom accounts manageable when only the default needs reconnect", async () => {
+  const connector = mcpCustomConnector({
+    displayName: "Acme MCP",
+    authMode: "automatic",
+    connected: false,
+    fields: [],
+    configuredFieldKeys: [],
+    missingRequiredFields: [],
+  });
+  const empty = mcpCustomConnector({
+    id: crypto.randomUUID(),
+    displayName: "Empty MCP",
+    connected: false,
+  });
+  const expired = customAccount(connector.id, crypto.randomUUID(), {
+    displayName: "Original default",
+    authMethod: "oauth",
+    connectionStatus: "reconnect-required",
+    reconnectReason: "credential_expired",
+  });
+  const accounts = [
+    expired,
+    customAccount(connector.id, crypto.randomUUID(), {
+      displayName: "Work",
+      authMethod: "oauth",
+      isDefault: false,
+    }),
+    customAccount(connector.id, crypto.randomUUID(), {
+      displayName: "Personal",
+      authMethod: "oauth",
+      isDefault: false,
+    }),
+  ];
+  const summaries = [
+    {
+      target: expired.target,
+      accountCount: 3,
+      attentionCount: 1,
+      defaultConnection: expired,
+    },
+  ];
+  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
+  mockCustomAgentAccess();
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector, empty] });
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, { summaries });
+  });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return summaries;
+  });
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(200, { connections: accounts, nextCursor: null });
+  });
+  await setupCustomPage();
+  await expect(
+    within(getConnectorCard("Acme MCP")).findByText("1/3 need attention"),
+  ).resolves.toBeInTheDocument();
+  expect(getConnectorCard("Empty MCP")).toHaveTextContent("No accounts");
+  expect(getConnectorAction("button", "Connect Empty MCP")).toBeEnabled();
+  expect(queryConnectorAction("button", "Connect Acme MCP")).toBeNull();
+
+  const connected = screen.getByTestId("connectors-scope-connected");
+  expect(connected).toHaveTextContent("Connected1");
+  click(connected);
+  const grid = await screen.findByTestId("connectors-connected-grid");
+  expect(within(grid).getByText("Acme MCP")).toBeInTheDocument();
+  expect(within(grid).queryByText("Empty MCP")).not.toBeInTheDocument();
+  click(getConnectorAction("button", "Manage Acme MCP accounts", grid));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage Acme MCP accounts",
+  });
+  const original = await within(manager).findByRole("group", {
+    name: "Original default",
+  });
+  expect(within(original).getByText("Default")).toBeInTheDocument();
+  expect(getConnectorAction("button", "Reconnect", original)).toBeEnabled();
+  expect(
+    within(manager).getByRole("group", { name: "Work" }),
+  ).toBeInTheDocument();
+  expect(
+    within(manager).getByRole("group", { name: "Personal" }),
+  ).toBeInTheDocument();
 });
 
 test("Reconnect an OAuth account after cancelled consent and metadata changes", async () => {

@@ -41,8 +41,9 @@ incremental compilation are more useful.
 # All crates
 cargo test --manifest-path crates/Cargo.toml --profile local
 
-# Specific crate
-cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
+# Complete guest-agent selection, including its separate integration-test owner
+cargo test --manifest-path crates/Cargo.toml --profile local \
+  -p guest-agent -p guest-agent-tests
 
 # Shared raw HTTP transport fixtures and their single contract suite
 # Consumers use dev-dependencies or opt-in test-support builds; default production
@@ -180,7 +181,7 @@ machine is memory-constrained, serialize both compilation and test execution:
 
 ```bash
 cargo test --manifest-path crates/Cargo.toml --profile local \
-  -j 1 -p guest-agent -- --test-threads=1
+  -j 1 -p guest-agent -p guest-agent-tests -- --test-threads=1
 ```
 
 `-j 1` limits Cargo to one compilation job, while `--test-threads=1` limits
@@ -226,6 +227,10 @@ cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
 Nextest schedules tests across executables and runs each case in a separate
 process. Guest mock fixtures recognize the verified Cargo or nextest parent
 session so the mock binaries are built once per invocation, not once per case.
+On Linux CI, `LLVM_PROFILE_FILE_NAME=crates-%b-%8m.profraw` separates executable
+build IDs and gives each profile signature up to eight raw files. LLVM manages
+locking and merging across test processes and their children. Default fresh
+coverage cleanup still removes profiles from earlier invocations.
 The job requires a nonempty LCOV report with at least one source file, then
 logs the unique normalized source-file count and source-set SHA-256 before
 uploading to Codecov. It does not compare the digest against an expected value;
@@ -238,14 +243,27 @@ includes its compilation and linking work; these timings do not isolate linker
 CPU time, and overlapping unit durations do not add up to total build wall time.
 Timing uploads are best-effort diagnostics and do not replace the coverage result.
 
+The job also logs the count and summed file bytes of its fresh raw profiles.
+The `rust-coverage-profile-evidence-<attempt>` artifact retains those statistics
+and the fresh LCOV report for seven days. Match its attempt and source checkout
+when comparing coverage or collection cost; asynchronous hit counts can vary.
+Raw-profile file bytes measure retained data footprint, not physical writes,
+process memory or runner cost. Evidence uploads are bounded diagnostics and
+cannot replace a failed coverage run.
+
 ## Test Organization
 
 Guest CLI integration executables share compiled neutral fixtures through
-`cli-test-support` and its non-default `test-support` feature. Keep that edge in
-development dependencies. Guest runtime adapters, compile-time manifest paths
-and process-global setup stay with the test owner; the fixture crate must not
-depend back on guest-agent. Reusing a library does not make process-global tests
-safe to combine into one executable. Existing fixture contracts exercise the
+`cli-test-support` and its non-default `test-support` feature. Production crates keep
+that edge in development dependencies. The private `guest-agent-tests` package owns integration
+executables without original-package binary/version/source bindings. Its Cargo
+library root explicitly binds the canonical `guest-agent/tests/common/mod.rs`,
+compiling guest-specific adapters and process-global setup once for those targets.
+Original-bound guest-agent targets retain that same source module. The test-owner
+package depends on guest-agent; production guest-agent must not depend back on it.
+Both packages are required for complete guest-agent testing and included in the
+default workspace coverage selection. Reusing a library does not make process-global
+tests safe to combine into one executable. Existing fixture contracts exercise the
 real command, file, HTTP and verified Cargo/nextest mock-session boundaries.
 
 ### Keep large fixtures cheap without weakening their contracts

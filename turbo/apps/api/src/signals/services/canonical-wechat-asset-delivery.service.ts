@@ -21,7 +21,14 @@ import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
 } from "../external/s3";
-import { sendWechatMedia, uploadWechatMedia } from "../external/wechat-media";
+import {
+  sendWechatMedia,
+  uploadWechatMedia,
+  WechatMediaUploadError,
+} from "../external/wechat-media";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
+import { WechatRequestError } from "@okouai/core/wechat-client";
+import { logger } from "../../lib/log";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
 import {
@@ -35,6 +42,19 @@ import { requireWechatSendAccess$ } from "./wechat-access.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { sendArchivedWechatText$ } from "./wechat-message-send.service";
 import { wechatEventId } from "./wechat-message-identity";
+const log = logger("service:wechat-asset-delivery");
+function failureDetails(error: unknown) {
+  return {
+    errorName: error instanceof Error ? error.name : "unknown",
+    ...(error instanceof WechatMediaUploadError ||
+    error instanceof WechatRequestError
+      ? { statusCode: error.statusCode }
+      : {}),
+    ...(error instanceof WechatRequestError
+      ? { providerRet: error.ret, providerErrorCode: error.errcode }
+      : {}),
+  };
+}
 
 interface Identity {
   readonly assetId: string;
@@ -291,7 +311,7 @@ const deliverFile$ = command(
     { set },
     args: Identity,
     row: Delivery,
-    bytes: Uint8Array,
+    uploaded: NonNullable<WechatMessage["item_list"]>[number],
     signal: AbortSignal,
   ) => {
     const access = await set(
@@ -306,17 +326,6 @@ const deliverFile$ = command(
     if (access.kind === "denied") {
       throw new Error(access.response.body.error.message);
     }
-    const uploaded = await uploadWechatMedia(
-      {
-        baseUrl: access.connection.baseUrl,
-        token: access.token,
-        senderId: access.connection.senderId,
-        filename: row.filename,
-        contentType: row.contentType,
-        bytes,
-      },
-      signal,
-    );
     const requestHash = createHash("sha256")
       .update(
         JSON.stringify([row.filename, row.checksum, row.destination.comment]),
@@ -430,7 +439,36 @@ export const completeCanonicalWechatDelivery$ = command(
     if (!checked.ok) {
       return fileFailure(checked.error);
     }
-    const bytes = checked.value;
+    // Preparing an encrypted CDN object cannot deliver a message. Keep the
+    // operation unclaimed so an upload failure can resume with the same ID.
+    const uploaded = await settle(
+      uploadWechatMedia(
+        {
+          baseUrl: access.connection.baseUrl,
+          token: access.token,
+          senderId: access.connection.senderId,
+          filename: row.filename,
+          contentType: row.contentType,
+          bytes: checked.value,
+        },
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!uploaded.ok) {
+      log.warn("WeChat file upload failed before message delivery", {
+        operationId: args.operationId,
+        stage: "media-upload",
+        ...failureDetails(uploaded.error),
+      });
+      return {
+        ok: false,
+        response: providerUnavailable(
+          "The file is published, but its WeChat media upload failed before sending. Retry with the same operation ID.",
+        ),
+      } as const;
+    }
     const providerState = {
       provider: "wechat",
       attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
@@ -450,11 +488,22 @@ export const completeCanonicalWechatDelivery$ = command(
     signal.throwIfAborted();
     if (claimed) {
       const result = await settle(
-        set(deliverFile$, args, { ...row, providerState }, bytes, signal),
+        set(
+          deliverFile$,
+          args,
+          { ...row, providerState },
+          uploaded.value,
+          signal,
+        ),
         signal,
       );
       signal.throwIfAborted();
       if (!result.ok) {
+        log.warn("WeChat file delivery was not confirmed", {
+          operationId: args.operationId,
+          stage: "message-delivery",
+          ...failureDetails(result.error),
+        });
         await db
           .update(canonicalAssetDeliveries)
           .set({

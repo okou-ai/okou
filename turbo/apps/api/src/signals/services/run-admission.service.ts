@@ -2,7 +2,6 @@ import {
   isBuiltInModelProviderType,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
@@ -17,7 +16,7 @@ import {
   paidPlanRequired,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { db$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import {
   loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
@@ -48,11 +47,6 @@ type OrgPlanRunAdmissionCapabilities = Pick<
   OrgPlanCapabilities,
   "status" | "restrictedBuiltInModels"
 >;
-export interface RunCreditAdmissionState {
-  readonly orgId: string;
-  readonly status: typeof agentRuns.$inferSelect.status;
-  readonly creditAdmitted: boolean;
-}
 
 /** One captured admission phase, including its already-owned catalog snapshot. */
 export interface RunAdmissionInput {
@@ -63,94 +57,6 @@ export interface RunAdmissionInput {
   readonly selectedModel: string | null | undefined;
   readonly enforceBuiltInCredits: boolean;
 }
-
-export function isFreePlanForCreditAdmission(
-  planKey: string | null | undefined,
-): boolean {
-  return planKey === "limited-free-1";
-}
-
-export function runHasActiveCreditAdmission(
-  run: Pick<RunCreditAdmissionState, "status" | "creditAdmitted">,
-): boolean {
-  return (
-    run.creditAdmitted && (run.status === "pending" || run.status === "running")
-  );
-}
-
-export async function loadRunCreditAdmissionState(params: {
-  readonly db: Db;
-  readonly runId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<RunCreditAdmissionState | undefined> {
-  const [run] = await params.db
-    .select({
-      orgId: agentRuns.orgId,
-      status: agentRuns.status,
-      creditAdmitted: agentRuns.creditAdmitted,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, params.runId),
-        eq(agentRuns.orgId, params.orgId),
-        eq(agentRuns.userId, params.userId),
-      ),
-    )
-    .limit(1);
-  return run;
-}
-
-export async function resolveActiveRunCreditAdmission(params: {
-  readonly db: Db;
-  readonly runId: string | undefined;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<boolean> {
-  if (!params.runId) {
-    return false;
-  }
-  const run = await loadRunCreditAdmissionState({
-    ...params,
-    runId: params.runId,
-  });
-  return run !== undefined && runHasActiveCreditAdmission(run);
-}
-
-/** Root reads finish as one phase before the caller checks cancellation.
- * Social financial snapshots keep the Db-aware helper above on their transaction. */
-export const resolveActiveRunCreditAdmission$ = command(
-  async (
-    { get },
-    params: {
-      readonly runId: string | undefined;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-  ): Promise<boolean> => {
-    if (!params.runId) {
-      return false;
-    }
-    const db = get(db$);
-    const [run] = await db
-      .select({
-        orgId: agentRuns.orgId,
-        status: agentRuns.status,
-        creditAdmitted: agentRuns.creditAdmitted,
-      })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, params.runId),
-          eq(agentRuns.orgId, params.orgId),
-          eq(agentRuns.userId, params.userId),
-        ),
-      )
-      .limit(1);
-    return run !== undefined && runHasActiveCreditAdmission(run);
-  },
-);
 
 /** Preserve the unsignalled availability phase and its single expiry sample. */
 export const resolveOrgCreditAvailability$ = command(

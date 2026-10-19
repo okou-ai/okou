@@ -12,6 +12,7 @@ mod nbd;
 mod service;
 mod setup;
 mod start;
+mod terminal_diagnostic;
 
 pub use benchmark::{BenchmarkArgs, run_benchmark};
 pub use build::{BuildArgs, run_build};

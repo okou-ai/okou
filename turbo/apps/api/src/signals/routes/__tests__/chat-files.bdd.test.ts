@@ -365,7 +365,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
         "Expected chat send to create visible no-credit messages",
       );
     }
-    expect(sent.body.runId).toBeNull();
     expect(sent.body.threadId).toStrictEqual(expect.any(String));
     // The background pick rejects the input for missing credits.
     await flushWaitUntilForTest();
@@ -423,7 +422,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
       [201],
     );
     expect(retried.body).toMatchObject({
-      runId: null,
       threadId,
       createdAt: expect.any(String),
     });
@@ -446,7 +444,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
       [201],
     );
     expect(duplicateAcrossThreads.body).toMatchObject({
-      runId: null,
       threadId: secondThread.id,
     });
     const secondThreadEvents = await api.listThreadEvents(
@@ -501,7 +498,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
       throw new Error("Expected chat recall to create a visible message");
     }
     expect(recalled.body).toMatchObject({
-      runId: null,
       threadId,
       createdAt: expect.any(String),
     });
@@ -523,7 +519,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
       [201],
     );
     expect(repeatedRecall.body).toMatchObject({
-      runId: null,
       threadId,
       createdAt: expect.any(String),
     });

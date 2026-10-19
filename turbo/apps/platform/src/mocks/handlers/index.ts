@@ -107,6 +107,10 @@ import { chatThreadEmojiHandlers } from "./chat-thread-emoji.ts";
 import { clerkLocalizationHandlers } from "./clerk-localizations.ts";
 import { localeResourceHandlers } from "./locale-resources.ts";
 import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
+import {
+  apiProactiveSuggestionsHandlers,
+  resetMockProactiveSuggestions,
+} from "./api-proactive-suggestions.ts";
 
 export const handlers = [
   ...apiMarketingEventsHandlers,
@@ -137,6 +141,7 @@ export const handlers = [
   ...apiUserPreferencesHandlers,
   ...apiPaidToolsHandlers,
   ...apiMorningBriefPreferenceHandlers,
+  ...apiProactiveSuggestionsHandlers,
   ...apiEmailSubscriptionHandlers,
   ...apiUserModelPreferenceHandlers,
   ...apiOnboardingHandlers,
@@ -160,6 +165,7 @@ export function resetAllMockHandlers(): void {
   resetMockUserPreferences();
   resetMockPaidTools();
   resetMockMorningBriefPreference();
+  resetMockProactiveSuggestions();
   resetMockEmailSubscription();
   resetMockUserModelPreference();
   resetMockAvailableRunModels();

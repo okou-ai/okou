@@ -25,7 +25,7 @@ import {
   setDefaultConnectorAccount$,
   setDefaultGoogleFormsAccount$,
 } from "../services/connector-account-lifecycle.service";
-import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
+import { publishConnectorRuntimeSyncWakeups$ } from "../services/connector-runtime-wakeup.service";
 import {
   builtinConnectorScopeDiff,
   deleteBuiltinConnectorLocalState$,
@@ -315,11 +315,11 @@ const setDefaultInner$ = command(
     if (!existing) {
       return notFound("Connector account not found");
     }
-    const writeDb = set(writeDb$);
-    const updatedAt = await commitConnectorRuntimeMutation(
+    set(writeDb$);
+    const updatedAt =
       request.target.kind === "builtin" &&
-        request.target.connectorSlug === "google-forms"
-        ? set(
+      request.target.connectorSlug === "google-forms"
+        ? await set(
             setDefaultGoogleFormsAccount$,
             {
               orgId: request.orgId,
@@ -328,17 +328,17 @@ const setDefaultInner$ = command(
             },
             signal,
           )
-        : set(setDefaultConnectorAccount$, request, signal),
-      (changed) => {
-        return changed instanceof Date
-          ? {
-              db: writeDb,
-              scope: { orgId: auth.orgId, userId: auth.userId },
-              targets: [body.data.target],
-            }
-          : undefined;
-      },
-    );
+        : await set(setDefaultConnectorAccount$, request, signal);
+    if (updatedAt instanceof Date) {
+      await set(
+        publishConnectorRuntimeSyncWakeups$,
+        {
+          scope: { orgId: auth.orgId, userId: auth.userId },
+          targets: [body.data.target],
+        },
+        signal,
+      );
+    }
     signal.throwIfAborted();
     if (updatedAt === "conflict") {
       return badRequestMessage("Another default change won; please save again");

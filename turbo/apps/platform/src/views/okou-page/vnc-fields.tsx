@@ -10,8 +10,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  SegmentControl,
-  SegmentControlItem,
 } from "@okouai/ui";
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
@@ -39,7 +37,6 @@ import {
   editVncCaBundle$,
   chooseVncProfile$,
   chooseVncSshConnection$,
-  chooseVncTransport$,
   chooseVncTrust$,
   replaceVncAuthentication$,
   vncEditor$,
@@ -49,6 +46,7 @@ import {
   mountVncCertificateSecret$,
   vncAuthMethodForProfile,
   vncCredentialMatchesProfile,
+  requiresVncProtectiveRoute,
   type VncProfile,
 } from "../../signals/vnc.ts";
 import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
@@ -65,6 +63,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
+import { VncNetworkFields } from "./vnc-network-fields.tsx";
 import {
   KerberosCredentialInputs,
   useKerberosProfileItems,
@@ -164,7 +163,8 @@ export function VncEndpointFields({
   const editor = useGet(vncEditor$);
   const chooseLoopback = useSet(chooseVncLoopbackHost$);
   const editDestination = useSet(editVncDestinationHost$);
-  const apple = requiresSshLoopback(editor.profile);
+  const apple =
+    requiresVncProtectiveRoute(editor.profile) && editor.transport === "ssh";
   const privateDirect =
     !apple &&
     editor.transport === "direct" &&
@@ -242,12 +242,18 @@ export function VncEndpointFields({
             })}
           </span>
           <Input
+            key={editor.transport}
             name="port"
             type="number"
             required
             min={1}
             max={65_535}
-            defaultValue={connection?.port ?? 5900}
+            defaultValue={
+              editor.transport === "cloudflare_access"
+                ? 443
+                : (connection?.port ?? 5900)
+            }
+            readOnly={editor.transport === "cloudflare_access"}
             aria-describedby="vnc-destination-help"
           />
         </label>
@@ -302,6 +308,29 @@ export function VncX509NoneWarning() {
 
 function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  if (
+    requiresVncProtectiveRoute(profile) &&
+    (editor.transport === "cloudflare_access" ||
+      editor.transport === "tailscale")
+  ) {
+    return (
+      <div className="grid gap-2 text-sm text-muted-foreground">
+        <p role="alert">
+          {t(($) => {
+            return $.vnc.native.protectionHelp;
+          })}
+        </p>
+        {!isRsaAesProfile(profile) && (
+          <p>
+            {t(($) => {
+              return $.vnc.native.macHelp;
+            })}
+          </p>
+        )}
+      </div>
+    );
+  }
   if (isRsaAesProfile(profile)) {
     return (
       <p
@@ -644,54 +673,18 @@ export function VncTransportFields({
 }: {
   readonly disabled: boolean;
 }) {
-  const { t } = useTranslation();
   const editor = useGet(vncEditor$);
-  const chooseTransport = useSet(chooseVncTransport$);
   return (
     <div className="grid min-w-0 gap-4">
-      {!requiresSshLoopback(editor.profile) && (
-        <div className="grid gap-2">
-          <span id="vnc-connection-mode" className="text-sm">
-            {t(($) => {
-              return $.vnc.transport.title;
-            })}
-          </span>
-          <SegmentControl
-            className="justify-self-start"
-            aria-labelledby="vnc-connection-mode"
-            disabled={disabled}
-            value={editor.transport}
-            onValueChange={chooseTransport}
-          >
-            <SegmentControlItem value="direct">
-              {t(($) => {
-                return $.vnc.transport.direct;
-              })}
-            </SegmentControlItem>
-            <SegmentControlItem value="ssh">
-              {t(($) => {
-                return $.vnc.transport.ssh;
-              })}
-            </SegmentControlItem>
-          </SegmentControl>
-        </div>
-      )}
+      <VncNetworkFields
+        role="rfb"
+        disabled={disabled}
+        protectedRoute={requiresVncProtectiveRoute(editor.profile)}
+      />
       {editor.transport === "ssh" && (
         <VncSshConnectionFields disabled={disabled} />
       )}
     </div>
-  );
-}
-
-function requiresSshLoopback(profile: VncProfile): boolean {
-  if (isRsaAesProfile(profile)) {
-    return isVncRsaAesAuthenticationOnly(RSA_AES_PROFILES[profile].type);
-  }
-  return (
-    profile === "apple_vnc_password" ||
-    profile === "apple_dh" ||
-    profile === "apple_srp" ||
-    profile === "apple_rsa_srp"
   );
 }
 
@@ -803,7 +796,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
   if (isRsaAesProfile(editor.profile)) {
     return <VncRsaPinFields disabled={disabled} />;
   }
-  if (requiresSshLoopback(editor.profile)) {
+  if (requiresVncProtectiveRoute(editor.profile)) {
     return null;
   }
   return (
@@ -816,6 +809,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
       <Input
         id="vnc-server-name"
         name="serverName"
+        required={editor.transport === "cloudflare_access"}
         maxLength={VNC_HOST_MAX_LENGTH}
         value={editor.tlsServerName}
         onChange={(event) => {

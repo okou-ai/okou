@@ -81,24 +81,11 @@ describe("unified run request contract", () => {
     ).toBe(true);
   });
 
-  it("accepts Agent-backed creation and Session-backed continuation", () => {
+  it("accepts Agent-backed creation", () => {
     expect(
       unifiedRunRequestSchema.safeParse({
         agentId: "agent-1",
         prompt: "start a run",
-      }).success,
-    ).toBe(true);
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        sessionId: "session-1",
-        prompt: "continue a run",
-      }).success,
-    ).toBe(true);
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        agentId: "agent-1",
-        sessionId: "session-1",
-        prompt: "continue a matching Agent Session",
       }).success,
     ).toBe(true);
   });
@@ -225,18 +212,16 @@ describe("network log model catalog cache telemetry", () => {
 });
 
 describe("Run result generations", () => {
-  const identity = {
-    agentSessionId: "agent-session",
-    conversationId: "conversation",
-  };
-  it("reads continuation and file outputs from current and historical results", () => {
+  it("reads native identity and file outputs from current and historical results", () => {
     for (const result of [
       {
-        ...identity,
+        agentSessionId: "agent-session",
+        conversationId: "conversation",
         artifact: { memory: "old-version" },
       },
       {
-        ...identity,
+        framework: "pi",
+        frameworkSessionId: "native-session",
         storageOutputs: [
           {
             name: "memory",
@@ -247,7 +232,11 @@ describe("Run result generations", () => {
         ],
       },
     ]) {
-      expect(runResultSchema.parse(result)).toMatchObject(identity);
+      if ("framework" in result)
+        expect(runResultSchema.parse(result)).toMatchObject({
+          framework: result.framework,
+          frameworkSessionId: result.frameworkSessionId,
+        });
       if ("storageOutputs" in result)
         expect(runResultSchema.parse(result).storageOutputs).toStrictEqual(
           result.storageOutputs,

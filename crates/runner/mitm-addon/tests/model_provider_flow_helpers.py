@@ -16,10 +16,10 @@ _WEBSOCKET_KEY = "dGhlIHNhbXBsZSBub25jZQ=="
 _WEBSOCKET_ACCEPT = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
 
-def _openai_responses_websocket_request_headers() -> http.Headers:
+def _openai_responses_websocket_request_headers(host: str = "openrouter.ai") -> http.Headers:
     return http.Headers(
         [
-            (b"Host", b"openrouter.ai"),
+            (b"Host", host.encode()),
             (b"Connection", b"keep-alive, Upgrade"),
             (b"Upgrade", b"websocket"),
             (b"Sec-WebSocket-Key", _WEBSOCKET_KEY.encode()),
@@ -30,14 +30,17 @@ def _openai_responses_websocket_request_headers() -> http.Headers:
 
 def make_openai_responses_websocket_request_flow(
     real_flow: RealFlowFactory,
+    *,
+    host: str = "openrouter.ai",
+    path: str = "/api/v1/responses",
 ) -> http.HTTPFlow:
     return real_flow(
         with_response=False,
         client_ip="10.200.0.5",
-        host="openrouter.ai",
-        path="/api/v1/responses",
+        host=host,
+        path=path,
         method="GET",
-        request_headers=_openai_responses_websocket_request_headers(),
+        request_headers=_openai_responses_websocket_request_headers(host),
     )
 
 

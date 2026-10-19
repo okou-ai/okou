@@ -464,65 +464,59 @@ async fn apply_storage_input(
         r2_storage_sources = %r2_storage_sources(context.storage_manifest.as_ref()),
         "downloading storages"
     );
-    let result = if use_dedicated {
-        sandbox
-            .apply_storage_manifest_with_timing(
-                &StorageManifestRequest {
-                    manifest_json,
-                    run_id: &run_id,
-                    runtime_dir: &runtime_dir,
-                    timeout: DEFAULT_EXEC_TIMEOUT,
-                },
-                host_timing,
-            )
-            .await
-    } else {
+    // Stale-file removal must succeed before this attempt can write a manifest.
+    if !use_dedicated {
         remove_fallback_storage_manifest(sandbox).await?;
-        if let Err(error) = sandbox
-            .write_file(STORAGE_MANIFEST_PATH, manifest_json)
-            .await
-        {
-            cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;
-            return Err(error.into());
-        }
-        let download_cmd = guest_storage_apply_command();
-        let download_env = guest_storage_apply_env(&run_id, &runtime_dir);
-        sandbox
-            .exec_with_diagnostic_label(
-                &ExecRequest {
-                    cmd: &download_cmd,
-                    timeout: DEFAULT_EXEC_TIMEOUT,
-                    env: &download_env,
-                    sudo: false,
-                    expected_exit_codes: &[],
-                    stdin_bytes: None,
-                    output_limits: EXEC_OUTPUT_LIMIT_1_MIB,
-                },
-                "storage-download",
-            )
-            .await
-    };
-    let result = match result {
-        Ok(result) => result,
-        Err(e) => {
-            if !use_dedicated {
-                cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;
-            }
-            return Err(e.into());
-        }
-    };
-
-    *guest_duration_ms = result.guest_duration_ms;
-
-    if !helper_exec_succeeded(&result) {
-        if !use_dedicated {
-            cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;
-        }
-        return Err(RunnerError::Internal(format_guest_storage_apply_failure(
-            &result,
-        )));
     }
-    Ok(())
+    let result: RunnerResult<()> = async {
+        let result = if use_dedicated {
+            sandbox
+                .apply_storage_manifest_with_timing(
+                    &StorageManifestRequest {
+                        manifest_json,
+                        run_id: &run_id,
+                        runtime_dir: &runtime_dir,
+                        timeout: DEFAULT_EXEC_TIMEOUT,
+                    },
+                    host_timing,
+                )
+                .await?
+        } else {
+            sandbox
+                .write_file(STORAGE_MANIFEST_PATH, manifest_json)
+                .await?;
+            let download_cmd = guest_storage_apply_command();
+            let download_env = guest_storage_apply_env(&run_id, &runtime_dir);
+            sandbox
+                .exec_with_diagnostic_label(
+                    &ExecRequest {
+                        cmd: &download_cmd,
+                        timeout: DEFAULT_EXEC_TIMEOUT,
+                        env: &download_env,
+                        sudo: false,
+                        expected_exit_codes: &[],
+                        stdin_bytes: None,
+                        output_limits: EXEC_OUTPUT_LIMIT_1_MIB,
+                    },
+                    "storage-download",
+                )
+                .await?
+        };
+
+        *guest_duration_ms = result.guest_duration_ms;
+
+        if !helper_exec_succeeded(&result) {
+            return Err(RunnerError::Internal(format_guest_storage_apply_failure(
+                &result,
+            )));
+        }
+        Ok(())
+    }
+    .await;
+    if !use_dedicated && result.is_err() {
+        cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;
+    }
+    result
 }
 
 async fn cleanup_fallback_storage_manifest_after_failure(

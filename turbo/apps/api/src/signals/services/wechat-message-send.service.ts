@@ -6,15 +6,18 @@ import { writeDb$ } from "../external/db";
 import {
   sendWechatText,
   WechatSessionExpiredError,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import { settle } from "../utils";
 import { conflict } from "../../lib/error";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import {
+  requireLiveWechatSendConnection$,
   requireWechatSendAccess$,
   type WechatOwner,
+  type WechatSendAccess,
 } from "./wechat-access.service";
 import { wechatEventId } from "./wechat-message-identity";
+import { recordWechatDeliveryPhase } from "./wechat-delivery-timing.service";
 
 interface ExistingReceiptArgs {
   readonly id: string;
@@ -82,27 +85,38 @@ const existingReceipt$ = command(
   },
 );
 
-export const sendArchivedWechatText$ = command(
+const releaseUnsentWechatClaim$ = command(
+  async ({ set }, id: string, signal: AbortSignal): Promise<void> => {
+    await set(writeDb$)
+      .delete(wechatMessages)
+      .where(
+        and(eq(wechatMessages.id, id), eq(wechatMessages.status, "unknown")),
+      );
+    signal.throwIfAborted();
+  },
+);
+
+interface WechatTextChunk {
+  readonly operationId: string;
+  readonly index: number;
+  readonly text: string;
+  readonly requestHash: string;
+  readonly runId?: string | null;
+}
+
+/** Prepared access belongs to one chunk; callers reauthorize subsequent sends. */
+export const sendPreparedWechatText$ = command(
   async (
     { set },
-    args: WechatOwner & {
-      readonly operationId: string;
-      readonly index: number;
-      readonly text: string;
-      readonly requestHash: string;
-      readonly generation?: string;
-      readonly contextId?: string;
-    },
+    access: WechatSendAccess,
+    args: WechatTextChunk,
     signal: AbortSignal,
   ) => {
-    const access = await set(requireWechatSendAccess$, args, signal);
-    if (access.kind === "denied") {
-      return access;
-    }
+    const { connection } = access;
     const db = set(writeDb$);
     // Identity survives reconnects: repeating an operation cannot resend earlier chunks.
     const id = wechatEventId(
-      args.channelId,
+      connection.id,
       args.operationId,
       `outbound:${args.index}`,
     );
@@ -110,8 +124,8 @@ export const sendArchivedWechatText$ = command(
       .insert(wechatMessages)
       .values({
         id,
-        connectionId: args.channelId,
-        generation: access.connection.generation,
+        connectionId: connection.id,
+        generation: connection.generation,
         direction: "outbound",
         status: "unknown",
         content: args.text,
@@ -122,24 +136,48 @@ export const sendArchivedWechatText$ = command(
       .returning({ id: wechatMessages.id });
     signal.throwIfAborted();
     if (!claimed) {
-      return await set(existingReceipt$, { ...args, id }, signal);
+      return await set(
+        existingReceipt$,
+        { ...args, id, channelId: connection.id },
+        signal,
+      );
     }
-    // An ambiguous transport outcome leaves the durable claim in unknown state.
-    const live = await set(
-      requireWechatSendAccess$,
-      { ...args, generation: access.connection.generation },
+    // Recheck the live binding after claiming, immediately before provider I/O.
+    // A known pre-send failure can release the claim; an interrupted provider
+    // attempt must remain unknown and must never be resent.
+    const checked = await settle(
+      set(requireLiveWechatSendConnection$, connection, signal),
       signal,
     );
+    if (!checked.ok) {
+      await set(releaseUnsentWechatClaim$, id, signal);
+      throw checked.error;
+    }
+    const live = checked.value;
     if (live.kind === "denied") {
+      await set(releaseUnsentWechatClaim$, id, signal);
       return live;
     }
+    const timing = {
+      inputEventId: access.contextId,
+      operationId: args.operationId,
+      chunkIndex: args.index,
+      runId: args.runId ?? undefined,
+    };
+    const sendStartedAt = monotonicNow();
+    recordWechatDeliveryPhase({
+      ...timing,
+      phase: "send_start",
+      durationMs: 0,
+      success: true,
+    });
     const result = await settle(
       sendWechatText(
         {
-          baseUrl: live.connection.baseUrl,
-          token: live.token,
-          contextToken: live.contextToken,
-          senderId: live.connection.senderId,
+          baseUrl: connection.baseUrl,
+          token: access.token,
+          contextToken: access.contextToken,
+          senderId: connection.senderId,
           clientId: `okou-${id}`,
           text: args.text,
         },
@@ -147,6 +185,13 @@ export const sendArchivedWechatText$ = command(
       ),
       signal,
     );
+    // A successful provider response is the send acknowledgement, before archiving.
+    recordWechatDeliveryPhase({
+      ...timing,
+      phase: "provider_send",
+      durationMs: monotonicNow() - sendStartedAt,
+      success: result.ok,
+    });
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof WechatSessionExpiredError) {
@@ -155,8 +200,8 @@ export const sendArchivedWechatText$ = command(
           .set({ status: "reconnect_required", updatedAt: nowDate() })
           .where(
             and(
-              eq(wechatConnections.id, args.channelId),
-              eq(wechatConnections.generation, live.connection.generation),
+              eq(wechatConnections.id, connection.id),
+              eq(wechatConnections.generation, connection.generation),
             ),
           );
         signal.throwIfAborted();
@@ -186,10 +231,28 @@ export const sendArchivedWechatText$ = command(
       kind: "sent",
       message: {
         id,
-        channelId: args.channelId,
+        channelId: connection.id,
         providerMessageId,
         url: null,
       } satisfies WechatReceipt,
     } as const;
+  },
+);
+
+export const sendArchivedWechatText$ = command(
+  async (
+    { set },
+    args: WechatOwner &
+      WechatTextChunk & {
+        readonly generation?: string;
+        readonly contextId?: string;
+      },
+    signal: AbortSignal,
+  ) => {
+    const access = await set(requireWechatSendAccess$, args, signal);
+    if (access.kind === "denied") {
+      return access;
+    }
+    return await set(sendPreparedWechatText$, access, args, signal);
   },
 );

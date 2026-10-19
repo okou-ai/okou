@@ -14,7 +14,7 @@ import {
   notExists,
   or,
 } from "drizzle-orm";
-import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -155,30 +155,26 @@ interface QueueEventIdentityColumns {
 }
 
 function unrevokedQueueEventCondition(
-  db: ChatQueueReadDb,
   event: QueueEventIdentityColumns = chatEvents,
 ) {
   return notExists(
-    db
+    new QueryBuilder()
       .select({ id: queueEventRevoker.id })
       .from(queueEventRevoker)
       .where(eq(queueEventRevoker.revokesEventId, event.id)),
   );
 }
 
-export function pendingChatQueueEventCondition(db: ChatQueueReadDb) {
-  return pendingChatQueueEventConditionFor(db, chatEvents);
+export function pendingChatQueueEventCondition() {
+  return pendingChatQueueEventConditionFor(chatEvents);
 }
 
 /** Apply the authoritative pending-queue predicate to a queue-event alias. */
-function pendingChatQueueEventConditionFor(
-  db: ChatQueueReadDb,
-  event: QueueEventIdentityColumns,
-) {
+function pendingChatQueueEventConditionFor(event: QueueEventIdentityColumns) {
   return and(
     inArray(event.eventType, ["input.prompt", "input.automation"]),
     isNull(event.runId),
-    unrevokedQueueEventCondition(db, event),
+    unrevokedQueueEventCondition(event),
   );
 }
 
@@ -281,7 +277,7 @@ export async function loadPendingChatQueueEvent(
       and(
         eq(chatEvents.id, args.eventId),
         eq(chatEvents.chatThreadId, args.chatThreadId),
-        pendingChatQueueEventCondition(db),
+        pendingChatQueueEventCondition(),
       ),
     )
     .limit(1);

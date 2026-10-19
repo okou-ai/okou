@@ -67,6 +67,11 @@ import {
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
+  createComposerConnectorCompletion,
+  createComposerDraftActions,
+  createComposerTemplateSelection,
+} from "./composer-business-actions.ts";
+import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
 } from "./image-annotation.ts";
@@ -112,6 +117,7 @@ type ComposerSuggestionSignals = Pick<
   | "expandSlashWorkflows$"
   | "closeSuggestionMenu$"
   | "setSuggestionMenuRef$"
+  | "setSlashHintMenuRef$"
   | "clearSlashRange$"
   | "insertAgent$"
   | "insertChatThread$"
@@ -150,7 +156,9 @@ export interface ComposerPendingEvent {
   readonly text: string;
 }
 
-interface ComposerDraftSignals {
+interface ComposerDraftSignals extends ReturnType<
+  typeof createComposerDraftActions
+> {
   readonly load$: Command<Promise<void>, [AbortSignal]>;
   readonly seed$: DraftSignals["seed$"];
   readonly setDraftInput$: Command<void, [string]>;
@@ -237,6 +245,9 @@ interface ComposerTemplateSignals
     void,
     [GenerationTemplateRequest | undefined]
   >;
+  readonly selectTemplateAndSave$: ReturnType<
+    typeof createComposerTemplateSelection
+  >;
 }
 
 export interface ComposerSignals {
@@ -255,6 +266,9 @@ export interface ComposerSignals {
   readonly workflow: ComposerWorkflowEditorSignals;
   readonly suggestion: ComposerSuggestionSignals;
   readonly connector: ComposerConnectorSignals;
+  readonly connectorCompletion: ReturnType<
+    typeof createComposerConnectorCompletion
+  >;
   readonly draft: ComposerDraftSignals;
   readonly model: ComposerModelSignals;
   readonly computer: ComposerComputerSignals;
@@ -373,6 +387,7 @@ function composerSuggestionSignals(
     expandSlashWorkflows$: composer.expandSlashWorkflows$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     setSuggestionMenuRef$: composer.setSuggestionMenuRef$,
+    setSlashHintMenuRef$: composer.setSlashHintMenuRef$,
     clearSlashRange$: composer.clearSlashRange$,
     insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
@@ -434,6 +449,7 @@ function composerDraftSignals(
     attachmentUploadsReady$: draft.attachmentUploadsReady$,
     uploadAttachment$: draft.uploadAttachment$,
     restoreAttachments$: draft.restoreAttachments$,
+    ...createComposerDraftActions(draft, options.save$),
     removeAttachment$: draft.removeAttachment$,
     dragOver$: draft.dragOver$,
     setDragOver$: draft.setDragOver$,
@@ -530,6 +546,9 @@ export function createComposerSignals(
     { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
+  const connector =
+    options.connector ??
+    createComposerConnectorSignals(options.agentId, options.threadId);
   const imageAnnotation = createImageAnnotationSignals();
   /**
    * Teardown owner for the annotation session and its in-flight derivative
@@ -570,9 +589,11 @@ export function createComposerSignals(
     feedback: workflowComposer.feedback,
     workflow: composerWorkflowSignals(workflowComposer),
     suggestion: composerSuggestionSignals(workflowComposer),
-    connector:
-      options.connector ??
-      createComposerConnectorSignals(options.agentId, options.threadId),
+    connector,
+    connectorCompletion: createComposerConnectorCompletion(
+      connector,
+      options.agentId,
+    ),
     draft: composerDraftSignals(options.draft, fileInput),
     model: {
       ...ui.model,
@@ -604,6 +625,11 @@ export function createComposerSignals(
       removeAutomationEvent$: options.removeAutomationEvent$,
     },
     template: {
+      selectTemplateAndSave$: createComposerTemplateSelection(
+        taskChips,
+        ui.template,
+        options.draft.save$,
+      ),
       ...composerTemplateSignals(workflowComposer),
       ...ui.template,
       generationTemplate$: draft.generationTemplate$,

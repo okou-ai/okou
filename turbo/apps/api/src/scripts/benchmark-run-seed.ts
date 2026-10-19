@@ -1,5 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunLifecycleConflictSet } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
 import { inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -23,11 +24,13 @@ export const insertBenchmarkRunBatch$ = command(
         .insert(agentRuns)
         .values([...rows])
         .returning({ id: agentRuns.id });
+      const lifecycle = billingRunLifecycleConflictSet();
       const identities = parseRawRows(
         identitySchema,
         await tx.execute(sql`
           INSERT INTO ${billingRunAttribution} (
-            run_id, org_id, user_id, run_started_at, source, thread_id, thread_context
+            run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
+            run_terminal_status, run_completed_at, run_lifecycle_context
           )
           SELECT id, org_id, user_id, created_at,
             CASE
@@ -37,7 +40,10 @@ export const insertBenchmarkRunBatch$ = command(
               ELSE 'other'
             END,
             chat_thread_id,
-            CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
+            CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END,
+            CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN status END,
+            CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN completed_at END,
+            'captured'
           FROM ${agentRuns}
           WHERE ${inArray(
             agentRuns.id,
@@ -50,7 +56,10 @@ export const insertBenchmarkRunBatch$ = command(
             thread_id = CASE WHEN billing_run_attribution.thread_context = 'unknown'
               THEN EXCLUDED.thread_id ELSE billing_run_attribution.thread_id END,
             thread_context = CASE WHEN billing_run_attribution.thread_context = 'unknown'
-              THEN EXCLUDED.thread_context ELSE billing_run_attribution.thread_context END
+              THEN EXCLUDED.thread_context ELSE billing_run_attribution.thread_context END,
+            run_terminal_status = ${lifecycle.runTerminalStatus},
+            run_completed_at = ${lifecycle.runCompletedAt},
+            run_lifecycle_context = ${lifecycle.runLifecycleContext}
           WHERE billing_run_attribution.org_id = EXCLUDED.org_id
             AND billing_run_attribution.user_id = EXCLUDED.user_id
             AND billing_run_attribution.run_started_at = EXCLUDED.run_started_at

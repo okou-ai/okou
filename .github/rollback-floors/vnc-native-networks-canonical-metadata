@@ -1,0 +1,8 @@
+The first-parent main commit adding this marker is the minimum API rollback
+target for native VNC public authoring and canonical network reference metadata.
+Every configuration metadata response includes vncHosts, including [].
+Impact previews retain their privacy-safe aggregate counts.
+Prepared B-F APIs can omit this array and are ineligible after this boundary;
+H's required-array readers must only reach this producer or a later artifact.
+Recover with an eligible immutable artifact or roll forward. Do not reinterpret
+native or detached routes as Direct, omit origin TLS, or replay uncertain input.

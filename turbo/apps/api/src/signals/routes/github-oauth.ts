@@ -13,7 +13,7 @@ import {
 import { requiredAuthContext$ } from "../auth/auth-context";
 import { queryOf } from "../context/request";
 import { request$ } from "../context/hono";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -33,12 +33,12 @@ import {
   getGithubInstallationInfo,
   getGithubOAuthAuthMethod,
   isGithubOauthStateSignatureValid,
-  linkGithubUser,
+  linkGithubUser$,
   loadActiveGithubInstallationForOrg$,
-  loadComposeFeatureSwitchContext,
+  loadComposeFeatureSwitchContext$,
   parseGithubOauthState,
   resolveGithubOauthOrgId$,
-  tryLinkGithubFromLocalRecord,
+  tryLinkGithubFromLocalRecord$,
   tryLinkGithubFromRemoteInstallations$,
   verifyGithubConnectSignature,
 } from "../services/github-oauth.service";
@@ -279,7 +279,6 @@ function githubSetupUserConnectionError(
 }
 
 type GithubSetupUserConnectionArgs = {
-  readonly db: Db;
   readonly orgId: string;
   readonly installRecordId: string;
   readonly ghInstallationId: string | null;
@@ -460,27 +459,30 @@ const resolveGithubCallbackAccess$ = command(
   },
 );
 
-async function linkGithubUserWithoutSetupCode(
-  args: GithubSetupUserConnectionArgs,
-  userId: string,
-  signal: AbortSignal,
-): Promise<GithubSetupUserConnectionResolution> {
-  const githubUserId = await linkGithubUser(
-    {
-      db: args.db,
-      installRecordId: args.installRecordId,
-      userId,
-      knownGithubUserId: args.knownGithubUserId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (githubUserId) {
-    await publishUserSignal([userId], "github:changed");
+const linkGithubUserWithoutSetupCode$ = command(
+  async (
+    { set },
+    args: GithubSetupUserConnectionArgs,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<GithubSetupUserConnectionResolution> => {
+    const githubUserId = await set(
+      linkGithubUser$,
+      {
+        installRecordId: args.installRecordId,
+        userId,
+        knownGithubUserId: args.knownGithubUserId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-  }
-  return { ok: true, connected: githubUserId !== null };
-}
+    if (githubUserId) {
+      await publishUserSignal([userId], "github:changed");
+      signal.throwIfAborted();
+    }
+    return { ok: true, connected: githubUserId !== null };
+  },
+);
 
 const connectGithubUserAfterSetup$ = command(
   async (
@@ -587,9 +589,9 @@ const connectGithubUserAfterSetup$ = command(
         );
       }
 
-      const githubUserId = await linkGithubUser(
+      const githubUserId = await set(
+        linkGithubUser$,
         {
-          db: args.db,
           installRecordId: args.installRecordId,
           userId,
           knownGithubUserId: userInfo.id,
@@ -610,7 +612,7 @@ const connectGithubUserAfterSetup$ = command(
       return { ok: true, connected: true };
     }
 
-    return await linkGithubUserWithoutSetupCode(args, userId, signal);
+    return await set(linkGithubUserWithoutSetupCode$, args, userId, signal);
   },
 );
 
@@ -625,7 +627,6 @@ const connectExistingGithubInstallation$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly orgId: string;
       readonly installationId: string;
       readonly state: ParsedGithubOauthState;
@@ -647,7 +648,6 @@ const connectExistingGithubInstallation$ = command(
     const connection = await set(
       connectGithubUserAfterSetup$,
       {
-        db: args.db,
         orgId: args.orgId,
         installRecordId: existing.id,
         ghInstallationId: args.installationId,
@@ -724,11 +724,11 @@ const installGithubOauth$ = command(
     }
 
     if (appId && privateKey && userId) {
-      const db = set(writeDb$);
+      set(writeDb$);
       const linkedFromLocal = query.orgId
-        ? await tryLinkGithubFromLocalRecord(
+        ? await set(
+            tryLinkGithubFromLocalRecord$,
             {
-              db,
               orgId: query.orgId,
               userId,
             },
@@ -834,7 +834,7 @@ const connectGithubUserOauth$ = command(
         return invalidGithubConnectLinkRedirect();
       }
 
-      const db = set(writeDb$);
+      set(writeDb$);
       const installation = await set(
         findGithubInstallationByInstallationId$,
         {
@@ -851,9 +851,9 @@ const connectGithubUserOauth$ = command(
         );
       }
 
-      const githubUserId = await linkGithubUser(
+      const githubUserId = await set(
+        linkGithubUser$,
         {
-          db,
           installRecordId: installation.id,
           userId: auth.userId,
           knownGithubUserId: query.ghUser,
@@ -920,7 +920,7 @@ const completeGithubAppInstallationCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<Response> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const orgId = await set(
       resolveGithubOauthOrgId$,
       {
@@ -952,7 +952,6 @@ const completeGithubAppInstallationCallback$ = command(
     const existingResponse = await set(
       connectExistingGithubInstallation$,
       {
-        db,
         installationId,
         orgId,
         state: args.state,
@@ -973,8 +972,9 @@ const completeGithubAppInstallationCallback$ = command(
         { appId: args.appId, privateKey: args.privateKey, installationId },
         signal,
       );
-    const featureSwitchContext = await loadComposeFeatureSwitchContext(
-      { db, composeId: args.composeId, userId: args.state.userId },
+    const featureSwitchContext = await set(
+      loadComposeFeatureSwitchContext$,
+      { composeId: args.composeId, userId: args.state.userId },
       signal,
     );
     const installRecordId = await set(
@@ -997,7 +997,6 @@ const completeGithubAppInstallationCallback$ = command(
     const connection = await set(
       connectGithubUserAfterSetup$,
       {
-        db,
         orgId,
         installRecordId,
         ghInstallationId: installationId,

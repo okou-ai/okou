@@ -322,9 +322,9 @@ runner_chat_send() {
 }
 
 # Sends one chat input and waits for the background pick to launch it. The send
-# only enqueues the input and answers `runId: null`; the launched run appears
-# as an `input.prompt` that revokes the sent input and carries its `runId`.
-# Prints the send response with that `runId` filled in.
+# only enqueues the input; the launched run appears as an `input.prompt`
+# that revokes the sent input and carries its `runId`.
+# Prints the send response with that `runId` added.
 runner_chat_send_parts() {
     local agent_id="$1"
     local prompt="$2"
@@ -522,33 +522,17 @@ runner_wait_for_run_running() {
 _wait_for_runner_chat_output() {
     local thread_id="$1"
     local run_id="$2"
-    local prompt="$3"
+    local expected_output="$3"
     local timeout="${4:-30}"
-    local interval="${RUNNER_CHAT_EVENT_POLL_INTERVAL_SECONDS:-2}"
-    local start=$SECONDS
-    local response=""
+    local chat_output
 
-    while (( SECONDS - start < timeout )); do
-        if response="$(runner_chat_event_rows "$thread_id" 2>&1)"; then
-            if jq -e --arg runId "$run_id" --arg prompt "$prompt" '
-                any(.rows[]?;
-                    .eventType == "output.message" and
-                    .runId == $runId and
-                    (.payload.content | contains($prompt))
-                ) and
-                any(.rows[]?;
-                    .eventType == "run.completed" and .runId == $runId
-                )
-            ' <<< "$response" >/dev/null; then
-                return 0
-            fi
-        fi
-        sleep "$interval"
-    done
-
-    echo "# Timed out (${timeout}s) waiting for chat output for run $run_id" >&2
-    echo "# Last chat event response: $response" >&2
-    return 1
+    # Once completion and output are visible, report wrong content immediately.
+    chat_output="$(_wait_for_runner_chat_completion \
+        "$thread_id" "$run_id" "$timeout")" || return 1
+    if [[ "$chat_output" != *"$expected_output"* ]]; then
+        echo "# Completed chat output for run $run_id did not contain ${expected_output@Q}: $chat_output" >&2
+        return 1
+    fi
 }
 
 _wait_for_runner_chat_completion() {
@@ -599,15 +583,14 @@ _wait_for_runner_chat_steer_consumed() {
     local timeout="${6:-45}"
     local interval="${RUNNER_CHAT_EVENT_POLL_INTERVAL_SECONDS:-2}"
     local start=$SECONDS
-    local response=""
+    local response="" chat_output
 
     while (( SECONDS - start < timeout )); do
         if response="$(runner_chat_event_rows "$thread_id" 2>&1)"; then
             if jq -e \
                 --arg runId "$run_id" \
                 --arg steerEventId "$steer_event_id" \
-                --arg steerPrompt "$steer_prompt" \
-                --arg expectedOutput "$expected_output" '
+                --arg steerPrompt "$steer_prompt" '
                 any(.rows[]?;
                     .eventType == "input.prompt" and
                     .runId == $runId and
@@ -619,7 +602,7 @@ _wait_for_runner_chat_steer_consumed() {
                 any(.rows[]?;
                     .eventType == "output.message" and
                     .runId == $runId and
-                    (.payload.content | contains($expectedOutput))
+                    (.payload.content | type == "string" and test("\\S"))
                 ) and
                 any(.rows[]?;
                     .eventType == "run.completed" and .runId == $runId
@@ -628,6 +611,16 @@ _wait_for_runner_chat_steer_consumed() {
                     (.runId == null or .runId == $runId)
                 )
             ' <<< "$response" >/dev/null; then
+                chat_output="$(jq -er --arg runId "$run_id" '
+                    [.rows[]? |
+                        select(.eventType == "output.message" and .runId == $runId) |
+                        .payload.content | select(type == "string" and test("\\S"))
+                    ] | last
+                ' <<< "$response")" || return 1
+                if [[ "$chat_output" != *"$expected_output"* ]]; then
+                    echo "# Completed steered chat output for run $run_id did not contain ${expected_output@Q}: $chat_output" >&2
+                    return 1
+                fi
                 return 0
             fi
         fi
@@ -671,9 +664,9 @@ runner_chat_steer() {
         "" \
         "$steer_event_id")" || return 1
     if ! jq -e --arg threadId "$thread_id" '
-        has("runId") and .runId == null and .threadId == $threadId
+        .threadId == $threadId
     ' <<< "$steer_response" >/dev/null; then
-        echo "# Steer created a separate run or thread: $steer_response" >&2
+        echo "# Steer returned a different thread: $steer_response" >&2
         return 1
     fi
 

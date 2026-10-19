@@ -17,11 +17,15 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
+  metadataCommitWithEventsSql,
+  metadataModelSettingsPatchSql,
+} from "./chat-thread-metadata-write-plan";
+import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   chatThreadServiceTierFromCodex,
   chatThreadEventInsertSql,
@@ -93,6 +97,7 @@ interface CurrentModelState {
 }
 
 interface ModelColumns {
+  readonly fastSupported: boolean;
   readonly selectedModel: string;
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;
@@ -203,6 +208,9 @@ function resolveModelColumns(
   return {
     kind: "ok",
     columns: {
+      fastSupported:
+        validateCodexServiceTier({ catalog, pin, codexServiceTier: "fast" }) ===
+        undefined,
       selectedModel: pin.selectedModel,
       modelSettings: effort.modelSettings,
       modelSettingsPatch: effort.modelSettingsPatch,
@@ -317,16 +325,16 @@ function metadataPreparationDisposition(prepared: PreparedMetadataOutcome) {
 
 const commitMetadata$ = command(
   async (
-    { set },
+    { get, set },
     args: ChatThreadMetadataUpdateArgs,
     prepared: PreparedMetadataOutcome,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
+    const readDb = get(db$);
     const proposal = metadataPreparationDisposition(prepared);
     if (proposal.kind !== "ready") {
-      const [owned] = await db
+      const [owned] = await readDb
         .select({ id: chatThreads.id })
         .from(chatThreads)
         .where(threadCondition(args))
@@ -340,58 +348,108 @@ const commitMetadata$ = command(
       }
       return proposal;
     }
-    // Preserve the current model settings and service tier while applying the
-    // model change and its ordered events. This is the only metadata write
-    // that needs a read/write snapshot; renames use one gated statement.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0094; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [current] = await tx
-        .select(currentSelection)
-        .from(chatThreads)
-        .where(threadCondition(args))
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!current?.agentId) {
-        return { kind: "not_found" };
-      }
-      const { catalog, pin } = proposal.value;
-      if (catalog === null) {
-        throw new Error("Prepared model catalog is missing");
-      }
-      const model = resolveModelColumns(catalog, args, current, pin);
-      if (model.kind === "response") {
-        return model;
-      }
-      const updatedAt = nowDate();
-      const [state] = await tx
-        .update(chatThreads)
-        .set({
-          updatedAt,
-          ...(hasTitle(args.patch)
-            ? { title: args.patch.title, renamedAt: updatedAt }
-            : {}),
-          ...model.columns,
-        })
-        .where(eq(chatThreads.id, args.threadId))
-        .returning(currentSelection);
-      signal.throwIfAborted();
-      for (const event of metadataEvents(
-        args,
-        current.agentId,
-        model.columns,
+    const [current] = await readDb
+      .select(currentSelection)
+      .from(chatThreads)
+      .where(threadCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!current?.agentId) {
+      return { kind: "not_found" };
+    }
+    const { catalog, pin } = proposal.value;
+    if (catalog === null) {
+      throw new Error("Prepared model catalog is missing");
+    }
+    const model = resolveModelColumns(catalog, args, current, pin);
+    if (model.kind === "response") {
+      return model;
+    }
+    const updatedAt = nowDate();
+    const db = set(writeDb$);
+    const columns = model.columns;
+    const updated = db
+      .update(chatThreads)
+      .set({
         updatedAt,
-      )) {
-        await tx.execute(chatThreadEventInsertSql(event));
-        signal.throwIfAborted();
-      }
-      if (!state) {
-        throw new Error("Updated chat thread state is missing");
-      }
-      return metadataResult(state);
+        ...(hasTitle(args.patch)
+          ? { title: args.patch.title, renamedAt: updatedAt }
+          : {}),
+        ...(columns
+          ? {
+              selectedModel: columns.selectedModel,
+              ...(columns.modelSettingsPatch
+                ? {
+                    modelSettings: metadataModelSettingsPatchSql(
+                      columns.modelSettingsPatch,
+                    ),
+                  }
+                : {}),
+              ...(args.codexServiceTier.kind === "set"
+                ? { codexServiceTier: args.codexServiceTier.value }
+                : {}),
+            }
+          : {}),
+      })
+      .where(
+        and(
+          threadCondition(args),
+          columns &&
+            args.codexServiceTier.kind === "preserve" &&
+            !columns.fastSupported
+            ? sql`${chatThreads.codexServiceTier} IS DISTINCT FROM ${sql.param("fast", chatThreads.codexServiceTier)}`
+            : undefined,
+        ),
+      )
+      .returning({
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
+        title: chatThreads.title,
+        selectedModel: chatThreads.selectedModel,
+        modelSettings: chatThreads.modelSettings,
+        codexServiceTier: chatThreads.codexServiceTier,
+        updatedAt: chatThreads.updatedAt,
+      });
+    const commitQuery = metadataCommitWithEventsSql({
+      updated: updated.getSQL(),
+      ...args.principal,
+      events: metadataEvents(args, current.agentId, columns, updatedAt),
     });
+    const rowSchema = metadataCommitRowSchema;
+    const [row] = await (async () => {
+      return parseRawRows(rowSchema, await db.execute(commitQuery));
+    })();
+    signal.throwIfAborted();
+    return row ? metadataResult(row) : { kind: "not_found" };
   },
 );
+
+// Preserve real column decoding; annotations do not decode driver values.
+const metadataCommitRowSchema = z.object({
+  threadId: z.string().uuid(),
+  agentId: z.string().uuid().nullable(),
+  title: z.string().nullable(),
+  titleTruncated: z.boolean(),
+  selectedModel: z.string().nullable(),
+  modelSettings: z.unknown().transform((value) => {
+    return value === null
+      ? null
+      : nullableDriverValueDecoder(
+          chatThreads.modelSettings,
+        ).mapFromDriverValue(value);
+  }),
+  codexServiceTier: z
+    .string()
+    .nullable()
+    .transform((value) => {
+      return value === null
+        ? null
+        : nullableDriverValueDecoder(
+            chatThreads.codexServiceTier,
+          ).mapFromDriverValue(value);
+    }),
+  updatedAt: pgTimestampWithoutTimezoneToDateSchema,
+});
 
 const titleMetadataStateSchema = z.object({
   threadId: z.string().uuid(),
@@ -475,7 +533,7 @@ export const updateChatThreadMetadata$ = command(
       return await set(commitTitleMetadata$, args, signal);
     }
     // Ownership remains the first returned refusal even if independent model
-    // preparation fails. No preparation error enters the write transaction.
+    // preparation fails. No preparation error reaches the write statement.
     const prepared = await settle(
       set(prepareMetadataModel$, args, signal),
       signal,

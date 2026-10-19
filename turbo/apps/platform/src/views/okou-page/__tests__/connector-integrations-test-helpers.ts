@@ -93,6 +93,8 @@ export function mockTeams(
     isConnected: false,
     isInstalled: false,
     isAdmin: true,
+    linkedAccounts: [],
+    pendingInstallation: false,
     installUrl:
       "https://teams.microsoft.com/l/app/00000000-0000-0000-0000-000000000001",
     connectUrl: "/api/teams/oauth/connect?orgId=org_1&userId=user_1",

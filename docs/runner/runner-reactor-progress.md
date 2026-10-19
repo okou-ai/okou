@@ -31,13 +31,13 @@ Persistence timeouts do not bound a wait that happens before persistence starts.
 
 ## Ownership and shutdown
 
-| Work                  | Owner and progress rule                                                                                                                                                                                  | Shutdown                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Heartbeat             | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller. | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                                         |
-| Admission / claim     | Up to four independently scheduled transactions; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them.                   | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort pending remote requests; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
-| Status retry          | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                            | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                                   |
-| Routine home-cache GC | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup; capacity protects completion cadence and budget collection.                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                   |
-| Poll wakeups          | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                               | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                                                                                          |
+| Work                           | Owner and progress rule                                                                                                                                                                                                                    | Shutdown                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Heartbeat                      | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller.                                   | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                                         |
+| Admission / claim / activation | Up to four independently scheduled transactions, including ordinary activation and failure recovery; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them. | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort pending remote requests; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
+| Status retry                   | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                                                              | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                                   |
+| Routine home-cache GC          | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup; capacity protects completion cadence and budget collection.                                                                             | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                   |
+| Poll wakeups                   | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                                                                 | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                                                                                          |
 
 Task join failures stop the reactor through its existing lifecycle and common
 teardown path and are returned as terminal errors. Ordinary optional GC or status
@@ -190,31 +190,21 @@ establish full session/history restoration or calibrate production host limits.
 
 ## Routine GC and promotion capacity
 
-Updated runners serialize routine maintenance with
-`home-image-cache-routine-gc.lock`. They briefly acquire capacity to check
-its existing nonempty completion-file mtime, then release capacity during the
-inventory and entry-local stale/temp cleanup. Every such mutation still requires
-that entry's nonblocking exclusive flock, so active checkout, generation staging and
-publication cannot be cleaned concurrently. No entry flock survives inventory.
+Updated runners serialize routine, manual, demand and publication-triggered
+collection with `home-image-cache-routine-gc.lock`. They only try the shared
+canonical capacity barrier and victim entry locks; contention defers collection.
+Routine maintenance checks the existing nonempty completion-file mtime, then
+holds a shared barrier during inventory and entry-local stale/temp cleanup.
+Every mutation requires that entry's nonblocking exclusive flock. No entry
+flock survives inventory. Final admission rechecks cadence and actual space;
+interrupted maintenance never advances the completion marker.
 
-Afterward routine GC attempts capacity nonblockingly, rechecks the completion
-interval and reads fresh filesystem stats. Count pressure observed in the
-unlocked inventory, or current free-space pressure, uses that retained inventory
-as hints for bounded mutation turns. Each victim needs its entry lock and current
-generation, inode and last-use revalidation. Cooperative exhaustion releases both
-global owners; continuation tries them again and rechecks the completion interval.
-Unlocked candidates alone never authorize eviction. Failed work or busy final
-capacity admission writes no new completion marker and is eligible for a later retry.
-
-Other processes using the same canonical home-cache domain can overlap the
-unlocked pass. Shared entry flocks protect mutations, and the second interval
-check observes another collector's intervening completion. Manual and
-promotion-triggered pressure GC retain capacity ownership and can still contend
-with promotion. This removes the routine inventory/entry-cleanup collision
-window, not pressure contention. The inventory covers the canonical home-cache
-domain. Count limits and observed free-space targets are independent; count-only
-cleanup does not activate a byte target. Profile-bound image eligibility, fresh allocation/reserve and cross-device
-copy headroom remain mandatory.
+New publishers can overlap collection through shared capacity while exclusive
+entry flocks protect each mutation. Legacy exclusive capacity windows still
+exclude new publication growth and physical IO on the exact same inode. Victim
+operations revalidate generation, inode and last-use; cooperative continuations
+try both global owners again. Count limits and observed free-space targets are
+independent. Unlocked candidates alone never authorize eviction.
 
 Cheap pressure probes and completed invalid/temp maintenance have independent
 cadences. A probe or cooperative reclaim turn never advances the maintenance
@@ -224,18 +214,47 @@ inode and last-use authority, and retains its LRU continuation between turns.
 Only actual available space establishes recovery: an unlinked image can remain
 allocated while another descriptor is open.
 
-Stopped publishers share one fair process-local publication permit, separate
-from Guest reclamation admission. They retain entry ownership while queued for
-up to 30 seconds before staging. Admission timeout leaves the original context
-untouched and reports `publication_admission_timeout`; ordinary abandonment and
-required-saving recovery retain their existing policies. This initial retention
-cap is not a measured optimum. Only the admitted publisher starts the existing
-250 ms observed capacity-flock contention retry. Other processes and GC still
-compete through that flock; checkout never joins the publication queue.
+Background maintenance and pressure requests bind to the current Running
+lifecycle generation. Drain stops new admission and expires queued work and
+continuations, even when a rapid drain/resume leaves the latest mode Running.
+Resume admits fresh requests. A selected entry cleanup or victim operation keeps
+its physical I/O and locks until completion; later units stop cooperatively.
+Interrupted maintenance does not advance its completion marker, and teardown
+still joins accepted work.
 
-Publication retains its local permit through the existing commit or refusal.
-A capacity owner must never wait for an entry lock. This retry has a separate
-budget from startup's short entry wait and immediate-fallback policy. Proven
+Shared pressure work retains foreground demand separately from background
+watermarks. An interrupted pressure inventory is discarded; later accepted
+demand restarts complete discovery. Expiring a background request removes only that target; accepted
+foreground demand keeps its own required free-space target and physical owner.
+Explicit manual and publication collection retain their caller authority. These
+are per-Runner lifecycle boundaries; other host collectors remain independent.
+
+Stopped publishers share four process-local physical IO slots, separate from
+Guest reclamation admission. Accepted attempts retain entry ownership, pinned
+source and exact staged/candidate/uncertain-commit progress in the existing IO
+tracker. Observer loss cannot release a physical tail's locks; shutdown joins it.
+Recovery revalidates the retained generation at its actual location and completes
+an uncertain metadata commit before retiring old data. Failed required saving
+retains its capsule while releasing physical IO admission.
+
+Publication orders entry/source, local IO slot, then shared canonical capacity.
+Move and exceptional Copy share that same bounded IO admission. Copy checks
+actual destination headroom before transfer and metadata headroom before commit;
+when the observed margin cannot cover four Copy-plus-metadata peaks, Copy
+releases partial admission and atomically takes all four existing IO permits.
+This serializes pressured Copy within one Runner without another lock or
+semaphore; other Runner owners still share the canonical capacity barrier.
+Concurrent allocation by other publishers or processes can race those observations.
+Unexpected EXDEV and pressure reclamation release IO/barrier admission before
+retrying with Copy demand or waiting for GC; the original 30-second pre-IO budget
+covers coalesced foreground reclaim observation and admission reentry after a
+successful result. No-progress/contention refuses safely; accepted reclamation
+remains joined by the existing pressure owner even if an observer expires.
+Legacy flock contention retains its
+250 ms observed retry budget.
+These admission deadlines never abort accepted transfer or sync. Sync runs in
+owned blocking work, while the accepted parent retains the relevant guards.
+Checkout never joins the publication queue. Proven
 guest exit releases healthy reclamation CPU permits before publication, but the
 entry and applicable logical lease remain owned until their cleanup contract
 completes. Waiting can therefore affect same-key checkout, resource-limited blank
@@ -274,16 +293,13 @@ retain the reserve policy. This is an observed allocation check, not a reservati
 against other writers or a guarantee about future guest growth. Same-filesystem
 rename still performs ordinary filesystem I/O and can fail.
 
-Successful routine completion emits `entry_count` (the unlocked candidate
+Successful routine completion emits `entry_count` (the inventory candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (all held phases,
-excluding acquisition waits and unlocked inventory), `budget_gc` and `freed_bytes`.
-Deferred final admission reports the inventory and initial held durations. These
-are phase observations, not production cold-start savings or wall-clock
-performance guarantees. The ignored
-`measure_routine_gc_inventory_and_capacity_hold` owner test prints representative
-local measurements without latency thresholds. It uses temporary files and the
-owner tests' injected filesystem budget, so it does not measure production
-`statvfs` latency or pressure collection.
+including shared inventory but excluding acquisition waits), `budget_gc` and
+`freed_bytes`. Deferred final admission reports the inventory and initial held
+durations. These observations are not production cold-start savings or wall-clock
+guarantees. Isolated temporary-file trials and injected filesystem budgets do
+not establish production pressure, IO or startup performance.
 
 ## Optional snapshot IO
 
@@ -318,6 +334,25 @@ are not resident-cache, released-byte or production memory-saving proof.
   still reject duplicate or ineligible ownership. Claim cooldown updates have no
   shared retained lock holder that depends on the reactor to resume. PollWakeups
   stays synchronous and provider defer/generation rules are unchanged.
+- Ordinary and home-preferred admission secure local capacity before claiming.
+  They transfer the revisioned eviction snapshot to an independent status task owned
+  by the joined cleanup tracker before another await. Claim proceeds through
+  cancellation registration and lifecycle checks without waiting for status
+  state, ordered persistence or old sandbox cleanup. Claim loss cannot cancel
+  accepted publication; snapshot revisions and status generations fence delayed
+  writes. Already-claimed finalizing fallback retains its awaited publication.
+- Ordinary blank refill accepts aged-retirement and completed-blank inventory
+  publication through the joined cleanup tracker before another await.
+  Preparation, diagnostics and later discovery can progress while advisory status
+  waits. Revision/generation fences reject stale inventory; shutdown joins these
+  accepted writers. Initial resource/preference admission and required durable
+  Preparing before physical reuse remain authoritative.
+- Exact speculative reuse joins claim with journal-gated Guest preparation.
+  The exclusive reservation and cancellation/lifecycle checks precede claim;
+  its idle snapshot must persist before speculative unpark. If a newer in-memory
+  revision supersedes it, current status durability is still required. A journal error
+  retains the parked reservation for ordinary claimed activation or rejection
+  rollback, preserving the persisted Preparing gate before physical reuse.
 - API claim requests own temporary poll exclusions until they settle. Poll uses
   the existing `excludedRunIds` field, prioritizes in-flight claims within its
   contract limit, and preserves the full cooldown inventory for local filtering.
@@ -326,15 +361,20 @@ are not resident-cache, released-byte or production memory-saving proof.
   that request's registration and wakes the existing scheduler. This avoids
   repeatedly rediscovering a still-queued claim while unrelated work is waiting;
   no API schema or failure-cooldown policy changes.
-- Admission/claim tasks are independent, but post-claim activation and executor
-  dispatch remain Reactor-owned. Completed claims may therefore retain bounded
-  reservations while activation waits on shared resources. Finalizing reuse
+- Admission tasks independently own ordinary claim, activation and recovery.
+  The same four slots include activation waits and completed unconsumed results;
+  saturated activation slots do not permit more claims. Prepared results retain
+  ClaimedActivationGuard until Reactor synchronously dispatches the executor.
+  Required Preparing-before-unpark and status publication remain authoritative.
+  Release the per-run cancellation transfer lock after accepting guarded readiness,
+  before returning a result: hard stop must not need Reactor consumption to unlock.
+  Lost prepared results retain tracked completion and resource recovery.
+  Activation panics retain recovery and propagation to Reactor. Finalizing reuse
   wakeups observed with all admission slots occupied are retained until a slot
   opens; original preference deadlines remain authoritative. Ordinary shutdown
   never aborts an uncertain claim HTTP request. A completed result lost before
-  activation uses the existing completion/rollback policy, including exact
-  speculative resources; it does not fabricate a remote result for a failed or
-  uncertain request.
+  executor handoff uses its actual admission or prepared-activation recovery owner;
+  it does not fabricate a remote result for a failed or uncertain request.
 - Home-cache watcher work remains retained with ownership of its watcher
   and drained filesystem events. Its classification does not own an idle-pool or
   status waiter needed by an inline reactor branch. The observation owner admits
@@ -438,6 +478,11 @@ provider-boundary gates through real `run()` to check claim overlap, a fast
 execution completing behind an earlier blocked claim, finite backpressure,
 resource/duplicate protection, rejection rollback, soft/hard lifecycle settlement,
 and recovery of pending or completed-but-unconsumed claims on Reactor drop.
+`main_loop/activation_progress.rs` gates real status publication, reserved Guest
+unpark, and failed-activation completion to check later-claim progress before
+release. `main_loop/activation_custody.rs` checks the shared four-slot bound,
+guarded activation without Reactor polling, result-loss recovery, and hard stop
+after a reserved activation publishes its result.
 These tests establish ordering and ownership, not production startup savings.
 
 Helper ownership and lifecycle tests run through `run()` with real

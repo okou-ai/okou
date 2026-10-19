@@ -176,7 +176,6 @@ const connectTelegramInTab$ = command(
           loginBotId,
           bot: botId,
           callbackBase: get(oauthBaseForNavigation$),
-          protocol2: status.installation?.authCallbackProtocol === 2,
         },
         signal,
       );

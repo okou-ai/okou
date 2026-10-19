@@ -159,10 +159,7 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
                 assert!(read(&home, &name, &version, &cancel).unwrap().is_none());
             } else {
                 assert_eq!(
-                    read(&home, &name, &version, &cancel)
-                        .unwrap()
-                        .flatten()
-                        .unwrap(),
+                    read(&home, &name, &version, &cancel).unwrap().unwrap(),
                     files()
                 );
             }
@@ -196,10 +193,7 @@ fn a_missing_entry_can_be_published_under_its_existing_writer_lock() {
             assert!(is_rejected(&home, name, version, &cancel).unwrap());
         } else {
             assert_eq!(
-                read(&home, name, version, &cancel)
-                    .unwrap()
-                    .flatten()
-                    .unwrap(),
+                read(&home, name, version, &cancel).unwrap().unwrap(),
                 payload
             );
         }
@@ -249,7 +243,6 @@ fn retirement_removes_only_redundant_archive_and_preserves_replacement() {
         assert_eq!(
             read(&home, "name", "v1", &CancellationToken::new())
                 .unwrap()
-                .flatten()
                 .unwrap(),
             files()
         );
@@ -304,6 +297,7 @@ fn retirement_preserves_archive_without_complete_valid_replacement() {
         "corrupt-content",
         "corrupt-index",
         "wrong-identity",
+        "wrong-kind",
         "cancelled",
     ] {
         let (root, home, entry, replacement_lock) = setup();
@@ -314,10 +308,14 @@ fn retirement_preserves_archive_without_complete_valid_replacement() {
             "missing-lock" => fs::remove_file(replacement_lock).unwrap(),
             "corrupt-content" => fs::write(entry.join("files/nested/file"), b"world").unwrap(),
             "corrupt-index" => fs::write(entry.join("index.json"), b"{").unwrap(),
-            "wrong-identity" => {
+            "wrong-identity" | "wrong-kind" => {
                 let path = entry.join("index.json");
                 let mut index: Index = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-                index.version = "other".into();
+                if mutation == "wrong-kind" {
+                    index.files = None;
+                } else {
+                    index.version = "other".into();
+                }
                 fs::write(path, serde_json::to_vec(&index).unwrap()).unwrap();
             }
             "cancelled" => cancel.cancel(),
@@ -326,6 +324,8 @@ fn retirement_preserves_archive_without_complete_valid_replacement() {
         let result = retire_archive(&home, "name", "v1", &cancel);
         if mutation.starts_with("missing") {
             assert!(!result.unwrap());
+        } else if mutation == "wrong-kind" {
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
         } else {
             assert!(result.is_err(), "{mutation}");
         }
@@ -377,7 +377,6 @@ fn real_files_survive_new_home_owner_without_an_archive() {
     assert_eq!(
         read(&home, "name", "v1", &CancellationToken::new())
             .unwrap()
-            .unwrap()
             .unwrap(),
         files()
     );
@@ -390,7 +389,7 @@ fn admission_rejections_have_no_foreground_entry_and_are_validated_only_for_fill
     publish(&home, "name", "v1", 100, None, &CancellationToken::new()).unwrap();
     assert!(!paths(&home, "name", "v1").0.exists());
     assert!(is_rejected(&home, "name", "v1", &CancellationToken::new()).unwrap());
-    let (rejected, _) = entry_paths(&home, "name", "v1", true);
+    let (rejected, _) = entry_paths(&home, "name", "v1", EntryKind::Rejection);
     fs::write(rejected.join("index.json"), b"{").unwrap();
     // Ordinary Guest delivery does not depend on unrelated admission metadata.
     assert!(
@@ -404,14 +403,30 @@ fn admission_rejections_have_no_foreground_entry_and_are_validated_only_for_fill
 #[test]
 fn entry_kind_cannot_be_swapped_between_positive_and_rejected_keys() {
     let (_root, home, positive, _) = setup();
-    let (rejected, _) = entry_paths(&home, "name", "v1", true);
+    let (rejected, _) = entry_paths(&home, "name", "v1", EntryKind::Rejection);
     fs::rename(&positive, &rejected).unwrap();
-    assert!(is_rejected(&home, "name", "v1", &CancellationToken::new()).is_err());
+    assert_eq!(
+        is_rejected(&home, "name", "v1", &CancellationToken::new())
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidData
+    );
     publish(&home, "other", "v1", 100, None, &CancellationToken::new()).unwrap();
     let (positive, _) = paths(&home, "other", "v1");
-    let (rejected, _) = entry_paths(&home, "other", "v1", true);
+    let (rejected, _) = entry_paths(&home, "other", "v1", EntryKind::Rejection);
     fs::rename(rejected, positive).unwrap();
-    assert!(read(&home, "other", "v1", &CancellationToken::new()).is_err());
+    let cancel = CancellationToken::new();
+    assert_eq!(
+        read(&home, "other", "v1", &cancel).unwrap_err().kind(),
+        io::ErrorKind::InvalidData
+    );
+    // Invalid kind metadata remains an error even when no bodies could fit.
+    assert_eq!(
+        read_with_budget(&home, "other", "v1", 0, 0, &cancel)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidData
+    );
 }
 
 #[test]
@@ -420,7 +435,6 @@ fn orphaned_lock_collection_does_not_make_persistent_files_unreachable() {
     fs::remove_file(&lock_path).unwrap();
     assert_eq!(
         read(&home, "name", "v1", &CancellationToken::new())
-            .unwrap()
             .unwrap()
             .unwrap(),
         files()
@@ -650,7 +664,6 @@ fn incomplete_staging_is_not_readable_and_next_fill_replaces_it() {
     assert!(!entry.join("partial").exists());
     assert_eq!(
         read(&home, "name", "v1", &CancellationToken::new())
-            .unwrap()
             .unwrap()
             .unwrap(),
         files()

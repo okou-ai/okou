@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.58](https://github.com/okou-ai/okou/compare/runner-network-v0.2.57...runner-network-v0.2.58) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share connector registry command values ([#41271](https://github.com/okou-ai/okou/issues/41271)) ([e3346f3](https://github.com/okou-ai/okou/commit/e3346f3c0448090e9c4a00fa12745f248d051233))
+
+## [0.2.57](https://github.com/okou-ai/okou/compare/runner-network-v0.2.56...runner-network-v0.2.57) (2026-10-19)
+
+## [0.2.56](https://github.com/okou-ai/okou/compare/runner-network-v0.2.55...runner-network-v0.2.56) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-network:** converge completed drain acknowledgement ([#41124](https://github.com/okou-ai/okou/issues/41124)) ([f9a5bf4](https://github.com/okou-ai/okou/commit/f9a5bf48c179d058dc6d43cafcfb40c26c59c388))
+
+## [0.2.55](https://github.com/okou-ai/okou/compare/runner-network-v0.2.54...runner-network-v0.2.55) (2026-10-17)
+
+## [0.2.54](https://github.com/okou-ai/okou/compare/runner-network-v0.2.53...runner-network-v0.2.54) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** enforce captured openrouter presets before auth ([#40884](https://github.com/okou-ai/okou/issues/40884)) ([1d2a780](https://github.com/okou-ai/okou/commit/1d2a780d35d7a8b2b5ceab760321470d8e06c489))
+
+## [0.2.53](https://github.com/okou-ai/okou/compare/runner-network-v0.2.52...runner-network-v0.2.53) (2026-10-17)
+
+## [0.2.52](https://github.com/okou-ai/okou/compare/runner-network-v0.2.51...runner-network-v0.2.52) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-network:** own kmsg diagnostic reader lifetime ([#40815](https://github.com/okou-ai/okou/issues/40815)) ([08e5aa5](https://github.com/okou-ai/okou/commit/08e5aa56f92fe155e8aecf1f6e115d84997b0d5b))
+* **runner-network:** remove redundant source drain state ([#40810](https://github.com/okou-ai/okou/issues/40810)) ([47c09f1](https://github.com/okou-ai/okou/commit/47c09f1a4690940572e4d2202040fda51b704aa8))
+
 ## [0.2.51](https://github.com/okou-ai/okou/compare/runner-network-v0.2.50...runner-network-v0.2.51) (2026-10-16)
 
 ## [0.2.50](https://github.com/okou-ai/okou/compare/runner-network-v0.2.49...runner-network-v0.2.50) (2026-10-16)

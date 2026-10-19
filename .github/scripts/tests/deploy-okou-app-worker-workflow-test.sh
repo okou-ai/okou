@@ -12,6 +12,7 @@ python3 - \
   "${repo_root}/turbo/apps/app-worker/wrangler.jsonc" \
   "${repo_root}/.github/workflows/turbo.yml" << 'PY'
 from pathlib import Path
+import json
 import os
 import subprocess
 import sys
@@ -161,10 +162,66 @@ require_fragments(
 expected_canonical_dist = "${{ steps.worker-production.outputs.canonical-dist }}"
 if sentry_step.get("env", {}).get("CANONICAL_DIST") != expected_canonical_dist:
     raise RuntimeError("source map upload must use the Worker canonical artifact")
-require_fragments(
-    sentry_step,
-    ["pnpm --filter @okouai/app exec sentry-cli sourcemaps upload \"$CANONICAL_DIST\""],
+assert sentry_step["env"]["APP_RELEASE"] == (
+    "${{ needs.release-please.outputs.app_version }}"
 )
+# Execute the production step; only the external Sentry command is controlled.
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    canonical_dist = root / "canonical dist"
+    canonical_dist.mkdir()
+    command_log = root / "commands.log"
+    command_boundary = '''pnpm() {
+      python3 - "$@" <<'COMMAND'
+import json
+import os
+import sys
+from pathlib import Path
+with Path(os.environ["COMMAND_LOG"]).open("a") as stream:
+    stream.write(json.dumps({"args": sys.argv[1:], "release": os.environ.get("SENTRY_RELEASE")}) + "\\n")
+COMMAND
+      if [[ "$*" == *"sourcemaps upload"* ]]; then
+        return "$UPLOAD_STATUS"
+      fi
+    }
+    '''
+
+    for app_release, upload_status in (("0.1034.0", 0), ("", 0), ("0.1034.0", 23)):
+        command_log.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", command_boundary + sentry_step["run"]],
+            cwd=root,
+            env={
+                **os.environ,
+                "APP_RELEASE": app_release,
+                "CANONICAL_DIST": str(canonical_dist),
+                "COMMAND_LOG": str(command_log),
+                "UPLOAD_STATUS": str(upload_status),
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == upload_status, result.stderr
+        commands = (
+            [json.loads(line) for line in command_log.read_text().splitlines()]
+            if command_log.exists()
+            else []
+        )
+        if app_release:
+            prefix = ["--filter", "@okouai/app", "exec", "sentry-cli"]
+            assert commands == [
+                {
+                    "args": prefix + ["releases", "new", app_release, "--finalize"],
+                    "release": app_release,
+                },
+                {
+                    "args": prefix + ["sourcemaps", "upload", "--release", app_release, str(canonical_dist)],
+                    "release": app_release,
+                },
+            ], commands
+        else:
+            assert commands == [], commands
+            assert "::warning::" in result.stdout, result.stdout
 
 deploy_source = require_fragments(
     deploy_step,

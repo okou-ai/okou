@@ -3,18 +3,14 @@ import {
   sandboxChannelHelloResultSchema,
 } from "../contracts/sandbox-channel";
 import {
-  sandboxFsListParamsSchema,
-  sandboxFsListResultSchema,
-  sandboxFsListCloseParamsSchema,
-  sandboxFsListCloseResultSchema,
-} from "../contracts/sandbox-channel-fs";
-import {
   sandboxDiagnosticsEchoSchema,
   sandboxDiagnosticsNoticeSchema,
 } from "../contracts/sandbox-channel-diagnostics";
 import type { RustTypeBinding } from "./types";
+import { sandboxFsTypeBindings } from "./sandbox-channel-fs-types";
 
 export const sandboxChannelTypeBindings = [
+  ...sandboxFsTypeBindings,
   {
     schema: sandboxChannelWireSchema,
     rustModulePath: ["sandbox_channel"],
@@ -83,85 +79,6 @@ export const sandboxChannelTypeBindings = [
           "Installed role/category revisions for one connection epoch.",
         ],
         fields: { categories: ["Current installed role contracts."] },
-      },
-    ],
-  },
-  {
-    schema: sandboxFsListParamsSchema,
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListParams",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "ListParams",
-        rustDoc: ["Exactly one relative raw-name path or owned continuation."],
-        fields: {
-          path: ["Canonical raw basename tokens relative to home."],
-          cursor: ["This connection's opaque continuation."],
-        },
-      },
-    ],
-  },
-  {
-    schema: sandboxFsListResultSchema,
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListResult",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "ListResult",
-        rustDoc: [
-          "One bounded directory page; null continuation denotes actual EOF.",
-        ],
-        fields: {
-          listingId: ["This enumeration's independent identity."],
-          entries: ["Bounded readonly metadata."],
-          nextCursor: ["Continuation, or null at actual EOF."],
-        },
-      },
-      {
-        rustTypeName: "ListResultEntrie",
-        rustDoc: ["One raw basename and safe display label."],
-        fields: {
-          nameToken: ["Canonical raw basename bytes."],
-          displayName: ["Safe text label, never a path input."],
-          kind: ["Readonly entry presentation kind."],
-        },
-      },
-      {
-        rustTypeName: "ListResultEntrieKind",
-        rustDoc: ["Readonly entry kinds."],
-        variants: {
-          directory: ["Expandable directory within policy."],
-          file: ["Ordinary file metadata."],
-          symlink: ["Displayed without target traversal."],
-          other: ["Special entry metadata only."],
-        },
-      },
-    ],
-  },
-  {
-    schema: sandboxFsListCloseParamsSchema,
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListCloseParams",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "ListCloseParams",
-        rustDoc: ["Release this connection's directory continuation."],
-        fields: { cursor: ["Owned continuation to release."] },
-      },
-    ],
-  },
-  {
-    schema: sandboxFsListCloseResultSchema,
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListCloseResult",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "ListCloseResult",
-        rustDoc: ["Successful bounded cursor release."],
       },
     ],
   },

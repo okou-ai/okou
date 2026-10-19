@@ -157,6 +157,120 @@ os._exit(3)
             any(wait["pid"] == child for wait in report["adopted_child_waits"])
         )
 
+    def test_reaped_child_keeps_positive_exit_diagnostics_and_null_residency(self):
+        program = """
+import json, subprocess, sys, time
+from pathlib import Path
+child = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read(1)'], stdin=subprocess.PIPE)
+print(child.pid, flush=True)
+deadline = time.monotonic() + 2
+released = False
+while time.monotonic() < deadline:
+    for line in Path('samples.jsonl').read_text().splitlines(keepends=True):
+        if not line.endswith('\\n'):
+            continue
+        for row in json.loads(line)['processes']:
+            if row['pid'] != child.pid:
+                continue
+            if row['residency_state'] == 'measured' and not released:
+                child.stdin.write(b'x'); child.stdin.close()
+                assert child.wait(timeout=1) == 0
+                released = True
+            if row['residency_state'] == 'exited':
+                assert released
+                assert row['residency_reason'] == 'pidfd_exit'
+                assert row['rss_bytes'] is None and row['pss_bytes'] is None
+                assert 0 < row['exit_observed_monotonic_ns'] <= row['observed_monotonic_ns']
+                sys.exit(0)
+    time.sleep(0.01)
+sys.exit(3)
+"""
+        result, report, output = self.run_case(program)
+        self.assertEqual(result.returncode, 0, (result.stderr, report))
+        self.assertEqual(report["format"], "runner-memory-calibration-v2")
+        self.assertTrue(report["success"])
+        self.assertGreater(report["residency_incomplete_samples"], 0)
+        pid = int((output / "stdout.log").read_text().strip())
+        samples = [json.loads(line) for line in (output / "samples.jsonl").read_text().splitlines()]
+        captured = set()
+        for sample in samples:
+            identities = {(row["pid"], row["start_ticks"]) for row in sample["processes"]}
+            self.assertLessEqual(captured, identities)
+            captured = identities
+        rows = [
+            row
+            for sample in samples
+            for row in sample["processes"]
+            if row["pid"] == pid
+        ]
+        self.assertEqual(len({row["start_ticks"] for row in rows}), 1)
+        self.assertTrue(any(row["residency_state"] == "measured" for row in rows))
+        self.assertTrue(any(row["residency_state"] == "exited" for row in rows))
+
+    def test_collector_retires_observation_fds_on_success_failure_and_cancellation(self):
+        wrapper = """
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location('owned_collector', sys.argv[1])
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+sys.argv = sys.argv[1:]
+before = len(os.listdir('/proc/self/fd'))
+if FAIL_CLOSE:
+    original_close = module.selectors.DefaultSelector.close
+    def fail_close(selector):
+        if selector.get_map() is not None:
+            original_close(selector)
+            raise OSError(5, 'controlled selector close failure')
+    module.selectors.DefaultSelector.close = fail_close
+code = module.main()
+assert len(os.listdir('/proc/self/fd')) == before, 'collector leaked an observation or I/O fd'
+assert module.child_pids(os.getpid()) == [], 'collector retained a child after cleanup'
+sys.exit(code)
+"""
+        for outcome in ("success", "driver_failure", "cancelled", "selector_failure"):
+            with self.subTest(outcome=outcome):
+                output = self.root / f"{outcome}-fds"
+                program = """
+import json, os, signal, sys, time
+from pathlib import Path
+deadline = time.monotonic() + 2
+while time.monotonic() < deadline:
+    for line in Path('samples.jsonl').read_text().splitlines(keepends=True):
+        if not line.endswith('\\n'):
+            continue
+        if any(p['pid'] == os.getpid() and p['residency_state'] == 'measured'
+               for p in json.loads(line)['processes']):
+            if CANCEL:
+                os.kill(os.getppid(), signal.SIGTERM)
+                time.sleep(60)
+            sys.exit(EXIT_CODE)
+    time.sleep(0.01)
+sys.exit(9)
+""".replace("CANCEL", repr(outcome in ("cancelled", "selector_failure"))).replace(
+                    "EXIT_CODE", "3" if outcome == "driver_failure" else "0"
+                )
+                command = self.command(output, program)
+                wrapper_program = wrapper.replace(
+                    "FAIL_CLOSE", repr(outcome == "selector_failure")
+                )
+                result = subprocess.run(
+                    [sys.executable, "-c", wrapper_program, *command[1:]],
+                    capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(
+                    result.returncode, int(outcome != "success"), result.stderr
+                )
+                if outcome == "selector_failure":
+                    self.assertIn("controlled selector close failure", result.stderr)
+                    self.assertNotIn("collector leaked", result.stderr)
+                    self.assertFalse((output / "report.json").exists())
+                    continue
+                report = json.loads((output / "report.json").read_text())
+                self.assertEqual(report["success"], outcome == "success")
+                if outcome == "driver_failure":
+                    self.assertEqual(report["driver_exit_code"], 3)
+                self.assertEqual(report["remaining_children"], [])
+                self.assertTrue(report["cleanup_confirmed"])
+
     def test_opaque_process_name_preserves_identity_residency_and_owned_signal(self):
         # /proc/<pid>/stat comm is an opaque kernel byte string, not ASCII.
         program = (
@@ -690,7 +804,12 @@ runpy.run_path(sys.argv[0], run_name='__main__')
                 MODULE, "bounded_read", side_effect=error
             ):
                 self.assertIsNone(MODULE.process_identity(123))
-                self.assertIsNone(MODULE.residency(123, 1))
+                value = MODULE.residency(123, 1)
+                self.assertEqual(value["residency_state"], "unavailable")
+                self.assertEqual(value["residency_reason"], "identity_missing")
+                self.assertIsNone(value["rss_bytes"])
+                self.assertIsNone(value["pss_bytes"])
+                self.assertIsNone(value["exit_observed_monotonic_ns"])
 
     def test_disappearing_task_keeps_other_threads_children(self):
         tasks = self.root / "tasks"
@@ -745,7 +864,87 @@ runpy.run_path(sys.argv[0], run_name='__main__')
                 MODULE, "bounded_read", return_value=b"Rss: 10 kB\nPss: 8 kB\n"
             ),
         ):
-            self.assertIsNone(MODULE.residency(123, 1))
+            value = MODULE.residency(123, 1)
+            self.assertEqual(value["residency_reason"], "identity_raced")
+            self.assertIsNone(value["rss_bytes"])
+            self.assertIsNone(value["exit_observed_monotonic_ns"])
+
+
+class ResidencyEvidenceTests(unittest.TestCase):
+    @staticmethod
+    def stat(generation=1, state="S"):
+        return f"123 (fixture) {state} 1 {'0 ' * 17}{generation}".encode()
+
+    def test_external_read_failures_have_distinct_reasons_without_exit_or_zero(self):
+        for reason in ("permission_denied", "smaps_missing", "smaps_incomplete", "zombie", "identity_changed"):
+            with self.subTest(reason=reason):
+                def read(path, limit=65536):
+                    if str(path).endswith("/stat"):
+                        return self.stat(2 if reason == "identity_changed" else 1,
+                                         "Z" if reason == "zombie" else "S")
+                    if reason == "permission_denied":
+                        raise PermissionError("controlled external smaps refusal")
+                    if reason == "smaps_missing":
+                        raise FileNotFoundError("controlled external smaps disappearance")
+                    return b"Rss: 10 kB\n"
+
+                with unittest.mock.patch.object(MODULE, "bounded_read", side_effect=read):
+                    value = MODULE.residency(123, 1)
+                self.assertEqual(value["residency_state"], "unavailable")
+                self.assertEqual(value["residency_reason"], reason)
+                self.assertIsNone(value["rss_bytes"])
+                self.assertIsNone(value["pss_bytes"])
+                self.assertIsNone(value["exit_observed_monotonic_ns"])
+
+    def test_ambiguous_disappearance_cannot_become_positive_exit(self):
+        observer = MODULE.ResidencyObserver()
+        try:
+            with unittest.mock.patch.object(MODULE, "bounded_read", side_effect=ProcessLookupError):
+                value = observer.sample(123, 1)
+            self.assertEqual(value["residency_state"], "unavailable")
+            self.assertEqual(value["residency_reason"], "identity_missing")
+            self.assertIsNone(value["exit_observed_monotonic_ns"])
+        finally:
+            observer.close()
+
+    def test_pidfd_generation_race_cannot_certify_the_wrong_process_exit(self):
+        with subprocess.Popen([sys.executable, "-c", "pass"]) as child:
+            fd = os.pidfd_open(child.pid)
+            child.wait(timeout=5)
+            duplicate = os.dup(fd)
+            observer = MODULE.ResidencyObserver()
+            reads = iter([self.stat(1), self.stat(2), self.stat(2)])
+            try:
+                with (
+                    unittest.mock.patch.object(MODULE.os, "pidfd_open", return_value=duplicate),
+                    unittest.mock.patch.object(MODULE, "bounded_read", side_effect=lambda *args: next(reads)),
+                ):
+                    value = observer.sample(123, 1)
+                self.assertEqual(value["residency_state"], "unavailable")
+                self.assertEqual(value["residency_reason"], "identity_changed")
+                self.assertIsNone(value["exit_observed_monotonic_ns"])
+                with self.assertRaises(OSError):
+                    os.fstat(duplicate)
+            finally:
+                observer.close()
+                os.close(fd)
+
+    def test_observation_descriptors_retire_without_terminating_the_owned_process(self):
+        with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read(1)"], stdin=subprocess.PIPE) as child:
+            observer = MODULE.ResidencyObserver()
+            try:
+                generation = MODULE.process_identity(child.pid)[0]
+                before = len(os.listdir("/proc/self/fd"))
+                value = observer.sample(child.pid, generation)
+                self.assertEqual(value["residency_state"], "measured")
+                self.assertEqual(len(os.listdir("/proc/self/fd")), before + 1)
+                observer.close()
+                self.assertEqual(len(os.listdir("/proc/self/fd")), before)
+                self.assertIsNone(child.poll())
+            finally:
+                observer.close()
+                child.stdin.close()
+                child.wait(timeout=5)
 
 
 if __name__ == "__main__":

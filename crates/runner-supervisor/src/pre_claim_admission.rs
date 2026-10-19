@@ -39,9 +39,9 @@ use tracing::{info, warn};
 use crate::blank_pool::BlankPoolDiagnostics;
 use crate::finalizing_admission::FinalizingAdmission;
 use crate::idle_lifecycle::{
-    IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
-    select_idle_entries_for_pressure, set_idle_status_snapshot,
+    IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
+    ReservedIdleActivation, SharedIdlePool, reserve_reusable_idle_for_spawn,
+    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 
 /// Narrow, borrowed composition inputs required for the admission-to-claim transaction.
@@ -49,7 +49,7 @@ use crate::idle_lifecycle::{
 pub struct PreClaimResources<'a> {
     pub runner_identity: RunnerProcessIdentity,
     pub idle_pool: &'a SharedIdlePool,
-    pub status: &'a StatusTracker,
+    pub status: &'a Arc<StatusTracker>,
     pub mode_rx: &'a watch::Receiver<RunnerMode>,
     pub cancel_tokens: &'a RunCancellationRegistry,
     pub provider: &'a dyn JobProvider,
@@ -349,15 +349,25 @@ async fn claim_with_local_admission(
     let resource = match resource {
         Some(resource) => resource,
         None => {
-            let (resource, selection) = acquire_local_admission_resource(
+            let allow_compatible_blank = !(ctx.has_home_cache
+                && candidate.reuse_key().is_some_and(|reuse_key| {
+                    ctx.home_cache_snapshot
+                        .might_contain_home_cache_reuse_key(reuse_key)
+                }));
+            let Some((resource, selection)) = acquire_local_admission_resource(
                 &candidate,
                 profile_name,
                 job_vcpu,
                 job_memory,
                 device_rate_limits,
+                allow_compatible_blank,
                 ctx,
             )
-            .await?;
+            .await
+            else {
+                record_home_admission_deferral(&candidate, ctx, "capacity_exhausted");
+                return None;
+            };
             blank_pool_selection = selection;
             resource
         }
@@ -441,24 +451,41 @@ async fn claim_with_local_admission(
                 let claimed = ctx.provider.claim(candidate).await;
                 (claimed, Instant::now())
             };
-            let preparation = prepare_exact_speculation(*reservation, run_id);
-            let ((claimed, claim_returned_at), preparation) = tokio::join!(claim, preparation);
-            let speculation = ExactSpeculation {
-                outcome: preparation.outcome,
-                sandbox_id,
-                idle_snapshot,
-                preparation_started_at: preparation.started_at,
-                preparation_completed_at: preparation.completed_at,
-                claim_started_at,
-                claim_returned_at,
-                unpark: preparation.unpark,
-                guest_restore: preparation.guest_restore,
+            let preparation = async {
+                let journal = match ctx.status.set_idle_snapshot(idle_snapshot.clone()).await {
+                    Ok(true) => Ok(()),
+                    // A newer in-memory revision can still be waiting for IO.
+                    // Persist the current status, never the superseded inventory.
+                    Ok(false) => ctx.status.retry_unpublished_snapshot().await,
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = journal {
+                    warn!(%error, "failed to persist exact speculation idle reservation");
+                    return Err(reservation);
+                }
+                Ok(prepare_exact_speculation(*reservation, run_id).await)
             };
-            (
-                claimed,
-                AdmittedResource::ExactSpeculation(speculation),
-                claim_returned_at,
-            )
+            let ((claimed, claim_returned_at), preparation) = tokio::join!(claim, preparation);
+            let resource = match preparation {
+                Ok(preparation) => AdmittedResource::ExactSpeculation(ExactSpeculation {
+                    outcome: preparation.outcome,
+                    sandbox_id,
+                    idle_snapshot,
+                    preparation_started_at: preparation.started_at,
+                    preparation_completed_at: preparation.completed_at,
+                    claim_started_at,
+                    claim_returned_at,
+                    unpark: preparation.unpark,
+                    guest_restore: preparation.guest_restore,
+                }),
+                // The Guest is still parked. Claimed activation must persist
+                // Preparing before unpark; rejection restores this same owner.
+                Err(reservation) => AdmittedResource::Reusable(ReservedIdleActivation::new(
+                    *reservation,
+                    idle_snapshot,
+                )),
+            };
+            (claimed, resource, claim_returned_at)
         }
         LocalAdmissionResource::Finalizing(finalizing) => {
             let claimed = ctx.provider.claim(candidate).await;
@@ -633,7 +660,7 @@ async fn prepare_ranked_preference_candidate(
         .await
     {
         return if reservation.guest_timezone_intent().is_usable_prediction() {
-            exact_speculative_preparation(candidate, reservation, ctx).await
+            exact_speculative_preparation(candidate, reservation)
         } else {
             reusable_preparation(candidate, reservation)
         };
@@ -686,12 +713,21 @@ async fn prepare_ranked_preference_candidate(
         if ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
             && has_compatible_home(reuse_key, profile_name, ctx)
         {
-            if let Some(lease) = ResourceBudget::try_reserve_lease(ctx.budget, job_vcpu, job_memory)
+            if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+                &candidate,
+                profile_name,
+                job_vcpu,
+                job_memory,
+                device_rate_limits,
+                false,
+                ctx,
+            )
+            .await
             {
                 return PreferencePreparation::Ready(PreparedCandidate {
                     candidate,
-                    resource: Some(LocalAdmissionResource::Fresh(lease)),
-                    blank_pool_selection: None,
+                    resource: Some(resource),
+                    blank_pool_selection,
                 });
             }
             "capacity_exhausted"
@@ -743,25 +779,12 @@ fn reusable_preparation(
     })
 }
 
-async fn exact_speculative_preparation(
+fn exact_speculative_preparation(
     candidate: JobCandidate,
     reservation: ReservedIdleActivation,
-    ctx: &PreClaimResources<'_>,
 ) -> PreferencePreparation {
     let sandbox_id = reservation.sandbox_id();
     let (reservation, idle_snapshot) = reservation.into_parts();
-    if let Err(error) = ctx.status.set_idle_snapshot(idle_snapshot.clone()).await {
-        warn!(%error, "failed to persist exact speculation idle reservation");
-        rollback_reserved_idle_for_spawn(
-            ReservedIdleActivation::new(reservation, idle_snapshot),
-            ctx.idle_pool,
-            ctx.status,
-            ctx.reuse_state_notify,
-            ctx.idle_destroy_tracker,
-        )
-        .await;
-        return ordinary_preparation(candidate);
-    }
     PreferencePreparation::Ready(PreparedCandidate {
         candidate,
         resource: Some(LocalAdmissionResource::ExactSpeculative(
@@ -871,16 +894,15 @@ async fn acquire_local_admission_resource(
     job_vcpu: u32,
     job_memory: u32,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
+    allow_compatible_blank: bool,
     ctx: &PreClaimResources<'_>,
 ) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
-    let home_cache_possible = ctx.has_home_cache
-        && candidate.reuse_key().is_some_and(|reuse_key| {
-            ctx.home_cache_snapshot
-                .might_contain_home_cache_reuse_key(reuse_key)
-        });
-    let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
+    let IdlePressureOutcome {
+        selection,
+        blank_pool_selection,
+        idle_snapshot,
+    } = select_idle_entries_for_pressure(
         ctx.idle_pool,
-        ctx.status,
         ctx.idle_destroy_tracker,
         ctx.budget,
         Vec::new(),
@@ -890,7 +912,7 @@ async fn acquire_local_admission_resource(
             profile_name,
             device_rate_limits,
             history_generation_run_id: None,
-            allow_compatible_blank: !home_cache_possible,
+            allow_compatible_blank,
             blank_pool_diagnostics: Some(ctx.blank_pool_diagnostics),
             vcpu: job_vcpu,
             memory_mb: job_memory,
@@ -898,33 +920,24 @@ async fn acquire_local_admission_resource(
         },
     )
     .await;
+    if let Some(snapshot) = idle_snapshot {
+        let status = Arc::clone(ctx.status);
+        ctx.idle_destroy_tracker.spawn_cleanup(
+            async move { set_idle_status_snapshot(&status, snapshot).await },
+            "candidate_admission_idle_status",
+        );
+    }
     match selection {
         IdlePressureSelection::Reusable(reservation) => Some((
             LocalAdmissionResource::Reusable(reservation),
             blank_pool_selection,
         )),
         IdlePressureSelection::Fresh(lease) => {
-            if let Some(reuse_key) = candidate.reuse_key()
-                && let Some(reservation) = reserve_reusable_idle_for_spawn(
-                    ctx.idle_pool,
-                    reuse_key,
-                    profile_name,
-                    device_rate_limits,
-                    None,
-                )
-                .await
-            {
-                drop(lease);
-                return Some((
-                    LocalAdmissionResource::Reusable(reservation),
-                    blank_pool_selection,
-                ));
-            }
+            // Claimed activation rechecks the pool, so claim need not wait for it.
             Some((LocalAdmissionResource::Fresh(lease), blank_pool_selection))
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
             drop(retiring_leases);
-            record_home_admission_deferral(candidate, ctx, "capacity_exhausted");
             None
         }
     }
@@ -1086,6 +1099,9 @@ pub async fn rollback_exact_speculation_outcome(
 
 #[cfg(test)]
 mod tests {
+    mod fresh_claim;
+    mod stale_journal;
+
     use super::*;
     use runner_provider::{ActiveRunnerPreference, RunnerPreferenceClaimState};
     use std::time::Duration;

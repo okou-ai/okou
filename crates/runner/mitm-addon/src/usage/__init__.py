@@ -18,14 +18,15 @@ The stable facade covers:
   through the Runner-private control socket.
 
 Production consumers use this package facade for proxy hooks and response
-processing, runner flush lifecycle and terminal reporting, and retained
-diagnostic telemetry.
+processing, runner flush lifecycle, and terminal billing reporting.
+Process diagnostics emit directly through ``addon_process_logging`` with one
+best-effort nonblocking stderr write; they are not retained usage delivery work.
 Tests should exercise public hook, provider, and lifecycle paths at their
 observable boundaries: runner-visible pending state and in-flight accounting,
 plus the local HTTP webhook boundary. Avoid patching private transport internals.
 Delivery admission tests may target the production ``usage.webhook`` enqueue
-boundary used by buffered usage and diagnostic telemetry; retry and transport
-helpers remain private.
+boundary used by buffered billing usage; retry and transport helpers remain
+private.
 """
 
 from . import webhook
@@ -63,8 +64,10 @@ from .openai_responses import (
     create_openai_responses_sse_usage_extractor,
     extract_openai_responses_usage_from_event,
     inspect_openai_responses_client_event_json,
+    inspect_openai_responses_client_event_steps,
     inspect_openai_responses_event_json,
     inspect_openai_responses_server_event,
+    inspect_openai_responses_server_event_steps,
     merge_openai_responses_usage_result,
 )
 from .providers.connectors import (
@@ -110,8 +113,10 @@ __all__ = [
     "has_positive_model_provider_usage",
     "increment_in_flight_flows",
     "inspect_openai_responses_client_event_json",
+    "inspect_openai_responses_client_event_steps",
     "inspect_openai_responses_event_json",
     "inspect_openai_responses_server_event",
+    "inspect_openai_responses_server_event_steps",
     "is_model_provider_usage_billable",
     "log_ignored_model_provider_usage_source",
     "log_terminal_model_provider_usage_sources",

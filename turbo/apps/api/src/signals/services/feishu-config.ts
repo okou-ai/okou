@@ -1,6 +1,7 @@
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
+  type UserFeatureSwitchOverrideRow,
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -15,8 +16,6 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { webUrl } from "../../lib/web-url";
-import type { Db } from "../external/db";
-import { decryptPersistentSecretValue } from "./crypto.utils";
 
 export interface FeishuInstallationConfig {
   readonly id: string;
@@ -32,12 +31,23 @@ export interface FeishuInstallationConfig {
   readonly callbackVerified: boolean;
 }
 
-export async function loadFeishuInstallationConfig(
-  db: Db,
-  installationId: string,
-): Promise<FeishuInstallationConfig | null> {
-  const [installation] = await db
-    .select({
+type FeishuInstallationConfigRow = Pick<
+  typeof feishuOrgInstallations.$inferSelect,
+  | "id"
+  | "orgId"
+  | "ownerUserId"
+  | "appId"
+  | "platform"
+  | "botOpenId"
+  | "encryptedAppSecret"
+  | "encryptedVerificationToken"
+  | "encryptedEncryptKey"
+  | "callbackVerifiedAt"
+>;
+
+export function feishuInstallationConfigReadPlan(installationId: string) {
+  return {
+    columns: {
       id: feishuOrgInstallations.id,
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
@@ -49,22 +59,16 @@ export async function loadFeishuInstallationConfig(
         feishuOrgInstallations.encryptedVerificationToken,
       encryptedEncryptKey: feishuOrgInstallations.encryptedEncryptKey,
       callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
-    })
-    .from(feishuOrgInstallations)
-    .where(eq(feishuOrgInstallations.id, installationId))
-    .limit(1);
-  if (!installation || !(await isFeishuInstallationEnabled(db, installation))) {
-    return null;
-  }
-  const context = { orgId: installation.orgId };
-  const [appSecret, verificationToken, encryptKey] = await Promise.all([
-    decryptPersistentSecretValue(installation.encryptedAppSecret, context),
-    decryptPersistentSecretValue(
-      installation.encryptedVerificationToken,
-      context,
-    ),
-    decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
-  ]);
+    },
+    condition: eq(feishuOrgInstallations.id, installationId),
+  };
+}
+
+export function feishuInstallationConfigFromSecrets(
+  installation: FeishuInstallationConfigRow,
+  secrets: readonly [string, string, string],
+): FeishuInstallationConfig {
+  const [appSecret, verificationToken, encryptKey] = secrets;
   return {
     id: installation.id,
     orgId: installation.orgId,
@@ -152,36 +156,35 @@ export function buildFeishuChatOpenUrl(
   return url.toString();
 }
 
-export async function isFeishuInstallationEnabled(
-  db: Db,
-  installation: {
-    readonly platform: FeishuPlatform;
-    readonly orgId: string;
-    readonly ownerUserId: string | null;
-  },
-): Promise<boolean> {
+export function feishuInstallationAvailabilityReadPlan(installation: {
+  readonly platform: FeishuPlatform;
+  readonly orgId: string;
+  readonly ownerUserId: string | null;
+}) {
   if (installation.platform === "feishu") {
-    return true;
+    return { kind: "resolved", enabled: true } as const;
   }
   if (!installation.ownerUserId) {
-    return false;
+    return { kind: "resolved", enabled: false } as const;
   }
-  const featureSwitchContextRows0 = await db
-    .select({
+  return {
+    kind: "read",
+    scope: { orgId: installation.orgId, userId: installation.ownerUserId },
+    columns: {
       userId: userFeatureSwitches.userId,
       switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(
-      userFeatureSwitchRowCondition(
-        installation.orgId,
-        installation.ownerUserId,
-      ),
-    );
-  const context = featureSwitchContextFromRows(
-    installation.orgId,
-    installation.ownerUserId,
-    featureSwitchContextRows0,
-  );
+    },
+    condition: userFeatureSwitchRowCondition(
+      installation.orgId,
+      installation.ownerUserId,
+    ),
+  } as const;
+}
+
+export function feishuInstallationEnabledFromRows(
+  scope: { readonly orgId: string; readonly userId: string },
+  rows: readonly UserFeatureSwitchOverrideRow[],
+): boolean {
+  const context = featureSwitchContextFromRows(scope.orgId, scope.userId, rows);
   return isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, context);
 }

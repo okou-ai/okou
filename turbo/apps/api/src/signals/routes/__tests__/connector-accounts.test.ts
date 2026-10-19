@@ -7,6 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
   builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
@@ -57,7 +58,9 @@ function authHeaders() {
 }
 
 function accountClient() {
-  return setupApp({ context, routes })(connectorAccountsContract);
+  return setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  );
 }
 
 function connectorClient() {
@@ -81,7 +84,7 @@ function customConnectorValuesClient() {
 }
 
 async function deleteBuiltinAccountPage(
-  connectorSlug: "openai" | "github",
+  connectorSlug: "openai" | "github" | "public-mcp",
   connections: readonly { readonly id: string }[],
 ): Promise<void> {
   const accountsApi = accountClient();
@@ -114,7 +117,7 @@ async function deleteBuiltinAccountPage(
 async function cleanupFixture(fixture: Fixture): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const accountsApi = accountClient();
-  for (const connectorSlug of ["openai", "github"] as const) {
+  for (const connectorSlug of ["openai", "github", "public-mcp"] as const) {
     let hasBuiltinAccounts = true;
     while (hasBuiltinAccounts) {
       const accounts = await accept(
@@ -1279,10 +1282,22 @@ describe("connector account lifecycle routes", () => {
   });
 
   async function createAccounts(accountCount: number): Promise<string[]> {
-    await seedFixture();
+    // The case owns this database, so central teardown closes it without
+    // listing and deleting each temporary account through the API.
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
     const createdAccountIds: string[] = [];
-    const connectorsApi = connectorClient();
+    // Account pagination does not depend on credential storage. Connect real
+    // public accounts instead of provisioning an API key for every row.
+    const connectorsApi = (
+      await setupApp({
+        context,
+        routes: builtinConnectorsRoutes.filter(({ route }) => {
+          return route === builtinConnectorNoAuthGrantContract.connect;
+        }),
+        isolatePg: true,
+      })
+    )(builtinConnectorNoAuthGrantContract);
     // Up to sixteen owned streams keep requests moving without unbounded
     // fan-out. Wait for every stream before fixture cleanup after a failure.
     const created = await Promise.allSettled(
@@ -1292,11 +1307,10 @@ describe("connector account lifecycle routes", () => {
           const response = await accept(
             connectorsApi.connect({
               headers: authHeaders(),
-              params: { connectorSlug: "openai" },
+              params: { connectorSlug: "public-mcp" },
               body: {
-                authMethod: "api-token",
+                authMethod: "none",
                 account: { intent: "add", displayName: label },
-                values: { apiKey: `sk-${label}` },
               },
             }),
             [200],
@@ -1318,7 +1332,7 @@ describe("connector account lifecycle routes", () => {
     const firstTwo = await accept(
       accountClient().connections({
         headers: authHeaders(),
-        query: { kind: "builtin", connectorSlug: "openai", limit: 2 },
+        query: { kind: "builtin", connectorSlug: "public-mcp", limit: 2 },
       }),
       [200],
     );
@@ -1335,7 +1349,7 @@ describe("connector account lifecycle routes", () => {
       accountClient().setDefault({
         headers: authHeaders(),
         params: { connectionId: outsideFirstTwo },
-        body: { target: { kind: "builtin", connectorSlug: "openai" } },
+        body: { target: { kind: "builtin", connectorSlug: "public-mcp" } },
       }),
       [200],
     );
@@ -1348,7 +1362,7 @@ describe("connector account lifecycle routes", () => {
         headers: authHeaders(),
         query: {
           kind: "builtin",
-          connectorSlug: "openai",
+          connectorSlug: "public-mcp",
           limit: 1,
           includeScopeMismatch: "true",
         },
@@ -1370,8 +1384,7 @@ describe("connector account lifecycle routes", () => {
     let createdAccountIds: string[];
 
     beforeEach(async () => {
-      // Pagination changes accounts, not catalog generations. Use the existing
-      // shared fixed catalog; the tracker still owns all 101 API-created accounts.
+      // Each case gets the fixed catalog and owns all 101 API-created accounts.
       createdAccountIds = await createAccounts(101);
     });
 
@@ -1384,7 +1397,7 @@ describe("connector account lifecycle routes", () => {
             headers: authHeaders(),
             query: {
               kind: "builtin",
-              connectorSlug: "openai",
+              connectorSlug: "public-mcp",
               limit: 23,
               ...(cursor ? { cursor } : {}),
             },
@@ -1407,7 +1420,7 @@ describe("connector account lifecycle routes", () => {
       );
       expect(summary.body.summaries).toContainEqual(
         expect.objectContaining({
-          target: { kind: "builtin", connectorSlug: "openai" },
+          target: { kind: "builtin", connectorSlug: "public-mcp" },
           accountCount: 101,
         }),
       );
@@ -1419,7 +1432,7 @@ describe("connector account lifecycle routes", () => {
           headers: authHeaders(),
           query: {
             kind: "builtin",
-            connectorSlug: "openai",
+            connectorSlug: "public-mcp",
             limit: 100,
             search: "Bulk 042",
           },
@@ -1434,7 +1447,7 @@ describe("connector account lifecycle routes", () => {
       const firstPage = await accept(
         accountClient().connections({
           headers: authHeaders(),
-          query: { kind: "builtin", connectorSlug: "openai", limit: 23 },
+          query: { kind: "builtin", connectorSlug: "public-mcp", limit: 23 },
         }),
         [200],
       );
@@ -1454,7 +1467,7 @@ describe("connector account lifecycle routes", () => {
           headers: authHeaders(),
           params: { connectionId: accountOutsideFirstPage },
           body: {
-            target: { kind: "builtin", connectorSlug: "openai" },
+            target: { kind: "builtin", connectorSlug: "public-mcp" },
             displayName: null,
           },
         }),
@@ -1465,7 +1478,7 @@ describe("connector account lifecycle routes", () => {
           headers: authHeaders(),
           query: {
             kind: "builtin",
-            connectorSlug: "openai",
+            connectorSlug: "public-mcp",
             limit: 100,
             search: accountOutsideFirstPage.slice(0, 8),
           },
@@ -1486,7 +1499,7 @@ describe("connector account lifecycle routes", () => {
           headers: authHeaders(),
           query: {
             kind: "builtin",
-            connectorSlug: "openai",
+            connectorSlug: "public-mcp",
             limit: 100,
             search: "no-matching-connector-account",
           },
@@ -1505,7 +1518,7 @@ describe("connector account lifecycle routes", () => {
           headers: authHeaders(),
           query: {
             kind: "builtin",
-            connectorSlug: "openai",
+            connectorSlug: "public-mcp",
             limit: 100,
             search: " ",
           },

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import {
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   formatRunErrorForExternalSurface,
@@ -7,11 +6,14 @@ import {
 import { knownRunFailureReasonSchema } from "../run-failure-reasons";
 import { webhookCompleteContract, webhookTelemetryContract } from "../webhooks";
 
-const legacyMetric = {
+const metric = {
   ts: "2026-10-10T00:00:00Z",
   cpu: 1,
   mem_used: 10,
   mem_total: 100,
+};
+const legacyMetric = {
+  ...metric,
   disk_used: 20,
   disk_total: 100,
 };
@@ -46,28 +48,49 @@ describe("independent filesystem telemetry compatibility", () => {
   });
 
   it("preserves separate byte/inode observations and real zero", () => {
-    const metric = { ...legacyMetric, rootfs, home };
+    const observed = { ...metric, rootfs, home };
+    expect(parse(observed).metrics).toStrictEqual([observed]);
+    expect(parse({ ...metric, rootfs }).metrics).toStrictEqual([
+      { ...metric, rootfs },
+    ]);
+    expect(parse({ ...metric, home }).metrics).toStrictEqual([
+      { ...metric, home },
+    ]);
     expect(parse(metric).metrics).toStrictEqual([metric]);
-    expect(parse({ ...legacyMetric, rootfs }).metrics).toStrictEqual([
-      { ...legacyMetric, rootfs },
-    ]);
-    expect(parse({ ...legacyMetric, home }).metrics).toStrictEqual([
-      { ...legacyMetric, home },
-    ]);
   });
 
-  it("new writers retain the legacy fields accepted by the outgoing tolerant reader", () => {
-    const outgoingMetric = z.object({
-      ts: z.string(),
-      cpu: z.number(),
-      mem_used: z.number(),
-      mem_total: z.number(),
-      disk_used: z.number(),
-      disk_total: z.number(),
+  it.each([
+    { disk_used: 0 },
+    { disk_total: 0 },
+    { disk_used: 0, disk_total: 0 },
+  ])("preserves independently supplied legacy numbers: %j", (legacyFields) => {
+    const observed = { ...metric, ...legacyFields, rootfs, home };
+    expect(parse(observed).metrics).toStrictEqual([observed]);
+  });
+
+  it.each(["disk_used", "disk_total"])(
+    "validates %s when supplied",
+    (field) => {
+      for (const invalid of [null, "20"]) {
+        expect(
+          webhookTelemetryContract.send.body.safeParse({
+            runId: "run",
+            metrics: [{ ...metric, [field]: invalid, rootfs, home }],
+          }).success,
+        ).toBe(false);
+      }
+    },
+  );
+
+  it("preserves mixed old and pair-free metrics with unavailable observations in one batch", () => {
+    const metrics = [legacyMetric, { ...metric, rootfs, home }, metric];
+    const body = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      systemLog: "preserved",
+      metrics,
     });
-    expect(
-      outgoingMetric.parse({ ...legacyMetric, rootfs, home }),
-    ).toStrictEqual(legacyMetric);
+    expect(body.systemLog).toBe("preserved");
+    expect(body.metrics).toStrictEqual(metrics);
   });
 
   it.each([
@@ -85,22 +108,21 @@ describe("independent filesystem telemetry compatibility", () => {
   ])(
     "drops a malformed optional observation without rejecting its batch: %j",
     (invalid) => {
-      const body = parse({ ...legacyMetric, rootfs, home: invalid });
+      const body = parse({ ...metric, rootfs, home: invalid });
       expect(body.systemLog).toBe("preserved");
       expect(body.metrics).toStrictEqual([
-        { ...legacyMetric, rootfs, home: undefined },
+        { ...metric, rootfs, home: undefined },
       ]);
-      expect(
-        parse({ ...legacyMetric, rootfs: invalid, home }).metrics,
-      ).toStrictEqual([{ ...legacyMetric, rootfs: undefined, home }]);
+      expect(parse({ ...metric, rootfs: invalid, home }).metrics).toStrictEqual(
+        [{ ...metric, rootfs: undefined, home }],
+      );
     },
   );
 
   it("strips extra path-bearing observation fields", () => {
     expect(
-      parse({ ...legacyMetric, rootfs: { ...rootfs, path: "private" } })
-        .metrics,
-    ).toStrictEqual([{ ...legacyMetric, rootfs }]);
+      parse({ ...metric, rootfs: { ...rootfs, path: "private" } }).metrics,
+    ).toStrictEqual([{ ...metric, rootfs }]);
   });
 });
 

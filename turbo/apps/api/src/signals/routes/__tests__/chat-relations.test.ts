@@ -49,7 +49,7 @@ async function enable(actor: ApiTestUser, enabled = true) {
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.ChatRelations]: enabled },
+    { [FeatureSwitchKey.ChatResourcePanel]: enabled },
   );
 }
 async function sourceFixture() {
@@ -70,10 +70,10 @@ async function sourceFixture() {
 }
 
 describe("chat relationships", () => {
-  it("records empty chat creation once and paginates without inferring human-created children", async () => {
+  it("returns all created chats once without inferring human-created children", async () => {
     const { actor, agentId, source, claimed, token } = await sourceFixture();
     const createdIds: string[] = [];
-    for (let index = 0; index < 3; index++) {
+    for (let index = 0; index < 51; index++) {
       const clientThreadId = randomUUID();
       const request = {
         headers: { authorization: `Bearer ${token}` },
@@ -94,34 +94,20 @@ describe("chat relationships", () => {
       }),
       [201],
     );
-    const first = await accept(
+    const all = await accept(
       relations.children({
         headers: headers(actor),
         params: { id: source.threadId },
-        query: { limit: 1 },
       }),
       [200],
     );
-    expect(first.body.items).toHaveLength(1);
-    expect(first.body.items[0]).toMatchObject({
+    expect(all.body.items).toHaveLength(createdIds.length);
+    expect(all.body.items[0]).toMatchObject({
       sourceRunId: source.runId,
       status: "idle",
     });
-    const cursor = first.body.nextCursor;
-    if (!cursor) {
-      throw new Error("Expected another page");
-    }
-    const rest = await accept(
-      relations.children({
-        headers: headers(actor),
-        params: { id: source.threadId },
-        query: { limit: 5, before: cursor.createdAt, beforeId: cursor.id },
-      }),
-      [200],
-    );
-    expect(rest.body.nextCursor).toBeNull();
     expect(
-      [...first.body.items, ...rest.body.items]
+      all.body.items
         .map((item) => {
           return item.threadId;
         })
@@ -131,7 +117,6 @@ describe("chat relationships", () => {
       relations.communications({
         headers: headers(actor),
         params: { id: source.threadId },
-        query: {},
       }),
       [200],
     );
@@ -180,7 +165,6 @@ describe("chat relationships", () => {
       relations.messages({
         headers: headers(actor),
         params: { id: source.threadId, peerId: peer.id },
-        query: {},
       }),
       [200],
     );
@@ -220,7 +204,6 @@ describe("chat relationships", () => {
       relations.messages({
         headers: headers(actor),
         params: { id: source.threadId, peerId: peer.id },
-        query: { limit: 1 },
       }),
       [200],
     );
@@ -228,7 +211,6 @@ describe("chat relationships", () => {
       messageEventId: replyId,
       targetRunId: source.runId,
     });
-    expect(consumed.body.nextCursor).not.toBeNull();
     const recalledId = randomUUID();
     await requestSendEventWithBearer(
       token,
@@ -254,7 +236,6 @@ describe("chat relationships", () => {
       relations.messages({
         headers: headers(actor),
         params: { id: source.threadId, peerId: peer.id },
-        query: {},
       }),
       [200],
     );
@@ -282,7 +263,6 @@ describe("chat relationships", () => {
       relations.communications({
         headers: headers(actor),
         params: { id: source.threadId },
-        query: {},
       }),
       [200],
     );
@@ -290,7 +270,6 @@ describe("chat relationships", () => {
       relations.communications({
         headers: headers(actor),
         params: { id: peer.id },
-        query: {},
       }),
       [200],
     );
@@ -304,12 +283,84 @@ describe("chat relationships", () => {
       relations.children({
         headers: headers(actor),
         params: { id: source.threadId },
-        query: {},
       }),
       [200],
     );
     expect(children.body.items).toStrictEqual([]);
     await cancelChatRun(actor, peerRunId, peerClaim.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+  });
+
+  it("returns complete communication lists and message histories", async () => {
+    const { actor, agentId, source, claimed, token } = await sourceFixture();
+    const peerIds: string[] = [];
+    const messageIds: string[] = [];
+    for (let index = 0; index < 6; index++) {
+      const peer = await chat.createThread(actor, { agentId });
+      peerIds.push(peer.id);
+      const messageCount = index === 0 ? 21 : 1;
+      for (let messageIndex = 0; messageIndex < messageCount; messageIndex++) {
+        const clientEventId = randomUUID();
+        await requestSendEventWithBearer(
+          token,
+          {
+            agentId,
+            threadId: peer.id,
+            clientEventId,
+            model: "claude-fable-5-1",
+            prompt: `Message ${index}-${messageIndex}`,
+          },
+          [201],
+        );
+        if (index === 0) {
+          messageIds.push(clientEventId);
+        }
+      }
+    }
+    const communications = await accept(
+      relations.communications({
+        headers: headers(actor),
+        params: { id: source.threadId },
+      }),
+      [200],
+    );
+    expect(
+      communications.body.items
+        .map((item) => {
+          return item.threadId;
+        })
+        .sort(),
+    ).toStrictEqual([...peerIds].sort());
+    const peerId = peerIds[0];
+    if (!peerId) {
+      throw new Error("Expected a related chat");
+    }
+    const messages = await accept(
+      relations.messages({
+        headers: headers(actor),
+        params: { id: source.threadId, peerId },
+      }),
+      [200],
+    );
+    expect(
+      messages.body.items
+        .map((item) => {
+          return item.messageEventId;
+        })
+        .sort(),
+    ).toStrictEqual([...messageIds].sort());
+    expect(
+      messages.body.items.map((item) => {
+        return item.createdAt;
+      }),
+    ).toStrictEqual(
+      messages.body.items
+        .map((item) => {
+          return item.createdAt;
+        })
+        .sort()
+        .reverse(),
+    );
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
@@ -335,7 +386,6 @@ describe("chat relationships", () => {
       relations.children({
         headers: headers(actor),
         params: { id: source.threadId },
-        query: {},
       }),
       [200],
     );
@@ -346,7 +396,6 @@ describe("chat relationships", () => {
       relations.messages({
         headers: headers(actor),
         params: { id: source.threadId, peerId: sent.body.threadId },
-        query: {},
       }),
       [200],
     );
@@ -360,7 +409,6 @@ describe("chat relationships", () => {
         relations.children({
           headers: headers(other),
           params: { id },
-          query: {},
         }),
         [404],
       );
@@ -374,7 +422,6 @@ describe("chat relationships", () => {
       relations.communications({
         headers: headers(otherOrg),
         params: { id: source.threadId },
-        query: {},
       }),
       [404],
     );
@@ -383,7 +430,6 @@ describe("chat relationships", () => {
       relations.children({
         headers: headers(actor),
         params: { id: source.threadId },
-        query: {},
       }),
       [403],
     );

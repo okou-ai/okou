@@ -1078,8 +1078,7 @@ export function disconnectedPersonalAccountCleanupSql(
   ];
 }
 
-interface SubscriptionCredentialOwner {
-  readonly db: Db;
+export interface PersonalSubscriptionCredentialScope {
   readonly orgId: string;
   readonly userId: string;
   readonly type: PersonalSubscriptionProviderType;
@@ -1089,43 +1088,55 @@ interface SubscriptionCredentialOwner {
 }
 
 /** One non-locking statement for the exact account and its whole ciphertext
- * bundle. Callers decrypt after it returns, never inside a transaction. */
-async function readAccountCiphertexts(
-  args: Omit<SubscriptionCredentialOwner, "featureSwitchContext"> & {
+ * bundle. Callers execute it and decrypt afterwards, outside a transaction. */
+export function personalSubscriptionAccountCiphertextsReadPlan(
+  args: Omit<PersonalSubscriptionCredentialScope, "featureSwitchContext"> & {
     readonly sourceId: string;
   },
-): Promise<{
-  readonly account: AccountRow;
-  readonly secrets: readonly {
-    readonly name: string;
-    readonly encryptedValue: string;
-  }[];
-} | null> {
-  const rows = await args.db
-    .select({
+) {
+  return {
+    columns: {
       account: modelProviderAccounts,
       secret: {
         name: modelProviderAccountSecrets.name,
         encryptedValue: modelProviderAccountSecrets.encryptedValue,
       },
-    })
-    .from(modelProviderAccounts)
-    .leftJoin(
-      modelProviderAccountSecrets,
-      eq(
+    },
+    from: modelProviderAccounts,
+    join: {
+      table: modelProviderAccountSecrets,
+      on: eq(
         modelProviderAccountSecrets.modelProviderAccountId,
         modelProviderAccounts.id,
       ),
-    )
-    .where(
-      and(
-        eq(modelProviderAccounts.id, args.sourceId),
-        personalSubscriptionAccountAccessCondition(args.runId),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        eq(modelProviderAccounts.type, args.type),
-      ),
-    );
+    },
+    where: and(
+      eq(modelProviderAccounts.id, args.sourceId),
+      personalSubscriptionAccountAccessCondition(args.runId),
+      eq(modelProviderAccounts.orgId, args.orgId),
+      eq(modelProviderAccounts.userId, args.userId),
+      eq(modelProviderAccounts.type, args.type),
+    ),
+  };
+}
+
+export interface PersonalSubscriptionAccountCiphertexts {
+  readonly account: AccountRow;
+  readonly secrets: readonly {
+    readonly name: string;
+    readonly encryptedValue: string;
+  }[];
+}
+
+export function personalSubscriptionAccountCiphertextsFromRows(
+  rows: readonly {
+    readonly account: AccountRow;
+    readonly secret: {
+      readonly name: string;
+      readonly encryptedValue: string;
+    } | null;
+  }[],
+): PersonalSubscriptionAccountCiphertexts | null {
   const account = rows[0]?.account;
   return account
     ? {
@@ -1137,7 +1148,7 @@ async function readAccountCiphertexts(
     : null;
 }
 
-async function credentialValues(
+export async function personalSubscriptionCredentialValues(
   rows: readonly { readonly name: string; readonly encryptedValue: string }[],
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<ReadonlyMap<string, string>> {
@@ -1166,25 +1177,7 @@ async function credentialValues(
   return values;
 }
 
-/** Returns state and the complete credential bundle of the exact personal
- * account. Personal subscriptions are addressed only by their account ID. */
-export async function readPersonalSubscriptionCredentialBundle(
-  args: SubscriptionCredentialOwner,
-) {
-  if (!args.sourceId) {
-    return null;
-  }
-  const current = await readAccountCiphertexts({
-    ...args,
-    sourceId: args.sourceId,
-  });
-  return current
-    ? {
-        account: current.account,
-        values: await credentialValues(
-          current.secrets,
-          args.featureSwitchContext,
-        ),
-      }
-    : null;
-}
+export type PersonalSubscriptionCredentialBundle = {
+  account: AccountRow;
+  values: Awaited<ReturnType<typeof personalSubscriptionCredentialValues>>;
+} | null;

@@ -329,7 +329,7 @@ test("The /ill slash command selects Image", async () => {
   const user = userEvent.setup({ delay: null });
   await fill(editor, "A quiet garden /ill");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  // The panel's rows act on mousedown, which only a full pointer sequence fires.
+  // Keep a full pointer sequence covered separately from the selection matrix.
   await user.click(button("Illustration", menu));
   await closeTemplatePicker();
   await waitFor(() => {
@@ -373,7 +373,7 @@ test.each([
     const editor = await setupChips();
     await fill(editor, "Keep my launch brief /");
     const menu = await screen.findByTestId("slash-workflow-menu");
-    await userEvent.setup({ delay: null }).click(button(entry, menu));
+    click(button(entry, menu));
     const dialog = await screen.findByRole("dialog");
     click(tabByText(category));
     click(

@@ -103,16 +103,25 @@ fn check_cancel(cancel: &CancellationToken) -> io::Result<()> {
 
 #[cfg(test)]
 pub(super) fn paths(home: &HomePaths, name: &str, version: &str) -> (PathBuf, PathBuf) {
-    entry_paths(home, name, version, false)
+    entry_paths(home, name, version, EntryKind::Positive)
 }
 
-fn version_key(version: &str, rejected: bool) -> String {
-    let kind = if rejected { "rejected-" } else { "" };
-    format!("decoded-v1-{kind}{}", short_digest(version))
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryKind {
+    Positive,
+    Rejection,
 }
 
-fn entry_paths(home: &HomePaths, name: &str, version: &str, rejected: bool) -> (PathBuf, PathBuf) {
-    let key = EntryKey::new(name, version, rejected);
+fn version_key(version: &str, kind: EntryKind) -> String {
+    let prefix = match kind {
+        EntryKind::Positive => "",
+        EntryKind::Rejection => "rejected-",
+    };
+    format!("decoded-v1-{prefix}{}", short_digest(version))
+}
+
+fn entry_paths(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> (PathBuf, PathBuf) {
+    let key = EntryKey::new(name, version, kind);
     (key.directory(home), key.lock(home))
 }
 
@@ -122,13 +131,13 @@ struct EntryKey {
 }
 
 impl EntryKey {
-    fn new(name: &str, version: &str, rejected: bool) -> Self {
+    fn new(name: &str, version: &str, kind: EntryKind) -> Self {
         // The format is part of the version-directory identity. Previous
         // archive readers never open this entry; GC uses the same name/key
         // lock and recursively accounts its files, including .tmp staging.
         Self {
             name_hash: short_digest(name),
-            version_key: version_key(version, rejected),
+            version_key: version_key(version, kind),
         }
     }
 
@@ -152,8 +161,8 @@ fn open_directory(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
-fn open_entry(home: &HomePaths, name: &str, version: &str, rejected: bool) -> io::Result<File> {
-    open_version(home, name, &version_key(version, rejected))
+fn open_entry(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> io::Result<File> {
+    open_version(home, name, &version_key(version, kind))
 }
 
 fn open_version(home: &HomePaths, name: &str, version_key: &str) -> io::Result<File> {
@@ -223,7 +232,7 @@ pub(super) fn read(
     name: &str,
     version: &str,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+) -> io::Result<Option<Vec<StorageFile>>> {
     read_with_budget(
         home,
         name,
@@ -241,14 +250,30 @@ pub(super) fn read_with_budget(
     content_budget: usize,
     file_budget: usize,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+) -> io::Result<Option<Vec<StorageFile>>> {
     read_with_source_size(home, name, version, content_budget, file_budget, cancel)
-        .map(|entry| entry.map(|files| files.map(|entry| entry.files)))
+        .map(|entry| entry.map(|entry| entry.files))
 }
 
 pub(super) struct ReadFiles {
     pub(super) files: Vec<StorageFile>,
     pub(super) compressed_bytes: usize,
+}
+
+enum LookupOutcome {
+    Miss,
+    Rejected,
+    Ready(ReadFiles),
+}
+
+impl LookupOutcome {
+    fn into_ready_files(self) -> io::Result<Option<ReadFiles>> {
+        match self {
+            Self::Miss => Ok(None),
+            Self::Ready(files) => Ok(Some(files)),
+            Self::Rejected => Err(invalid("decoded cache identity or admission mismatch")),
+        }
+    }
 }
 
 pub(super) fn read_with_source_size(
@@ -258,16 +283,17 @@ pub(super) fn read_with_source_size(
     content_budget: usize,
     file_budget: usize,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<ReadFiles>>> {
+) -> io::Result<Option<ReadFiles>> {
     read_entry(
         home,
         name,
         version,
-        false,
+        EntryKind::Positive,
         content_budget,
         file_budget,
         cancel,
-    )
+    )?
+    .into_ready_files()
 }
 
 pub(super) fn is_rejected(
@@ -276,7 +302,11 @@ pub(super) fn is_rejected(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
-    read_entry(home, name, version, true, 0, 0, cancel).map(|entry| entry.is_some())
+    match read_entry(home, name, version, EntryKind::Rejection, 0, 0, cancel)? {
+        LookupOutcome::Miss => Ok(false),
+        LookupOutcome::Rejected => Ok(true),
+        LookupOutcome::Ready(_) => Err(invalid("decoded cache identity or admission mismatch")),
+    }
 }
 
 /// A fresh rejection can omit only optional warming of a still-present source.
@@ -325,13 +355,13 @@ fn read_entry(
     home: &HomePaths,
     name: &str,
     version: &str,
-    rejected: bool,
+    kind: EntryKind,
     content_budget: usize,
     file_budget: usize,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<ReadFiles>>> {
+) -> io::Result<LookupOutcome> {
     check_cancel(cancel)?;
-    let key = EntryKey::new(name, version, rejected);
+    let key = EntryKey::new(name, version, kind);
     let path = key.directory(home);
     // Most first uses have no extracted entry. A miss needs no flock or lock
     // namespace walk. Present data is still reopened and validated under its
@@ -339,7 +369,7 @@ fn read_entry(
     match fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.is_dir() => {}
         Ok(_) => return Err(invalid("decoded cache target is not a directory")),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LookupOutcome::Miss),
         Err(error) => return Err(error),
     }
     let lock_path = key.lock(home);
@@ -347,14 +377,14 @@ fn read_entry(
         .map_err(io::Error::other)?
     {
         ExistingTryLock::Acquired(lock) => lock,
-        ExistingTryLock::Busy => return Ok(None),
+        ExistingTryLock::Busy => return Ok(LookupOutcome::Miss),
         ExistingTryLock::Missing => {
             // Existing Runner GC removes free lock files independently from
             // their cached data. Recreate for the observed entry, then reopen
             // it under the validated lock (GC may have removed it meanwhile).
             match lock::try_acquire_or_busy_blocking(&lock_path).map_err(io::Error::other)? {
                 TryLock::Acquired(lock) => lock,
-                TryLock::Busy => return Ok(None),
+                TryLock::Busy => return Ok(LookupOutcome::Miss),
             }
         }
     };
@@ -362,7 +392,7 @@ fn read_entry(
         home,
         name,
         version,
-        rejected,
+        kind,
         content_budget,
         file_budget,
         cancel,
@@ -374,29 +404,34 @@ fn read_locked_entry(
     home: &HomePaths,
     name: &str,
     version: &str,
-    rejected: bool,
+    kind: EntryKind,
     content_budget: usize,
     file_budget: usize,
     cancel: &CancellationToken,
-) -> io::Result<Option<Option<ReadFiles>>> {
-    let path = EntryKey::new(name, version, rejected).directory(home);
-    let root = match open_entry(home, name, version, rejected) {
+) -> io::Result<LookupOutcome> {
+    let path = EntryKey::new(name, version, kind).directory(home);
+    let root = match open_entry(home, name, version, kind) {
         Ok(root) => root,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LookupOutcome::Miss),
         Err(error) => return Err(error),
     };
     let index: Index = serde_json::from_slice(&read_file(&root, "index.json", INDEX_LIMIT)?)
         .map_err(io::Error::other)?;
+    let index_kind = if index.files.is_some() {
+        EntryKind::Positive
+    } else {
+        EntryKind::Rejection
+    };
     if index.name != name
         || index.version != version
         || index.compressed_bytes > MAX_COMPRESSED_BYTES
-        || index.files.is_none() != rejected
+        || index_kind != kind
     {
         return Err(invalid("decoded cache identity or admission mismatch"));
     }
     let Some(metadata) = index.files else {
         touch_mtime(&path);
-        return Ok(Some(None));
+        return Ok(LookupOutcome::Rejected);
     };
     if index.compressed_bytes == 0
         || metadata.is_empty()
@@ -436,7 +471,7 @@ fn read_locked_entry(
     if total > content_budget || files.len() > file_budget {
         // A valid optional entry can miss either batch budget without reading its
         // bodies. Later smaller entries may fit; malformed metadata remains an error.
-        return Ok(None);
+        return Ok(LookupOutcome::Miss);
     }
     let data = File::from(
         openat(
@@ -458,10 +493,10 @@ fn read_locked_entry(
     }
     check_cancel(cancel)?;
     touch_mtime(&path);
-    Ok(Some(Some(ReadFiles {
+    Ok(LookupOutcome::Ready(ReadFiles {
         files,
         compressed_bytes: index.compressed_bytes,
-    })))
+    }))
 }
 
 pub(super) fn retire_archive(
@@ -519,7 +554,7 @@ pub(super) fn retire_archive(
             "retired storage archive is not a regular private file",
         ));
     }
-    let replacement_lock = EntryKey::new(name, version, false).lock(home);
+    let replacement_lock = EntryKey::new(name, version, EntryKind::Positive).lock(home);
     let _replacement =
         match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
             .map_err(io::Error::other)?
@@ -531,12 +566,12 @@ pub(super) fn retire_archive(
         home,
         name,
         version,
-        false,
+        EntryKind::Positive,
         storage_files::MAX_STORAGE_BYTES,
         storage_files::MAX_FILES,
         cancel,
     )?
-    .flatten()
+    .into_ready_files()?
     .is_none()
     {
         return Ok(false);
@@ -573,7 +608,12 @@ pub(super) fn publish(
     cancel: &CancellationToken,
 ) -> io::Result<()> {
     check_cancel(cancel)?;
-    let (path, lock_path) = entry_paths(home, name, version, files.is_none());
+    let kind = if files.is_some() {
+        EntryKind::Positive
+    } else {
+        EntryKind::Rejection
+    };
+    let (path, lock_path) = entry_paths(home, name, version, kind);
     let _lock = match lock::try_acquire_or_busy_blocking(&lock_path).map_err(io::Error::other)? {
         TryLock::Acquired(lock) => lock,
         TryLock::Busy => return Ok(()),

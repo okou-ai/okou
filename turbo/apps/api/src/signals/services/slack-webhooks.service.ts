@@ -448,86 +448,59 @@ function decryptSlackBotToken(args: {
   });
 }
 
-async function resolveDefaultComposeId(
-  db: Db,
-  orgId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return row?.defaultAgentId ?? null;
-}
-
-async function getWorkspaceAgent(
-  db: Db,
-  composeId: string,
-  orgId?: string,
-): Promise<WorkspaceAgentSummary | undefined> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      orgId
-        ? and(eq(agents.id, composeId), eq(agents.orgId, orgId))
-        : eq(agents.id, composeId),
-    )
-    .limit(1);
-  return agent;
-}
-
-async function getVisibleWorkspaceAgent(
-  db: Db,
-  composeId: string,
-  orgId: string,
-  userId: string,
-): Promise<WorkspaceAgentSummary | undefined> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, composeId),
-        eq(agents.orgId, orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
-      ),
-    )
-    .limit(1);
-  return agent;
-}
-
 async function resolveEffectiveCompose(
   db: Db,
   userId: string,
   orgId: string,
 ): Promise<EffectiveComposeResolution> {
-  const defaultAgentId = await resolveDefaultComposeId(db, orgId);
+  const defaultAgentId = await (async () => {
+    const [row] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    return row?.defaultAgentId ?? null;
+  })();
   if (!defaultAgentId) {
     return { status: "not_configured" };
   }
-  const configuredDefaultAgent = await getWorkspaceAgent(
-    db,
-    defaultAgentId,
-    orgId,
-  );
+  const configuredDefaultAgent = await (async () => {
+    const [agent] = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        displayName: agents.displayName,
+      })
+      .from(agents)
+      .where(
+        orgId
+          ? and(eq(agents.id, defaultAgentId), eq(agents.orgId, orgId))
+          : eq(agents.id, defaultAgentId),
+      )
+      .limit(1);
+    return agent;
+  })();
   if (!configuredDefaultAgent) {
     return { status: "not_found" };
   }
-  const visibleDefaultAgent = await getVisibleWorkspaceAgent(
-    db,
-    defaultAgentId,
-    orgId,
-    userId,
-  );
+  const visibleDefaultAgent = await (async () => {
+    const [agent] = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        displayName: agents.displayName,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, defaultAgentId),
+          eq(agents.orgId, orgId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
+        ),
+      )
+      .limit(1);
+    return agent;
+  })();
   if (!visibleDefaultAgent) {
     return { status: "not_accessible" };
   }
@@ -1061,13 +1034,32 @@ const handleMessagesTabOpened$ = command(
     }
     let agentName: string | undefined;
     if (installation.orgId) {
-      const composeId = await resolveDefaultComposeId(
-        args.db,
-        installation.orgId,
-      );
-      const agent = composeId
-        ? await getWorkspaceAgent(args.db, composeId)
-        : undefined;
+      const db = args.db;
+      const orgId = installation.orgId;
+      const composeId = await (async () => {
+        const [row] = await db
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .limit(1);
+        return row?.defaultAgentId ?? null;
+      })();
+      let agent: WorkspaceAgentSummary | undefined;
+      if (composeId) {
+        const db = args.db;
+        agent = await (async () => {
+          const [row] = await db
+            .select({
+              id: agents.id,
+              name: agents.name,
+              displayName: agents.displayName,
+            })
+            .from(agents)
+            .where(eq(agents.id, composeId))
+            .limit(1);
+          return row;
+        })();
+      }
       agentName = agent?.displayName ?? agent?.name;
     }
     await createSlackClient(

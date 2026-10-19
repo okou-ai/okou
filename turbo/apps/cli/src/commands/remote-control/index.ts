@@ -22,20 +22,17 @@ const metadataSchema = z.object({
   revision: z.int().positive().optional(),
   generation: z.int().positive().optional(),
   sshHosts: z.array(referenceSchema).optional(),
-  // B reader preparation. H (#40229) removes omission support after G's drain gate.
-  vncHosts: z
-    .array(
-      referenceSchema.extend({
-        roles: z
-          .array(z.enum(["rfb", "kdc"]))
-          .min(1)
-          .max(2)
-          .refine((roles) => {
-            return new Set(roles).size === roles.length;
-          }),
-      }),
-    )
-    .optional(),
+  vncHosts: z.array(
+    referenceSchema.extend({
+      roles: z
+        .array(z.enum(["rfb", "kdc"]))
+        .min(1)
+        .max(2)
+        .refine((roles) => {
+          return new Set(roles).size === roles.length;
+        }),
+    }),
+  ),
 });
 const impactSchema = z.object({
   expectedRevision: z.int().positive(),
@@ -213,7 +210,7 @@ Feature availability and organization administrator checks are enforced by the b
                 ),
               );
           print(
-            metadata(result),
+            result.status === 204 ? result.body : metadata(result.body),
             options.json,
             `Created. Use okou remote-control ${kind} show <id> for current metadata.`,
           );
@@ -277,7 +274,7 @@ Feature availability and organization administrator checks are enforced by the b
             contracts.delete.body,
           );
           print(
-            metadata(await api.delete(id, body)),
+            await api.delete(id, body),
             options.json,
             "Deleted. Refresh the configuration and host inventories.",
           );

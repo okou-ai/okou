@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 SET lock_timeout = '1s';
 --> statement-breakpoint
 -- Concurrent builds on existing streams may exceed the normal statement limit.

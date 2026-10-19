@@ -10,13 +10,9 @@ import {
   xResourceUsageEventSchema,
 } from "./x-resource-usage";
 import {
-  RESUME_SESSION_HISTORY_MAX_BYTES,
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  sessionHistoryDownloadSourceSchema,
-  sessionHistoryEncodingSchema,
-  sessionHistorySizeBucketSchema,
   secretConnectorMetadataMapSchema,
   homeReuseResultSchema,
   sandboxStartupPathSchema,
@@ -704,8 +700,11 @@ const metricDataSchema = z.object({
   scheduled_lag_ms: z.number().optional(),
   mem_used: z.number(),
   mem_total: z.number(),
-  disk_used: z.number(),
-  disk_total: z.number(),
+  // Old Guest writers/replays still supply these during the rollout. Remove
+  // them in #41244 after old producers, replay sources and incompatible rollback
+  // artifacts are excluded and retained-history consumers are migrated.
+  disk_used: z.number().optional(),
+  disk_total: z.number().optional(),
   // A bad optional filesystem sample must not reject the telemetry batch.
   rootfs: filesystemObservationSchema.optional().catch(undefined),
   home: filesystemObservationSchema.optional().catch(undefined),
@@ -716,59 +715,6 @@ const metricDataSchema = z.object({
   workload_cpu_nr_throttled: z.number().optional(),
   workload_cpu_throttled_usec: z.number().optional(),
 });
-
-const sessionHistoryCompressionRatioBucketSchema = z.enum([
-  "identity",
-  "lt_0_25",
-  "0_25_0_5",
-  "0_5_0_75",
-  "0_75_1",
-  "ge_1",
-]);
-
-const sessionHistoryPayloadBytesSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .max(RESUME_SESSION_HISTORY_MAX_BYTES);
-
-const sessionHistoryRestoreRepresentationSchema = z.enum(["raw", "codex_zstd"]);
-
-const booleanStringSchema = z.enum(["true", "false"]);
-
-const sessionHistoryContentLengthStateSchema = z.enum([
-  "absent",
-  "matches_expected",
-  "mismatches_expected",
-  "present_without_expected",
-  "oversized",
-]);
-
-const sessionHistoryContentEncodingStateSchema = z.enum([
-  "absent",
-  "gzip",
-  "zstd",
-  "other",
-]);
-
-const sessionHistoryTransferEncodingStateSchema = z.enum([
-  "absent",
-  "chunked",
-  "other",
-]);
-
-const sandboxOperationDownloadSourceSchema = z
-  .preprocess((value) => {
-    const parsed = sessionHistoryDownloadSourceSchema.safeParse(value);
-    if (parsed.success) {
-      return parsed.data;
-    }
-    if (typeof value === "string") {
-      return undefined;
-    }
-    return value;
-  }, sessionHistoryDownloadSourceSchema.optional())
-  .optional();
 
 export const runnerStartupPathSchema = z.enum([
   ...sandboxStartupPathSchema.options,
@@ -844,84 +790,6 @@ export type ArchiveConnectionAttempt = z.infer<
   typeof archiveConnectionAttemptSchema
 >;
 
-const sessionHistoryDownloadTimingMsSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .max(Number.MAX_SAFE_INTEGER);
-
-// Every offset uses the same materializer-local monotonic origin. The UTC
-// calibration permits joins without interpreting legacy recording timestamps
-// or summed attempt durations as true phase intervals. All fields are optional
-// so draining Runners and rollback API versions can coexist.
-const sessionHistoryDownloadAttributionSchema = z.object({
-  session_history_observation_stage: z
-    .enum(["restore", "cancel_drain"])
-    .optional(),
-  session_history_timing_origin_unix_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_download_attempt: z.number().int().min(1).max(3).optional(),
-  session_history_attempt_count: z.number().int().min(0).max(3).optional(),
-  session_history_failed_attempt_count: z
-    .number()
-    .int()
-    .min(0)
-    .max(3)
-    .optional(),
-  session_history_interrupted_attempt_count: z
-    .number()
-    .int()
-    .min(0)
-    .max(3)
-    .optional(),
-  session_history_retry_count: z.number().int().min(0).max(2).optional(),
-  session_history_retry_backoff_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_request_start_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_request_end_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_body_start_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_body_end_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_chunk_wait_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_chunk_wait_max_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_chunk_count: z
-    .number()
-    .int()
-    .min(0)
-    .max(4_294_967_295)
-    .optional(),
-  session_history_body_copy_ms: sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_body_allocation_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_cpu_admission_start_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_cpu_admission_end_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_cpu_queue_start_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_cpu_queue_end_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_restore_wait_start_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-  session_history_restore_wait_end_offset_ms:
-    sessionHistoryDownloadTimingMsSchema.optional(),
-});
-
-export type SessionHistoryDownloadAttribution = z.infer<
-  typeof sessionHistoryDownloadAttributionSchema
->;
-
-// The forwarding allowlist is derived only from this explicitly declared
-// schema, never from arbitrary operation keys supplied by the caller.
-export const sessionHistoryDownloadAttributionFields = Object.freeze(
-  sessionHistoryDownloadAttributionSchema.keyof().options,
-);
-
 const storageBatchEvidenceIntegerSchema = z
   .number()
   .int()
@@ -932,7 +800,6 @@ const storageBatchEvidenceIntegerSchema = z
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
 const sandboxOperationSchema = z.object({
-  ...sessionHistoryDownloadAttributionSchema.shape,
   ts: z.string(),
   action_type: z.string(),
   duration_ms: z.number(),
@@ -1084,64 +951,6 @@ const sandboxOperationSchema = z.object({
     runnerResourceBudgetUtilizationBucketSchema.optional(),
   runner_resource_budget_lease_count_bucket:
     runnerResourceBudgetLeaseCountBucketSchema.optional(),
-  encoding: sessionHistoryEncodingSchema.optional(),
-  session_history_raw_size_bucket: sessionHistorySizeBucketSchema.optional(),
-  session_history_encoded_size_bucket:
-    sessionHistorySizeBucketSchema.optional(),
-  session_history_compression_ratio_bucket:
-    sessionHistoryCompressionRatioBucketSchema.optional(),
-  session_history_ref_seen_recently: booleanStringSchema.optional(),
-  session_history_ref_download_inflight: booleanStringSchema.optional(),
-  session_history_content_length_state:
-    sessionHistoryContentLengthStateSchema.optional(),
-  session_history_content_encoding_state:
-    sessionHistoryContentEncodingStateSchema.optional(),
-  session_history_transfer_encoding_state:
-    sessionHistoryTransferEncodingStateSchema.optional(),
-  session_history_download_source: sandboxOperationDownloadSourceSchema,
-  session_history_framework: z.enum(["claude-code", "codex", "pi"]).optional(),
-  session_history_raw_bytes: sessionHistoryPayloadBytesSchema.optional(),
-  session_history_source_bytes: sessionHistoryPayloadBytesSchema.optional(),
-  // Successful history payload bytes; omitted when a local restore fails.
-  session_history_guest_bytes: sessionHistoryPayloadBytesSchema.optional(),
-  session_history_source_representation:
-    sessionHistoryRestoreRepresentationSchema.optional(),
-  session_history_restore_representation:
-    sessionHistoryRestoreRepresentationSchema.optional(),
-  session_history_restore_reason: z
-    .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
-    .optional(),
-  session_history_transfer_source: z
-    .enum(["home_cache", "downloaded", "inline"])
-    .optional(),
-  session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
-  session_history_codec_decision: z
-    .enum(["native_zstd", "source_zstd", "below_threshold", "above_threshold"])
-    .optional(),
-  // Draining Runners retain the previous sampling policy and reason field.
-  session_history_codec_reason: z
-    .enum([
-      "native_zstd",
-      "below_threshold",
-      "sample_rejected",
-      "sample_accepted",
-    ])
-    .optional(),
-  // These also describe inline history, whose existing contract has no
-  // reference-size ceiling. Keep safe integer measurements without imposing
-  // the local/ref 128 MiB limit on that separate restore path.
-  session_history_transfer_bytes: z.number().int().nonnegative().optional(),
-  session_history_wire_bytes: z.number().int().nonnegative().optional(),
-  session_history_write_requests: z.number().int().positive().optional(),
-  session_history_selection_ms: z.number().int().nonnegative().optional(),
-  session_history_file_gate_wait_ms: z.number().int().nonnegative().optional(),
-  session_history_requests_ms: z.number().int().nonnegative().optional(),
-  session_history_encoder_pipeline_ms: z
-    .number()
-    .int()
-    .nonnegative()
-    .optional(),
-  session_history_publication_ms: z.number().int().nonnegative().optional(),
 });
 
 /**

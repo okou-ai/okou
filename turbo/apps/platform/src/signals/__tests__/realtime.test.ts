@@ -762,7 +762,6 @@ test("Chat thread notifications invalidate their matching resources", async () =
           recordInvalidation("connector-preference"),
         ],
         automations: [recordInvalidation("automations")],
-        artifacts: [recordInvalidation("artifacts")],
       },
       handlers: { onWorkflowsChanged$: keepAliveLoop$ },
     },
@@ -773,7 +772,6 @@ test("Chat thread notifications invalidate their matching resources", async () =
     for (const topic of [
       "chatThreadDetailChanged",
       "chatThreadAutomationsChanged",
-      "chatThreadArtifactsChanged",
       "chatThreadWorkflowsChanged",
     ]) {
       expect(
@@ -790,25 +788,6 @@ test("Chat thread notifications invalidate their matching resources", async () =
     {
       topic: `chatThreadAutomationsChanged:${threadId}`,
       expected: ["thread-detail", "connector-preference", "automations"],
-    },
-    {
-      topic: `chatThreadArtifactsChanged:${threadId}`,
-      expected: [
-        "thread-detail",
-        "connector-preference",
-        "automations",
-        "artifacts",
-      ],
-    },
-    {
-      topic: `chatThreadArtifactsChanged:${threadId}`,
-      expected: [
-        "thread-detail",
-        "connector-preference",
-        "automations",
-        "artifacts",
-        "artifacts",
-      ],
     },
   ] as const;
   for (const notification of notifications) {
@@ -832,7 +811,6 @@ test("An initial refresh failure does not destroy live subscriptions", async () 
         invalidations: {
           threadDetail: [noopInvalidation$],
           automations: [noopInvalidation$],
-          artifacts: [noopInvalidation$],
         },
         handlers: {
           onWorkflowsChanged$: keepAliveLoop$,

@@ -359,6 +359,22 @@ function scopeTokens(scope: string | undefined): readonly string[] {
   return [...new Set(scope.split(/\s+/u).filter(Boolean))];
 }
 
+function withOfflineAccessScope(
+  scope: string | undefined,
+  metadata: AuthorizationServerMetadata,
+): string | undefined {
+  // Omitted grant_types_supported defaults to authorization_code and implicit,
+  // not refresh_token. AS-only scopes must not expand resource permissions.
+  if (
+    !scope ||
+    !metadata.scopes_supported?.includes("offline_access") ||
+    !metadata.grant_types_supported?.includes("refresh_token")
+  ) {
+    return scope;
+  }
+  return [...new Set([...scopeTokens(scope), "offline_access"])].join(" ");
+}
+
 function selectedScope(
   challengeScope: string | undefined,
   metadata: OAuthProtectedResourceMetadata,
@@ -490,7 +506,10 @@ async function discoverAutomaticOAuthAuthority(
     authorizationResponseIssParameterSupported:
       authorizationServerMetadata.authorization_response_iss_parameter_supported ===
       true,
-    scope: selectedScope(args.challengeScope, protectedResourceMetadata),
+    scope: withOfflineAccessScope(
+      selectedScope(args.challengeScope, protectedResourceMetadata),
+      authorizationServerMetadata,
+    ),
     protectedResourceMetadata,
     authorizationServerMetadata,
   };
@@ -844,6 +863,21 @@ export async function prepareMcpAutomaticOAuthReauthorization(
     context: boundClientContext(args.binding),
   });
   signal.throwIfAborted();
+  const requestedScope = withOfflineAccessScope(
+    args.requestedScope,
+    authority.authorizationServerMetadata,
+  );
+  if (
+    args.binding.registrationMethod === "dcr" &&
+    !scopeTokens(args.requestedScope).includes("offline_access") &&
+    scopeTokens(requestedScope).includes("offline_access") &&
+    !registrationCoversScope(args.binding.dcrRegistration, "offline_access")
+  ) {
+    throw new McpAutomaticOAuthError(
+      { kind: "incompatible", reason: "registration-conflict" },
+      "Existing MCP OAuth registration is not compatible with the requested scopes",
+    );
+  }
   const authorization = await automaticOAuthRemote(
     "authorization request",
     signal,
@@ -852,7 +886,7 @@ export async function prepareMcpAutomaticOAuthReauthorization(
         metadata: authority.authorizationServerMetadata,
         clientInformation,
         redirectUrl: args.redirectUri,
-        scope: args.requestedScope,
+        scope: requestedScope,
         state: args.state,
         resource: new URL(authority.resource),
       });
@@ -881,7 +915,7 @@ export async function prepareMcpAutomaticOAuthReauthorization(
     kind: "oauth",
     authorizationUrl: authorization.authorizationUrl.toString(),
     codeVerifier: authorization.codeVerifier,
-    requestedScope: args.requestedScope,
+    requestedScope: requestedScope ?? null,
     context,
   };
 }

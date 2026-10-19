@@ -1,7 +1,6 @@
 import { publicChatActor } from "../../routes/__tests__/helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 
-import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -38,7 +37,7 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
-  it("preserves independent disk samples through the metrics HTTP transport", async () => {
+  it("preserves supplied legacy dimensions and independent pair-free disk samples through the metrics HTTP transport", async () => {
     // Telemetry-client suite exception: the ingestion payload is the subject,
     // and no production read endpoint exposes these measurements. Construct
     // the run through public endpoints and keep route tests on HTTP outcomes.
@@ -54,6 +53,9 @@ describe("shared SDK ingestion", () => {
         cpu: 1,
         mem_used: 10,
         mem_total: 100,
+      };
+      const legacyMetric = {
+        ...metric,
         disk_used: 20,
         disk_total: 100,
       };
@@ -66,12 +68,12 @@ describe("shared SDK ingestion", () => {
         available_inodes: 5,
       };
       const home = {
-        used_bytes: 200,
+        used_bytes: 0,
         total_bytes: 200,
-        available_bytes: 0,
-        used_inodes: 20,
+        available_bytes: 190,
+        used_inodes: 0,
         total_inodes: 20,
-        available_inodes: 0,
+        available_inodes: 19,
       };
       const receivedMetrics: unknown[] = [];
       server.use(
@@ -101,10 +103,18 @@ describe("shared SDK ingestion", () => {
           body: {
             runId,
             metrics: [
-              metric,
+              legacyMetric,
+              { ...legacyMetric, rootfs, home },
+              { ...legacyMetric, rootfs },
+              { ...legacyMetric, home },
               { ...metric, rootfs, home },
               { ...metric, rootfs },
               { ...metric, home },
+              metric,
+              { ...metric, rootfs, home: { ...home, used_bytes: -1 } },
+              { ...metric, rootfs: { ...rootfs, used_bytes: -1 }, home },
+              { ...metric, disk_used: 0, rootfs },
+              { ...metric, disk_total: 0, home },
             ],
           },
         }),
@@ -118,8 +128,11 @@ describe("shared SDK ingestion", () => {
         cpu: metric.cpu,
         mem_used: metric.mem_used,
         mem_total: metric.mem_total,
-        disk_used: metric.disk_used,
-        disk_total: metric.disk_total,
+      };
+      const expectedLegacy = {
+        ...expected,
+        disk_used: legacyMetric.disk_used,
+        disk_total: legacyMetric.disk_total,
       };
       const rootfsDimensions = {
         rootfs_used_bytes: 20,
@@ -130,18 +143,26 @@ describe("shared SDK ingestion", () => {
         rootfs_available_inodes: 5,
       };
       const homeDimensions = {
-        home_used_bytes: 200,
+        home_used_bytes: 0,
         home_total_bytes: 200,
-        home_available_bytes: 0,
-        home_used_inodes: 20,
+        home_available_bytes: 190,
+        home_used_inodes: 0,
         home_total_inodes: 20,
-        home_available_inodes: 0,
+        home_available_inodes: 19,
       };
       expect(receivedMetrics).toStrictEqual([
-        expected,
+        expectedLegacy,
+        { ...expectedLegacy, ...rootfsDimensions, ...homeDimensions },
+        { ...expectedLegacy, ...rootfsDimensions },
+        { ...expectedLegacy, ...homeDimensions },
         { ...expected, ...rootfsDimensions, ...homeDimensions },
         { ...expected, ...rootfsDimensions },
         { ...expected, ...homeDimensions },
+        expected,
+        { ...expected, ...rootfsDimensions },
+        { ...expected, ...homeDimensions },
+        { ...expected, disk_used: 0, ...rootfsDimensions },
+        { ...expected, disk_total: 0, ...homeDimensions },
       ]);
     });
   });
@@ -401,111 +422,19 @@ describe("shared SDK ingestion", () => {
     });
   });
 
-  it("preserves workspace restore measurements through the sandbox-operation SDK transport", async () => {
+  it("preserves storage batch measurements through the sandbox-operation SDK transport", async () => {
     // Logger-suite exception: the SDK ingestion record is the subject, and no
     // production read endpoint exposes it. Exercise the real webhook so its
     // validation and field projection remain part of this transport contract.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
-      prompt: "restore workspace history",
+      prompt: "measure storage batch application",
     });
     const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
     await owned.run(async () => {
       const token = claim.sandboxToken;
       const ts = "2026-09-15T00:00:00Z";
-      const metadata = {
-        session_history_framework: "codex",
-        session_history_raw_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-        session_history_source_bytes: 1024,
-        session_history_source_representation: "codex_zstd",
-        session_history_restore_representation: "raw",
-        session_history_restore_reason: "codex_pruning_guard",
-      } as const;
-      const operation = {
-        ts,
-        action_type: "session_history_home_cache_guest_restore",
-        duration_ms: 1234,
-        success: true,
-      };
-      const measured = {
-        ...operation,
-        ...metadata,
-        session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-        session_history_ref_hash: "must-not-reach-axiom",
-      };
-      const zero = {
-        session_history_raw_bytes: 0,
-        session_history_source_bytes: 0,
-        session_history_guest_bytes: 0,
-      };
-      const transferMeasurements = {
-        ...operation,
-        action_type: "session_history_transfer",
-        session_history_framework: "codex",
-        session_history_restore_representation: "raw",
-        session_history_transfer_source: "home_cache",
-        session_history_wire_codec: "zstd",
-        session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-        session_history_wire_bytes: 1024,
-        session_history_write_requests: 9,
-        session_history_selection_ms: 0,
-        session_history_file_gate_wait_ms: 0,
-        session_history_requests_ms: 1200,
-        session_history_encoder_pipeline_ms: 1000,
-        session_history_publication_ms: 0,
-      } as const;
-      const transfer = {
-        ...transferMeasurements,
-        session_history_codec_decision: "above_threshold",
-      } as const;
-      const legacyTransfer = {
-        ...transferMeasurements,
-        session_history_codec_reason: "sample_accepted",
-      } as const;
-      const emptyTransfer = {
-        ...transfer,
-        session_history_transfer_source: "inline",
-        session_history_transfer_bytes: 0,
-        session_history_wire_bytes: 0,
-        session_history_write_requests: 1,
-        session_history_wire_codec: "none",
-        session_history_codec_decision: "below_threshold",
-        session_history_encoder_pipeline_ms: 0,
-      } as const;
-      const nativeZstdTransfer = {
-        ...transfer,
-        session_history_restore_representation: "codex_zstd",
-        session_history_wire_codec: "none",
-        session_history_codec_decision: "native_zstd",
-        session_history_wire_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-        session_history_encoder_pipeline_ms: 0,
-      } as const;
-      const sourceZstdTransfer = {
-        ...transfer,
-        session_history_framework: "pi",
-        session_history_transfer_source: "downloaded",
-        session_history_codec_decision: "source_zstd",
-        session_history_transfer_bytes: 64 * 1024,
-        session_history_wire_bytes: 1024,
-        session_history_write_requests: 1,
-        session_history_encoder_pipeline_ms: 0,
-        session_history_publication_ms: 2,
-      } as const;
-      const failedTransfer = {
-        ...operation,
-        action_type: "session_history_transfer",
-        success: false,
-        session_history_framework: "codex",
-        session_history_transfer_source: "downloaded",
-      } as const;
-      const largeInlineTransfer = {
-        ...transfer,
-        session_history_transfer_source: "inline",
-        session_history_transfer_bytes: 256 * 1024 * 1024,
-        session_history_wire_bytes: 288 * 1024 * 1024,
-        session_history_write_requests: 18,
-      } as const;
       const storageBatch = {
         ts,
         action_type: "runner_storage_manifest_batch_apply",
@@ -570,17 +499,6 @@ describe("shared SDK ingestion", () => {
           body: {
             runId,
             sandboxOperations: [
-              measured,
-              { ...operation, ...metadata, success: false },
-              { ...operation, ...zero },
-              { ...operation, action_type: "legacy_operation" },
-              transfer,
-              legacyTransfer,
-              emptyTransfer,
-              nativeZstdTransfer,
-              sourceZstdTransfer,
-              failedTransfer,
-              largeInlineTransfer,
               storageBatch,
               partialStorageBatch,
               unavailableStorageBatch,
@@ -595,40 +513,11 @@ describe("shared SDK ingestion", () => {
         _time: ts,
         source: "sandbox",
         sandbox_type: "runner",
-        op_type: operation.action_type,
-        duration_ms: operation.duration_ms,
+        op_type: storageBatch.action_type,
+        duration_ms: storageBatch.duration_ms,
         success: true,
         run_id: runId,
       };
-      for (const event of [
-        {
-          ...expected,
-          ...metadata,
-          session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
-        },
-        { ...expected, ...metadata, success: false },
-        { ...expected, ...zero },
-        { ...expected, op_type: "legacy_operation" },
-      ]) {
-        expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-          "vm0-sandbox-op-log-dev",
-          [event],
-        );
-      }
-      for (const { ts: transferTime, action_type: opType, ...fields } of [
-        transfer,
-        legacyTransfer,
-        emptyTransfer,
-        nativeZstdTransfer,
-        sourceZstdTransfer,
-        failedTransfer,
-        largeInlineTransfer,
-      ]) {
-        expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-          "vm0-sandbox-op-log-dev",
-          [{ ...expected, ...fields, _time: transferTime, op_type: opType }],
-        );
-      }
       expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
         "vm0-sandbox-op-log-dev",
         [

@@ -219,10 +219,12 @@ describe("POST /api/me/model-providers (upsert)", () => {
           return new HttpResponse(null, { status: 503 });
         }),
       );
-      const client = setupApp({
+      const app = await setupApp({
         context,
         routes: personalModelProvidersMainTestRoutes,
-      })(personalModelProvidersMainContract);
+        isolatePg: true,
+      });
+      const client = app(personalModelProvidersMainContract);
       const original = await accept(
         client.upsert({
           body: {

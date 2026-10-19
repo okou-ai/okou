@@ -20,12 +20,12 @@ const DEADLINE: Duration = Duration::from_secs(5);
 pub(super) struct LiveEpoch {
     registration: Registration,
     idle: Channel,
-    cursor: String,
+    handles: super::filesystem::Retained,
 }
 
 impl LiveEpoch {
-    pub(super) fn cursor(&self) -> &str {
-        &self.cursor
+    pub(super) fn handles(&self) -> &super::filesystem::Retained {
+        &self.handles
     }
     pub(super) async fn retire(self) -> TestResult<()> {
         let Self {
@@ -69,7 +69,7 @@ pub(super) async fn exercise(
     sandbox: &dyn Sandbox,
     run: &str,
     registry: &RunGuestChannels,
-    stale_cursor: Option<&str>,
+    stale_handles: Option<&super::filesystem::Retained>,
 ) -> TestResult<LiveEpoch> {
     let run_id: RunId = run.parse()?;
     let registration = registry
@@ -101,10 +101,11 @@ pub(super) async fn exercise(
     let mut recovered =
         tokio::time::timeout(DEADLINE, registry.open_for_sandbox(run_id, sandbox.id())).await??;
     hello(&mut recovered).await?;
-    if let Some(cursor) = stale_cursor {
-        super::filesystem::reject_cursor(&mut recovered, cursor).await?;
+    if let Some(handles) = stale_handles {
+        super::filesystem::reject_cursor(&mut recovered, &handles.cursor).await?;
+        super::file_read::reject_handle(&mut recovered, &handles.reader).await?;
     }
-    let cursor = super::filesystem::exercise(
+    let handles = super::filesystem::exercise(
         sandbox,
         &mut recovered,
         streams
@@ -131,7 +132,7 @@ pub(super) async fn exercise(
     Ok(LiveEpoch {
         registration,
         idle,
-        cursor,
+        handles,
     })
 }
 
@@ -151,7 +152,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
         send(
             channel,
-            json!({"schemaVersion":1,"type":"hello","id":id,"categories":{"diagnostics":1,"fs":2}}),
+            json!({"schemaVersion":1,"type":"hello","id":id,"categories":{"diagnostics":1,"fs":3}}),
         )
         .await?;
         match receive(channel).await? {
@@ -170,7 +171,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
                     .get("categories")
                     .and_then(|value| value.get("fs"))
                     .and_then(Value::as_u64)
-                    == Some(2) => {}
+                    == Some(3) => {}
             _ => return Err(io::Error::other("packaged Guest hello mismatch").into()),
         }
         match receive(channel).await? {

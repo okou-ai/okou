@@ -114,6 +114,12 @@
       "files": {
         "connecting": "Conectando con los archivos…",
         "currentFolder": "Carpeta actual",
+        "download": "Descargar {{name}}",
+        "downloadChanged": "El archivo cambió durante la descarga. Descárgalo de nuevo.",
+        "downloadFailed": "Error al descargar. Inténtalo de nuevo.",
+        "downloadFrame": "Descarga de archivo",
+        "downloadUnsupported": "Este navegador no admite la descarga de archivos.",
+        "downloadUpdateRequired": "Actualiza la página e inténtalo de nuevo. Si las descargas siguen sin estar disponibles, inicia una nueva ejecución.",
         "empty": "Esta carpeta está vacía.",
         "enterFolder": "Abrir la carpeta {{name}}",
         "goHome": "Ir a la carpeta personal",
@@ -126,6 +132,17 @@
         "other": "Otro",
         "parentFolders": "Carpetas superiores",
         "pending": "Los archivos estarán disponibles cuando comience la ejecución en cola.",
+        "preview": "Vista previa de {{name}}",
+        "previewChanged": "Este archivo cambió. Cierra la vista previa y vuelve a abrirla.",
+        "previewDecode": "No se pudo decodificar este archivo. Aún puedes descargarlo.",
+        "previewEmpty": "Este archivo está vacío.",
+        "previewInvalid": "No se puede mostrar este archivo. Aún puedes descargarlo.",
+        "previewLoading": "Cargando vista previa…",
+        "previewSize": "Este archivo es demasiado grande para la vista previa. Aún puedes descargarlo.",
+        "previewTruncated": "Se muestran los primeros 64 KiB. Descarga el archivo para ver todo su contenido.",
+        "previewUnavailable": "Vista previa no disponible. Ciérrala e inténtalo de nuevo o descarga el archivo.",
+        "previewUnsupported": "No hay vista previa para este tipo de archivo. Aún puedes descargarlo.",
+        "previewUpdateRequired": "Actualiza la página e inténtalo de nuevo. Si la vista previa sigue sin estar disponible, inicia una nueva ejecución.",
         "readonly": "Archivos de solo lectura de la ejecución actual.",
         "refresh": "Actualizar",
         "retry": "Reintentar",
@@ -136,7 +153,7 @@
         "updateRequired": "Esta ejecución no admite archivos. Inicia otra tras actualizar el entorno aislado."
       },
       "log": "Registro",
-      "manualReloadNotice": "Recarga esta página para ver los registros de actividad más recientes.",
+      "manualReloadNotice": "Los registros no se actualizan automáticamente.",
       "modelProvidedBy": "{{model}} proporcionado por {{provider}}",
       "networkEmpty": {
         "description": "No se registró tráfico de red durante esta ejecución.",
@@ -147,6 +164,7 @@
         "description": "Este registro no existe o no tienes permiso para verlo en el espacio de trabajo actual.",
         "title": "Registro no encontrado"
       },
+      "refresh": "Actualizar",
       "runner": {
         "environment": "Entorno",
         "framework": "Framework",
@@ -1555,13 +1573,17 @@
       "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
-      "continueChat": "Continuar chat",
       "dismiss": "Descartar",
       "label": "Sugerencias",
-      "newChat": "Nuevo chat",
       "next": "Siguiente sugerencia",
       "position": "{{current}} de {{total}}",
-      "previous": "Sugerencia anterior"
+      "previous": "Sugerencia anterior",
+      "recoveryHint": "Revisa el chat antes de volver a enviar. Puedes restaurar la sugerencia en tu borrador.",
+      "restoreDraft": "Restaurar borrador",
+      "runFailed": "No se pudo iniciar la sugerencia",
+      "runInChat": "Ejecutar en este chat",
+      "runNewChat": "Ejecutar en un chat nuevo",
+      "starting": "Iniciando…"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -1802,6 +1824,7 @@
       "selectedModelUnavailableToast": "El modelo seleccionado no está disponible",
       "selectModel": "Seleccionar modelo",
       "slashActions": {
+        "actions": "Acciones",
         "archive": "Archivar chat",
         "back": "Atrás",
         "connect": "Conectar una herramienta",
@@ -1815,6 +1838,11 @@
         "pin": "Fijar chat",
         "rename": "Cambiar nombre del chat",
         "schedule": "Programar",
+        "scheduleCustom": "Programación personalizada",
+        "scheduleEveryMonday": "Cada lunes",
+        "scheduleEveryMonth": "El primer día de cada mes",
+        "scheduleEveryMorning": "Cada mañana",
+        "scheduleEveryWeekday": "Cada día laborable",
         "scheduleHint": "Ejecutar según un horario",
         "share": "Compartir chat",
         "shareHint": "Comparte un enlace a esta conversación",
@@ -1823,6 +1851,7 @@
       },
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
+        "hint": "Busca flujos de trabajo o elige una plantilla…",
         "make": "Crear",
         "useTemplate": "Usar la plantilla {{title}}"
       },
@@ -2123,14 +2152,10 @@
       "communications": "Mensajes",
       "idle": "Inactivo",
       "loadFailed": "Error al cargar",
-      "loading": "Cargando…",
       "messageUnavailable": "Mensaje no disponible",
-      "more": "Más",
-      "noMessages": "Todavía no hay mensajes",
       "origin": "Desde",
       "queued": "En cola",
       "received": "Recibido",
-      "refresh": "Actualizar",
       "running": "En curso",
       "sent": "Enviado",
       "toggleMessages": "Mensajes con {{title}}",
@@ -2163,8 +2188,7 @@
       "loadFailed": "No se pudieron cargar los recursos",
       "loadingLinks": "Cargando enlaces",
       "retry": "Reintentar",
-      "title": "Recursos del chat",
-      "viewAll": "Ver todo"
+      "title": "Recursos del chat"
     },
     "run": {
       "collapseWorkHistory": "Contraer el historial de trabajo",
@@ -3582,7 +3606,6 @@
         "connectedDescription": "Tu cuenta de Teams está conectada.",
         "connectTitle": "Conectar Microsoft Teams",
         "identityMismatch": "La cuenta o el espacio de Teams solicitado no coincide con la conexión actual.",
-        "identityUnknown": "No podemos confirmar la cuenta de Teams de este enlace. Abre Teams para comprobar tu cuenta.",
         "install": "Instalar en Teams",
         "invalidContext": "Este enlace no incluye todos los datos de la cuenta de Teams. Abre un nuevo enlace desde Teams.",
         "open": "Abrir Teams",
@@ -4015,7 +4038,6 @@
     "retry": "Reintentar",
     "samplePages": "Páginas de ejemplo: {{total}}",
     "title": "Documento",
-    "use": "Usar plantilla",
     "useNamed": "Usar {{title}}"
   },
   "global": {
@@ -5188,6 +5210,15 @@
         "retryMessage": "No se pudo cargar o actualizar la configuración de Morning Brief. Vuelve a intentarlo para continuar.",
         "title": "Resumen matutino"
       },
+      "proactiveSuggestions": {
+        "description": "Okou revisa tus fuentes conectadas cada hora y propone próximos pasos útiles en tu página de inicio.",
+        "missingDefaultAgent": "Elige un Agent predeterminado disponible para recibir sugerencias proactivas.",
+        "preparationFailed": "No se pudo completar la configuración. Inténtalo de nuevo.",
+        "preparing": "Preparando las sugerencias por hora. Puedes desactivarlas en cualquier momento.",
+        "retry": "Reintentar",
+        "retryMessage": "No se pudo cargar o actualizar la configuración. Inténtalo de nuevo.",
+        "title": "Sugerencias proactivas"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Pulsa ⌘/Ctrl+Enter para enviar, Enter para nueva línea",
@@ -5245,7 +5276,6 @@
       "description": "Tus agentes pueden solicitar compras y consultar transacciones de Link. Tú apruebas cada compra.",
       "disconnect": "Desconectar",
       "loadError": "No se pudo cargar tu cartera.",
-      "permissionsUnknown": "Vuelve a conectar Link para revisar y confirmar sus permisos actuales.",
       "retry": "Reintentar",
       "scope": "Permite que Okou compre por ti y consulte tu actividad en Link.",
       "title": "Cartera",
@@ -5275,8 +5305,7 @@
         "statusLabel": "Estado",
         "title": "Transacciones de Link",
         "unknownStatus": "Estado no disponible"
-      },
-      "workspaceScopeChanged": "Tu cartera de Link ahora puede usarse con todos tus agentes de este espacio de trabajo. Vuelve a conectarla para aprobar este cambio."
+      }
     },
     "workspace": {
       "danger": {
@@ -5873,7 +5902,9 @@
     "loading": "Cargando la configuración de VNC…",
     "manage": "Gestionar VNC",
     "native": {
-      "editPending": "La edición de esta ruta de red privada aún no está disponible.",
+      "configuration": "Configuración de red",
+      "empty": "Añade una red reutilizable en los ajustes de Cloudflare Access o Tailscale y vuelve aquí para seleccionarla.",
+      "gatewayHelp": "Usa el nombre de host de la aplicación TCP de Cloudflare y el puerto 443. El túnel selecciona el puerto de destino; configura por separado la identidad del certificado VNC y la del servicio Kerberos.",
       "hostCount_one": "{{count}} equipo",
       "hostCount_many": "{{count}} equipos",
       "hostCount_other": "{{count}} equipos",
@@ -5881,10 +5912,19 @@
       "impactSummary": "Afectados: {{members}} y {{hosts}}. Sus equipos seguirán guardados, pero no podrán conectarse hasta que sus propietarios los vuelvan a vincular. Ningún equipo cambiará automáticamente a una conexión directa.",
       "inUse": "Tus equipos SSH o VNC siguen utilizando esta red. Vuelve a vincularlos o elimínalos primero.",
       "kdcRole": "Servidor de autenticación",
+      "loadFailed": "No se pudieron cargar las configuraciones de red.",
+      "loading": "Cargando configuraciones de red…",
+      "macHelp": "Aún hay que verificar la compatibilidad del modo seleccionado con Compartir pantalla de macOS de forma independiente. Proteger esta conexión no impide que otros clientes accedan al servicio VNC del Mac.",
       "needsRebind": "Esta ruta de red privada necesita una nueva configuración. No podrá conectarse hasta que se vuelva a vincular.",
+      "originCaBundle": "Certificados CA del TLS de origen",
+      "originServerName": "Nombre del servidor TLS de origen",
       "originTls": "TLS de origen",
+      "originTlsHelp": "Mac y los modos RSA-AES de solo autenticación requieren un servicio TLS con certificado verificado en el servidor seleccionado que reenvíe únicamente al VNC local. Su identidad y confianza son independientes de la puerta de enlace de Cloudflare y del certificado VNC interno.",
+      "originTrust": "Confianza del certificado TLS de origen",
+      "peerHelp": "Usa la IP o el nombre exactos del nodo Tailscale y el puerto de servicio permitidos por la red seleccionada. No se necesita servicio ni permiso SSH.",
       "protectionHelp": "Este modo de autenticación no cifra el tráfico del escritorio. La ruta de red privada seleccionada debe proteger toda la conexión con este servidor.",
-      "rfbRole": "Escritorio"
+      "rfbRole": "Escritorio",
+      "select": "Seleccionar una configuración de red guardada"
     },
     "port": "Puerto",
     "retry": "Reintentar",
@@ -5944,7 +5984,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "Solo subtipo 263 de QEMU. TLS verifica el servidor antes de SCRAM; sin recurrir a PLAIN ni al subtipo 264.",
       "serverName": "Identidad del certificado TLS",
-      "serverNameHelp": "Opcional. Déjalo vacío para verificar el certificado con el host de destino RFB. Defínelo solo si el certificado usa otro nombre DNS.",
+      "serverNameHelp": "Cloudflare Access requiere la identidad del certificado del servidor RFB. En otras rutas, puedes dejar este campo vacío para verificar con el host de destino RFB.",
       "serverNameHint": "p. ej., desktop.internal.example.com",
       "system": "Autoridades de certificación del sistema",
       "title": "Confianza en el certificado del servidor",
@@ -5969,7 +6009,7 @@
       "empty": "No hay hosts SSH guardados. Añade uno en la configuración de SSH antes de usar esta ruta.",
       "loadFailed": "No se pudieron cargar los hosts SSH guardados.",
       "loading": "Cargando hosts SSH guardados…",
-      "privateDirectHelp": "Las direcciones IP privadas o de bucle local requieren un host SSH guardado. Elige la ruta SSH de arriba; no se cambiará automáticamente.",
+      "privateDirectHelp": "Las direcciones IP privadas requieren una ruta de red privada compatible o un host SSH guardado. Elige la ruta explícitamente.",
       "select": "Selecciona un host SSH guardado",
       "selectionUnavailable": "El host SSH seleccionado ya no está disponible. Selecciona otro o cambia explícitamente a Directa.",
       "ssh": "Mediante un host SSH guardado",
@@ -6675,7 +6715,6 @@
       "connectDescription": "Conecta tu cuenta de Discord para chatear con tu agente.",
       "connectedTitle": "Conectado con Discord",
       "connectTitle": "Conectar con Discord",
-      "continueInNewTab": "Continuar en una pestaña nueva",
       "defaultWorkspace": "Espacio de trabajo predeterminado para Discord",
       "description": "Menciona a Okou en un servidor o envía un mensaje directo al bot.",
       "disconnect": "Desconectar Discord",
@@ -6732,6 +6771,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Cuenta",
+      "agentLabel": "Agente",
       "code": "Código de verificación",
       "connect": "Conectar",
       "connected": "Conectado",
@@ -6741,11 +6782,15 @@
       "expired": "Este código QR ha caducado. Crea uno nuevo.",
       "failed": "No se pudo conectar con WeChat. Inténtalo de nuevo.",
       "instructions": "Escanea este código QR con WeChat y confirma en tu teléfono.",
+      "linkUnavailable": "Este enlace no está disponible. Usa la cuenta y el espacio de trabajo originales y envía otro mensaje en WeChat para obtener un nuevo enlace. También puedes escanear un nuevo código QR.",
       "name": "WeChat",
+      "newQr": "Conectar con un nuevo código QR",
       "reconnect": "Volver a conectar",
       "reconnect_required": "Escanea de nuevo para volver a conectar.",
       "restart_required": "Esta cuenta de WeChat ya está vinculada. Crea un nuevo código QR para volver a conectarla.",
+      "restoreDescription": "Vuelve a conectar WeChat a la cuenta y al espacio de trabajo siguientes.",
       "retry": "Crear un nuevo código QR",
+      "returnToWechat": "Vuelve a WeChat y envía un mensaje para empezar a conversar.",
       "scanned": "Escaneado. Confirma en tu teléfono.",
       "scope": "Solo se conectan tus mensajes directos a este agente. Se admiten mensajes de texto.",
       "title": "Conectar WeChat",
@@ -6753,7 +6798,8 @@
       "verification_blocked": "Demasiados intentos. Crea un nuevo código QR.",
       "verification_required": "Introduce el código de verificación que aparece en WeChat.",
       "verify": "Verificar",
-      "waiting": "Esperando a que escanees…"
+      "waiting": "Esperando a que escanees…",
+      "workspaceLabel": "Espacio de trabajo"
     }
   }
 }

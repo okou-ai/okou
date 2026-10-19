@@ -34,9 +34,12 @@ const LOG_TAG: &str = "sandbox:guest-agent";
 /// time during cleanup, so a small bounded queue is plenty.
 const COMMAND_CHANNEL_CAPACITY: usize = 8;
 
-/// At most two two-second attempts for each changed incident set.
-const INCIDENT_ATTEMPTS: u8 = 2;
-const INCIDENT_UPLOAD_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bounded incident delivery shared with the aggregate shutdown budget.
+const INCIDENT_ATTEMPTS: u64 =
+    api_contracts::generated::constants::runners::AGENT_TELEMETRY_INCIDENT_ATTEMPTS;
+const INCIDENT_UPLOAD_TIMEOUT: Duration = Duration::from_millis(
+    api_contracts::generated::constants::runners::AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS,
+);
 
 /// Latest-value handoff to the existing uploader; there is no diagnostic queue.
 #[derive(Clone, Debug)]
@@ -297,8 +300,7 @@ async fn upload_telemetry(
     });
 
     // Use 1 attempt for telemetry (non-critical, best-effort)
-    let url = http.telemetry_url()?;
-    match http.post_json(url, &payload, 1).await {
+    match http.post_telemetry(&payload).await {
         Ok(_) => {
             let position_persisted = save_positions_with_warning(
                 position_updates,
@@ -432,20 +434,41 @@ impl Telemetry {
     /// Consumes `self`, so no later periodic `Live` tick or caller-driven
     /// flush can run after the EOF-consuming final pass. A completed upload
     /// with a position persistence failure is reported in [`FlushReport`].
-    pub async fn final_flush_and_shutdown(self) -> Result<FlushReport, AgentError> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .tx
-            .send(Cmd::FinalFlushAndShutdown { reply: reply_tx })
-            .await
-            .is_err()
-        {
-            let _ = self.handle.await;
-            return Err(AgentError::TelemetryUnavailable);
+    /// The shared aggregate deadline includes any upload already in flight;
+    /// expiry aborts and joins the uploader before returning.
+    pub async fn final_flush_and_shutdown(mut self) -> Result<FlushReport, AgentError> {
+        let budget = Duration::from_millis(
+            api_contracts::generated::constants::runners::AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS,
+        );
+        // Include a periodic upload already in flight, queueing, the final pass,
+        // and worker retirement. Caller cancellation still leaves queued work
+        // with the worker; only this owned deadline aborts it.
+        let result = tokio::time::timeout(budget, async {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            let result = if self
+                .tx
+                .send(Cmd::FinalFlushAndShutdown { reply: reply_tx })
+                .await
+                .is_err()
+            {
+                Err(AgentError::TelemetryUnavailable)
+            } else {
+                reply_rx
+                    .await
+                    .unwrap_or(Err(AgentError::TelemetryUnavailable))
+            };
+            let _ = (&mut self.handle).await;
+            result
+        })
+        .await;
+        match result {
+            Ok(result) => result,
+            Err(_) => {
+                self.handle.abort();
+                let _ = self.handle.await;
+                Err(AgentError::TelemetryShutdownTimeout)
+            }
         }
-        let result = reply_rx.await.map_err(|_| AgentError::TelemetryUnavailable);
-        let _ = self.handle.await;
-        result?
     }
 }
 
@@ -538,6 +561,52 @@ async fn upload_with_incidents(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[tokio::test(start_paused = true)]
+    async fn final_shutdown_deadline_retires_an_unresponsive_worker() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let (entered_tx, entered_rx) = oneshot::channel();
+        // Fault the worker boundary: it accepts the final command but cannot
+        // retire. The public consuming shutdown must bound and join that owner.
+        let handle = tokio::spawn(async move {
+            let command = rx.recv().await.expect("final command should be queued");
+            let _ = entered_tx.send(());
+            std::future::pending::<()>().await;
+            drop(command);
+        });
+        let worker = handle.abort_handle();
+        let (incident_tx, _) = watch::channel(None);
+        let telemetry = Telemetry {
+            tx,
+            handle,
+            incident_reporter: IncidentReporter {
+                tx: incident_tx,
+                sandbox_id: None,
+            },
+        };
+        let shutdown = tokio::spawn(telemetry.final_flush_and_shutdown());
+        entered_rx
+            .await
+            .expect("worker should accept final shutdown");
+        let budget = Duration::from_millis(
+            api_contracts::generated::constants::runners::AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS,
+        );
+        tokio::time::advance(budget - Duration::from_millis(1)).await;
+        assert!(
+            !shutdown.is_finished(),
+            "the configured budget remains available"
+        );
+        tokio::time::advance(Duration::from_millis(2)).await;
+        let result = tokio::time::timeout(Duration::from_secs(1), shutdown)
+            .await
+            .expect("aggregate expiry must stop an unresponsive uploader")
+            .expect("shutdown task should not panic");
+        assert!(matches!(result, Err(AgentError::TelemetryShutdownTimeout)));
+        assert!(
+            worker.is_finished(),
+            "shutdown must join the aborted worker"
+        );
+    }
 
     #[test]
     fn save_position_and_read_back() {

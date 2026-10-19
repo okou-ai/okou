@@ -32,7 +32,9 @@ _WEBSOCKET_ACCEPT = b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
 
 def _write_openai_model_websocket_registry(tmp_path: Path) -> Path:
-    firewall_name = "model-provider:openrouter-codex"
+    # Managed OpenRouter requires captured-preset SSE. Exercise the separate,
+    # supported personal Codex WebSocket lifecycle through its actual endpoint.
+    firewall_name = "model-provider:codex-oauth-token"
     return _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
@@ -41,9 +43,9 @@ def _write_openai_model_websocket_registry(tmp_path: Path) -> Path:
             sandbox_marker="tok-xyz",
             firewall_name=firewall_name,
             api_entry={
-                "base": "https://openrouter.ai",
+                "base": "https://chatgpt.com/backend-api",
                 "auth": {"headers": {"Authorization": "Bearer token"}},
-                "permissions": [{"name": "responses", "rules": ["GET /api/v1/responses"]}],
+                "permissions": [{"name": "responses", "rules": ["GET /codex/responses"]}],
             },
             network_policy={
                 "allow": ["responses"],
@@ -117,7 +119,9 @@ class TestModelProviderWebSocketLifecycle:
         control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
-        flow = make_openai_responses_websocket_request_flow(real_flow)
+        flow = make_openai_responses_websocket_request_flow(
+            real_flow, host="chatgpt.com", path="/backend-api/codex/responses"
+        )
 
         with (
             mitm_ctx(registry_path=str(reg_path), api_url=usage_webhook_server.api_url),
@@ -193,8 +197,8 @@ class TestModelProviderWebSocketLifecycle:
         flow = real_flow(
             with_response=False,
             client_ip="10.200.0.5",
-            host="openrouter.ai",
-            path="/api/v1/responses",
+            host="chatgpt.com",
+            path="/backend-api/codex/responses",
             method="GET",
         )
 
@@ -302,7 +306,9 @@ class TestModelProviderWebSocketLifecycle:
         control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
-        flow = make_openai_responses_websocket_request_flow(real_flow)
+        flow = make_openai_responses_websocket_request_flow(
+            real_flow, host="chatgpt.com", path="/backend-api/codex/responses"
+        )
 
         with (
             mitm_ctx(registry_path=str(reg_path)),
@@ -354,7 +360,9 @@ class TestModelProviderWebSocketLifecycle:
     ) -> None:
         control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
-        flow = make_openai_responses_websocket_request_flow(real_flow)
+        flow = make_openai_responses_websocket_request_flow(
+            real_flow, host="chatgpt.com", path="/backend-api/codex/responses"
+        )
 
         with mitm_ctx(registry_path=str(reg_path)), fake_firewall_headers():
             await mitm_addon.request(flow)
@@ -389,7 +397,9 @@ class TestModelProviderWebSocketLifecycle:
         control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
-        flow = make_openai_responses_websocket_request_flow(real_flow)
+        flow = make_openai_responses_websocket_request_flow(
+            real_flow, host="chatgpt.com", path="/backend-api/codex/responses"
+        )
 
         with (
             mitm_ctx(registry_path=str(reg_path), api_url=usage_webhook_server.api_url),

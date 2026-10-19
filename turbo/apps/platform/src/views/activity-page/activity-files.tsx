@@ -14,11 +14,7 @@ function ActivityFilesPanel() {
     return $.activity.detail.files.title;
   });
   return (
-    <section
-      ref={mount}
-      aria-label={title}
-      className="flex h-[min(70dvh,720px)] min-h-80 w-full min-w-0 flex-col overflow-hidden"
-    >
+    <section ref={mount} aria-label={title} className="isolate w-full min-w-0">
       <SandboxFilesBody signals={activityFiles} />
     </section>
   );

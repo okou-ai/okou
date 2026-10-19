@@ -9,6 +9,29 @@ use nix::fcntl::{Flock, FlockArg};
 
 use runner_host::host_file::{self, DirMode};
 
+/// Retire a temporary queue path without owning its publication policy.
+pub(super) struct TemporaryFileCleanup<'a> {
+    path: Option<&'a Path>,
+}
+
+impl<'a> TemporaryFileCleanup<'a> {
+    pub(super) fn new(path: &'a Path) -> Self {
+        Self { path: Some(path) }
+    }
+
+    pub(super) fn disarm(mut self) {
+        self.path = None;
+    }
+}
+
+impl Drop for TemporaryFileCleanup<'_> {
+    fn drop(&mut self) {
+        if let Some(path) = self.path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 /// The group directory outlives individual runs. Lock its existing inode so
 /// cleanup cannot unlink a lock file while a publisher is waiting on it.
 pub(super) fn lock_active_inputs(group_dir: &Path) -> io::Result<Flock<File>> {

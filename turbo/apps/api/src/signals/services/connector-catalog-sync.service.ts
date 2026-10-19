@@ -1,3 +1,4 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { isDeepStrictEqual } from "node:util";
 
 import type {
@@ -57,7 +58,13 @@ import {
   loadAcceptedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
-import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
+import {
+  uniqueConnectorRuntimeTargets,
+  connectorRuntimeWakeupCondition,
+  publishConnectorRuntimeWakeupRows,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+  type ConnectorRuntimeWakeupBusinessArgs,
+} from "./connector-runtime-wakeup.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import { createAcceptedConnectorServerFirewallCatalog } from "./connector-server-firewall-catalog.service";
 
@@ -167,13 +174,47 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
 
   await Promise.all(
     [...affectedByOrg].map(async ([orgId, customConnectorIds]) => {
-      await publishConnectorRuntimeSyncWakeups({
-        db: args.db,
+      const wakeupDb = args.db;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
         scope: { orgId },
         targets: customConnectorIds.map((customConnectorId) => {
           return { kind: "custom" as const, customConnectorId };
         }),
-      });
+      };
+      await (async () => {
+        const result = await settle(
+          (async () => {
+            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+            if (targets.length === 0) {
+              return;
+            }
+
+            const rows = await wakeupDb
+              .select({
+                runId: agentRuns.id,
+                runnerGroup: agentRuns.runnerGroup,
+              })
+              .from(agentRuns)
+
+              .where(connectorRuntimeWakeupCondition(wakeup.scope));
+
+            await publishConnectorRuntimeWakeupRows({
+              scope: wakeup.scope,
+              targets,
+              rows,
+            });
+          })(),
+        );
+        if (!result.ok) {
+          reportConnectorRuntimeWakeupDiscoveryFailure({
+            orgId: wakeup.scope.orgId,
+            scopedToUser: wakeup.scope.userId !== undefined,
+            scopedToAgent: wakeup.scope.agentId !== undefined,
+            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+            error: result.error,
+          });
+        }
+      })();
     }),
   );
   log.debug("Evaluated Custom connector catalog wakeups", {
@@ -253,13 +294,47 @@ async function publishBuiltinCatalogWakeups(args: {
   const pending = byOrg.entries();
   async function publishOrgWakeups() {
     for (const [orgId, slugs] of pending) {
-      await publishConnectorRuntimeSyncWakeups({
-        db: args.db,
+      const wakeupDb = args.db;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
         scope: { orgId },
         targets: slugs.map((connectorSlug) => {
           return { kind: "builtin" as const, connectorSlug };
         }),
-      });
+      };
+      await (async () => {
+        const result = await settle(
+          (async () => {
+            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+            if (targets.length === 0) {
+              return;
+            }
+
+            const rows = await wakeupDb
+              .select({
+                runId: agentRuns.id,
+                runnerGroup: agentRuns.runnerGroup,
+              })
+              .from(agentRuns)
+
+              .where(connectorRuntimeWakeupCondition(wakeup.scope));
+
+            await publishConnectorRuntimeWakeupRows({
+              scope: wakeup.scope,
+              targets,
+              rows,
+            });
+          })(),
+        );
+        if (!result.ok) {
+          reportConnectorRuntimeWakeupDiscoveryFailure({
+            orgId: wakeup.scope.orgId,
+            scopedToUser: wakeup.scope.userId !== undefined,
+            scopedToAgent: wakeup.scope.agentId !== undefined,
+            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+            error: result.error,
+          });
+        }
+      })();
     }
   }
   await Promise.all(

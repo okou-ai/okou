@@ -30,7 +30,7 @@ import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { isValidTimeZone } from "../utils";
 interface UserScopedQuery {
   readonly orgId: string;
@@ -389,42 +389,44 @@ interface UserModelPreferenceWriteArgs extends UserScopedQuery {
   readonly preference: UpdateUserModelPreferenceRequest;
 }
 
-/** Reuse canonical preference persistence inside an admitted transaction. */
-export async function updateUserModelPreferenceInDb(
-  writeDb: Pick<Db, "insert">,
-  args: UserModelPreferenceWriteArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const updatedAt = nowDate();
-  const columns = userModelPreferenceColumns(args.preference);
-  const modelSettingsPatch = args.preference.modelSettingsPatch;
-  await writeDb
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      ...columns,
-      createdAt: updatedAt,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: {
+const writeUserModelPreference$ = command(
+  async (
+    { set },
+    args: UserModelPreferenceWriteArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const writeDb = set(writeDb$);
+    const updatedAt = nowDate();
+    const columns = userModelPreferenceColumns(args.preference);
+    const modelSettingsPatch = args.preference.modelSettingsPatch;
+    await writeDb
+      .insert(orgMembersMetadata)
+      .values({
+        orgId: args.orgId,
+        userId: args.userId,
         ...columns,
-        ...(modelSettingsPatch === undefined
-          ? {}
-          : {
-              modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
+        createdAt: updatedAt,
+        updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: {
+          ...columns,
+          ...(modelSettingsPatch === undefined
+            ? {}
+            : {
+                modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
                 cast(${modelSettingsPatch.model} as text),
                 COALESCE(${orgMembersMetadata.modelSettings} -> cast(${modelSettingsPatch.model} as text), '{}'::jsonb)
                   || jsonb_build_object('effort', cast(${modelSettingsPatch.effort} as text))
               )`,
-            }),
-        updatedAt,
-      },
-    });
-  signal.throwIfAborted();
-}
+              }),
+          updatedAt,
+        },
+      });
+    signal.throwIfAborted();
+  },
+);
 
 export const updateUserModelPreference$ = command(
   async (
@@ -432,7 +434,7 @@ export const updateUserModelPreference$ = command(
     args: UserModelPreferenceWriteArgs,
     signal: AbortSignal,
   ): Promise<UserModelPreferenceResponse> => {
-    await updateUserModelPreferenceInDb(set(writeDb$), args, signal);
+    await set(writeUserModelPreference$, args, signal);
     return get(userModelPreference({ orgId: args.orgId, userId: args.userId }));
   },
 );

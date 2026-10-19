@@ -1,106 +1,303 @@
-import { DurableObject } from "cloudflare:workers";
+import {
+  DurableObject,
+  WorkflowEntrypoint,
+  type WorkflowEvent,
+  type WorkflowStep,
+} from "cloudflare:workers";
+import { receiveWechatBlock } from "./workflow";
 import { z } from "zod";
-interface Env {
-  readonly WECHAT_RECEIVER: DurableObjectNamespace<WechatReceiver>;
-  readonly WECHAT_GATEWAY_ENABLED: string;
-  readonly WECHAT_GATEWAY_CONTROL_SECRET: string;
-  readonly WECHAT_GATEWAY_SECRET: string;
-  readonly API_ORIGIN: string;
-}
-const startSchema = z.object({ connectionId: z.uuid() });
-const resultSchema = z.object({ active: z.boolean() });
-async function signature(secret: string, text: string) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(text));
-  return Array.from(new Uint8Array(signed))
-    .map((byte) => {
-      return byte.toString(16).padStart(2, "0");
-    })
-    .join("");
-}
-async function controlAuthorized(request: Request, secret: string) {
-  if (!secret) return false;
-  const header = request.headers.get("authorization");
-  if (!header?.startsWith("Bearer ")) return false;
-  // Compare fixed-size digests rather than a prefix-sensitive secret string.
-  const expected = await signature(secret, "control");
-  const actual = await signature(header.slice(7), "control");
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++)
-    diff |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
-  return diff === 0;
-}
+import { controlAuthorized } from "./auth";
+import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
+import { saveReceiver, readPendingBatch } from "./pending";
+import { seal } from "./crypto";
+import { pollLegacyReceiver } from "./legacy";
+import {
+  LEASE_MS,
+  type Env,
+  type ReceiverState,
+  type ReceiverParams,
+} from "./types";
+
+const startSchema = z.object({
+  connectionId: z.uuid(),
+  generation: z.uuid().optional(),
+});
 export class WechatReceiver extends DurableObject<Env> {
   async fetch(request: Request) {
     const body = startSchema.parse(await request.json());
-    await this.ctx.storage.put("connectionId", body.connectionId);
-    if ((await this.ctx.storage.getAlarm()) === null)
-      await this.ctx.storage.setAlarm(Date.now() + 1);
-    return Response.json({ ok: true });
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (new URL(request.url).pathname === "/stop") {
+        await this.ctx.storage.deleteAll();
+        await this.ctx.storage.deleteAlarm();
+        return Response.json({ ok: true });
+      }
+      await this.ctx.storage.transaction(async (txn) => {
+        await txn.put("connectionId", body.connectionId);
+        const state = await txn.get<ReceiverState>("receiver");
+        const hint = await txn.get<string>("generationHint");
+        if (body.generation && body.generation !== hint) {
+          await txn.put("generationHint", body.generation);
+          if (state) await txn.put("receiver", { ...state, leaseUntil: 0 });
+          await txn.setAlarm(Date.now() + 1);
+        } else if ((await txn.getAlarm()) === null) {
+          await txn.setAlarm(Date.now() + 1);
+        }
+      });
+      return Response.json({ ok: true });
+    });
   }
   async alarm() {
     if (this.env.WECHAT_GATEWAY_ENABLED !== "true") return;
-    const connectionId = await this.ctx.storage.get<string>("connectionId");
-    if (!connectionId) return;
-    // Schedule recovery before network I/O. A crash retries through the provider
-    // alarm mechanism; the API's encrypted pending batch and event IDs own replay.
-    await this.ctx.storage.setAlarm(Date.now() + 90_000);
-    const body = JSON.stringify({ connectionId });
-    const timestamp = String(Math.floor(Date.now() / 1000));
-    const origin = new URL(this.env.API_ORIGIN);
-    if (origin.protocol !== "https:")
-      throw new Error("API_ORIGIN must use HTTPS");
-    const response = await fetch(new URL("/api/internal/wechat/poll", origin), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-wechat-timestamp": timestamp,
-        "x-wechat-signature": await signature(
-          this.env.WECHAT_GATEWAY_SECRET,
-          `${timestamp}.${body}`,
-        ),
-      },
-      body,
-      signal: AbortSignal.timeout(80_000),
-    });
-    if (!response.ok)
-      throw new Error(`WeChat receiver API returned ${response.status}`);
-    const result = resultSchema.parse(await response.json());
-    if (!result.active) {
-      await this.ctx.storage.deleteAlarm();
-      await this.ctx.storage.deleteAll();
-      return;
+    if (this.env.WECHAT_WORKFLOWS_ENABLED !== "true") {
+      // API/Worker rollout bridge: remove after every live binding migrates and
+      // old artifacts are excluded as rollback targets (okou-ai/okou#41268).
+      const connectionId = await this.ctx.storage.get<string>("connectionId");
+      if (!connectionId || (await this.ctx.storage.get("receiver"))) return;
+      return pollLegacyReceiver(this.ctx.storage, this.env, connectionId);
     }
-    await this.ctx.storage.setAlarm(Date.now() + 1_000);
+    const launch = await this.ctx.blockConcurrencyWhile(async () => {
+      const connectionId = await this.ctx.storage.get<string>("connectionId");
+      if (!connectionId) return null;
+      const saved = await this.ctx.storage.get<ReceiverState>("receiver");
+      if (saved && saved.leaseUntil > Date.now()) {
+        await this.ctx.storage.setAlarm(
+          saved.started ? saved.leaseUntil : Date.now() + 5_000,
+        );
+        return saved.started ? null : { state: saved, connectionId };
+      }
+      const state: ReceiverState = {
+        ...saved,
+        ownerId: crypto.randomUUID(),
+        leaseUntil: Date.now() + LEASE_MS,
+        started: false,
+        cursor: saved?.cursor ?? "",
+      };
+      // Ownership and its recovery alarm must survive or roll back together.
+      await this.ctx.storage.transaction(async (txn) => {
+        await txn.put("receiver", state);
+        await txn.setAlarm(Date.now() + 5_000);
+      });
+      return { state, connectionId };
+    });
+    if (!launch) return;
+    const { state, connectionId } = launch;
+    try {
+      await this.env.WECHAT_POLL_WORKFLOW.create({
+        id: state.ownerId,
+        params: { connectionId, ownerId: state.ownerId },
+      });
+    } catch (error) {
+      // Only an existing instance proves that the create already committed.
+      const instance = await this.env.WECHAT_POLL_WORKFLOW.get(state.ownerId);
+      const status = await instance.status();
+      if (status.status === "unknown") throw error;
+    }
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const current = await this.ctx.storage.get<ReceiverState>("receiver");
+      if (!this.live(current, state.ownerId)) return;
+      await this.ctx.storage.put("receiver", { ...current, started: true });
+      await this.ctx.storage.setAlarm(current.leaseUntil);
+    });
+  }
+  async open(ownerId: string) {
+    const state = await this.ctx.storage.get<ReceiverState>("receiver");
+    return this.live(state, ownerId) ? state : null;
+  }
+  private live(
+    state: ReceiverState | undefined,
+    ownerId: string,
+  ): state is ReceiverState {
+    return (
+      this.env.WECHAT_GATEWAY_ENABLED === "true" &&
+      this.env.WECHAT_WORKFLOWS_ENABLED === "true" &&
+      state?.ownerId === ownerId &&
+      state.leaseUntil > Date.now()
+    );
+  }
+  async renew(ownerId: string, stream: ReadableStream | null) {
+    const session = stream
+      ? z
+          .object({
+            generation: z.uuid(),
+            baseUrl: z.string(),
+            token: z.string(),
+            cursor: z.string(),
+            preserveCursor: z.boolean(),
+            pending: wechatUpdatesSchema.nullable(),
+          })
+          .parse(await new Response(stream).json())
+      : undefined;
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const state = await this.ctx.storage.get<ReceiverState>("receiver");
+      const connectionId = await this.ctx.storage.get<string>("connectionId");
+      if (!this.live(state, ownerId) || !connectionId) return null;
+      let next = state;
+      if (session) {
+        next = {
+          ...state,
+          generation: session.generation,
+          session: await seal(
+            this.env.WECHAT_RECEIVER_ENCRYPTION_KEY,
+            connectionId,
+            {
+              generation: session.generation,
+              baseUrl: session.baseUrl,
+              token: session.token,
+            },
+          ),
+          cursor:
+            session.preserveCursor && state.session
+              ? state.cursor
+              : session.cursor,
+          pending: undefined,
+        };
+      }
+      next = { ...next, leaseUntil: Date.now() + LEASE_MS };
+      next = await saveReceiver(
+        this.ctx.storage,
+        this.env.WECHAT_RECEIVER_ENCRYPTION_KEY,
+        connectionId,
+        state,
+        next,
+        session?.pending,
+      );
+      await this.ctx.storage.setAlarm(next.leaseUntil);
+      return next;
+    });
+  }
+  async checkpoint(
+    ownerId: string,
+    cursor: string,
+    stream: ReadableStream | null,
+  ) {
+    const updates = stream
+      ? wechatUpdatesSchema.parse(await new Response(stream).json())
+      : null;
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const state = await this.ctx.storage.get<ReceiverState>("receiver");
+      const connectionId = await this.ctx.storage.get<string>("connectionId");
+      if (!this.live(state, ownerId) || !connectionId) return null;
+      if (state.cursor !== cursor || state.pending) return state;
+      const nextCursor = updates?.get_updates_buf ?? cursor;
+      const hasMessages = !!updates?.msgs?.length;
+      if (!hasMessages && nextCursor === cursor) return state;
+      const next: ReceiverState = {
+        ...state,
+        cursor: nextCursor,
+        pending: undefined,
+      };
+      // The cursor and batch share one atomic storage write.
+      return saveReceiver(
+        this.ctx.storage,
+        this.env.WECHAT_RECEIVER_ENCRYPTION_KEY,
+        connectionId,
+        state,
+        next,
+        updates,
+      );
+    });
+  }
+  async readPending(ownerId: string) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const state = await this.open(ownerId);
+      if (!state?.pending) return null;
+      return readPendingBatch(this.ctx.storage, state.pending);
+    });
+  }
+  async acknowledge(ownerId: string, batchId: string) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const state = await this.ctx.storage.get<ReceiverState>("receiver");
+      if (!this.live(state, ownerId)) return null;
+      if (state.pending?.id !== batchId) return state;
+      const next = { ...state, pending: undefined };
+      return saveReceiver(
+        this.ctx.storage,
+        this.env.WECHAT_RECEIVER_ENCRYPTION_KEY,
+        "",
+        state,
+        next,
+        null,
+      );
+    });
+  }
+  async finish(ownerId: string, restart: boolean, delayMs = 1) {
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const state = await this.ctx.storage.get<ReceiverState>("receiver");
+      if (!this.live(state, ownerId)) return;
+      if (restart) {
+        await this.ctx.storage.transaction(async (txn) => {
+          await txn.put("receiver", { ...state, leaseUntil: 0 });
+          await txn.setAlarm(Date.now() + delayMs);
+        });
+      } else {
+        await this.ctx.storage.deleteAll();
+        await this.ctx.storage.deleteAlarm();
+      }
+    });
   }
 }
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (env.WECHAT_GATEWAY_ENABLED !== "true")
+    const path = new URL(request.url).pathname;
+    if (path !== "/stop" && env.WECHAT_GATEWAY_ENABLED !== "true")
       return new Response("Disabled", { status: 503 });
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/start")
+    if (request.method !== "POST" || !["/start", "/stop"].includes(path))
       return new Response("Not found", { status: 404 });
     if (!(await controlAuthorized(request, env.WECHAT_GATEWAY_CONTROL_SECRET)))
       return new Response("Unauthorized", { status: 401 });
     const text = await request.text();
     if (text.length > 1024) return new Response("Too large", { status: 413 });
-    const parsed = startSchema.safeParse(JSON.parse(text) as unknown);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text) as unknown;
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+    const parsed = startSchema.safeParse(raw);
     if (!parsed.success) return new Response("Bad request", { status: 400 });
     const actor = env.WECHAT_RECEIVER.get(
       env.WECHAT_RECEIVER.idFromName(parsed.data.connectionId),
     );
     return actor.fetch(
-      new Request("https://receiver/start", {
+      new Request(`https://receiver${path}`, {
         method: "POST",
         body: JSON.stringify(parsed.data),
       }),
     );
   },
 };
+
+export class WechatPollWorkflow extends WorkflowEntrypoint<
+  Env,
+  ReceiverParams
+> {
+  async run(event: WorkflowEvent<ReceiverParams>, step: WorkflowStep) {
+    try {
+      for (let block = 0; block < 6; block++) {
+        const active = await step.do(
+          `receive-${block}`,
+          {
+            timeout: "11 minutes",
+            retries: { limit: 3, delay: "5 seconds", backoff: "exponential" },
+          },
+          () => {
+            return receiveWechatBlock(this.env, event.payload);
+          },
+        );
+        if (!active) return;
+      }
+      await step.do("continue-receiving", async () => {
+        const actor = this.env.WECHAT_RECEIVER.get(
+          this.env.WECHAT_RECEIVER.idFromName(event.payload.connectionId),
+        );
+        await actor.finish(event.payload.ownerId, true);
+      });
+    } catch (error) {
+      const actor = this.env.WECHAT_RECEIVER.get(
+        this.env.WECHAT_RECEIVER.idFromName(event.payload.connectionId),
+      );
+      await actor.finish(event.payload.ownerId, true, 90_000);
+      throw error;
+    }
+  }
+}

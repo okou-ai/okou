@@ -35,10 +35,6 @@ import {
   loadOrgPlanCapabilities,
   loadOrgPlanCapabilities$,
 } from "./org-plan-entitlement-read.service";
-import {
-  resolveActiveRunCreditAdmission,
-  resolveActiveRunCreditAdmission$,
-} from "./run-admission.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
 export interface ManagedUsageErrorResponse {
@@ -95,11 +91,9 @@ function estimatedCredits(
 export interface ManagedUsageCreditCheckArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly runId?: string;
   readonly resource: ManagedUsageResource;
   readonly label: string;
   readonly reservedCredits?: number;
-  readonly enforceBalance?: boolean;
 }
 
 /** Check spendable credits within the caller's admission transaction. */
@@ -169,16 +163,6 @@ export async function checkManagedCreditsSnapshotInDb(
   signal.throwIfAborted();
   if (!capabilities || capabilities.status !== "active") {
     return insufficientCredits();
-  }
-  const activeRunAdmission = await resolveActiveRunCreditAdmission({
-    db: writeDb,
-    runId: args.runId,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  signal.throwIfAborted();
-  if (activeRunAdmission && !args.enforceBalance) {
-    return null;
   }
   const spendableCredits = credits - row.unsettledExpired;
   const usagePackCredits = BigInt(
@@ -270,15 +254,6 @@ const checkManagedCreditBalance$ = command(
     signal.throwIfAborted();
     if (!capabilities || capabilities.status !== "active") {
       return insufficientCredits();
-    }
-    const activeRunAdmission = await set(resolveActiveRunCreditAdmission$, {
-      runId: args.runId,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-    signal.throwIfAborted();
-    if (activeRunAdmission && !args.enforceBalance) {
-      return null;
     }
     const spendableCredits = credits - row.unsettledExpired;
     const [memberCredits] = await writeDb

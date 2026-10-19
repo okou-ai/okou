@@ -1,0 +1,37 @@
+import { z } from "zod";
+import { authHeadersSchema, initContract } from "./base";
+import { apiErrorSchema } from "./errors";
+
+export const PROACTIVE_SUGGESTIONS_DEFINITION_NAME = "agent-suggestions";
+export const PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY = "hourly-check";
+
+const preferenceSchema = z.object({
+  enabled: z.boolean(),
+  status: z.enum(["preparing", "enabled", "paused", "error"]),
+  unavailableReason: z.enum(["missing-default-agent"]).nullable(),
+});
+export type ProactiveSuggestionsPreference = z.infer<typeof preferenceSchema>;
+
+const c = initContract();
+const errors = {
+  400: apiErrorSchema,
+  401: apiErrorSchema,
+  403: apiErrorSchema,
+};
+export const proactiveSuggestionsContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/preferences/proactive-suggestions",
+    headers: authHeadersSchema,
+    responses: { 200: preferenceSchema, ...errors },
+    summary: "Get your Proactive Suggestions preference",
+  },
+  update: {
+    method: "PUT",
+    path: "/api/preferences/proactive-suggestions",
+    headers: authHeadersSchema,
+    body: z.object({ enabled: z.boolean() }),
+    responses: { 200: preferenceSchema, ...errors },
+    summary: "Update your Proactive Suggestions preference",
+  },
+});

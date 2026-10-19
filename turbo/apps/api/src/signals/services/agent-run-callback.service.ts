@@ -8,7 +8,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { computeHmacSignature } from "../../lib/event-consumer/hmac";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -29,6 +29,7 @@ const L = logger("AgentRunCallback");
 // never mistaken for HTTP callbacks by the terminal dispatch queries.
 const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
   "slack:chat",
+  "wechat:chat",
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
@@ -74,24 +75,6 @@ interface DispatchSingleCallbackInput {
   readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
 
-export async function undeliveredChatCallbackIdForRun(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<string | undefined> {
-  const [callback] = await db
-    .select({ id: agentRunCallbacks.id })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        inArray(agentRunCallbacks.status, ["pending", "failed"]),
-      ),
-    )
-    .limit(1);
-  return callback?.id;
-}
-
 interface DispatchInternalRunCallbackInput {
   readonly callback: CallbackRecord;
   readonly runId: string;
@@ -132,6 +115,12 @@ const dispatchInternalCallback$ = command(
           input.envelope,
           signal,
         );
+      }
+      case "wechat:chat": {
+        return {
+          success: false,
+          error: "WeChat chat delivery callbacks are inline-only",
+        };
       }
       case "slack:chat": {
         return {

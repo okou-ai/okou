@@ -1,0 +1,38 @@
+[package]
+name = "guest-agent-tests"
+version = "0.1.13"
+edition.workspace = true
+description = "Isolated guest-agent integration tests with compiled shared fixtures"
+publish = false
+
+# Original-package binary/version/source tests still use this canonical module.
+# An explicit library root shares its implementation without a reverse dev edge.
+[lib]
+path = "../guest-agent/tests/common/mod.rs"
+
+[dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
+guest-agent.workspace = true
+guest-contracts.workspace = true
+guest-telemetry.workspace = true
+libc = { workspace = true, features = ["std"] }
+process-control-ipc.workspace = true
+serde_json = { workspace = true, features = ["raw_value", "std"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "test-util", "time"] }
+tokio-util.workspace = true
+
+[dev-dependencies]
+api-contracts.workspace = true
+base64 = { workspace = true, features = ["simd-unsafe", "std"] }
+flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
+futures-util = { workspace = true, features = ["async-await", "async-await-macro", "std"] }
+httpmock = { workspace = true, features = ["cookies"] }
+reqwest = { workspace = true, features = ["json", "rustls"] }
+rustix = { workspace = true, features = ["event", "fs", "linux_4_11", "process", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+shell-quote.workspace = true
+tempfile = { workspace = true, features = ["getrandom"] }
+uuid = { workspace = true, features = ["std", "v4", "v5"] }
+
+[lints]
+workspace = true

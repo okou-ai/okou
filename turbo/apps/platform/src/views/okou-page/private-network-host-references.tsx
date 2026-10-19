@@ -1,9 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { CloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
-import {
-  privateNetworkHostCount,
-  privateNetworkVncHosts,
-} from "../../lib/private-network-references.ts";
+import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 
 export function PrivateNetworkHostReferences({
   config,
@@ -12,7 +9,6 @@ export function PrivateNetworkHostReferences({
 }) {
   const { t } = useTranslation();
   const count = privateNetworkHostCount(config);
-  const vncHosts = privateNetworkVncHosts(config);
   return (
     <div className="grid gap-1 text-sm text-muted-foreground">
       <p>
@@ -39,7 +35,7 @@ export function PrivateNetworkHostReferences({
               </li>
             );
           })}
-          {vncHosts.map((host) => {
+          {config.vncHosts.map((host) => {
             return (
               <li key={`vnc:${host.id}`}>
                 <span>{host.displayName}</span> ·{" "}

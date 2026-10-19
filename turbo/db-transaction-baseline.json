@@ -147,11 +147,6 @@
       "owner": "clearChatThreadConnectorSelection"
     },
     {
-      "id": "TX-0094",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-metadata-update.service.ts",
-      "owner": "commitMetadata$"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
@@ -165,21 +160,6 @@
       "id": "TX-0097",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "deleteChatThreadContent$"
-    },
-    {
-      "id": "TX-0104",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "updateCloudflareAccessConfig$"
-    },
-    {
-      "id": "TX-0106",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "convertCloudflareAccessToOrganization$"
-    },
-    {
-      "id": "TX-0107",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "convertCloudflareAccessToPersonal$"
     },
     {
       "id": "TX-0111",
@@ -417,16 +397,6 @@
       "owner": "reserveDormantIdentity$"
     },
     {
-      "id": "TX-0205",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "retainDormantIdentity$"
-    },
-    {
-      "id": "TX-0206",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "deleteReservedCreationOrphan$"
-    },
-    {
       "id": "TX-0208",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeDormantMaterialization$"
@@ -440,11 +410,6 @@
       "id": "TX-0210",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "discardDormantMaterialization$"
-    },
-    {
-      "id": "TX-0211",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "pauseRemovedAutomationConfiguration$"
     },
     {
       "id": "TX-0216",

@@ -9,10 +9,12 @@ import type {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathParams$ } from "../route.ts";
-import { onRejection } from "../utils.ts";
+import { pageVersion$ } from "../page-signal.ts";
+import { NEVER_RESOLVED_PROMISE, resetSignal, settle } from "../utils.ts";
 import type {
   AgentEvent,
   AgentEventsResponse,
+  LogDetail,
 } from "../okou-page/log-types.ts";
 import { groupVisibleGroups, type EventGroup } from "./log-detail-utils.ts";
 import {
@@ -27,25 +29,19 @@ type AgentEventsClient = InitClientReturn<
   InitClientArgs
 >;
 
+type ActivityDetailClient = InitClientReturn<
+  typeof logsByIdContract,
+  InitClientArgs
+>;
+
 interface ActivityEvents {
   readonly runId: string;
   readonly events: AgentEvent[];
 }
 
-type ActivityEventsState =
-  | {
-      readonly phase: "loading" | "unavailable";
-      readonly runId: string;
-    }
-  | {
-      readonly phase: "ready";
-      readonly data: ActivityEvents;
-    };
-
 interface ActivityVisibleGroups {
   readonly runId: string | null;
   readonly groups: EventGroup[];
-  readonly loading: boolean;
 }
 
 export const currentRunId$ = computed((get) => {
@@ -82,7 +78,7 @@ async function fetchAgentEventBatch(
   client: AgentEventsClient,
   runId: string,
   signal: AbortSignal,
-): Promise<AgentEvent[]> {
+): Promise<ActivityEvents> {
   let page = await fetchAgentEventPage(client, runId, undefined, signal);
   const events = [...page.events];
 
@@ -104,67 +100,96 @@ async function fetchAgentEventBatch(
     page = nextPage;
   }
 
-  return events;
+  return { runId, events };
 }
 
-const internalActivityEventsState$ = state<ActivityEventsState | null>(null);
+async function fetchActivityDetail(
+  client: ActivityDetailClient,
+  runId: string,
+  signal: AbortSignal,
+): Promise<LogDetail> {
+  const result = await accept(
+    client.getById({
+      params: { id: runId },
+      fetchOptions: { signal },
+    }),
+    [200],
+    signal,
+  );
+  return result.body;
+}
 
-export const activityEvents$ = computed((get) => {
-  const runId = get(currentRunId$);
-  const state = get(internalActivityEventsState$);
-  if (!runId || state?.phase !== "ready" || state.data.runId !== runId) {
-    return null;
-  }
-  return state.data;
+const activityData$ = computed((get) => {
+  get(pageVersion$);
+  return {
+    runId: get(currentRunId$),
+    detail$: state<Promise<LogDetail>>(NEVER_RESOLVED_PROMISE),
+    events$: state<Promise<ActivityEvents>>(NEVER_RESOLVED_PROMISE),
+    resetRefresh$: resetSignal(),
+  };
 });
 
-const activityEventsLoading$ = computed((get) => {
-  const runId = get(currentRunId$);
-  const state = get(internalActivityEventsState$);
-  return state?.phase === "loading" && state.runId === runId;
+export const activityEvents$ = computed(async (get) => {
+  const data = get(activityData$);
+  return data.runId ? await get(data.events$) : null;
 });
 
-export const setupActivityEvents$ = command(
+export const setupActivity$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const runId = get(currentRunId$);
+    signal.throwIfAborted();
+    const data = get(activityData$);
+    const runId = data.runId;
     if (!runId) {
-      set(internalActivityEventsState$, null);
       return;
     }
 
-    set(internalActivityEventsState$, { phase: "loading", runId });
-    const client = get(apiClient$)(runAgentEventsContract);
-    const events = await onRejection(
-      fetchAgentEventBatch(client, runId, signal),
-      () => {
-        if (!signal.aborted) {
-          set(internalActivityEventsState$, { phase: "unavailable", runId });
-        }
-      },
+    const client = get(apiClient$);
+    const detail = fetchActivityDetail(client(logsByIdContract), runId, signal);
+    const events = fetchAgentEventBatch(
+      client(runAgentEventsContract),
+      runId,
+      signal,
     );
+    set(data.detail$, detail);
+    set(data.events$, events);
+    // The detail request keeps its error for the page's not-found view.
+    await Promise.all([settle(detail), events]);
     signal.throwIfAborted();
-
-    set(internalActivityEventsState$, {
-      phase: "ready",
-      data: { runId, events },
-    });
   },
 );
 
 export const activityDetail$ = computed(async (get) => {
-  const runId = get(currentRunId$);
-  if (!runId) {
-    return null;
-  }
-
-  const result = await accept(
-    get(apiClient$)(logsByIdContract).getById({
-      params: { id: runId },
-    }),
-    [200],
-  );
-  return result.body;
+  const data = get(activityData$);
+  return data.runId ? await get(data.detail$) : null;
 });
+
+export const refreshActivity$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const data = get(activityData$);
+    const runId = data.runId;
+    if (!runId) {
+      return;
+    }
+    const refreshSignal = set(data.resetRefresh$, signal);
+    const client = get(apiClient$);
+    const detail = fetchActivityDetail(
+      client(logsByIdContract),
+      runId,
+      refreshSignal,
+    );
+    const events = fetchAgentEventBatch(
+      client(runAgentEventsContract),
+      runId,
+      refreshSignal,
+    );
+    await Promise.all([detail, events]);
+    signal.throwIfAborted();
+    refreshSignal.throwIfAborted();
+    set(data.detail$, detail);
+    set(data.events$, events);
+  },
+);
 
 const internalStepSearch$ = state("");
 
@@ -182,12 +207,10 @@ export const activityVisibleGroups$ = computed(async (get) => {
     get(activityDetail$),
     get(activityEvents$),
   ]);
-  const loading = get(activityEventsLoading$);
   if (!detail || !events || events.runId !== detail.id) {
     return {
       runId,
       groups: [],
-      loading,
     } satisfies ActivityVisibleGroups;
   }
   return {
@@ -195,7 +218,6 @@ export const activityVisibleGroups$ = computed(async (get) => {
     groups: groupVisibleGroups(events.events, {
       framework: detail.framework,
     }),
-    loading: false,
   } satisfies ActivityVisibleGroups;
 });
 

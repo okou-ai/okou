@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Bound FK cleanup probes without blocking active checkpoint writers.
 SET lock_timeout = '1s';
 --> statement-breakpoint

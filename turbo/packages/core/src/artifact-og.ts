@@ -154,6 +154,40 @@ function validTag(name: string, value: string): boolean {
   );
 }
 
+/** Read authored Open Graph fields without treating document content as metadata. */
+export function htmlOpenGraphMetadata(html: string, documentUrl: string) {
+  const parsed = inspectHtml(html);
+  const content = (name: string) => {
+    return parsed.tags
+      .find((tag) => {
+        return tag.name === name && tag.content.trim();
+      })
+      ?.content.trim();
+  };
+  const base =
+    parsed.baseHref !== undefined && URL.canParse(parsed.baseHref, documentUrl)
+      ? new URL(parsed.baseHref, documentUrl).href
+      : documentUrl;
+  const image = parsed.tags
+    .filter((tag) => {
+      return tag.name === "og:image";
+    })
+    .map((tag) => {
+      const value = tag.content.trim();
+      return value && URL.canParse(value, base)
+        ? new URL(value, base).href
+        : "";
+    })
+    .find((value) => {
+      return validTag("og:image", value);
+    });
+  return {
+    title: content("og:title")?.slice(0, 300),
+    description: content("og:description")?.slice(0, 500),
+    imageUrl: image,
+  };
+}
+
 function applyHtmlEdits(
   html: string,
   edits: (HtmlRange & { readonly text: string })[],

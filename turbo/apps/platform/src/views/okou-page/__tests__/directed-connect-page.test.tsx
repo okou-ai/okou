@@ -1,4 +1,7 @@
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
+import {
+  customConnectorAccount,
+  mockOAuthCompletions,
+} from "./connector-page-test-helpers.ts";
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
@@ -571,6 +574,19 @@ test("Reconnect the exact manual custom-connector account", async () => {
     missingRequiredFields: [],
     configuredFieldKeys: ["secret"],
   });
+  const account = customConnectorAccount(connector.id, { id: connectionId });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: [
+        {
+          target: account.target,
+          accountCount: 1,
+          attentionCount: 0,
+          defaultConnection: account,
+        },
+      ],
+    });
+  });
   let submittedValues: readonly {
     readonly key: string;
     readonly kind: "secret" | "variable";
@@ -778,6 +794,22 @@ test("Reconnect the exact custom OAuth account", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [{ ...connector, connectedAccountUpdatedAt }],
+    });
+  });
+  const account = customConnectorAccount(connector.id, {
+    id: connectionId,
+    authMethod: "oauth",
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: [
+        {
+          target: account.target,
+          accountCount: 2,
+          attentionCount: 0,
+          defaultConnection: account,
+        },
+      ],
     });
   });
   context.mocks.api(
@@ -1013,6 +1045,40 @@ test("Start public OAuth from a directed connection link", async () => {
   ).toBeVisible();
 });
 
+test("Close directed OAuth progress without reporting a failure", async () => {
+  const { authWindow } = mockConnectorOauthStart({ popupClosed: false });
+  mockPublicConnectorStatus(
+    publicOAuthConnectorStatus({
+      slug: "github",
+      label: "Public GitHub",
+      singleAuthCodeAuthMethodId: "oauth",
+    }),
+  );
+
+  await setupPage({
+    context,
+    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+  });
+
+  await screen.findByText("Okou needs Public GitHub to proceed");
+  click(getButtonByText("Connect"));
+
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe(
+      "https://oauth.test/github/authorize",
+    );
+  });
+  const progress = await screen.findByRole("dialog", {
+    name: "Connecting your account",
+  });
+
+  click(within(progress).getByLabelText("Close"));
+  expect(authWindow.closed).toBeTruthy();
+
+  await screen.findByText("Connect");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 test("Connect a no-auth connector and continue the originating chat", async () => {
   mockPublicConnectorStatus(
     publicNoAuthConnectorStatus({
@@ -1057,7 +1123,6 @@ test("Connect a no-auth connector and continue the originating chat", async () =
       continuationPrompt = body.prompt ?? null;
     }
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000201",
       threadId,
     });
   });
@@ -1124,7 +1189,6 @@ test("Complete OpenID and continue the originating chat", async () => {
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     continuationPrompt = body.prompt ?? null;
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000202",
       threadId,
     });
   });
@@ -1307,7 +1371,6 @@ test("Reconnect the exact account and continue the originating chat only after s
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     continuationPrompt = body.prompt ?? null;
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000203",
       threadId,
     });
   });
@@ -1347,6 +1410,8 @@ test("Connect a manual grant and continue the originating chat", async () => {
   let submittedValues: Record<string, string> | null = null;
   const threadId = "00000000-0000-4000-a000-000000000103";
   const callbackPrompt = "Re-check Axiom, then continue";
+  const callbackStarted = context.mocks.deferred<void>();
+  const releaseCallback = context.mocks.deferred<void>();
   let continuationPrompt: string | null = null;
   context.mocks.api(
     builtinConnectorManualGrantContract.connect,
@@ -1370,10 +1435,11 @@ test("Connect a manual grant and continue the originating chat", async () => {
       });
     },
   );
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
     continuationPrompt = body.prompt ?? null;
+    callbackStarted.resolve();
+    await releaseCallback.promise;
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000203",
       threadId,
     });
   });
@@ -1397,6 +1463,11 @@ test("Connect a manual grant and continue the originating chat", async () => {
     "xaat-directed-connect",
   );
   click(getButtonByText("Save"));
+
+  await callbackStarted.promise;
+  expect(getButtonByText("Saving...")).toBeDisabled();
+  expect(axiomDialog).toBeInTheDocument();
+  releaseCallback.resolve();
 
   await waitFor(() => {
     expect(submittedValues).toStrictEqual({

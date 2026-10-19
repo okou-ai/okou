@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.5.17](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.16...runner-storage-v0.5.17) (2026-10-19)
+
+## [0.5.16](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.15...runner-storage-v0.5.16) (2026-10-19)
+
+## [0.5.15](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.14...runner-storage-v0.5.15) (2026-10-19)
+
+## [0.5.14](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.13...runner-storage-v0.5.14) (2026-10-17)
+
+## [0.5.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.12...runner-storage-v0.5.13) (2026-10-17)
+
+## [0.5.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.11...runner-storage-v0.5.12) (2026-10-17)
+
+## [0.5.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.10...runner-storage-v0.5.11) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-storage:** converge archive publication cleanup ([#40792](https://github.com/okou-ai/okou/issues/40792)) ([5ca0b46](https://github.com/okou-ai/okou/commit/5ca0b463c3cae06279f7e44839a527f9d3e88a81))
+
+## [0.5.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.9...runner-storage-v0.5.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-storage:** converge template download error cleanup ([#40743](https://github.com/okou-ai/okou/issues/40743)) ([5cbe760](https://github.com/okou-ai/okou/commit/5cbe76087f8057f7bd30fe1ba2e3fbb9ea926e64))
+* **runner-storage:** make decoded cache lookup outcomes explicit ([#40744](https://github.com/okou-ai/okou/issues/40744)) ([423c1b8](https://github.com/okou-ai/okou/commit/423c1b8033bff9fcbf3753be1ae12adf1692b29f))
+* **runner:** express storage eviction accounting as domain outcomes ([#40765](https://github.com/okou-ai/okou/issues/40765)) ([d3ad8e7](https://github.com/okou-ai/okou/commit/d3ad8e7967d5290fbe55d278918a92808b1b5ae5))
+
 ## [0.5.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.8...runner-storage-v0.5.9) (2026-10-16)
 
 

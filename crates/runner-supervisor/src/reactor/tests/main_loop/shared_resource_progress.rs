@@ -230,7 +230,7 @@ async fn heartbeat_task_panic_stops_claiming_and_runs_common_teardown() {
 }
 
 #[tokio::test]
-async fn routine_gc_progresses_while_the_reactor_waits_for_the_idle_pool() {
+async fn draining_routine_gc_retires_while_the_reactor_waits_for_the_idle_pool() {
     let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
@@ -262,8 +262,8 @@ async fn routine_gc_progresses_while_the_reactor_waits_for_the_idle_pool() {
     drive_ready_reactor(reactor.as_mut()).await;
     release.add_permits(1);
 
-    // Deliberately do not poll the reactor. The GC owner must complete real
-    // filesystem work and retain its routine lock through the capacity marker.
+    // Deliberately do not poll the reactor. The accepted owner must observe
+    // drain independently and retire without claiming completed maintenance.
     let routine_holder = tokio::time::timeout(
         Duration::from_secs(2),
         runner_host::lock::acquire(routine_path),
@@ -271,7 +271,7 @@ async fn routine_gc_progresses_while_the_reactor_waits_for_the_idle_pool() {
     .await
     .expect("routine GC must progress independently")
     .unwrap();
-    assert!(std::fs::metadata(capacity_path).unwrap().len() > 0);
+    assert_eq!(std::fs::metadata(capacity_path).unwrap().len(), 0);
     drop(routine_holder);
     drop(pool_holder);
     tokio::time::timeout(Duration::from_secs(5), reactor)
@@ -336,7 +336,7 @@ async fn teardown_joins_routine_gc_before_releasing_its_owner_lock() {
         .unwrap();
     let _routine_holder = runner_host::lock::acquire(routine_path).await.unwrap();
     let capacity_holder = runner_host::lock::acquire(capacity_path).await.unwrap();
-    assert!(capacity_holder.metadata().unwrap().len() > 0);
+    assert_eq!(capacity_holder.metadata().unwrap().len(), 0);
     assert_stopped_status(&env).await;
 }
 

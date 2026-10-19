@@ -112,6 +112,12 @@
       "files": {
         "connecting": "Menghubungkan ke file…",
         "currentFolder": "Folder saat ini",
+        "download": "Unduh {{name}}",
+        "downloadChanged": "File berubah saat diunduh. Unduh kembali.",
+        "downloadFailed": "Unduhan gagal. Coba lagi.",
+        "downloadFrame": "Unduhan file",
+        "downloadUnsupported": "Browser ini tidak mendukung unduhan file.",
+        "downloadUpdateRequired": "Muat ulang halaman dan coba lagi. Jika unduhan tetap tidak tersedia, mulai proses baru.",
         "empty": "Folder ini kosong.",
         "enterFolder": "Buka folder {{name}}",
         "goHome": "Buka folder home",
@@ -124,6 +130,17 @@
         "other": "Lainnya",
         "parentFolders": "Folder induk",
         "pending": "File tersedia saat proses dalam antrean dimulai.",
+        "preview": "Pratinjau {{name}}",
+        "previewChanged": "File ini berubah. Tutup pratinjau lalu buka kembali.",
+        "previewDecode": "File ini tidak dapat didekode. Anda masih dapat mengunduhnya.",
+        "previewEmpty": "File ini kosong.",
+        "previewInvalid": "File ini tidak dapat dipratinjau. Anda masih dapat mengunduhnya.",
+        "previewLoading": "Memuat pratinjau…",
+        "previewSize": "File ini terlalu besar untuk pratinjau. Anda masih dapat mengunduhnya.",
+        "previewTruncated": "Menampilkan 64 KiB pertama. Unduh file untuk melihat seluruh isinya.",
+        "previewUnavailable": "Pratinjau tidak tersedia. Tutup dan coba lagi, atau unduh file.",
+        "previewUnsupported": "Pratinjau tidak tersedia untuk jenis file ini. Anda masih dapat mengunduhnya.",
+        "previewUpdateRequired": "Muat ulang halaman ini dan coba lagi. Jika pratinjau masih tidak tersedia, mulai proses baru.",
         "readonly": "File hanya baca dari proses saat ini.",
         "refresh": "Segarkan",
         "retry": "Coba lagi",
@@ -134,7 +151,7 @@
         "updateRequired": "Proses ini tidak mendukung file. Mulai proses baru setelah sandbox diperbarui."
       },
       "log": "Log",
-      "manualReloadNotice": "Muat ulang halaman ini untuk melihat log aktivitas terbaru.",
+      "manualReloadNotice": "Log tidak diperbarui secara otomatis.",
       "modelProvidedBy": "{{model}} disediakan oleh {{provider}}",
       "networkEmpty": {
         "description": "Tidak ada traffic jaringan yang direkam untuk run ini.",
@@ -145,6 +162,7 @@
         "description": "Log ini tidak ada atau Anda tidak memiliki izin untuk melihatnya di ruang kerja saat ini.",
         "title": "Log tidak ditemukan"
       },
+      "refresh": "Segarkan",
       "runner": {
         "environment": "Lingkungan",
         "framework": "Framework",
@@ -1530,13 +1548,17 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "continueChat": "Lanjutkan chat",
       "dismiss": "Abaikan",
       "label": "Saran",
-      "newChat": "Chat baru",
       "next": "Saran berikutnya",
       "position": "{{current}} dari {{total}}",
-      "previous": "Saran sebelumnya"
+      "previous": "Saran sebelumnya",
+      "recoveryHint": "Periksa chat sebelum mengirim lagi. Anda dapat memulihkan saran ke draf.",
+      "restoreDraft": "Pulihkan draf",
+      "runFailed": "Tidak dapat memulai saran",
+      "runInChat": "Jalankan di chat ini",
+      "runNewChat": "Jalankan di chat baru",
+      "starting": "Memulai…"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -1770,6 +1792,7 @@
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
       "slashActions": {
+        "actions": "Tindakan",
         "archive": "Arsipkan obrolan",
         "back": "Kembali",
         "connect": "Hubungkan alat",
@@ -1783,6 +1806,11 @@
         "pin": "Sematkan obrolan",
         "rename": "Ganti nama obrolan",
         "schedule": "Jadwalkan",
+        "scheduleCustom": "Jadwal khusus",
+        "scheduleEveryMonday": "Setiap Senin",
+        "scheduleEveryMonth": "Hari pertama setiap bulan",
+        "scheduleEveryMorning": "Setiap pagi",
+        "scheduleEveryWeekday": "Setiap hari kerja",
         "scheduleHint": "Jalankan sesuai jadwal",
         "share": "Bagikan obrolan",
         "shareHint": "Bagikan tautan ke percakapan ini",
@@ -1791,6 +1819,7 @@
       },
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
+        "hint": "Cari alur kerja atau pilih templat…",
         "make": "Buat",
         "useTemplate": "Gunakan templat {{title}}"
       },
@@ -2076,14 +2105,10 @@
       "communications": "Pesan",
       "idle": "Tidak aktif",
       "loadFailed": "Gagal memuat",
-      "loading": "Memuat…",
       "messageUnavailable": "Pesan tidak tersedia",
-      "more": "Lainnya",
-      "noMessages": "Belum ada pesan",
       "origin": "Dari",
       "queued": "Dalam antrean",
       "received": "Diterima",
-      "refresh": "Muat ulang",
       "running": "Berjalan",
       "sent": "Dikirim",
       "toggleMessages": "Pesan dengan {{title}}",
@@ -2114,8 +2139,7 @@
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
-      "title": "Sumber daya chat",
-      "viewAll": "Lihat semua"
+      "title": "Sumber daya chat"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -3505,7 +3529,6 @@
         "connectedDescription": "Akun Teams Anda terhubung.",
         "connectTitle": "Hubungkan Microsoft Teams",
         "identityMismatch": "Akun atau ruang kerja Teams yang diminta tidak cocok dengan koneksi saat ini.",
-        "identityUnknown": "Kami tidak dapat mengonfirmasi akun Teams dalam tautan ini. Buka Teams untuk memeriksa akun Anda.",
         "install": "Instal di Teams",
         "invalidContext": "Informasi akun Teams pada tautan ini tidak lengkap. Buka tautan koneksi baru dari Teams.",
         "open": "Buka Teams",
@@ -3938,7 +3961,6 @@
     "retry": "Coba lagi",
     "samplePages": "Halaman contoh: {{total}}",
     "title": "Dokumen",
-    "use": "Gunakan templat",
     "useNamed": "Gunakan {{title}}"
   },
   "global": {
@@ -5101,6 +5123,15 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
+      "proactiveSuggestions": {
+        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "preparationFailed": "Penyiapan tidak dapat diselesaikan. Coba lagi.",
+        "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
+        "retry": "Coba lagi",
+        "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Saran proaktif"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Tekan ⌘/Ctrl+Enter untuk mengirim, Enter untuk baris baru",
@@ -5158,7 +5189,6 @@
       "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
-      "permissionsUnknown": "Hubungkan kembali Link untuk meninjau dan mengonfirmasi izin saat ini.",
       "retry": "Coba lagi",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
       "title": "Dompet",
@@ -5188,8 +5218,7 @@
         "statusLabel": "Status",
         "title": "Transaksi Link",
         "unknownStatus": "Status tidak tersedia"
-      },
-      "workspaceScopeChanged": "Dompet Link Anda kini dapat digunakan oleh semua agen Anda di ruang kerja ini. Hubungkan kembali untuk menyetujui perubahan ini."
+      }
     },
     "workspace": {
       "danger": {
@@ -5770,16 +5799,27 @@
     "loading": "Memuat konfigurasi VNC…",
     "manage": "Kelola VNC",
     "native": {
-      "editPending": "Pengeditan rute jaringan privat ini belum tersedia.",
+      "configuration": "Konfigurasi jaringan",
+      "empty": "Tambahkan jaringan yang dapat digunakan kembali di pengaturan Cloudflare Access atau Tailscale, lalu kembali ke sini untuk memilihnya.",
+      "gatewayHelp": "Gunakan nama host aplikasi TCP Cloudflare dan port 443. Tunnel memilih port tujuan; konfigurasikan identitas sertifikat VNC dan layanan Kerberos secara terpisah.",
       "hostCount_other": "{{count}} host",
       "impactConfirm": "Saya memahami bahwa host anggota ini tetap tersimpan, tetapi tidak dapat terhubung hingga pemiliknya menautkan ulang host tersebut.",
       "impactSummary": "Terdampak: {{members}} dan {{hosts}}. Host tetap tersimpan, tetapi tidak dapat terhubung hingga pemiliknya menautkan ulang host tersebut. Tidak ada host yang beralih ke koneksi langsung secara otomatis.",
       "inUse": "Host SSH atau VNC Anda masih menggunakan jaringan ini. Tautkan ulang atau hapus host tersebut terlebih dahulu.",
       "kdcRole": "Server autentikasi",
+      "loadFailed": "Tidak dapat memuat konfigurasi jaringan.",
+      "loading": "Memuat konfigurasi jaringan…",
+      "macHelp": "Kompatibilitas mode terpilih dengan Berbagi Layar macOS mandiri masih perlu diverifikasi. Melindungi koneksi ini tidak mencegah klien lain mengakses layanan VNC pada Mac.",
       "needsRebind": "Rute jaringan privat ini memerlukan konfigurasi baru. Rute tidak dapat terhubung hingga ditautkan ulang.",
+      "originCaBundle": "Sertifikat CA TLS origin",
+      "originServerName": "Nama server TLS origin",
       "originTls": "TLS asal",
+      "originTlsHelp": "Mac dan mode RSA-AES khusus autentikasi memerlukan layanan TLS dengan sertifikat terverifikasi pada server yang dipilih, yang hanya meneruskan ke VNC lokal. Identitas dan kepercayaannya terpisah dari gateway Cloudflare dan sertifikat VNC bagian dalam.",
+      "originTrust": "Kepercayaan sertifikat TLS origin",
+      "peerHelp": "Gunakan IP atau nama peer Tailscale yang persis serta port layanan yang diizinkan oleh jaringan terpilih. Layanan maupun izin SSH tidak diperlukan.",
       "protectionHelp": "Mode autentikasi ini tidak mengenkripsi lalu lintas desktop. Rute jaringan privat yang dipilih harus melindungi seluruh koneksi ke server ini.",
-      "rfbRole": "Desktop"
+      "rfbRole": "Desktop",
+      "select": "Pilih konfigurasi jaringan tersimpan"
     },
     "port": "Port",
     "retry": "Coba lagi",
@@ -5839,7 +5879,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "Hanya subtipe QEMU 263. TLS memverifikasi server sebelum SCRAM; tidak beralih ke PLAIN atau subtipe 264.",
       "serverName": "Identitas sertifikat TLS",
-      "serverNameHelp": "Opsional. Kosongkan untuk memverifikasi sertifikat terhadap host tujuan RFB. Atur hanya jika sertifikat menggunakan nama DNS yang berbeda.",
+      "serverNameHelp": "Cloudflare Access memerlukan identitas sertifikat server RFB. Untuk rute lain, kolom ini dapat dikosongkan agar verifikasi menggunakan host tujuan RFB.",
       "serverNameHint": "mis. desktop.internal.example.com",
       "system": "Otoritas sertifikat sistem",
       "title": "Kepercayaan sertifikat server",
@@ -5863,7 +5903,7 @@
       "empty": "Tidak ada host SSH tersimpan. Tambahkan satu di pengaturan SSH sebelum menggunakan rute ini.",
       "loadFailed": "Host SSH tersimpan tidak dapat dimuat.",
       "loading": "Memuat host SSH tersimpan…",
-      "privateDirectHelp": "Alamat IP privat atau loopback memerlukan host SSH yang tersimpan. Pilih rute SSH di atas; koneksi tidak akan berubah secara otomatis.",
+      "privateDirectHelp": "Alamat IP privat memerlukan rute jaringan privat yang didukung atau host SSH tersimpan. Pilih rute secara eksplisit.",
       "select": "Pilih host SSH tersimpan",
       "selectionUnavailable": "Host SSH yang dipilih tidak lagi tersedia. Pilih host lain atau ubah secara eksplisit ke Langsung.",
       "ssh": "Melalui host SSH tersimpan",
@@ -6565,7 +6605,6 @@
       "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
       "connectedTitle": "Terhubung ke Discord",
       "connectTitle": "Hubungkan ke Discord",
-      "continueInNewTab": "Lanjutkan di tab baru",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
@@ -6622,6 +6661,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Akun",
+      "agentLabel": "Agen",
       "code": "Kode verifikasi",
       "connect": "Hubungkan",
       "connected": "Terhubung",
@@ -6631,11 +6672,15 @@
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat. Coba lagi.",
       "instructions": "Pindai kode QR ini dengan WeChat, lalu konfirmasi di ponsel Anda.",
+      "linkUnavailable": "Tautan ini tidak tersedia. Gunakan akun dan ruang kerja semula, lalu kirim pesan lagi di WeChat untuk mendapatkan tautan baru. Anda juga dapat memindai kode QR baru.",
       "name": "WeChat",
+      "newQr": "Hubungkan dengan kode QR baru",
       "reconnect": "Hubungkan kembali",
       "reconnect_required": "Pindai lagi untuk menghubungkan kembali.",
       "restart_required": "Akun WeChat ini sudah ditautkan. Buat kode QR baru untuk menghubungkannya kembali.",
+      "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "retry": "Buat kode QR baru",
+      "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
       "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
@@ -6643,7 +6688,8 @@
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
       "verification_required": "Masukkan kode verifikasi yang ditampilkan di WeChat.",
       "verify": "Verifikasi",
-      "waiting": "Menunggu pemindaian…"
+      "waiting": "Menunggu pemindaian…",
+      "workspaceLabel": "Ruang kerja"
     }
   }
 }

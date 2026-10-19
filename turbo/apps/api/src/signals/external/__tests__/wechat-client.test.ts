@@ -6,7 +6,7 @@ import {
   sendWechatText,
   wechatOrigin,
   WechatSessionExpiredError,
-} from "../wechat-client";
+} from "@okouai/core/wechat-client";
 const origin = "https://ilinkai.weixin.qq.com";
 describe("WeChat protocol boundaries", () => {
   it("preserves uint64 IDs and does not rewrite message text", async () => {
@@ -24,8 +24,8 @@ describe("WeChat protocol boundaries", () => {
       "",
       new AbortController().signal,
     );
-    expect(result.msgs?.[0]?.message_id).toBe("18446744073709551615");
-    expect(result.msgs?.[0]?.item_list?.[0]?.text_item?.text).toBe(
+    expect(result?.msgs?.[0]?.message_id).toBe("18446744073709551615");
+    expect(result?.msgs?.[0]?.item_list?.[0]?.text_item?.text).toBe(
       "message_id: 123",
     );
   });
@@ -61,6 +61,22 @@ describe("WeChat protocol boundaries", () => {
     await expect(
       getWechatUpdates(origin, "test-token", "", new AbortController().signal),
     ).rejects.toBeInstanceOf(WechatSessionExpiredError);
+  });
+  it("rejects provider redirects without forwarding credentials", async () => {
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return new HttpResponse(null, {
+          status: 307,
+          headers: { Location: "https://other-provider.test/getupdates" },
+        });
+      }),
+      http.post("https://other-provider.test/getupdates", () => {
+        return HttpResponse.json({ msgs: [] });
+      }),
+    );
+    await expect(
+      getWechatUpdates(origin, "test-token", "", new AbortController().signal),
+    ).rejects.toThrow("WeChat request failed (307)");
   });
   it.each([
     "http://ilinkai.weixin.qq.com",

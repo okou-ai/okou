@@ -135,9 +135,9 @@ export const startDiscordAuthorization$ = command(
                 completion.status === 409 &&
                 completion.body.error.code === "DISCORD_OAUTH_APPROVAL_REQUIRED"
               ) {
-                // A 0.1018 consent tab can approve and close while an older
-                // pending response is in flight. Check once more under the
-                // private proof before treating closure as cancellation.
+                // A consent tab can approve and close while an older pending
+                // response is in flight. Check once more under the private
+                // proof before treating closure as cancellation.
                 if (!popup.closed || !closedBeforeRequest) {
                   return false;
                 }

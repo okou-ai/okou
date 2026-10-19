@@ -1,9 +1,4 @@
-import type { SQLWrapper } from "drizzle-orm";
 import { z, type output, type ZodType } from "zod";
-
-type ApiDb = ReturnType<(typeof import("./db"))["db"]>;
-
-type RawSqlExecutor = Pick<ApiDb, "execute">;
 
 export const pgInt8ToSafeIntegerSchema = z
   .string()
@@ -33,12 +28,4 @@ export function parseRawRows<TSchema extends ZodType>(
   return result.rows.map((row) => {
     return rowSchema.parse(row);
   });
-}
-
-export async function executeRawRows<TSchema extends ZodType>(
-  executor: RawSqlExecutor,
-  query: SQLWrapper,
-  rowSchema: TSchema,
-): Promise<output<TSchema>[]> {
-  return parseRawRows(rowSchema, await executor.execute(query));
 }

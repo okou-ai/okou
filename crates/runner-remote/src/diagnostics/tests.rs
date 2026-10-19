@@ -6,10 +6,10 @@ fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
         connection,
         operation: Operation::Exec,
         identity: Identity::default(),
-        cause: match protocol {
+        cause: Some(match protocol {
             Protocol::Ssh => Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch),
             Protocol::Vnc => Cause::Vnc(crate::vnc::Failure::AuthenticationFailed),
-        },
+        }),
         dependency: None,
         native: None,
         ssh: None,
@@ -66,7 +66,15 @@ fn replacement_preserves_history_but_fences_stale_producers_and_other_runs() {
     let old = Handle::new(RunId::new_v4(), true);
     let connection = Uuid::new_v4();
     failure(&old, Protocol::Ssh, connection);
+    let check = old.check_scope();
     let current = old.replacement(true);
+    assert!(!check.current());
+    failure(&check, Protocol::Vnc, connection);
+    assert!(check.select(Protocol::Vnc, &Selector::default()).is_none());
+    assert_eq!(
+        old.finish_check(None, trace::Progress::Unknown)["status"],
+        "blocked"
+    );
     failure(&old, Protocol::Vnc, connection);
     assert!(
         current
@@ -175,13 +183,13 @@ fn shared_native_cause_is_pinned_for_both_consumers_and_cleanup_cannot_replace_i
                 vnc,
                 Identity::default(),
                 &source,
-                Dependency {
+                Some(Dependency {
                     protocol: Protocol::Ssh,
                     connection_id: ssh,
                     cause: None,
                     configuration_created_at: None,
                     configuration_generation: None,
-                },
+                }),
                 &active,
             )
             .unwrap(),
@@ -253,7 +261,7 @@ fn intentional_session_retirement_cannot_receive_or_overwrite_a_later_native_fai
                         ..Identity::default()
                     },
                     &source,
-                    dependency.clone(),
+                    Some(dependency.clone()),
                     active,
                 )
                 .unwrap(),

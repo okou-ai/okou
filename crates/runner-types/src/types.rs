@@ -1727,6 +1727,8 @@ pub struct HeartbeatState {
     pub allocated_vcpu: u32,
     pub allocated_memory_mb: u32,
     pub running_count: usize,
+    /// Advisory profiles that fit after reclaiming owned parked inventory.
+    /// Allocated resources still include it; actual admission reserves locally.
     pub admittable_profiles: Vec<String>,
     pub held_sandbox_states: Vec<HeldSandboxState>,
     /// Whole home inventory, including empty arrays that clear prior observations.

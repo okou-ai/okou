@@ -1830,14 +1830,12 @@ export const chatEventsContract = c.router({
         .strict(),
     ]),
     responses: {
+      /**
+       * A send enqueues its input and returns without waiting for a run. The
+       * run, or an `input.rejected` event explaining why none started,
+       * appears in the thread's event stream.
+       */
       201: z.object({
-        /**
-         * Always null: a send enqueues its input and returns without waiting
-         * for a run. The key stays because older clients require it. The run,
-         * or an `input.rejected` event explaining why none started, appears
-         * in the thread's event stream.
-         */
-        runId: z.string().nullable(),
         threadId: z.string(),
         createdAt: z.string().optional(),
       }),
@@ -2026,30 +2024,6 @@ export const chatThreadArtifactsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "List uploaded files associated with every run in a chat thread",
-  },
-  /** @deprecated Cached App compatibility; use artifactGoogleDriveContract.upload. */
-  syncGoogleDrive: {
-    method: "POST",
-    path: "/api/chat-threads/:threadId/artifacts",
-    headers: authHeadersSchema,
-    pathParams: chatThreadThreadIdPathParamsSchema,
-    body: z.object({
-      runId: z.string(),
-      fileId: z.string(),
-    }),
-    responses: {
-      200: z.object({
-        id: z.string(),
-        name: z.string(),
-        webViewLink: z.string().nullable(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Sync a chat artifact file to the user's connected Google Drive",
   },
 });
 

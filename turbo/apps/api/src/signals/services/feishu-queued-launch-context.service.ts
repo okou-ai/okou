@@ -1,4 +1,3 @@
-import { isFeishuInstallationEnabled } from "./feishu-config";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -7,7 +6,6 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
 import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
 import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -47,7 +45,9 @@ type FeishuLaunchContextRow = Pick<
   readonly connectorSourceId: string | null;
 };
 
-function requiredFeishuLaunchContext(row: FeishuLaunchContextRow | undefined) {
+export function requiredFeishuLaunchContext(
+  row: FeishuLaunchContextRow | undefined,
+) {
   if (
     !row ||
     row.conversationHistory === null ||
@@ -84,17 +84,14 @@ function requiredFeishuLaunchContext(row: FeishuLaunchContextRow | undefined) {
   };
 }
 
-async function loadFeishuLaunchContext(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-) {
-  const [row] = await db
-    .select({
+export function feishuQueuedLaunchContextReadPlan(args: {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return {
+    columns: {
       conversationHistory: chatFeishuContext.conversationHistory,
       messageText: chatFeishuContext.messageText,
       messageFiles: chatFeishuContext.messageFiles,
@@ -113,70 +110,38 @@ async function loadFeishuLaunchContext(
       installationId: chatFeishuContext.installationId,
       routeThreadId: feishuChatThreadRoutes.threadId,
       feishuDisplayName: feishuOrgConnections.feishuUserName,
-    })
-    .from(chatEvents)
-    .innerJoin(
-      chatFeishuContext,
-      and(
-        eq(chatFeishuContext.id, chatEvents.contextId),
-        eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
-      ),
-    )
-    .innerJoin(
-      feishuChatThreadRoutes,
-      and(
-        eq(feishuChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
-        eq(feishuChatThreadRoutes.connectionId, chatFeishuContext.connectionId),
-        eq(feishuChatThreadRoutes.chatId, chatFeishuContext.chatId),
-        eq(feishuChatThreadRoutes.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      feishuOrgConnections,
-      and(
-        eq(feishuOrgConnections.id, chatFeishuContext.connectionId),
-        eq(
-          feishuOrgConnections.installationId,
-          chatFeishuContext.installationId,
-        ),
-        eq(feishuOrgConnections.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      feishuOrgInstallations,
-      and(
-        eq(feishuOrgInstallations.id, chatFeishuContext.installationId),
-        eq(feishuOrgInstallations.orgId, args.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "feishu"),
-      ),
-    )
-    .limit(1);
-  if (
-    row &&
-    !(await isFeishuInstallationEnabled(db, { ...row, orgId: args.orgId }))
-  ) {
-    return null;
-  }
-  return requiredFeishuLaunchContext(row);
+    },
+    contextJoin: and(
+      eq(chatFeishuContext.id, chatEvents.contextId),
+      eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
+    ),
+    routeJoin: and(
+      eq(feishuChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+      eq(feishuChatThreadRoutes.connectionId, chatFeishuContext.connectionId),
+      eq(feishuChatThreadRoutes.chatId, chatFeishuContext.chatId),
+      eq(feishuChatThreadRoutes.userId, args.userId),
+    ),
+    connectionJoin: and(
+      eq(feishuOrgConnections.id, chatFeishuContext.connectionId),
+      eq(feishuOrgConnections.installationId, chatFeishuContext.installationId),
+      eq(feishuOrgConnections.userId, args.userId),
+    ),
+    installationJoin: and(
+      eq(feishuOrgInstallations.id, chatFeishuContext.installationId),
+      eq(feishuOrgInstallations.orgId, args.orgId),
+    ),
+    condition: and(
+      eq(chatEvents.id, args.eventId),
+      eq(chatEvents.chatThreadId, args.chatThreadId),
+      eq(chatEvents.contextType, "feishu"),
+    ),
+  };
 }
 
-export async function loadFeishuQueuedLaunchMaterial(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-): Promise<FeishuQueuedLaunchMaterial | null> {
-  const context = await loadFeishuLaunchContext(db, args);
+export function feishuQueuedLaunchMaterialFromContext(
+  context: ReturnType<typeof requiredFeishuLaunchContext>,
+  featureSwitchContext: FeatureSwitchContext,
+): FeishuQueuedLaunchMaterial | null {
   if (!context) {
     return null;
   }
@@ -194,7 +159,7 @@ export async function loadFeishuQueuedLaunchMaterial(
       senderOpenId: context.senderOpenId,
       integrationNote: resolveIntegrationNotePrompt({
         triggerSource: context.platform,
-        featureSwitchContext: args.featureSwitchContext,
+        featureSwitchContext,
       }),
       history: context.conversationHistory,
     }),

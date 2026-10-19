@@ -22,8 +22,12 @@ import { sandboxDiagnosticsEchoSchema } from "@okouai/api-contracts/contracts/sa
 import {
   sandboxFsListParamsSchema,
   sandboxFsListCloseParamsSchema,
+  sandboxFsOpenParamsSchema,
+  sandboxFsReadParamsSchema,
+  sandboxFsHandleParamsSchema,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { probeHomeFiles } from "./runner-wss-files";
+import { probeFileReads } from "./runner-wss-file-read";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 const RUNNER = "22222222-2222-4222-8222-222222222222";
@@ -38,6 +42,8 @@ async function peer(
     extraFrame?: boolean;
     filesystem?: boolean;
     corruptListing?: boolean;
+    fsVersion?: number;
+    corruptRead?: boolean;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "wss-node-peer-"));
@@ -74,6 +80,7 @@ async function peer(
       let echoes = 0;
       let ready = false;
       const cursors = new Map<string, { listingId: string; offset: number }>();
+      const readers = new Map<string, { size: number; selected: number }>();
       const reverse = new Map<
         string,
         Extract<SandboxChannelMessage, { type: "request" }>
@@ -134,7 +141,7 @@ async function peer(
             result: {
               categories: {
                 diagnostics: 1,
-                ...(options.filesystem ? { fs: 2 } : {}),
+                ...(options.filesystem ? { fs: options.fsVersion ?? 3 } : {}),
               },
             },
           });
@@ -164,8 +171,79 @@ async function peer(
           return;
         }
         assert.ok(message.type === "request");
+        if (
+          message.category === "fs" &&
+          ["open", "read", "finish", "close"].includes(message.operation)
+        ) {
+          assert.equal(message.categoryVersion, 3);
+          const fail = (code: string) =>
+            emit({
+              schemaVersion: 1,
+              type: "response",
+              id: randomUUID(),
+              requestId: message.id,
+              error: { code },
+            });
+          const token = (name: string) =>
+            Buffer.from(name).toString("base64url");
+          if (message.operation === "open") {
+            const params = sandboxFsOpenParamsSchema.parse(message.params);
+            const name = params.path.at(-1);
+            if (name === token("outside")) {
+              fail("link_not_expandable");
+              return;
+            }
+            if (name === token("nested")) {
+              fail("not_regular_file");
+              return;
+            }
+            assert.ok(name === token("leaf") || name === token(".hidden"));
+            const size = name === token("leaf") ? 70003 : 0;
+            const selected =
+              params.mode === "prefix" ? Math.min(size, 65536) : size;
+            const handle = randomUUID();
+            readers.set(handle, { size, selected });
+            result(message.id, {
+              handle,
+              nameToken: name,
+              displayName: name === token("leaf") ? "leaf" : ".hidden",
+              fileSize: size.toString(),
+              selectedSize: selected.toString(),
+              truncated: selected < size,
+            });
+          } else if (message.operation === "read") {
+            const params = sandboxFsReadParamsSchema.parse(message.params);
+            const reader = readers.get(params.handle);
+            if (!reader) {
+              fail("handle_expired");
+              return;
+            }
+            const offset = Number(params.offset);
+            if (offset > reader.selected) {
+              fail("invalid_params");
+              return;
+            }
+            const length = Math.min(params.length, reader.selected - offset);
+            const bytes = Buffer.from(
+              Uint8Array.from({ length }, (_, i) => (offset + i) % 256),
+            );
+            result(message.id, {
+              offset: params.offset,
+              length,
+              data: options.corruptRead ? "AB==" : bytes.toString("base64"),
+            });
+          } else {
+            assert.ok(
+              message.operation === "finish" || message.operation === "close",
+            );
+            const params = sandboxFsHandleParamsSchema.parse(message.params);
+            if (!readers.delete(params.handle)) fail("handle_expired");
+            else result(message.id, {});
+          }
+          return;
+        }
         if (message.category === "fs") {
-          assert.equal(message.categoryVersion, 2);
+          assert.equal(message.categoryVersion, 3);
           const fail = (code: string) =>
             emit({
               schemaVersion: 1,
@@ -387,6 +465,70 @@ test("corrupt Guest diagnostics fails the protocol verdict", async () => {
   }
 });
 
+test("file reader probe checks exact bytes/hash and rejects corrupt chunks", async () => {
+  for (const corruptRead of [false, true]) {
+    const fixture = await peer({
+      filesystem: true,
+      corruptRead,
+    });
+    const client = new RunnerWssClient(
+      RUN,
+      fixture.ticket,
+      undefined,
+      fixture.ca,
+    );
+    try {
+      await client.connect();
+      if (corruptRead)
+        await assert.rejects(
+          probeFileReads(client, "wss-home-fixture"),
+          /Invalid sandbox channel/,
+        );
+      else {
+        const receipt = await probeFileReads(client, "wss-home-fixture");
+        assert.equal(receipt.fileReadBytes, 70003);
+        assert.equal(receipt.fileReadSha256.length, 64);
+        assert.equal(receipt.readerRelease, true);
+        await client.diagnostics();
+      }
+    } finally {
+      try {
+        await client.close();
+      } finally {
+        await fixture.close();
+      }
+    }
+  }
+});
+
+test("stale filesystem versions reject both listing and reads until peers match", async () => {
+  const fixture = await peer({ filesystem: true, fsVersion: 2 });
+  const client = new RunnerWssClient(
+    RUN,
+    fixture.ticket,
+    undefined,
+    fixture.ca,
+  );
+  try {
+    await client.connect();
+    await assert.rejects(
+      probeFileReads(client, "wss-home-fixture"),
+      /Filesystem version mismatch; refresh required/,
+    );
+    await assert.rejects(
+      probeHomeFiles(client, "wss-home-fixture"),
+      /Filesystem role unavailable/,
+    );
+    await client.diagnostics();
+  } finally {
+    try {
+      await client.close();
+    } finally {
+      await fixture.close();
+    }
+  }
+});
+
 test("extra invalid Guest frames after awaited diagnostics remain a failure", async () => {
   const fixture = await peer({ extraFrame: true });
   const client = new RunnerWssClient(
@@ -470,7 +612,7 @@ test("public cleanup deletes owned thread and agent after cancellation failure w
       );
       clientEventId = input.clientEventId;
       status = 201;
-      body = { threadId: THREAD, runId: null };
+      body = { threadId: THREAD };
     } else if (url.pathname.endsWith("/event-rows")) {
       assert.equal(url.searchParams.get("sinceSeqId"), "0");
       assert.equal(

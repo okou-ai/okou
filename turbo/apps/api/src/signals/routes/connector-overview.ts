@@ -91,8 +91,15 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
     throw catalog.error;
   }
+  const customIdsWithAccounts = new Set(
+    summaries.flatMap((summary) => {
+      return summary.target.kind === "custom" && summary.accountCount > 0
+        ? [summary.target.customConnectorId]
+        : [];
+    }),
+  );
   const connectedCustom = customConnectors.filter((connector) => {
-    return connector.connected;
+    return connector.connected || customIdsWithAccounts.has(connector.id);
   });
   const connectedCustomIds = new Set(
     connectedCustom.map((connector) => {

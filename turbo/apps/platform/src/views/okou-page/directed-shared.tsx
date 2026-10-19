@@ -11,6 +11,7 @@ import {
   paletteColorTheme$,
   shellDocumentAttributesRef$,
 } from "../../signals/theme.ts";
+import { isAbortError } from "../../signals/utils.ts";
 
 export function StandaloneLayout({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
@@ -39,6 +40,24 @@ export function ProductBrandMarkLink() {
     <Link pathname="/connectors" className="no-underline text-foreground">
       <ProductBrandMark size="compact" />
     </Link>
+  );
+}
+
+/** A cancelled attempt is the user's choice, not a failure of the action. */
+export function DirectedActionError({
+  loadable,
+}: {
+  readonly loadable:
+    | { readonly state: "idle" | "loading" | "hasData" }
+    | { readonly state: "hasError"; readonly error: unknown };
+}) {
+  if (loadable.state !== "hasError" || isAbortError(loadable.error)) {
+    return null;
+  }
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {String(loadable.error)}
+    </p>
   );
 }
 

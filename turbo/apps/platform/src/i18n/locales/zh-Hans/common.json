@@ -112,6 +112,12 @@
       "files": {
         "connecting": "正在连接文件…",
         "currentFolder": "当前文件夹",
+        "download": "下载 {{name}}",
+        "downloadChanged": "文件在下载时发生变化，请重新下载。",
+        "downloadFailed": "下载失败，请重试。",
+        "downloadFrame": "文件下载",
+        "downloadUnsupported": "此浏览器不支持文件下载。",
+        "downloadUpdateRequired": "请刷新页面后重试。如果仍无法下载，请开始新的运行。",
         "empty": "此文件夹为空。",
         "enterFolder": "进入 {{name}}",
         "goHome": "返回主目录",
@@ -124,6 +130,17 @@
         "other": "其他",
         "parentFolders": "上级文件夹",
         "pending": "排队中的运行开始后即可浏览文件。",
+        "preview": "预览 {{name}}",
+        "previewChanged": "文件发生变化，请关闭预览后重新打开。",
+        "previewDecode": "无法解码此文件，你仍可下载它。",
+        "previewEmpty": "此文件为空。",
+        "previewInvalid": "无法预览此文件，你仍可下载它。",
+        "previewLoading": "正在加载预览…",
+        "previewSize": "文件过大，无法预览，你仍可下载它。",
+        "previewTruncated": "仅显示前 64 KiB，下载文件可查看完整内容。",
+        "previewUnavailable": "预览不可用，请关闭后重试，或下载文件。",
+        "previewUnsupported": "此文件类型暂不支持预览，你仍可下载它。",
+        "previewUpdateRequired": "请刷新页面后重试。如果仍无法预览，请开始新的运行。",
         "readonly": "仅浏览当前运行的文件。",
         "refresh": "刷新",
         "retry": "重试",
@@ -134,7 +151,7 @@
         "updateRequired": "此运行不支持文件浏览。请在沙箱更新后开始新的运行。"
       },
       "log": "日志",
-      "manualReloadNotice": "刷新页面即可查看最新的活动日志。",
+      "manualReloadNotice": "日志不会自动更新。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次运行没有记录到网络流量。",
@@ -145,6 +162,7 @@
         "description": "该日志不存在，或者你在当前工作区没有查看权限。",
         "title": "未找到日志"
       },
+      "refresh": "刷新",
       "runner": {
         "environment": "环境",
         "framework": "框架",
@@ -1530,13 +1548,17 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
-      "continueChat": "继续聊天",
       "dismiss": "忽略",
       "label": "建议",
-      "newChat": "新建聊天",
       "next": "下一条建议",
       "position": "{{current}} / {{total}}",
-      "previous": "上一条建议"
+      "previous": "上一条建议",
+      "recoveryHint": "重新发送前请先检查聊天。你可以将建议恢复到草稿。",
+      "restoreDraft": "恢复到草稿",
+      "runFailed": "无法启动建议",
+      "runInChat": "在原聊天运行",
+      "runNewChat": "在新聊天运行",
+      "starting": "正在启动…"
     },
     "attachments": {
       "attach": "添加附件",
@@ -1770,6 +1792,7 @@
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
       "slashActions": {
+        "actions": "操作",
         "archive": "归档对话",
         "back": "返回",
         "connect": "连接工具",
@@ -1783,6 +1806,11 @@
         "pin": "置顶对话",
         "rename": "重命名对话",
         "schedule": "定时运行",
+        "scheduleCustom": "自定义时间",
+        "scheduleEveryMonday": "每周一",
+        "scheduleEveryMonth": "每月 1 日",
+        "scheduleEveryMorning": "每天早上",
+        "scheduleEveryWeekday": "每个工作日",
         "scheduleHint": "按计划自动运行",
         "share": "分享对话",
         "shareHint": "分享这段对话的链接",
@@ -1791,6 +1819,7 @@
       },
       "slashPanel": {
         "browseAll": "浏览全部模板",
+        "hint": "搜索工作流或选择模板…",
         "make": "制作",
         "useTemplate": "使用模板 {{title}}"
       },
@@ -2076,14 +2105,10 @@
       "communications": "消息",
       "idle": "空闲",
       "loadFailed": "加载失败",
-      "loading": "加载中…",
       "messageUnavailable": "消息不可用",
-      "more": "更多",
-      "noMessages": "暂无消息",
       "origin": "发起自",
       "queued": "排队中",
       "received": "收到",
-      "refresh": "刷新",
       "running": "运行中",
       "sent": "发出",
       "toggleMessages": "与 {{title}} 的消息往来",
@@ -2114,8 +2139,7 @@
       "loadFailed": "无法加载聊天资源",
       "loadingLinks": "正在加载链接",
       "retry": "重试",
-      "title": "聊天资源",
-      "viewAll": "查看全部"
+      "title": "聊天资源"
     },
     "run": {
       "collapseWorkHistory": "收起工作记录",
@@ -3505,7 +3529,6 @@
         "connectedDescription": "你的 Teams 账号已连接。",
         "connectTitle": "连接 Microsoft Teams",
         "identityMismatch": "此链接指定的 Teams 账号或工作区与当前连接不一致。",
-        "identityUnknown": "无法确认此链接中的 Teams 账号。请打开 Teams 检查账号。",
         "install": "在 Teams 中安装",
         "invalidContext": "此链接缺少 Teams 账号信息。请从 Teams 获取新的连接链接。",
         "open": "打开 Teams",
@@ -3938,7 +3961,6 @@
     "retry": "重试",
     "samplePages": "样张页数：{{total}}",
     "title": "文档",
-    "use": "使用模板",
     "useNamed": "使用 {{title}}"
   },
   "global": {
@@ -5101,6 +5123,15 @@
         "retryMessage": "晨报设置无法加载或更新，请重试以继续。",
         "title": "晨报"
       },
+      "proactiveSuggestions": {
+        "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
+        "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
+        "preparationFailed": "主动建议设置未能完成，请重试。",
+        "preparing": "正在准备每小时建议，你可以随时关闭。",
+        "retry": "重试",
+        "retryMessage": "无法加载或更新主动建议设置，请重试。",
+        "title": "主动建议"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "按⌘/Ctrl+Enter 发送，按 Enter 换行",
@@ -5158,7 +5189,6 @@
       "description": "让智能体发起购买请求并查看 Link 交易。每笔购买均由你批准。",
       "disconnect": "断开连接",
       "loadError": "无法加载钱包。",
-      "permissionsUnknown": "请重新连接 Link，查看并确认当前授权权限。",
       "retry": "重试",
       "scope": "让 Okou 代你购买并查看 Link 交易。",
       "title": "钱包",
@@ -5188,8 +5218,7 @@
         "statusLabel": "状态",
         "title": "Link 交易记录",
         "unknownStatus": "状态不可用"
-      },
-      "workspaceScopeChanged": "你的 Link 钱包现在可供此工作区内你的所有 Agent 使用。请重新连接以确认此变更。"
+      }
     },
     "workspace": {
       "danger": {
@@ -5770,16 +5799,27 @@
     "loading": "正在加载 VNC 配置…",
     "manage": "管理 VNC",
     "native": {
-      "editPending": "暂不支持编辑此私有网络路由。",
+      "configuration": "网络配置",
+      "empty": "先在 Cloudflare Access 或 Tailscale 设置中添加可复用网络，再回到此处选择。",
+      "gatewayHelp": "使用 Cloudflare TCP 应用的主机名和 443 端口。隧道负责选择目标端口；VNC 证书身份和 Kerberos 服务身份需单独配置。",
       "hostCount_other": "{{count}} 台主机",
       "impactConfirm": "我理解这些成员的主机会保留，但在其所有者重新绑定之前无法连接。",
       "impactSummary": "受影响：{{members}}和{{hosts}}。主机会保留，但在其所有者重新绑定之前无法连接。任何主机都不会自动切换为直连。",
       "inUse": "你的 SSH 或 VNC 主机仍在使用此网络。请先重新绑定或删除这些主机。",
       "kdcRole": "认证服务器",
+      "loadFailed": "无法加载网络配置。",
+      "loading": "正在加载网络配置…",
+      "macHelp": "所选模式与独立 macOS 屏幕共享的兼容性仍需验证。保护此连接并不能阻止其他客户端访问 Mac 的 VNC 监听端口。",
       "needsRebind": "此私有网络路由需要新的配置，重新绑定后才能连接。",
+      "originCaBundle": "源站 TLS CA 证书",
+      "originServerName": "源站 TLS 服务器名称",
       "originTls": "源站 TLS",
+      "originTlsHelp": "Mac 和仅认证的 RSA-AES 模式要求在所选服务器上运行经过证书验证的 TLS 服务，且只能转发到本机 VNC。其身份和信任设置独立于 Cloudflare 网关及内层 VNC 证书。",
+      "originTrust": "源站 TLS 证书信任",
+      "peerHelp": "使用所选网络允许的确切 Tailscale 节点 IP 或名称及服务端口。无需 SSH 服务或 SSH 授权。",
       "protectionHelp": "此认证模式不会加密桌面流量。所选私有网络路由必须保护到此服务器的完整连接。",
-      "rfbRole": "桌面"
+      "rfbRole": "桌面",
+      "select": "选择已保存的网络配置"
     },
     "port": "端口",
     "retry": "重试",
@@ -5839,7 +5879,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
       "qemuX509SaslHelp": "仅支持 QEMU 子类型 263。TLS 会在 SCRAM 之前验证服务器；不降级到 PLAIN 或子类型 264。",
       "serverName": "TLS 证书身份",
-      "serverNameHelp": "可选。留空时将根据 RFB 目标主机验证证书。仅当证书使用其他 DNS 名称时才填写。",
+      "serverNameHelp": "Cloudflare Access 必须明确填写 RFB 服务端的证书身份。其他路由可留空，此时将根据 RFB 目标主机验证证书。",
       "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系统证书颁发机构",
       "title": "服务器证书信任",
@@ -5863,7 +5903,7 @@
       "empty": "没有可用的已保存 SSH 主机。使用此路由前，请先在 SSH 设置中添加主机。",
       "loadFailed": "无法加载已保存的 SSH 主机。",
       "loading": "正在加载已保存的 SSH 主机…",
-      "privateDirectHelp": "私有或回环 IP 地址必须通过已保存的 SSH 主机访问。请主动选择上方的 SSH 路由；连接方式不会自动更改。",
+      "privateDirectHelp": "私有 IP 地址需要受支持的私有网络路由或已保存的 SSH 主机。请明确选择路由。",
       "select": "选择已保存的 SSH 主机",
       "selectionUnavailable": "所选 SSH 主机已不可用。请选择其他主机，或明确切换为直连。",
       "ssh": "通过已保存的 SSH 主机",
@@ -6565,7 +6605,6 @@
       "connectDescription": "连接 Discord 账号，与智能体聊天。",
       "connectedTitle": "已连接 Discord",
       "connectTitle": "连接 Discord",
-      "continueInNewTab": "在新标签页继续",
       "defaultWorkspace": "Discord 默认工作区",
       "description": "在服务器中提及 Okou，或给机器人发送私信。",
       "disconnect": "断开 Discord 连接",
@@ -6622,6 +6661,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "账号",
+      "agentLabel": "Agent",
       "code": "验证码",
       "connect": "连接",
       "connected": "已连接",
@@ -6631,11 +6672,15 @@
       "expired": "二维码已过期，请重新生成。",
       "failed": "连接微信失败，请重试。",
       "instructions": "使用微信扫描二维码，然后在手机上确认。",
+      "linkUnavailable": "此链接不可用。请使用原账号和工作区，并在微信中再发一条消息获取新链接。也可以重新扫码连接。",
       "name": "微信",
+      "newQr": "使用新二维码连接",
       "reconnect": "重新连接",
       "reconnect_required": "请重新扫码连接。",
       "restart_required": "该微信已绑定，请重新生成二维码以连接。",
+      "restoreDescription": "将微信恢复连接到以下账号和工作区。",
       "retry": "重新生成二维码",
+      "returnToWechat": "返回微信，发送消息即可开始对话。",
       "scanned": "已扫码，请在手机上确认。",
       "scope": "只连接你与此智能体的单聊，目前支持文字消息。",
       "title": "连接微信",
@@ -6643,7 +6688,8 @@
       "verification_blocked": "验证码尝试次数过多，请重新生成二维码。",
       "verification_required": "输入微信中显示的验证码。",
       "verify": "验证",
-      "waiting": "等待扫码…"
+      "waiting": "等待扫码…",
+      "workspaceLabel": "工作区"
     }
   }
 }

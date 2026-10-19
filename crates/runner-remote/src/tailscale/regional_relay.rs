@@ -28,6 +28,7 @@ impl Dial for Verified {
         let trace = Trace::current().with_role(Role::Relay);
         let trace4 = trace.fork();
         let trace6 = trace.fork();
+        trace.dial_branches([trace4.clone(), trace6.clone()]);
         let v4 = trace4.clone().scope(async {
             match server.ipv4 {
                 IpUsage::Disable => std::future::pending().await,
@@ -45,9 +46,15 @@ impl Dial for Verified {
         // Both owned branches remain within the retained runtime; dropping a
         // losing resolver future does not release the node's physical receipt.
         tokio::pin!(v4, v6);
-        let (result, selected) = tokio::select! {
-            result = &mut v4 => match result { Ok(io) => (Ok(io), &trace4), Err(_) => (v6.await, &trace6) },
-            result = &mut v6 => match result { Ok(io) => (Ok(io), &trace6), Err(_) => (v4.await, &trace4) },
+        // Only enabled families can remain candidates after a failed attempt.
+        let (result, selected) = match (server.ipv4, server.ipv6) {
+            (IpUsage::Disable, IpUsage::Disable) => return Err(Failure::DomainFailed),
+            (IpUsage::Disable, _) => (v6.await, &trace6),
+            (_, IpUsage::Disable) => (v4.await, &trace4),
+            _ => tokio::select! {
+                result = &mut v4 => match result { Ok(io) => (Ok(io), &trace4), Err(_) => (v6.await, &trace6) },
+                result = &mut v6 => match result { Ok(io) => (Ok(io), &trace6), Err(_) => (v4.await, &trace4) },
+            },
         };
         trace.adopt(selected);
         let io = result.map_err(|_| Failure::DomainFailed)?;
@@ -62,7 +69,14 @@ impl Dial for Verified {
 
 async fn connect(address: std::net::SocketAddr) -> std::io::Result<tokio::net::TcpStream> {
     Trace::current().endpoint(address);
-    evidence::observe(Stage::RelayTcp, tokio::net::TcpStream::connect(address)).await
+    evidence::observe(Stage::RelayTcp, async {
+        tokio::net::TcpStream::connect(address)
+            .await
+            .inspect_err(|error| {
+                evidence::failed(Stage::RelayTcp, Detail::io(error));
+            })
+    })
+    .await
 }
 
 async fn dns(
@@ -118,7 +132,8 @@ impl<D: Dial> Connector for Regional<D> {
                 return Err(Failure::DomainFailed);
             }
             let trace = Trace::current();
-            let attempt_trace = trace.fork().with_role(Role::Relay);
+            trace.replace(&trace.fork());
+            let attempt_trace = trace.clone().with_role(Role::Relay);
             let attempt =
                 attempt_trace
                     .clone()
@@ -138,7 +153,10 @@ impl<D: Dial> Connector for Regional<D> {
                             use super::registration::Tls;
                             let io = evidence::observe(Stage::RelayTls, tls.connect(name, raw))
                                 .await
-                                .map_err(|_| Failure::DomainFailed)?;
+                                .map_err(|error| {
+                                    evidence::failed(Stage::RelayTls, Detail::io(&error));
+                                    Failure::DomainFailed
+                                })?;
                             let client = ts_http_util::http1::connect::<EmptyBody>(io)
                                 .await
                                 .map_err(|_| Failure::DomainFailed)?;
@@ -164,7 +182,6 @@ impl<D: Dial> Connector for Regional<D> {
                     Err(Failure::DomainFailed)
                 }),
             };
-            trace.replace(&attempt_trace);
             if result.is_ok() {
                 return result;
             }

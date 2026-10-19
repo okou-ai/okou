@@ -43,7 +43,6 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ChatResourcePanel = "chatResourcePanel",
-  ChatRelations = "chatRelations",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
@@ -59,7 +58,6 @@ export enum FeatureSwitchKey {
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
   CustomTemplates = "customTemplates",
-  ComposerSlashCustomTemplates = "composerSlashCustomTemplates",
   BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
@@ -68,5 +66,6 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
+  ComposerSlashHint = "composerSlashHint",
   SlashActions = "slashActions",
 }

@@ -1,7 +1,7 @@
 //! Native receipts complement, rather than replace, the owned-command collector.
 
-use std::fs::File;
 use std::io::Read;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,6 +29,7 @@ pub struct Artifacts {
     pub rootfs_sha256: String,
     pub snapshot_id: String,
     pub snapshot_files: std::collections::BTreeMap<String, String>,
+    pub snapshot_preparation_sha256: String,
     pub policy_sha256: String,
 }
 
@@ -36,12 +37,8 @@ impl Artifacts {
     pub fn load_and_verify() -> TestResult<Self> {
         let path = std::env::var("OKOU_TEST_TERMINAL_ARTIFACTS")?;
         let value: Self = serde_json::from_slice(&std::fs::read(path)?)?;
-        let compiled = option_env!("OKOU_TEST_BUILD_SOURCE_SHA")
-            .ok_or_else(|| io::Error::other("native source SHA was not supplied at compilation"))?;
-        if value.source_sha != compiled
-            || value.source_sha.len() != 40
-            || !value.source_sha.bytes().all(|c| c.is_ascii_hexdigit())
-        {
+        let compiled = compiled_source()?;
+        if value.source_sha != compiled {
             return Err(io::Error::other("native compiled-source identity mismatch").into());
         }
         verify_file(&std::env::current_exe()?, &value.test_binary_sha256)?;
@@ -85,6 +82,7 @@ impl Artifacts {
             }
             verify_file(&Path::new(&snapshot).join(name), expected)?;
         }
+        super::snapshot_preparation::verify_record(Path::new(&snapshot), &value)?;
         Ok(value)
     }
 
@@ -97,6 +95,7 @@ impl Artifacts {
             "rootfs_sha256": self.rootfs_sha256,
             "snapshot_id": self.snapshot_id,
             "snapshot_files": self.snapshot_files,
+            "snapshot_preparation_sha256": self.snapshot_preparation_sha256,
             "policy_sha256": self.policy_sha256,
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
             "required_fixture_tail_bytes": TAIL_BYTES,
@@ -104,28 +103,24 @@ impl Artifacts {
     }
 }
 
+pub(super) fn compiled_source() -> TestResult<&'static str> {
+    let source = option_env!("OKOU_TEST_BUILD_SOURCE_SHA")
+        .ok_or_else(|| io::Error::other("native source SHA was not supplied at compilation"))?;
+    if source.len() != 40
+        || !source
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    {
+        return Err(io::Error::other("invalid native compiled source SHA").into());
+    }
+    Ok(source)
+}
+
 pub fn verify_file(path: &Path, expected: &str) -> TestResult<()> {
     if expected.len() != 64 || !expected.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err(io::Error::other("invalid artifact SHA-256").into());
     }
-    if !std::fs::symlink_metadata(path)?.file_type().is_file() {
-        return Err(io::Error::other("native artifact is not a regular file").into());
-    }
-    let mut file = File::open(path)?;
-    let mut hash = Sha256::new();
-    let mut buffer = vec![0; 1024 * 1024];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hash.update(
-            buffer
-                .get(..count)
-                .ok_or_else(|| io::Error::other("invalid native read count"))?,
-        );
-    }
-    if hex::encode(hash.finalize()) != expected {
+    if file_sha256(path)? != expected {
         return Err(io::Error::other(format!(
             "native artifact identity mismatch: {}",
             path.display()
@@ -133,6 +128,55 @@ pub fn verify_file(path: &Path, expected: &str) -> TestResult<()> {
         .into());
     }
     Ok(())
+}
+
+pub(super) fn file_sha256(path: &Path) -> TestResult<String> {
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let before = file.metadata()?;
+    if !before.file_type().is_file() {
+        return Err(io::Error::other("native artifact is not a regular file").into());
+    }
+    let limit = before
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| io::Error::other("native artifact length overflow"))?;
+    let mut reader = (&mut file).take(limit);
+    let mut hash = Sha256::new();
+    let mut buffer = vec![0; 1024 * 1024];
+    let mut total = 0_u64;
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        total += count as u64;
+        hash.update(
+            buffer
+                .get(..count)
+                .ok_or_else(|| io::Error::other("invalid native read count"))?,
+        );
+    }
+    let after = file.metadata()?;
+    if total != before.len()
+        || before.len() != after.len()
+        || (
+            before.mtime(),
+            before.mtime_nsec(),
+            before.ctime(),
+            before.ctime_nsec(),
+        ) != (
+            after.mtime(),
+            after.mtime_nsec(),
+            after.ctime(),
+            after.ctime_nsec(),
+        )
+    {
+        return Err(io::Error::other("native artifact changed while hashing").into());
+    }
+    Ok(hex::encode(hash.finalize()))
 }
 
 /// CLOCK_MONOTONIC matches P1's monotonic_ns; wall time is supplementary.
@@ -222,6 +266,69 @@ impl Case {
 
     pub fn critical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_CRITICAL_WITNESS ", phase, evidence)
+    }
+
+    pub fn critical_progress_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_CRITICAL_PROGRESS_WITNESS ", phase, evidence)
+    }
+
+    pub fn read_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_READ_CANCELLATION_WITNESS ", phase, evidence)
+    }
+
+    pub fn read_revocation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_READ_REVOCATION_WITNESS ", phase, evidence)
+    }
+
+    pub fn read_stop_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_READ_STOP_WITNESS ", phase, evidence)
+    }
+
+    pub fn observer_loss_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_OBSERVER_LOSS_WITNESS ", phase, evidence)
+    }
+
+    pub fn status_failure_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_STATUS_FAILURE_WITNESS ", phase, evidence)
+    }
+
+    pub fn later_parking_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_LATER_PARKING_WITNESS ", phase, evidence)
+    }
+
+    pub fn batch_aba_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_BATCH_ABA_WITNESS ", phase, evidence)
+    }
+
+    pub fn batch_repark_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_BATCH_REPARK_WITNESS ", phase, evidence)
+    }
+
+    pub fn require_original_lease_released(&self) -> io::Result<()> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("native receipt state poisoned"))?;
+        if !state
+            .original_lease
+            .as_ref()
+            .is_some_and(|lease| !lease.is_active())
+        {
+            return Err(io::Error::other("native original full lease remains owned"));
+        }
+        Ok(())
+    }
+
+    pub fn shared_reads_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_SHARED_READS_WITNESS ", phase, evidence)
+    }
+
+    pub fn create_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_CREATE_CANCELLATION_WITNESS ", phase, evidence)
+    }
+
+    pub fn returned_guest_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_RETURNED_GUEST_WITNESS ", phase, evidence)
     }
 
     pub fn startup_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {

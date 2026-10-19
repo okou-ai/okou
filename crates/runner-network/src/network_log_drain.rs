@@ -300,7 +300,7 @@ where
     }
 
     let mut ready_lines_in_slice = 0;
-    loop {
+    let outcome = loop {
         match poll_next_line_ready(lines) {
             Ok(ReadyLine::Line(line)) => {
                 on_line(line).await;
@@ -317,25 +317,22 @@ where
                     ready_lines_in_slice = 0;
                 }
             }
-            Ok(ReadyLine::Pending) => {
-                request.ack();
-                return DrainReadyLinesOutcome::Continue;
-            }
+            Ok(ReadyLine::Pending) => break DrainReadyLinesOutcome::Continue,
             Ok(ReadyLine::Eof) => {
-                request.ack();
-                return DrainReadyLinesOutcome::Stop(DrainableLineReaderExit::Eof {
+                break DrainReadyLinesOutcome::Stop(DrainableLineReaderExit::Eof {
                     during_drain: true,
                 });
             }
             Err(e) => {
-                request.ack();
-                return DrainReadyLinesOutcome::Stop(DrainableLineReaderExit::ReadError {
+                break DrainReadyLinesOutcome::Stop(DrainableLineReaderExit::ReadError {
                     during_drain: true,
                     error: e,
                 });
             }
         }
-    }
+    };
+    request.ack();
+    outcome
 }
 
 /// Poll `Lines::next_line` once without waiting for future readiness.

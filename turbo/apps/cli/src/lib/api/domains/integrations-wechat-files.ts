@@ -69,9 +69,12 @@ interface DownloadWechatFileResult {
   readonly size: number;
 }
 
-function downloadLength(response: Response): number {
+function downloadLength(response: Response): number | undefined {
   const header = response.headers.get("content-length");
-  if (!header || !/^\d+$/u.test(header)) {
+  if (header === null || response.headers.has("content-encoding")) {
+    return undefined;
+  }
+  if (!/^\d+$/u.test(header)) {
     throw new Error("Wechat download response has no valid content length");
   }
   const length = Number(header);
@@ -145,12 +148,15 @@ export async function downloadWechatFile(
         const chunk = await reader.read();
         if (chunk.done) break;
         size += chunk.value.byteLength;
-        if (size > MAX_WECHAT_FILE_SIZE_BYTES || size > expectedLength) {
+        if (
+          size > MAX_WECHAT_FILE_SIZE_BYTES ||
+          (expectedLength !== undefined && size > expectedLength)
+        ) {
           throw new Error("Wechat download exceeds its declared size");
         }
         await file.writeFile(chunk.value);
       }
-      if (size !== expectedLength) {
+      if (expectedLength !== undefined && size !== expectedLength) {
         throw new Error("Wechat download is incomplete");
       }
     } finally {

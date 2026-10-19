@@ -438,7 +438,6 @@ test.each([
         userMessage: body.userMessage,
       });
       return respond(201, {
-        runId: activeRun ? null : confirmedRunId,
         threadId: body.threadId,
       });
     });

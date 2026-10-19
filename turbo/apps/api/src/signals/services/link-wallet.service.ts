@@ -180,14 +180,14 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
-// Historical consent has no requested-scope snapshot. Keep it unknown until
-// reauthorization; refresh cannot establish consent. Convergence gate: #40206.
 function walletScopeChange(
   storedScopes: string | null,
-  workspaceScopeChanged = false,
-  grantedScopes: readonly string[] = [],
-  grantedSourceActions: readonly string[] = [],
+  grantedScopes: readonly string[],
+  grantedSourceActions: readonly string[],
 ): WalletConnectionStatus["scopeChange"] {
+  if (storedScopes === null) {
+    throw new Error("Link wallet connection is missing oauthRequestedScopes");
+  }
   const current = [
     ...new Set([
       ...LINK_WALLET_OAUTH_SCOPES,
@@ -196,44 +196,30 @@ function walletScopeChange(
       ...grantedSourceActions,
     ]),
   ].sort();
-  const stored =
-    storedScopes === null
-      ? null
-      : [
-          ...new Set([
-            ...z.array(z.string()).parse(JSON.parse(storedScopes)),
-            ...grantedScopes,
-            ...grantedSourceActions,
-          ]),
-        ].sort();
-  const addedScopes = stored
-    ? current.filter((scope) => {
-        return !stored.includes(scope);
-      })
-    : [];
-  const removedScopes = (stored ?? []).filter((scope) => {
+  const stored = [
+    ...new Set([
+      ...z.array(z.string()).parse(JSON.parse(storedScopes)),
+      ...grantedScopes,
+      ...grantedSourceActions,
+    ]),
+  ].sort();
+  const addedScopes = current.filter((scope) => {
+    return !stored.includes(scope);
+  });
+  const removedScopes = stored.filter((scope) => {
     return !current.some((requested) => {
       return requested === scope;
     });
   });
-  if (
-    !workspaceScopeChanged &&
-    stored !== null &&
-    addedScopes.length === 0 &&
-    removedScopes.length === 0
-  ) {
+  if (addedScopes.length === 0 && removedScopes.length === 0) {
     return null;
   }
   return {
-    reason: workspaceScopeChanged
-      ? "workspace_scope_changed"
-      : stored === null
-        ? "permissions_unknown"
-        : "permissions_changed",
+    reason: "permissions_changed",
     addedScopes,
     removedScopes,
     currentScopes: current,
-    storedScopes: stored ?? [],
+    storedScopes: stored,
   };
 }
 
@@ -255,33 +241,14 @@ export const walletSettingsStatus$ = computed(
         ),
       )
       .limit(1);
-    // Retire this bridge only after old writers/rollback targets are gone and
-    // their grants are explicitly reauthorized or revoked; see #40206.
-    const [legacy] = await db
-      .select({ id: linkWalletConnections.id })
-      .from(linkWalletConnections)
-      .where(
-        and(
-          eq(linkWalletConnections.orgId, owner.orgId),
-          eq(linkWalletConnections.userId, owner.userId),
-          isNotNull(linkWalletConnections.agentId),
-          isNull(linkWalletConnections.revokedAt),
-        ),
-      )
-      .limit(1);
     const scopeChange =
-      row && !row.revokedAt
-        ? status.connected
-          ? walletScopeChange(
-              row.oauthRequestedScopes,
-              false,
-              status.authorization.scopes,
-              status.authorization.sourceActions,
-            )
-          : null
-        : legacy
-          ? walletScopeChange(null, true)
-          : null;
+      row && !row.revokedAt && status.connected
+        ? walletScopeChange(
+            row.oauthRequestedScopes,
+            status.authorization.scopes,
+            status.authorization.sourceActions,
+          )
+        : null;
     const connectionStatus = scopeChange
       ? "scope-mismatch"
       : status.connected
@@ -328,12 +295,7 @@ export const walletConnectStatus$ = command(
           eq(linkWalletOAuthAttempts.stateHash, hash(state)),
           eq(linkWalletOAuthAttempts.orgId, owner.orgId),
           eq(linkWalletOAuthAttempts.userId, owner.userId),
-          or(
-            eq(linkWalletOAuthAttempts.scope, "workspace_user"),
-            owner.agentId
-              ? eq(linkWalletOAuthAttempts.agentId, owner.agentId)
-              : undefined,
-          ),
+          eq(linkWalletOAuthAttempts.scope, "workspace_user"),
         ),
       )
       .limit(1);
@@ -448,6 +410,7 @@ export const completeWalletOAuth$ = command(
       .where(
         and(
           eq(linkWalletOAuthAttempts.status, "pending"),
+          eq(linkWalletOAuthAttempts.scope, "workspace_user"),
           eq(linkWalletOAuthAttempts.stateHash, hash(input.state)),
           eq(linkWalletOAuthAttempts.orgId, input.orgId),
           eq(linkWalletOAuthAttempts.userId, input.userId),
@@ -474,6 +437,9 @@ export const completeWalletOAuth$ = command(
     const code = input.code;
     const result = await onRejection(
       (async () => {
+        if (attempt.oauthRequestedScopes === null) {
+          throw new Error("Wallet OAuth attempt is missing requested scopes");
+        }
         const verifier = await decryptStoredSecretValue(
           attempt.encryptedVerifier,
         );
@@ -520,7 +486,6 @@ export const completeWalletOAuth$ = command(
 async function publishWalletChanged(owner: WalletOwner): Promise<void> {
   await publishUserSignal([owner.userId], "wallet:changed", {
     orgId: owner.orgId,
-    ...(owner.agentId ? { agentId: owner.agentId } : {}),
   } satisfies WalletChangedPayload);
 }
 
@@ -568,12 +533,6 @@ const publishWalletOAuth$ = command(
     // Consuming the still-live OAuth attempt and publishing the grant is atomic.
     // Disconnect deletes attempts before revoking connections, so an in-flight
     // callback cannot resurrect a grant after the user has disconnected it.
-    // Outgoing API attempts must retain their original consent scope. Remove
-    // this branch only after those writers and pending attempts drain (#40206).
-    const grantAgentId = attempt.scope === "agent" ? attempt.agentId : null;
-    const conflictTarget = grantAgentId
-      ? sql`(org_id, user_id, agent_id)`
-      : sql`(org_id, user_id) WHERE agent_id IS NULL`;
     const result = parseRawRows(
       z.object({ id: z.uuid() }),
       await db.execute(sql`
@@ -582,12 +541,12 @@ const publishWalletOAuth$ = command(
         SET status = 'completed', encrypted_verifier = ''
         WHERE id = ${attempt.id} AND status = 'exchanging'
           AND expires_at > ${nowDate()}
-        RETURNING org_id, user_id, agent_id, id
+        RETURNING org_id, user_id, id
       )
       INSERT INTO ${linkWalletConnections}
         (org_id, user_id, agent_id, authorization_id, encrypted_credentials, oauth_requested_scopes)
-      SELECT org_id, user_id, ${grantAgentId}::uuid, id, ${encryptedCredentials}, ${attempt.oauthRequestedScopes} FROM authorized
-      ON CONFLICT ${conflictTarget} DO UPDATE
+      SELECT org_id, user_id, NULL, id, ${encryptedCredentials}, ${attempt.oauthRequestedScopes} FROM authorized
+      ON CONFLICT (org_id, user_id) WHERE agent_id IS NULL DO UPDATE
       SET authorization_id = EXCLUDED.authorization_id,
           encrypted_credentials = EXCLUDED.encrypted_credentials, revoked_at = NULL,
           oauth_requested_scopes = EXCLUDED.oauth_requested_scopes,
@@ -820,22 +779,21 @@ const revokeWalletConnection$ = command(
 
 const cancelWalletOAuthAttempts$ = command(
   async ({ set }, owner: WalletOwner) => {
-    return await set(writeDb$)
+    await set(writeDb$)
       .delete(linkWalletOAuthAttempts)
       .where(
         and(
           eq(linkWalletOAuthAttempts.orgId, owner.orgId),
           eq(linkWalletOAuthAttempts.userId, owner.userId),
         ),
-      )
-      .returning({ agentId: linkWalletOAuthAttempts.agentId });
+      );
   },
 );
 
 export const disconnectWallet$ = command(
   async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const canceled = await set(cancelWalletOAuthAttempts$, owner);
+    await set(cancelWalletOAuthAttempts$, owner);
     signal.throwIfAborted();
     // Disable locally before provider I/O, retaining encrypted material solely so
     // a failed provider revocation can be retried through this same endpoint.
@@ -850,25 +808,8 @@ export const disconnectWallet$ = command(
       )
       .returning();
     signal.throwIfAborted();
-    // Old chat clients only understand agentId. Notify each affected origin as
-    // well as carrying the workspace identity understood by current clients.
-    const origins = new Set(
-      canceled.flatMap(({ agentId }) => {
-        return agentId ? [agentId] : [];
-      }),
-    );
-    if (owner.agentId) {
-      origins.add(owner.agentId);
-    }
-    if (origins.size === 0) {
-      await publishWalletChanged(owner);
-      signal.throwIfAborted();
-    } else {
-      for (const agentId of origins) {
-        await publishWalletChanged({ ...owner, agentId });
-        signal.throwIfAborted();
-      }
-    }
+    await publishWalletChanged(owner);
+    signal.throwIfAborted();
     for (const connection of connections) {
       if (connection.revocationConfirmedAt) {
         continue;

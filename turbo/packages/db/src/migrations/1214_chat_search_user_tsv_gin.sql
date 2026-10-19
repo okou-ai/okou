@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Build the btree_gin user + keyword index without blocking chat search reads
 -- or projector writes. CONCURRENTLY waits for older transactions database-wide,
 -- and those waits do not block ordinary reads or writes, so a 1s lock timeout

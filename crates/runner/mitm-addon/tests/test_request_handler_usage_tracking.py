@@ -1,6 +1,7 @@
 """Billable usage tracking lifecycle tests for the request hook."""
 
 import asyncio
+import json
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.managed_openrouter_helpers import model_config, payload
 from tests.pending_helpers import assert_pending
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
@@ -198,6 +200,9 @@ def _write_model_provider_tracking_registry(
     sandbox_marker: str = _DEFAULT_SANDBOX_MARKER,
 ) -> Path:
     route = _model_provider_route(billable=billable)
+    fields = dict(sandbox_fields or {})
+    if billable:
+        fields["piModelConfig"] = model_config("openai-responses")
     registry_root = registry_dir or tmp_path
     registry_root.mkdir(parents=True, exist_ok=True)
     return _write_registry(
@@ -219,7 +224,7 @@ def _write_model_provider_tracking_registry(
                 "unknownPolicy": "deny",
             },
             billable_firewalls=[route.firewall_name] if billable else None,
-            sandbox_fields=sandbox_fields,
+            sandbox_fields=fields,
         ),
     )
 
@@ -236,13 +241,17 @@ def _x_tracking_flow(real_flow):
 
 def _model_provider_tracking_flow(real_flow, *, billable: bool = True):
     route = _model_provider_route(billable=billable)
-    return real_flow(
+    flow = real_flow(
         with_response=False,
         client_ip="10.200.0.5",
         host=route.host,
         path=route.path,
         method="POST",
     )
+    if billable:
+        flow.request.headers["Content-Type"] = "application/json"
+        flow.request.content = json.dumps(payload("openai-responses")).encode()
+    return flow
 
 
 def _write_billable_auth_url_rewrite_registry(tmp_path: Path) -> Path:

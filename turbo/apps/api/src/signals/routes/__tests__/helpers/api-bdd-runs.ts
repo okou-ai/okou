@@ -432,15 +432,12 @@ export function createRunsApi(context: TestContext) {
     if (sent.status !== 201) {
       throw new Error("Expected the Thread run send to be accepted");
     }
-    let runId = sent.body.runId;
-    if (runId === null) {
-      await flushWaitUntilForTest();
-      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
-      runId =
-        events.find((event) => {
-          return event.revokesEventId === clientEventId;
-        })?.runId ?? null;
-    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const runId =
+      events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId ?? null;
     if (!runId) {
       throw new Error("Expected the Thread run send to launch a run");
     }
@@ -489,7 +486,7 @@ export function createRunsApi(context: TestContext) {
       },
       [201],
     );
-    if (sent.status !== 201 || sent.body.runId !== null) {
+    if (sent.status !== 201) {
       throw new Error("Expected the Thread send to be queued without a run");
     }
     await flushWaitUntilForTest();
@@ -532,7 +529,7 @@ export function createRunsApi(context: TestContext) {
       },
       [201],
     );
-    if (sent.status !== 201 || sent.body.runId !== null) {
+    if (sent.status !== 201) {
       throw new Error("Expected the Thread send to be queued without a run");
     }
     // Drain the launch task; only the public input rejection is observed below.

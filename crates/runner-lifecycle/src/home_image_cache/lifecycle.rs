@@ -43,6 +43,7 @@ use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 
 mod handoff;
+mod publication;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // Stopped publishers retain their entry and applicable resource lease while
@@ -91,6 +92,7 @@ pub struct HomeImagePromotionContext {
     storage_fingerprints: StorageFingerprints,
     restored_session_identity: Option<crate::restored_session_identity::RestoredSessionIdentity>,
     history_proof: Option<HomeCacheHistoryProofBinding>,
+    publication: Arc<tokio::sync::Mutex<publication::PublicationProgress>>,
 }
 
 pub struct HomeImagePromotionIdentityFailure {
@@ -162,12 +164,24 @@ struct HomeImageLeaseState {
 ///
 /// Separate cache instances and processes do not share the registry, so their busy locks remain
 /// explicitly `unknown` rather than being inferred from other runner state.
-struct HomeEntryLock {
+/// Clones share one kernel lock; the last custody owner retires its registry row.
+#[derive(Clone)]
+struct HomeEntryLock(Arc<HomeEntryLockCustody>);
+
+struct HomeEntryLockCustody {
     inner: Arc<HomeImageCacheInner>,
     cache_key: String,
     identity: Arc<()>,
     lock: Option<Flock<std::fs::File>>,
-    unused_selection: bool,
+    unused_selection: std::sync::atomic::AtomicBool,
+}
+
+impl std::ops::Deref for HomeEntryLock {
+    type Target = HomeEntryLockCustody;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl HomeEntryLock {
@@ -195,13 +209,13 @@ impl HomeEntryLock {
             });
         }
         drop(owners);
-        Self {
+        Self(Arc::new(HomeEntryLockCustody {
             inner: Arc::clone(&cache.inner),
             cache_key: cache_key.to_owned(),
             identity,
             lock: Some(lock),
-            unused_selection: false,
-        }
+            unused_selection: std::sync::atomic::AtomicBool::new(false),
+        }))
     }
 
     fn set_owner(&mut self, owner: HomeCacheLockOwner) {
@@ -223,7 +237,7 @@ impl HomeEntryLock {
     }
 }
 
-impl Drop for HomeEntryLock {
+impl Drop for HomeEntryLockCustody {
     fn drop(&mut self) {
         let mut owners = self
             .inner
@@ -239,7 +253,10 @@ impl Drop for HomeEntryLock {
         }
         drop(owners);
         drop(self.lock.take());
-        if self.unused_selection {
+        if self
+            .unused_selection
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             self.inner.record_selection_release(&self.cache_key);
         }
     }
@@ -865,7 +882,8 @@ impl HomeImageCache {
                     }
                 }
                 if let Some(lock) = lease.entry_lock.as_mut() {
-                    lock.unused_selection = true;
+                    lock.unused_selection
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
                 lease
             }
@@ -1210,7 +1228,7 @@ impl HomeImageCache {
         let path = self.capacity_lock_path();
         #[cfg(test)]
         if let Some((entered, release)) = &self.promotion_capacity_lock_test_gate {
-            return runner_host::lock::acquire_with_contention_timeout_for_test(
+            return runner_host::lock::acquire_shared_with_contention_timeout_for_test(
                 path,
                 HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
                 async {
@@ -1224,346 +1242,11 @@ impl HomeImageCache {
             )
             .await;
         }
-        runner_host::lock::acquire_with_contention_timeout(
+        runner_host::lock::acquire_shared_with_contention_timeout(
             path,
             HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
         )
         .await
-    }
-
-    async fn promote_locked(
-        &self,
-        input: HomeImagePromotionInput<'_>,
-    ) -> LifecycleResult<HomeImagePromotionOutcome> {
-        use super::fs::{PinnedImage, move_noreplace, sparse_copy_pinned, sync_directory};
-        let paths = self.entry_paths(input.cache_key);
-        let generation = input.run_id.to_string();
-        if let Some(binding) = input.history_proof {
-            super::metadata::validate_history_binding(binding, &generation)?;
-        }
-        if input.rootfs_hash.is_empty()
-            || input.image_size_bytes == 0
-            || !input.image_size_bytes.is_multiple_of(1024 * 1024)
-        {
-            self.observe_publication(
-                &input,
-                HomeObservationOutcome::Skipped,
-                "invalid_image_identity",
-                None,
-                None,
-            );
-            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-        }
-        let previous = self
-            .read_valid_metadata(
-                &paths.metadata(),
-                input.profile_name,
-                input.reuse_key,
-                input.working_dir,
-                input.image_size_bytes,
-            )
-            .await
-            .ok()
-            .flatten();
-        if previous
-            .as_ref()
-            .is_some_and(|m| m.last_completed_at.as_str() >= input.completed_at)
-        {
-            self.observe_publication(
-                &input,
-                HomeObservationOutcome::PreservedExisting,
-                "newer_committed_image",
-                previous.as_ref().map(|m| m.image_generation.as_str()),
-                None,
-            );
-            return Ok(HomeImagePromotionOutcome::PreservedExisting);
-        }
-        // Stopped publishers from this process must not spend their external
-        // contention budget racing one another. Keep entry ownership and the
-        // fair acquire future until admitted, cancelled, or refused pre-staging.
-        #[cfg(test)]
-        self.inner.publication_admission_entered.add_permits(1);
-        let _publication = match tokio::time::timeout(
-            HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT,
-            self.inner.publication_admission.acquire(),
-        )
-        .await
-        {
-            Ok(permit) => permit.map_err(|error| {
-                LifecycleError::Internal(format!("home publication admission closed: {error}"))
-            })?,
-            Err(_) => {
-                self.observe_publication(
-                    &input,
-                    HomeObservationOutcome::Skipped,
-                    "publication_admission_timeout",
-                    None,
-                    None,
-                );
-                info!(run_id = %input.run_id, cache_key = input.cache_key,
-                    admission_timeout_ms = duration_ms(HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT),
-                    "home image cache promotion skipped: publication admission timeout");
-                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-            }
-        };
-        let _capacity = match self.acquire_promotion_capacity_lock().await {
-            Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
-            Ok(runner_host::lock::TryLock::Busy) => {
-                self.observe_publication(
-                    &input,
-                    HomeObservationOutcome::Skipped,
-                    "capacity_lock_busy",
-                    None,
-                    None,
-                );
-                info!(run_id = %input.run_id, cache_key = input.cache_key,
-                        contention_timeout_ms = duration_ms(HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT),
-                        "home image cache promotion skipped: capacity lock busy");
-                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-            }
-            Err(error) => {
-                self.observe_publication(
-                    &input,
-                    HomeObservationOutcome::Skipped,
-                    "capacity_lock_unavailable",
-                    None,
-                    None,
-                );
-                warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
-                        "home image cache promotion skipped: capacity lock unavailable");
-                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-            }
-        };
-        #[cfg(test)]
-        if let Some((entered, release)) = &self.publication_capacity_held_test_gate {
-            entered.notify_one();
-            release
-                .acquire()
-                .await
-                .expect("publication capacity-held gate closed")
-                .forget();
-        }
-        let mut stats = self.fs_stats().await?;
-        let pressure = self.pressure_thresholds(stats);
-        // Metadata staging and new directory blocks also need reserve. Never use
-        // an unavailable scan as zero or assume another locked image is reclaimable.
-        let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
-        if !has_copy_headroom(stats, pressure, metadata_peak) && pressure.reserve_feasible {
-            self.gc_locked(false, metadata_peak).await?;
-            stats = self.fs_stats().await?;
-        }
-        if !has_copy_headroom(stats, pressure, metadata_peak) {
-            self.observe_publication(
-                &input,
-                HomeObservationOutcome::Skipped,
-                if pressure.reserve_feasible {
-                    "disk_reserve"
-                } else {
-                    "reserve_infeasible"
-                },
-                None,
-                None,
-            );
-            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-        }
-        let source = match PinnedImage::open(input.active_image, input.image_size_bytes) {
-            Ok(source) => source,
-            Err(error) => {
-                info!(%error, "home publication source unavailable");
-                self.observe_publication(
-                    &input,
-                    HomeObservationOutcome::Skipped,
-                    "source_unavailable",
-                    None,
-                    None,
-                );
-                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-            }
-        };
-        let source_identity = source.identity();
-        source.validate_path(input.active_image)?;
-        self.ensure_home_cache_entry_dir(input.cache_key).await?;
-        sync_directory(self.home_image_cache_dir()).await?;
-        if let Some(parent) = self.home_image_cache_dir().parent() {
-            sync_directory(parent).await?;
-        }
-        let staging = paths.tmp_image(input.run_id);
-        let candidate = paths
-            .image(&generation)
-            .ok_or_else(|| LifecycleError::Internal("invalid publication generation".into()))?;
-        // The generation is never reused, even after an interrupted attempt.
-        if fs::symlink_metadata(&candidate).await.is_ok()
-            || fs::symlink_metadata(&staging).await.is_ok()
-        {
-            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-        }
-        source.validate_path(input.active_image)?;
-        let (pinned, copied) = match move_noreplace(input.active_image, &staging) {
-            Ok(()) => {
-                source.validate_path(&staging)?;
-                (source, false)
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
-                let source_file = source.clone_file_for_observation()?;
-                let destination = self.home_image_cache_fs_stats_path();
-                let logical_bytes = input.image_size_bytes;
-                let copy_peak = tokio::task::spawn_blocking(move || {
-                    let unit = nix::sys::statvfs::statvfs(&destination)
-                        .map(|stats| stats.fragment_size())
-                        .unwrap_or(logical_bytes.max(1));
-                    sandbox::home_drive_copy_peak_bytes_from_file(&source_file, logical_bytes, unit)
-                })
-                .await
-                .map_err(|error| {
-                    LifecycleError::Internal(format!("publication copy demand: {error}"))
-                })?;
-                let additional_peak = copy_peak.saturating_add(metadata_peak);
-                let mut fresh_stats = self.fs_stats().await?;
-                if !has_copy_headroom(fresh_stats, pressure, additional_peak) {
-                    self.gc_locked(false, additional_peak).await?;
-                    fresh_stats = self.fs_stats().await?;
-                }
-                if !has_copy_headroom(fresh_stats, pressure, additional_peak) {
-                    self.observe_publication(
-                        &input,
-                        HomeObservationOutcome::Skipped,
-                        "copy_disk_reserve",
-                        None,
-                        None,
-                    );
-                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                }
-                let copied = sparse_copy_pinned(&source, &staging, input.image_size_bytes).await?;
-                source.validate_path(input.active_image)?;
-                (copied, true)
-            }
-            Err(e) => {
-                return Err(super::io_context::with_paths(
-                    e,
-                    "renameat2(RENAME_NOREPLACE)",
-                    input.active_image,
-                    &staging,
-                )
-                .into());
-            }
-        };
-        pinned.validate_path(&staging)?;
-        #[cfg(test)]
-        self.publication_fault(super::PublicationFault::BeforeImageSync)?;
-        pinned.sync(&staging)?;
-        sync_directory(paths.entry_dir()).await?;
-        if !copied && let Some(parent) = input.active_image.parent() {
-            sync_directory(parent).await?;
-        }
-        #[cfg(test)]
-        self.publication_fault(super::PublicationFault::AfterImageSync)?;
-        #[cfg(test)]
-        self.remove_staging_before_image_rename_for_test(&staging)
-            .await?;
-        move_noreplace(&staging, &candidate).map_err(|error| {
-            super::io_context::with_paths(
-                error,
-                "renameat2(RENAME_NOREPLACE)",
-                &staging,
-                &candidate,
-            )
-        })?;
-        let observed = pinned.validate_path(&candidate)?;
-        sync_directory(paths.entry_dir()).await?;
-        // Transfer can race other filesystem writers. Check actual remaining
-        // headroom again before the durable metadata commit.
-        let fresh_stats = self.fs_stats().await?;
-        if !has_copy_headroom(
-            fresh_stats,
-            self.pressure_thresholds(fresh_stats),
-            metadata_peak,
-        ) {
-            self.observe_publication(
-                &input,
-                HomeObservationOutcome::Skipped,
-                "post_transfer_reserve",
-                None,
-                None,
-            );
-            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-        }
-        let metadata = HomeCacheMetadata {
-            format_version: CACHE_FORMAT_VERSION,
-            cache_scope: self.inner.cache_scope.clone(),
-            profile_name: input.profile_name.to_owned(),
-            rootfs_hash: input.rootfs_hash.to_owned(),
-            reuse_key: input.reuse_key.to_owned(),
-            working_dir: input.working_dir.to_owned(),
-            fingerprint_scope: "/home/user".to_owned(),
-            image_generation: generation,
-            history_proof: input.history_proof.cloned(),
-            last_completed_at: input.completed_at.to_owned(),
-            last_used_at: local_timestamp(),
-            last_terminal_status: input.terminal_status,
-            home_trust: HomeTrust::Clean,
-            logical_image_size_bytes: input.image_size_bytes,
-            allocated_bytes: allocated_bytes(&observed),
-            current_image: pinned.identity(),
-            drive_layout: HOME_DRIVE_LAYOUT.to_owned(),
-            storage_fingerprints: filter_storage_fingerprints_for_home(input.storage_fingerprints),
-            state: HomeCacheEntryState::Current,
-        };
-        pinned.validate_path(&candidate)?;
-        self.write_metadata(input.cache_key, input.run_id, metadata)
-            .await?;
-        // Only a successful synced commit grants deletion authority. A late
-        // metadata error leaves the new image intact, never mixed-generation.
-        if let Some(previous) = previous
-            && let Some(old) = paths.image(&previous.image_generation)
-            && old != candidate
-            && let Ok(old_pin) = PinnedImage::open(&old, previous.logical_image_size_bytes)
-            && old_pin.identity() == previous.current_image
-            && old_pin.validate_path(&old).is_ok()
-        {
-            let removed = fs::remove_file(&old).await;
-            let mut observation = HomeObservation::new(
-                HomeObservationKind::Removal,
-                if removed.is_ok() {
-                    HomeObservationOutcome::Deleted
-                } else {
-                    HomeObservationOutcome::Failed
-                },
-            );
-            observation.run_id = Some(input.run_id);
-            observation.reuse_key = Some(input.reuse_key.to_owned());
-            observation.cache_key = Some(input.cache_key.to_owned());
-            observation.profile_name = Some(input.profile_name.to_owned());
-            observation.image_generation = Some(previous.image_generation);
-            observation.reason = Some("replaced_generation".into());
-            self.observe_home(observation);
-            let _ = sync_directory(paths.entry_dir()).await;
-        }
-        if copied
-            && let Ok(source_pin) = PinnedImage::open(input.active_image, input.image_size_bytes)
-            && source_pin.validate_path(input.active_image).is_ok()
-        {
-            // The active source may have been replaced since transfer. Deletion
-            // requires the original observed identity, not merely matching size.
-            if source_pin.identity() == source_identity {
-                let _ = fs::remove_file(input.active_image).await;
-                if let Some(parent) = input.active_image.parent() {
-                    let _ = sync_directory(parent).await;
-                }
-            }
-        }
-        // Native acceptance and operational readers use this as a completion
-        // receipt, never as preparation or a candidate-image write acknowledgement.
-        info!(run_id = %input.run_id, cache_key = input.cache_key,
-            image_generation = %input.run_id, image_size_bytes = input.image_size_bytes,
-            "home image cache promoted");
-        self.observe_publication(
-            &input,
-            HomeObservationOutcome::Published,
-            "synced_commit",
-            Some(&input.run_id.to_string()),
-            Some(allocated_bytes(&observed)),
-        );
-        Ok(HomeImagePromotionOutcome::Promoted)
     }
 }
 
@@ -1812,6 +1495,9 @@ impl HomeImageLease {
             storage_fingerprints,
             restored_session_identity: restored_session_identity.cloned(),
             history_proof: None,
+            publication: Arc::new(tokio::sync::Mutex::new(
+                publication::PublicationProgress::default(),
+            )),
         })
     }
 }
@@ -1839,6 +1525,11 @@ impl HomeImagePromotionContext {
         &mut self,
         binding: Option<HomeCacheHistoryProofBinding>,
     ) -> LifecycleResult<()> {
+        if !self.can_reactivate() {
+            return Err(LifecycleError::Internal(
+                "home history proof is sealed by accepted publication".into(),
+            ));
+        }
         self.history_proof = None;
         if let Some(binding) = binding {
             super::metadata::validate_history_binding(&binding, &self.publication_generation())?;
@@ -1924,59 +1615,6 @@ impl HomeImagePromotionContext {
         self.validate_expected_identity(&self.cache, request)
     }
 
-    pub async fn promote(&self) -> LifecycleResult<HomeImagePromotionOutcome> {
-        let _late_entry_lock_guard = match self.entry_lock.as_ref() {
-            Some(_) => None,
-            None => {
-                match runner_host::lock::try_acquire(self.cache.entry_lock_path(&self.cache_key))
-                    .await
-                {
-                    Ok(lock) => Some(HomeEntryLock::new(
-                        &self.cache,
-                        &self.cache_key,
-                        lock,
-                        HomeCacheLockOwner::Finalizing,
-                    )),
-                    Err(e) => {
-                        info!(
-                            run_id = %self.run_id,
-                            cache_key = self.cache_key,
-                            error = %e,
-                            "home image cache promotion skipped: late entry lock unavailable"
-                        );
-                        self.observe_publication(
-                            HomeObservationOutcome::Skipped,
-                            "late_entry_lock_unavailable",
-                        );
-                        return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                    }
-                }
-            }
-        };
-
-        let result = self
-            .cache
-            .promote_locked(HomeImagePromotionInput {
-                run_id: self.run_id,
-                cache_key: &self.cache_key,
-                profile_name: &self.profile_name,
-                rootfs_hash: &self.rootfs_hash,
-                reuse_key: &self.reuse_key,
-                working_dir: &self.working_dir,
-                active_image: &self.active_image,
-                image_size_bytes: self.image_size_bytes,
-                terminal_status: self.terminal_status,
-                completed_at: &self.completed_at,
-                storage_fingerprints: &self.storage_fingerprints,
-                history_proof: self.history_proof.as_ref(),
-            })
-            .await;
-        if result.is_err() {
-            self.observe_publication(HomeObservationOutcome::Failed, "publication_error");
-        }
-        result
-    }
-
     pub fn observe_publication(&self, outcome: HomeObservationOutcome, reason: &str) {
         let mut observation = HomeObservation::new(HomeObservationKind::Publication, outcome);
         observation.run_id = Some(self.run_id);
@@ -1988,6 +1626,10 @@ impl HomeImagePromotionContext {
     }
 
     pub async fn abandon_unpublished(self, reason: &str) -> LifecycleResult<bool> {
+        let progress = self.publication.clone().lock_owned().await;
+        if progress.started() {
+            return Ok(false);
+        }
         let Self {
             cache,
             cache_key,
@@ -2022,6 +1664,10 @@ impl HomeImagePromotionContext {
     }
 
     pub async fn invalidate_current(self, reason: &str) -> LifecycleResult<bool> {
+        let progress = self.publication.clone().lock_owned().await;
+        if progress.started() {
+            return Ok(false);
+        }
         let Self {
             cache,
             cache_key,
@@ -2069,6 +1715,9 @@ impl HomeImagePromotionContext {
         home_drive_available: bool,
     ) -> Result<HomeImageLease, HomeImagePromotionIdentityMismatch> {
         self.validate_identity(expected)?;
+        if !self.can_reactivate() {
+            return Err(HomeImagePromotionIdentityMismatch::PublicationStarted);
+        }
         Ok(self.into_active_lease_unchecked(home_drive_available))
     }
 
@@ -2077,13 +1726,26 @@ impl HomeImagePromotionContext {
         expected: &HomeImagePromotionIdentity,
         home_drive_available: bool,
     ) -> Result<HomeImageLease, Box<HomeImagePromotionIdentityFailure>> {
-        if let Err(mismatch) = self.validate_identity(expected) {
+        let identity = self.validate_identity(expected).and_then(|()| {
+            if self.can_reactivate() {
+                Ok(())
+            } else {
+                Err(HomeImagePromotionIdentityMismatch::PublicationStarted)
+            }
+        });
+        if let Err(mismatch) = identity {
             return Err(Box::new(HomeImagePromotionIdentityFailure {
                 promotion: self,
                 mismatch,
             }));
         }
         Ok(self.into_active_lease_unchecked(home_drive_available))
+    }
+
+    fn can_reactivate(&self) -> bool {
+        self.publication
+            .try_lock()
+            .is_ok_and(|progress| !progress.started())
     }
 
     fn into_active_lease_unchecked(self, home_drive_available: bool) -> HomeImageLease {
@@ -2105,6 +1767,7 @@ impl HomeImagePromotionContext {
             storage_fingerprints,
             restored_session_identity: _,
             history_proof: _,
+            publication: _,
         } = self;
         if let Some(entry_lock) = entry_lock.as_mut() {
             entry_lock.set_owner(HomeCacheLockOwner::Active);

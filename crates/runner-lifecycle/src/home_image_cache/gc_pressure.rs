@@ -13,6 +13,13 @@ use crate::error::LifecycleResult;
 const MAX_VICTIM_ATTEMPTS: usize = 16;
 const MUTATION_TURN: Duration = Duration::from_secs(1);
 
+#[derive(Clone, Copy)]
+pub(super) enum GcTarget {
+    Inactive,
+    CountOnly,
+    FreeBytes(u64),
+}
+
 /// Why an observed reclaim turn stopped. Deleted allocation is not free space.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HomeCacheReclaimStatus {
@@ -24,6 +31,7 @@ pub enum HomeCacheReclaimStatus {
     BudgetExhausted,
     DifferentFilesystem,
     ObserverTimedOut,
+    BackgroundStopped,
 }
 
 /// A caller-visible physical-space observation, independent of cache quotas.
@@ -80,19 +88,34 @@ impl GcContinuation {
         }
     }
 
-    fn satisfied(&self, required: Option<u64>, available: u64) -> bool {
-        self.entry_count <= MAX_HELD_HOME_STATES
-            && required.is_none_or(|required| available >= required)
+    fn stop_status(
+        &self,
+        target: GcTarget,
+        available: u64,
+        capacity: u64,
+    ) -> Option<HomeCacheReclaimStatus> {
+        let required = match target {
+            GcTarget::Inactive => return Some(HomeCacheReclaimStatus::BackgroundStopped),
+            GcTarget::CountOnly => None,
+            GcTarget::FreeBytes(required) if required > capacity => {
+                return Some(HomeCacheReclaimStatus::Infeasible);
+            }
+            GcTarget::FreeBytes(required) => Some(required),
+        };
+        (self.entry_count <= MAX_HELD_HOME_STATES
+            && required.is_none_or(|required| available >= required))
+        .then_some(HomeCacheReclaimStatus::TargetSatisfied)
     }
 }
 
 impl HomeImageCache {
-    /// Caller holds exclusive capacity. No entry acquisition waits, and no
+    /// Caller holds the collector singleton and shared compatibility barrier.
+    /// No entry acquisition waits, and no
     /// accepted physical operation is cancelled to enforce the soft turn.
     pub(super) async fn reclaim_gc_turn(
         &self,
         continuation: &mut GcContinuation,
-        required: Option<u64>,
+        target: impl Fn() -> GcTarget,
         dry_run: bool,
         reason: &'static str,
     ) -> LifecycleResult<HomeCacheReclaimOutcome> {
@@ -102,18 +125,14 @@ impl HomeImageCache {
             HomeCacheReclaimStatus::BudgetExhausted,
             stats.available_bytes,
         );
-        if required.is_some_and(|required| required > stats.total_bytes) {
-            outcome.status = HomeCacheReclaimStatus::Infeasible;
-            return Ok(outcome);
-        }
         let mut authority_changed = false;
         let mut available_after = stats.available_bytes;
         loop {
             let available = available_after
                 .saturating_add(continuation.prospective_released_bytes)
                 .min(stats.total_bytes);
-            if continuation.satisfied(required, available) {
-                outcome.status = HomeCacheReclaimStatus::TargetSatisfied;
+            if let Some(status) = continuation.stop_status(target(), available, stats.total_bytes) {
+                outcome.status = status;
                 return Ok(outcome);
             }
             if !continuation.candidates.is_empty()
@@ -144,6 +163,12 @@ impl HomeImageCache {
             if !current.same_current_image(&candidate) {
                 authority_changed = true;
                 continue;
+            }
+            // Entry acquisition and identity observation can yield across drain
+            // or a changed pressure target. Recheck before accepting removal.
+            if let Some(status) = continuation.stop_status(target(), available, stats.total_bytes) {
+                outcome.status = status;
+                return Ok(outcome);
             }
             // Previewed cleanup is still physically present. Count it once,
             // including when this whole entry becomes a subsequent victim.

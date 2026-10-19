@@ -1,4 +1,6 @@
 import {
+  settle,
+  safeSync,
   settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
@@ -12,13 +14,33 @@ import {
 import { z } from "zod";
 import type { WechatAttachment } from "@okouai/db/jsonb-contracts/wechat";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
+import { wechatItemSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
-  wechatItemSchema,
   wechatRequest,
   wechatSendReceiptSchema,
-} from "./wechat-client";
+} from "@okouai/core/wechat-client";
 
 type Item = z.infer<typeof wechatItemSchema>;
+export class WechatMediaDownloadError extends Error {
+  constructor(
+    readonly code: "invalid-media" | "too-large" | "download-failed",
+    message: string,
+    readonly statusCode?: number,
+  ) {
+    super(message);
+    this.name = "WechatMediaDownloadError";
+  }
+}
+export class WechatMediaUploadError extends Error {
+  constructor(readonly statusCode?: number) {
+    super(
+      statusCode === undefined
+        ? "WeChat CDN upload did not complete"
+        : `WeChat CDN upload failed (HTTP ${statusCode})`,
+    );
+    this.name = "WechatMediaUploadError";
+  }
+}
 const CDN_ORIGIN = "https://novac2c.cdn.weixin.qq.com";
 function cdnUrl(
   full: string | undefined,
@@ -144,22 +166,38 @@ export async function downloadWechatMedia(
   item: Item,
   signal: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const { media, key } = downloadSource(item);
+  const source = safeSync(() => {
+    const { media, key } = downloadSource(item);
+    return {
+      key,
+      url: cdnUrl(media.full_url, media.encrypt_query_param, "download"),
+    };
+  });
+  if ("error" in source) {
+    throw new WechatMediaDownloadError(
+      "invalid-media",
+      source.error instanceof Error
+        ? source.error.message
+        : "Invalid WeChat media reference",
+    );
+  }
+  const { key, url } = source.ok;
   const controller = new AbortController();
-  const response = await fetch(
-    cdnUrl(media.full_url, media.encrypt_query_param, "download"),
-    {
-      redirect: "error",
-      signal: AbortSignal.any([
-        signal,
-        controller.signal,
-        AbortSignal.timeout(40_000),
-      ]),
-    },
-  );
+  const response = await fetch(url, {
+    redirect: "error",
+    signal: AbortSignal.any([
+      signal,
+      controller.signal,
+      AbortSignal.timeout(40_000),
+    ]),
+  });
   if (!response.ok || !response.body) {
     controller.abort();
-    throw new Error("WeChat attachment is unavailable or expired");
+    throw new WechatMediaDownloadError(
+      "download-failed",
+      "WeChat attachment is unavailable or expired",
+      response.status,
+    );
   }
   const reader = response.body.getReader();
   const result = await settleIncludingAbort(readMediaBody(reader, signal));
@@ -174,18 +212,33 @@ export async function downloadWechatMedia(
   }
   let bytes = result.value;
   if (key) {
-    const decipher = createDecipheriv("aes-128-ecb", key, null);
-    bytes = Buffer.concat([decipher.update(bytes), decipher.final()]);
+    const decrypted = safeSync(() => {
+      const decipher = createDecipheriv("aes-128-ecb", key, null);
+      return Buffer.concat([decipher.update(bytes), decipher.final()]);
+    });
+    if ("error" in decrypted) {
+      throw new WechatMediaDownloadError(
+        "invalid-media",
+        "Invalid WeChat encrypted media",
+      );
+    }
+    bytes = decrypted.ok;
   }
   if (bytes.byteLength > MAX_WECHAT_FILE_SIZE_BYTES) {
-    throw new Error("WeChat attachment exceeds 10 MiB");
+    throw new WechatMediaDownloadError(
+      "too-large",
+      "WeChat attachment exceeds 10 MiB",
+    );
   }
   if (
     item.type === 4 &&
     item.file_item?.len !== undefined &&
     String(bytes.byteLength) !== item.file_item.len
   ) {
-    throw new Error("WeChat attachment size does not match its metadata");
+    throw new WechatMediaDownloadError(
+      "invalid-media",
+      "WeChat attachment size does not match its metadata",
+    );
   }
   return new Uint8Array(bytes);
 }
@@ -203,7 +256,10 @@ async function readMediaBody(
     }
     size += chunk.value.byteLength;
     if (size > MAX_WECHAT_FILE_SIZE_BYTES + 16) {
-      throw new Error("WeChat attachment exceeds 10 MiB");
+      throw new WechatMediaDownloadError(
+        "too-large",
+        "WeChat attachment exceeds 10 MiB",
+      );
     }
     chunks.push(chunk.value);
   }
@@ -256,20 +312,16 @@ export async function uploadWechatMedia(
         signal,
       ),
     );
-  const response = await fetch(
-    cdnUrl(target.upload_full_url, target.upload_param, "upload", filekey),
-    {
-      method: "POST",
-      body: new Uint8Array(encrypted),
-      headers: { "Content-Type": "application/octet-stream" },
-      redirect: "error",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(40_000)]),
-    },
+  const downloadParam = await uploadEncryptedMedia(
+    cdnUrl(
+      target.upload_full_url?.trim(),
+      target.upload_param,
+      "upload",
+      filekey,
+    ),
+    encrypted,
+    signal,
   );
-  const downloadParam = response.headers.get("x-encrypted-param");
-  if (!response.ok || !downloadParam) {
-    throw new Error("WeChat media upload was not confirmed");
-  }
   const media = {
     encrypt_query_param: downloadParam,
     aes_key: Buffer.from(key.toString("hex")).toString("base64"),
@@ -287,6 +339,46 @@ export async function uploadWechatMedia(
             len: String(args.bytes.byteLength),
           },
         };
+}
+
+/** Retrying the same CDN object is safe; message delivery is never retried here. */
+async function uploadEncryptedMedia(
+  url: URL,
+  encrypted: Uint8Array,
+  signal: AbortSignal,
+): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await settle(
+      fetch(url, {
+        method: "POST",
+        body: new Uint8Array(encrypted),
+        headers: { "Content-Type": "application/octet-stream" },
+        redirect: "error",
+        signal: AbortSignal.any([signal, AbortSignal.timeout(40_000)]),
+      }),
+      signal,
+    );
+    signal.throwIfAborted();
+    const response = result.ok ? result.value : undefined;
+    const downloadParam = response?.headers.get("x-encrypted-param");
+    if (response?.body) {
+      await response.body.cancel();
+      signal.throwIfAborted();
+    }
+    if (response?.ok && downloadParam) {
+      return downloadParam;
+    }
+    if (
+      attempt === 2 ||
+      (response &&
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 429)
+    ) {
+      throw new WechatMediaUploadError(response?.status);
+    }
+  }
+  throw new WechatMediaUploadError();
 }
 export async function sendWechatMedia(
   args: {

@@ -16,6 +16,9 @@ use super::HomeImageCache;
 use super::io_context::with_path;
 use super::types::{FsStats, HomeCachePressureThresholds};
 
+mod staging;
+pub(super) use staging::StagingFile;
+
 pub(super) const HOME_IMAGE_COPY_TIMEOUT: Duration = Duration::from_secs(300);
 
 impl HomeImageCache {
@@ -341,11 +344,12 @@ impl PinnedImage {
         }
         Ok(observed)
     }
-    pub(super) fn sync(&self, path: &Path) -> LifecycleResult<()> {
-        self.file
-            .sync_all()
-            .map_err(|error| with_path(error, "sync_image", path))?;
-        Ok(())
+    pub(super) async fn sync_owned(
+        &self,
+        path: &Path,
+        before_sync: impl FnOnce() + Send + 'static,
+    ) -> LifecycleResult<()> {
+        sync_descriptor(&self.file, path, before_sync).await
     }
     pub(super) fn identity(&self) -> super::metadata::HomeImageFileIdentity {
         self.identity
@@ -363,34 +367,33 @@ impl PinnedImage {
     }
 }
 
-pub(super) async fn sync_private_file(path: &Path) -> LifecycleResult<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    secure_home_cache_publication_file(path)?;
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(path)
-        .map_err(|error| with_path(error, "open_private_file", path))?;
-    if !file
-        .metadata()
-        .map_err(|error| with_path(error, "File::metadata", path))?
-        .is_file()
-        || file
-            .metadata()
-            .map_err(|error| with_path(error, "File::metadata", path))?
-            .nlink()
-            != 1
-    {
-        return Err(LifecycleError::Internal(
-            "sync target is not an owned regular file".into(),
-        ));
-    }
-    file.sync_all()
-        .map_err(|error| with_path(error, "sync_private_file", path))?;
+async fn sync_descriptor(
+    file: &std::fs::File,
+    path: &Path,
+    before_sync: impl FnOnce() + Send + 'static,
+) -> LifecycleResult<()> {
+    let file = file.try_clone()?;
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || {
+        before_sync();
+        file.sync_all()
+            .map_err(|error| with_path(error, "sync_image", &path))
+    })
+    .await
+    .map_err(|error| LifecycleError::Internal(format!("home image sync task failed: {error}")))??;
     Ok(())
 }
 
 pub(super) async fn sync_directory(path: &Path) -> LifecycleResult<()> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || sync_directory_blocking(&path))
+        .await
+        .map_err(|error| {
+            LifecycleError::Internal(format!("home directory sync task failed: {error}"))
+        })?
+}
+
+fn sync_directory_blocking(path: &Path) -> LifecycleResult<()> {
     use std::os::unix::fs::OpenOptionsExt;
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -435,18 +438,21 @@ pub(super) async fn sparse_copy_pinned(
     source: &PinnedImage,
     dst: &Path,
     size: u64,
+    retained_target: &mut Option<StagingFile>,
+    after_create: impl FnOnce() -> LifecycleResult<()>,
 ) -> LifecycleResult<PinnedImage> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let target = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(dst)
-        .map_err(|error| with_path(error, "create_sparse_destination", dst))?;
+    if retained_target.is_none() {
+        *retained_target = Some(StagingFile::create(dst)?);
+    }
+    let target = retained_target.as_ref().unwrap();
+    target.validate_path(dst)?;
+    after_create()?;
     use std::os::fd::AsRawFd;
-    let target_path = format!("/proc/{}/fd/{}", std::process::id(), target.as_raw_fd());
+    let target_path = format!(
+        "/proc/{}/fd/{}",
+        std::process::id(),
+        target.descriptor().as_raw_fd()
+    );
     let mut command = tokio::process::Command::new("cp");
     command
         .arg("--sparse=always")
@@ -478,6 +484,7 @@ pub(super) async fn sparse_copy_pinned(
     }
     let copied = PinnedImage::open(dst, size)?;
     let target_metadata = target
+        .descriptor()
         .metadata()
         .map_err(|error| with_path(error, "File::metadata", dst))?;
     if copied.identity().dev != target_metadata.dev()

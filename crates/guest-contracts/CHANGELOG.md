@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.26.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.1...guest-contracts-v0.26.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **runner:** align telemetry shutdown and predecessor wait budgets ([#41263](https://github.com/okou-ai/okou/issues/41263)) ([3143521](https://github.com/okou-ai/okou/commit/3143521e47e215d52050a3c6092b68e32f450e3a))
+
+## [0.26.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.0...guest-contracts-v0.26.1) (2026-10-19)
+
+## [0.26.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.5...guest-contracts-v0.26.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
 ## [0.25.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.4...guest-contracts-v0.25.5) (2026-10-16)
 
 

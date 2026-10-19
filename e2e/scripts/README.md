@@ -32,3 +32,13 @@ The E2E lockfile owns the captured local packages and their runtime dependencies
 This script directory uses ESM to consume the contracts' public imports.
 Echo inputs span zero through 16 KiB of decoded bytes; 64 KiB opaque transport framing remains
 covered by the transport owner tests, independently of application JSON.
+
+The owned fixture also supplies a 70,003-byte binary file and an empty file.
+The unified fs v3 probe checks directory listing and reads arbitrary
+offsets through a bounded window, validates exact bytes and SHA-256, checks the
+64 KiB prefix boundary and independent complete selection, and verifies explicit
+finish/close rejection of released handles. One reader is deliberately abandoned
+to connection teardown. Mismatched fs versions reject both listing and reads.
+Both sides must advertise fs v3; a stale client must refresh, without a legacy fallback.
+Actual pinned-kernel containment, sparse offsets beyond 4 GiB, mutation and
+park/reuse retirement also run in the native amd64/ARM64 Guest suite.

@@ -1,4 +1,7 @@
-import type { RunnerPreference } from "@okouai/api-contracts/contracts/runners";
+import {
+  RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+  type RunnerPreference,
+} from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -11,6 +14,7 @@ import {
   exists,
   gt,
   isNotNull,
+  isNull,
   or,
   sql,
   type SQL,
@@ -20,14 +24,17 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { db$ } from "../external/db";
+import { nowDate } from "../../lib/time";
+import { db$, writeDb$ } from "../external/db";
 
 const RUNNER_REUSE_PROTECTION_MS = 2000;
 const RUNNER_EXACT_HISTORY_PROTECTION_MS = Math.min(
   1000,
   RUNNER_REUSE_PROTECTION_MS,
 );
-const RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS = 1500;
+// A short bridge covers a completed source before active-producer inventory
+// arrives. Only current producer proof earns the longer telemetry-close budget.
+const RUNNER_FINALIZING_COMPLETION_BRIDGE_MS = 1500;
 const RUNNER_REUSE_HOLDER_FRESH_MS = 30_000;
 
 const finalizingSourceRun = alias(agentRuns, "finalizing_source_run");
@@ -194,6 +201,9 @@ export function runnerReusePreferencePollPriority(args: {
     args.currentDate.getTime() - RUNNER_EXACT_HISTORY_PROTECTION_MS,
   );
   const finalizingCompletedAfter = new Date(
+    args.currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
+  );
+  const producerProtectedAfter = new Date(
     args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   );
   const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
@@ -230,7 +240,10 @@ export function runnerReusePreferencePollPriority(args: {
   const hasLocalHome = local(homeCondition);
   const pendingProducer =
     and(
-      gt(runnerJobQueue.createdAt, protectedAfter),
+      or(
+        isNull(runnerJobQueue.discoveryStartedAt),
+        gt(runnerJobQueue.discoveryStartedAt, producerProtectedAfter),
+      ),
       activeProducerCondition({
         reuseKey,
         profile,
@@ -254,7 +267,10 @@ export function runnerReusePreferencePollPriority(args: {
   });
   return sql`CASE
     WHEN ${and(
-      gt(runnerJobQueue.createdAt, generationProtectedAfter),
+      or(
+        isNull(runnerJobQueue.discoveryStartedAt),
+        gt(runnerJobQueue.discoveryStartedAt, generationProtectedAfter),
+      ),
       isNotNull(runnerJobQueue.reuseKey),
       isNotNull(targetGenerationRunId),
       hasGlobalExact,
@@ -271,13 +287,19 @@ export function runnerReusePreferencePollPriority(args: {
       ELSE 0
     END
     WHEN ${and(
-      gt(runnerJobQueue.createdAt, protectedAfter),
+      or(
+        isNull(runnerJobQueue.discoveryStartedAt),
+        gt(runnerJobQueue.discoveryStartedAt, protectedAfter),
+      ),
       isNotNull(runnerJobQueue.reuseKey),
       hasGlobalReusable,
     )}
     THEN CASE WHEN ${hasLocalReusable} THEN 4 ELSE 0 END
     WHEN ${and(
-      gt(runnerJobQueue.createdAt, protectedAfter),
+      or(
+        isNull(runnerJobQueue.discoveryStartedAt),
+        gt(runnerJobQueue.discoveryStartedAt, protectedAfter),
+      ),
       isNotNull(runnerJobQueue.reuseKey),
       hasGlobalHome,
     )}
@@ -368,6 +390,7 @@ function runnerReuseHolderPlan(args: {
   readonly shouldLookUpExactGeneration: boolean;
   readonly shouldLookUpGenericReuse: boolean;
   readonly finalizingCompletedAfter: Date;
+  readonly shouldLookUpFinalizingProducer: boolean;
 }) {
   const reusableCondition = args.shouldLookUpGenericReuse
     ? reusableSandboxCondition({
@@ -391,7 +414,7 @@ function runnerReuseHolderPlan(args: {
         })
       : sql`false`;
   const producerCondition =
-    args.shouldLookUpGenericReuse && args.historyGenerationRunId
+    args.shouldLookUpFinalizingProducer && args.historyGenerationRunId
       ? activeProducerCondition({
           reuseKey: sql.param(args.reuseKey),
           profile: sql.param(args.profile),
@@ -447,12 +470,12 @@ function runnerReuseHolderPlan(args: {
 }
 
 interface RunnerReusePreferenceArgs {
+  readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
   readonly historyGenerationRunId: string | undefined;
-  readonly createdAt: Date;
-  readonly currentDate: Date;
+  readonly discoveryStartedAt: Date | null;
 }
 
 interface RunnerReusePreferenceResolution {
@@ -460,45 +483,83 @@ interface RunnerReusePreferenceResolution {
   readonly finalizingSource?: "active_producer" | "completion_bridge";
 }
 
-export const resolveRunnerReusePreference$ = command(
+const startRunnerJobDiscovery$ = command(
+  async (
+    { set },
+    args: { readonly runId: string; readonly runnerGroup: string },
+  ): Promise<Date | null> => {
+    // Both poll and notification can discover the committed row first. Keep
+    // their original winner's time even when they race or publication retries.
+    const [row] = await set(writeDb$)
+      .update(runnerJobQueue)
+      .set({
+        discoveryStartedAt: sql`COALESCE(
+          ${runnerJobQueue.discoveryStartedAt},
+          ${sql.param(nowDate(), runnerJobQueue.discoveryStartedAt)}
+        )`,
+      })
+      .where(
+        and(
+          eq(runnerJobQueue.runId, args.runId),
+          eq(runnerJobQueue.runnerGroup, args.runnerGroup),
+          gt(runnerJobQueue.expiresAt, sql`now()`),
+        ),
+      )
+      .returning({ discoveryStartedAt: runnerJobQueue.discoveryStartedAt });
+    if (!row) {
+      return null;
+    }
+    if (row.discoveryStartedAt === null) {
+      throw new Error("Discovered runner job is missing its start time");
+    }
+    return row.discoveryStartedAt;
+  },
+);
+
+function runnerReuseLookupStages(
+  args: {
+    readonly discoveryStartedAt: Date | null;
+    readonly historyGenerationRunId: string | undefined;
+  },
+  currentDate: Date,
+) {
+  const currentTime = currentDate.getTime();
+  const startedAt = args.discoveryStartedAt?.getTime();
+  return {
+    shouldLookUpGenericReuse:
+      startedAt === undefined ||
+      startedAt + RUNNER_REUSE_PROTECTION_MS > currentTime,
+    shouldLookUpFinalizingProducer:
+      args.historyGenerationRunId !== undefined &&
+      (startedAt === undefined ||
+        startedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS > currentTime),
+    shouldLookUpExactGeneration:
+      args.historyGenerationRunId !== undefined &&
+      (startedAt === undefined ||
+        startedAt + RUNNER_EXACT_HISTORY_PROTECTION_MS > currentTime),
+  };
+}
+
+const findRunnerReuseHolder$ = command(
   async (
     { get },
-    args: RunnerReusePreferenceArgs,
-  ): Promise<RunnerReusePreferenceResolution> => {
-    if (!args.reuseKey) {
-      return {
-        preference: { kind: "noPreference", reason: "noReuseKey" },
-      };
-    }
-    const matchingReuseExpiresAt = new Date(
-      args.createdAt.getTime() + RUNNER_REUSE_PROTECTION_MS,
-    );
-    const exactHistoryExpiresAt = args.historyGenerationRunId
-      ? new Date(args.createdAt.getTime() + RUNNER_EXACT_HISTORY_PROTECTION_MS)
-      : null;
-    const shouldLookUpGenericReuse = matchingReuseExpiresAt > args.currentDate;
-    if (!shouldLookUpGenericReuse && !args.historyGenerationRunId) {
-      return {
-        preference: { kind: "noPreference", reason: "expired" },
-      };
-    }
-
-    const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
-    const shouldLookUpExactGeneration =
-      exactHistoryExpiresAt !== null &&
-      exactHistoryExpiresAt > args.currentDate;
-    const finalizingCompletedAfter = new Date(
-      args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-    );
+    args: {
+      readonly runnerGroup: string;
+      readonly profile: string;
+      readonly reuseKey: string;
+      readonly historyGenerationRunId: string | undefined;
+      readonly shouldLookUpGenericReuse: boolean;
+      readonly shouldLookUpExactGeneration: boolean;
+      readonly shouldLookUpFinalizingProducer: boolean;
+    },
+  ): Promise<RunnerReuseHolder | null> => {
+    const currentDate = nowDate();
     const plan = runnerReuseHolderPlan({
-      runnerGroup: args.runnerGroup,
-      profile: args.profile,
-      reuseKey: args.reuseKey,
-      historyGenerationRunId: args.historyGenerationRunId,
-      freshAfter,
-      shouldLookUpExactGeneration,
-      shouldLookUpGenericReuse,
-      finalizingCompletedAfter,
+      ...args,
+      freshAfter: runnerReuseHolderFreshAfter(currentDate),
+      finalizingCompletedAfter: new Date(
+        currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
+      ),
     });
     const [row] = await get(db$)
       .select(plan.fields)
@@ -507,7 +568,7 @@ export const resolveRunnerReusePreference$ = command(
       .where(plan.where)
       .orderBy(...plan.orderBy)
       .limit(1);
-    const holder: RunnerReuseHolder | null = row
+    return row
       ? {
           runnerIdentity: {
             runnerId: row.runnerId,
@@ -520,11 +581,90 @@ export const resolveRunnerReusePreference$ = command(
           sourceCompletedAt: row.sourceCompletedAt,
         }
       : null;
+  },
+);
+
+export const resolveRunnerReusePreference$ = command(
+  async (
+    { set },
+    args: RunnerReusePreferenceArgs,
+  ): Promise<RunnerReusePreferenceResolution> => {
+    if (!args.reuseKey) {
+      return {
+        preference: { kind: "noPreference", reason: "noReuseKey" },
+      };
+    }
+    const lookupStages = runnerReuseLookupStages(args, nowDate());
+    if (
+      !lookupStages.shouldLookUpGenericReuse &&
+      !args.historyGenerationRunId
+    ) {
+      return {
+        preference: { kind: "noPreference", reason: "expired" },
+      };
+    }
+    const lookupArgs = {
+      runnerGroup: args.runnerGroup,
+      profile: args.profile,
+      reuseKey: args.reuseKey,
+      historyGenerationRunId: args.historyGenerationRunId,
+    };
+    let holder = await set(findRunnerReuseHolder$, {
+      ...lookupArgs,
+      ...lookupStages,
+    });
+
+    // Prepare the holder before starting a new window. Both delivery paths
+    // await this write before returning a poll result or publishing to Ably.
+    const discoveryStartedAt =
+      args.discoveryStartedAt ?? (await set(startRunnerJobDiscovery$, args));
+    if (discoveryStartedAt === null) {
+      return {
+        preference: { kind: "noPreference", reason: "noViableHolder" },
+      };
+    }
+    const savedStages = runnerReuseLookupStages(
+      {
+        discoveryStartedAt,
+        historyGenerationRunId: args.historyGenerationRunId,
+      },
+      nowDate(),
+    );
+    if (!savedStages.shouldLookUpGenericReuse && !args.historyGenerationRunId) {
+      return {
+        preference: { kind: "noPreference", reason: "expired" },
+      };
+    }
+    if (
+      lookupStages.shouldLookUpExactGeneration !==
+        savedStages.shouldLookUpExactGeneration ||
+      lookupStages.shouldLookUpFinalizingProducer !==
+        savedStages.shouldLookUpFinalizingProducer ||
+      lookupStages.shouldLookUpGenericReuse !==
+        savedStages.shouldLookUpGenericReuse
+    ) {
+      // A competing discovery or the lookup itself may have consumed a stage.
+      // Select using the saved deadline without renewing it or retrying writes.
+      holder = await set(findRunnerReuseHolder$, {
+        ...lookupArgs,
+        ...savedStages,
+      });
+    }
     return runnerReusePreferenceResult({
       holder,
-      matchingReuseExpiresAt,
-      exactHistoryExpiresAt,
-      shouldLookUpGenericReuse,
+      matchingReuseExpiresAt: new Date(
+        discoveryStartedAt.getTime() + RUNNER_REUSE_PROTECTION_MS,
+      ),
+      finalizingProducerExpiresAt: new Date(
+        discoveryStartedAt.getTime() +
+          RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+      ),
+      exactHistoryExpiresAt: args.historyGenerationRunId
+        ? new Date(
+            discoveryStartedAt.getTime() + RUNNER_EXACT_HISTORY_PROTECTION_MS,
+          )
+        : null,
+      shouldLookUpGenericReuse: savedStages.shouldLookUpGenericReuse,
     });
   },
 );
@@ -532,12 +672,14 @@ export const resolveRunnerReusePreference$ = command(
 function runnerReusePreferenceResult(args: {
   readonly holder: RunnerReuseHolder | null;
   readonly matchingReuseExpiresAt: Date;
+  readonly finalizingProducerExpiresAt: Date;
   readonly exactHistoryExpiresAt: Date | null;
   readonly shouldLookUpGenericReuse: boolean;
 }): RunnerReusePreferenceResolution {
   const {
     holder,
     matchingReuseExpiresAt,
+    finalizingProducerExpiresAt,
     exactHistoryExpiresAt,
     shouldLookUpGenericReuse,
   } = args;
@@ -578,10 +720,10 @@ function runnerReusePreferenceResult(args: {
         runnerIdentity: holder.runnerIdentity,
         tier: "finalizingPredecessor",
         expiresAt: (holder.hasActiveProducer
-          ? matchingReuseExpiresAt
+          ? finalizingProducerExpiresAt
           : new Date(
               holder.sourceCompletedAt.getTime() +
-                RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+                RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
             )
         ).toISOString(),
       },

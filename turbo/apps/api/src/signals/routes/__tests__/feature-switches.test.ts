@@ -112,7 +112,7 @@ describe("/api/feature-switches", () => {
     });
   });
 
-  it("returns registered switches and CLI compatibility while merging known overrides for a supported App", async () => {
+  it("returns registered switches while merging known overrides for a supported App", async () => {
     createRouteMocks(context).clerk.session(
       `user_${randomUUID()}`,
       `org_${randomUUID()}`,
@@ -152,12 +152,9 @@ describe("/api/feature-switches", () => {
       [FeatureSwitchKey.Dummy]: false,
     };
     expect(updated.body.switches).toStrictEqual(expected);
-    expect(updated.body.effectiveSwitches).toMatchObject({
-      ...expected,
-      artifactPreviews: true,
-    });
+    expect(updated.body.effectiveSwitches).toMatchObject(expected);
     expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
-      [...Object.values(FeatureSwitchKey), "artifactPreviews"].sort(),
+      Object.values(FeatureSwitchKey).sort(),
     );
     const current = await accept(client().get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual(expected);

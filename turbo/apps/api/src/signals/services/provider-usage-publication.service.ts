@@ -8,7 +8,10 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
@@ -110,6 +113,10 @@ export const recordRunnerUsageBatch$ = command(
             startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
             triggerSource: agentRuns.triggerSource,
             threadId: agentRuns.chatThreadId,
+            status: agentRuns.status,
+            billingCompletedAt: sql`${agentRuns.completedAt}::text`
+              .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+              .as("billing_completed_at"),
             modelProvider: agentRuns.modelProvider,
             selectedModel: agentRuns.selectedModel,
             modelRuntimeModel: agentRuns.modelRuntimeModel,

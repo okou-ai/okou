@@ -85,7 +85,24 @@ fn reuse_preparation_requests(
 
 #[tokio::test]
 async fn exact_reuse_restores_guest_while_claim_is_blocked() {
-    let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+    for tier in [
+        RunnerPreferenceTier::ExactSandbox,
+        RunnerPreferenceTier::HomeCache,
+    ] {
+        assert_exact_reuse_claim_progresses_during_status_write(tier).await;
+    }
+}
+
+async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPreferenceTier) {
+    let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+    let status_write_started = Arc::new(tokio::sync::Notify::new());
+    let release_status_write = Arc::new(tokio::sync::Semaphore::new(0));
+    config.shared.status = Arc::new(StatusTracker::new_with_atomic_write_gate(
+        env._temp_dir.path().join("status.json"),
+        3, // Initial and Running snapshots precede the exact reservation journal.
+        Arc::clone(&status_write_started),
+        Arc::clone(&release_status_write),
+    ));
     let budget = Arc::clone(&config.capacity.budget);
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     add_healthy_reuse_preparation_matcher(&overrides);
@@ -117,19 +134,28 @@ async fn exact_reuse_restores_guest_while_claim_is_blocked() {
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
-            run_id,
-            &reuse_key,
-            generation_run_id,
-        ))
+        .send(
+            exact_generation_candidate(run_id, &reuse_key, generation_run_id)
+                .with_runner_preference(ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    tier,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
+        )
         .unwrap();
 
     assert!(
         env.handle
-            .wait_claim_in_flight(1, Duration::from_secs(5))
+            .wait_claim_in_flight(1, Duration::from_secs(2))
             .await,
-        "provider claim did not reach its boundary"
+        "a reserved exact sandbox must reach claim before its status is persisted"
     );
+    tokio::time::timeout(Duration::from_secs(2), status_write_started.notified())
+        .await
+        .expect("exact reservation journal should be independently pending");
+    assert_eq!(overrides.unpark_call_count(), 0);
+    assert!(guest_restore_timezones(&overrides).is_empty());
+    release_status_write.add_permits(1);
     assert!(
         overrides
             .wait_guest_state_restore_call_count(1, Duration::from_secs(5))
@@ -162,6 +188,102 @@ async fn exact_reuse_restores_guest_while_claim_is_blocked() {
     assert!(timezone_correction_commands(&overrides).is_empty());
 
     shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn exact_reuse_journal_timeout_preserves_the_original_reserved_sandbox() {
+    for accepted in [false, true] {
+        let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+        let status_path = env._temp_dir.path().join("status.json");
+        let journal_started = Arc::new(tokio::sync::Notify::new());
+        let release_journal = Arc::new(tokio::sync::Semaphore::new(0));
+        config.shared.status = Arc::new(StatusTracker::new_with_write_gate(
+            status_path.clone(),
+            3,
+            Arc::clone(&journal_started),
+            release_journal,
+        ));
+        let budget = Arc::clone(&config.capacity.budget);
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        add_healthy_reuse_preparation_matcher(&overrides);
+        let reuse_key = RunId::new_v4().to_string();
+        let generation_run_id = RunId::new_v4();
+        let sandbox_id = seed_idle_pool_with_speculative_timezone(
+            &env.idle_pool,
+            &budget,
+            &overrides,
+            SpeculativeIdleSeedSpec {
+                reuse_key: &reuse_key,
+                profile_name: "vm0/default",
+                vcpu: 2,
+                memory_mb: 4096,
+                history_generation_run_id: generation_run_id,
+                guest_timezone_intent: GuestTimezoneIntent::Default,
+                timing: None,
+            },
+        )
+        .await;
+        let run_handle = tokio::spawn(run(config));
+        wait_discover_entered(&env, Duration::from_secs(2)).await;
+
+        let run_id = RunId::new_v4();
+        env.handle.block_claim(run_id);
+        env.provider.set_claim_result(
+            run_id,
+            accepted.then(|| claimed_context(run_id, &reuse_key, None)),
+        );
+        env.handle
+            .discover_tx
+            .send(exact_generation_candidate(
+                run_id,
+                &reuse_key,
+                generation_run_id,
+            ))
+            .unwrap();
+        assert!(
+            env.handle
+                .wait_run_claim_in_flight(run_id, Duration::from_secs(2))
+                .await
+        );
+        tokio::time::timeout(Duration::from_secs(2), journal_started.notified())
+            .await
+            .expect("reservation journal should reach its write gate");
+        assert_eq!(overrides.unpark_call_count(), 0);
+        assert!(overrides.guest_state_restore_calls().is_empty());
+
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(5)).await;
+        tokio::time::resume();
+        env.handle.unblock_claim(run_id);
+        if accepted {
+            let completion = env
+                .handle
+                .wait_completion(run_id, Duration::from_secs(5))
+                .await
+                .expect("claimed reuse should retain its parked sandbox after journal timeout");
+            assert_eq!(completion.exit_code, 0);
+            assert_eq!(completion.sandbox_id, Some(sandbox_id));
+            assert_eq!(overrides.unpark_call_count(), 1);
+        } else {
+            wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+            wait_idle_pool_reuse_keys(&env.idle_pool, &[&reuse_key], Duration::from_secs(5)).await;
+            assert_eq!(
+                env.idle_pool.lock().await.status_snapshot().idle_sandboxes[0].sandbox_id,
+                sandbox_id,
+            );
+            assert_eq!(overrides.unpark_call_count(), 0);
+            assert!(env.handle.completions.lock().unwrap().is_empty());
+        }
+        assert_eq!(env.handle.claim_candidates().len(), 1);
+        assert_eq!(overrides.destroy_call_count(), 0);
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        shutdown(&env, run_handle).await;
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        let persisted: serde_json::Value =
+            serde_json::from_str(&tokio::fs::read_to_string(status_path).await.unwrap()).unwrap();
+        assert_eq!(persisted["mode"], "stopped");
+        assert!(persisted.get("idle_sandboxes").is_none());
+    }
 }
 
 async fn assert_timezone_transition_with(

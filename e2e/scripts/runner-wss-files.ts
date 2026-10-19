@@ -92,7 +92,7 @@ export async function probeHomeFiles(client: RunnerWssClient, fixture: string) {
     await client.rejectFs("list", { cursor: closed }, "cursor_expired");
     client.assertHealthy();
     return {
-      filesystemVersion: 2,
+      filesystemVersion: 3,
       actualRoot: true,
       actualHomeAncestor: true,
       actualHome: true,

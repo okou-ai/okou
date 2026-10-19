@@ -61,7 +61,7 @@ migration stops promotion. Staged builds, host provisioning, and other
 non-serving preparation may finish before migrations; they do not establish
 that traffic has moved.
 
-Migrations marked `-- vm0:non-transactional` execute one statement at a time.
+Migrations marked `-- okou:non-transactional` execute one statement at a time.
 Earlier successful statements survive a later failure, and a retry starts the
 migration again. Every statement must be idempotent under a full retry.
 
@@ -71,6 +71,29 @@ Evaluate all reachable combinations:
 - new App -> old API when traffic propagation or rollback can expose it;
 - old Runner -> new API;
 - new Runner -> old API when deployment order can expose it.
+
+#### API Request Drain
+
+Production traffic cutover sends new API requests to the replacement deployment.
+The outgoing deployment receives no new requests after cutover, while requests
+admitted before it can continue running the outgoing code. The API's Vercel
+function uses `maxDuration: 300` in
+[`vite.config.ts`](../turbo/apps/api/vite.config.ts), giving each invocation a
+five-minute execution limit, including time spent in preflight or KMS work.
+
+Record the outgoing and replacement artifact identities, the verified time
+traffic finished moving off the outgoing deployment, and the outgoing artifact's
+enforced request limit in the owning issue or PR. With the 300-second limit,
+the outgoing-request drain deadline is **verified cutover time + five minutes**.
+After that deadline, outgoing API invocations have ended; individual completion
+logs for every request are unnecessary when both cutover and the enforced limit
+are verified. Check the outgoing artifact's limit rather than assuming it matches
+the replacement. Work outside the API invocation follows its owning lifetime.
+
+When a protocol change requires preparation before activation, deploy the
+preparation, complete this drain, then activate the change. Waiting after a
+combined release does not establish that the preparation and drain preceded
+activation.
 
 ### Runner, Guest, and CLI Artifacts
 
@@ -158,7 +181,21 @@ non-GA.
 
 ## Required Change Patterns
 
-Prefer additive cross-version changes:
+Use focused PRs and multiple deployments to minimize backward-compatibility
+logic and technical debt. Merge and deploy each stage, then verify its serving
+artifacts and applicable [drain and rollback gates](#drain-and-rollback-gates)
+before merging the next stage. Prefer controlling deployment order over adding
+compatibility branches. Do not add version negotiation or multi-version parsing
+when deployment ordering can make the transition safe.
+
+For Runner changes, deploy the required API or Runner preparation before
+activating its dependent behavior in a later PR and deployment. Before removing
+the old path, verify that old Runner owners have finished claimed work and
+finalization and exited, and exclude incompatible rollback artifacts. Retained
+data and historical package references still require their own compatibility
+or migration gates.
+
+When reachable consumers require overlapping contracts, prefer additive changes:
 
 - add optional request fields before requiring them;
 - add response fields without requiring old clients to read them;
@@ -175,15 +212,22 @@ them.
 
 For an incompatible change, separate the phases:
 
-1. **Prepare:** readers and handlers accept both shapes.
+1. **Prepare:** deploy the prerequisites for the replacement while preserving the
+   current contract. Accept both shapes only when reachable consumers or retained
+   data require it.
 2. **Migrate:** clients and writers start using the replacement.
-3. **Clean up:** remove the bridge only after all affected old consumers are no
-   longer reachable.
+3. **Clean up:** remove the old path or temporary bridge only after all affected
+   old consumers are no longer reachable and retained data and rollback targets
+   satisfy their gates.
 
 Separate PRs included in one unreleased deployment do not establish reader-first
 ordering. Verify the actual deployed artifact and consumer population.
-Compatibility branches must name their surface, removal condition, and owning
-follow-up; see [fallback declarations](fallback.md#9-declare-new-fallbacks-in-the-pr-summary-and-the-review).
+Every rollout compatibility branch is temporary technical debt and must name
+its surface, removal condition, and owning follow-up; see
+[fallback declarations](fallback.md#9-declare-new-fallbacks-in-the-pr-summary-and-the-review).
+Completing the rollout includes removing all of its backward-compatibility
+branches, superseded contracts, and their tests after every applicable gate
+passes. The final implementation supports only the replacement contract.
 Do not add broad defaults to hide corrupt data or incompatible protocols.
 
 An explicitly accepted breaking cutover must record the affected consumers,
@@ -370,9 +414,11 @@ business triggers; follow the [trigger policy](api/database.md#database-triggers
   references separately; a client upgrade does not erase old rows or copied
   links.
 
-Every applicable gate must pass. A merge, nominal deployment duration, or an
-arbitrary elapsed interval is not drain evidence. Keep enforced rollback floors
-in [the main-owned records](../.github/rollback-floors) and their release tooling;
+Every applicable gate must pass. A verified traffic cutover and the enforced
+outgoing-request deadline can establish [API request drain](#api-request-drain).
+A merge, nominal deployment duration, or an arbitrary elapsed interval alone
+cannot. Keep enforced rollback floors in
+[the main-owned records](../.github/rollback-floors) and their release tooling;
 this document does not reset or replace them. Contracted-schema recovery must
 restore compatibility first or roll forward, not promote an incompatible API.
 

@@ -1300,29 +1300,6 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
 
-      - name: Migrate Link wallet grant metadata
-        id: wallet-grant-migration
-        if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
-        timeout-minutes: 15
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
-          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID_API }}
-          WEB_API_ENV_FILE: ${{ steps.api-production-env.outputs.file }}
-          WALLET_GRANT_REPORT: ${{ runner.temp }}/link-wallet-grants.json
-        run: bash .github/scripts/release/migrate-link-wallet-grants.sh
-
-      - name: Retain aggregate Link wallet migration evidence
-        if: ${{ always() && steps.wallet-grant-migration.outcome != 'skipped' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: link-wallet-grants-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/link-wallet-grants.json
-          if-no-files-found: warn
-          retention-days: 30
-
       - name: Calculate migration duration
         id: migration-duration
         if: ${{ always() && steps.migration-timer.outputs.start }}
@@ -1715,13 +1692,26 @@ jobs:
 
       - name: Upload App source maps to Sentry
         env:
+          APP_RELEASE: ${{ needs.release-please.outputs.app_version }}
           CANONICAL_DIST: ${{ steps.worker-production.outputs.canonical-dist }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_APP }}
         working-directory: turbo
         run: |
-          pnpm --filter @okouai/app exec sentry-cli sourcemaps upload "$CANONICAL_DIST"
+          set -euo pipefail
+
+          # app_version is empty for an app-worker-only release. Skip the upload
+          # there: without an explicit release, sentry-cli names it after the
+          # commit hash, which the runtime release (the platform version) never matches.
+          if [[ -z "$APP_RELEASE" ]]; then
+            echo "::warning::No App platform version in this release; skipping Sentry source map upload"
+            exit 0
+          fi
+
+          export SENTRY_RELEASE="$APP_RELEASE"
+          pnpm --filter @okouai/app exec sentry-cli releases new "$APP_RELEASE" --finalize
+          pnpm --filter @okouai/app exec sentry-cli sourcemaps upload --release "$APP_RELEASE" "$CANONICAL_DIST"
 
       - name: Deploy App Worker production
         env:

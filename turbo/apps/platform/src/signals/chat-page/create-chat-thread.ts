@@ -87,7 +87,6 @@ import {
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
-import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
@@ -1439,10 +1438,6 @@ function createLatestEventSignals(
 
 function createArtifacts(threadId: string) {
   const internalArtifactsReload$ = state(0);
-  const internalPreviewRefreshRevision$ = state(0);
-  const previewRefreshRevision$ = computed((get) => {
-    return get(internalPreviewRefreshRevision$);
-  });
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(internalArtifactsReload$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
@@ -1455,50 +1450,10 @@ function createArtifacts(threadId: string) {
       return version + 1;
     });
   });
-  const invalidateArtifacts$ = command(({ set }) => {
-    set(reloadArtifacts$);
-    set(internalPreviewRefreshRevision$, (revision) => {
-      return revision + 1;
-    });
-  });
-
   return {
     artifacts$,
     reloadArtifacts$,
-    invalidateArtifacts$,
-    previewRefreshRevision$,
   };
-}
-
-function createArtifactPreviewImageUrls(
-  artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
-): Computed<Promise<ReadonlyMap<string, string>>> {
-  return computed(async (get) => {
-    const runs = await get(artifacts$);
-    const previewImageUrlsByUrl = new Map<string, string>();
-    for (const run of runs) {
-      for (const file of run.files) {
-        if (!file.previewImageUrl) {
-          continue;
-        }
-        previewImageUrlsByUrl.set(
-          artifactReferenceLookupKey(file.url),
-          file.previewImageUrl,
-        );
-        previewImageUrlsByUrl.set(
-          artifactReferenceLookupKey(canonicalUserMessageFileUrl(file.id)),
-          file.previewImageUrl,
-        );
-        if (file.aliasUrl) {
-          previewImageUrlsByUrl.set(
-            artifactReferenceLookupKey(file.aliasUrl),
-            file.previewImageUrl,
-          );
-        }
-      }
-    }
-    return previewImageUrlsByUrl;
-  });
 }
 
 interface EventTreeRegistries {
@@ -1974,28 +1929,16 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 function createPagedEventResources({
   chatActionContext,
   chatEvents$,
-  previewImageUrlsByUrl$,
-  previewRefreshRevision$,
-  previewCatalogReady$,
   connector,
 }: {
   readonly chatActionContext: ChatActionContext;
   readonly chatEvents$: Computed<ChatEvent[]>;
-  readonly previewImageUrlsByUrl$: Computed<
-    Promise<ReadonlyMap<string, string>>
-  >;
-  readonly previewRefreshRevision$: Computed<number>;
-  readonly previewCatalogReady$: Computed<boolean>;
   readonly connector: ComposerConnectorSignals;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
   const browserSessionSignals = createBrowserSessionSignals(threadId);
-  const artifactCardSignals = createArtifactCardSignalsRegistry(
-    previewImageUrlsByUrl$,
-    previewRefreshRevision$,
-    previewCatalogReady$,
-  );
+  const artifactCardSignals = createArtifactCardSignalsRegistry();
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
@@ -2382,9 +2325,6 @@ function createLoadMoreRenderedChatGroups(
 interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
-  previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
-  previewRefreshRevision$: Computed<number>;
-  previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
@@ -2392,9 +2332,6 @@ interface ChatThreadMessagePipelineOptions {
 function createChatThreadMessagePipeline({
   chatActionContext,
   chatEvents,
-  previewImageUrlsByUrl$,
-  previewRefreshRevision$,
-  previewCatalogReady$,
   connector,
   thinkingSummaries$,
 }: ChatThreadMessagePipelineOptions) {
@@ -2404,9 +2341,6 @@ function createChatThreadMessagePipeline({
   const resources = createPagedEventResources({
     chatActionContext,
     chatEvents$: chatEvents.chatEvents$,
-    previewImageUrlsByUrl$,
-    previewRefreshRevision$,
-    previewCatalogReady$,
     connector,
   });
   const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
@@ -2539,8 +2473,6 @@ interface RunTrackingDeps {
   threadId: string;
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
-  reloadArtifacts$: Command<void, []>;
-  invalidateArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
@@ -2954,21 +2886,18 @@ function createEnsureVisibleEventTreesAfterScroll(
 function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
-  reloadArtifacts$,
   cancellationRecovery,
   reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
   | "threadId"
   | "catchUpChatEvents$"
-  | "reloadArtifacts$"
   | "cancellationRecovery"
   | "reloadConnectorAccounts$"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
     set(cancellationRecovery.reload$);
-    set(reloadArtifacts$);
     set(reloadConnectorAccounts$);
     await Promise.all([
       get(cancellationRecovery.pending$),
@@ -2991,8 +2920,6 @@ function createRunTracking({
   threadId,
   setupChatEvents$,
   catchUpChatEvents$,
-  reloadArtifacts$,
-  invalidateArtifacts$,
   subscribeBrowserSessions$,
   subscribeSessionOutput$,
   subscribeThinkingSummaries$,
@@ -3004,7 +2931,6 @@ function createRunTracking({
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$,
-    reloadArtifacts$,
     cancellationRecovery,
     reloadConnectorAccounts$,
   });
@@ -3030,7 +2956,6 @@ function createRunTracking({
             automations: [
               automationSignals.headerAutomations.reloadAutomations$,
             ],
-            artifacts: [invalidateArtifacts$],
           },
           handlers: {
             onWorkflowsChanged$,
@@ -3592,6 +3517,7 @@ interface CreateChatThreadComposerSignalsOptions {
 interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
+  readonly preserveThreadDraft?: boolean;
   readonly agentId: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
@@ -3738,12 +3664,18 @@ function createThreadComposerSignalsWithContext(
     context.threadMeta$,
   );
   const { queueDraftSync$, cancelDraftSync$, flushDraftClear$ } =
-    createDraftSync(threadId, draft);
-  const loadDraft$ = createThreadDraftLoad(
-    context.threadDraft$,
-    draft,
-    queueDraftSync$,
-  );
+    context.preserveThreadDraft
+      ? {
+          queueDraftSync$: noOpComposerDraftAction$,
+          cancelDraftSync$: command(() => {
+            return undefined;
+          }),
+          flushDraftClear$: noOpComposerDraftAction$,
+        }
+      : createDraftSync(threadId, draft);
+  const loadDraft$ = context.preserveThreadDraft
+    ? noOpComposerDraftAction$
+    : createThreadDraftLoad(context.threadDraft$, draft, queueDraftSync$);
   const messageActions = createThreadMessageActions({
     threadId,
     agentId: context.agentId,
@@ -3783,6 +3715,7 @@ export function createThreadComposerSignals(
   options: {
     readonly forward?: ChatForwardContext;
     readonly onOptimisticSend?: () => void;
+    readonly preserveThreadDraft?: boolean;
   } = {},
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
@@ -3797,6 +3730,7 @@ export function createThreadComposerSignals(
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
+      preserveThreadDraft: options.preserveThreadDraft,
     },
     createDraftSignals(),
   );
@@ -3817,9 +3751,6 @@ export function createChatPanelSignals(
   const threadMeta$ = createThreadMeta(threadId);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
-  const previewCatalogReady$ = computed((get) => {
-    return !get(optimisticCreateUnsettled$);
-  });
   const threadMetadata = createThreadMetadata(threadMeta$);
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
@@ -3847,9 +3778,6 @@ export function createChatPanelSignals(
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },
     chatEvents,
-    previewImageUrlsByUrl$: createArtifactPreviewImageUrls(artifact.artifacts$),
-    previewRefreshRevision$: artifact.previewRefreshRevision$,
-    previewCatalogReady$,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
   });
@@ -3878,8 +3806,6 @@ export function createChatPanelSignals(
     threadId,
     setupChatEvents$: messages.setup$,
     catchUpChatEvents$: messages.catchUp$,
-    reloadArtifacts$: messages.reloadArtifacts$,
-    invalidateArtifacts$: artifact.invalidateArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
     subscribeSessionOutput$: sessionOutput.subscribe$,
@@ -3889,6 +3815,7 @@ export function createChatPanelSignals(
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
   });
+  const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
     threadId,
     agentId,
@@ -3921,8 +3848,9 @@ export function createChatPanelSignals(
       messagePipeline.allChatGroups$,
       artifact.artifacts$,
       messagePipeline.initialEventsReady$,
+      relations.closeMessages$,
     ),
-    relations: createChatRelationSignals(threadId, messagePipeline),
+    relations,
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

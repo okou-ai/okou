@@ -24,6 +24,8 @@ class ForegroundReportTests(unittest.TestCase):
             event["unix_ns"] *= 100_000_000
         for sample in self.samples:
             sample["monotonic_ns"] *= 100_000_000
+            for process in sample["processes"]:
+                process["observed_monotonic_ns"] = sample["monotonic_ns"]
         raw_policy, raw_inputs = json.dumps(self.policy), json.dumps(self.inputs)
         self.collector["metadata"].update(native_foreground_policy_json=raw_policy,
             native_foreground_inputs_json=raw_inputs, native_foreground_snapshot_bytes=startup.BYTES)

@@ -413,9 +413,10 @@ validates all configured architecture manifests before starting the runner.
 Native host CPU placement and guest RPC tests compile after `runner-host-groups`
 resolves the architecture inventory, in parallel with `runner-test-prepare`
 waiting for its selected image. The `host-cpu-fairness-build` and
-`guest-rpc-firecracker-build` jobs retain their `release` and `ci` profiles and
-separate target-specific Cargo cache keys. Compilation does not use a metal host,
-rootfs, or snapshot.
+`guest-rpc-firecracker-build` jobs both use the optimized `ci` profile and
+separate target-specific Cargo cache keys. The host CPU producer uses an 8-core
+builder and the shared R2 compiler cache, with its cache architecture derived from
+the selected target. Compilation does not use a metal host, rootfs, or snapshot.
 
 The host CPU artifact compiles for the selected target and executes with the host
 and immutable image hashes supplied by `runner-test-prepare`. The historically

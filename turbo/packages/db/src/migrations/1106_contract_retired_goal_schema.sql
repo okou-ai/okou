@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- S5 of #32653: replay 1094 semantics, then verify and contract atomically.
 -- 4,162 measured Goals; 100 candidate thread IDs and <=100 revokes per commit.
 -- A 15-minute CALL bound leaves a restartable committed prefix on timeout.

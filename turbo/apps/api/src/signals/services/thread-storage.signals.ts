@@ -257,11 +257,23 @@ function createStorageIndexSignals(
           requests: persistedStorageMountRequests(input.args.mounts),
         };
       }
-      const { artifacts, composeVolumes } = await resolveStorageManifestInputs(
-        input.args,
-      );
+      const { artifacts, composeVolumes } = await resolveStorageManifestInputs({
+        instructionsStorageName: input.args.instructionsStorageName,
+        framework: input.args.framework,
+        artifacts: input.args.artifacts,
+        timing: input.args.timing,
+      });
       const request = prepareRequestStorageResolution(
-        input.args,
+        {
+          agentOrgId: input.args.agentOrgId,
+          runtimeOrgId: input.args.runtimeOrgId,
+          userId: input.args.userId,
+          artifacts: input.args.artifacts,
+          additionalVolumes: input.args.additionalVolumes,
+          additionalVolumeSources: input.args.additionalVolumeSources,
+          timing: input.args.timing,
+          stats: input.args.stats,
+        },
         bucket,
         composeVolumes,
         artifacts,
@@ -340,7 +352,9 @@ function createStoragePlanSignals(
         if (selection.kind === "captured") {
           return {
             requested: await resolveValidatedPersistedStorageMounts({
-              ...selection.args,
+              mounts: selection.args.mounts,
+              timing: selection.args.timing,
+              stats: selection.args.stats,
               bucket: selection.bucket,
               storageIndex,
               branch: "captured",

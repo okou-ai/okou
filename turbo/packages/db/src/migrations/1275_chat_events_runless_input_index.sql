@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Pending-input reads filter one thread's run-less input rows, but the only
 -- thread-scoped indexes cover every event type, so each read visits the whole
 -- retained thread history. This partial index covers only run-less input rows.

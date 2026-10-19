@@ -18,6 +18,13 @@ function fixture(enabled = true) {
         new NodeURL("../../dist/index.js", import.meta.url),
       ),
       modules: true,
+      compatibilityFlags: ["nodejs_compat"],
+      workflows: {
+        WECHAT_POLL_WORKFLOW: {
+          name: "wechat-poll-test",
+          className: "WechatPollWorkflow",
+        },
+      },
       compatibilityDate: "2026-09-03",
       cf: false,
       telemetry: { enabled: false },
@@ -26,6 +33,7 @@ function fixture(enabled = true) {
       },
       bindings: {
         WECHAT_GATEWAY_ENABLED: String(enabled),
+        WECHAT_WORKFLOWS_ENABLED: "false",
         WECHAT_GATEWAY_SECRET: secret,
         WECHAT_GATEWAY_CONTROL_SECRET: control,
         API_ORIGIN: "https://api.example.test",
@@ -60,6 +68,15 @@ it("requires authenticated control and remains disabled by default", async () =>
       })
     ).status,
   ).toBe(503);
+  expect(
+    (
+      await disabled.runtime.dispatchFetch("https://worker/stop", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${control}` },
+        body: JSON.stringify({ connectionId }),
+      })
+    ).status,
+  ).toBe(200);
   const enabled = fixture();
   expect(
     (

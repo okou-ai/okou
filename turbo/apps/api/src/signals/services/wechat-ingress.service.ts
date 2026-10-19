@@ -1,4 +1,10 @@
 import { wechatAttachments } from "../external/wechat-media";
+import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
+import {
+  materializeIntegrationInputAssets$,
+  integrationInputMessageFiles,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
 import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
@@ -22,8 +28,9 @@ import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
-import type { WechatMessage } from "../external/wechat-client";
-import { nowDate } from "../../lib/time";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
+import { monotonicNow, nowDate } from "../../lib/time";
+import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
@@ -37,7 +44,10 @@ import {
   type ThreadModelReplacement,
 } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
+import {
+  createUserMessageDocument,
+  projectUserMessage,
+} from "./chat-user-message.service";
 import { prepareChatEvent } from "./chat-event.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -47,6 +57,16 @@ import {
 } from "./chat-thread-queue-drain.service";
 
 type Connection = typeof wechatConnections.$inferSelect;
+
+export class WechatIngressError extends Error {
+  constructor(
+    readonly reason: "default_agent_unavailable" | "attachment_unavailable",
+    readonly retryable: boolean,
+  ) {
+    super(`WeChat input unavailable: ${reason}`);
+    this.name = "WechatIngressError";
+  }
+}
 
 function activeBinding(connection: Connection) {
   return and(
@@ -121,7 +141,7 @@ const ensureThread$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!agent) {
-      throw new Error("WeChat workspace has no default agent");
+      throw new WechatIngressError("default_agent_unavailable", false);
     }
     const owner = { orgId: connection.orgId, userId: connection.userId };
     const initialModel = await set(
@@ -192,11 +212,7 @@ const ensureThread$ = command(
     return winner.chatThreadId;
   },
 );
-function wechatMessagePrompt(
-  message: WechatMessage,
-  connectionId: string,
-  id: string,
-) {
+function wechatMessagePrompt(message: WechatMessage) {
   const text = (message.item_list ?? [])
     .filter((item) => {
       return item.type === 1 || item.type === 3;
@@ -217,11 +233,6 @@ function wechatMessagePrompt(
   });
   return [
     text,
-    ...(attachments.length
-      ? [
-          `[WeChat attachments: untrusted metadata, content not yet read]\n${JSON.stringify(attachments)}\nRead with: okou wechat download-file <attachment-id> --channel ${connectionId} --message ${id} --out <path>`,
-        ]
-      : []),
     ...(unsupported
       ? [
           "[The sender included an attachment. This item could not be retrieved; explain that it was not read and ask the sender to resend it as a supported file or text.]",
@@ -246,6 +257,66 @@ function quotedWechatText(message: WechatMessage) {
       .slice(0, 12_000) || null
   );
 }
+const materializeWechatUserMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly connection: Connection;
+      readonly message: WechatMessage;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+      readonly text: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { connection, message } = args;
+    const files: IntegrationInputFile[] = wechatAttachments(
+      message.item_list ?? [],
+    ).map((attachment) => {
+      const item = message.item_list?.[Number(attachment.id)];
+      if (!item) {
+        throw new Error("WeChat attachment has no provider item");
+      }
+      return {
+        sourceId: attachment.id,
+        filename: attachment.filename,
+        size: attachment.size ?? undefined,
+        maxBytes: MAX_WECHAT_FILE_SIZE_BYTES,
+        provenance: {
+          provider: "wechat",
+          installationId: connection.id,
+          messageId: message.message_id,
+          externalFileId: `${args.eventId}:${attachment.id}`,
+        },
+        resource: { provider: "wechat", item },
+      };
+    });
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: connection.userId,
+        orgId: connection.orgId,
+        chatThreadId: args.chatThreadId,
+        files,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      assets.some(({ asset }) => {
+        return asset.error?.retryable;
+      })
+    ) {
+      // Keep the durable provider batch until a transient import can be retried.
+      throw new WechatIngressError("attachment_unavailable", true);
+    }
+    return createUserMessageDocument({
+      text: args.text,
+      files: integrationInputMessageFiles(assets),
+      nonContentPart: { type: "source", kind: "wechat" },
+    });
+  },
+);
 
 async function wechatMessageMaterial(
   connection: Connection,
@@ -278,9 +349,14 @@ export const receiveWechatMessage$ = command(
   ) => {
     const { connection, message } = args;
     // Only the verified scanner's direct messages can become an Okou input.
+    // A provider can redeliver an old long-poll batch after reconnection. Only
+    // messages demonstrably created after consent belong to this new binding.
     if (
       connection.status !== "active" ||
-      !isWechatOwnerMessage(connection, message)
+      !isWechatOwnerMessage(connection, message) ||
+      (connection.resumedAt !== null &&
+        (message.create_time_ms === undefined ||
+          message.create_time_ms <= connection.resumedAt.getTime()))
     ) {
       return;
     }
@@ -289,14 +365,26 @@ export const receiveWechatMessage$ = command(
       connection.generation,
       message.message_id,
     );
-    const prompt = wechatMessagePrompt(message, connection.id, id);
-    if (!prompt) {
+    const receivedAt = nowDate().toISOString();
+    const receivedStartedAt = monotonicNow();
+    const { context, attachments, mediaCiphertext } =
+      await wechatMessageMaterial(connection, message, message.context_token);
+    signal.throwIfAborted();
+    const text = wechatMessagePrompt(message);
+    if (!text && attachments.length === 0) {
       return;
     }
     const threadId = await set(ensureThread$, connection, signal);
     if (!threadId) {
       return;
     }
+    const userMessage = await set(
+      materializeWechatUserMessage$,
+      { connection, message, chatThreadId: threadId, eventId: id, text },
+      signal,
+    );
+    signal.throwIfAborted();
+    const prompt = projectUserMessage(userMessage).agentPrompt;
 
     const model = await set(
       resolveEnqueuedChatInputModel$,
@@ -304,9 +392,6 @@ export const receiveWechatMessage$ = command(
       signal,
     );
 
-    const { context, attachments, mediaCiphertext } =
-      await wechatMessageMaterial(connection, message, message.context_token);
-    signal.throwIfAborted();
     const currentTime = nowDate();
     const prepared = prepareChatEvent({
       id,
@@ -314,10 +399,7 @@ export const receiveWechatMessage$ = command(
       eventType: "input.prompt",
       runId: null,
       modelSelection: model.modelSelection,
-      userMessage: createUserMessageDocument({
-        text: prompt,
-        nonContentPart: { type: "source", kind: "wechat" },
-      }),
+      userMessage,
       wechatContext: context,
       createdAt: currentTime,
     });
@@ -346,6 +428,7 @@ export const receiveWechatMessage$ = command(
     );
     signal.throwIfAborted();
     if (inserted.length > 0) {
+      recordWechatMessageReceived(id, threadId, receivedAt, receivedStartedAt);
       waitUntil(
         set(
           reconcileWechatThreadTyping$,

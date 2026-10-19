@@ -67,7 +67,7 @@ import {
   type PgPoolAcquisitionCapture,
   type PgQueryExecutionCapture,
 } from "../../lib/db-instrumentation";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -747,8 +747,7 @@ const resolvePollRunnerReusePreference$ = command(
       readonly profile: string;
       readonly reuseKey: string | null;
       readonly historyGenerationRunId: string | undefined;
-      readonly createdAt: Date;
-      readonly currentDate: Date;
+      readonly discoveryStartedAt: Date | null;
     },
   ) => {
     const resolution = await tapError(
@@ -788,6 +787,7 @@ const findPendingRunnerJob$ = command(
             nullableDriverValueDecoder(pgTextDecoder),
           ),
         createdAt: runnerJobQueue.createdAt,
+        discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
       })
       .from(runnerJobQueue)
       .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
@@ -862,8 +862,7 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     profile: pendingJob.profile,
     reuseKey: pendingJob.reuseKey,
     historyGenerationRunId: pendingJob.historyGenerationRunId ?? undefined,
-    createdAt: pendingJob.createdAt,
-    currentDate,
+    discoveryStartedAt: pendingJob.discoveryStartedAt,
   });
   signal.throwIfAborted();
   recordPollTimingMetrics({
@@ -923,6 +922,7 @@ interface ClaimedRun {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string | null;
+  readonly modelProvider: (typeof agentRuns.$inferSelect)["modelProvider"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -943,32 +943,35 @@ function isClaimableJob(value: ClaimLookupResult): value is ClaimableJob {
   return "job" in value;
 }
 
-async function getRunNetworkPolicyScope(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<RunNetworkPolicyScope | undefined> {
-  const [row] = await db
-    .select({
-      runId: agentRuns.id,
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      agentId: agents.id,
-      status: agentRuns.status,
-    })
-    .from(agentRuns)
+const getRunNetworkPolicyScope$ = command(
+  async (
+    { get },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<RunNetworkPolicyScope | undefined> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        runId: agentRuns.id,
+        userId: agentRuns.userId,
+        orgId: agentRuns.orgId,
+        agentId: agents.id,
+        status: agentRuns.status,
+      })
+      .from(agentRuns)
 
-    .innerJoin(agents, eq(agents.id, agentRuns.agentId))
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  return row
-    ? {
-        ...row,
-        status: runStatusSchema.parse(row.status),
-      }
-    : undefined;
-}
+      .innerJoin(agents, eq(agents.id, agentRuns.agentId))
+      .where(eq(agentRuns.id, runId))
+      .limit(1);
+    signal.throwIfAborted();
+    return row
+      ? {
+          ...row,
+          status: runStatusSchema.parse(row.status),
+        }
+      : undefined;
+  },
+);
 
 function runnerRunAuthorizationError(
   auth: RunnerAuthContext,
@@ -991,31 +994,34 @@ function isTerminalRunStatus(status: RunStatus): boolean {
   );
 }
 
-async function getClaimableJob(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<ClaimLookupResult> {
-  const [jobWithRun] = await db
-    .select({
-      job: {
-        runnerGroup: runnerJobQueue.runnerGroup,
-        profile: runnerJobQueue.profile,
-        reuseKey: runnerJobQueue.reuseKey,
-        executionContext: runnerJobQueue.executionContext,
-        createdAt: runnerJobQueue.createdAt,
-      },
-      run: {
-        id: agentRuns.id,
-        userId: agentRuns.userId,
-        orgId: agentRuns.orgId,
-        agentId: agentRuns.agentId,
-        prompt: agentRuns.prompt,
-        appendSystemPrompt: agentRuns.appendSystemPrompt,
-        vars: agentRuns.vars,
-        // Claim's current input may already belong to this Run; only another
-        // run-attributed event is evidence of earlier thread activity.
-        isFirstRun: sql`
+const getClaimableJob$ = command(
+  async (
+    { get },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<ClaimLookupResult> => {
+    const db = get(db$);
+    const [jobWithRun] = await db
+      .select({
+        job: {
+          runnerGroup: runnerJobQueue.runnerGroup,
+          profile: runnerJobQueue.profile,
+          reuseKey: runnerJobQueue.reuseKey,
+          executionContext: runnerJobQueue.executionContext,
+          createdAt: runnerJobQueue.createdAt,
+        },
+        run: {
+          id: agentRuns.id,
+          userId: agentRuns.userId,
+          orgId: agentRuns.orgId,
+          agentId: agentRuns.agentId,
+          prompt: agentRuns.prompt,
+          appendSystemPrompt: agentRuns.appendSystemPrompt,
+          vars: agentRuns.vars,
+          modelProvider: agentRuns.modelProvider,
+          // Claim's current input may already belong to this Run; only another
+          // run-attributed event is evidence of earlier thread activity.
+          isFirstRun: sql`
           CASE WHEN ${agentRuns.chatThreadId} IS NULL THEN NULL
           ELSE ${notExists(
             db
@@ -1030,28 +1036,29 @@ async function getClaimableJob(
               ),
           )} END
         `.mapWith(nullableDriverValueDecoder(pgBooleanDecoder)),
-      },
-    })
-    .from(runnerJobQueue)
-    .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .where(
-      and(
-        eq(runnerJobQueue.runId, runId),
-        or(isNotNull(agentRuns.agentId), isNull(agentRuns.chatThreadId)),
-        gt(runnerJobQueue.expiresAt, sql`now()`),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
+        },
+      })
+      .from(runnerJobQueue)
+      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
+      .where(
+        and(
+          eq(runnerJobQueue.runId, runId),
+          or(isNotNull(agentRuns.agentId), isNull(agentRuns.chatThreadId)),
+          gt(runnerJobQueue.expiresAt, sql`now()`),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
 
-  if (jobWithRun) {
-    return {
-      job: jobWithRun.job,
-      run: jobWithRun.run,
-    };
-  }
-  return notFound("Job not found in queue");
-}
+    if (jobWithRun) {
+      return {
+        job: jobWithRun.job,
+        run: jobWithRun.run,
+      };
+    }
+    return notFound("Job not found in queue");
+  },
+);
 
 function claimAuthorizationError(
   auth: RunnerAuthContext,
@@ -1065,6 +1072,9 @@ function claimAuthorizationError(
 
   if (jobWithRun.run.userId !== auth.userId) {
     return forbidden("Job does not belong to user");
+  }
+  if (jobWithRun.run.modelProvider === "built-in") {
+    return forbidden("Built-in model jobs require an official runner");
   }
   return isOfficialRunnerGroup(jobWithRun.job.runnerGroup)
     ? null
@@ -1277,7 +1287,10 @@ async function transitionClaimedJobToRunning(
     "claim_route_transition_execute",
     "nested",
     async () => {
-      return await executeRawRows(db, query, claimTransitionSqlRowSchema);
+      const rowSchema = claimTransitionSqlRowSchema;
+      return await (async () => {
+        return parseRawRows(rowSchema, await db.execute(query));
+      })();
     },
   );
   const transition = decodeClaimTransitionResult(result);
@@ -2248,7 +2261,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const lookupAuthorizationStartedAt = now();
   const jobWithRun = await claimRouteTiming.measureLookup(async () => {
-    return await getClaimableJob(db, runId, signal);
+    return await set(getClaimableJob$, runId, signal);
   });
   signal.throwIfAborted();
   if (!isClaimableJob(jobWithRun)) {
@@ -2315,8 +2328,8 @@ const connectorRuntimeSyncInner$ = command(
     const runId = get(
       pathParamsOf(runnersConnectorRuntimeSyncContract.sync),
     ).runId;
-    const db = set(writeDb$);
-    const run = await getRunNetworkPolicyScope(db, runId, signal);
+    set(writeDb$);
+    const run = await set(getRunNetworkPolicyScope$, runId, signal);
     if (!run) {
       return notFound("Run not found");
     }

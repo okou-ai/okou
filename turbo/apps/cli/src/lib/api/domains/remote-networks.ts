@@ -54,13 +54,14 @@ export const cloudflareAccessNetworks = {
       const result = await (
         await cloudflareClient()
       ).create({ headers: {}, query: { view: "scoped" }, body });
-      if (result.status === 204) return { id: body.id };
+      if (result.status === 204)
+        return { status: 204, body: { id: body.id } } as const;
       if (result.status !== 201)
         handleManagementError(
           result,
           "Cannot create Cloudflare Access configuration",
         );
-      return result.body;
+      return { status: 201, body: result.body } as const;
     });
   },
   update: (configId: string, body: UpdateCloudflareAccessRequest) => {
@@ -152,10 +153,11 @@ export const tailscaleNetworks = {
       const result = await (
         await tailscaleClient()
       ).create({ headers: {}, body });
-      if (result.status === 204) return { id: body.id };
+      if (result.status === 204)
+        return { status: 204, body: { id: body.id } } as const;
       if (result.status !== 201)
         handleManagementError(result, "Cannot create Tailscale configuration");
-      return result.body;
+      return { status: 201, body: result.body } as const;
     });
   },
   update: (configId: string, body: UpdateTailscaleRequest) => {

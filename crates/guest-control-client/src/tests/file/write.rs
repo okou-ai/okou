@@ -1489,6 +1489,7 @@ async fn write_file_frame_builder_runs_before_waiting_for_writer_lock() {
             crate::write_request_frame_with_builder(
                 &host.shared,
                 123,
+                Duration::from_secs(5),
                 move |seq, frame| {
                     guest_control_proto::encode_write_file_frame_into(
                         frame,

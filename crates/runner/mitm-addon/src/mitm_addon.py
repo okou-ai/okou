@@ -60,6 +60,7 @@ import flow_metadata_keys as metadata_keys
 import http_header_syntax
 import http_local_responses
 import http_network_log
+import managed_openrouter
 import matching
 import mitmproxy_compat
 import model_websocket_usage
@@ -81,6 +82,7 @@ import upstream_admission
 import upstream_destination_binding
 import usage
 import websocket_framing
+import websocket_inspection
 import websocket_retention
 from auth import (
     FirewallAuthHandlingResult,
@@ -422,6 +424,9 @@ def _prebind_bounded_requestheaders_upstream_destination(
             allowed_kinds=frozenset(("connector_auth",)),
         )
         and not _request_may_use_aws_sigv4(flow)
+        # A bound connection cannot skip managed OpenRouter body admission.
+        # The canonical classifier below still selects the credential owner.
+        and trusted_authority.host != managed_openrouter.HOST
     ):
         return None
     classification = _classify_request_for_flow_with_trusted_authority(
@@ -860,6 +865,10 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         except BaseException:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             raise
+        if bounded_classification is not None and _admit_managed_openrouter_from_headers(
+            flow, bounded_classification
+        ):
+            return None
         if (
             bounded_classification is None
             or bounded_classification.kind != "firewall_allow"
@@ -878,6 +887,8 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             flow,
             defer_unresolved_public_destination=True,
         )
+    if _admit_managed_openrouter_from_headers(flow, classification):
+        return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
         _block_public_destination_denied(
@@ -1036,6 +1047,62 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     _restore_request_headers_probe_metadata(flow, metadata_snapshot)
     return None
+
+
+def _reject_managed_openrouter_request(
+    flow: http.HTTPFlow,
+    classification: request_classification.FirewallAllow,
+    reason: str,
+    *,
+    terminate: bool = False,
+) -> None:
+    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
+    flow.request.stream = False
+    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
+    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
+    flow_metadata.set_firewall_decision(
+        flow.metadata, "BLOCK", error="managed_openrouter_request_rejected"
+    )
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        "Managed OpenRouter request rejected",
+        type="managed_model_policy",
+        reason=reason,
+    )
+    if terminate:
+        request_classification.pop_cached_classification(flow)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        managed_openrouter.release_from_flow(flow)
+        flow.kill()
+    else:
+        flow.response = http_local_responses.make_local_json_response(
+            flow,
+            403,
+            {
+                "error": "managed_openrouter_request_rejected",
+                "reason": reason,
+                "message": "Request blocked by the managed model preset policy",
+            },
+        )
+
+
+def _admit_managed_openrouter_from_headers(
+    flow: http.HTTPFlow, classification: request_classification.RequestClassification
+) -> bool:
+    """Intercept managed auth before every header-phase streaming fast path."""
+    if (
+        classification.kind != "firewall_allow"
+        or classification.firewall_allow.name != managed_openrouter.OWNER
+    ):
+        return False
+    _start_request_timing(flow)
+    _prebind_requestheaders_upstream_destination(flow, classification)
+    try:
+        managed_openrouter.admit_request(flow, classification.sandbox_info)
+    except managed_openrouter.RequestRejectedError as error:
+        _reject_managed_openrouter_request(flow, classification, str(error), terminate=True)
+    return True
 
 
 def _admit_buffered_public_destination_request(
@@ -1288,6 +1355,7 @@ def _revalidate_current_firewall_authorization_for_request(
     *,
     expected_run_id: str,
     expected_request: _FirewallRequestIdentity,
+    expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
         flow, original_authority=expected_request.authority
@@ -1298,6 +1366,13 @@ def _revalidate_current_firewall_authorization_for_request(
         expected_run_id=expected_run_id,
     )
     if current_allow is None or not _firewall_request_identity_is_current(flow, expected_request):
+        _block_current_firewall_authorization(flow, current_classification)
+        return False
+    if allow.name == managed_openrouter.OWNER and (
+        expected_managed_policy is None
+        or managed_openrouter.policy_for_sandbox(current_allow.sandbox_info)
+        != expected_managed_policy
+    ):
         _block_current_firewall_authorization(flow, current_classification)
         return False
     if _firewall_allow_injects_ordinary_upstream_credentials(
@@ -1501,6 +1576,7 @@ async def request(flow: http.HTTPFlow) -> None:
     order. This hook dispatches the current-state result.
     """
     if flow.metadata.get(_REQUEST_HEADERS_TERMINATED):
+        managed_openrouter.release_from_flow(flow)
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
@@ -1512,6 +1588,7 @@ async def request(flow: http.HTTPFlow) -> None:
     connector_intent.capture_and_strip(flow)
 
     if flow.response is not None or flow.error is not None:
+        managed_openrouter.release_from_flow(flow)
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
@@ -1579,6 +1656,13 @@ async def request(flow: http.HTTPFlow) -> None:
         if classification.kind == "firewall_allow":
             allow = classification.firewall_allow
             sandbox_info = classification.sandbox_info
+            managed_policy = None
+            if allow.name == managed_openrouter.OWNER:
+                try:
+                    managed_policy = managed_openrouter.validate_request(flow, sandbox_info)
+                except managed_openrouter.RequestRejectedError as error:
+                    _reject_managed_openrouter_request(flow, classification, str(error))
+                    return
             if connector_diagnostics.maybe_make_connector_owner_local_response(
                 flow,
                 classification,
@@ -1625,6 +1709,7 @@ async def request(flow: http.HTTPFlow) -> None:
                         allow,
                         expected_run_id=expected_run_id,
                         expected_request=expected_request,
+                        expected_managed_policy=managed_policy,
                     )
                 ),
             )
@@ -1664,6 +1749,7 @@ async def request(flow: http.HTTPFlow) -> None:
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
+        managed_openrouter.release_from_flow(flow)
         terminal_usage.release_tracked_flow(flow)
         raise
     finally:
@@ -1776,31 +1862,9 @@ def responseheaders(flow: http.HTTPFlow) -> None:
     codex_model_catalog_cache.wrap_response_stream(flow)
 
 
-def websocket_message(flow: http.HTTPFlow) -> None:
+def websocket_message(flow: http.HTTPFlow) -> Awaitable[None] | None:
     """Bound WebSocket history and observe model-provider protocol events."""
-    if not flow.websocket or not flow.websocket.messages:
-        return
-
-    message = flow.websocket.messages[-1]
-    websocket_retention.schedule_message_trim(flow)
-    if not flow_metadata.run_id(flow.metadata):
-        return
-    if getattr(message, "from_client", False):
-        if not model_websocket_usage.should_observe_client_event(flow):
-            return
-        body = message.content.encode() if isinstance(message.content, str) else message.content
-        event = usage.inspect_openai_responses_client_event_json(body)
-        model_websocket_usage.observe_client_event(flow, event)
-        return
-    if not model_websocket_usage.is_enabled(flow):
-        return
-    body = message.content.encode() if isinstance(message.content, str) else message.content
-    event = usage.inspect_openai_responses_event_json(body)
-    inspection = usage.inspect_openai_responses_server_event(
-        event,
-        include_lifecycle=model_websocket_usage.should_inspect_server_lifecycle(flow, event),
-    )
-    model_websocket_usage.feed_usage(flow, inspection)
+    return websocket_inspection.inspect_message(flow)
 
 
 def _response_size(flow: http.HTTPFlow) -> int:
@@ -1834,6 +1898,7 @@ def _release_terminal_flow_state(
     release_aws_sigv4_body_admission: bool = True,
 ) -> None:
     if release_tracking:
+        websocket_inspection.release(flow)
         websocket_framing.log_limit_violation(flow)
         websocket_retention.release_terminal_messages(flow)
         terminal_usage.release_model_websocket_terminal_state(flow)
@@ -1848,6 +1913,7 @@ def _release_terminal_flow_state(
     response_streaming.release_response_stream_state(flow)
     auth_base_forwarder.release_forward_request_admission_from_flow(flow)
     public_destination_body_admission.release_from_flow(flow)
+    managed_openrouter.release_from_flow(flow)
     if release_aws_sigv4_body_admission:
         aws_sigv4_body_admission.release_from_flow(flow)
     if release_tracking:
@@ -1858,6 +1924,7 @@ def _release_terminal_flow_state(
 def websocket_end(flow: http.HTTPFlow) -> None:
     """Settle model-provider usage for a WebSocket-upgraded response."""
     try:
+        websocket_inspection.release(flow)
         run_id = flow_metadata.run_id(flow.metadata)
         if run_id:
             terminal_usage.report_model_provider_usage_once(flow, run_id)
@@ -2063,6 +2130,7 @@ def _finish_response_handling(
 
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
+    websocket_inspection.release(flow)
     if response_streaming.has_pending_response_inspection(flow):
         return _complete_error_after_inspection(flow)
     try:
@@ -2150,22 +2218,24 @@ def _handle_error(flow: http.HTTPFlow) -> None:
 
 
 def done():
-    """Flush pending reports and forwarding workers before mitmproxy exits.
+    """Flush pending billing usage and stop addon workers before mitmproxy exits.
 
-    The runner flush lifecycle waits for any active delivery worker,
-    retries buffered usage and retained diagnostic reports, drains accepted
-    requests, and closes admission before this hook shuts down the usage
-    executor. Control admission is already closed; pending log prefixes remain
-    owned by the JSONL writer. Any retryable usage outcome
-    retained by completed workers is then retried synchronously.
+    The runner flush lifecycle closes delivery admission, waits for any active
+    delivery worker, and flushes buffered billing usage before this hook shuts
+    down and joins the usage executor. Billing usage retained by
+    completed workers is then drained synchronously under the existing
+    retry/idempotency policy. Control admission is already closed; pending log
+    prefixes remain owned by the independent JSONL writer.
+    Process diagnostics use ``addon_process_logging`` for one best-effort
+    nonblocking stderr write, with no retained queue, retry, or shutdown drain.
+    Delivery controls and this hook cannot replay a dropped process event.
     Auth.base forwarding does not need to finish running work during shutdown.
     Its `wait=False` worker shutdown closes admission, wakes or terminates
     affected forwards, cancels pending futures, and best-effort aborts active
     upstream work without joining daemon workers or waiting for slow upstream
     responses. JSONL writer shutdown is also bounded and best-effort; if it times
     out, process shutdown continues with accepted log entries possibly still
-    pending. After joining the usage executor, retained billing and diagnostic
-    work is drained through synchronous delivery.
+    pending.
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """

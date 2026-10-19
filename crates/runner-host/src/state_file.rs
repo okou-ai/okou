@@ -147,28 +147,9 @@ async fn read_open_file_bytes(
     path: &Path,
     max_bytes: u64,
 ) -> HostResult<Vec<u8>> {
-    use tokio::io::AsyncReadExt;
-
-    let read_limit = max_bytes.checked_add(1).ok_or_else(|| {
-        HostError::Internal(format!(
-            "state file {} read limit is too large",
-            path.display()
-        ))
-    })?;
-    let mut limited = file.take(read_limit);
-    let mut contents = Vec::new();
-    limited
-        .read_to_end(&mut contents)
+    crate::host_file::read_bounded_contents(file, path, max_bytes, "state file")
         .await
-        .map_err(|e| HostError::Internal(format!("read state file {}: {e}", path.display())))?;
-    if contents.len() as u64 > max_bytes {
-        return Err(HostError::Internal(format!(
-            "state file {} exceeds {} bytes",
-            path.display(),
-            max_bytes
-        )));
-    }
-    Ok(contents)
+        .map_err(|error| HostError::Internal(error.to_string()))
 }
 
 #[cfg(unix)]

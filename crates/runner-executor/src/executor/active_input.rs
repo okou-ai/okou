@@ -18,7 +18,7 @@ use sandbox::{
     GuestProcessControlHandle, ProcessControlFailureKind, ProcessControlGuestStatus,
     ProcessControlOutcome, ProcessControlWriteState,
 };
-use tokio_util::sync::CancellationToken;
+use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{error, info, warn};
 
 use runner_provider::{
@@ -38,7 +38,8 @@ const FIRST_ACTIVE_INPUT_SEQUENCE: u64 = 1;
 
 pub(super) struct ActiveInputForwarder {
     stop: CancellationToken,
-    task: tokio::task::JoinHandle<()>,
+    // Normal stop joins graceful cancellation; owner or stop-waiter Drop aborts.
+    task: AbortOnDropHandle<()>,
 }
 
 impl ActiveInputForwarder {
@@ -56,7 +57,10 @@ impl ActiveInputForwarder {
         let task = tokio::spawn(async move {
             run_forwarder(run_id, source, control, job_cancel, stop_for_task).await;
         });
-        Some(Self { stop, task })
+        Some(Self {
+            stop,
+            task: AbortOnDropHandle::new(task),
+        })
     }
 
     /// Stop live forwarding while the caller still owns the live sandbox.

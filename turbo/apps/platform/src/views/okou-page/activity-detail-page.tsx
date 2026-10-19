@@ -6,8 +6,9 @@ import {
   useLastLoadable,
   useLastResolved,
 } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
-import { Search, Loader2, Download, ChartLine } from "lucide-react";
+import { Search, Loader2, Download, ChartLine, RefreshCw } from "lucide-react";
 import {
   surfaceVariants,
   Button,
@@ -35,6 +36,7 @@ import {
   isSupportedFramework,
 } from "@okouai/core/frameworks";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { activityFiles } from "../../signals/activity-page/sandbox-files.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
@@ -50,6 +52,7 @@ import { StatusBadge } from "./components/log-views/status-badge.tsx";
 import {
   activityDetail$,
   activityEvents$,
+  refreshActivity$,
   activityVisibleGroups$,
   activityStepSearch$,
   setActivityStepSearch$,
@@ -512,6 +515,8 @@ function ActivityStepsContent({
   const { t } = useTranslation();
   const stepSearch = useGet(activityStepSearch$);
   const setStepSearch = useSet(setActivityStepSearch$);
+  const pageSignal = useGet(pageSignal$);
+  const [refreshState, refresh] = useLoadableSet(refreshActivity$);
   const visibleGroupsLoadable = useLastLoadable(activityVisibleGroups$);
   const visibleGroupsData =
     visibleGroupsLoadable.state === "hasData" &&
@@ -523,8 +528,7 @@ function ActivityStepsContent({
   const visibleGroupsLoading =
     visibleGroupsLoadable.state === "loading" ||
     (visibleGroupsLoadable.state === "hasData" &&
-      (visibleGroupsLoadable.data.runId !== detail.id ||
-        visibleGroupsLoadable.data.loading));
+      visibleGroupsLoadable.data.runId !== detail.id);
   const { prompt, showSystemPrompt, appendSystemPrompt } = prepareRenderData(
     detail,
     features,
@@ -587,6 +591,31 @@ function ActivityStepsContent({
         isLoading={visibleGroupsLoading}
         startedAt={detail.startedAt}
       />
+      {isActiveRunStatus(detail.status) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.activity.detail.manualReloadNotice;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="shrink-0"
+            pending={refreshState.state === "loading"}
+            disabled={visibleGroupsLoading}
+            onClick={() => {
+              detach(refresh(pageSignal), Reason.DomCallback);
+            }}
+          >
+            <RefreshCw aria-hidden />
+            {t(($) => {
+              return $.activity.detail.refresh;
+            })}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -974,6 +1003,7 @@ function ActivityDetailContent({
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const updateParams = useSet(updateSearchParams$);
+  const filesViewport = useSet(activityFiles.virtual.scroll.setScrollViewport$);
   const showDebugTabs = features?.[FeatureSwitchKey.OkouDebug] ?? false;
   const rawTab = params.get("tab");
   const activeTab: ActivityTab =
@@ -1002,7 +1032,14 @@ function ActivityDetailContent({
 
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
-      <div className="flex-1 flex flex-col min-h-0 overflow-auto">
+      <div
+        ref={activeTab === "files" ? filesViewport : undefined}
+        data-testid="activity-detail-viewport"
+        className={cn(
+          "flex-1 flex flex-col min-h-0 overflow-auto",
+          activeTab === "files" && "scroll-pt-12",
+        )}
+      >
         <nav className="hidden md:flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
           {features?.[FeatureSwitchKey.OkouDebug] && (
             <>
@@ -1083,13 +1120,6 @@ function ActivityDetailContent({
               features={features}
             />
           </div>
-          {isActiveRunStatus(status) && (
-            <p className="mt-6 text-sm text-muted-foreground">
-              {t(($) => {
-                return $.activity.detail.manualReloadNotice;
-              })}
-            </p>
-          )}
         </div>
       </div>
     </div>

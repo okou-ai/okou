@@ -1776,14 +1776,16 @@ function matchStaticFirewallBaseUrl(
   }
 
   const basePath = rawBasePathFromUrl(baseForMatch);
-  const relativePath = baseHasParams
-    ? options.tolerateMalformedBaseParams === true
-      ? matchFirewallPathPrefixForMalformedBaseDecision(
-          rawPathFromUrl(url),
-          basePath,
-        )
-      : matchFirewallPathPrefix(rawPathFromUrl(url), basePath)
-    : matchStaticBasePathPrefix(rawPathFromUrl(url), basePath);
+  // A normalized "/" retains the path boundary of a raw "//" base.
+  const relativePath =
+    baseHasParams && basePath !== "/"
+      ? options.tolerateMalformedBaseParams === true
+        ? matchFirewallPathPrefixForMalformedBaseDecision(
+            rawPathFromUrl(url),
+            basePath,
+          )
+        : matchFirewallPathPrefix(rawPathFromUrl(url), basePath)
+      : matchStaticBasePathPrefix(rawPathFromUrl(url), basePath);
   if (relativePath === null) return null;
 
   const displayBase = stripTrailingSlash(rawBase);

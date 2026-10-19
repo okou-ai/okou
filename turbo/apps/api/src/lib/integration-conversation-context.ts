@@ -29,7 +29,7 @@ function formatSenderBlock(info: ConversationSender): string {
 }
 
 export function formatConversationContext(args: {
-  readonly integration: "Slack" | "Discord";
+  readonly integration: "Slack" | "Discord" | "WeChat";
   readonly contextType: "thread" | "channel";
   readonly messages: readonly ConversationMessage[];
 }): string {

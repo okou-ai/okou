@@ -29,9 +29,9 @@ def no_reads(value, finished):
         raise ValueError("Critical optional reader was not suppressed/joined")
 
 
-def validate(directory):
+def validate_cases(directory, cases):
     directory = pathlib.Path(directory)
-    result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
+    result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     metadata = collector["metadata"]
     raw_policy = metadata["native_critical_policy_json"]
     raw_inputs = metadata["native_critical_inputs_json"]
@@ -64,12 +64,12 @@ def validate(directory):
     if (type(size) is not int or size != 4096 * 1024**2
             or protected + 4096 * 1024**2 + inputs["prefetch_overhead_bytes"] > policy["host_total_bytes"]):
         raise ValueError("Critical declared read does not fit supplied bounds")
-    witnesses = {case: [] for case in CASES}
+    witnesses = {case: [] for case in cases}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):
             continue
         event = json.loads(line[len(PREFIX):], object_pairs_hook=pressure_report.unique_object)
-        if (not isinstance(event, dict) or event.get("case") not in CASES
+        if (not isinstance(event, dict) or event.get("case") not in cases
                 or type(event.get("version")) is not int or event["version"] != 1
                 or not integer(event.get("monotonic_ns"), 1) or not integer(event.get("unix_ns"), 1)):
             raise ValueError("invalid Critical witness")
@@ -175,6 +175,10 @@ def validate(directory):
             "supplied_policy_classification_only": True, "numerical_shortage_or_relief_proven": False}
     result["remaining_parent_gate"] = "40297 startup/foreground/heartbeat/provider cancellation and late results; 39998/higher provenance/residency/envelopes"
     return {"format": "native-critical-phase-report-v1", "native_critical_multiwave_complete": True, **result}
+
+
+def validate(directory):
+    return validate_cases(directory, CASES)
 
 
 if __name__ == "__main__":

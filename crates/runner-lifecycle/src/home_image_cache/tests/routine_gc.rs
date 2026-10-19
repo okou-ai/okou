@@ -91,7 +91,7 @@ async fn routine_inventory_does_not_hold_capacity_while_blocked_at_scan_boundary
 }
 
 #[tokio::test]
-async fn multi_entry_inventory_scans_once_without_holding_capacity() {
+async fn multi_entry_inventory_scans_once_with_shared_compatibility_exclusion() {
     let fixture = Fixture::new().await;
     let first = fixture
         .commit("first", b"first-home", "2026-10-09T09:00:00Z")
@@ -111,7 +111,13 @@ async fn multi_entry_inventory_scans_once_without_holding_capacity() {
         tokio::spawn(async move { cache.try_routine_gc(std::time::Duration::ZERO).await });
     entered.notified().await;
     assert_eq!(fixture.cache.gc_root_scan_count(), 1);
-    let capacity = runner_host::lock::try_acquire(fixture.cache.capacity_lock_path())
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(fixture.cache.capacity_lock_path())
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Busy
+    ));
+    let capacity = runner_host::lock::acquire_shared(fixture.cache.capacity_lock_path())
         .await
         .unwrap();
     drop(capacity);
@@ -119,7 +125,7 @@ async fn multi_entry_inventory_scans_once_without_holding_capacity() {
     assert!(pending.await.unwrap().unwrap().is_some());
     assert!(fixture.image("first", &first).exists());
     assert!(fixture.image("second", &second).exists());
-    let candidates = fixture.cache.gc_candidates().await.unwrap();
+    let candidates = fixture.cache.gc_candidates(|| true).await.unwrap().unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(fixture.cache.held_home_states().await.len(), 2);
 }

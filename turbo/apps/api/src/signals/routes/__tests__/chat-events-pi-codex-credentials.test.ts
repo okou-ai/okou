@@ -97,7 +97,6 @@ describe("Pi Codex subscription admission", () => {
     if (response.status !== 201) {
       throw new Error("Expected the send to be accepted");
     }
-    expect(response.body.runId).toBeNull();
     // The pick refuses the input in the thread instead of launching a run.
     const messages = await waitForThreadMessages(
       f.actor,
@@ -210,7 +209,6 @@ describe("ChatGPT auth.json credentials at launch", () => {
     if (response.status !== 201) {
       throw new Error("Expected the send to be accepted");
     }
-    expect(response.body.runId).toBeNull();
     expect(kms.decryptCalls).toBe(0);
   }, 30_000);
 });

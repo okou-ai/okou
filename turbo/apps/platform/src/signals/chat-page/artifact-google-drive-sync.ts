@@ -9,8 +9,9 @@ import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/art
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
-import type { ApiClientFactory } from "../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { settle, withCleanup } from "../utils.ts";
+import { pageVersion$ } from "../page-signal.ts";
 
 type ArtifactGoogleDriveSyncParams = {
   readonly agentId: string;
@@ -222,7 +223,7 @@ export const googleDriveSyncPending$ = computed((get) => {
   return get(internalGoogleDriveSyncPending$);
 });
 
-export const syncArtifactFileToGoogleDrive$ = command(
+const syncArtifactFileToGoogleDrive$ = command(
   async (
     { get, set },
     params: ArtifactGoogleDriveSyncParams & {
@@ -252,7 +253,78 @@ export const syncArtifactFileToGoogleDrive$ = command(
   },
 );
 
-export async function authorizeGoogleDriveForAgent(
+type GoogleDriveSyncAccount = {
+  readonly artifactId: string;
+  readonly agentId: string;
+  readonly connectionId: string | undefined;
+};
+
+function createGoogleDriveSyncAccount() {
+  return state<GoogleDriveSyncAccount | undefined>(undefined);
+}
+
+// Keep only the latest successful operation in the current page's graph.
+// A new page version replaces the graph rather than retaining artifact keys.
+const pageGoogleDriveSyncAccount$ = computed((get) => {
+  get(pageVersion$);
+  return createGoogleDriveSyncAccount();
+});
+
+export const googleDriveSyncAccount$ = computed((get) => {
+  return get(get(pageGoogleDriveSyncAccount$));
+});
+
+// Retain the account selected by a successful operation, not the thread list's
+// stale connect/reconnect instruction. Catalog consumers can still refresh.
+export const syncArtifactAndRefresh$ = command(
+  async (
+    { get, set },
+    params: ArtifactGoogleDriveSyncParams & {
+      readonly authorize: boolean;
+      readonly onSyncSuccess?: () => void;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    // Capture this page's state before any await; old work cannot write into
+    // a replacement page's graph even if its completion races navigation.
+    const account$ = get(pageGoogleDriveSyncAccount$);
+    const createClient = get(apiClient$);
+    if (params.authorize) {
+      await authorizeGoogleDriveForAgent(
+        { agentId: params.agentId, createClient },
+        signal,
+      );
+    }
+    const success = await set(
+      syncArtifactFileToGoogleDrive$,
+      { ...params, createClient },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (success) {
+      set(account$, {
+        artifactId: params.artifactId,
+        agentId: params.agentId,
+        connectionId: params.connectionId,
+      });
+    } else {
+      const account = get(account$);
+      if (
+        account?.artifactId === params.artifactId &&
+        account.agentId === params.agentId &&
+        account.connectionId === params.connectionId
+      ) {
+        set(account$, undefined);
+      }
+    }
+    if (success) {
+      params.onSyncSuccess?.();
+    }
+  },
+);
+
+async function authorizeGoogleDriveForAgent(
   params: {
     readonly agentId: string;
     readonly createClient: ApiClientFactory;

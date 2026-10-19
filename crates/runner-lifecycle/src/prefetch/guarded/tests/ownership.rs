@@ -1,5 +1,142 @@
 use super::*;
 
+struct ActualReadRelease(Arc<Gate>);
+
+impl Drop for ActualReadRelease {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+#[tokio::test]
+async fn cancelled_actual_file_read_keeps_p2_custody_after_dropped_drain() {
+    let fixture = Fixture::new(48).await;
+    let bytes = vec![7; MEMORY_PREFETCH_CHUNK_BYTES + 17];
+    let candidate = fixture.file("actual-snapshot", &bytes, 2).await;
+    let path = candidate.path.clone();
+    let gate = Arc::new(Gate::default());
+    let release = ActualReadRelease(gate.clone());
+    let held = gate.clone();
+    let (mut tasks, mut latest) = MemoryPrefetchTasks::spawn_guarded_with_read_checkpoint_for_test(
+        [candidate],
+        2,
+        fixture.config(),
+        Arc::new(move |count| {
+            assert_eq!(count, MIB);
+            held.hold();
+            Ok(())
+        }),
+    )
+    .unwrap();
+    gate.entered().await;
+    let accepted = report(&mut latest, |r| r.accepted == 1).await;
+    assert!(!accepted.finished);
+    tasks.cancel();
+    {
+        let first = tasks.drain();
+        tokio::pin!(first);
+        assert!(futures_util::poll!(&mut first).is_pending());
+    }
+    {
+        let second = tasks.drain();
+        tokio::pin!(second);
+        assert!(futures_util::poll!(&mut second).is_pending());
+        let held = fixture.operations.snapshot().unwrap();
+        assert_eq!(
+            (
+                held.registered_operations,
+                held.started,
+                held.ordinary_growth_bytes
+            ),
+            (1, 1, 3 * MIB)
+        );
+        assert!(held.tracked_tasks > 0);
+        gate.release();
+        tokio::time::timeout(WAIT, second).await.unwrap();
+    }
+    let result = report(&mut latest, |r| r.finished).await;
+    assert_eq!(
+        (
+            result.accepted,
+            result.cancelled,
+            result.completed,
+            result.failed,
+            result.uncertain
+        ),
+        (1, 1, 0, 0, 0)
+    );
+    assert_eq!(result.read_bytes, MIB);
+    assert!(result.last_error.is_none());
+    let settled = fixture.operations.snapshot().unwrap();
+    assert_eq!(
+        (
+            settled.registered_operations,
+            settled.ordinary_growth_bytes,
+            settled.tracked_tasks
+        ),
+        (0, 0, 0)
+    );
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    drop(release);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn actual_guarded_checkpoint_keeps_complete_read_and_io_failure_contracts() {
+    for fail in [false, true] {
+        let fixture = Fixture::new(48).await;
+        let bytes = vec![7; MEMORY_PREFETCH_CHUNK_BYTES + 17];
+        let candidate = fixture.file("actual-snapshot", &bytes, 2).await;
+        let path = candidate.path.clone();
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let record = observed.clone();
+        let (mut tasks, mut latest) =
+            MemoryPrefetchTasks::spawn_guarded_with_read_checkpoint_for_test(
+                [candidate],
+                2,
+                fixture.config(),
+                Arc::new(move |count| {
+                    record.lock().unwrap().push(count);
+                    if fail {
+                        Err(std::io::Error::other("checkpoint IO failed"))
+                    } else {
+                        Ok(())
+                    }
+                }),
+            )
+            .unwrap();
+        tokio::time::timeout(WAIT, tasks.drain()).await.unwrap();
+        let result = report(&mut latest, |r| r.finished).await;
+        assert_eq!(
+            (
+                result.accepted,
+                result.completed,
+                result.failed,
+                result.uncertain
+            ),
+            (1, usize::from(!fail), usize::from(fail), 0)
+        );
+        assert_eq!(result.last_error.is_some(), fail);
+        if !fail {
+            assert_eq!(result.read_bytes, bytes.len() as u64);
+        }
+        assert_eq!(
+            *observed.lock().unwrap(),
+            if fail {
+                vec![MIB]
+            } else {
+                vec![MIB, bytes.len() as u64]
+            }
+        );
+        assert_eq!(
+            fixture.operations.snapshot().unwrap().registered_operations,
+            0
+        );
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+        fixture.stop().await;
+    }
+}
+
 #[tokio::test]
 async fn cancelled_drain_waiter_cannot_forget_the_owned_pending_queue() {
     let fixture = Fixture::new(12).await;

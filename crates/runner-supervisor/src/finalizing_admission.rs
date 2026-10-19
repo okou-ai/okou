@@ -24,9 +24,9 @@ use tokio::sync::Notify;
 use tracing::info;
 
 use crate::idle_lifecycle::{
-    IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, reserve_exact_idle_for_spawn, rollback_reserved_idle_for_spawn,
-    select_idle_entries_for_pressure,
+    IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
+    ReservedIdleActivation, SharedIdlePool, reserve_exact_idle_for_spawn,
+    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 use runner_executor::executor::{
     ExecutionFailure, FinalizingExactIdleLookup, FinalizingHandoffOutcome, FinalizingHandoffReason,
@@ -43,7 +43,9 @@ use runner_provider::RunCancellationRegistration;
 use runner_types::ids::RunId;
 
 /// Grace for an in-progress predecessor to accept a successor's handoff request.
-pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(1500);
+pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(
+    api_contracts::generated::constants::runners::RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
+);
 
 /// Exact-predecessor proof carried across the provider claim boundary.
 pub struct FinalizingAdmission {
@@ -554,9 +556,12 @@ async fn acquire_fallback_resource(
     let cancel = cancellation.token();
     let mut retiring_leases = Vec::new();
     let lease = loop {
-        let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
+        let IdlePressureOutcome {
+            selection,
+            blank_pool_selection,
+            idle_snapshot,
+        } = select_idle_entries_for_pressure(
             ctx.idle_pool,
-            ctx.status,
             ctx.idle_destroy_tracker,
             ctx.budget,
             std::mem::take(&mut retiring_leases),
@@ -574,6 +579,9 @@ async fn acquire_fallback_resource(
             },
         )
         .await;
+        if let Some(snapshot) = idle_snapshot {
+            set_idle_status_snapshot(ctx.status, snapshot).await;
+        }
         debug_assert!(blank_pool_selection.is_none());
         match selection {
             IdlePressureSelection::Reusable(reservation) => {

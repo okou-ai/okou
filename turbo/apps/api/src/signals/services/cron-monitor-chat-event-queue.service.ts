@@ -259,47 +259,46 @@ async function recheckOrphanedQueueEvents(
   return confirmedEvents;
 }
 
-async function monitorChatEventQueue(db: Db, signal: AbortSignal) {
-  const window = recentStaleChatQueueWindow(nowDate().getTime());
-  const suspectedEvents = await findOrphanedQueueEvents(
-    db,
-    window,
-    undefined,
-    signal,
-  );
-  signal.throwIfAborted();
-  // The split reads deliberately avoid one global polymorphic join. Re-read
-  // only suspected rows so a concurrent revoke, context insert, or thread
-  // deletion cannot turn the monitor into a false alert.
-  const orphanedEvents = await recheckOrphanedQueueEvents(
-    db,
-    window,
-    suspectedEvents,
-    signal,
-  );
-  signal.throwIfAborted();
-
-  const orphanedMessagesBySource: Record<string, number> = {};
-  for (const event of orphanedEvents) {
-    orphanedMessagesBySource[event.contextType] =
-      (orphanedMessagesBySource[event.contextType] ?? 0) + 1;
-  }
-  const orphanedMessages = orphanedEvents.length;
-  if (orphanedMessages > 0) {
-    throw new OrphanedQueuedChatEventsError(
-      orphanedMessages,
-      orphanedMessagesBySource,
-    );
-  }
-
-  return {
-    success: true as const,
-    orphanedMessages,
-  };
-}
-
 export const monitorChatEventQueue$ = command(
   async ({ set }, signal: AbortSignal) => {
-    return await monitorChatEventQueue(set(writeDb$), signal);
+    const db = set(writeDb$);
+    return await (async () => {
+      const window = recentStaleChatQueueWindow(nowDate().getTime());
+      const suspectedEvents = await findOrphanedQueueEvents(
+        db,
+        window,
+        undefined,
+        signal,
+      );
+      signal.throwIfAborted();
+      // The split reads deliberately avoid one global polymorphic join. Re-read
+      // only suspected rows so a concurrent revoke, context insert, or thread
+      // deletion cannot turn the monitor into a false alert.
+      const orphanedEvents = await recheckOrphanedQueueEvents(
+        db,
+        window,
+        suspectedEvents,
+        signal,
+      );
+      signal.throwIfAborted();
+
+      const orphanedMessagesBySource: Record<string, number> = {};
+      for (const event of orphanedEvents) {
+        orphanedMessagesBySource[event.contextType] =
+          (orphanedMessagesBySource[event.contextType] ?? 0) + 1;
+      }
+      const orphanedMessages = orphanedEvents.length;
+      if (orphanedMessages > 0) {
+        throw new OrphanedQueuedChatEventsError(
+          orphanedMessages,
+          orphanedMessagesBySource,
+        );
+      }
+
+      return {
+        success: true as const,
+        orphanedMessages,
+      };
+    })();
   },
 );

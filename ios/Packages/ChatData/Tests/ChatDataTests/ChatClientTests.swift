@@ -841,7 +841,7 @@ final class ChatClientTests: XCTestCase {
         let body = try JSONDecoder().decode(CapturedSend.self, from: chatRequestBody(request))
         state.withLock { $0.sends.append(body) }
         return ChatHTTPResponse(
-          status: 201, body: "{\"threadId\":\"\(fixtureThread)\",\"runId\":null}")
+          status: 201, body: "{\"threadId\":\"\(fixtureThread)\"}")
       }
       throw URLError(.unsupportedURL)
     }
@@ -877,7 +877,7 @@ final class ChatClientTests: XCTestCase {
         }
         if count == 1 { throw URLError(.networkConnectionLost) }
         return ChatHTTPResponse(
-          status: 201, body: "{\"threadId\":\"\(fixtureThread)\",\"runId\":null}")
+          status: 201, body: "{\"threadId\":\"\(fixtureThread)\"}")
       }
       throw URLError(.unsupportedURL)
     }
@@ -917,7 +917,7 @@ final class ChatClientTests: XCTestCase {
         let control = try JSONDecoder().decode(CapturedControl.self, from: chatRequestBody(request))
         commands.withLock { $0.append(control) }
         return ChatHTTPResponse(
-          status: 201, body: "{\"threadId\":\"\(fixtureThread)\",\"runId\":null}")
+          status: 201, body: "{\"threadId\":\"\(fixtureThread)\"}")
       default: throw URLError(.unsupportedURL)
       }
     }

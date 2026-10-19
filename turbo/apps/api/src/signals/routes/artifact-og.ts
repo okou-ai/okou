@@ -10,6 +10,7 @@ import {
   artifactOgMetadata$,
   artifactOgImage$,
 } from "../services/artifact-og.service";
+import { slackPreviewImage$ } from "../services/slack-preview-image.service";
 
 const noStore$ = command(({ set }) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
@@ -39,6 +40,22 @@ function imageResponse(bytes: Buffer | null, variant?: "slack"): Response {
 }
 
 export const artifactOgRoutes: readonly RouteEntry[] = [
+  {
+    route: artifactOgContract.slackImage,
+    handler: command(async ({ get, set }, signal: AbortSignal) => {
+      set(noStore$);
+      const bytes = await set(
+        slackPreviewImage$,
+        get(queryOf(artifactOgContract.slackImage)),
+        signal,
+      );
+      return bytes
+        ? new Response(new Uint8Array(bytes), {
+            headers: { "Content-Type": "image/png" },
+          })
+        : new Response(null, { status: 403 });
+    }),
+  },
   {
     route: artifactOgContract.metadata,
     handler: command(async ({ get, set }, signal: AbortSignal) => {

@@ -116,6 +116,45 @@ function slashButton(name: string): HTMLElement {
   return result;
 }
 
+test("Search template categories by their displayed name", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  await user.keyboard("Web");
+  await waitFor(() => {
+    expect(slashButton("Website")).toBeInTheDocument();
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  await user.keyboard("site");
+  expect(editor.textContent).toBe("Draft /Website");
+  await user.click(slashButton("Website"));
+  await screen.findByRole("dialog");
+  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  expect(editor.textContent).toBe("Draft ");
+});
+
+test.each(["网站", "ウェブサイト", "cafe\u0301"])(
+  "Keep slash search and template browsing available for Unicode query %s",
+  async (query) => {
+    const user = userEvent.setup({ delay: null });
+    await openSlashMenu();
+    const editor = await findComposerEditor();
+    await user.keyboard(query);
+    expect(editor.textContent).toBe(`Draft /${query}`);
+    await waitFor(() => {
+      expect(slashButton("Browse all templates")).toBeInTheDocument();
+      expect(querySlashButton("Website")).toBeNull();
+      expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
+    });
+    await user.click(slashButton("Browse all templates"));
+    await screen.findByRole("dialog");
+    expect(tabByText("Website")).toBeInTheDocument();
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(editor.textContent).toBe("Draft ");
+  },
+);
+
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
@@ -188,8 +227,8 @@ test("Enter keeps the keyboard selection while another workflow is hovered", asy
     return slashButton(`/${WORKFLOW_NAME}`);
   });
 
-  // The best match sits nearest the composer, so the next one is above it.
-  await user.keyboard("{ArrowUp}");
+  // Search starts at the best match and moves down to the next row.
+  await user.keyboard("{ArrowDown}");
   await user.pointer({
     target: workflow,
     coords: { clientX: 10, clientY: 10 },

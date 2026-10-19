@@ -176,11 +176,11 @@ export const requireExecuteRowSchema = createRule({
     schema: [],
     messages: {
       rowTypeArgument:
-        "Drizzle execute row generics are compile-only. Remove the type argument and use executeRawRows(...) with a runtime schema.",
+        "Drizzle execute row generics are compile-only. Remove the type argument and use parseRawRows(schema, await db.execute(query)) with a runtime schema.",
       rawResult:
-        "Do not consume raw rows from Drizzle execute. Use executeRawRows(...) or parseRawRows(schema, await tx.execute(...)) with a runtime schema; otherwise direct execute is only for discarded results or rowCount.",
+        "Do not consume raw rows from Drizzle execute. Use parseRawRows(schema, await tx.execute(...)) with a runtime schema; otherwise direct execute is only for discarded results or rowCount.",
       assertedResult:
-        "A TypeScript assertion does not validate a Drizzle execute result. Decode rows with executeRawRows(...) instead.",
+        "A TypeScript assertion does not validate a Drizzle execute result. Decode rows with parseRawRows(schema, await db.execute(query)) instead.",
       executeReference:
         "Do not alias Drizzle execute. Call it directly so result safety can be enforced.",
     },

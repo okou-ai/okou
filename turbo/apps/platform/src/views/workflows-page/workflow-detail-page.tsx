@@ -29,7 +29,6 @@ import type {
   WorkflowSchedule,
   WorkflowScheduleType,
   WorkflowAutomationSummary,
-  WorkflowUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
 import {
   AlertTriangle,
@@ -129,9 +128,7 @@ import {
   createWorkflowStripeInvoicePaidAutomation$,
   createdWorkflowWebhookAutomation$,
   currentWorkflowId$,
-  copyWorkflow$,
   defaultWorkflowCronFields,
-  deleteWorkflow$,
   deleteWorkflowAutomation$,
   editingScheduleCronFields$,
   editingGithubPullRequestAction$,
@@ -141,12 +138,10 @@ import {
   isGoogleCalendarWorkflowAutomation,
   patchWorkflowMetadataForm$,
   openWorkflowChat$,
-  pauseWorkflowAutomations$,
   reloadWorkflows$,
   revealWebhookSecretAutomationId$,
   revealWorkflowWebhookSecret$,
   resetWorkflowMetadataForm$,
-  runWorkflowAutomationNow$,
   selectedWorkflowFilePath$,
   setCreateGithubPullRequestAction$,
   setCreateGmailMatchConditions$,
@@ -203,6 +198,14 @@ import {
   workflowMetadataPatch$,
   targetedWorkflowAutomationId$,
 } from "../../signals/workflows-page/workflows-signals.ts";
+import {
+  copyOrMoveWorkflow$,
+  deleteWorkflowAndReturnToList$,
+  deleteWorkflowFile$,
+  runWorkflowAutomationAndOpenThread$,
+  saveWorkflowFileDraft$,
+  uploadWorkflowFiles$,
+} from "../../signals/workflows-page/workflow-detail-actions.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -2022,7 +2025,6 @@ function WorkflowCopyDialog({
     detail,
     enabledSourceAutomationIds,
     form,
-    onOpenChange,
     sourceAgentName,
   });
 
@@ -2079,27 +2081,19 @@ function useWorkflowCopySubmission({
   detail,
   enabledSourceAutomationIds,
   form,
-  onOpenChange,
   sourceAgentName,
 }: {
   readonly agentName: string;
   readonly detail: WorkflowDetailResponse;
   readonly enabledSourceAutomationIds: readonly string[];
   readonly form: WorkflowCopyFormState;
-  readonly onOpenChange: (open: boolean) => void;
   readonly sourceAgentName: string;
 }): { readonly submit: () => void; readonly submitting: boolean } {
   const pageSignal = useGet(pageSignal$);
   const navigate = useSet(detachedNavigateTo$);
-  const [copyLoadable, copyWorkflow] = useLoadableSet(copyWorkflow$);
-  const [pauseLoadable, pauseWorkflowAutomations] = useLoadableSet(
-    pauseWorkflowAutomations$,
-  );
-  const [deleteLoadable, deleteWorkflow] = useLoadableSet(deleteWorkflow$);
-  const submitting =
-    copyLoadable.state === "loading" ||
-    pauseLoadable.state === "loading" ||
-    deleteLoadable.state === "loading";
+  const [copyLoadable, copyOrMoveWorkflow] =
+    useLoadableSet(copyOrMoveWorkflow$);
+  const submitting = copyLoadable.state === "loading";
   const navigateToCopy = (workflowId: string) => {
     navigate(ROUTES.workflowDetailAutomations, {
       pathParams: { workflowId },
@@ -2112,25 +2106,15 @@ function useWorkflowCopySubmission({
     }
     detach(
       (async () => {
-        const copied = await copyWorkflow(
-          { workflowId: detail.id, toAgentId },
+        const { copied, removedOriginal } = await copyOrMoveWorkflow(
+          {
+            workflowId: detail.id,
+            toAgentId,
+            removeOriginal: form.removeOriginal,
+            enabledSourceAutomationIds,
+          },
           pageSignal,
         );
-        let removedOriginal = false;
-        if (form.removeOriginal) {
-          if (enabledSourceAutomationIds.length > 0) {
-            await pauseWorkflowAutomations(
-              [...enabledSourceAutomationIds],
-              pageSignal,
-            );
-          }
-          await deleteWorkflow(detail.id, pageSignal);
-          removedOriginal = true;
-        }
-        onOpenChange(false);
-        if (form.removeOriginal) {
-          navigateToCopy(copied.id);
-        }
         notifyWorkflowCopySuccess({
           agentName,
           sourceAgentName,
@@ -2156,8 +2140,9 @@ function WorkflowDeleteDialog({
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const pageSignal = useGet(pageSignal$);
-  const navigate = useSet(detachedNavigateTo$);
-  const [deleteLoadable, deleteWorkflow] = useLoadableSet(deleteWorkflow$);
+  const [deleteLoadable, deleteWorkflowAndReturnToList] = useLoadableSet(
+    deleteWorkflowAndReturnToList$,
+  );
   const deleting = deleteLoadable.state === "loading";
 
   return (
@@ -2197,11 +2182,7 @@ function WorkflowDeleteDialog({
           }}
           onConfirm={() => {
             detach(
-              (async () => {
-                await deleteWorkflow(detail.id, pageSignal);
-                onOpenChange(false);
-                navigate(ROUTES.workflows);
-              })(),
+              deleteWorkflowAndReturnToList(detail.id, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -2223,8 +2204,12 @@ function WorkflowFilePicker({
   const files: readonly WorkflowFileMetadata[] = detail.files ?? [];
   const fileContents: readonly WorkflowFileEntry[] = detail.fileContents ?? [];
   const pageSignal = useGet(pageSignal$);
-  const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
-  const saving = saveLoadable.state === "loading";
+  const [uploadLoadable, uploadWorkflowFiles] =
+    useLoadableSet(uploadWorkflowFiles$);
+  const [deleteLoadable, deleteWorkflowFile] =
+    useLoadableSet(deleteWorkflowFile$);
+  const saving =
+    uploadLoadable.state === "loading" || deleteLoadable.state === "loading";
   const canManageFiles = detail.canManage;
   const selectedLabel =
     selectedFilePath ??
@@ -2233,25 +2218,10 @@ function WorkflowFilePicker({
     });
   const uploadFiles = (selected: FileList) => {
     detach(
-      (async () => {
-        const uploaded = await readUploadedWorkflowFiles(selected);
-        const byPath = new Map(
-          fileContents.map((file) => {
-            return [file.path, file];
-          }),
-        );
-        for (const file of uploaded) {
-          byPath.set(file.path, file);
-        }
-        await updateWorkflow(
-          {
-            workflowId: detail.id,
-            body: { files: [...byPath.values()] },
-          },
-          pageSignal,
-        );
-        setSelectedFilePath(uploaded[0]?.path ?? null);
-      })(),
+      uploadWorkflowFiles(
+        { workflowId: detail.id, fileContents, files: Array.from(selected) },
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
   };
@@ -2260,19 +2230,10 @@ function WorkflowFilePicker({
       return;
     }
     detach(
-      (async () => {
-        const nextFiles = fileContents.filter((file) => {
-          return file.path !== selectedFilePath;
-        });
-        await updateWorkflow(
-          {
-            workflowId: detail.id,
-            body: { files: nextFiles },
-          },
-          pageSignal,
-        );
-        setSelectedFilePath(null);
-      })(),
+      deleteWorkflowFile(
+        { workflowId: detail.id, fileContents, filePath: selectedFilePath },
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
   };
@@ -2429,24 +2390,6 @@ function WorkflowFileManagementItems({
   );
 }
 
-function workflowDraftUpdateBody(
-  selectedFilePath: string | null,
-  draft: string,
-  fileContents: readonly WorkflowFileEntry[],
-): WorkflowUpdateRequest {
-  if (!selectedFilePath) {
-    return { instruction: draft || null };
-  }
-
-  return {
-    files: fileContents.map((file) => {
-      return file.path === selectedFilePath
-        ? { path: file.path, content: draft }
-        : file;
-    }),
-  };
-}
-
 function selectedWorkflowFile(
   fileContents: readonly WorkflowFileEntry[],
   selectedFilePath: string | null,
@@ -2524,7 +2467,9 @@ function WorkflowSelectedFileEditor({
   const setDraftState = useSet(setWorkflowFileDraft$);
   const discardDraft = useSet(discardWorkflowFileDraft$);
   const pageSignal = useGet(pageSignal$);
-  const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
+  const [saveLoadable, saveWorkflowFileDraft] = useLoadableSet(
+    saveWorkflowFileDraft$,
+  );
   const saving = saveLoadable.state === "loading";
   const canEdit = detail.canManage;
   const draftMatches =
@@ -2552,18 +2497,16 @@ function WorkflowSelectedFileEditor({
     if (!canEdit || draft === null) {
       return;
     }
-    const body = workflowDraftUpdateBody(selectedFilePath, draft, fileContents);
     detach(
-      (async () => {
-        await updateWorkflow(
-          {
-            workflowId: detail.id,
-            body,
-          },
-          pageSignal,
-        );
-        setDraftState(null);
-      })(),
+      saveWorkflowFileDraft(
+        {
+          workflowId: detail.id,
+          fileContents,
+          filePath: selectedFilePath,
+          content: draft,
+        },
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
   };
@@ -2619,23 +2562,6 @@ function WorkflowSelectedFileEditor({
         />
       ) : null}
     </div>
-  );
-}
-
-async function readUploadedWorkflowFiles(
-  files: FileList,
-): Promise<WorkflowFileEntry[]> {
-  return await Promise.all(
-    Array.from(files).map(async (file) => {
-      const uploadFile = file as File & {
-        readonly webkitRelativePath?: string;
-      };
-      const path = (uploadFile.webkitRelativePath || file.name).replace(
-        /^\.\//,
-        "",
-      );
-      return { path, content: await file.text() };
-    }),
   );
 }
 
@@ -8711,14 +8637,15 @@ function AutomationControls({
 }) {
   const copy = automationActionCopy();
   const pageSignal = useGet(pageSignal$);
-  const navigate = useSet(detachedNavigateTo$);
   const revealWebhookSecretAutomationId = useGet(
     revealWebhookSecretAutomationId$,
   );
   const setRevealWebhookSecretAutomationId = useSet(
     setRevealWebhookSecretAutomationId$,
   );
-  const [runNowLoadable, runNow] = useLoadableSet(runWorkflowAutomationNow$);
+  const [runNowLoadable, runNow] = useLoadableSet(
+    runWorkflowAutomationAndOpenThread$,
+  );
   const busy = runNowLoadable.state === "loading";
   const canEdit = canEditStructure && canEditWorkflowAutomation(automation);
   const revealWebhookSecretOpen =
@@ -8741,12 +8668,7 @@ function AutomationControls({
                   className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
                   onClick={() => {
                     detach(
-                      (async () => {
-                        const result = await runNow(automation.id, pageSignal);
-                        navigate(ROUTES.chat, {
-                          pathParams: { threadId: result.chatThreadId },
-                        });
-                      })(),
+                      runNow(automation.id, pageSignal),
                       Reason.DomCallback,
                       "run workflow automation now",
                     );
