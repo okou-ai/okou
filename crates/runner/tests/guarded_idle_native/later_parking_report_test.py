@@ -13,7 +13,6 @@ import uuid
 import cleanup_report as cleanup
 import later_parking_report as later
 import report
-import report_test
 import status_failure_report_test as failure_test
 
 
@@ -154,7 +153,7 @@ class LaterParkingReportTests(unittest.TestCase):
             lambda:self.event("later_retired")["evidence"].update(later_exit_confirmed=False),
             lambda:self.event("producers_joined")["evidence"].update(remaining_activation_owners=1)))
 
-    def test_original_source_policy_snapshot_and_home_proof_are_required(self):
+    def test_original_home_and_raw_policy_identity_are_required(self):
         self.events[-1]["evidence"]["original_home_restored"] = False
         with self.assertRaises(ValueError): self.validate()
         self.events[-1]["evidence"]["original_home_restored"] = True
