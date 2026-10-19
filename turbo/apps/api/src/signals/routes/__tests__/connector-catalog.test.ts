@@ -1062,6 +1062,37 @@ describe("GET /api/connector-catalog", () => {
     ).toStrictEqual(["oauth", "api-token"]);
   });
 
+  it("shows Sanity MCP only while its feature switch is enabled", async () => {
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    mocks.clerk.session(userId, orgId);
+    const headers = { authorization: "Bearer clerk-session" };
+    const params = { connectorSlug: "sanity-mcp" };
+    const catalog = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const before = await accept(catalog.list({ headers }), [200]);
+    expect(before.body.connectors).not.toContainEqual(
+      expect.objectContaining({ slug: params.connectorSlug }),
+    );
+    await accept(catalog.get({ headers, params }), [404]);
+
+    await enableConnectorFeatureSwitches(orgId, userId, {
+      [FeatureSwitchKey.SanityMcpConnector]: true,
+    });
+    const enabled = await accept(catalog.get({ headers, params }), [200]);
+    expect(enabled.body.connector.authMethods).toMatchObject([
+      { id: "automatic", grantKind: "automatic" },
+    ]);
+    const listed = await accept(catalog.list({ headers }), [200]);
+    expect(listed.body.connectors).toContainEqual(
+      expect.objectContaining({ slug: params.connectorSlug }),
+    );
+
+    await deleteFeatureSwitches(orgId, userId);
+    await accept(catalog.get({ headers, params }), [404]);
+  });
+
   it("shows only the Mercury API token method while Mercury OAuth is disabled", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;

@@ -277,6 +277,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ramp spend management connector",
     enabled: false,
   },
+  [FeatureSwitchKey.SanityMcpConnector]: {
+    maintainer: "liangyou@vm0.ai",
+    description: "Enable the Sanity builtin MCP connector",
+    enabled: false,
+  },
   [FeatureSwitchKey.ResendConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Resend email service connector",

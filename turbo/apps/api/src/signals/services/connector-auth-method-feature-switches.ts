@@ -27,6 +27,7 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "reddit\0oauth": FeatureSwitchKey.RedditConnector,
+  "sanity-mcp\0automatic": FeatureSwitchKey.SanityMcpConnector,
   "spotify\0oauth": FeatureSwitchKey.SpotifyConnector,
   "supabase\0oauth": FeatureSwitchKey.SupabaseConnector,
   "test-oauth\0api": FeatureSwitchKey.TestOauthConnector,

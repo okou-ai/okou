@@ -2526,5 +2526,6 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     automaticMcpConnector("oauth"),
     builtinAutomaticMcpConnector("monday-mcp", "Monday.com", "MONDAY_MCP"),
     builtinAutomaticMcpConnector("plaud-mcp", "Plaud", "PLAUD_MCP"),
+    builtinAutomaticMcpConnector("sanity-mcp", "Sanity", "SANITY_MCP"),
   ],
 } satisfies ConnectorCatalogArtifact;
