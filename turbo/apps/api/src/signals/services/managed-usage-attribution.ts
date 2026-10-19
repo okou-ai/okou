@@ -1,8 +1,15 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  billingRunLifecycleConflictSet,
+  billingRunLifecycleValues,
+} from "@okouai/db/operations/billing-run-lifecycle";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { and, eq, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import {
   managedValues,
   type ManagedUsageRecordArgs,
@@ -15,6 +22,8 @@ export interface BillingRun {
   readonly startedAt: string;
   readonly triggerSource: string | null;
   readonly threadId: string | null;
+  readonly status: string;
+  readonly billingCompletedAt: string | null;
 }
 
 export interface BillingAttribution {
@@ -40,6 +49,10 @@ export function managedBillingRunQuery(runId: string | undefined) {
         .as("started_at"),
       triggerSource: agentRuns.triggerSource,
       threadId: agentRuns.chatThreadId,
+      status: agentRuns.status,
+      billingCompletedAt: sql`${agentRuns.completedAt}::text`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("completed_at"),
     })
     .from(agentRuns)
     .where(runId ? eq(agentRuns.id, runId) : sql`false`)
@@ -115,12 +128,14 @@ export function billingRunAttributionWrite(run: BillingRun) {
       source,
       threadId: run.threadId,
       threadContext: run.threadId === null ? "threadless" : "thread",
+      ...billingRunLifecycleValues(run.status, run.billingCompletedAt),
     },
     conflict: {
       target: billingRunAttribution.runId,
       // A live Run may have lost its thread through ON DELETE SET NULL.
       // Fill only an unknown grouping identity; never rewrite captured history.
       set: {
+        ...billingRunLifecycleConflictSet(),
         runId: run.id,
         threadId: sql`CASE WHEN ${billingRunAttribution.threadContext} = 'unknown' THEN ${run.threadId}::uuid ELSE ${billingRunAttribution.threadId} END`,
         threadContext: sql`CASE WHEN ${billingRunAttribution.threadContext} = 'unknown' THEN ${run.threadId === null ? "threadless" : "thread"} ELSE ${billingRunAttribution.threadContext} END`,

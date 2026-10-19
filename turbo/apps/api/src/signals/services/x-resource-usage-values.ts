@@ -6,7 +6,10 @@ import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { z } from "zod";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 
 export type UsageBody = z.output<typeof webhookUsageEventContract.send.body>;
 type UsageObservation = UsageBody["events"][number];
@@ -98,6 +101,10 @@ export function xUsageRunQuery(owner: Owner) {
       userId: agentRuns.userId,
       createdAt: agentRuns.createdAt,
       completedAt: agentRuns.completedAt,
+      status: agentRuns.status,
+      billingCompletedAt: sql`${agentRuns.completedAt}::text`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("billing_completed_at"),
       startedAt: sql`${agentRuns.createdAt}::text`
         .mapWith(pgTextDecoder)
         .as("started_at"),
