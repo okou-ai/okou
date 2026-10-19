@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  DOCUMENT_TEMPLATE_ITEMS,
-  type DocumentTemplateCategory,
-} from "@okouai/core/document-template-items";
+import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import {
@@ -14,9 +12,10 @@ import type {
   ComposerCreateSignals,
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
-import { onRef } from "../utils.ts";
+import { onRef, settle } from "../utils.ts";
 import { observeRail, type RailTravel } from "./rail-travel.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 export type ComposerTask =
   ComposerCreateMode | "workflow" | "website" | "visualization" | "suggestions";
@@ -47,24 +46,51 @@ function isComposerGeneralTask(
   );
 }
 
+type ComposerDocumentCategory = DocumentTemplateCategory | "custom";
+
 function createDocumentCategorySignals() {
-  const internalDocumentCategory$ =
-    state<DocumentTemplateCategory>("creative-brief");
+  const internalDocumentCategory$ = state<ComposerDocumentCategory | null>(
+    null,
+  );
+  const defaultDocumentCategory$ = computed(
+    async (get): Promise<ComposerDocumentCategory> => {
+      const result = await settle(get(customTemplateCatalog$));
+      if (!result.ok) {
+        // A failed custom catalog must leave the built-in shelf usable.
+        return "creative-brief";
+      }
+      return result.value.some((template) => {
+        return template.kind === "document";
+      })
+        ? "custom"
+        : "creative-brief";
+    },
+  );
   const documentCategory$ = computed((get) => {
-    return get(internalDocumentCategory$);
-  });
-  const documentItems$ = computed((get) => {
-    const category = get(documentCategory$);
-    return DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
-      return item.category === category;
-    });
+    const switches = get(featureSwitch$);
+    if (switches[FeatureSwitchKey.CustomTemplates] !== true) {
+      const selected = get(internalDocumentCategory$);
+      return selected === "custom"
+        ? "creative-brief"
+        : (selected ?? "creative-brief");
+    }
+    if (switches[FeatureSwitchKey.BuiltinDocumentTemplates] !== true) {
+      return "custom";
+    }
+    const selected = get(internalDocumentCategory$);
+    if (selected !== null) {
+      return selected;
+    }
+    // Resolve the default from the catalog. An explicit choice stops depending
+    // on this request, so a late response or refresh cannot replace that choice.
+    return get(defaultDocumentCategory$);
   });
   const setDocumentCategory$ = command(
-    ({ set }, category: DocumentTemplateCategory) => {
+    ({ set }, category: ComposerDocumentCategory) => {
       set(internalDocumentCategory$, category);
     },
   );
-  return { documentCategory$, documentItems$, setDocumentCategory$ };
+  return { documentCategory$, setDocumentCategory$ };
 }
 
 export function createComposerTaskChipsSignals(
@@ -75,7 +101,7 @@ export function createComposerTaskChipsSignals(
     "workflow" | "website" | "visualization" | "suggestions" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
-  const { documentCategory$, documentItems$, setDocumentCategory$ } =
+  const { documentCategory$, setDocumentCategory$ } =
     createDocumentCategorySignals();
   /** The task selected through the chip row, slash panel or template picker. */
   const task$ = computed((get): ComposerTask | null => {
@@ -84,7 +110,7 @@ export function createComposerTaskChipsSignals(
   // Only a shelf that can display custom templates subscribes to the catalog.
   const customTemplates$ = computed(async (get) => {
     const task = get(task$);
-    if (task !== "presentation" && task !== "image") {
+    if (task !== "presentation" && task !== "image" && task !== "document") {
       return [];
     }
     return await get(customTemplateCatalog$);
@@ -202,7 +228,6 @@ export function createComposerTaskChipsSignals(
     workflows,
     visualization,
     documentCategory$,
-    documentItems$,
     setDocumentCategory$,
   };
 }

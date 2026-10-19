@@ -698,9 +698,10 @@
       "illustrationPreview": "pratinjau ilustrasi {{title}}",
       "importDeck": "Impor dek Anda sendiri",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Impor dokumen Anda sendiri",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
-      "importFile": "Impor template",
       "importImage": "Impor gambar Anda sendiri",
       "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
@@ -5640,7 +5641,7 @@
       "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
-    "clearSearch": "Hapus pencarian",
+    "builtIn": "Bawaan",
     "custom": "Kustom",
     "delete": {
       "cancel": "Batal",
@@ -5654,14 +5655,6 @@
       "back": "Templat kustom",
       "page": "Halaman {{number}}"
     },
-    "empty": {
-      "description": "Impor dokumen, presentasi, atau gambar untuk menggunakan kembali desainnya.",
-      "document": "Belum ada dokumen",
-      "illustration": "Belum ada gambar",
-      "presentation": "Belum ada presentasi",
-      "title": "Buat sesuai gaya Anda"
-    },
-    "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
     "rename": {
       "action": "Ubah nama",

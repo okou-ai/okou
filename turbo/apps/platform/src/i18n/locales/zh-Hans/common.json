@@ -698,9 +698,10 @@
       "illustrationPreview": "{{title}} 插画预览",
       "importDeck": "导入你自己的演示文稿",
       "importDeckHint": "（.pptx、.ppt、.pdf）",
+      "importDocument": "导入你自己的文档",
+      "importDocumentHint": "（.docx、.doc）",
       "importedSlides_one": "{{count}} 页",
       "importedSlides_other": "{{count}} 页",
-      "importFile": "导入你自己的文件",
       "importImage": "导入自己的图片",
       "importImageHint": "保存为可复用风格",
       "multiAccent": "多口音",
@@ -5640,7 +5641,7 @@
       "preview": "预览{{title}}",
       "rename": "重命名模板"
     },
-    "clearSearch": "清除搜索",
+    "builtIn": "内置",
     "custom": "自定义",
     "delete": {
       "cancel": "取消",
@@ -5654,14 +5655,6 @@
       "back": "自定义模板",
       "page": "第 {{number}} 页"
     },
-    "empty": {
-      "description": "Okou 会把你文件里的设计变成可以反复使用的模板。",
-      "document": "还没有文档",
-      "illustration": "还没有图片",
-      "presentation": "还没有演示文稿",
-      "title": "打造你自己的模板"
-    },
-    "importHint": "可以导入文档、演示文稿或图片。",
     "loadFailed": "无法加载模板。",
     "rename": {
       "action": "重命名",

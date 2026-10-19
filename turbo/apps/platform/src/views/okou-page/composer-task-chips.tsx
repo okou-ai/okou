@@ -20,7 +20,13 @@ import {
 import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { cn } from "@okouai/ui/lib/utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DOCUMENT_TEMPLATE_CATEGORIES } from "@okouai/core/document-template-items";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+import {
+  DOCUMENT_TEMPLATE_CATEGORIES,
+  DOCUMENT_TEMPLATE_ITEMS,
+  type DocumentTemplateCategory,
+  type DocumentTemplateItem,
+} from "@okouai/core/document-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -342,7 +348,7 @@ function ComposerTemplateShelf({
                     {
                       type: "custom",
                       title: template.title,
-                      category: "custom",
+                      category: "illustration",
                       ...(template.coverUrl === null
                         ? {}
                         : { previewImageUrl: template.coverUrl }),
@@ -438,20 +444,116 @@ function ComposerTaskIdeas({
   );
 }
 
+function ComposerDocumentTemplateRail({
+  signals,
+  category,
+  templates,
+  items,
+}: {
+  readonly signals: ComposerSignals;
+  readonly category: DocumentTemplateCategory | "custom" | undefined;
+  readonly templates: readonly UserTemplateCatalogEntry[];
+  readonly items: readonly DocumentTemplateItem[];
+}) {
+  const setMode = useSet(signals.create.setMode$);
+  const selectTemplate = useSet(signals.taskChips.selectTemplate$);
+  const saveDraft = useSet(signals.draft.save$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <ComposerRail
+      signals={signals}
+      key={category}
+      rail={`templates:document:${category}`}
+      gap="gap-4"
+      items={
+        category === "custom"
+          ? [
+              <TemplateImportCard
+                key="import"
+                signals={signals}
+                kind="document"
+                compact
+                className="block w-[142px]"
+                onImported={() => {
+                  setMode(null);
+                }}
+              />,
+              ...templates.map((template) => {
+                return (
+                  <ComposerTemplateCover
+                    key={template.id}
+                    title={template.title}
+                    coverUrl={template.previewAssets[0]?.url ?? null}
+                    width="w-[142px]"
+                    ratio="aspect-[210/297]"
+                    contain
+                    onSelect={() => {
+                      selectTemplate(
+                        {
+                          type: "custom",
+                          selection: { userTemplateId: template.id },
+                        },
+                        {
+                          type: "custom",
+                          title: template.title,
+                          category: "document",
+                        },
+                        "document",
+                      );
+                      detach(saveDraft(pageSignal), Reason.DomCallback);
+                    }}
+                  />
+                );
+              }),
+            ]
+          : items.map((item) => {
+              return (
+                <ComposerTemplateCover
+                  key={item.id}
+                  title={item.title}
+                  coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
+                    width: 284,
+                  })}
+                  width="w-[142px]"
+                  ratio="aspect-[210/297]"
+                  contain
+                  onSelect={() => {
+                    selectTemplate(toDocumentGenerationTemplate(item), {
+                      type: "document",
+                      title: item.title,
+                      category: "document",
+                    });
+                    detach(saveDraft(pageSignal), Reason.DomCallback);
+                  }}
+                />
+              );
+            })
+      }
+    />
+  );
+}
+
 function ComposerDocumentRecommendations({
   signals,
 }: {
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const category = useGet(signals.taskChips.documentCategory$);
-  const items = useGet(signals.taskChips.documentItems$);
+  const categoryResult = useLastLoadable(signals.taskChips.documentCategory$);
+  const category =
+    categoryResult.state === "hasData" ? categoryResult.data : undefined;
+  const switches = useGet(featureSwitch$);
+  const customTemplatesEnabled =
+    switches[FeatureSwitchKey.CustomTemplates] === true;
+  const builtinTemplatesEnabled =
+    switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
+  const custom = useCustomTemplateRecommendations(signals, "document");
+  const items = DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
+    return item.category === category;
+  });
   const setCategory = useSet(signals.taskChips.setDocumentCategory$);
-  const selectTemplate = useSet(signals.taskChips.selectTemplate$);
   const setPickerCategory = useSet(signals.template.setDocumentCategory$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
-  const saveDraft = useSet(signals.draft.save$);
-  const pageSignal = useGet(pageSignal$);
   const label = t(($) => {
     return $.chat.taskChips.shelf.document;
   });
@@ -460,13 +562,18 @@ function ComposerDocumentRecommendations({
       className="flex min-w-0 flex-col gap-3"
       role="group"
       aria-label={label}
+      aria-busy={category === undefined}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-baseline gap-2">
           <p className="truncate text-base font-medium">{label}</p>
-          <span className="text-xs text-muted-foreground" aria-live="polite">
-            {formatLocalizedNumber(items.length)}
-          </span>
+          {category !== undefined && (
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              {formatLocalizedNumber(
+                category === "custom" ? custom.length : items.length,
+              )}
+            </span>
+          )}
         </div>
         <Button
           type="button"
@@ -474,7 +581,11 @@ function ComposerDocumentRecommendations({
           size="xs"
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            setPickerCategory(category);
+            setPickerCategory(
+              category === "custom" || category === undefined
+                ? "all"
+                : category,
+            );
             openTemplates({ kind: "insert", category: "document" });
           }}
         >
@@ -485,20 +596,38 @@ function ComposerDocumentRecommendations({
         </Button>
       </div>
       <TemplateFilterPillRow
-        active={category}
+        active={category ?? ""}
         layout="scroll"
         label={t(($) => {
           return $.documentTemplates.filter;
         })}
-        pills={DOCUMENT_CATEGORIES.map((id) => {
-          return {
-            id,
-            label: t(($) => {
-              return $.documentTemplates.categories[id];
-            }),
-          };
-        })}
+        pills={[
+          ...(customTemplatesEnabled
+            ? [
+                {
+                  id: "custom",
+                  label: t(($) => {
+                    return $.templates.custom;
+                  }),
+                },
+              ]
+            : []),
+          ...(builtinTemplatesEnabled
+            ? DOCUMENT_CATEGORIES.map((id) => {
+                return {
+                  id,
+                  label: t(($) => {
+                    return $.documentTemplates.categories[id];
+                  }),
+                };
+              })
+            : []),
+        ]}
         onSelect={(id) => {
+          if (id === "custom" && customTemplatesEnabled) {
+            setCategory("custom");
+            return;
+          }
           const next = DOCUMENT_CATEGORIES.find((value) => {
             return value === id;
           });
@@ -507,33 +636,11 @@ function ComposerDocumentRecommendations({
           }
         }}
       />
-      <ComposerRail
-        key={category}
+      <ComposerDocumentTemplateRail
         signals={signals}
-        rail={`templates:document:${category}`}
-        gap="gap-4"
-        items={items.map((item) => {
-          return (
-            <ComposerTemplateCover
-              key={item.id}
-              title={item.title}
-              coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
-                width: 284,
-              })}
-              width="w-[142px]"
-              ratio="aspect-[210/297]"
-              contain
-              onSelect={() => {
-                selectTemplate(toDocumentGenerationTemplate(item), {
-                  type: "document",
-                  title: item.title,
-                  category: "document",
-                });
-                detach(saveDraft(pageSignal), Reason.DomCallback);
-              }}
-            />
-          );
-        })}
+        category={category}
+        templates={custom}
+        items={items}
       />
     </div>
   );
@@ -658,8 +765,10 @@ export function ComposerTaskChips({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const switches = useGet(featureSwitch$);
   const documentTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
+    switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true ||
+    switches[FeatureSwitchKey.CustomTemplates] === true;
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;

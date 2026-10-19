@@ -188,22 +188,6 @@ function buttonByName(name: string, container: ParentNode = document.body) {
   });
 }
 
-function kindLabels(filters: HTMLElement): string[] {
-  return queryAllByRoleFast("radio", filters).map((radio) => {
-    return radio.textContent?.trim() ?? "";
-  });
-}
-
-function kindByName(name: string, filters: HTMLElement): HTMLElement {
-  const kind = queryAllByRoleFast("radio", filters).find((radio) => {
-    return radio.textContent?.trim() === name;
-  });
-  if (!kind) {
-    throw new Error(`Expected a kind named "${name}"`);
-  }
-  return kind;
-}
-
 function menuItemByName(name: string): HTMLElement {
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
     return candidate.textContent?.trim() === name;
@@ -214,7 +198,11 @@ function menuItemByName(name: string): HTMLElement {
   return item;
 }
 
-async function openCustomPanel(enabled = true) {
+async function openCustomPanel(
+  enabled = true,
+  category: "Presentation" | "Document" | "Image" = "Presentation",
+  builtInDocuments = false,
+) {
   const user = userEvent.setup({ delay: null });
   const capture = mockTemplateChat();
   await setupPage({
@@ -222,31 +210,39 @@ async function openCustomPanel(enabled = true) {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: enabled,
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: builtInDocuments,
     },
   });
   const dialog = await openTemplatePicker(user);
+  if (category !== "Presentation") {
+    click(tabByText(category));
+  }
   return { user, dialog, capture };
 }
 
-test("The Custom category stays hidden while the switch is off", async () => {
+test("The switch preserves the ordinary Presentation catalog", async () => {
   mockCustomTemplates([customTemplate()]);
 
   const { dialog } = await openCustomPanel(false);
 
-  // The seven format categories are untouched.
   expect(queryTabByText("Presentation")).toBeTruthy();
   expect(queryTabByText("Custom")).toBeUndefined();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
-test("The picker opens on Custom once the switch is on", async () => {
+test("The picker opens Presentation with separate Custom and Built-in sections", async () => {
   mockCustomTemplates([customTemplate()]);
 
   const { dialog } = await openCustomPanel();
 
-  // Custom leads the nav for this member, so the picker lands there without a
-  // click rather than on the first format below it.
-  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "true");
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  expect(queryTabByText("Custom")).toBeUndefined();
+  expect(
+    within(dialog).getByRole("region", { name: "Custom" }),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
@@ -266,7 +262,7 @@ test("The switch decides whether the catalog is requested at all", async () => {
   expect(listed).toBe(0);
 });
 
-test("The Custom category lists every reachable template", async () => {
+test("The Custom section lists owned and shared templates of the selected type", async () => {
   mockCustomTemplates([
     customTemplate(),
     customTemplate({
@@ -281,7 +277,7 @@ test("The Custom category lists every reachable template", async () => {
   ]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
 
   await expect(
     within(dialog).findByText("Q3 board review"),
@@ -313,8 +309,8 @@ test("A template published while the panel is open appears in it", async () => {
     customTemplate({
       id: "33333333-3333-4333-8333-333333333333",
       title: "Party invitation",
-      sourceFilename: "invitation.docx",
-      kind: "document",
+      sourceFilename: "invitation.pptx",
+      kind: "presentation",
     }),
     ...templates,
   ];
@@ -361,7 +357,7 @@ test("A colleague's template names its owner and offers no management", async ()
   ]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
 
   await expect(
     within(dialog).findByText("Theirs"),
@@ -384,7 +380,7 @@ test("Search matches the source file name, not only the title", async () => {
   ]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
   await within(dialog).findByText("Renewal deck");
 
   fireEvent.change(within(dialog).getByPlaceholderText("Search templates"), {
@@ -399,91 +395,63 @@ test("Search matches the source file name, not only the title", async () => {
   expect(within(dialog).getByText("Renewal deck")).toBeInTheDocument();
 });
 
-test("Kind filters combine with search without an All option", async () => {
+test("Content categories scope custom templates and reset their search", async () => {
   mockCustomTemplates([
     customTemplate(),
     documentTemplate(),
     illustrationTemplate(),
   ]);
-
   const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("radiogroup", {
-    name: "Template categories",
-  });
-
-  click(kindByName("Document", filters));
+  await within(dialog).findByText("Q3 board review");
+  click(tabByText("Document"));
   await expect(
     within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
-
-  click(kindByName("Presentation", filters));
-  await expect(
-    within(dialog).findByText("Q3 board review"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
-
-  click(kindByName("Image", filters));
+  click(tabByText("Image"));
   await expect(
     within(dialog).findByText("Market day"),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-
-  const search = within(dialog).getByPlaceholderText("Search templates");
-  await fill(search, "brand-report.docx");
+  expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
+  await fill(
+    within(dialog).getByPlaceholderText("Search templates"),
+    "brand-report.docx",
+  );
   await expect(
     within(dialog).findByText("No matches"),
   ).resolves.toBeInTheDocument();
-  expect(kindByName("Image", filters)).toBeChecked();
-
-  click(kindByName("Document", filters));
+  click(tabByText("Document"));
   await expect(
     within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
-  expect(search).toHaveValue("brand-report.docx");
-  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
-
-  await fill(search, "");
-  await expect(
-    within(dialog).findByText("Brand report"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
-  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-  expect(kindLabels(filters)).toStrictEqual([
-    "Document",
-    "Presentation",
-    "Image",
-  ]);
+  expect(within(dialog).getByPlaceholderText("Search templates")).toHaveValue(
+    "",
+  );
 });
 
-test("An empty kind keeps the search and kind filters in place", async () => {
+test("An empty Custom section keeps the import tile and built-in styles usable", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("radiogroup", {
-    name: "Template categories",
-  });
-  click(kindByName("Image", filters));
-  await expect(
-    within(dialog).findByText("No images yet"),
-  ).resolves.toBeInTheDocument();
-  // The toolbar does not change shape between kinds: the search stays, and
-  // the kind filters remain so the member can leave the empty kind.
-  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
-  const emptyKindFilters = within(dialog).getByRole("radiogroup", {
-    name: "Template categories",
-  });
-  expect(kindByName("Image", emptyKindFilters)).toBeChecked();
-  expect(within(dialog).getAllByLabelText("Import template")).toHaveLength(1);
-  click(kindByName("Presentation", emptyKindFilters));
+  await within(dialog).findByText("Q3 board review");
+  click(tabByText("Image"));
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
+  await within(custom).findByText("0");
+  expect(within(custom).getByLabelText("Import your own")).toHaveAttribute(
+    "accept",
+    ".png,.jpg,.jpeg,.webp,.bmp",
+  );
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
+  expect(tabByText("Image")).toHaveAttribute("aria-selected", "true");
+  click(tabByText("Presentation"));
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-  expect(kindByName("Presentation", emptyKindFilters)).toBeChecked();
 });
 
-test("Returning to Custom shows the loaded catalog without waiting on the network", async () => {
-  // Once the member has left Custom, any further catalog request stays
+test("Returning to a type retains the loaded custom catalog", async () => {
+  // Once the member has left Presentation, any further catalog request stays
   // unanswered for the rest of the test, as on a slow connection.
   const slowNetwork = createDeferredPromise<void>(context.signal);
   let answerCatalog = true;
@@ -503,11 +471,11 @@ test("Returning to Custom shows the loaded catalog without waiting on the networ
   await within(dialog).findByText("Q3 board review");
 
   answerCatalog = false;
-  click(tabByText("Presentation"));
+  click(tabByText("Website"));
   await waitFor(() => {
     expect(within(dialog).queryByText("Q3 board review")).toBeNull();
   });
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
 
   // Reloading on every return blanked the pane until the request answered.
   await expect(
@@ -516,19 +484,19 @@ test("Returning to Custom shows the loaded catalog without waiting on the networ
   expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
 });
 
-test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
+test("An empty custom catalog offers its import tile without an onboarding panel", async () => {
   mockCustomTemplates([]);
-
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
-
-  await expect(
-    within(dialog).findByText(
-      "Import a document, presentation or image to reuse its design.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByLabelText("Import template")).toBeInTheDocument();
-  expect(within(dialog).queryByText("No matches")).not.toBeInTheDocument();
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
+  await within(custom).findByText("0");
+  expect(within(custom).getByLabelText("Import your own deck")).toHaveAttribute(
+    "accept",
+    ".pptx,.ppt,.pdf",
+  );
+  expect(within(custom).queryByRole("paragraph")).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
 });
 
 test("A custom deck steps through its pages on the stage", async () => {
@@ -544,7 +512,7 @@ test("A custom deck steps through its pages on the stage", async () => {
   });
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
   await within(dialog).findByText("Q3 board review");
   click(buttonByName("Preview Q3 board review", dialog)!);
 
@@ -574,7 +542,7 @@ test("A template shared with you opens without the owner's controls", async () =
   });
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
   await within(dialog).findByText("Q3 board review");
   click(buttonByName("Preview Q3 board review", dialog)!);
 
@@ -597,7 +565,7 @@ test("Opening a deck shows its pages and management controls", async () => {
   });
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
   await within(dialog).findByText("Q3 board review");
 
   click(buttonByName("Preview Q3 board review", dialog)!);
@@ -623,7 +591,7 @@ test("Using a custom template sends the row id and nothing about its kind", asyn
 
   const { dialog } = await openCustomPanel();
 
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
   await within(dialog).findByText("Q3 board review");
   click(buttonByName("Use", dialog)!);
 
@@ -682,8 +650,8 @@ test("A document template with no cover is tiled by its format", async () => {
   const template = documentTemplate();
   mockCustomTemplates([template]);
 
-  const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  const { dialog } = await openCustomPanel(true, "Document");
+  click(tabByText("Document"));
 
   await expect(
     within(dialog).findByText("Brand report"),
@@ -707,8 +675,8 @@ test("A document template with a cover is tiled by its first page over a stack",
     }),
   ]);
 
-  const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  const { dialog } = await openCustomPanel(true, "Document");
+  click(tabByText("Document"));
 
   const page = await within(dialog).findByTestId("document-cover-page");
   expect(page).toHaveAttribute("src", DOCUMENT_COVER_URL);
@@ -723,8 +691,8 @@ test("A document template with a cover is tiled by its first page over a stack",
 test("Opening a Word template hands the source file to the Office viewer", async () => {
   mockCustomTemplateStore([documentTemplate()]);
 
-  const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  const { dialog } = await openCustomPanel(true, "Document");
+  click(tabByText("Document"));
   await within(dialog).findByText("Brand report");
   click(buttonByName("Preview Brand report", dialog)!);
 
@@ -755,8 +723,8 @@ test("A PDF template opens in the browser's own viewer", async () => {
     }),
   ]);
 
-  const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
+  const { dialog } = await openCustomPanel(true, "Document");
+  click(tabByText("Document"));
   await within(dialog).findByText("Annual report");
   click(buttonByName("Preview Annual report", dialog)!);
 
@@ -822,7 +790,10 @@ function exampledIllustrationTemplate(
 }
 
 function exampleStrip(dialog: HTMLElement): HTMLElement[] {
-  return queryAllByRoleFast("button", dialog).filter((button) => {
+  return queryAllByRoleFast(
+    "button",
+    within(dialog).getByRole("region", { name: "Custom" }),
+  ).filter((button) => {
     return /^Show variant \d+$/.test(button.getAttribute("aria-label") ?? "");
   });
 }
@@ -830,7 +801,7 @@ function exampleStrip(dialog: HTMLElement): HTMLElement[] {
 test("An image template is shown by the examples its style produced, not its source", async () => {
   mockCustomTemplateStore([exampledIllustrationTemplate()]);
 
-  const { dialog } = await openCustomPanel();
+  const { dialog } = await openCustomPanel(true, "Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   const hero = () => {
@@ -863,7 +834,7 @@ test("An image template is shown by the examples its style produced, not its sou
 test("An image template with one example has nothing to choose between", async () => {
   mockCustomTemplateStore([exampledIllustrationTemplate([EXAMPLE_URLS[0]])]);
 
-  const { dialog } = await openCustomPanel();
+  const { dialog } = await openCustomPanel(true, "Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   expect(
@@ -876,7 +847,7 @@ test("An image template with one example has nothing to choose between", async (
 test("Rename an image template from its card menu", async () => {
   mockCustomTemplateStore([exampledIllustrationTemplate()]);
 
-  const { dialog } = await openCustomPanel();
+  const { dialog } = await openCustomPanel(true, "Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   click(buttonByName("Actions for Quiet UI mockup", dialog)!);
@@ -893,14 +864,15 @@ test("Rename an image template from its card menu", async () => {
 
   // Whitespace is collapsed before it is stored, and the dialog closes once
   // the name is saved.
-  await expect(
-    within(dialog).findByText("Quiet UI kit"),
-  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", { name: "Rename template" }),
     ).not.toBeInTheDocument();
   });
+  await expect(
+    within(dialog).findByText("Quiet UI kit"),
+  ).resolves.toBeInTheDocument();
+  expect(tabByText("Image")).toHaveAttribute("aria-selected", "true");
 });
 
 test("A rename the server refuses keeps the dialog and the typed name", async () => {
@@ -910,7 +882,7 @@ test("A rename the server refuses keeps the dialog and the typed name", async ()
     },
   });
 
-  const { dialog } = await openCustomPanel();
+  const { dialog } = await openCustomPanel(true, "Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   click(buttonByName("Actions for Quiet UI mockup", dialog)!);
@@ -935,7 +907,7 @@ async function openDetail(
   dialog: HTMLElement,
   title: string,
 ): Promise<HTMLElement> {
-  click(tabByText("Custom"));
+  click(tabByText("Presentation"));
   await within(dialog).findByText(title);
   click(buttonByName(`Preview ${title}`, dialog)!);
   // The preview dialog is portaled out of the picker, so the editor is found
@@ -1085,18 +1057,20 @@ test("Changing visibility updates the card's meta line", async () => {
   expect(within(dialog).queryByText("Private")).not.toBeInTheDocument();
 });
 
-test("Deleting a template removes only its card", async () => {
-  const board = customTemplate();
-  const renewal = customTemplate({
+test("Deleting an image template keeps its category and other cards", async () => {
+  const board = exampledIllustrationTemplate();
+  const renewal = exampledIllustrationTemplate();
+  const remaining = {
+    ...renewal,
     id: "22222222-2222-4222-8222-222222222222",
-    title: "Renewal deck",
-  });
-  mockCustomTemplateStore([board, renewal]);
+    title: "Renewal style",
+  };
+  mockCustomTemplateStore([board, remaining]);
 
-  const { dialog } = await openCustomPanel();
+  const { dialog } = await openCustomPanel(true, "Image");
   await within(dialog).findByText(board.title);
 
-  click(buttonByName("Actions for Q3 board review", dialog)!);
+  click(buttonByName(`Actions for ${board.title}`, dialog)!);
   await waitFor(() => {
     expect(menuItemByName("Delete")).toBeInTheDocument();
   });
@@ -1111,7 +1085,8 @@ test("Deleting a template removes only its card", async () => {
   await waitFor(() => {
     expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
   });
-  expect(within(dialog).getByText(renewal.title)).toBeInTheDocument();
+  expect(within(dialog).getByText(remaining.title)).toBeInTheDocument();
+  expect(tabByText("Image")).toHaveAttribute("aria-selected", "true");
 });
 
 test("Cancelling the delete confirmation keeps the template", async () => {
@@ -1219,25 +1194,26 @@ test.each(["visibility change", "deletion"] as const)(
   },
 );
 
-test("Uploading moves to Custom once the switch is on", async () => {
+test("Each content type owns a format-specific import tile", async () => {
   mockCustomTemplates([customTemplate()]);
-
   const { dialog } = await openCustomPanel();
-
-  // The built-in Presentation tab delegates importing to Custom.
-  click(tabByText("Presentation"));
-  await waitFor(() => {
-    expect(
-      dialog.querySelector("[data-presentation-template-import]"),
-    ).toBeNull();
-  });
-
-  click(tabByText("Custom"));
   await within(dialog).findByText("Q3 board review");
-  expect(within(dialog).getByLabelText("Import template")).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Import your own deck")).toHaveAttribute(
+    "accept",
+    ".pptx,.ppt,.pdf",
+  );
+  click(tabByText("Document"));
+  expect(
+    within(dialog).getByLabelText("Import your own document"),
+  ).toHaveAttribute("accept", ".docx,.doc");
+  click(tabByText("Image"));
+  expect(within(dialog).getByLabelText("Import your own")).toHaveAttribute(
+    "accept",
+    ".png,.jpg,.jpeg,.webp,.bmp",
+  );
 });
 
-test("A document can be imported while browsing images", async () => {
+test("Importing a document uses the custom template dispatcher", async () => {
   mockCustomTemplates([illustrationTemplate()]);
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000011",
@@ -1250,9 +1226,9 @@ test("A document can be imported while browsing images", async () => {
 
   const { user, dialog, capture } = await openCustomPanel();
 
-  click(tabByText("Custom"));
+  click(tabByText("Document"));
   await user.upload(
-    await within(dialog).findByLabelText("Import template"),
+    await within(dialog).findByLabelText("Import your own document"),
     new File(["docx"], "brand-report.docx", {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
@@ -1294,9 +1270,9 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
   });
   const dialog = await openTemplatePicker(user);
 
-  click(tabByText("Custom"));
+  click(tabByText("Document"));
   await user.upload(
-    await within(dialog).findByLabelText("Import template"),
+    await within(dialog).findByLabelText("Import your own document"),
     new File(["docx"], "brand-report.docx", {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
@@ -1311,4 +1287,42 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+});
+
+test("Built-in document categories do not filter out custom documents", async () => {
+  mockCustomTemplates([documentTemplate()]);
+  const { dialog } = await openCustomPanel(true, "Document", true);
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
+  await within(custom).findByText("Brand report");
+  const builtIn = within(dialog).getByRole("region", { name: "Built-in" });
+  click(buttonByName("Reports", builtIn)!);
+  expect(within(custom).getByText("Brand report")).toBeInTheDocument();
+  expect(within(builtIn).getByText("Two-column report")).toBeInTheDocument();
+});
+
+test("A failed custom catalog leaves built-in templates available and can retry", async () => {
+  let fail = true;
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return fail
+      ? respond(500, {
+          error: { code: "INTERNAL_SERVER_ERROR", message: "Unavailable" },
+        })
+      : respond(200, [customTemplate()]);
+  });
+  const { dialog } = await openCustomPanel();
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
+  const retry = await waitFor(() => {
+    const button = buttonByName("Try again", custom);
+    expect(button).toBeTruthy();
+    return button!;
+  });
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
+  expect(within(custom).getByLabelText("Import your own deck")).toBeEnabled();
+  fail = false;
+  click(retry);
+  await expect(
+    within(custom).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
 });

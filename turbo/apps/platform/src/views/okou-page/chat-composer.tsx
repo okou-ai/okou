@@ -46,7 +46,10 @@ import type {
   CustomConnectorBrief,
 } from "@okouai/api-contracts/contracts/connector-overview";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+import type {
+  UserTemplateCatalogEntry,
+  UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
@@ -90,7 +93,6 @@ import {
   Select,
   SelectContent,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
@@ -130,7 +132,6 @@ import {
   FileText,
   Globe,
   Image as ImageIcon,
-  Layers,
   LayoutTemplate,
   Loader2,
   Lock,
@@ -198,13 +199,11 @@ import {
 import { connectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
 import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
 import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
-import {
-  resetCustomTemplatePicker$,
-  resetCustomTemplatePickerView$,
-} from "../../signals/okou-page/custom-template-library.ts";
+import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
 import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
+  DOCUMENT_TEMPLATE_IMPORT_ACCEPT,
   PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
   IMAGE_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
@@ -285,7 +284,8 @@ import {
   toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
-import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
+import { TemplateSourceSection } from "./template-source-section.tsx";
+import { CustomTemplatePickerSection } from "./custom-template-picker-pane.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import {
   ComposerPaidToolNotice,
@@ -3331,34 +3331,18 @@ function TemplatePickerCategoryNav({
   customTemplatesEnabled,
   documentTemplatesEnabled,
   onChange,
-  onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
   documentTemplatesEnabled: boolean;
   onChange: (value: string) => void;
-  onReopenCustom: () => void;
 }) {
   const { t } = useTranslation();
-  // Custom leads the list and is separated by a rule, because it answers who
-  // made a template while the formats below it answer what you are making. The
-  // format options keep their own order untouched.
   const categoryOptions: {
     value: string;
     label: string;
     Icon: LucideIcon;
   }[] = [
-    ...(customTemplatesEnabled
-      ? [
-          {
-            value: "custom",
-            label: t(($) => {
-              return $.templates.custom;
-            }),
-            Icon: Layers,
-          },
-        ]
-      : []),
     {
       value: "slides",
       label: t(($) => {
@@ -3366,7 +3350,7 @@ function TemplatePickerCategoryNav({
       }),
       Icon: Presentation,
     },
-    ...(documentTemplatesEnabled
+    ...(documentTemplatesEnabled || customTemplatesEnabled
       ? [
           {
             value: "document",
@@ -3387,7 +3371,9 @@ function TemplatePickerCategoryNav({
     {
       value: "illustration",
       label: t(($) => {
-        return $.artifacts.templates.illustration;
+        return customTemplatesEnabled
+          ? $.artifacts.kinds.image
+          : $.artifacts.templates.illustration;
       }),
       Icon: ImageIcon,
     },
@@ -3414,14 +3400,7 @@ function TemplatePickerCategoryNav({
 
   return (
     <>
-      <div
-        className={cn(
-          "shrink-0 sm:hidden",
-          selectedCategory === "custom"
-            ? "flex h-[68px] items-center px-5 pr-44 max-[374px]:pr-40"
-            : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
-        )}
-      >
+      <div className="shrink-0 border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4 sm:hidden">
         <Select
           items={categoryItems}
           value={selectedCategory}
@@ -3443,24 +3422,17 @@ function TemplatePickerCategoryNav({
             aria-label={t(($) => {
               return $.artifacts.templates.category;
             })}
-            className={
-              selectedCategory === "custom"
-                ? "h-8 w-auto max-w-full border-0 bg-background px-0 max-[374px]:text-xs"
-                : "h-9 w-full bg-card"
-            }
+            className="h-9 w-full bg-card"
           >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryItems.flatMap(({ value, label }) => {
-              return [
+            {categoryItems.map(({ value, label }) => {
+              return (
                 <SelectItem key={value} value={value}>
                   {label}
-                </SelectItem>,
-                ...(value === "custom"
-                  ? [<SelectSeparator key={`${value}-rule`} />]
-                  : []),
-              ];
+                </SelectItem>
+              );
             })}
           </SelectContent>
         </Select>
@@ -3476,39 +3448,24 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex h-auto min-h-0 flex-1 flex-col items-stretch justify-start gap-0.5 overflow-y-auto rounded-none bg-transparent p-0 px-3 pb-3"
           >
-            {categoryOptions.flatMap(({ value, label, Icon }) => {
-              const selected = value === selectedCategory;
-              return [
+            {categoryOptions.map(({ value, label, Icon }) => {
+              return (
                 <TabsTrigger
                   key={value}
                   value={value}
-                  // Reactivating Custom clears its view without reloading the
-                  // catalog after native focus activation changed the category.
-                  onClick={
-                    selected && value === "custom" ? onReopenCustom : undefined
-                  }
                   className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-state-selected data-active:font-medium data-active:text-foreground data-active:!shadow-none focus-visible:ring-inset"
                 >
                   <Icon
                     className={cn(
                       "h-4 w-4 shrink-0 transition-colors",
-                      selected
+                      value === selectedCategory
                         ? "text-foreground"
                         : "text-gray-700 group-hover:text-gray-800",
                     )}
                   />
                   <span className="truncate">{label}</span>
-                </TabsTrigger>,
-                ...(value === "custom"
-                  ? [
-                      <div
-                        key={`${value}-rule`}
-                        role="presentation"
-                        className="my-2 shrink-0 border-t border-t-gray-400"
-                      />,
-                    ]
-                  : []),
-              ];
+                </TabsTrigger>
+              );
             })}
           </TabsList>
         </div>
@@ -3530,7 +3487,7 @@ function TemplatePickerHeader() {
   );
 }
 
-function TemplatePickerWorkflowSearch({
+function TemplatePickerSearch({
   search,
   onSearchChange,
 }: {
@@ -3539,7 +3496,7 @@ function TemplatePickerWorkflowSearch({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="relative w-56 shrink-0">
+    <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -3617,18 +3574,41 @@ export function TemplateImportCard({
 }: {
   signals: ComposerSignals;
   onImported: () => void;
-  kind?: "presentation" | "illustration";
+  kind?: UserTemplateKind;
   compact?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
   const importTemplate = useSet(importPresentationTemplateDeck$);
-  const label = t(($) => {
-    return kind === "illustration"
-      ? $.artifacts.templates.importImage
-      : $.artifacts.templates.importDeck;
-  });
+  const labels = {
+    presentation: t(($) => {
+      return $.artifacts.templates.importDeck;
+    }),
+    document: t(($) => {
+      return $.artifacts.templates.importDocument;
+    }),
+    illustration: t(($) => {
+      return $.artifacts.templates.importImage;
+    }),
+  };
+  const hints = {
+    presentation: t(($) => {
+      return $.artifacts.templates.importDeckHint;
+    }),
+    document: t(($) => {
+      return $.artifacts.templates.importDocumentHint;
+    }),
+    illustration: t(($) => {
+      return $.artifacts.templates.importImageHint;
+    }),
+  };
+  const accepts = {
+    presentation: PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+    document: DOCUMENT_TEMPLATE_IMPORT_ACCEPT,
+    illustration: IMAGE_TEMPLATE_IMPORT_ACCEPT,
+  };
+  const label = labels[kind];
   return (
     <label
       data-presentation-template-import={
@@ -3640,7 +3620,13 @@ export function TemplateImportCard({
         className={cn(
           TEMPLATE_TILE_MEDIA,
           "block bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
-          kind === "illustration" ? "aspect-[4/5]" : "aspect-video",
+          kind === "illustration"
+            ? "aspect-[4/5]"
+            : kind === "document"
+              ? compact
+                ? "aspect-[210/297]"
+                : "aspect-[4/3]"
+              : "aspect-video",
           compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
       >
@@ -3652,11 +3638,7 @@ export function TemplateImportCard({
         <input
           type="file"
           className="sr-only"
-          accept={
-            kind === "illustration"
-              ? IMAGE_TEMPLATE_IMPORT_ACCEPT
-              : PRESENTATION_TEMPLATE_IMPORT_ACCEPT
-          }
+          accept={accepts[kind]}
           aria-label={label}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
@@ -3686,7 +3668,8 @@ export function TemplateImportCard({
         <span
           className={cn(
             compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
-            kind === "illustration" && "whitespace-normal",
+            (kind === "illustration" || kind === "document") &&
+              "whitespace-normal",
           )}
         >
           {label}
@@ -3697,11 +3680,7 @@ export function TemplateImportCard({
             compact ? "text-[12px] leading-4" : "text-xs",
           )}
         >
-          {t(($) => {
-            return kind === "illustration"
-              ? $.artifacts.templates.importImageHint
-              : $.artifacts.templates.importDeckHint;
-          })}
+          {hints[kind]}
         </span>
       </span>
     </label>
@@ -4939,41 +4918,38 @@ function PptTemplateGrid({
   onImported: () => void;
   signals: ComposerSignals;
 }) {
-  // Uploading and the decks it produced belong to whichever catalog this
-  // member can open. Once Custom is theirs, both live there, and this tab is
-  // the built-in templates alone; until then it is the import tile, the
-  // accessible uploaded decks (owned decks first), then the built-ins.
   const customTemplates =
     useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
+  if (customTemplates) {
+    return (
+      <TemplateSourceSection source="builtIn">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {builtInCards}
+        </div>
+      </TemplateSourceSection>
+    );
+  }
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {customTemplates ? null : (
-        <>
-          <ImportedPresentationTemplateLibraryStatus signals={signals} />
-          <TemplateImportCard signals={signals} onImported={onImported} />
-        </>
-      )}
-      {customTemplates ? null : (
-        <>
-          {importedItems.map(({ imageBuffers, template }) => {
-            return (
-              <ImportedPptCard
-                key={template.id}
-                imageSignals={imageBuffers.card}
-                template={template}
-                selected={
-                  value?.type === "presentation" &&
-                  value.selection.templateId ===
-                    formatUserPresentationTemplateId(template.id)
-                }
-                onSelect={onSelectImported}
-                onPreview={onPreviewImported}
-                signals={signals}
-              />
-            );
-          })}
-        </>
-      )}
+      <ImportedPresentationTemplateLibraryStatus signals={signals} />
+      <TemplateImportCard signals={signals} onImported={onImported} />
+      {importedItems.map(({ imageBuffers, template }) => {
+        return (
+          <ImportedPptCard
+            key={template.id}
+            imageSignals={imageBuffers.card}
+            template={template}
+            selected={
+              value?.type === "presentation" &&
+              value.selection.templateId ===
+                formatUserPresentationTemplateId(template.id)
+            }
+            onSelect={onSelectImported}
+            onPreview={onPreviewImported}
+            signals={signals}
+          />
+        );
+      })}
       {builtInCards}
     </div>
   );
@@ -5150,7 +5126,6 @@ function TemplatePickerDialog({
     signals.template.resetImportedPresentationTemplatePicker$,
   );
   const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
-  const resetCustomTemplatePickerView = useSet(resetCustomTemplatePickerView$);
   const restorePresentationGridScroll = useSet(
     signals.template.restoreTemplatePickerPresentationScrollRef$,
   );
@@ -5189,7 +5164,23 @@ function TemplatePickerDialog({
   const features = useGet(featureSwitch$);
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
-  const showTemplatePickerSearch = selectedCategory === "workflow";
+  const showCustomTemplates =
+    customTemplatesEnabled &&
+    ["slides", "document", "illustration"].includes(selectedCategory);
+  const showTemplatePickerSearch =
+    selectedCategory === "workflow" || showCustomTemplates;
+  const categoryTitle =
+    selectedCategory === "slides"
+      ? t(($) => {
+          return $.artifacts.kinds.presentation;
+        })
+      : selectedCategory === "document"
+        ? t(($) => {
+            return $.documentTemplates.title;
+          })
+        : t(($) => {
+            return $.artifacts.kinds.image;
+          });
 
   const previewImageUrlsForCategory = (targetCategory: string) => {
     if (targetCategory === "slides") {
@@ -5294,10 +5285,10 @@ function TemplatePickerDialog({
 
   // The frame mounts these controls only while showing the gallery.
   const handleCategoryChange = (nextCategory: string) => {
-    // Returning to Custom keeps the catalog it already has. Publishes and
-    // mutations refresh it on their own, and a forced reload here blanked the
-    // whole pane until the request came back.
     setCategory(nextCategory);
+    if (customTemplatesEnabled) {
+      setSearch("");
+    }
     prewarmTemplatePreviewsForCategory(nextCategory);
   };
 
@@ -5306,18 +5297,25 @@ function TemplatePickerDialog({
     prewarmTemplatePreviewsForCategory(selectedCategory);
   };
 
-  const presentationCards = presentationItems.map((item) => {
-    return (
-      <PptCard
-        key={item.slug}
-        item={item}
-        selected={isSelectedPresentationTemplate(item, value)}
-        onSelect={handleSelectPresentation}
-        onPreview={handlePreview}
-        signals={signals}
-      />
-    );
-  });
+  const presentationCards = presentationItems
+    .filter((item) => {
+      return (
+        !customTemplatesEnabled ||
+        item.title.toLowerCase().includes(search.trim().toLowerCase())
+      );
+    })
+    .map((item) => {
+      return (
+        <PptCard
+          key={item.slug}
+          item={item}
+          selected={isSelectedPresentationTemplate(item, value)}
+          onSelect={handleSelectPresentation}
+          onPreview={handlePreview}
+          signals={signals}
+        />
+      );
+    });
 
   return (
     <TemplatePickerDialogFrame
@@ -5358,7 +5356,6 @@ function TemplatePickerDialog({
                   features[FeatureSwitchKey.BuiltinDocumentTemplates] === true
                 }
                 onChange={handleCategoryChange}
-                onReopenCustom={resetCustomTemplatePickerView}
               />
               {/* Keep the existing single active content tree and its category
                   unmounting runModel; signals retain search and scroll state. */}
@@ -5367,16 +5364,20 @@ function TemplatePickerDialog({
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory !== "custom" &&
-                selectedCategory !== "document" ? (
+                {selectedCategory !== "document" || showCustomTemplates ? (
                   <div
                     className={cn(
                       "relative h-[68px] shrink-0 items-center px-6 pr-14",
                       showTemplatePickerSearch ? "flex" : "hidden sm:flex",
                     )}
                   >
+                    {showCustomTemplates ? (
+                      <h2 className="mr-auto hidden text-base font-semibold sm:block">
+                        {categoryTitle}
+                      </h2>
+                    ) : null}
                     {showTemplatePickerSearch ? (
-                      <TemplatePickerWorkflowSearch
+                      <TemplatePickerSearch
                         search={search}
                         onSearchChange={handleSearchChange}
                       />
@@ -5386,10 +5387,20 @@ function TemplatePickerDialog({
                 <TemplatePickerCategoryContent
                   signals={signals}
                   selectedCategory={selectedCategory}
+                  customTemplatesEnabled={customTemplatesEnabled}
+                  search={search}
                   pptCards={presentationCards}
                   importedPptItems={importedItems}
                   websiteItems={WEBSITE_TEMPLATE_ITEMS}
-                  illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
+                  illustrationItems={
+                    customTemplatesEnabled
+                      ? ILLUSTRATION_TEMPLATE_ITEMS.filter((item) => {
+                          return item.title
+                            .toLowerCase()
+                            .includes(search.trim().toLowerCase());
+                        })
+                      : ILLUSTRATION_TEMPLATE_ITEMS
+                  }
                   workflowCatalog={workflowCatalog}
                   value={value}
                   illustrationVariantIndex={illustrationVariantIndex}
@@ -5425,6 +5436,8 @@ function TemplatePickerDialog({
 function TemplatePickerCategoryContent({
   signals,
   selectedCategory,
+  customTemplatesEnabled,
+  search,
   pptCards,
   importedPptItems,
   websiteItems,
@@ -5449,6 +5462,8 @@ function TemplatePickerCategoryContent({
 }: {
   signals: ComposerSignals;
   selectedCategory: string;
+  customTemplatesEnabled: boolean;
+  search: string;
   pptCards: ReactNode;
   importedPptItems: readonly ImportedPresentationTemplatePickerItem[];
   websiteItems: readonly WebsiteTemplateItem[];
@@ -5477,23 +5492,30 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
 }) {
+  const customSection = (kind: UserTemplateKind) => {
+    return customTemplatesEnabled ? (
+      <CustomTemplatePickerSection
+        signals={signals}
+        kind={kind}
+        query={search}
+        onSelect={onSelectCustom}
+        importCard={
+          <TemplateImportCard
+            kind={kind}
+            signals={signals}
+            onImported={onImported}
+          />
+        }
+      />
+    ) : undefined;
+  };
   if (selectedCategory === "document") {
     return (
       <DocumentTemplatePickerPane
         signals={signals}
         onSelect={onSelectDocument}
+        customTemplates={customSection("document")}
       />
-    );
-  }
-  if (selectedCategory === "custom") {
-    return (
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <CustomTemplatePickerPane
-          signals={signals}
-          onSelect={onSelectCustom}
-          onImported={onImported}
-        />
-      </div>
     );
   }
   if (selectedCategory === "slides") {
@@ -5506,6 +5528,7 @@ function TemplatePickerCategoryContent({
           onPresentationScroll(event.currentTarget.scrollTop);
         }}
       >
+        {customSection("presentation")}
         <PptTemplateGrid
           builtInCards={pptCards}
           importedItems={importedPptItems}
@@ -5549,14 +5572,28 @@ function TemplatePickerCategoryContent({
           });
         }}
       >
-        <IllustrationTemplateGrid
-          items={illustrationItems}
-          value={value}
-          variantIndexBySlug={illustrationVariantIndex}
-          onSelect={onSelectIllustration}
-          onVariantChange={onIllustrationVariantChange}
-          runtime={runtime}
-        />
+        {customSection("illustration")}
+        {customTemplatesEnabled ? (
+          <TemplateSourceSection source="builtIn">
+            <IllustrationTemplateGrid
+              items={illustrationItems}
+              value={value}
+              variantIndexBySlug={illustrationVariantIndex}
+              onSelect={onSelectIllustration}
+              onVariantChange={onIllustrationVariantChange}
+              runtime={runtime}
+            />
+          </TemplateSourceSection>
+        ) : (
+          <IllustrationTemplateGrid
+            items={illustrationItems}
+            value={value}
+            variantIndexBySlug={illustrationVariantIndex}
+            onSelect={onSelectIllustration}
+            onVariantChange={onIllustrationVariantChange}
+            runtime={runtime}
+          />
+        )}
       </div>
     );
   }

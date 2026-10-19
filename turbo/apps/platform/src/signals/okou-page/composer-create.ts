@@ -64,7 +64,8 @@ export function createComposerCreateSignals(
   const mode$ = computed((get) => {
     const mode = get(internalMode$);
     return mode === "document" &&
-      get(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] !== true
+      get(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] !== true &&
+      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] !== true
       ? null
       : mode;
   });

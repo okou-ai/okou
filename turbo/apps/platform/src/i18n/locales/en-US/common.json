@@ -699,9 +699,10 @@
       "illustrationPreview": "{{title}} illustration preview",
       "importDeck": "Import your own deck",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Import your own document",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Import template",
       "importImage": "Import your own",
       "importImageHint": "Save as a style",
       "multiAccent": "Multi-accent",
@@ -5656,7 +5657,7 @@
       "preview": "Preview {{title}}",
       "rename": "Rename template"
     },
-    "clearSearch": "Clear search",
+    "builtIn": "Built-in",
     "custom": "Custom",
     "delete": {
       "cancel": "Cancel",
@@ -5670,14 +5671,6 @@
       "back": "Custom templates",
       "page": "Page {{number}}"
     },
-    "empty": {
-      "description": "Import a document, presentation or image to reuse its design.",
-      "document": "No documents yet",
-      "illustration": "No images yet",
-      "presentation": "No presentations yet",
-      "title": "Make it yours"
-    },
-    "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "rename": {
       "action": "Rename",
