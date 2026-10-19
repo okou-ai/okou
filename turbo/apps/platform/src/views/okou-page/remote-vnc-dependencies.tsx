@@ -5,8 +5,8 @@ import { Button } from "@okouai/ui";
 import {
   remoteControlGuidedEnabled$,
   setRemoteNetworkPicker$,
+  openRemoteDependencySsh$,
 } from "../../signals/remote-control-setup.ts";
-import { openSshDialog$ } from "../../signals/ssh.ts";
 import { vncEditor$, requiresVncProtectiveRoute } from "../../signals/vnc.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -19,7 +19,7 @@ export function RemoteVncDependencies({
   const { t } = useTranslation();
   const enabled = useGet(remoteControlGuidedEnabled$);
   const editor = useGet(vncEditor$);
-  const [opening, open] = useLoadableSet(openSshDialog$);
+  const [opening, open] = useLoadableSet(openRemoteDependencySsh$);
   const network = useSet(setRemoteNetworkPicker$);
   const signal = useGet(pageSignal$);
   if (!enabled) {
@@ -42,7 +42,7 @@ export function RemoteVncDependencies({
           className="justify-self-start"
           disabled={disabled || opening.state === "loading"}
           onClick={() => {
-            detach(open("create", null, signal), Reason.DomCallback);
+            detach(open(signal), Reason.DomCallback);
           }}
         >
           {t(($) => {

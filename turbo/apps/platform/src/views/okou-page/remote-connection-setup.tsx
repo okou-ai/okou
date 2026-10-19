@@ -30,6 +30,7 @@ import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   beginRemoteGuide$,
+  enterRemoteSetup$,
   leaveRemoteSetup$,
   openRemoteLogin$,
   openRemoteNetwork$,
@@ -199,6 +200,7 @@ function SetupEntry({
 }) {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
+  const chooseProtocol = useSet(enterRemoteSetup$);
   const [starting, start] = useLoadableSet(beginRemoteGuide$);
   const signal = useGet(pageSignal$);
   return (
@@ -211,10 +213,7 @@ function SetupEntry({
       <SegmentControl
         value={setup.protocol}
         onValueChange={(value) => {
-          update({
-            protocol: value === "vnc" && vncEnabled ? "vnc" : "ssh",
-            port: value === "vnc" ? "5900" : "22",
-          });
+          chooseProtocol(value === "vnc" && vncEnabled ? "vnc" : "ssh");
         }}
         aria-label={t(($) => {
           return $.remoteControlSetup.entryTitle;

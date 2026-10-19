@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/tailscale";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -389,4 +389,56 @@ test("VNC saves only after the separate login and server-identity steps", async 
       security: { type: "x509_none", trust: { mode: "system" } },
     }),
   ]);
+});
+
+test("Switching protocols starts the matching editor instead of retaining the previous protocol form", async () => {
+  const username = await directForm();
+  await fill(username, "operator");
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", {
+    name: "Use existing connection settings",
+  });
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(screen.getByText("VNC", { selector: "strong" }));
+  click(getAction("button", "Start setup"));
+  await screen.findByRole("heading", { name: "Target operating system" });
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", {
+    name: "Enable screen access on the target computer",
+  });
+  click(getAction("button", "The service is ready"));
+  await screen.findByRole("heading", {
+    name: "Which login settings does the VNC service use?",
+  });
+  expect(screen.queryByLabelText("SSH username")).toBeNull();
+});
+
+test("Leaving setup cancels an editor that is still loading credentials", async () => {
+  const gate = context.mocks.deferred<void>();
+  context.mocks.api(sshCredentialsContract.list, async ({ respond }) => {
+    await gate.promise;
+    return respond(200, { credentials: [] });
+  });
+  await page("/connectors?scope=remote-control&setup=ssh");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(
+    getAction("button", "Already have connection details? Enter them directly"),
+  );
+  await screen.findByRole("heading", {
+    name: "Use existing connection settings",
+  });
+  click(screen.getByText("Direct connection"));
+  click(screen.getByTestId("connectors-scope-private-network"));
+  await screen.findByRole("heading", { name: "Private networks" });
+  await act(async () => {
+    gate.resolve();
+    await gate.promise;
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(screen.getByTestId("connectors-scope-remote-control"));
+  await screen.findByRole("heading", { name: "Remote connections" });
+  expect(screen.queryByLabelText("SSH username")).toBeNull();
 });

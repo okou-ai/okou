@@ -3,6 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
+import { resetSignal } from "./utils.ts";
 import {
   chooseSshAuthMethod$,
   chooseSshConnectionMode$,
@@ -75,6 +76,7 @@ export interface RemoteSetup {
 
 const setup$ = state<RemoteSetup | null>(null);
 const flowSequence$ = state(0);
+const resetSetupOperation$ = resetSignal();
 export const remoteControlGuidedEnabled$ = computed((get) => {
   return (
     get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ?? false
@@ -124,6 +126,7 @@ export const remoteSetup$ = computed((get) => {
 });
 
 export const resetRemoteSetup$ = command(({ get, set }) => {
+  set(resetSetupOperation$);
   if (get(setup$)) {
     set(closeSshDialog$);
     set(closeVncDialog$);
@@ -136,6 +139,7 @@ export const resetRemoteSetup$ = command(({ get, set }) => {
   });
 });
 export const leaveRemoteSetup$ = command(({ get, set }) => {
+  set(resetSetupOperation$);
   set(setup$, null);
   set(flowSequence$, (value) => {
     return value + 1;
@@ -210,7 +214,8 @@ export const beginRemoteGuide$ = command(
   },
 );
 export const openRemoteLogin$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetSetupOperation$, parentSignal);
     const current = get(remoteSetup$);
     if (!current) {
       return;
@@ -255,8 +260,9 @@ export const openRemoteNetwork$ = command(
   async (
     { get, set },
     kind: "tailscale" | "cloudflare_access",
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ) => {
+    const signal = set(resetSetupOperation$, parentSignal);
     const current = get(remoteSetup$);
     if (!current) {
       return;
@@ -401,8 +407,9 @@ export const chooseRemoteNetworkProvider$ = command(
   async (
     { get, set },
     kind: "tailscale" | "cloudflare_access",
-    signal: AbortSignal,
+    parentSignal: AbortSignal,
   ) => {
+    const signal = set(resetSetupOperation$, parentSignal);
     if (!get(remoteControlGuidedEnabled$)) {
       return;
     }
@@ -413,5 +420,13 @@ export const chooseRemoteNetworkProvider$ = command(
     }
     signal.throwIfAborted();
     set(networkPicker$, false);
+  },
+);
+
+export const openRemoteDependencySsh$ = command(
+  async ({ set }, parentSignal: AbortSignal) => {
+    const signal = set(resetSetupOperation$, parentSignal);
+    await set(openSshDialog$, "create", null, signal);
+    signal.throwIfAborted();
   },
 );
