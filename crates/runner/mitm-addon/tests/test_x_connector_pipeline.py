@@ -72,7 +72,7 @@ class TestXConnectorResponsePipeline:
             for event in body["events"]
         ]
 
-    def test_full_response_pipeline_large_x_json_uses_incremental_parser_without_buffer(
+    async def test_full_response_pipeline_large_x_json_uses_incremental_parser_without_buffer(
         self, tmp_path, real_flow, mitm_ctx
     ):
         """responseheaders + response bill X JSON without a body-prefix copy."""
@@ -82,6 +82,7 @@ class TestXConnectorResponsePipeline:
         callback = response_stream(flow)
         callback(b'{"data":[{"id":"1","text":"')
         callback(b"x" * (STREAM_BUFFER_LIMIT + 4096))
+        await mitm_addon.responseinspection(flow)
         callback(b'"}],"includes":{"users":[{"id":"u1"}]},"meta":{"result_count":1}}')
         assert metadata_keys.STREAM_BUFFER not in flow.metadata
         assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
@@ -175,7 +176,7 @@ class TestXConnectorResponsePipeline:
         assert lost_visibility_entries[0]["body_truncated"] is False
 
     @pytest.mark.parametrize("encoding_case", ["gzip", "deflate"])
-    def test_full_response_pipeline_bounds_compressed_x_json_work(
+    async def test_full_response_pipeline_bounds_compressed_x_json_work(
         self, tmp_path, real_flow, encoding_case
     ):
         flow = make_x_pipeline_flow(
@@ -197,6 +198,7 @@ class TestXConnectorResponsePipeline:
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)
         assert callback(compressed) == compressed
+        await mitm_addon.responseinspection(flow)
         corrupt_followup = bytearray(_compress_body(encoding_case, b""))
         checksum_offset = -8 if encoding_case == "gzip" else -1
         corrupt_followup[checksum_offset] ^= 0xFF
@@ -682,7 +684,7 @@ class TestXConnectorResponsePipeline:
         assert entry["parse_error"]
         assert "connector_response_finish" not in flow.metadata
 
-    def test_response_logs_x_json_parse_error_after_forensic_buffer_truncates(
+    async def test_response_logs_x_json_parse_error_after_forensic_buffer_truncates(
         self, tmp_path, real_flow, mitm_ctx
     ):
         """The X JSON parser should stay authoritative after the forensic buffer fills."""
@@ -699,6 +701,7 @@ class TestXConnectorResponsePipeline:
         mitm_addon.responseheaders(flow)
         response_stream(flow)(b'{"data":[{"id":"1","text":"' + b"x" * STREAM_BUFFER_LIMIT)
         assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        await mitm_addon.responseinspection(flow)
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)

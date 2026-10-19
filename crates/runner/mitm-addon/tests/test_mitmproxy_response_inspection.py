@@ -29,7 +29,7 @@ from tests.model_sse_cooperative_helpers import (
     model_sse_update,
 )
 from tests.pending_helpers import assert_pending
-from tests.x_flow_helpers import make_x_pipeline_flow
+from tests.x_flow_helpers import make_x_pipeline_flow, x_json_user_page
 
 
 class _ResponsePeerLayer(layer.Layer):
@@ -61,9 +61,11 @@ class _ResponsePeerLayer(layer.Layer):
     ("cancel_inspection", "response_kind"),
     [
         pytest.param(False, "x", id="complete-x", marks=pytest.mark.shard_cost(10)),
+        pytest.param(False, "x-json", id="complete-x-json"),
         pytest.param(False, "model-sse", id="complete-model-sse", marks=pytest.mark.shard_cost(2)),
         pytest.param(False, "model-json", id="complete-model-json"),
         pytest.param(True, "x", id="cancel-hook-x"),
+        pytest.param(True, "x-json", id="cancel-hook-x-json"),
         pytest.param(True, "model-sse", id="cancel-hook-model-sse"),
         pytest.param(True, "model-json", id="cancel-hook-model-json"),
     ],
@@ -85,9 +87,21 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         first_wire = gzip.compress(b"{}\n" * 100_000)
         second_wire = gzip.compress(b'{"data":{"id":"1"}}\n')
         expected_first_work = 100_000
-    elif response_kind == "model-json":
-        flow = make_model_json_pipeline_flow(real_flow, tmp_path)
-        body = model_json_body()
+    elif response_kind in {"model-json", "x-json"}:
+        if response_kind == "x-json":
+            flow = make_x_pipeline_flow(
+                real_flow,
+                tmp_path,
+                path="/2/users/search",
+                query="query=user&max_results=1000&user.fields=description",
+                permission="users.read",
+                rule="GET /2/users/search",
+                content_encoding="gzip",
+            )
+            body = x_json_user_page()
+        else:
+            flow = make_model_json_pipeline_flow(real_flow, tmp_path)
+            body = model_json_body()
         first_wire = gzip.compress(body[:-2])
         second_wire = gzip.compress(body[-2:])
         # JSON has no authoritative prefix observations, even with usage first.
@@ -108,6 +122,8 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     def observed_work():
         if response_kind == "x":
             return flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"]
+        if response_kind == "x-json":
+            return flow.metadata.get(metadata_keys.X_JSON_STATE, {}).get("response_data_count", 0)
         return flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE, {}).get("tokens.output", 0)
 
     pulse = asyncio.Event()
@@ -160,7 +176,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                 # Its read must wait for all first-member work or cancellation.
                 assert inspection_completed.is_set()
                 if cancel_inspection:
-                    if response_kind == "x":
+                    if response_kind in {"x", "x-json"}:
                         assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
                     else:
                         assert observed_work() <= 8
@@ -327,7 +343,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
 
     reads_at_pulse, rows_at_pulse, pending_at_pulse = await heartbeat
     assert reads_at_pulse == len(first_chunks)
-    if response_kind == "model-json":
+    if response_kind in {"model-json", "x-json"}:
         assert rows_at_pulse == 0
     else:
         assert 0 < rows_at_pulse <= 8
@@ -336,8 +352,16 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     assert returned_sizes == [*(len(chunk) for chunk in wire_chunks), 0]
     assert received == first_wire + second_wire
     if cancel_inspection:
-        assert webhook.usage_events() == []
-        if response_kind == "x":
+        if response_kind == "x-json":
+            # The normal response hook retains the existing request-hint fallback.
+            # No inspected document count or identity is published by cancellation.
+            (event,) = webhook.usage_events()
+            assert event["quantity"] == 1_000
+            assert event["resources"] == []
+            assert event["remainder"] == [{"reason": "parse_fallback", "quantity": 1_000}]
+        else:
+            assert webhook.usage_events() == []
+        if response_kind in {"x", "x-json"}:
             assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (
                 "response inspection interrupted"
             )
@@ -351,6 +375,13 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         (event,) = webhook.usage_events()
         assert event["quantity"] == 1
         assert event["resources"] == [{"id": "1", "occurrences": 1}]
+    elif response_kind == "x-json":
+        assert observed_work() == 1_000
+        (event,) = webhook.usage_events()
+        assert event["category"] == "user.read"
+        assert event["quantity"] == 1_000
+        assert event["resources"] == []
+        assert event["remainder"] == [{"reason": "identity_limit", "quantity": 1_000}]
     elif response_kind == "model-json":
         assert observed_work() == 200
         assert webhook.usage_events() == []
