@@ -2102,10 +2102,7 @@
       "communications": "संदेश",
       "idle": "निष्क्रिय",
       "loadFailed": "लोड नहीं हुआ",
-      "loading": "लोड हो रहा है…",
       "messageUnavailable": "संदेश उपलब्ध नहीं",
-      "more": "और देखें",
-      "noMessages": "अभी तक कोई संदेश नहीं",
       "origin": "शुरुआत",
       "queued": "कतार में",
       "received": "प्राप्त हुआ",
@@ -2135,15 +2132,13 @@
     "resources": {
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
-      "emptyArtifacts": "अभी कोई आर्टिफ़ैक्ट नहीं है",
       "emptyLinks": "इस चैट में अभी कोई लिंक नहीं है",
       "expand": "विस्तार करें",
       "links": "लिंक",
       "loadFailed": "संसाधन लोड नहीं हो सके",
       "loadingLinks": "लिंक लोड हो रहे हैं",
       "retry": "फिर कोशिश करें",
-      "title": "चैट संसाधन",
-      "viewAll": "सभी देखें"
+      "title": "चैट संसाधन"
     },
     "run": {
       "collapseWorkHistory": "कार्य इतिहास संक्षिप्त करें",

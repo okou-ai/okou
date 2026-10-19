@@ -2095,10 +2095,7 @@
       "communications": "消息",
       "idle": "空闲",
       "loadFailed": "加载失败",
-      "loading": "加载中…",
       "messageUnavailable": "消息不可用",
-      "more": "更多",
-      "noMessages": "暂无消息",
       "origin": "发起自",
       "queued": "排队中",
       "received": "收到",
@@ -2127,15 +2124,13 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "emptyArtifacts": "目前还没有 artifact",
       "emptyLinks": "此聊天中暂无链接",
       "expand": "展开",
       "links": "链接",
       "loadFailed": "无法加载聊天资源",
       "loadingLinks": "正在加载链接",
       "retry": "重试",
-      "title": "聊天资源",
-      "viewAll": "查看全部"
+      "title": "聊天资源"
     },
     "run": {
       "collapseWorkHistory": "收起工作记录",

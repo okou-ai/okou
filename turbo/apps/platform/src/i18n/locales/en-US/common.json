@@ -2102,10 +2102,7 @@
       "communications": "Messages",
       "idle": "Idle",
       "loadFailed": "Could not load",
-      "loading": "Loading…",
       "messageUnavailable": "Message unavailable",
-      "more": "More",
-      "noMessages": "No messages yet",
       "origin": "From",
       "queued": "Queued",
       "received": "Received",
@@ -2135,15 +2132,13 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "emptyArtifacts": "No artifacts yet",
       "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
       "links": "Links",
       "loadFailed": "Could not load resources",
       "loadingLinks": "Loading links",
       "retry": "Try again",
-      "title": "Resources",
-      "viewAll": "View all"
+      "title": "Resources"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",
