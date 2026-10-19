@@ -264,3 +264,45 @@ test("A builtin summary with no default sends the user to account management wit
   expect(queryFastControl("button", "Connect", dialog)).toBeNull();
   expect(fixture.oauthConnectionRequests).toStrictEqual([]);
 });
+
+test.each([true, false])(
+  "Conflicting builtin credential snapshots keep an account-management action (summary expired: %s)",
+  async (expired) => {
+    const target = { kind: "builtin", connectorSlug: "github" } as const;
+    const accounts = savedAccounts(target, expired);
+    const catalog = builtinConnector({ slug: "github", label: "GitHub" });
+    const fixture = installComposerConnectorFixture({
+      catalog: [
+        {
+          ...catalog,
+          connected: expired,
+          connectionStatus: expired ? "connected" : "reconnect-required",
+          connection: {
+            ...catalog.connection!,
+            id: accounts[0]!.id,
+            reconnectReason: expired
+              ? null
+              : "authorization_expired_or_revoked",
+          },
+        },
+      ],
+      accountSummaries: [accountSummary(target, accounts)],
+      accounts,
+    });
+    const dialog = await openDirectory();
+    await fill(
+      within(dialog).getByPlaceholderText("Find connectors..."),
+      "github",
+    );
+    click(await findFastControl("button", "Open GitHub details", dialog));
+    const manage = await findFastControl(
+      "link",
+      "Manage GitHub accounts",
+      dialog,
+    );
+    expect(manage).toHaveAttribute("href", "/connectors");
+    expect(queryFastControl("button", "Connect", dialog)).toBeNull();
+    expect(queryFastControl("button", "Reconnect", dialog)).toBeNull();
+    expect(fixture.oauthConnectionRequests).toStrictEqual([]);
+  },
+);

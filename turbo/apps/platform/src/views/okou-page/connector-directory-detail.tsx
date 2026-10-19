@@ -54,6 +54,9 @@ function ConnectorDetailHeader({
     accountSummary.accountCount > 0 &&
     (!accountSummary.defaultConnection ||
       connector.connection?.id !== accountSummary.defaultConnection.id ||
+      (status === "reconnect-required") !==
+        (accountSummary.defaultConnection.connectionStatus ===
+          "reconnect-required") ||
       (accountSummary.attentionCount > 0 &&
         accountSummary.defaultConnection.connectionStatus === "connected"));
   return (

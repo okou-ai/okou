@@ -42,12 +42,29 @@ import { customConnectorTarget } from "../okou-page/components/settings/custom-c
 import { ConnectorAccountSummaryText } from "../okou-page/components/settings/connector-card.tsx";
 import { Link } from "../router/link.tsx";
 
+function canAddAgentAccess(
+  connector: CustomConnectorResponse,
+  summary: ConnectorAccountBriefSummary | undefined,
+): boolean {
+  if (isIntegrationManagedCustomConnector(connector)) {
+    return connector.connected;
+  }
+  const defaultConnection = summary?.defaultConnection;
+  return (
+    connector.connected &&
+    defaultConnection?.connectionStatus === "connected" &&
+    connector.connectedAccountId === defaultConnection.id
+  );
+}
+
 function CustomConnectorAccountStatus({
   connector,
   summary,
+  readyForAccess,
 }: {
   readonly connector: CustomConnectorResponse;
   readonly summary: ConnectorAccountBriefSummary | undefined;
+  readonly readyForAccess: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -57,7 +74,7 @@ function CustomConnectorAccountStatus({
         <>
           {" · "}
           <ConnectorAccountSummaryText summary={summary} status="ready" />
-          {!connector.connected && summary?.attentionCount === 0 && (
+          {!readyForAccess && summary?.attentionCount === 0 && (
             <>
               {" · "}
               {t(($) => {
@@ -116,6 +133,7 @@ function JobCustomConnectorRow({
   const signal = useGet(pageSignal$);
   const [toggleLoadable, toggle] = useLoadableSet(toggleAgentCustomConnector$);
   const saving = toggleLoadable.state === "loading";
+  const readyForAccess = canAddAgentAccess(connector, summary);
   const openPermissions = useSet(openCustomConnectorPermissions$);
   const hasPermissionBundle =
     connector.kind === "http" && Boolean(connector.permissionBundleRef);
@@ -125,7 +143,7 @@ function JobCustomConnectorRow({
     })?.permissionNames ?? [];
 
   const openPermissionDrawer = (initiallyAuthorized: boolean) => {
-    if (!agentId || !connector.connected) {
+    if (!agentId || !readyForAccess) {
       return;
     }
     openPermissions(
@@ -151,7 +169,7 @@ function JobCustomConnectorRow({
       }
       label={connector.displayName}
       labelSuffix={
-        !connector.connected && agentId ? (
+        !readyForAccess && agentId ? (
           <CustomConnectorReconnectLink
             connector={connector}
             agentId={agentId}
@@ -159,16 +177,20 @@ function JobCustomConnectorRow({
         ) : undefined
       }
       description={
-        <CustomConnectorAccountStatus connector={connector} summary={summary} />
+        <CustomConnectorAccountStatus
+          connector={connector}
+          summary={summary}
+          readyForAccess={readyForAccess}
+        />
       }
       enabled={enabled}
       loading={saving || (hasPermissionBundle && grantsLoading)}
       disabled={
-        (!enabled && !connector.connected) ||
+        (!enabled && !readyForAccess) ||
         (hasPermissionBundle && grants === null)
       }
       showManage={
-        connector.connected &&
+        readyForAccess &&
         enabled &&
         hasPermissionBundle &&
         grants !== null &&
@@ -176,7 +198,7 @@ function JobCustomConnectorRow({
       }
       isLast={isLast}
       onToggle={(checked) => {
-        if (checked && !connector.connected) {
+        if (checked && !readyForAccess) {
           return;
         }
         if (checked && hasPermissionBundle) {
@@ -286,7 +308,12 @@ function ConnectedJobCustomConnectorsSection({
       })
     : undefined;
   const permissionTarget =
-    activePermissionDraft && permissionTargetConnector?.connected
+    activePermissionDraft &&
+    permissionTargetConnector &&
+    canAddAgentAccess(
+      permissionTargetConnector,
+      summaries.get(`custom:${permissionTargetConnector.id}`),
+    )
       ? {
           connector: permissionTargetConnector,
           draft: activePermissionDraft,

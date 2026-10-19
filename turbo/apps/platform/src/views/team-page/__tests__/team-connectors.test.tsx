@@ -473,18 +473,27 @@ function savedCustomSummary(
   };
 }
 
-test.each([true, false])(
-  "An agent can see and repair a saved custom connector without gaining access (expired: %s)",
-  async (expired) => {
+test.each([
+  { expired: true, definitionReady: false, matchingDefault: true },
+  { expired: false, definitionReady: false, matchingDefault: true },
+  { expired: true, definitionReady: true, matchingDefault: true },
+  { expired: false, definitionReady: true, matchingDefault: false },
+])(
+  "An agent can repair a saved custom connector without gaining access (expired: $expired, definition ready: $definitionReady, matching default: $matchingDefault)",
+  async ({ expired, definitionReady, matchingDefault }) => {
     const connector = acmeConnectorFixture({
       slug: "_acme-search",
-      connected: false,
-      connectedAccountId: undefined,
+      connected: definitionReady,
+      connectedAccountId: definitionReady
+        ? matchingDefault
+          ? "30000000-0000-4000-8000-000000000001"
+          : "30000000-0000-4000-8000-000000000003"
+        : undefined,
       fields: [
         { key: "apiKey", label: "API key", kind: "secret", required: true },
       ],
-      missingRequiredFields: ["apiKey"],
-      configuredFieldKeys: [],
+      missingRequiredFields: definitionReady ? [] : ["apiKey"],
+      configuredFieldKeys: definitionReady ? ["apiKey"] : [],
       permissionBundleRef: "builtin:acme-search@1",
     });
     const saves: unknown[] = [];
@@ -521,6 +530,34 @@ test.each([true, false])(
     ).not.toBeInTheDocument();
   },
 );
+
+test("An agent can grant access through a healthy configured default while a sibling needs attention", async () => {
+  const connector = acmeConnectorFixture();
+  const saves: unknown[] = [];
+  mockConnectorSurface(context, {
+    customConnectors: [connector],
+    accountSummaries: [
+      { ...savedCustomSummary(connector, false), attentionCount: 1 },
+    ],
+    onCustomSave: (args) => {
+      saves.push(args);
+    },
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("Acme Search");
+  expect(screen.getByText("1/2 need attention")).toBeVisible();
+  const grant = connectorAccessSwitch("Grant Acme Search access");
+  expect(grant).not.toHaveAttribute("aria-disabled", "true");
+  click(grant);
+  await screen.findByText("Custom connectors saved");
+  expect(saves).toStrictEqual([
+    {
+      agentId: RESEARCH_AGENT_ID,
+      grants: [{ customConnectorId: connector.id, permissionNames: [] }],
+      operation: "add",
+    },
+  ]);
+});
 
 test("An expired custom account keeps its existing agent grant revocable", async () => {
   const connector = acmeConnectorFixture({
