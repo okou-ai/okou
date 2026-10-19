@@ -142,6 +142,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",

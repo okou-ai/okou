@@ -3967,7 +3967,6 @@
     "retry": "Retry",
     "samplePages": "Sample pages: {{total}}",
     "title": "Document",
-    "use": "Use template",
     "useNamed": "Use {{title}}"
   },
   "global": {

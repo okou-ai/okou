@@ -32,7 +32,7 @@ export function DocumentTemplatePickerPane({ signals, onSelect }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <TemplateFilterPillRow
-        className="shrink-0 px-6 pb-4 pr-14 pt-6"
+        className="shrink-0 px-6 py-5 pr-14"
         active={category}
         label={t(($) => {
           return $.documentTemplates.filter;
@@ -143,7 +143,7 @@ function DocumentTemplateCard({
           )}
         >
           {t(($) => {
-            return $.documentTemplates.use;
+            return $.artifacts.templates.use;
           })}
         </button>
       </div>
