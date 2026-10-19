@@ -8,6 +8,8 @@ import {
   closeRemoteResource$,
   remoteNetworkPage$,
   closeRemoteNetworkPage$,
+  saveRemoteTailscale$,
+  saveRemoteCloudflare$,
 } from "../../signals/remote-resource-detail.ts";
 import {
   sshConnections$,
@@ -239,10 +241,10 @@ export function RemoteNetworkPage() {
           <NetworkProviderPicker inline />
         )}
         <div hidden={page.state !== "hasData" || page.data !== "tailscale"}>
-          <TailscaleDialog inline />
+          <TailscaleDialog inline saveAction={saveRemoteTailscale$} />
         </div>
         <div hidden={page.state !== "hasData" || page.data !== "cloudflare"}>
-          <CloudflareAccessDialog inline />
+          <CloudflareAccessDialog inline saveAction={saveRemoteCloudflare$} />
         </div>
       </div>
     </RemoteDetailPage>

@@ -10,9 +10,10 @@ import {
   selectedRemoteNetworkProvider$,
   setRemoteNetworkPicker$,
 } from "./remote-control-setup.ts";
-import { closeTailscaleDialog$, tailscaleDialog$ } from "./tailscale.ts";
+import { closeTailscaleDialog$, saveTailscale$, tailscaleDialog$ } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
+  saveCloudflareAccess$,
   cloudflareAccessDialog$,
 } from "./cloudflare-access.ts";
 
@@ -106,3 +107,26 @@ export const closeRemoteNetworkPage$ = command(({ set }) => {
   set(closeTailscaleDialog$);
   set(closeCloudflareAccessDialog$);
 });
+
+export const saveRemoteTailscale$ = command(
+  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
+    await set(saveTailscale$, form, signal);
+    signal.throwIfAborted();
+    const remaining = await get(tailscaleDialog$);
+    signal.throwIfAborted();
+    if (!remaining) {
+      set(closeRemoteNetworkPage$);
+    }
+  },
+);
+export const saveRemoteCloudflare$ = command(
+  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
+    await set(saveCloudflareAccess$, form, signal);
+    signal.throwIfAborted();
+    const remaining = await get(cloudflareAccessDialog$);
+    signal.throwIfAborted();
+    if (!remaining) {
+      set(closeRemoteNetworkPage$);
+    }
+  },
+);

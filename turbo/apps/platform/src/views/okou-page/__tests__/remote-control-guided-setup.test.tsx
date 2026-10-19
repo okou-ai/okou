@@ -1010,4 +1010,18 @@ test("Private network starts with one neutral provider selector and both guides 
   expect(
     screen.queryByRole("heading", { name: "Set up a connection" }),
   ).toBeNull();
+  context.mocks.api(cloudflareAccessContract.create, ({ respond }) => {
+    return respond(204);
+  });
+  click(screen.getByText("Cloudflare Access", { exact: true }));
+  await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
+  click(getAction("button", "Already have credentials? Enter them directly"));
+  await fill(await screen.findByRole("textbox", { name: "Name" }), "Saved network");
+  await fill(screen.getByRole("textbox", { name: "Client ID" }), "test-client");
+  await fill(screen.getByRole("textbox", { name: "Client Secret" }), "test-secret");
+  click(getAction("button", "Save network"));
+  await screen.findByRole("heading", { name: "No private networks yet" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+
 });
