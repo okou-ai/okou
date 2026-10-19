@@ -8,14 +8,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Plus, ChevronRight, Pin, PinOff, CheckCheck } from "lucide-react";
-import {
-  Button,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  Skeleton,
-} from "@okouai/ui";
+import { Button, Skeleton, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import {
@@ -35,6 +28,8 @@ import {
   pinAgentDialogHandoff$,
   handOffPinAgentDialogToCreateAgent$,
   completePinAgentDialogClose$,
+  pinAgentControl$,
+  pinAgentControlRef$,
   draggingPinnedAgentId$,
   pinnedAgentDropTargetId$,
   startPinnedAgentDrag$,
@@ -55,6 +50,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { equalSets } from "../../lib/equality.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { PinAgentDialog } from "./sidebar-dialogs.tsx";
@@ -67,8 +63,12 @@ import {
 
 const PINNED_AGENTS_CONTENT_ID = "sidebar-pinned-agents-content";
 
+// Four 66px tiles across the 276px column, with a 4px inline inset, leave each
+// name 58px — room for most first words and a five-character Chinese name.
+// Keep in step with the grid's `grid-cols-4`.
+const PINNED_AGENT_GRID_COLUMNS = 4;
 const pinnedAgentGridCardFrameClassName =
-  "flex w-full min-w-0 flex-col items-center gap-1.5 rounded-lg p-1.5";
+  "flex w-full min-w-0 flex-col items-center gap-1.5 rounded-lg px-1 py-1.5";
 // `leading-tight` at 11px is 13.75px. Keep both loading and resolved labels on
 // the same whole-pixel line box so swapping their DOM elements cannot round the
 // baseline onto different device pixels.
@@ -216,11 +216,10 @@ interface PinnedGridAgent {
 type PinnedDropSide = "before" | "after";
 
 /**
- * A grid tile is only a fifth of the sidebar wide, so almost every agent name
- * is truncated down to a few characters. The tile carries a hover tooltip with
- * the full name — a native `title` is too slow and too easy to miss for a label
- * that is unreadable by default. The tooltip is disabled while a reorder drag
- * is in flight so it never floats over the drop carets.
+ * A grid tile is a quarter of the sidebar wide, so a long agent name still
+ * runs past its label. The label fades where it is cut and, like the thread
+ * titles below it, scrolls to its end while the tile is hovered or focused, so
+ * the full name never needs a tooltip floating over its neighbours.
  */
 function PinnedAgentGridCard({
   agent,
@@ -249,13 +248,12 @@ function PinnedAgentGridCard({
   const displayName = agent.displayName ?? agent.agentId;
 
   const isDragging = draggingAgentId === agent.agentId;
-  const isDragInFlight = draggingAgentId !== null;
   const acceptsDrop =
     isReorderable &&
     draggingAgentId !== null &&
     draggingAgentId !== agent.agentId;
 
-  const card = (
+  return (
     <Link
       ref={refreshLayoutRef}
       pathname="/agents/:agentId/chat"
@@ -366,26 +364,18 @@ function PinnedAgentGridCard({
           </span>
         )}
       </span>
-      <span
-        data-testid="pinned-agent-label-frame"
-        className={`text-[color:var(--nav-copy,inherit)] ${pinnedAgentGridLabelFrameClassName} w-full truncate text-center text-[11px] ${
-          isPrimarySelected ? "font-medium" : ""
-        } ${isDragging ? "opacity-0" : ""}`}
-      >
-        {displayName}
-      </span>
+      <HoverScrollTitle
+        data-slot="pinned-agent-title"
+        title={displayName}
+        variant="tile"
+        className={cn(
+          "text-[11px] text-[color:var(--nav-copy,inherit)]",
+          pinnedAgentGridLabelFrameClassName,
+          isPrimarySelected && "font-medium",
+          isDragging && "opacity-0",
+        )}
+      />
     </Link>
-  );
-
-  return (
-    <TooltipProvider delay={200}>
-      <Tooltip disabled={isDragInFlight}>
-        <TooltipTrigger render={card} />
-        <TooltipContent side="top">
-          <p className="text-xs">{displayName}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 }
 
@@ -429,6 +419,7 @@ export function PinAgentDialogContainer() {
   const handingOff = useGet(pinAgentDialogHandoff$);
   const handOffToCreateAgent = useSet(handOffPinAgentDialogToCreateAgent$);
   const completeClose = useSet(completePinAgentDialogClose$);
+  const pinControl = useGet(pinAgentControl$);
 
   // A hand-off keeps the dialog mounted through its exit, without returning
   // focus, so the create dialog opens from onOpenChangeComplete and keeps its
@@ -455,6 +446,7 @@ export function PinAgentDialogContainer() {
         }
       }}
       handingOff={handingOff}
+      returnFocusTo={pinControl}
     />
   );
 }
@@ -478,6 +470,7 @@ export function PinnedAgentListSection({
   });
 
   const openPinAgentDialog = useSet(openPinAgentDialog$);
+  const pinControlRef = useSet(pinAgentControlRef$);
   const selectPinnedAgent = useSet(selectPinnedAgent$);
   const setExpanded = useSet(setSidebarExpanded$);
   const collapsed = useGet(agentCardCollapsed$);
@@ -536,27 +529,54 @@ export function PinnedAgentListSection({
             );
           });
 
+    // The pin control keeps its tile while it shares the first row with the
+    // agents, and moves to the header once the agents fill that row.
+    const pinControlInGrid =
+      horizontalPinnedAgents !== null &&
+      horizontalPinnedAgents.length < PINNED_AGENT_GRID_COLUMNS;
+    const pinControlInHeader =
+      horizontalPinnedAgents !== null && !pinControlInGrid;
+    const pinAgentLabel = t(($) => {
+      return $.sidebar.pinAgent;
+    });
+
     return (
       <div className="shrink-0" data-testid="pinned-agents-horizontal">
-        <span className="flex h-8 items-center pl-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
-          {t(($) => {
-            return $.sidebar.pinnedAgents;
-          })}
-        </span>
+        <div className="flex h-8 items-center justify-between pl-2">
+          <span className="text-[13px] font-medium leading-4 text-nav-copy-muted">
+            {t(($) => {
+              return $.sidebar.pinnedAgents;
+            })}
+          </span>
+          {pinControlInHeader && (
+            <Button
+              ref={pinControlRef}
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              showTooltip
+              aria-label={pinAgentLabel}
+              onClick={() => {
+                openPinAgentDialog();
+              }}
+            >
+              <Plus />
+            </Button>
+          )}
+        </div>
         <div
-          className="grid min-w-0 grid-cols-5 items-start gap-x-1 gap-y-2.5"
+          className="grid min-w-0 grid-cols-4 items-start gap-x-1 gap-y-2.5"
           data-testid="pinned-agents-grid"
         >
-          {pinnedAgentCards.slice(0, 4)}
-          {horizontalPinnedAgents !== null && (
+          {pinnedAgentCards}
+          {pinControlInGrid && (
             <button
+              ref={pinControlRef}
               type="button"
               onClick={() => {
                 openPinAgentDialog();
               }}
-              aria-label={t(($) => {
-                return $.sidebar.pinAgent;
-              })}
+              aria-label={pinAgentLabel}
               className="flex w-full min-w-0 flex-col items-center gap-1.5 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-[hsl(var(--gray-300))]">
@@ -572,7 +592,6 @@ export function PinnedAgentListSection({
               </span>
             </button>
           )}
-          {pinnedAgentCards.slice(4)}
         </div>
       </div>
     );
