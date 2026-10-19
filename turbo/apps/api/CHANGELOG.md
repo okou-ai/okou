@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.752.0](https://github.com/okou-ai/okou/compare/api-v1.751.6...api-v1.752.0) (2026-10-19)
+
+
+### Features
+
+* **suggestions:** add opt-in hourly proactive suggestions ([#41251](https://github.com/okou-ai/okou/issues/41251)) ([154bc8a](https://github.com/okou-ai/okou/commit/154bc8acb035843ea47c99f6f56f5779698c6bbb))
+
+
+### Bug Fixes
+
+* load complete chat relationships before folding ([#41294](https://github.com/okou-ai/okou/issues/41294)) ([f54609b](https://github.com/okou-ai/okou/commit/f54609b895643b419e55321ebe25e0ef24057c08))
+
+
+### Refactoring
+
+* retire artifact preview wire compatibility ([#41305](https://github.com/okou-ai/okou/issues/41305)) ([9b8bf22](https://github.com/okou-ai/okou/commit/9b8bf22ebd17f157abd67822f65c8771b6e314d6))
+* retire historical link wallet status compatibility ([#41303](https://github.com/okou-ai/okou/issues/41303)) ([353a229](https://github.com/okou-ai/okou/commit/353a229dc08f0691e37a48bcc0f3e9589c4889a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.574.0
+    * @okouai/core bumped to 8.769.2
+    * @okouai/db bumped to 1.346.0
+    * @okouai/pi-agent-runtime bumped to 1.50.24
+
 ## [1.751.6](https://github.com/okou-ai/okou/compare/api-v1.751.5...api-v1.751.6) (2026-10-19)
 
 

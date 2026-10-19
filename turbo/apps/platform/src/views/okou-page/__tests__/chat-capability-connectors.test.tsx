@@ -1,5 +1,9 @@
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
+  connectorAccountsContract,
+  type ConnectorAccountMutationIntent,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  customConnectorAccount,
   mockConnectorAgentAccess,
   mockOAuthCompletions,
 } from "./connector-page-test-helpers.ts";
@@ -554,8 +558,12 @@ describe("with an active banking grant", () => {
   });
 });
 
-test("Connect and authorize a custom MCP connector", async () => {
+async function attemptCustomMcpConnection(
+  hasSavedAccount: boolean,
+  complete: boolean,
+) {
   const sends: CapturedChatSend[] = [];
+  const submittedAccounts: ConnectorAccountMutationIntent[] = [];
   const authorizationUpdates: AgentCustomConnectorGrant[][] = [];
   let connected = false;
   const connector = () => {
@@ -567,11 +575,31 @@ test("Connect and authorize a custom MCP connector", async () => {
     });
   };
   installCustomConnectorApi({ connector, authorizationUpdates });
+  const account = customConnectorAccount(CUSTOM_CONNECTOR_ID, {
+    id: CONNECTOR_CONNECTION_ID,
+    connectionStatus: "reconnect-required",
+    reconnectReason: "authorization_expired_or_revoked",
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: hasSavedAccount
+        ? [
+            {
+              target: account.target,
+              accountCount: 2,
+              attentionCount: 1,
+              defaultConnection: account,
+            },
+          ]
+        : [],
+    });
+  });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
+    submittedAccounts.push(body.account);
     expect(body.values).toStrictEqual([
       { key: "apiSecret", kind: "secret", value: "secret-value" },
     ]);
-    connected = true;
+    connected = complete;
     return respond(200, connector());
   });
   installActionConversation({
@@ -583,28 +611,52 @@ test("Connect and authorize a custom MCP connector", async () => {
     ],
     sends,
   });
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: RUN_PATH,
-  });
-
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
   await readyChat();
   const card = await screen.findByTestId("connector-action-card");
   click(getButton("Connect", card));
-  const secret = await screen.findByLabelText("API secret");
-  await fill(secret, "secret-value");
-  click(getButton("Save"));
-
-  await waitFor(() => {
-    expect(getButton("Authorized", card)).toBeDisabled();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect Workspace Search",
   });
-  expect(authorizationUpdates).toStrictEqual([
-    [{ customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] }],
-  ]);
-  expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
-  expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
+  await fill(within(dialog).getByLabelText("API secret"), "secret-value");
+  click(getButton("Save", dialog));
+  await waitFor(() => {
+    expect(submittedAccounts).toStrictEqual([
+      hasSavedAccount
+        ? { intent: "reconnect", connectionId: account.id }
+        : { intent: "add" },
+    ]);
+  });
+  return { card, dialog, sends, authorizationUpdates };
+}
+
+test.each([false, true])(
+  "Connect or reconnect a custom MCP default before resuming (%s)",
+  async (hasSavedAccount) => {
+    const { card, sends, authorizationUpdates } =
+      await attemptCustomMcpConnection(hasSavedAccount, true);
+    await waitFor(() => {
+      expect(getButton("Authorized", card)).toBeDisabled();
+    });
+    expect(authorizationUpdates).toStrictEqual([
+      [{ customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] }],
+    ]);
+    expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
+    });
+  },
+);
+
+test("Keep an incomplete custom MCP reconnect unauthorized without resuming", async () => {
+  const { dialog, sends, authorizationUpdates } =
+    await attemptCustomMcpConnection(true, false);
+  await waitFor(() => {
+    expect(getButton("Save", dialog)).toBeEnabled();
+  });
+  expect(authorizationUpdates).toStrictEqual([]);
+  expect(sentPrompts(sends)).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
 });
 
 test("Connect a single available connector without an unnecessary chooser", async () => {

@@ -1,5 +1,5 @@
 {
-  "id": "79bc7256-aec6-4a4d-974d-a597c1a16d13",
+  "id": "ff827d6e-6dc3-4720-b0f4-3969f281d5c0",
   "prevId": "7b0f7bd3-9580-49f7-829e-66a71e9a578f",
   "version": "7",
   "dialect": "postgresql",
@@ -4059,6 +4059,25 @@
           "notNull": true,
           "default": "'unknown'"
         },
+        "run_terminal_status": {
+          "name": "run_terminal_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_completed_at": {
+          "name": "run_completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_lifecycle_context": {
+          "name": "run_lifecycle_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unknown'"
+        },
         "usage_observed": {
           "name": "usage_observed",
           "type": "boolean",
@@ -4115,6 +4134,10 @@
         "billing_run_attribution_thread_context_check": {
           "name": "billing_run_attribution_thread_context_check",
           "value": "(\n        (\"billing_run_attribution\".\"thread_context\" = 'thread' AND \"billing_run_attribution\".\"thread_id\" IS NOT NULL)\n        OR (\"billing_run_attribution\".\"thread_context\" IN ('threadless', 'unknown') AND \"billing_run_attribution\".\"thread_id\" IS NULL)\n      )"
+        },
+        "billing_run_attribution_lifecycle_check": {
+          "name": "billing_run_attribution_lifecycle_check",
+          "value": "(\n          (\"billing_run_attribution\".\"run_lifecycle_context\" IN ('unknown', 'legacy_unavailable')\n            AND \"billing_run_attribution\".\"run_terminal_status\" IS NULL AND \"billing_run_attribution\".\"run_completed_at\" IS NULL)\n          OR (\"billing_run_attribution\".\"run_lifecycle_context\" = 'captured' AND (\n            (\"billing_run_attribution\".\"run_terminal_status\" IS NULL AND \"billing_run_attribution\".\"run_completed_at\" IS NULL)\n            OR (\"billing_run_attribution\".\"run_terminal_status\" IS NOT NULL\n              AND \"billing_run_attribution\".\"run_terminal_status\" IN ('completed', 'failed', 'cancelled', 'timeout'))\n          ))\n        )"
         }
       },
       "isRLSEnabled": false
@@ -16450,27 +16473,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_hosted_deployments_public_slug": {
-          "name": "idx_hosted_deployments_public_slug",
-          "columns": [
-            {
-              "expression": "(\"manifest\"->>'publicSlug')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "site_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_hosted_deployments_site_manifest_version": {
           "name": "idx_hosted_deployments_site_manifest_version",
           "columns": [
@@ -16652,21 +16654,6 @@
           "columns": [
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_hosted_sites_slug": {
-          "name": "idx_hosted_sites_slug",
-          "columns": [
-            {
-              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

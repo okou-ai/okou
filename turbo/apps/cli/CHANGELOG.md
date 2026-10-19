@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.402.0](https://github.com/okou-ai/okou/compare/cli-v9.401.4...cli-v9.402.0) (2026-10-19)
+
+
+### Features
+
+* **suggestions:** add opt-in hourly proactive suggestions ([#41251](https://github.com/okou-ai/okou/issues/41251)) ([154bc8a](https://github.com/okou-ai/okou/commit/154bc8acb035843ea47c99f6f56f5779698c6bbb))
+
+
+### Refactoring
+
+* retire artifact preview wire compatibility ([#41305](https://github.com/okou-ai/okou/issues/41305)) ([9b8bf22](https://github.com/okou-ai/okou/commit/9b8bf22ebd17f157abd67822f65c8771b6e314d6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.574.0
+    * @okouai/core bumped to 8.769.2
+    * @okouai/pi-agent-runtime bumped to 1.50.24
+
 ## [9.401.4](https://github.com/okou-ai/okou/compare/cli-v9.401.3...cli-v9.401.4) (2026-10-19)
 
 

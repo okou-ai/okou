@@ -76,7 +76,6 @@ async function openSlashMenu(
     path,
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: true,
-      [FeatureSwitchKey.ComposerSlashCustomTemplates]: true,
       [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
       ...featureSwitches,
     },
@@ -165,15 +164,14 @@ test.each(CATEGORIES)(
   },
 );
 
-test.each([
-  FeatureSwitchKey.ComposerSlashCustomTemplates,
-  FeatureSwitchKey.CustomTemplates,
-])("Disabling %s preserves the built-in slash catalog", async (feature) => {
+test("Disabling custom templates preserves the built-in slash catalog", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, () => {
     throw new Error("A disabled slash custom catalog must not be requested");
   });
-  const { menu } = await openSlashMenu({ [feature]: false });
+  const { menu } = await openSlashMenu({
+    [FeatureSwitchKey.CustomTemplates]: false,
+  });
   await userEvent.setup().hover(button("Presentation", menu));
   const pane = await within(menu).findByRole("region", {
     name: "Presentation",

@@ -50,6 +50,29 @@ export function mockOAuthCompletions(
   return completed;
 }
 
+export function customConnectorAccount(
+  customConnectorId: string,
+  overrides: Partial<Omit<ConnectorAccountConnection, "target">> = {},
+): ConnectorAccountConnection {
+  return {
+    id: crypto.randomUUID(),
+    target: { kind: "custom", customConnectorId },
+    authMethod: "manual",
+    displayName: null,
+    isDefault: true,
+    externalId: null,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 export function getConnectorAction(
   role: "button" | "link" | "menuitem" | "tab",
   name: string,

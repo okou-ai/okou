@@ -2258,14 +2258,11 @@ describe("Debug Morning Brief", () => {
           status: "queued",
           deduplicated: false,
         });
-        // The automation event, not an agent-supplied key, identifies the email.
+        // The automation event identifies the email, so a retry replays it.
         expect(
           (
             await accept(
-              notifications.mail({
-                headers: notificationHeaders,
-                body: { ...brief, idempotencyKey: `debug-brief:${requestId}` },
-              }),
+              notifications.mail({ headers: notificationHeaders, body: brief }),
               [200],
             )
           ).body,
