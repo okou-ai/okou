@@ -536,7 +536,7 @@ impl HomeImageCache {
             progress.committed = true;
             self.retire_publication_sources(&input, progress, &candidate, source.identity())
                 .await;
-            // Close transferred/source descriptors within compatibility ownership,
+            // Close transferred/source descriptors while holding IO admission,
             // including unlinked Copy sources that still consume disk allocation.
             progress.source = None;
             progress.image = None;

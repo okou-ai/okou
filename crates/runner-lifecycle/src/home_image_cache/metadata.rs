@@ -202,7 +202,7 @@ impl HomeImageCache {
             .await
     }
 
-    /// Entry and compatibility ownership outlive every accepted write/sync.
+    /// Entry and IO admission outlive every accepted write/sync.
     /// Retain the exclusively created staging descriptor before writing, so a
     /// partial-write retry cannot adopt or overwrite another attempt's inode.
     pub(super) async fn write_metadata_with_progress(
