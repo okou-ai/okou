@@ -2451,6 +2451,13 @@
       "when": 1792417169707,
       "tag": "1427_official_workflow_free_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 1428,
+      "version": "7",
+      "when": 1792421309143,
+      "tag": "1428_retire_workflow_deferred_retry_index",
+      "breakpoints": true
     }
   ]
 }
