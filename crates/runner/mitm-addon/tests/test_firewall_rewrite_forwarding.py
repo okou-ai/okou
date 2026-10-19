@@ -216,12 +216,6 @@ class TestAuthBaseUrlRewriteForwarding:
                 id="representation-length",
             ),
             pytest.param([], [], id="absent"),
-            pytest.param(
-                [("Content-Length", "123"), ("Content-Length", "124")],
-                [],
-                id="conflicting",
-            ),
-            pytest.param([("Content-Length", "invalid")], [], id="malformed"),
             pytest.param([("Content-Length", "123, 123")], [], id="comma-list"),
             pytest.param(
                 [("Content-Length", "123"), ("Content-Length", "123")],
@@ -260,6 +254,40 @@ class TestAuthBaseUrlRewriteForwarding:
         assert flow.response.status_code == status
         assert flow.response.raw_content == b""
         assert flow.response.headers.get_all("Content-Length") == expected_content_lengths
+
+    @pytest.mark.parametrize(("method", "status"), [("HEAD", 200), ("GET", 304)])
+    @pytest.mark.parametrize(
+        "response_headers",
+        [
+            [("Content-Length", "123"), ("Content-Length", "124")],
+            [("Content-Length", "invalid")],
+        ],
+        ids=["conflicting", "malformed"],
+    )
+    async def test_url_rewrite_rejects_invalid_bodyless_response_framing(
+        self, real_flow, mitm_ctx, tmp_path, method: str, status: int, response_headers
+    ):
+        flow, allow, sandbox_info, token_meta = make_forwarding_rewrite_inputs(
+            real_flow, tmp_path, method=method
+        )
+        with (
+            fake_forwarder_upstream(status=status, body=b"", headers=response_headers) as upstream,
+            patch.object(auth, "get_firewall_headers", AsyncMock(return_value=token_meta)),
+            mitm_ctx(),
+        ):
+            result = await handle_firewall_request_without_upstream_admission(
+                flow, allow, sandbox_info
+            )
+
+        assert result is auth.FirewallAuthHandlingResult.LOCAL_RESPONSE
+        assert flow.response is not None
+        assert flow.response.status_code == 502
+        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "url_rewrite_forward_failed"
+        assert metadata_keys.AUTH_URL_REWRITE not in flow.metadata
+        assert upstream.socket.closed
+        assert upstream.socket.response_file is not None
+        assert upstream.socket.response_file.closed
+        assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
     @pytest.mark.parametrize(
         "status",

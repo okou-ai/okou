@@ -1,15 +1,20 @@
 """Informational response sequences through real forwarding and auth mapping."""
 
-import http.client as http_client
 from unittest.mock import AsyncMock, patch
 
+import h11
 import pytest
 
 import auth
 import auth_base_forwarder as forwarder
 import auth_base_transport as transport
 import flow_metadata_keys as metadata_keys
-from tests.auth_base_forwarder_helpers import FakeSocket, fake_forwarder_upstream, http_response
+from tests.auth_base_forwarder_helpers import (
+    FakeResponseFile,
+    FakeSocket,
+    fake_forwarder_upstream,
+    http_response,
+)
 from tests.firewall_auth_helpers import handle_firewall_request_without_upstream_admission
 from tests.firewall_rewrite_helpers import make_forwarding_rewrite_inputs
 
@@ -145,7 +150,7 @@ async def test_eof_before_final_response_fails_and_releases_resources(statuses: 
     wire = _informational_responses(statuses)
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(wire)) as upstream,
-        pytest.raises(http_client.RemoteDisconnected),
+        pytest.raises(h11.RemoteProtocolError),
     ):
         await forwarder.forward_request("https://example.com/hook", "POST", [], b"{}")
 
@@ -162,7 +167,7 @@ async def test_upgrade_is_rejected_without_waiting_for_a_final_response(statuses
     )
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(wire)) as upstream,
-        pytest.raises(http_client.HTTPException, match="does not support protocol upgrades"),
+        pytest.raises(h11.RemoteProtocolError),
     ):
         await forwarder.forward_request("https://example.com", "GET", [], None)
 
@@ -233,7 +238,7 @@ async def test_truncated_final_body_fails_after_informational_response():
     )
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(wire)) as upstream,
-        pytest.raises(http_client.IncompleteRead),
+        pytest.raises(h11.RemoteProtocolError),
     ):
         await forwarder.forward_request("https://example.com", "GET", [], None)
 
@@ -252,7 +257,7 @@ async def test_informational_headers_retain_parser_limits(interim_headers: bytes
     wire = b"HTTP/1.1 103 Early Hints\r\n" + interim_headers + b"\r\n" + http_response()
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(wire)) as upstream,
-        pytest.raises(http_client.HTTPException),
+        pytest.raises(h11.RemoteProtocolError),
     ):
         await forwarder.forward_request("https://example.com", "GET", [], None)
 
@@ -260,3 +265,76 @@ async def test_informational_headers_retain_parser_limits(interim_headers: bytes
     assert upstream.socket.response_file is not None
     assert upstream.socket.response_file.closed
     assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
+
+
+@pytest.mark.parametrize("chunk_size", [1, 7])
+async def test_fragmented_response_and_binary_request_keep_one_complete_exchange(chunk_size: int):
+    wire = _informational_responses((103, 102, 100, 199)) + (
+        b"HTTP/1.1 503 Unavailable\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"X-Bytes: caf\xe9\r\n"
+        b"Set-Cookie: a=1\r\nSet-Cookie: b=2\r\n\r\n"
+        b"5\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: discarded\r\n\r\n"
+    )
+
+    class FragmentedFile(FakeResponseFile):
+        def readinto(self, buffer) -> int:
+            return super().readinto(memoryview(buffer)[:chunk_size])
+
+    class FragmentedSocket(FakeSocket):
+        def makefile(self, *_args, **_kwargs) -> FakeResponseFile:
+            self.response_file = FragmentedFile(wire)
+            return self.response_file
+
+    request_body = b"\x00\xffrequest-data"
+    with fake_forwarder_upstream(socket_factory=lambda: FragmentedSocket(wire)) as upstream:
+        status, body, headers = await forwarder.forward_request(
+            "https://example.com/hook",
+            "POST",
+            [("X-Repeat", "one"), ("X-Repeat", "two")],
+            request_body,
+        )
+
+    assert status == 503
+    assert body == b"hello world"
+    assert headers.fields == (
+        (b"X-Bytes", b"caf\xe9"),
+        (b"Set-Cookie", b"a=1"),
+        (b"Set-Cookie", b"b=2"),
+    )
+    assert upstream.socket.request_header_values("X-Repeat") == ["one", "two"]
+    assert upstream.socket.request_header_values("Content-Length") == [str(len(request_body))]
+    assert bytes(upstream.socket.sent).split(b"\r\n\r\n", 1)[1] == request_body
+    assert upstream.socket.request_text().count("POST /hook HTTP/1.1\r\n") == 1
+    assert upstream.socket.response_file is not None
+    assert upstream.socket.response_file.closed
+    assert upstream.socket.closed
+    assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
+
+
+@pytest.mark.parametrize("budget", ["line-bytes", "header-lines"])
+async def test_accepts_response_at_existing_header_budget(budget: str):
+    if budget == "line-bytes":
+        prefix = b"X-Large: "
+        header_bytes = prefix + b"x" * (65536 - len(prefix) - 2) + b"\r\n"
+    else:
+        # 99 fields plus the blank terminator fit the existing 100-line cap.
+        header_bytes = b"X-Budget: ok\r\n" * 98
+    wire = (
+        _informational_responses((103,))
+        + b"HTTP/1.1 200 OK\r\n"
+        + header_bytes
+        + b"Content-Length: 2\r\n\r\nok"
+    )
+    with fake_forwarder_upstream(socket_factory=lambda: FakeSocket(wire)) as upstream:
+        status, body, headers = await forwarder.forward_request(
+            "https://example.com", "GET", [], None
+        )
+
+    assert status == 200
+    assert body == b"ok"
+    if budget == "header-lines":
+        assert headers.get_all("X-Budget") == ["ok"] * 98
+    else:
+        assert len(headers["X-Large"]) == 65536 - len(b"X-Large: ") - 2
+    assert upstream.socket.closed

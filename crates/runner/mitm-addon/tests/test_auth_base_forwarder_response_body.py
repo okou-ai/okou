@@ -1,9 +1,9 @@
 """Response framing and allocation bounds through the real auth.base forwarder."""
 
 import gc
-import http.client as http_client
 import tracemalloc
 
+import h11
 import pytest
 
 import auth_base_forwarder as forwarder
@@ -64,13 +64,10 @@ async def test_rejects_truncated_response_after_multiple_read_buffers(framing: s
 
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(raw_response)) as upstream,
-        pytest.raises(http_client.IncompleteRead) as exc_info,
+        pytest.raises(h11.RemoteProtocolError),
     ):
         await forwarder.forward_request("https://example.com", "GET", [], None)
 
-    if framing == "fixed":
-        assert exc_info.value.partial == payload
-        assert exc_info.value.expected == 3
     assert upstream.socket.response_file is not None
     assert upstream.socket.response_file.closed
     assert upstream.socket.closed
