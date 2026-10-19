@@ -540,17 +540,14 @@ def _read_response_body(
         event = protocol.next_event()
         if event is h11.NEED_DATA:
             conn.set_remaining_timeout()
-            read_size = min(
-                _AUTH_BASE_RESPONSE_READ_BUFFER_BYTES,
-                MAX_AUTH_BASE_RESPONSE_BODY_BYTES + 1 - len(body),
-            )
             # read1 returns available bytes without waiting to fill a buffer on
-            # a keep-alive peer. h11 emits Data incrementally, including chunks.
-            protocol.receive_data(source.read1(read_size))
+            # a keep-alive peer. Wire reads also carry chunk framing/trailers,
+            # so retain their bounded window even at the payload cap.
+            protocol.receive_data(source.read1(_AUTH_BASE_RESPONSE_READ_BUFFER_BYTES))
         elif isinstance(event, h11.Data):
-            body.extend(event.data)
-            if len(body) > MAX_AUTH_BASE_RESPONSE_BODY_BYTES:
+            if len(event.data) > MAX_AUTH_BASE_RESPONSE_BODY_BYTES - len(body):
                 raise ForwardedResponseTooLargeError("Forwarded auth.base response body too large")
+            body.extend(event.data)
         elif isinstance(event, h11.EndOfMessage):
             return bytes(body)
         else:
