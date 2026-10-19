@@ -20,7 +20,6 @@ import {
   discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
-  listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
 import {
   connectorCatalogDisplayColumns,
@@ -29,6 +28,7 @@ import {
 } from "../services/connector-catalog-columns";
 import {
   catalogSource,
+  listExternalPublicConnectorCatalogStatus,
   connectorCatalogConnectItemsFromSource,
   listExternalPublicConnectorCatalog,
   loadAcceptedConnectorCatalogSnapshot,
@@ -132,12 +132,19 @@ const listConnectorCatalogStatusInner$ = command(
     }
     signal.throwIfAborted();
 
+    const catalogStatusDb = context.db;
+    const catalogStatusFeatureStates = context.featureStates;
+    const catalogStatusConnections = connectorState.value;
     const catalog = await settleConnectorCatalogRead(
-      listPublicConnectorCatalogStatus({
-        db: context.db,
-        featureStates: context.featureStates,
-        connections: connectorState.value,
-      }),
+      (async () => {
+        const read = await listExternalPublicConnectorCatalogStatus({
+          db: catalogStatusDb,
+          featureStates: catalogStatusFeatureStates,
+          connections: catalogStatusConnections,
+          referenceConnectorSlugs: [],
+        });
+        return read.status;
+      })(),
       signal,
     );
     if (!catalog.ok) {

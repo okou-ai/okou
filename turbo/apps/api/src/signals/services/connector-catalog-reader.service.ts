@@ -4,7 +4,6 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import type {
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorCatalog,
@@ -22,7 +21,6 @@ import {
   connectorBriefsFromSource,
   discoverExternalPublicConnectorCatalogStatus,
   ExternalConnectorCatalogUnavailableError,
-  listExternalPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetailFromSource,
   searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
@@ -49,18 +47,6 @@ export async function searchConnectorCatalog(
   args: ConnectorCatalogSearchArgs,
 ): Promise<BuiltinConnectorSearchItem[]> {
   return await searchExternalConnectorCatalog(args);
-}
-
-export async function listPublicConnectorCatalogStatus(
-  args: ConnectorCatalogReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-  },
-): Promise<PublicConnectorCatalogStatusResponse> {
-  const read = await listExternalPublicConnectorCatalogStatus({
-    ...args,
-    referenceConnectorSlugs: [],
-  });
-  return read.status;
 }
 
 export function connectorBriefsFromRows(args: {
