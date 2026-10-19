@@ -565,7 +565,7 @@
       "agentLoading": "智能体还在加载",
       "connect": "连接 Google Drive",
       "connectTooltip": "连接 Google Drive 后即可上传成果",
-      "conversionNotice": "创建可编辑的副本。格式可能发生变化，原文件将保留。",
+      "conversionNotice": "创建可编辑副本，格式可能有所变化。",
       "conversionUnconfirmed": "无法确认 Google 转换结果，请检查云端硬盘后再重试。",
       "noArtifacts": "没有可同步的成果",
       "openDocs": "在 Google 文档中打开",

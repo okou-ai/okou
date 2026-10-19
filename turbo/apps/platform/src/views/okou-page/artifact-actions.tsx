@@ -231,6 +231,17 @@ export function ArtifactShareButton({
   );
 }
 
+function useGoogleDriveCompletedOperation(
+  syncTarget: ArtifactDownloadSyncTarget | undefined,
+) {
+  const operation = useGet(googleDriveSyncAccount$);
+  return operation &&
+    operation.artifactId === syncTarget?.artifactId &&
+    operation.agentId === syncTarget.agentId
+    ? operation
+    : undefined;
+}
+
 function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
 ) {
@@ -262,13 +273,10 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const completedAccount = useGet(googleDriveSyncAccount$);
-  const selectedAccount =
-    completedAccount &&
-    completedAccount.artifactId === syncTarget?.artifactId &&
-    completedAccount.agentId === syncTarget.agentId
-      ? completedAccount
-      : undefined;
+  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
+  const selectedAccount = completedOperation?.ready
+    ? completedOperation
+    : undefined;
   const accountReady =
     selectedAccount !== undefined || syncTarget?.accountReady === true;
 
@@ -281,6 +289,7 @@ function useGoogleDriveAvailability(
     googleDriveConnected,
     googleDriveConnector,
     googleDriveReady: accountReady,
+    googleImport: completedOperation?.googleImport,
     googleDriveConnectionId: selectedAccount
       ? selectedAccount.connectionId
       : syncTarget?.connectionId,
@@ -643,6 +652,17 @@ function GoogleDriveMenuItem({
     );
   }
 
+  const imported = availability.googleImport;
+  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
+    if (!imported.webViewLink) {
+      throw new Error("Converted Google file is missing its editor URL");
+    }
+    return (
+      <GoogleDriveCompletedMenuItem
+        action={{ kind: "open", target, url: imported.webViewLink }}
+      />
+    );
+  }
   const completed = googleDriveCompletedAction(syncTarget, target);
   if (completed) {
     return <GoogleDriveCompletedMenuItem action={completed} />;

@@ -566,7 +566,7 @@
       "agentLoading": "एजेंट अभी भी लोड हो रहा है",
       "connect": "Google Drive कनेक्ट करें",
       "connectTooltip": "आर्टिफ़ैक्ट अपलोड करने के लिए Google Drive कनेक्ट करें",
-      "conversionNotice": "संपादन योग्य कॉपी बनाता है। फ़ॉर्मैट बदल सकता है; मूल फ़ाइल सुरक्षित रहती है।",
+      "conversionNotice": "संपादन योग्य कॉपी बनाता है; फ़ॉर्मैट बदल सकता है।",
       "conversionUnconfirmed": "Google रूपांतरण की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले Drive देखें।",
       "noArtifacts": "सिंक करने के लिए कोई आर्टिफ़ैक्ट नहीं",
       "openDocs": "Google Docs में खोलें",
