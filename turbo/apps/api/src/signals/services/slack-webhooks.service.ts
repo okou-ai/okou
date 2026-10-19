@@ -735,12 +735,6 @@ const resolveSlackAgentRouteAdmission$ = command(
   },
 );
 
-async function disconnect(db: Db, connectionId: string): Promise<void> {
-  await db
-    .delete(slackOrgConnections)
-    .where(eq(slackOrgConnections.id, connectionId));
-}
-
 const cleanupWorkspaceInstallation$ = command(
   async (
     { set },
@@ -904,7 +898,12 @@ export const handleSlackCommands$ = command(
       if (!connection) {
         return ephemeral(buildErrorMessage("You are not connected."));
       }
-      await disconnect(db, connection.id);
+      const connectionId = connection.id;
+      await (async (): Promise<void> => {
+        await db
+          .delete(slackOrgConnections)
+          .where(eq(slackOrgConnections.id, connectionId));
+      })();
       signal.throwIfAborted();
       waitUntil(
         tapError(
@@ -1412,7 +1411,12 @@ const handleHomeDisconnect$ = command(
     if (!connection) {
       return;
     }
-    await disconnect(db, connection.id);
+    const connectionId = connection.id;
+    await (async (): Promise<void> => {
+      await db
+        .delete(slackOrgConnections)
+        .where(eq(slackOrgConnections.id, connectionId));
+    })();
     const installation = await installationForWorkspace(db, payload.team.id);
     if (!installation) {
       return;

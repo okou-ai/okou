@@ -4381,6 +4381,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.configureSlackAppMocks();
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Default Agent",
+      isolatePg: true,
     });
     const status = await bdd.readOnboardingStatus(actor);
     const defaultAgentId = status.defaultAgentId;
@@ -4515,6 +4516,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
+    await bdd.readMe(actor, { isolatePg: true });
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
