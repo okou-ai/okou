@@ -158,15 +158,6 @@ async function syncArtifactFilesToGoogleDrive(
     if (syncedCount === params.files.length) {
       toast.success(googleDriveSyncSuccessMessage(params.files.length), {
         id: toastId,
-        ...(params.files.some((file) => {
-          return file.mode === "google";
-        })
-          ? {
-              description: i18n.t(($) => {
-                return $.artifacts.googleDrive.conversionNotice;
-              }),
-            }
-          : {}),
       });
       return results;
     }

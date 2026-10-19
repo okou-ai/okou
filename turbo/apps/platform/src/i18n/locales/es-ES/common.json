@@ -581,7 +581,7 @@
       "agentLoading": "El agente sigue cargando",
       "connect": "Conectar Google Drive",
       "connectTooltip": "Conecta Google Drive para subir artefactos",
-      "conversionNotice": "Crea una copia editable. El formato puede cambiar; se conserva el archivo original.",
+      "conversionNotice": "Crear una copia editable",
       "conversionUnconfirmed": "No se pudo confirmar la conversión de Google. Revisa Drive antes de reintentar.",
       "noArtifacts": "No hay artefactos que sincronizar",
       "openDocs": "Abrir en Google Docs",

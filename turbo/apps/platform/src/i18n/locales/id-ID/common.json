@@ -565,7 +565,7 @@
       "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
-      "conversionNotice": "Membuat salinan yang dapat diedit. Format dapat berubah; file asli tetap disimpan.",
+      "conversionNotice": "Buat salinan yang dapat diedit",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "noArtifacts": "Tidak ada artefak untuk disinkronkan",
       "openDocs": "Buka di Google Docs",
