@@ -2409,6 +2409,13 @@
       "when": 1792407015724,
       "tag": "1421_backfill_billing_run_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1422,
+      "version": "7",
+      "when": 1792408450137,
+      "tag": "1422_retire_provider_scoped_canonical_delivery_index",
+      "breakpoints": true
     }
   ]
 }

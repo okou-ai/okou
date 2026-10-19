@@ -26,7 +26,7 @@ import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { SlackFile } from "../../lib/slack-webhook-context";
 import { buildFileUrlFromKey, isArtifactKeyV2 } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
-import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { db$, writeDb$ } from "../external/db";
 import { DiscordFileFetchError } from "../external/discord-file-fetcher";
@@ -1346,46 +1346,29 @@ const ensureCanonicalDelivery$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const inserted = await settle(
-      db
-        .insert(canonicalAssetDeliveries)
-        .values({
-          assetId,
-          provider: args.provider,
-          operationId: args.operationId,
-          status: "pending",
-          destination: args.destination,
-          ...(args.provider === "discord" || args.provider === "wechat"
-            ? {
-                providerState: { provider: args.provider, attempt: null },
-              }
-            : {}),
-        })
-        .onConflictDoNothing({
-          target: [
-            canonicalAssetDeliveries.assetId,
-            canonicalAssetDeliveries.operationId,
-          ],
-        })
-        .returning({ id: canonicalAssetDeliveries.id }),
-      signal,
-    );
+    const inserted = await db
+      .insert(canonicalAssetDeliveries)
+      .values({
+        assetId,
+        provider: args.provider,
+        operationId: args.operationId,
+        status: "pending",
+        destination: args.destination,
+        ...(args.provider === "discord" || args.provider === "wechat"
+          ? {
+              providerState: { provider: args.provider, attempt: null },
+            }
+          : {}),
+      })
+      .onConflictDoNothing({
+        target: [
+          canonicalAssetDeliveries.assetId,
+          canonicalAssetDeliveries.operationId,
+        ],
+      })
+      .returning({ id: canonicalAssetDeliveries.id });
     signal.throwIfAborted();
-    // The provider-scoped index remains for outgoing writers after migration
-    // 1409. It can win PostgreSQL's concurrent unique check before the arbiter.
-    // Resolve only that same-operation conflict; unrelated DB failures escape.
-    // DB/API removal gate (#40671): retire this catch with the old index after
-    // all serving/draining APIs and retained rollback targets use the new target.
-    if (
-      !inserted.ok &&
-      !isUniqueViolation(
-        inserted.error,
-        "canonical_asset_deliveries_asset_provider_operation_unique",
-      )
-    ) {
-      throw inserted.error;
-    }
-    if (inserted.ok && inserted.value.length > 0) {
+    if (inserted.length > 0) {
       return true;
     }
     // A separate statement sees the winner after ON CONFLICT waits for it.
