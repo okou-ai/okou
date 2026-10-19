@@ -187,11 +187,10 @@ not measured fleet sizing.
 ### Filesystem observation and operator monitoring
 
 Guest periodic telemetry reports independent optional `rootfs` and `home`
-objects with used/total/available bytes and inodes. Current Guests omit the
-legacy `disk_used` and `disk_total` pair. Missing, unsafe or unmounted home is
-omitted, not substituted with rootfs or a zero measurement. The API accepts legacy
-payloads and discards malformed optional observations without dropping the
-otherwise valid batch. Flat telemetry dimensions use `rootfs_*` and `home_*`.
+objects with used/total/available bytes and inodes. Missing, unsafe or unmounted
+home is omitted, not substituted with rootfs or a zero measurement. The API
+discards malformed optional observations without dropping the otherwise valid
+batch. Flat telemetry dimensions use `rootfs_*` and `home_*`.
 
 Failure diagnostics probe `/` and `/home/user` separately. Byte exhaustion or
 zero available inodes on home yields `guest_home_filesystem_full`; rootfs uses

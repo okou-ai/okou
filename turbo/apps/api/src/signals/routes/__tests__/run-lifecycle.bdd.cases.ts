@@ -2491,8 +2491,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                   cpu: 1,
                   mem_used: 2,
                   mem_total: 4,
-                  disk_used: 8,
-                  disk_total: 16,
                 },
               ],
             },

@@ -28,6 +28,8 @@ case "${1:-}" in
       else
         [ "${MOCK_RUN_STORAGE_OUTPUT_READER_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "625c4607ccdcd2d46a5c7227f61419928035e13f" ]; then
+      [ "${MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
@@ -323,6 +325,7 @@ assert_failure() {
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor e01702c7d762b5d2a76d557db77ccaf19c4f95c8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must accept structured-only disk telemetry"
+grep -Fxq "git merge-base --is-ancestor 625c4607ccdcd2d46a5c7227f61419928035e13f bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "retained Runner artifact must contain the pair-free disk telemetry writer"
 grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "eligible API artifact must satisfy the canonical VNC producer floor"
 grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
@@ -1156,6 +1159,15 @@ assert_failure "predates structured provider balance failures" \
 [ ! -s "${tmp_dir}/balance-runner.output" ] || fail "incompatible retained Runner must not publish outputs"
 if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
   fail "incompatible retained Runner must fail before Runner artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the pair-free disk telemetry writer" \
+  run_resolver "${tmp_dir}/pair-free-disk-writer.output" MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID=0
+grep -Fq '625c4607ccdcd2d46a5c7227f61419928035e13f' "${tmp_dir}/failure.err" || fail "disk writer rejection must identify the producer commit"
+[ ! -s "${tmp_dir}/pair-free-disk-writer.output" ] || fail "dual-writing Runner must not publish rollback outputs"
+if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "dual-writing Runner must fail before Runner artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
