@@ -2693,16 +2693,15 @@ export const recordQueuedPromptRunLaunch$ = command(
   },
 );
 
-async function readTerminalChatCallbackRun(db: Db, runId: string) {
-  const [run] = await db
-    .select({
+function terminalChatCallbackRunReadPlan(runId: string) {
+  return {
+    columns: {
       threadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  return run;
+    },
+    condition: eq(agentRuns.id, runId),
+    limit: 1,
+  };
 }
 
 async function loadTerminalChatCallback(
@@ -3350,7 +3349,16 @@ const processTerminalChatCallback$ = command(
           "api_dispatch_pre_create_agent_chat_callback_load_terminal",
           "top_level",
           async () => {
-            const existing = await readTerminalChatCallbackRun(args.db, runId);
+            const db = args.db;
+            const existing = await (async () => {
+              const plan = terminalChatCallbackRunReadPlan(runId);
+              const [run] = await db
+                .select(plan.columns)
+                .from(agentRuns)
+                .where(plan.condition)
+                .limit(plan.limit);
+              return run;
+            })();
             signal.throwIfAborted();
             if (!existing?.threadId || existing.triggerSource === null) {
               return null;
