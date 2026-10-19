@@ -40,6 +40,7 @@ import {
   readConnectorAccountCount,
   resolveCustomConnectorAccountMutation,
   readConnectorOAuthCompletion,
+  readConnectorAccountCompletion,
 } from "./connector-accounts.ts";
 import type { ConnectorConnectSuccess } from "./connectors.ts";
 import type {
@@ -415,7 +416,27 @@ const setCustomConnectorValuesForTarget$ = command(
     signal.throwIfAborted();
     const connector = setCustomConnectorValuesResponseSchema.parse(result.body);
     set(bumpReload$);
-    if (!connector.connected) {
+    // The legacy alias on this operation is its actual operated account,
+    // unlike the default-scoped alias on a definition read. Retired by #41309.
+    const connectionId = connector.connectionId ?? connector.connectedAccountId;
+    if (connectionId === undefined) {
+      throw new Error(
+        "Connector account identity is unavailable. Refresh and try again.",
+      );
+    }
+    if (
+      args.account.intent === "reconnect" &&
+      connectionId !== args.account.connectionId
+    ) {
+      throw new Error("Connector account response identity mismatch.");
+    }
+    const connected = await readConnectorAccountCompletion(
+      createClient,
+      { kind: "custom", customConnectorId: args.id },
+      connectionId,
+      signal,
+    );
+    if (!connected) {
       return {
         connected: false,
         targetAuthorized: false,
@@ -426,6 +447,7 @@ const setCustomConnectorValuesForTarget$ = command(
       authorizeCompletedCustomConnectorTarget$,
       {
         connector,
+        accountComplete: connected,
         target: args.authorizationTarget,
         initialAccountCount,
       },
@@ -440,7 +462,7 @@ const setCustomConnectorValuesForTarget$ = command(
     return {
       connected: true,
       targetAuthorized,
-      connectionId: result.body.connectedAccountId ?? null,
+      connectionId,
     };
   },
 );
@@ -545,12 +567,13 @@ const authorizeCompletedCustomConnectorTarget$ = command(
     { set },
     args: {
       readonly connector: CustomConnectorResponse | undefined;
+      readonly accountComplete: boolean;
       readonly target: CustomConnectorAuthorizationTarget;
       readonly initialAccountCount: number | undefined;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    if (!args.connector?.connected) {
+    if (!args.accountComplete || !args.connector) {
       return false;
     }
     if (
@@ -578,28 +601,61 @@ const authorizeCompletedCustomConnectorTarget$ = command(
   },
 );
 
+function openCustomConnectorAuthorizationWindow(signal: AbortSignal) {
+  const authWindow = window.open(
+    "about:blank",
+    "_blank",
+    "width=600,height=700",
+  );
+  if (!authWindow) {
+    throw new Error("Failed to open authorization window");
+  }
+  authWindow.opener = null;
+  signal.addEventListener(
+    "abort",
+    () => {
+      authWindow.close();
+    },
+    { once: true },
+  );
+  return authWindow;
+}
+
+async function waitForCustomConnectorAuthorizationWindow(
+  authWindow: Window,
+  signal: AbortSignal,
+) {
+  await waitLoopUntil(
+    () => {
+      return authWindow.closed;
+    },
+    IN_VITEST ? 10 : 250,
+    signal,
+  );
+  signal.throwIfAborted();
+}
+
+function completedCustomConnectorAccountId(
+  receipt: {
+    readonly connectionId?: string;
+    readonly connectedAccountId: string;
+  },
+  account: PlatformConnectorAccountMutationIntent,
+) {
+  const connectionId = receipt.connectionId ?? receipt.connectedAccountId;
+  if (account.intent === "reconnect" && connectionId !== account.connectionId) {
+    throw new Error("Connector account response identity mismatch.");
+  }
+  return connectionId;
+}
+
 const connectCustomConnectorAuthorizationForTargetCommand$ = command(
   async (
     { get, set },
     args: CustomConnectorAuthorizationTargetArgs,
     signal: AbortSignal,
   ): Promise<CustomConnectorConnectionResult> => {
-    const authWindow = window.open(
-      "about:blank",
-      "_blank",
-      "width=600,height=700",
-    );
-    if (!authWindow) {
-      throw new Error("Failed to open authorization window");
-    }
-    authWindow.opener = null;
-    signal.addEventListener(
-      "abort",
-      () => {
-        authWindow.close();
-      },
-      { once: true },
-    );
+    const authWindow = openCustomConnectorAuthorizationWindow(signal);
     let navigated = false;
     let initialAccountCount: number | undefined;
     const { startResult, account } = await withCleanup(
@@ -641,31 +697,37 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
     );
     signal.throwIfAborted();
     if (startResult.result === "connected") {
-      set(markConnectorConnectionCompleted$, signal);
+      const connectionId = completedCustomConnectorAccountId(
+        startResult,
+        account,
+      );
+      const connected = await readConnectorAccountCompletion(
+        get(apiClient$),
+        { kind: "custom", customConnectorId: args.id },
+        connectionId,
+        signal,
+      );
+      if (connected) {
+        set(markConnectorConnectionCompleted$, signal);
+      }
       set(bumpReload$);
       const targetAuthorized = await set(
         authorizeCompletedCustomConnectorTarget$,
         {
           connector: startResult.connector,
+          accountComplete: connected,
           target: args.authorizationTarget,
           initialAccountCount,
         },
         signal,
       );
       return {
-        connected: startResult.connector.connected,
+        connected,
         targetAuthorized,
-        connectionId: startResult.connectedAccountId,
+        connectionId,
       };
     }
-    await waitLoopUntil(
-      () => {
-        return authWindow.closed;
-      },
-      IN_VITEST ? 10 : 250,
-      signal,
-    );
-    signal.throwIfAborted();
+    await waitForCustomConnectorAuthorizationWindow(authWindow, signal);
     set(bumpReload$);
     const connectors = await waitForOperation(get(customConnectors$), signal);
     signal.throwIfAborted();
@@ -680,29 +742,34 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (
-      connectionId === null ||
-      (args.useDefaultConnectorProjection &&
-        connector?.connectedAccountId !== connectionId)
-    ) {
+    if (connectionId === null) {
       return {
         connected: false,
         targetAuthorized: false,
         connectionId: null,
       };
     }
-    set(markConnectorConnectionCompleted$, signal);
+    const connected = await readConnectorAccountCompletion(
+      get(apiClient$),
+      { kind: "custom", customConnectorId: args.id },
+      connectionId,
+      signal,
+    );
+    if (connected) {
+      set(markConnectorConnectionCompleted$, signal);
+    }
     const targetAuthorized = await set(
       authorizeCompletedCustomConnectorTarget$,
       {
         connector,
+        accountComplete: connected,
         target: args.authorizationTarget,
         initialAccountCount,
       },
       signal,
     );
     return {
-      connected: connector?.connected ?? false,
+      connected,
       targetAuthorized,
       connectionId,
     };

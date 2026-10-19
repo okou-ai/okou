@@ -14,6 +14,12 @@ import chalk from "chalk";
 import { server } from "../../../mocks/server";
 import { connectCommand } from "../connect";
 import {
+  connectorAccount,
+  connectorAccountSummary,
+  stubConnectorAccountSummaries,
+  stubConnectorAccountDetails,
+} from "../../__tests__/helpers/connector-accounts";
+import {
   customConnector,
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
@@ -66,6 +72,10 @@ describe("okou connector connect command", () => {
     connectCommand.setOptionValueWithSource("value", [], "default");
     connectCommand.setOptionValue("input", undefined);
     server.use(stubCustomConnectors([]));
+    server.use(
+      stubConnectorAccountSummaries([]),
+      stubConnectorAccountDetails(),
+    );
   });
 
   afterEach(() => {
@@ -168,6 +178,14 @@ describe("okou connector connect command", () => {
   it("preserves reconnect syntax and resolves the current default exactly", async () => {
     let receivedBody: unknown;
     server.use(
+      stubConnectorAccountSummaries([
+        connectorAccountSummary({ kind: "builtin", connectorSlug: "openai" }, [
+          connectorAccount(
+            { kind: "builtin", connectorSlug: "openai" },
+            { id: DEFAULT_CONNECTION_ID },
+          ),
+        ]),
+      ]),
       http.get(
         "http://localhost:3000/api/connectors/:connectorSlug",
         ({ params }) => {

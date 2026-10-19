@@ -77,6 +77,7 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import { parseCustomMcpEndpoint } from "./custom-mcp-endpoint";
 import {
   customConnectorDefinitionConnectedAccount,
+  customConnectorDefinitionFieldCompatibility,
   customConnectorConnectedConnections,
   customConnectorRuntimeStorageSnapshot,
   customConnectorValueMarkers,
@@ -1521,26 +1522,22 @@ function validateDefinitionAuth(
   fields: readonly CustomConnectorField[],
 ): CustomConnectorAuthMode | BadRequestResponse {
   const authMode = input.authMode ?? "manual";
-  if (authMode === "automatic" && input.kind !== "mcp") {
+  const issue = customConnectorDefinitionFieldCompatibility({
+    authMode,
+    kind: input.kind ?? "http",
+    fields,
+  });
+  if (issue === "automatic-requires-mcp") {
     return badRequestMessage(
       "Automatic authentication is available only for MCP Streamable HTTP connectors",
     );
   }
-  if (
-    authMode !== "manual" &&
-    fields.some((field) => {
-      return field.kind === "secret";
-    })
-  ) {
+  if (issue === "secret-fields-not-supported") {
     return badRequestMessage(
       `${authMode === "none" ? "No-auth" : authMode === "automatic" ? "Automatic" : "OAuth"} custom connector fields must be variables`,
     );
   }
-  if (
-    (authMode === "none" || authMode === "automatic") &&
-    input.kind === "mcp" &&
-    fields.length > 0
-  ) {
+  if (issue === "mcp-fields-not-supported") {
     return badRequestMessage(
       `${authMode === "none" ? "No-auth" : "Automatic"} MCP connectors cannot include fields`,
     );
@@ -3102,7 +3099,10 @@ export const setCustomConnectorValues$ = command(
     },
     signal: AbortSignal,
   ): Promise<
-    | (CustomConnectorResponse & { readonly connectedAccountId: string })
+    | (CustomConnectorResponse & {
+        readonly connectedAccountId: string;
+        readonly connectionId: string;
+      })
     | BadRequestResponse
     | NotFoundResponse
     | ForbiddenResponse
@@ -3195,6 +3195,7 @@ export const setCustomConnectorValues$ = command(
         connectedAccountId: writeResult.connectedAccountId,
       }),
       connectedAccountId: writeResult.connectedAccountId,
+      connectionId: writeResult.connectedAccountId,
     };
   },
 );

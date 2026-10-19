@@ -3081,6 +3081,8 @@
       "noAccountsFound": "Akun tidak ditemukan",
       "reconnectRequired": "Perlu dihubungkan kembali",
       "rename": "Ganti nama",
+      "setupIncomplete": "Penyiapan belum lengkap",
+      "setupUnavailable": "Status akun tidak tersedia",
       "skipName": "Lewati",
       "summaryMany": "{{value}} akun",
       "summaryMany_other": "",

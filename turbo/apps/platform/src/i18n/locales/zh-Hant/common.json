@@ -3081,6 +3081,8 @@
       "noAccountsFound": "沒有找到帳號",
       "reconnectRequired": "需要重新連線",
       "rename": "重新命名",
+      "setupIncomplete": "設定尚未完成",
+      "setupUnavailable": "帳號狀態暫時無法取得",
       "skipName": "跳過",
       "summaryMany": "{{value}} 個帳號",
       "summaryMany_other": "",

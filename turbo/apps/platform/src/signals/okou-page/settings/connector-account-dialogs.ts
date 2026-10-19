@@ -41,6 +41,7 @@ export type ConnectorAccountConnectMode =
       readonly kind: "reconnect";
       readonly connectionId: string;
       readonly authMethod?: ConnectorAuthMethodId;
+      readonly account?: ConnectorAccountConnection;
     };
 
 export interface ConnectorAccountMutationOptions {

@@ -7,6 +7,7 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import type {
+  BuiltinConnectorResponse,
   BuiltinConnectorOauthDeviceAuthSessionPollResponse,
   BuiltinConnectorOauthDeviceAuthSessionStartResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
@@ -649,6 +650,15 @@ function deviceAuthTokenConnectionInput(
   };
 }
 
+function completedDeviceAuthResponse(
+  connector: BuiltinConnectorResponse,
+): PollSuccess {
+  return {
+    status: 200,
+    body: { status: "complete", connector, connectionId: connector.id },
+  };
+}
+
 const completeClaimedSession$ = command(
   async (
     { set },
@@ -776,10 +786,7 @@ const completeClaimedSession$ = command(
       { prepared, connectionResult: result, postCommitAbort },
       signal,
     );
-    return {
-      status: 200,
-      body: { status: "complete", connector: connected.connector },
-    };
+    return completedDeviceAuthResponse(connected.connector);
   },
 );
 
@@ -843,10 +850,7 @@ const completedDeviceSessionResponse$ = command(
     if (!connector) {
       throw new Error("Completed OAuth connector not found");
     }
-    const response: PollSuccess = {
-      status: 200,
-      body: { status: "complete", connector },
-    };
+    const response = completedDeviceAuthResponse(connector);
     const error = await set(
       authorizeDeviceSessionConnector$,
       { ...args, connectorSlug: args.method.connectorSlug },

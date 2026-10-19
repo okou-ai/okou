@@ -48,6 +48,41 @@ export async function readConnectorAccountCount(
   );
 }
 
+/** Completion requires facts for the operated account, including on old API responses. */
+export async function readConnectorAccountCompletion(
+  createClient: ApiClientFactory,
+  target: ConnectorAccountTarget,
+  connectionId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const result = await accept(
+    createClient(connectorAccountsContract).connection({
+      params: { connectionId },
+      query: target,
+      fetchOptions: { signal },
+    }),
+    [200],
+    signal,
+  );
+  signal.throwIfAborted();
+  if (
+    result.body.id !== connectionId ||
+    connectorAccountTargetKey(result.body.target) !==
+      connectorAccountTargetKey(target) ||
+    result.body.setupStatus === undefined
+  ) {
+    throw new Error(
+      "Connector account setup information is unavailable. Refresh and try again.",
+    );
+  }
+  if (result.body.setupStatus !== "complete") {
+    throw new Error(
+      "This account needs additional setup. Review its connector settings and try again.",
+    );
+  }
+  return result.body.connectionStatus === "connected";
+}
+
 export async function resolveCustomConnectorAccountMutation(
   createClient: ApiClientFactory,
   customConnectorId: string,

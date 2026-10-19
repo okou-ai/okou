@@ -3148,6 +3148,8 @@
       "noAccountsFound": "No se encontraron cuentas",
       "reconnectRequired": "Se requiere volver a conectar",
       "rename": "Cambiar nombre",
+      "setupIncomplete": "Configuración incompleta",
+      "setupUnavailable": "Estado de la cuenta no disponible",
       "skipName": "Omitir",
       "summaryMany": "{{value}} cuentas",
       "summaryMany_one": "",

@@ -3094,6 +3094,8 @@
       "noAccountsFound": "No accounts found",
       "reconnectRequired": "Reconnect required",
       "rename": "Rename",
+      "setupIncomplete": "Setup incomplete",
+      "setupUnavailable": "Account status unavailable",
       "skipName": "Skip",
       "summaryMany": "{{value}} accounts",
       "summaryOne": "{{value}} account",

@@ -3148,6 +3148,8 @@
       "noAccountsFound": "Nenhuma conta encontrada",
       "reconnectRequired": "É necessário reconectar",
       "rename": "Renomear",
+      "setupIncomplete": "Configuração incompleta",
+      "setupUnavailable": "Status da conta indisponível",
       "skipName": "Pular",
       "summaryMany": "{{value}} contas",
       "summaryMany_one": "",

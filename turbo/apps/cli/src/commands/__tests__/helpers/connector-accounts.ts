@@ -1,4 +1,5 @@
 import {
+  connectorAccountTargetSchema,
   type ConnectorAccountConnection,
   type ConnectorAccountSummary,
   type ConnectorAccountTarget,
@@ -25,6 +26,9 @@ export function connectorAccount(
     externalEmail: null,
     oauthScopes: [],
     connectionStatus: "connected",
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     reconnectReason: null,
     tokenExpiresAt: null,
     createdAt: "2026-10-19T00:00:00.000Z",
@@ -41,7 +45,10 @@ export function connectorAccountSummary(
     target,
     accountCount: accounts.length,
     attentionCount: accounts.filter((account) => {
-      return account.connectionStatus === "reconnect-required";
+      return (
+        account.connectionStatus === "reconnect-required" ||
+        account.setupStatus !== "complete"
+      );
     }).length,
     defaultConnection:
       accounts.find((account) => {
@@ -57,6 +64,25 @@ export function stubConnectorAccountSummaries(
   return http.get(`${origin}/api/connector-accounts`, () => {
     return HttpResponse.json({ summaries });
   });
+}
+
+export function stubConnectorAccountDetails(
+  overrides: Partial<ConnectorAccountConnection> = {},
+) {
+  return http.get(
+    "http://localhost:3000/api/connector-accounts/:connectionId",
+    ({ request, params }) => {
+      const target = connectorAccountTargetSchema.parse(
+        Object.fromEntries(new URL(request.url).searchParams),
+      );
+      return HttpResponse.json(
+        connectorAccount(target, {
+          id: String(params.connectionId),
+          ...overrides,
+        }),
+      );
+    },
+  );
 }
 
 export function catalogAccountSummaries(

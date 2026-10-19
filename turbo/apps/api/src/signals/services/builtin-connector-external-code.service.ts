@@ -443,7 +443,11 @@ const persistClaimedExternalCodeConnector$ = command(
     }
     return {
       status: 200,
-      body: { status: "complete", connector: persisted.connector },
+      body: {
+        status: "complete",
+        connector: persisted.connector,
+        connectionId: persisted.connector.id,
+      },
     };
   },
 );
@@ -535,7 +539,12 @@ const completedExternalCodeSessionResponse$ = command(
       { ...args, connectorSlug: args.method.connectorSlug },
       signal,
     );
-    return error ?? { status: 200, body: { status: "complete", connector } };
+    return (
+      error ?? {
+        status: 200,
+        body: { status: "complete", connector, connectionId: connector.id },
+      }
+    );
   },
 );
 

@@ -227,7 +227,8 @@ describe("okou connector list command", () => {
       });
       expect(connectedRow).toContain("Account #55555555");
       expect(connectedRow).not.toContain("not connected");
-      expect(missingRow).toContain("missing apiKey");
+      expect(missingRow).toContain("not connected");
+      expect(missingRow).not.toContain("missing apiKey");
     });
 
     it("emits parseable current-context JSON without ANSI", async () => {

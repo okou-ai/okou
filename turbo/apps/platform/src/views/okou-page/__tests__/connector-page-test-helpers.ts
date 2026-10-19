@@ -65,6 +65,9 @@ export function customConnectorAccount(
     externalEmail: null,
     oauthScopes: null,
     connectionStatus: "connected",
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     reconnectReason: null,
     tokenExpiresAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -521,6 +524,11 @@ export function mockCustomConnectorStory(
         externalEmail: null,
         oauthScopes: null,
         connectionStatus: "connected",
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: body.values.map((value) => {
+          return value.key;
+        }),
         reconnectReason: null,
         tokenExpiresAt: null,
         createdAt: "2026-01-01T00:00:00.000Z",
@@ -606,6 +614,9 @@ export function mockGithubAccounts(
       externalUsername: isDefault ? null : `octocat-${index}`,
       externalEmail: null,
       oauthScopes: [],
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
       connectionStatus: isDefault
         ? ("reconnect-required" as const)
         : ("connected" as const),
