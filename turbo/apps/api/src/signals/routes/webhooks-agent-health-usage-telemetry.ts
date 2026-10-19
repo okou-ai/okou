@@ -16,8 +16,9 @@ import {
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { and, eq, inArray } from "drizzle-orm";
-import type { z } from "zod";
+import { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -37,10 +38,7 @@ import { runnerAuth$ } from "../auth/runner-auth";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
-import {
-  DISCORD_TYPING_REFRESH_INTERVAL_SECONDS,
-  hasDiscordTypingTargetForRun,
-} from "../services/discord-run-typing.service";
+import { DISCORD_TYPING_REFRESH_INTERVAL_SECONDS } from "../services/discord-run-typing.service";
 import {
   WECHAT_TYPING_REFRESH_INTERVAL_SECONDS,
   hasWechatTypingTargetForRun$,
@@ -60,12 +58,19 @@ import { readUsageEventBody } from "./webhooks-usage-body";
 import { ingestXResourceUsage$ } from "../services/x-resource-usage.service";
 import { XResourceUsageError } from "../services/x-resource-usage-values";
 
+import { discordDeliveryTargetSchema } from "../services/discord-chat-callback-payload";
+import { internalRunCallbackKindForRecord } from "../services/internal-run-callback";
+
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
 const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
 const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
+const discordTypingPayloadSchema = z.object({
+  discordDelivery: discordDeliveryTargetSchema,
+});
+const DISCORD_TYPING_ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 
 interface SandboxOperationDimensionInput {
   readonly error?: string;
@@ -446,7 +451,32 @@ const typingRefreshIntervalSecondsForRun$ = command(
         : undefined;
     }
     if (args.triggerSource === "discord") {
-      const refresh = await hasDiscordTypingTargetForRun(get(db$), args.runId);
+      const db = get(db$);
+      const runId = args.runId;
+      const refresh = await (async () => {
+        const callbacks = await db
+          .select({
+            url: agentRunCallbacks.url,
+            internalKind: agentRunCallbacks.internalKind,
+            payload: agentRunCallbacks.payload,
+          })
+          .from(agentRunCallbacks)
+          .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
+          .where(
+            and(
+              eq(agentRunCallbacks.runId, runId),
+              eq(agentRunCallbacks.status, "pending"),
+              eq(agentRuns.triggerSource, "discord"),
+              inArray(agentRuns.status, DISCORD_TYPING_ACTIVE_RUN_STATUSES),
+            ),
+          );
+        return callbacks.some((callback) => {
+          return (
+            internalRunCallbackKindForRecord(callback) === "chat" &&
+            discordTypingPayloadSchema.safeParse(callback.payload).success
+          );
+        });
+      })();
       signal.throwIfAborted();
       return refresh ? DISCORD_TYPING_REFRESH_INTERVAL_SECONDS : undefined;
     }
