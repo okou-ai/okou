@@ -374,6 +374,15 @@ impl Peers {
         if result.is_err() {
             return self.fail();
         }
+        if self.diagnostics {
+            for binding in self
+                .bindings
+                .iter()
+                .filter_map(|held| held.binding.upgrade())
+            {
+                self.observe_status(&binding);
+            }
+        }
         if let Some((rules, named)) = update.packetfilter {
             // A changed provider policy has no proven per-stream byte cutoff. Seal
             // all old bindings and flush public peer queues before adopting it.
@@ -654,6 +663,7 @@ impl Peers {
             retired: false,
             pending_plaintext: false,
         });
+        self.observe_status(&binding);
         Ok(binding)
     }
 
@@ -821,6 +831,18 @@ impl Peers {
             return Ok(None);
         }
         self.observe_peer(source, super::evidence::Flow::LabelledInput, 1);
+        if self.diagnostics
+            && let Some(kind) = super::evidence::WireKind::observed(packet.as_ref())
+        {
+            self.observe_peer(
+                source,
+                super::evidence::Flow::WireGuard {
+                    received: true,
+                    kind,
+                },
+                1,
+            );
+        }
         let (mut frames, mut received) = self.incoming(vec![packet])?;
         // DERP's source label is not a substitute for authenticated WireGuard
         // identity. Require both before an exact TCP stack adopts plaintext or
@@ -857,6 +879,15 @@ impl Peers {
             .and_then(|peer| peer.node.derp_region)
     }
 
+    fn observe_status(&self, binding: &Binding) {
+        if self.diagnostics
+            && self.current(binding).is_ok()
+            && let Some(peer) = self.peers.get(&binding.identity.id)
+        {
+            binding.trace.peer_status(peer.node.status);
+        }
+    }
+
     pub(super) fn wait_writable(
         &self,
     ) -> impl Future<Output = Result<OwnedSemaphorePermit, tokio::sync::AcquireError>> + Send + use<>
@@ -888,6 +919,37 @@ impl Peers {
             for ((_, endpoint), packets) in &output {
                 if let Some(peer) = endpoint.as_derp() {
                     self.observe_peer(peer, super::evidence::Flow::EncryptedOutput, packets.len());
+                    let (mut initiation, mut response, mut cookie, mut transport) = (0, 0, 0, 0);
+                    use super::evidence::WireKind;
+                    for packet in packets {
+                        let count = match WireKind::observed(packet.as_ref()) {
+                            Some(WireKind::Initiation) => &mut initiation,
+                            Some(WireKind::Response) => &mut response,
+                            Some(WireKind::Cookie) => &mut cookie,
+                            Some(WireKind::Transport) => &mut transport,
+                            None => continue,
+                        };
+                        *count += 1;
+                    }
+                    // Classify once per SDK batch; traverse active bindings at
+                    // most once per kind rather than once per transport packet.
+                    for (kind, count) in [
+                        (WireKind::Initiation, initiation),
+                        (WireKind::Response, response),
+                        (WireKind::Cookie, cookie),
+                        (WireKind::Transport, transport),
+                    ] {
+                        if count != 0 {
+                            self.observe_peer(
+                                peer,
+                                super::evidence::Flow::WireGuard {
+                                    received: false,
+                                    kind,
+                                },
+                                count,
+                            );
+                        }
+                    }
                 }
             }
         }

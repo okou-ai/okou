@@ -104,6 +104,18 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
     let automatic = diagnostic_text(failure.result());
     assert!(automatic.contains("node setup reused;"), "{automatic}");
     assert!(
+        automatic.contains("Selected peer control-plane status: online;"),
+        "{automatic}"
+    );
+    assert!(
+        automatic.contains("WireGuard transport-data produced:"),
+        "{automatic}"
+    );
+    assert!(
+        !automatic.contains("WireGuard transport-data produced: not observed."),
+        "{automatic}"
+    );
+    assert!(
         automatic.contains("Native node registration: passed;"),
         "{automatic}"
     );
@@ -147,6 +159,14 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
             .await;
         assert_eq!(checked["status"], "passed", "{checked}");
         let text = diagnostic_text(&checked);
+        assert!(
+            text.contains("Selected peer control-plane status: online;"),
+            "{text}"
+        );
+        assert!(
+            text.contains("WireGuard transport-data header received:"),
+            "{text}"
+        );
         assert!(text.contains("stream passed; node setup reused;"), "{text}");
         assert!(text.contains("VNC initialization: passed."), "{text}");
         assert!(text.contains("Check-owned cleanup: passed."), "{text}");

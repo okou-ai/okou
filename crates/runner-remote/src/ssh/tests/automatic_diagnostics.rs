@@ -206,7 +206,7 @@ async fn key_decode_rejection_reports_credential_failure_before_network() {
     assert!(text.contains(&format!("Configuration: created at {CREATED_AT};")));
     assert!(text.contains("generation 7."));
     assert_stage(text, "authority", "passed");
-    assert_stage(text, "credential", "failed");
+    assert_stage(text, "credential_preparation", "failed");
     for stage in ["dns", "tcp", "ssh_proof", "ssh_trust", "authentication"] {
         assert_stage(text, stage, "not_reached");
     }

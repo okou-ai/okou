@@ -205,8 +205,10 @@ pub(crate) struct Report {
     cause: Option<Cause>,
     pub(crate) dependencies: Vec<Dependency>,
     native: Option<NativeSource>,
-    native_layers: Option<crate::tailscale::evidence::Snapshot>,
-    native_connection: Option<crate::tailscale::evidence::Snapshot>,
+    // Optional native detail must not inflate every nested SSH/VNC RPC future,
+    // including direct/SSH-routed Kerberos paths with no native connection.
+    native_layers: Option<Box<crate::tailscale::evidence::Snapshot>>,
+    native_connection: Option<Box<crate::tailscale::evidence::Snapshot>>,
     vnc: Option<crate::vnc::evidence::Snapshot>,
     #[serde(skip)]
     ssh: Option<trace::Snapshot>,
@@ -472,11 +474,13 @@ impl Handle {
         // remain observable without rewriting this operation's explanation.
         let native_layers = native
             .as_ref()
-            .and_then(|source| source.evidence.layers().snapshot());
+            .and_then(|source| source.evidence.layers().snapshot())
+            .map(Box::new);
         let native_connection = native
             .as_ref()
             .and_then(|source| source.connection.as_ref())
-            .and_then(crate::tailscale::evidence::Trace::snapshot);
+            .and_then(crate::tailscale::evidence::Trace::snapshot)
+            .map(Box::new);
         let mut report = Report {
             run_id: self.store.run,
             assignment_id: self
