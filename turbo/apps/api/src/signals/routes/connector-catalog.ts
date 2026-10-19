@@ -17,7 +17,6 @@ import {
   userFeatureSwitchOverrides,
 } from "../services/feature-switches.service";
 import {
-  discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
 } from "../services/connector-catalog-reader.service";
@@ -31,6 +30,7 @@ import {
   listExternalPublicConnectorCatalogStatus,
   connectorCatalogConnectItemsFromSource,
   listExternalPublicConnectorCatalog,
+  discoverExternalPublicConnectorCatalogStatus,
   loadAcceptedConnectorCatalogSnapshot,
   publicConnectorCatalogStatusFromSource,
   type ConnectorCatalogSlugSource,
@@ -283,14 +283,23 @@ const discoverConnectorCatalogInner$ = command(
     }
     signal.throwIfAborted();
 
+    const catalogDiscoveryDb = context.db;
+    const catalogDiscoveryFeatureStates = context.featureStates;
+    const catalogDiscoveryConnections = connectorState.value;
+    const catalogDiscoveryKeyword = query.keyword;
+    const catalogDiscoveryCategory = query.category;
     const catalog = await settleConnectorCatalogRead(
-      discoverPublicConnectorCatalogStatus({
-        db: context.db,
-        featureStates: context.featureStates,
-        connections: connectorState.value,
-        keyword: query.keyword,
-        category: query.category,
-      }),
+      (async () => {
+        const read = await discoverExternalPublicConnectorCatalogStatus({
+          db: catalogDiscoveryDb,
+          featureStates: catalogDiscoveryFeatureStates,
+          connections: catalogDiscoveryConnections,
+          keyword: catalogDiscoveryKeyword,
+          category: catalogDiscoveryCategory,
+          referenceConnectorSlugs: [],
+        });
+        return read.status;
+      })(),
       signal,
     );
     if (!catalog.ok) {
