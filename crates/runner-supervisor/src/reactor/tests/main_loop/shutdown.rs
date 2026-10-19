@@ -170,10 +170,10 @@ async fn assert_network_log_eof_stops_runner(component: NetworkLogTestComponent)
     let (stdin, pid, starttime) = component.install(&mut config).await;
     let reap_gate = crate::test_fixtures::ReapGate::new();
     component.set_reap_gate(&mut config, reap_gate.clone());
-    env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
 
     wait_discover_entered(&env, Duration::from_secs(2)).await;
+    env.handle.block_heartbeats();
     drop(stdin);
 
     tokio::time::timeout(Duration::from_secs(2), reap_gate.entered.notified())
@@ -210,10 +210,10 @@ async fn assert_network_log_read_error_stops_runner(component: NetworkLogTestCom
     let (mut stdin, pid, starttime) = component.install(&mut config).await;
     let reap_gate = crate::test_fixtures::ReapGate::new();
     component.set_reap_gate(&mut config, reap_gate.clone());
-    env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
 
     wait_discover_entered(&env, Duration::from_secs(2)).await;
+    env.handle.block_heartbeats();
     stdin.write_all(&[0xff, b'\n']).await.unwrap();
     stdin.flush().await.unwrap();
 

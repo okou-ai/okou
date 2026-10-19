@@ -612,7 +612,9 @@ mod tests {
             *self.failure_reason.lock().unwrap() = request.failure_reason;
         }
 
-        async fn heartbeat(&self, _state: &HeartbeatState) {}
+        async fn heartbeat(&self, _state: &HeartbeatState) -> runner_provider::ProviderResult<()> {
+            Ok(())
+        }
 
         async fn shutdown(&self) {}
     }
@@ -652,7 +654,9 @@ mod tests {
         fn completion_report_timing(&self) -> CompletionReportTiming {
             self.timing
         }
-        async fn heartbeat(&self, _state: &HeartbeatState) {}
+        async fn heartbeat(&self, _state: &HeartbeatState) -> runner_provider::ProviderResult<()> {
+            Ok(())
+        }
         async fn shutdown(&self) {}
     }
 

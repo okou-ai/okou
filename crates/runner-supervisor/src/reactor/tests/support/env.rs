@@ -87,7 +87,7 @@ impl MockRunEnv {
         api.assert_report_calls(count);
     }
 
-    pub(super) async fn shutdown_startup_api(&self) {
+    pub(in super::super) async fn shutdown_startup_api(&self) {
         if let Some(api) = &self.startup_api {
             api.shutdown().await;
         }

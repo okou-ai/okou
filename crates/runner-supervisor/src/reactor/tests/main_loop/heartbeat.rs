@@ -12,10 +12,11 @@ use std::sync::Arc;
 
 async fn wait_for_blocked_routine_heartbeat(env: &MockRunEnv) {
     wait_discover_entered(env, Duration::from_secs(2)).await;
+    env.handle.block_heartbeats();
     tokio::time::advance(HEARTBEAT_PERIOD).await;
     assert!(
         env.handle
-            .wait_heartbeat_past(0, Duration::from_secs(5))
+            .wait_heartbeat_past(1, Duration::from_secs(5))
             .await,
         "first routine heartbeat should enter the provider",
     );
@@ -169,7 +170,6 @@ async fn discover_survives_heartbeat_ticks() {
 #[tokio::test(start_paused = true)]
 async fn blocked_heartbeat_does_not_block_job_discovery_or_reaping() {
     let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
     wait_for_blocked_routine_heartbeat(&env).await;
 
@@ -198,6 +198,38 @@ async fn blocked_heartbeat_does_not_block_job_discovery_or_reaping() {
 }
 
 #[tokio::test]
+async fn routine_delivery_failure_after_startup_keeps_job_admission_available() {
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(receiver);
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    env.handle.fail_next_heartbeat();
+    trigger_routine_heartbeat(&trigger, &env, RunnerMode::Running).await;
+    assert!(
+        env.handle
+            .wait_heartbeat_past(1, Duration::from_secs(5))
+            .await
+    );
+    assert!(
+        env.handle
+            .wait_heartbeat_in_flight(0, Duration::from_secs(5))
+            .await
+    );
+
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    assert!(
+        env.handle
+            .wait_completion(run_id, Duration::from_secs(5))
+            .await
+            .is_some(),
+        "a later heartbeat failure must not turn healthy startup into an admission failure"
+    );
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
 async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
     let wait_gate = sandbox_mock::MockLifecycleGate::new();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -206,10 +238,10 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
     let (heartbeat_trigger, heartbeat_trigger_rx) = tokio::sync::mpsc::unbounded_channel();
     config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_trigger_rx);
     let status_path = env._temp_dir.path().join("status.json");
-    env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
 
     wait_discover_entered(&env, Duration::from_secs(2)).await;
+    env.handle.block_heartbeats();
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
     let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
@@ -221,7 +253,7 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
     trigger_routine_heartbeat(&heartbeat_trigger, &env, RunnerMode::Running).await;
     assert!(
         env.handle
-            .wait_heartbeat_past(0, Duration::from_secs(5))
+            .wait_heartbeat_past(1, Duration::from_secs(5))
             .await,
         "first routine heartbeat should enter the provider",
     );
@@ -244,7 +276,7 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
     // A further tick while the first request is blocked must collapse into
     // the same dirty follow-up rather than overlap or queue another payload.
     trigger_routine_heartbeat(&heartbeat_trigger, &env, RunnerMode::Draining).await;
-    assert_eq!(env.handle.heartbeat_count(), 1);
+    assert_eq!(env.handle.heartbeat_count(), 2);
     assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
 
     // Flip again without notifying or adding another trigger. The follow-up
@@ -258,7 +290,7 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
     env.handle.unblock_heartbeats();
     assert!(
         env.handle
-            .wait_heartbeat_past(1, Duration::from_secs(5))
+            .wait_heartbeat_past(2, Duration::from_secs(5))
             .await,
         "coalesced trigger should produce one follow-up",
     );
@@ -275,14 +307,15 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
             .heartbeats
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        let heartbeats = &heartbeats[1..]; // Required startup delivery precedes routine sends.
         assert_eq!(heartbeats.len(), 2);
         assert_eq!(heartbeats[0].mode, "running");
         assert_eq!(heartbeats[1].mode, "running");
         assert_eq!(heartbeats[1].running_count, 1);
         assert_eq!(heartbeats[0].snapshot_generation, 7);
         assert_eq!(heartbeats[1].snapshot_generation, 7);
-        assert_eq!(heartbeats[0].snapshot_sequence, 1);
-        assert_eq!(heartbeats[1].snapshot_sequence, 2);
+        assert_eq!(heartbeats[0].snapshot_sequence, 2);
+        assert_eq!(heartbeats[1].snapshot_sequence, 3);
     }
     assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
 
@@ -302,7 +335,6 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     config.wss_ingress_service_probe = Arc::new(|| Box::pin(async { true }));
     let status_path = env._temp_dir.path().join("status.json");
-    env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
     wait_for_blocked_routine_heartbeat(&env).await;
 
@@ -315,7 +347,7 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
     wait_status_mode(&status_path, "stopping", Duration::from_secs(5)).await;
 
     assert!(!run_handle.is_finished());
-    assert_eq!(env.handle.heartbeat_count(), 1);
+    assert_eq!(env.handle.heartbeat_count(), 2);
     assert_eq!(env.handle.heartbeat_in_flight(), 1);
 
     env.handle.unblock_heartbeats();
@@ -332,6 +364,7 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
             .heartbeats
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        let heartbeats = &heartbeats[1..];
         let modes: Vec<&str> = heartbeats
             .iter()
             .map(|heartbeat| heartbeat.mode.as_str())
@@ -341,7 +374,7 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
             .map(|heartbeat| heartbeat.snapshot_sequence)
             .collect();
         assert_eq!(modes, ["running", "stopping"]);
-        assert_eq!(sequences, [1, 2]);
+        assert_eq!(sequences, [2, 3]);
         assert!(
             heartbeats
                 .iter()
@@ -364,7 +397,6 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
 async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     config.wss_ingress_service_probe = Arc::new(|| Box::pin(async { true }));
-    env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
     wait_for_blocked_routine_heartbeat(&env).await;
 
@@ -382,7 +414,7 @@ async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
     .expect("natural drain should commit Stopping while heartbeat is blocked");
 
     assert!(!run_handle.is_finished());
-    assert_eq!(env.handle.heartbeat_count(), 1);
+    assert_eq!(env.handle.heartbeat_count(), 2);
     assert_eq!(env.handle.heartbeat_in_flight(), 1);
 
     env.handle.unblock_heartbeats();
@@ -399,6 +431,7 @@ async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
             .heartbeats
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        let heartbeats = &heartbeats[1..];
         let modes: Vec<&str> = heartbeats
             .iter()
             .map(|heartbeat| heartbeat.mode.as_str())
@@ -408,7 +441,7 @@ async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
             .map(|heartbeat| heartbeat.snapshot_sequence)
             .collect();
         assert_eq!(modes, ["running", "stopping", "stopping"]);
-        assert_eq!(sequences, [1, 2, 3]);
+        assert_eq!(sequences, [2, 3, 4]);
         assert!(
             heartbeats
                 .iter()
@@ -598,7 +631,7 @@ async fn heartbeat_tick_uses_live_mode_after_silent_mode_flip() {
 /// silent revert of `interval_at` → `interval` would not fail it on
 /// the default CI path. This test pins the invariant directly: a
 /// job pushed immediately at startup is processed without any tick
-/// having fired, observable via `heartbeat_count == 0`.
+/// having fired, observable via only the required startup heartbeat.
 #[tokio::test(start_paused = true)]
 async fn heartbeat_tick_defers_past_first_select_poll() {
     let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
@@ -607,8 +640,8 @@ async fn heartbeat_tick_defers_past_first_select_poll() {
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
     // `minimal_context` → no reuse key → completion path does not trigger
-    // `reuse_state_notify`, so any heartbeat observed here came from the
-    // interval tick (the path we want to prove did NOT fire).
+    // `reuse_state_notify`, so any heartbeat beyond the required startup
+    // inventory came from the interval tick (which must not fire yet).
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
 
@@ -620,7 +653,7 @@ async fn heartbeat_tick_defers_past_first_select_poll() {
 
     assert_eq!(
         env.handle.heartbeat_count(),
-        0,
+        1,
         "heartbeat tick fired before the startup job was processed — \
              is the main-loop interval `interval_at(now + period, period)` \
              instead of `interval(period)`?"

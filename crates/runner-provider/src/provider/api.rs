@@ -942,17 +942,19 @@ impl JobProvider for ApiProvider {
         }
     }
 
-    async fn heartbeat(&self, state: &HeartbeatState) {
-        match self.api.heartbeat(state).await {
+    async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
+        let result = self.api.heartbeat(state).await;
+        match &result {
             Ok(()) => {
                 self.record_heartbeat_success_at(state, Instant::now())
                     .await
             }
             Err(error) => {
-                self.record_heartbeat_failure_at(state, &error, Instant::now())
+                self.record_heartbeat_failure_at(state, error, Instant::now())
                     .await;
             }
         }
+        result
     }
 
     async fn defer_poll_until(&self, deadline: Instant) {
@@ -3037,9 +3039,9 @@ mod tests {
         );
         let state = heartbeat_state_for_test();
 
-        provider.heartbeat(&state).await;
-        provider.heartbeat(&state).await;
-        provider.heartbeat(&state).await;
+        assert!(provider.heartbeat(&state).await.is_err());
+        provider.heartbeat(&state).await.unwrap();
+        assert!(provider.heartbeat(&state).await.is_err());
         server.assert_finished().await;
         guard.shutdown().await;
 

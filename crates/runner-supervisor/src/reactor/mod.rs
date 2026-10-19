@@ -91,8 +91,7 @@ mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
-    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    WssIngressServiceProbe,
+    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, WssIngressServiceProbe,
 };
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
@@ -101,9 +100,7 @@ use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
-use home_cache_observation::{
-    HomeCacheObservation, HomeCacheObservationEvent, InitialHomeCacheObservation,
-};
+use home_cache_observation::HomeCacheObservationEvent;
 use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
@@ -1005,6 +1002,21 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         mut test_hooks,
     } = config;
+    let active_runs = shared.active_runs.clone();
+    let home_cache_snapshot = HomeCacheStateSnapshot::new();
+    let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
+    let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
+        idle_pool: &shared.idle_pool,
+        runner_identity: runner.identity,
+        group: &runner.group,
+        profiles: &projected_heartbeat_profiles,
+        budget: &capacity.budget,
+        provider: Arc::clone(&provider_state.provider),
+        active_runs: &active_runs,
+        home_cache_snapshot: home_cache_snapshot.clone(),
+        wss_ingress_service_probe,
+        sandbox_op_reporter: sandbox_op_reporter.clone(),
+    });
     let Some(started) = startup::start(
         startup::StartupResources {
             sandbox_runtime,
@@ -1020,6 +1032,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         },
         signals,
         wss,
+        startup::StartupInventory {
+            heartbeat: hb_ctx,
+            snapshot: &home_cache_snapshot,
+            profiles: &projected_heartbeat_profiles,
+            reporter: sandbox_op_reporter.as_ref(),
+            #[cfg(test)]
+            test_hooks: &test_hooks,
+        },
     )
     .await?
     else {
@@ -1052,6 +1072,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         prune_listener,
         prune_admission,
         startup_mode,
+        mut home_cache_observation,
+        mut heartbeat,
     } = started;
 
     let mut jobs: JoinSet<JobResult> = JoinSet::new();
@@ -1102,50 +1124,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let reuse_state_notify = Arc::clone(&shared.reuse_state_notify);
     let idle_destroy_tracker = IdleDestroyTracker::new(Arc::clone(&reuse_state_notify));
     let orphaned_active_runs = OrphanedActiveRuns::new();
-    let active_runs = shared.active_runs.clone();
-    let home_cache_snapshot = HomeCacheStateSnapshot::new();
     let mut orphan_reap_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(10),
         Duration::from_secs(10),
     );
     orphan_reap_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-    let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
-    let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
-        idle_pool: &shared.idle_pool,
-        runner_identity: runner.identity,
-        group: &runner.group,
-        profiles: &projected_heartbeat_profiles,
-        budget: &capacity.budget,
-        provider: Arc::clone(&provider_state.provider),
-        active_runs: &active_runs,
-        home_cache_snapshot: home_cache_snapshot.clone(),
-        wss_ingress_service_probe,
-        sandbox_op_reporter: sandbox_op_reporter.clone(),
-    });
-    let (mut home_cache_observation, initial_home_cache) = HomeCacheObservation::initialize(
-        exec_config.home_cache.as_ref(),
-        &home_cache_snapshot,
-        &projected_heartbeat_profiles,
-        runner.identity,
-        sandbox_op_reporter.as_ref(),
-        #[cfg(test)]
-        &test_hooks,
-    )
-    .await;
-    let mut heartbeat = HeartbeatController::new(hb_ctx);
-    let initial_heartbeat_mode = lifecycle.current_mode();
-    if initial_heartbeat_mode == RunnerMode::Running {
-        match initial_home_cache {
-            InitialHomeCacheObservation::Change(change) => {
-                heartbeat.request_initial_home_cache(initial_heartbeat_mode, change)?;
-            }
-            InitialHomeCacheObservation::LoadedSnapshot => {
-                heartbeat.request_initial_home_cache_snapshot(initial_heartbeat_mode)?;
-            }
-            InitialHomeCacheObservation::Empty => {}
-        }
-    }
 
     // Pin the discover future so it survives cancellation by other select!
     // branches (heartbeat, lifecycle changes, etc.). Without pinning, heartbeat

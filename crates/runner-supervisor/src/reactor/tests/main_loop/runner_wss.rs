@@ -292,6 +292,53 @@ async fn accept_loop_failure_is_fatal_during_readiness_and_after_running() {
 }
 
 #[tokio::test]
+async fn accept_failure_during_initial_inventory_delivery_remains_fatal() {
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let dir = env._temp_dir.path().join("wss");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
+    let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
+    enable_wss(&mut config, dir);
+    let (fail, failed) = tokio::sync::oneshot::channel();
+    config.wss.as_mut().unwrap().fail_accept = Some(failed);
+    env.handle.block_heartbeats();
+    let status_path = env._temp_dir.path().join("status.json");
+    let run_handle = tokio::spawn(run(config));
+    assert!(
+        env.handle
+            .wait_heartbeat_in_flight(1, Duration::from_secs(5))
+            .await
+    );
+    fail.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), env.cancel.cancelled())
+        .await
+        .unwrap();
+    assert!(
+        !run_handle.is_finished(),
+        "rollback must retain the outstanding delivery"
+    );
+    env.handle.unblock_heartbeats();
+    let result = tokio::time::timeout(Duration::from_secs(5), run_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        result.is_err(),
+        "required listener failure cannot become a successful cancellation"
+    );
+    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
+    assert!(!path.exists());
+    assert_eq!(env.handle.discover_started_count(), 0);
+    {
+        let heartbeats = env.handle.heartbeats.lock().unwrap();
+        assert_eq!(heartbeats.len(), 2);
+        assert_eq!(heartbeats[1].mode, "stopping");
+        assert_eq!(heartbeats[1].snapshot_sequence, 2);
+    }
+    env.shutdown_startup_api().await;
+}
+
+#[tokio::test]
 async fn accept_failure_joins_factory_startup_and_cleans_factories_before_runtime() {
     use async_trait::async_trait;
     use std::sync::Mutex;

@@ -783,7 +783,12 @@ impl JobProvider for FaultProvider {
         _: runner_provider::CompletionAuth,
     ) {
     }
-    async fn heartbeat(&self, _: &runner_types::types::HeartbeatState) {}
+    async fn heartbeat(
+        &self,
+        _: &runner_types::types::HeartbeatState,
+    ) -> runner_provider::ProviderResult<()> {
+        Ok(())
+    }
     async fn shutdown(&self) {}
 }
 

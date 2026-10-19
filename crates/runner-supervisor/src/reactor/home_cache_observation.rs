@@ -11,7 +11,8 @@ use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeOb
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_storage::{SandboxOpRecord, SandboxOpReporter};
-use tracing::warn;
+use tokio_util::task::AbortOnDropHandle;
+use tracing::{Instrument, warn};
 
 use super::home_cache_refresh::HomeCacheRefresh;
 use super::{RunnerError, RunnerResult};
@@ -38,14 +39,59 @@ pub(super) enum HomeCacheObservationEvent {
     RefreshFailed(RunnerError),
 }
 
+pub(super) type InitialHomeCacheTask =
+    AbortOnDropHandle<(HomeCacheObservation, InitialHomeCacheObservation)>;
+
+#[cfg(test)]
+struct InitialScanTestHooks {
+    before_initial_home_cache_scan: Option<super::StartLoopTestGate>,
+    after_initial_home_cache_scan: Option<super::StartLoopTestGate>,
+}
+
 impl HomeCacheObservation {
-    pub(super) async fn initialize(
+    /// Read-only bootstrap overlaps provider/factory startup. Its caller owns
+    /// cancellation and joins any observation returned before rollback.
+    pub(super) fn begin_initialization(
         home_cache: Option<&HomeImageCache>,
         snapshot: &HomeCacheStateSnapshot,
         profiles: &BTreeMap<String, HeartbeatProfile>,
         identity: RunnerProcessIdentity,
         reporter: Option<&SandboxOpReporter>,
         #[cfg(test)] test_hooks: &super::RunTestHooks,
+    ) -> InitialHomeCacheTask {
+        let home_cache = home_cache.cloned();
+        let snapshot = snapshot.clone();
+        let profiles = profiles.clone();
+        let reporter = reporter.cloned();
+        #[cfg(test)]
+        let test_hooks = InitialScanTestHooks {
+            before_initial_home_cache_scan: test_hooks.before_initial_home_cache_scan.clone(),
+            after_initial_home_cache_scan: test_hooks.after_initial_home_cache_scan.clone(),
+        };
+        AbortOnDropHandle::new(tokio::spawn(
+            async move {
+                Self::initialize(
+                    home_cache.as_ref(),
+                    &snapshot,
+                    &profiles,
+                    identity,
+                    reporter.as_ref(),
+                    #[cfg(test)]
+                    &test_hooks,
+                )
+                .await
+            }
+            .in_current_span(),
+        ))
+    }
+
+    async fn initialize(
+        home_cache: Option<&HomeImageCache>,
+        snapshot: &HomeCacheStateSnapshot,
+        profiles: &BTreeMap<String, HeartbeatProfile>,
+        identity: RunnerProcessIdentity,
+        reporter: Option<&SandboxOpReporter>,
+        #[cfg(test)] test_hooks: &InitialScanTestHooks,
     ) -> (Self, InitialHomeCacheObservation) {
         let mut home_cache_watcher = match home_cache {
             Some(cache) => match HomeCacheWatcher::new(cache.clone()).await {

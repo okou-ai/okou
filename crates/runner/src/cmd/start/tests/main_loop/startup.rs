@@ -29,7 +29,9 @@ impl runner_provider::JobProvider for ShutdownRecordingProvider {
         panic!("publish failure cleanup test does not complete jobs")
     }
 
-    async fn heartbeat(&self, _state: &HeartbeatState) {}
+    async fn heartbeat(&self, _state: &HeartbeatState) -> runner_provider::ProviderResult<()> {
+        Ok(())
+    }
 
     async fn shutdown(&self) {
         self.shutdowns.fetch_add(1, Ordering::SeqCst);

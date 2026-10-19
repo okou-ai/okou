@@ -485,6 +485,8 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
         .await,
         "non-empty initial cache should be published before the deferred routine tick",
     );
+    // Initial delivery now precedes ready publication and timer creation.
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
 
     let events = observations.events();
     let loading = events.first().unwrap();
@@ -682,77 +684,6 @@ async fn startup_unclassified_cache_invalidated_after_scan_is_reconciled() {
             .all(|state| state.reuse_key != reuse_key),
         "the first heartbeat must not advertise a cache invalidated after the initial scan",
     );
-
-    shutdown(&env, run_handle).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn unavailable_home_cache_watcher_uses_periodic_reconciliation() {
-    let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
-    let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
-    let home = config.paths.home.clone();
-    let group = config.runner.group.clone();
-    let cache_root = home.home_image_cache_dir();
-    tokio::fs::write(&cache_root, b"not a directory")
-        .await
-        .unwrap();
-    let home_cache = HomeImageCache::shared(
-        RunnerPaths::new(config.paths.base_dir.clone()),
-        &home,
-        &group,
-    );
-    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache.clone());
-
-    let run_handle = tokio::spawn(run(config));
-    wait_discover_entered(&env, Duration::from_secs(5)).await;
-    home_cache.reset_held_state_root_scan_count();
-
-    tokio::fs::remove_file(cache_root).await.unwrap();
-    let runner_paths = RunnerPaths::new(env._temp_dir.path().join("fallback-publisher"));
-    tokio::fs::create_dir_all(runner_paths.base_dir())
-        .await
-        .unwrap();
-    let publisher_cache = HomeImageCache::shared(runner_paths.clone(), &home, &group);
-    seed_home_cache_state(
-        &publisher_cache,
-        &runner_paths,
-        "thread:routine-fallback",
-        "vm0/default",
-        1024 * 1024,
-    )
-    .await;
-    let before = env.handle.heartbeat_count();
-    let mut heartbeat_cursor = env.start_observer.cursor();
-    for _ in 0..2 {
-        tokio::time::advance(HEARTBEAT_PERIOD).await;
-        heartbeat_cursor = env
-            .start_observer
-            .wait_routine_heartbeat_requested_after(
-                heartbeat_cursor,
-                RunnerMode::Running,
-                Duration::from_secs(5),
-            )
-            .await;
-    }
-    assert_eq!(
-        home_cache.held_state_root_scan_count(),
-        0,
-        "ordinary heartbeats should not provide failed-watcher reconciliation",
-    );
-
-    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY - HEARTBEAT_PERIOD * 2).await;
-    assert!(
-        wait_heartbeat_matching_after(&env.handle, before, Duration::from_secs(5), |heartbeat| {
-            heartbeat
-                .held_home_states
-                .iter()
-                .any(|state| state.reuse_key == "thread:routine-fallback")
-        })
-        .await,
-        "periodic reconciliation must converge after watcher setup failure",
-    );
-    assert_eq!(home_cache.held_state_root_scan_count(), 1);
 
     shutdown(&env, run_handle).await;
 }

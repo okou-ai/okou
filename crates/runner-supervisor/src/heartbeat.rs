@@ -16,7 +16,7 @@ use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeCacheInventory, Ho
 use runner_lifecycle::idle_pool::IdlePool;
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::ResourceBudget;
-use runner_provider::JobProvider;
+use runner_provider::{JobProvider, ProviderResult};
 use runner_types::types::{
     HeartbeatState, HeldHomeState, HeldSandboxState, MAX_ACTIVE_REUSE_PRODUCERS,
     MAX_HELD_SANDBOX_STATES,
@@ -47,6 +47,8 @@ pub enum HeartbeatError {
     TaskFailed(tokio::task::JoinError),
     #[error("heartbeat snapshot sequence overflow")]
     SequenceOverflow,
+    #[error("initial home-cache heartbeat failed")]
+    InitialDeliveryFailed,
 }
 
 pub type HeartbeatResult<T> = Result<T, HeartbeatError>;
@@ -133,7 +135,7 @@ impl BaseHeartbeatContext {
 /// follow-up built from live state when that send starts.
 pub struct HeartbeatController {
     context: HeartbeatContext,
-    in_flight: Option<AbortOnDropHandle<()>>,
+    in_flight: Option<AbortOnDropHandle<ProviderResult<()>>>,
     pending: Option<HeartbeatRequest>,
     next_snapshot_sequence: u64,
 }
@@ -145,13 +147,13 @@ pub(crate) struct TerminalHeartbeat {
 }
 
 impl TerminalHeartbeat {
-    /// Publish after provider shutdown, without ordinary cache or WSS enrichment.
+    /// Publish a final snapshot without ordinary cache or WSS enrichment.
     pub(crate) async fn send(self) {
         let state = self
             .context
             .collect_state(RunnerMode::Stopping, self.snapshot_sequence)
             .await;
-        self.context.provider.heartbeat(&state).await;
+        let _ = self.context.provider.heartbeat(&state).await;
     }
 }
 
@@ -161,12 +163,6 @@ struct HeartbeatRequest {
 
 impl HeartbeatRequest {
     fn ordinary() -> Self {
-        Self {
-            home_cache_change: None,
-        }
-    }
-
-    fn initial_home_cache_snapshot() -> Self {
         Self {
             home_cache_change: None,
         }
@@ -212,19 +208,6 @@ impl HeartbeatController {
         self.request_inner(mode, HeartbeatRequest::home_cache(change))
     }
 
-    pub fn request_initial_home_cache_snapshot(&mut self, mode: RunnerMode) -> HeartbeatResult<()> {
-        self.request_inner(mode, HeartbeatRequest::initial_home_cache_snapshot())
-    }
-
-    pub fn request_initial_home_cache(
-        &mut self,
-        mode: RunnerMode,
-        change: HomeCacheChange,
-    ) -> HeartbeatResult<()> {
-        let request = HeartbeatRequest::home_cache(change);
-        self.request_inner(mode, request)
-    }
-
     fn request_inner(
         &mut self,
         mode: RunnerMode,
@@ -247,6 +230,11 @@ impl HeartbeatController {
 
     /// Observe the task from an enabled `tokio::select!` branch.
     pub async fn wait_for_send(&mut self) -> HeartbeatResult<()> {
+        let _ = self.wait_for_delivery().await?;
+        Ok(())
+    }
+
+    async fn wait_for_delivery(&mut self) -> HeartbeatResult<ProviderResult<()>> {
         let send = self
             .in_flight
             .as_mut()
@@ -258,6 +246,28 @@ impl HeartbeatController {
             self.pending = None;
         }
         result.map_err(HeartbeatError::TaskFailed)
+    }
+
+    /// Startup shares the ordinary sequence source, but requires delivery
+    /// success before publishing local running readiness. Cancellation leaves
+    /// the active send owned here so rollback can drain and fence it.
+    pub(crate) async fn report_initial_home_cache(
+        &mut self,
+        mode: RunnerMode,
+        change: Option<HomeCacheChange>,
+    ) -> HeartbeatResult<()> {
+        debug_assert!(self.in_flight.is_none());
+        self.request_inner(
+            mode,
+            HeartbeatRequest {
+                home_cache_change: change,
+            },
+        )?;
+        let delivery = self.wait_for_delivery().await?;
+        self.finish_send(mode)?;
+        // Provider telemetry records sanitized failure details. Do not copy
+        // arbitrary API response bodies into the startup error or its logs.
+        delivery.map_err(|_| HeartbeatError::InitialDeliveryFailed)
     }
 
     /// Clear a completed send and start one live-state follow-up when dirty.
@@ -296,7 +306,7 @@ impl HeartbeatController {
     pub async fn drain(&mut self) -> HeartbeatResult<()> {
         self.pending = None;
         if let Some(send) = self.in_flight.take() {
-            send.await.map_err(HeartbeatError::TaskFailed)?;
+            let _ = send.await.map_err(HeartbeatError::TaskFailed)?;
         }
         Ok(())
     }
@@ -320,10 +330,8 @@ impl HeartbeatController {
         self.next_snapshot_sequence = next_snapshot_sequence;
         let context = self.context.clone();
         self.in_flight = Some(AbortOnDropHandle::new(tokio::spawn(
-            async move {
-                send_heartbeat(&context, mode, snapshot_sequence, request).await;
-            }
-            .in_current_span(),
+            async move { send_heartbeat(&context, mode, snapshot_sequence, request).await }
+                .in_current_span(),
         )));
         Ok(())
     }
@@ -342,7 +350,7 @@ async fn send_heartbeat(
     mode: RunnerMode,
     snapshot_sequence: u64,
     request: HeartbeatRequest,
-) {
+) -> ProviderResult<()> {
     // A producer can move into the idle pool while the heartbeat waits for
     // its lock. Include either side of that transfer in this advisory snapshot.
     let mut producers = hb.active_runs.active_reuse_producers();
@@ -394,7 +402,7 @@ async fn send_heartbeat(
         home_states = state.held_home_states.len(),
         "heartbeat"
     );
-    hb.base.provider.heartbeat(&state).await;
+    let delivery = hb.base.provider.heartbeat(&state).await;
     if let Some(change) = cache_change {
         info!(
             changed = true,
@@ -402,6 +410,7 @@ async fn send_heartbeat(
             "home cache change heartbeat completed"
         );
     }
+    delivery
 }
 
 /// Scans the home cache and commits the result to the shared snapshot.
@@ -616,11 +625,12 @@ mod tests {
         ) {
         }
 
-        async fn heartbeat(&self, state: &HeartbeatState) {
+        async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
             self.heartbeats
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(state.clone());
+            Ok(())
         }
 
         async fn shutdown(&self) {}
@@ -704,9 +714,13 @@ mod tests {
             sandbox_op_reporter: Some(observations.handle()),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
-        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         refresh_snapshot(&snapshot, Vec::new());
-        send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         refresh_snapshot(
             &snapshot,
             vec![
@@ -732,7 +746,9 @@ mod tests {
             Some("thread:active".into()),
             "vm0/default".into(),
         );
-        send_heartbeat(&hb, RunnerMode::Running, 3, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 3, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         let events = observations.events();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].inventory_loaded, Some(false));
@@ -1110,11 +1126,17 @@ mod tests {
             wss_ingress_service_probe,
         });
 
-        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         active.store(true, std::sync::atomic::Ordering::SeqCst);
-        send_heartbeat(&hb, RunnerMode::Draining, 2, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Draining, 2, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         active.store(false, std::sync::atomic::Ordering::SeqCst);
-        send_heartbeat(&hb, RunnerMode::Running, 3, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 3, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         let sent = provider.heartbeats.lock().unwrap();
         assert_eq!(
             sent.iter()
@@ -1155,13 +1177,15 @@ mod tests {
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
-        let ((), events) = capture_heartbeat_events(send_heartbeat(
+        let (delivery, events) = capture_heartbeat_events(send_heartbeat(
             &hb,
             RunnerMode::Running,
             42,
             HeartbeatRequest::ordinary(),
         ))
         .await;
+
+        delivery.unwrap();
 
         let heartbeat_event = captured_event(&events, "heartbeat");
         assert_eq!(heartbeat_event.level, tracing::Level::INFO);
@@ -1276,7 +1300,8 @@ mod tests {
                 1,
                 HeartbeatRequest::home_cache(change).merge(HeartbeatRequest::ordinary()),
             )
-            .await;
+            .await
+            .unwrap();
             let sent = provider.heartbeats.lock().unwrap();
             assert_eq!(sent.len(), 1);
             let keys = sent[0]
@@ -1341,13 +1366,9 @@ mod tests {
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
-        send_heartbeat(
-            &hb,
-            RunnerMode::Running,
-            42,
-            HeartbeatRequest::initial_home_cache_snapshot(),
-        )
-        .await;
+        send_heartbeat(&hb, RunnerMode::Running, 42, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
 
         let heartbeats = provider
             .heartbeats
@@ -1477,9 +1498,13 @@ mod tests {
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
-        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         assert!(publisher.mark_finalizing(std::time::Instant::now()));
-        send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
         let mut pool = idle_pool.lock().await;
         let in_flight_hb = hb.clone();
         let in_flight = tokio::spawn(async move {
@@ -1489,7 +1514,8 @@ mod tests {
                 3,
                 HeartbeatRequest::ordinary(),
             )
-            .await;
+            .await
+            .unwrap();
         });
         // The task takes the active snapshot then waits for the pool lock.
         tokio::task::yield_now().await;
@@ -1503,7 +1529,9 @@ mod tests {
         assert!(publisher.publish_exact_sandbox());
         drop(pool);
         in_flight.await.unwrap();
-        send_heartbeat(&hb, RunnerMode::Running, 4, HeartbeatRequest::ordinary()).await;
+        send_heartbeat(&hb, RunnerMode::Running, 4, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
 
         let heartbeats = provider
             .heartbeats

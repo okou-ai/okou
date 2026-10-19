@@ -122,7 +122,9 @@ impl JobProvider for Provider {
         assert_eq!(token, format!("original-claim-{}", request.run_id));
         self.completed.lock().unwrap().push((request.run_id, token));
     }
-    async fn heartbeat(&self, _: &HeartbeatState) {}
+    async fn heartbeat(&self, _: &HeartbeatState) -> runner_provider::ProviderResult<()> {
+        Ok(())
+    }
     async fn shutdown(&self) {}
 }
 
