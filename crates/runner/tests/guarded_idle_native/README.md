@@ -1328,6 +1328,11 @@ entry's exclusive lease. Incoming therefore first completes with `LockBusy`;
 its exact Guest and full logical lease remain owned through the existing C6
 replacement, stale-batch refusal, contention and required-saving guards.
 
+Both assignments use an ordinary workspace directory inside the home image.
+The context declares no external workspace artifact, giving the required home
+owner custody of every workspace byte through successful and failed terminals.
+Versioned artifact re-materialization belongs to its separate storage contract.
+
 The fixture restores and saves the complete original generation before allowing
 supersession. It then activates that same incoming Guest through the public idle
 owner and actual Executor reuse dispatch. This acquires the now available same

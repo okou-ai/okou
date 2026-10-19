@@ -72,6 +72,7 @@ pub struct Fixture {
     rootfs_hash: String,
     case: Arc<evidence::Case>,
     nonzero: bool,
+    workspace_artifact: Option<ArtifactEntry>,
 }
 
 pub struct Execution<'a> {
@@ -109,6 +110,45 @@ impl Fixture {
         rootfs_hash: String,
         case: Arc<evidence::Case>,
         nonzero: bool,
+    ) -> TestResult<Arc<Self>> {
+        Self::new_with_workspace(
+            paths,
+            cache,
+            rootfs_hash,
+            case,
+            nonzero,
+            Some(ArtifactEntry {
+                mount_path: "/home/user/workspace".into(),
+                vas_storage_name: "workspace".into(),
+                vas_storage_id: "native-workspace".into(),
+                vas_version_id: "native-empty-version".into(),
+                archive_url: None,
+                archive_size: None,
+                empty: Some(true),
+                missing_root_policy: None,
+            }),
+        )
+        .await
+    }
+
+    /// Keep the ordinary workspace directory under the required home owner.
+    pub(super) async fn new_with_home_workspace(
+        paths: &RunnerPaths,
+        cache: HomeImageCache,
+        rootfs_hash: String,
+        case: Arc<evidence::Case>,
+        nonzero: bool,
+    ) -> TestResult<Arc<Self>> {
+        Self::new_with_workspace(paths, cache, rootfs_hash, case, nonzero, None).await
+    }
+
+    async fn new_with_workspace(
+        paths: &RunnerPaths,
+        cache: HomeImageCache,
+        rootfs_hash: String,
+        case: Arc<evidence::Case>,
+        nonzero: bool,
+        workspace_artifact: Option<ArtifactEntry>,
     ) -> TestResult<Arc<Self>> {
         if std::env::var("USE_MOCK_CODEX").as_deref() != Ok("true") {
             return Err(io::Error::other(
@@ -154,6 +194,7 @@ impl Fixture {
             rootfs_hash,
             case,
             nonzero,
+            workspace_artifact,
         }))
     }
 
@@ -203,16 +244,7 @@ impl Fixture {
         });
         context.storage_manifest = Some(StorageManifest {
             storages: Vec::new(),
-            artifacts: vec![ArtifactEntry {
-                mount_path: "/home/user/workspace".into(),
-                vas_storage_name: "workspace".into(),
-                vas_storage_id: "native-workspace".into(),
-                vas_version_id: "native-empty-version".into(),
-                archive_url: None,
-                archive_size: None,
-                empty: Some(true),
-                missing_root_policy: None,
-            }],
+            artifacts: self.workspace_artifact.iter().cloned().collect(),
         });
         let observation = format!("/home/user/native-continuation-{run}.json");
         let source = format!(

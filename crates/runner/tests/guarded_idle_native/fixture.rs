@@ -277,7 +277,11 @@ pub async fn exec(sandbox: &dyn Sandbox, cmd: &str) -> TestResult<Vec<u8>> {
         || result.stdout_truncated
         || result.stderr_truncated
     {
-        return Err(std::io::Error::other("native guest fixture command failed").into());
+        return Err(std::io::Error::other(format!(
+            "native guest fixture command failed: {cmd}; termination={:?}; stdout_truncated={}; stderr_truncated={}; stderr={}",
+            result.termination, result.stdout_truncated, result.stderr_truncated,
+            String::from_utf8_lossy(&result.stderr),
+        )).into());
     }
     Ok(result.stdout)
 }

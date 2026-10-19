@@ -71,7 +71,7 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
         key,
         nonzero,
     } = setup;
-    let original_fixture = continuation::Fixture::new(
+    let original_fixture = continuation::Fixture::new_with_home_workspace(
         &paths,
         cache.clone(),
         rootfs.clone(),
@@ -79,8 +79,14 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
         nonzero,
     )
     .await?;
-    let incoming_fixture =
-        continuation::Fixture::new(&paths, cache, rootfs.clone(), proof.clone(), false).await?;
+    let incoming_fixture = continuation::Fixture::new_with_home_workspace(
+        &paths,
+        cache,
+        rootfs.clone(),
+        proof.clone(),
+        false,
+    )
+    .await?;
     let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096)
         .ok_or_else(|| failure("dual original full lease unavailable"))?;
     proof.bind_original_lease(&lease)?;
