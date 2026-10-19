@@ -141,73 +141,6 @@ function replacementTarget(source: ActiveInputSourceRow) {
 }
 
 /**
- * Consume one steered prompt or run-targeted budget with a single replacement
- * insert. On a revoke-edge conflict the revoker decides: this run's
- * replacement means the source was already steered, anything else means
- * another consumer won. Without `append` (the run is no longer running) only
- * the revoker is read, so a repeated declaration stays idempotent. A source
- * outside the run's thread or of another event type is `invalid`.
- */
-async function consumeActiveInputSource(
-  db: Db,
-  scope: ActiveInputRunThread,
-  sourceEventId: string,
-  append: boolean,
-): Promise<ActiveInputConsumption> {
-  const sourceChatThreadId = scope.chatThreadId;
-  const sourceEventIds = [sourceEventId];
-  const [source] = await db
-    .select(activeInputSourceFields())
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, sourceChatThreadId),
-        inArray(chatEvents.id, sourceEventIds),
-      ),
-    );
-  if (
-    !source?.userMessage ||
-    (source.eventType !== "input.prompt" &&
-      (source.eventType !== "input.budget" ||
-        source.contextType !== "agent_run" ||
-        source.contextId !== scope.runId))
-  ) {
-    return { outcome: "invalid" };
-  }
-  if (append && source.runId === null) {
-    const steeredInput = {
-      chatThreadId: scope.chatThreadId,
-      runId: scope.runId,
-      userMessage: source.userMessage,
-    };
-    const replacement =
-      parseRawRows(
-        chatEventCommandResultSchema,
-        await db.execute(
-          chatEventReplacementInsertSql(
-            replacementTarget(source),
-            source.eventType === "input.budget"
-              ? { ...steeredInput, eventType: "input.budget" }
-              : { ...steeredInput, eventType: "input.prompt" },
-          ),
-        ),
-      )[0] ?? null;
-    if (replacement) {
-      return { outcome: "appended" };
-    }
-  }
-  const [revoker] = await db
-    .select({ eventType: chatEvents.eventType, runId: chatEvents.runId })
-    .from(chatEvents)
-    .where(eq(chatEvents.revokesEventId, source.id))
-    .limit(1);
-  return revoker?.runId === scope.runId &&
-    revoker.eventType === source.eventType
-    ? { outcome: "steered" }
-    : { outcome: "rejected" };
-}
-
-/**
  * The thread position of the queue input the run consumed last. Its latest
  * replacement is appended when it consumes the input, after prompts queued in
  * the meantime, so the anchor is the position of the input it revoked. Two
@@ -357,12 +290,61 @@ export const declareSteeredInput$ = command(
       return { outcome: "forbidden" };
     }
     const running = scope.status === "running";
-    const consumed = await consumeActiveInputSource(
-      db,
-      scope,
-      args.eventId,
-      running,
-    );
+    const sourceEventId = args.eventId;
+    const append = running;
+    const consumed = await (async (): Promise<ActiveInputConsumption> => {
+      const sourceChatThreadId = scope.chatThreadId;
+      const sourceEventIds = [sourceEventId];
+      const [source] = await db
+        .select(activeInputSourceFields())
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.chatThreadId, sourceChatThreadId),
+            inArray(chatEvents.id, sourceEventIds),
+          ),
+        );
+      if (
+        !source?.userMessage ||
+        (source.eventType !== "input.prompt" &&
+          (source.eventType !== "input.budget" ||
+            source.contextType !== "agent_run" ||
+            source.contextId !== scope.runId))
+      ) {
+        return { outcome: "invalid" };
+      }
+      if (append && source.runId === null) {
+        const steeredInput = {
+          chatThreadId: scope.chatThreadId,
+          runId: scope.runId,
+          userMessage: source.userMessage,
+        };
+        const replacement =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await db.execute(
+              chatEventReplacementInsertSql(
+                replacementTarget(source),
+                source.eventType === "input.budget"
+                  ? { ...steeredInput, eventType: "input.budget" }
+                  : { ...steeredInput, eventType: "input.prompt" },
+              ),
+            ),
+          )[0] ?? null;
+        if (replacement) {
+          return { outcome: "appended" };
+        }
+      }
+      const [revoker] = await db
+        .select({ eventType: chatEvents.eventType, runId: chatEvents.runId })
+        .from(chatEvents)
+        .where(eq(chatEvents.revokesEventId, source.id))
+        .limit(1);
+      return revoker?.runId === scope.runId &&
+        revoker.eventType === source.eventType
+        ? { outcome: "steered" }
+        : { outcome: "rejected" };
+    })();
     signal.throwIfAborted();
     if (consumed.outcome === "invalid") {
       return { outcome: "not_found" };
