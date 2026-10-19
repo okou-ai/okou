@@ -833,15 +833,21 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
 
     let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
     if mode == ToolOomMode::TaskGuestInjected {
-        let ready_relative = wait_for_tool_marker(
-            task_oom::READY,
-            fixture
-                .offender
-                .as_mut()
-                .ok_or("task controller is missing")?,
-        )?;
+        let controller = fixture
+            .offender
+            .as_mut()
+            .ok_or("task controller is missing")?;
+        let ready_relative = wait_for_tool_marker(task_oom::READY, controller)?;
         if ready_relative != offender_relative {
             return Err("resident task readiness belongs to a different cgroup".into());
+        }
+        if let Some(status) = controller
+            .try_wait()
+            .map_err(|error| format!("inspect task controller before OOM injection: {error}"))?
+        {
+            return Err(format!(
+                "task controller exited before Guest OOM injection: {status}"
+            ));
         }
     }
     if mode.injected() {
