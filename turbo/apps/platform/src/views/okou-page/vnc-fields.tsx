@@ -40,6 +40,9 @@ import {
   chooseVncTrust$,
   replaceVncAuthentication$,
   vncEditor$,
+  vncProfile$,
+  vncTransport$,
+  vncCredentialSelection$,
   vncCredentials$,
   invalidateVnc$,
   mountVncSecret$,
@@ -308,11 +311,10 @@ export function VncX509NoneWarning() {
 
 function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const transport = useGet(vncTransport$);
   if (
     requiresVncProtectiveRoute(profile) &&
-    (editor.transport === "cloudflare_access" ||
-      editor.transport === "tailscale")
+    (transport === "cloudflare_access" || transport === "tailscale")
   ) {
     return (
       <div className="grid gap-2 text-sm text-muted-foreground">
@@ -673,17 +675,16 @@ export function VncTransportFields({
 }: {
   readonly disabled: boolean;
 }) {
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const transport = useGet(vncTransport$);
   return (
     <div className="grid min-w-0 gap-4">
       <VncNetworkFields
         role="rfb"
         disabled={disabled}
-        protectedRoute={requiresVncProtectiveRoute(editor.profile)}
+        protectedRoute={requiresVncProtectiveRoute(profile)}
       />
-      {editor.transport === "ssh" && (
-        <VncSshConnectionFields disabled={disabled} />
-      )}
+      {transport === "ssh" && <VncSshConnectionFields disabled={disabled} />}
     </div>
   );
 }
@@ -1418,12 +1419,13 @@ export function VncCredentialSelection({
 }) {
   const { t } = useTranslation();
   const credentials = useLoadable(vncCredentials$);
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const selection = useGet(vncCredentialSelection$);
   const choose = useSet(chooseVncCredential$);
   const compatibleCredentials =
     credentials.state === "hasData" && credentials.data
       ? credentials.data.filter((credential) => {
-          return vncCredentialMatchesProfile(credential, editor.profile);
+          return vncCredentialMatchesProfile(credential, profile);
         })
       : [];
   const credentialItems = [
@@ -1438,12 +1440,12 @@ export function VncCredentialSelection({
     },
   ];
   const selectedCredentialUnavailable =
-    editor.selection !== "" &&
-    editor.selection !== "new" &&
+    selection !== "" &&
+    selection !== "new" &&
     credentials.state === "hasData" &&
     credentials.data !== null &&
     !compatibleCredentials.some((credential) => {
-      return credential.id === editor.selection;
+      return credential.id === selection;
     });
   return (
     <fieldset className="grid min-w-0 gap-4">
@@ -1472,7 +1474,7 @@ export function VncCredentialSelection({
         ) : (
           <Select
             items={credentialItems}
-            value={editor.selection}
+            value={selection}
             onValueChange={(value, details) => {
               if (value === null) {
                 details.cancel();
@@ -1512,7 +1514,7 @@ export function VncCredentialSelection({
           })}
         </p>
       )}
-      {editor.selection === "new" && (
+      {selection === "new" && (
         <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
           <VncCredentialFields
             credential={null}
