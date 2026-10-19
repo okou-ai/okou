@@ -6282,7 +6282,10 @@ function SelectablePagedGroupRow({
     >
       {/* The full-width label owns selection. Message content stays outside
           it so text selection, links, and message actions keep their owners. */}
-      <Field.Root className="relative" disabled={phase !== "selecting"}>
+      <Field.Root
+        className="group/share-selection relative"
+        disabled={phase !== "selecting"}
+      >
         <Field.Label
           className={cn(
             buttonVariants({ variant: "quiet", size: "lg" }),
@@ -6299,7 +6302,13 @@ function SelectablePagedGroupRow({
           checked={allSelected}
           indeterminate={indeterminate}
           disabled={phase !== "selecting"}
-          className="absolute top-1/2 right-3 -translate-y-1/2"
+          className={cn(
+            "absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 border-muted-foreground",
+            phase === "selecting" &&
+              !allSelected &&
+              !indeterminate &&
+              "group-hover/share-selection:border-foreground group-hover/share-selection:bg-state-hover-overlay",
+          )}
           onCheckedChange={toggleGroup}
         />
       </Field.Root>
