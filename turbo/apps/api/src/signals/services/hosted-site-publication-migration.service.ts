@@ -211,7 +211,6 @@ function retainedPointer(
 ): HostedSitePointer {
   if (
     current.siteId !== site.id ||
-    current.publicSlug !== site.publicSlug ||
     // Pointers written before the layout marker are legacy-layout pointers.
     (current.publicBrand ?? linkLayoutSegment("legacy")) !==
       site.linkLayoutSegment

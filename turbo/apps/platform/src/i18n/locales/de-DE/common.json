@@ -653,6 +653,23 @@
       "singularTitle": "Artefakt",
       "unavailable": "Dieses Artefakt ist nicht mehr verfügbar."
     },
+    "siteUrl": {
+      "available": "Verfügbar",
+      "cancel": "Abbrechen",
+      "checkFailed": "Adresse konnte nicht geprüft werden. Bearbeite sie und versuche es erneut.",
+      "checking": "Verfügbarkeit wird geprüft…",
+      "customize": "URL anpassen",
+      "hint": "Wähle einen kurzen, einprägsamen Namen",
+      "invalid": "3–63 Kleinbuchstaben, Ziffern oder Bindestriche; keine reservierten Präfixe",
+      "label": "Website-URL",
+      "loadFailed": "Website-Einstellungen konnten nicht geladen werden",
+      "oldUrlWarning": "Die alte URL funktioniert nicht mehr. Aktualisiere bereits geteilte Links.",
+      "published": "Veröffentlicht",
+      "save": "Speichern",
+      "saveFailed": "Speichern fehlgeschlagen. Die Adresse ist möglicherweise vergeben oder geändert. Lade die Seite neu und versuche es erneut.",
+      "taken": "Diese Adresse ist bereits vergeben",
+      "updated": "Website-URL aktualisiert"
+    },
     "templates": {
       "activeHtmlPreview": "{{title}} aktive HTML-Vorschau",
       "all": "Alle",

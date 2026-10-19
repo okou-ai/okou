@@ -26,6 +26,7 @@ export const hostedSites = pgTable(
   (table) => {
     return [
       index("idx_hosted_sites_org").on(table.orgId),
+      index("idx_hosted_sites_slug").on(table.slug),
       uniqueIndex("idx_hosted_sites_org_slug").on(table.orgId, table.slug),
       uniqueIndex("idx_hosted_sites_org_chat_thread_requested_slug")
         .on(table.orgId, table.chatThreadId, table.requestedSlug)
@@ -54,6 +55,10 @@ export const hostedDeployments = pgTable(
   (table) => {
     return [
       index("idx_hosted_deployments_site").on(table.siteId),
+      index("idx_hosted_deployments_public_slug").on(
+        sql`(${table.manifest}->>'publicSlug')`,
+        table.siteId,
+      ),
       uniqueIndex("idx_hosted_deployments_site_manifest_version").on(
         table.siteId,
         sql`((${table.manifest}->>'deploymentVersion')::integer)`,

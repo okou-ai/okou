@@ -671,6 +671,23 @@
       "singularTitle": "Artefato",
       "unavailable": "Este artefato não está mais disponível."
     },
+    "siteUrl": {
+      "available": "Disponível",
+      "cancel": "Cancelar",
+      "checkFailed": "Não foi possível verificar o endereço. Edite-o para tentar novamente.",
+      "checking": "Verificando disponibilidade…",
+      "customize": "Personalizar URL",
+      "hint": "Escolha um nome curto e fácil de lembrar",
+      "invalid": "Use de 3 a 63 letras minúsculas, números ou hífens; sem prefixos reservados",
+      "label": "URL do site",
+      "loadFailed": "Não foi possível carregar as configurações do site",
+      "oldUrlWarning": "A URL antiga deixará de funcionar. Atualize os links compartilhados.",
+      "published": "Publicado",
+      "save": "Salvar",
+      "saveFailed": "Não foi possível salvar. O endereço pode estar em uso ou ter mudado. Atualize e tente novamente.",
+      "taken": "Este endereço já está em uso",
+      "updated": "URL do site atualizada"
+    },
     "templates": {
       "activeHtmlPreview": "Visualização HTML ativa de {{title}}",
       "all": "Todos",

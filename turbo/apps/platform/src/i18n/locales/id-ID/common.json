@@ -652,6 +652,23 @@
       "singularTitle": "Artefak",
       "unavailable": "Artefak ini tidak lagi tersedia."
     },
+    "siteUrl": {
+      "available": "Tersedia",
+      "cancel": "Batal",
+      "checkFailed": "Tidak dapat memeriksa alamat. Ubah untuk mencoba lagi.",
+      "checking": "Memeriksa ketersediaan…",
+      "customize": "Sesuaikan URL",
+      "hint": "Pilih nama yang singkat dan mudah diingat",
+      "invalid": "Gunakan 3–63 huruf kecil, angka, atau tanda hubung; tanpa awalan yang dicadangkan",
+      "label": "URL situs",
+      "loadFailed": "Tidak dapat memuat pengaturan situs",
+      "oldUrlWarning": "URL lama tidak akan berfungsi. Perbarui tautan yang telah dibagikan.",
+      "published": "Dipublikasikan",
+      "save": "Simpan",
+      "saveFailed": "Tidak dapat menyimpan. Alamat mungkin sudah digunakan atau berubah. Muat ulang dan coba lagi.",
+      "taken": "Alamat ini sudah digunakan",
+      "updated": "URL situs diperbarui"
+    },
     "templates": {
       "activeHtmlPreview": "Pratinjau HTML aktif {{title}}",
       "all": "Semua",
