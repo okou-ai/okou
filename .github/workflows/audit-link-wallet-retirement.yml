@@ -39,6 +39,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          PGSSLROOTCERT: /etc/ssl/certs/ca-certificates.crt
         run: |
           set -euo pipefail
           DATABASE_URL=$(neonctl connection-string production --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)

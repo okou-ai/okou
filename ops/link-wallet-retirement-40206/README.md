@@ -3,7 +3,8 @@
 Run the **Audit Link Wallet Retirement** workflow on `main`. It uses the existing
 production environment and Neon connection, independently of release. The job
 installs its PostgreSQL driver explicitly and connects directly with PostgreSQL's
-read-only startup setting. One fixed aggregate `SELECT` uses one implicit
+read-only startup setting and the installed system CA bundle for `verify-full`.
+One fixed aggregate `SELECT` uses one implicit
 statement transaction; there is no explicit transaction, migration, credential
 decryption, token refresh, or provider revocation.
 
