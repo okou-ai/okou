@@ -23,7 +23,6 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import {
   buildComposerSlashWorkflows,
   findWorkflowQueryMatches,
-  orderRecentWorkflows,
   type ComposerSlashWorkflow,
   type ComposerSlashWorkflowMatch,
 } from "../../signals/okou-page/workflow-composer-domain";
@@ -509,7 +508,7 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const recentIds = useLoadable(composer.suggestion.recentWorkflowIds$);
+  const usage = useLoadable(composer.suggestion.workflowUsage$);
   // Null means the list is not requested yet; the last loadable keeps that
   // null while the first request is in flight.
   const requested =
@@ -518,20 +517,19 @@ function useComposerWorkflowSuggestions(
     agentId: composer.agentId,
     workflows: requested ?? [],
   });
-  const recentOverview = query === "";
-  const ordered = recentOverview
-    ? orderRecentWorkflows(
-        workflows,
-        recentIds.state === "hasData" ? recentIds.data : [],
-      )
-    : workflows;
   return {
     workflows:
-      query === undefined ? [] : findWorkflowQueryMatches(ordered, query),
+      query === undefined
+        ? []
+        : findWorkflowQueryMatches(
+            workflows,
+            query,
+            usage.state === "hasData" ? usage.data : new Map(),
+          ),
     loading:
       workflowsLoadable.state === "loading" ||
       requested === null ||
-      (recentOverview && recentIds.state === "loading"),
+      (query !== undefined && usage.state === "loading"),
   };
 }
 
@@ -731,8 +729,8 @@ function suggestionNavigationOrder(
   overviewCategoryCount: number | null,
 ): readonly number[] {
   return Array.from({ length: count }, (_, visualIndex) => {
-    // Above the composer the overview reads workflows from most recent to
-    // least recent, then the creation categories in their existing anchored
+    // Above the composer the overview reads workflows from most used to
+    // least used, then the creation categories in their existing anchored
     // order below them. Below the composer it reads categories then workflows
     // top-down, which is the index order, so callers pass null there.
     if (overviewCategoryCount !== null) {
@@ -794,10 +792,9 @@ function useComposerSuggestionMenu({
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
-  // The menus open above the composer, so their most relevant rows come last,
-  // nearest it. Mobile keyboards leave little room above the composer, so the
-  // slash menu keeps Make first there; rows and keyboard share one order.
-  const reversedSuggestions = !showWorkflows || isDesktop;
+  // Typed slash results read from strongest to weakest top-down on every
+  // screen. Preserve the anchored overview and @-mention navigation order.
+  const reversedSuggestions = !showWorkflows || (isDesktop && workflowOverview);
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;

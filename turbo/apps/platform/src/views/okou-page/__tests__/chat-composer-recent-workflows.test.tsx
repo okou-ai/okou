@@ -1,4 +1,7 @@
-import { workflowsCollectionContract } from "@okouai/api-contracts";
+import {
+  chatEventsContract,
+  workflowsCollectionContract,
+} from "@okouai/api-contracts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -8,6 +11,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockNow, now } from "../../../lib/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
@@ -21,8 +25,11 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000920";
+const NOW = Date.parse("2026-10-19T12:00:00.000Z");
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-function mockWorkflows() {
+function mockWorkflows(prefix = "") {
+  mockNow(NOW, context.signal);
   mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
@@ -35,7 +42,7 @@ function mockWorkflows() {
   });
   const workflows = ["zulu", "delta", "echo", "beta", "alpha", "charlie"].map(
     (name) => {
-      return composerWorkflow(name, "Recency test workflow");
+      return composerWorkflow(`${prefix}${name}`, "Usage test workflow");
     },
   );
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
@@ -84,9 +91,17 @@ function mockHistory(
     readonly org?: string;
   }[],
 ) {
+  const timestamp = now();
   const values = new Map(
     histories.map(({ ids, user = "test-user-123", org = "org_default" }) => {
-      return [`okou_recent-workflows:${user}:${org}`, JSON.stringify(ids)];
+      return [
+        `okou_workflow-usage:${user}:${org}`,
+        JSON.stringify(
+          ids.map((workflowId, index) => {
+            return { workflowId, usedAt: timestamp - index - 1 };
+          }),
+        ),
+      ];
     }),
   );
   vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
@@ -279,8 +294,11 @@ test("An accepted use retains history written by another browser tab", async () 
   const editor = await openComposer();
   // The page has read the first accepted use; another tab writes before the next send.
   history.set(
-    "okou_recent-workflows:test-user-123:org_default",
-    JSON.stringify([echo.id, zulu.id]),
+    "okou_workflow-usage:test-user-123:org_default",
+    JSON.stringify([
+      { workflowId: echo.id, usedAt: now() - 1 },
+      { workflowId: zulu.id, usedAt: now() - 2 },
+    ]),
   );
   for (const name of ["delta"]) {
     await fill(editor, `/${name}`);
@@ -328,7 +346,7 @@ test("Persisted recency is isolated by user and workspace and ignores unavailabl
   ]);
 });
 
-test("Recency leaves typed search order unchanged", async () => {
+test("Typed search keeps name matches ahead of more recently used description matches", async () => {
   const workflows = mockWorkflows();
   mockHistory([
     {
@@ -343,10 +361,261 @@ test("Recency leaves typed search order unchanged", async () => {
   await user.keyboard("a");
   await waitFor(() => {
     expect(workflowNames()).toStrictEqual([
-      "/charlie",
-      "/beta",
-      "/delta",
       "/alpha",
+      "/delta",
+      "/beta",
+      "/charlie",
+      "/zulu",
+      "/echo",
     ]);
   });
+});
+
+test("The pr-a search ranks frequent prefixes above substrings, abbreviations, and descriptions", async () => {
+  mockWorkflows();
+  const names = [
+    "report",
+    "team-pr-auto",
+    "presentation-restart-auto",
+    "pr-auto",
+    "pr-auto-deploy",
+    "pr-audit",
+  ];
+  const workflows = names.map((name) => {
+    return composerWorkflow(
+      name,
+      name === "report" ? "Run pr-auto for a pull request" : null,
+    );
+  });
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(200, workflows);
+  });
+  mockHistory([
+    {
+      ids: [
+        "report",
+        "report",
+        "report",
+        "report",
+        "team-pr-auto",
+        "team-pr-auto",
+        "team-pr-auto",
+        "pr-auto-deploy",
+        "pr-auto",
+        "pr-auto",
+      ].map((name) => {
+        const workflow = workflows.find((workflow) => {
+          return workflow.name === name;
+        });
+        if (!workflow) {
+          throw new Error(`Missing workflow ${name}`);
+        }
+        return workflow.id;
+      }),
+    },
+  ]);
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  const editor = await openComposer();
+  await fill(editor, "/Pr-A");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/pr-auto",
+      "/pr-auto-deploy",
+      "/pr-audit",
+      "/team-pr-auto",
+      "/report",
+      "/presentation-restart-auto",
+    ]);
+  });
+  await fill(editor, "/pr-auto-deploy");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual(["/pr-auto-deploy"]);
+  });
+  await userEvent.setup().keyboard("{Enter}");
+  expect(editor).toHaveTextContent(/^\/pr-auto-deploy\s*$/);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+async function sendWorkflowPrompt(prompt: string): Promise<HTMLElement> {
+  const editor = await findComposerEditor();
+  await fill(editor, prompt);
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(editor.textContent).toBe("");
+  });
+  await fill(editor, "Next draft");
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  return editor;
+}
+
+test("Frequency wins over recency within a match tier on desktop and mobile", async () => {
+  mockWorkflows("qz-");
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await openComposer();
+  await sendWorkflowPrompt("/qz-delta");
+  await sendWorkflowPrompt("/qz-delta");
+  mockNow(NOW + 1000, context.signal);
+  const editor = await sendWorkflowPrompt("/qz-beta");
+
+  for (const desktop of [true, false]) {
+    context.mocks.browser.matchMedia(desktop);
+    await fill(editor, "Draft /qz");
+    await waitFor(() => {
+      expect(workflowNames()).toStrictEqual([
+        "/qz-delta",
+        "/qz-beta",
+        "/qz-alpha",
+        "/qz-charlie",
+        "/qz-echo",
+        "/qz-zulu",
+      ]);
+    });
+    expect(button("/qz-delta")).toHaveAttribute("data-active", "true");
+    const user = userEvent.setup();
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(editor).toHaveTextContent("Draft /qz-beta");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  }
+});
+
+test("A message counts each workflow once and equal counts use the latest accepted send", async () => {
+  mockWorkflows();
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await openComposer();
+  await sendWorkflowPrompt("/zulu /zulu");
+  mockNow(NOW + 1000, context.signal);
+  const editor = await sendWorkflowPrompt("/echo");
+  await fill(editor, "Draft /");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/echo",
+      "/zulu",
+      "/alpha",
+      "/beta",
+    ]);
+  });
+});
+
+test("Uses outside the rolling 30-day window expire when the menu next opens", async () => {
+  mockWorkflows();
+  mockNow(NOW - 30 * DAY_MS, context.signal);
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await openComposer();
+  await sendWorkflowPrompt("/zulu");
+  await sendWorkflowPrompt("/zulu");
+  mockNow(NOW - 29 * DAY_MS, context.signal);
+  const editor = await sendWorkflowPrompt("/echo");
+  mockNow(NOW, context.signal);
+  await fill(editor, "Draft /");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/echo",
+      "/alpha",
+      "/beta",
+      "/charlie",
+    ]);
+  });
+});
+
+test("A rejected send does not promote a workflow", async () => {
+  mockWorkflows();
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(400, {
+      error: { code: "BAD_REQUEST", message: "Message was not accepted" },
+    });
+  });
+  const editor = await openComposer();
+  await fill(editor, "/zulu");
+  click(button("Send"));
+  await screen.findByText("Message was not accepted");
+  await fill(editor, "Draft /");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/alpha",
+      "/beta",
+      "/charlie",
+      "/delta",
+    ]);
+  });
+});
+
+test("Typed results keep their order and keyboard selection while an earlier send finishes", async () => {
+  mockWorkflows("qz-");
+  const sendGate = createDeferredPromise<void>(context.signal);
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    sendGate: sendGate.promise,
+  });
+  const editor = await openComposer();
+  await fill(editor, "/qz-delta");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(editor.textContent).toBe("");
+  });
+  await fill(editor, "Draft /qz");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/qz-alpha",
+      "/qz-beta",
+      "/qz-charlie",
+      "/qz-delta",
+      "/qz-echo",
+      "/qz-zulu",
+    ]);
+  });
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowDown}");
+  sendGate.resolve();
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  expect(workflowNames()).toStrictEqual([
+    "/qz-alpha",
+    "/qz-beta",
+    "/qz-charlie",
+    "/qz-delta",
+    "/qz-echo",
+    "/qz-zulu",
+  ]);
+  expect(button("/qz-beta")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{Enter}");
+  expect(editor).toHaveTextContent("Draft /qz-beta");
+  await fill(editor, "Draft /qz");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/qz-delta",
+      "/qz-alpha",
+      "/qz-beta",
+      "/qz-charlie",
+      "/qz-echo",
+      "/qz-zulu",
+    ]);
+  });
+});
+
+test("Undated legacy recency does not become fabricated 30-day usage", async () => {
+  const workflows = mockWorkflows();
+  const history = mockHistory([]);
+  history.set(
+    "okou_recent-workflows:test-user-123:org_default",
+    JSON.stringify(
+      workflows.map((workflow) => {
+        return workflow.id;
+      }),
+    ),
+  );
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await openComposer();
+  expect(workflowNames()).toStrictEqual([
+    "/alpha",
+    "/beta",
+    "/charlie",
+    "/delta",
+  ]);
 });

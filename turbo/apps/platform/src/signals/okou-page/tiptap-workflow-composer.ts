@@ -43,7 +43,7 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
-import { createRecentWorkflowIds } from "./recent-workflows.ts";
+import { createWorkflowUsage } from "./workflow-usage.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
@@ -78,6 +78,7 @@ import {
   buildComposerSlashWorkflows,
   findActiveSlashWorkflowRange,
   workflowTokenPattern,
+  type WorkflowUsage,
   type ComposerSlashWorkflow,
   type SlashWorkflowRange,
 } from "./workflow-composer-domain.ts";
@@ -240,7 +241,9 @@ export interface WorkflowComposerSignals {
   readonly slashWorkflowsExpanded$: Computed<boolean>;
   /** The open menu's inner height when its workflows were revealed. */
   readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
-  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
+  readonly workflowUsage$: Computed<
+    Promise<ReadonlyMap<string, WorkflowUsage>>
+  >;
   readonly expandSlashWorkflows$: Command<void, []>;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
@@ -3061,7 +3064,7 @@ function createSlashExpansionSignals(
     return range !== null && expansion?.range === range ? expansion : null;
   });
   return {
-    recentWorkflowIds$: createRecentWorkflowIds(activeSlashRange$),
+    workflowUsage$: createWorkflowUsage(activeSlashRange$),
     slashWorkflowsExpanded$: computed((get) => {
       return get(expansion$) !== null;
     }),
