@@ -24,7 +24,8 @@ final class ConversationStore {
   private(set) var history: ChatHistory?
   private(set) var pending: [PendingMessage] = []
   private(set) var messages: [ChatMessage] = []
-  private(set) var visibleMessages: [ChatMessage] = []
+  private(set) var visibleItems: [ConversationItem] = []
+  var visibleMessages: [ChatMessage] { visibleItems.compactMap(\.message) }
   private(set) var hasEarlierMessages = false
   private(set) var isLoadingEarlier = false
   private(set) var readingPosition: ConversationReadingPosition?
@@ -49,6 +50,8 @@ final class ConversationStore {
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
+  private var items: [ConversationItem] = []
+  private var expandedWorkSections: Set<String> = []
   private var closed = false
 
   init(
@@ -209,7 +212,7 @@ final class ConversationStore {
     guard !closed else { return }
     // A disappearing/recycled row may still report an identity that replay just revoked.
     if let position, position.messageID != readingPosition?.messageID,
-      !messages.contains(where: { $0.id == position.messageID })
+      !items.contains(where: { $0.id == position.messageID })
     {
       return
     }
@@ -231,7 +234,7 @@ final class ConversationStore {
       }
       // Warm only the landing rows immediately above the current boundary, not the entire page.
       await messageMarkdown.prepareLatest(
-        Array(messages.prefix(renderWindow.range.lowerBound).suffix(4)))
+        Array(items.prefix(renderWindow.range.lowerBound).compactMap(\.message).suffix(4)))
       guard !closed, !needsUpgrade, !Task.isCancelled else { return }
       // Refresh/send may have changed the projection while preparation was suspended.
       renderWindow.expand()
@@ -249,16 +252,47 @@ final class ConversationStore {
     publishWindow()
   }
 
+  func toggleWorkHistory(_ sectionID: String) {
+    guard !closed, let section = history?.workSections.first(where: { $0.id == sectionID }),
+      section.isCollapsible
+    else { return }
+    if !expandedWorkSections.insert(sectionID).inserted {
+      expandedWorkSections.remove(sectionID)
+    }
+    rebuildMessages()
+  }
+
   private func rebuildMessages() {
     let persisted = history?.persistedEventIDs ?? []
     let next =
       (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
-    guard messages != next else { return }
-    if let position = readingPosition, !next.contains(where: { $0.id == position.messageID }) {
-      let surviving = Set(next.map(\.id))
-      if let index = messages.firstIndex(where: { $0.id == position.messageID }),
-        let replacement = messages.dropFirst(index + 1).first(where: { surviving.contains($0.id) })
-          ?? messages.prefix(index).last(where: { surviving.contains($0.id) })
+    if messages != next { messages = next }
+    let sections = history?.workSections ?? []
+    expandedWorkSections.formIntersection(sections.map(\.id))
+    let headers = Dictionary(
+      uniqueKeysWithValues: sections.map { ($0.hiddenMessageIDs.first ?? $0.anchorMessageID, $0) })
+    let hiddenSections = Dictionary(
+      uniqueKeysWithValues: sections.flatMap { section in
+        section.hiddenMessageIDs.map { ($0, section) }
+      })
+    var nextItems: [ConversationItem] = []
+    for message in next {
+      if let section = headers[message.id] {
+        nextItems.append(.work(section, expanded: expandedWorkSections.contains(section.id)))
+      }
+      if let section = hiddenSections[message.id] {
+        if section.isCollapsible && !expandedWorkSections.contains(section.id) { continue }
+        nextItems.append(.message(message, isWorkHistory: true))
+      } else {
+        nextItems.append(.message(message))
+      }
+    }
+    guard items != nextItems else { return }
+    if let position = readingPosition, !nextItems.contains(where: { $0.id == position.messageID }) {
+      let surviving = Set(nextItems.map(\.id))
+      if let index = items.firstIndex(where: { $0.id == position.messageID }),
+        let replacement = items.dropFirst(index + 1).first(where: { surviving.contains($0.id) })
+          ?? items.prefix(index).last(where: { surviving.contains($0.id) })
       {
         readingPosition = ConversationReadingPosition(
           messageID: replacement.id, offset: position.offset)
@@ -266,15 +300,15 @@ final class ConversationStore {
         readingPosition = nil
       }
     }
-    messages = next
-    renderWindow.update(next)
+    items = nextItems
+    renderWindow.update(nextItems)
     if let readingPosition { renderWindow.include(readingPosition.messageID) }
     publishWindow()
   }
 
   private func publishWindow() {
-    let next = Array(messages[renderWindow.range])
-    if visibleMessages != next { visibleMessages = next }
+    let next = Array(items[renderWindow.range])
+    if visibleItems != next { visibleItems = next }
     hasEarlierMessages = renderWindow.hasEarlierMessages
   }
 

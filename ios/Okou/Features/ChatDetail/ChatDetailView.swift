@@ -1,5 +1,6 @@
 import ChatDomain
 import SwiftUI
+import Textual
 
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
@@ -14,23 +15,30 @@ struct ChatDetailView: View {
 
   private var history: ChatHistory { conversation.history ?? .empty }
   private var rows: [ConversationCollectionRow] {
-    let messages = conversation.visibleMessages
+    let items = conversation.visibleItems
     var result: [ConversationCollectionRow] = []
     if conversation.hasEarlierMessages {
       result.append(.earlier(isLoading: conversation.isLoadingEarlier))
     }
-    for (index, message) in messages.enumerated() {
+    for (index, item) in items.enumerated() {
       let continuesGroup =
-        message.role == .assistant && index > 0 && messages[index - 1].role == .assistant
-      let pendingRetry = conversation.pending.first { $0.id == message.id }?.needsRetry
-      result.append(
-        .message(
-          message, showsAvatar: !continuesGroup,
-          topSpacing: index == 0 ? 20 : (continuesGroup ? 8 : 24),
-          pendingRetry: pendingRetry,
-          isSending: pendingRetry == true && conversation.isSending))
+        index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
+      let spacing: CGFloat = index == 0 ? 20 : (continuesGroup ? 8 : 24)
+      switch item {
+      case .work(let section, let expanded):
+        result.append(
+          .work(section, expanded: expanded, showsAvatar: true, topSpacing: spacing))
+      case .message(let message, let isWorkHistory):
+        let pendingRetry = conversation.pending.first { $0.id == message.id }?.needsRetry
+        result.append(
+          .message(
+            message, showsAvatar: !continuesGroup, topSpacing: spacing,
+            pendingRetry: pendingRetry,
+            isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory)
+        )
+      }
     }
-    result.append(.footer(history.executionState, hasMessages: !messages.isEmpty))
+    result.append(.footer(history.executionState, hasMessages: !items.isEmpty))
     return result
   }
 
@@ -61,7 +69,7 @@ struct ChatDetailView: View {
       }
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
-    .onChange(of: displayedMessages) { _, _ in scrolling.messagesChanged() }
+    .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
     .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
@@ -112,9 +120,25 @@ struct ChatDetailView: View {
       .accessibilityIdentifier("load-earlier-messages")
       .padding(.horizontal, 20)
       .padding(.vertical, 12)
-    case .message(let message, let showsAvatar, let topSpacing, let pendingRetry, let isSending):
+    case .work(let section, let expanded, let showsAvatar, let topSpacing):
+      VStack(alignment: .leading, spacing: 8) {
+        if showsAvatar { assistantAvatar }
+        ConversationWorkHeader(section: section, expanded: expanded) {
+          scrolling.toggleWorkHistory(section.id)
+        }
+        .padding(.leading, 6)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: section.id, anchor: anchor) }
+      }
+      .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
+    case .message(
+      let message, let showsAvatar, let topSpacing, let pendingRetry, let isSending,
+      let isWorkHistory):
       messageRow(
-        message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending
+        message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending,
+        isWorkHistory: isWorkHistory
       )
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
@@ -127,8 +151,6 @@ struct ChatDetailView: View {
             ProgressView().controlSize(.small)
             Text(executionState.label).font(.subheadline).foregroundStyle(.secondary)
           }.accessibilityIdentifier("execution-status")
-        } else if executionState == .cancelled {
-          Label("Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
         }
         if hasMessages {
           Link(
@@ -145,27 +167,69 @@ struct ChatDetailView: View {
   }
 
   private func messageRow(
-    _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool
+    _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool,
+    isWorkHistory: Bool
+  ) -> some View {
+    Group {
+      if message.role == .user {
+        UserMessageBubbleLayout {
+          messageContent(
+            message, showsAvatar: false, pendingRetry: pendingRetry, isSending: isSending
+          )
+          .padding(14)
+          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        }
+      } else {
+        messageContent(
+          message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending,
+          isWorkHistory: isWorkHistory
+        )
+        .textual.fontScale(isWorkHistory ? 0.9 : 1)
+        .foregroundStyle(isWorkHistory ? Color.secondary : Color.primary)
+        .padding(.leading, isWorkHistory ? 28 : 0)
+        .overlay(alignment: .leading) {
+          if isWorkHistory {
+            Rectangle().fill(Color.secondary.opacity(0.25)).frame(width: 1).padding(.leading, 14)
+          }
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    .contextMenu {
+      Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+    }
+  }
+
+  private var assistantAvatar: some View {
+    Image("AssistantAvatar")
+      .resizable().scaledToFit()
+      .frame(width: 28, height: 28)
+      .accessibilityLabel("Okou")
+      .accessibilityIdentifier("assistant-avatar")
+  }
+
+  private func messageContent(
+    _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool,
+    isWorkHistory: Bool = false
   ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      if message.role == .assistant {
-        if showsAvatar {
-          Image("AssistantAvatar")
-            .resizable().scaledToFit()
-            .frame(width: 28, height: 28)
-            .accessibilityLabel("Okou")
-            .accessibilityIdentifier("assistant-avatar")
-        }
-      } else if message.role == .system {
-        Text("Notice")
-          .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+      if message.role == .assistant && showsAvatar { assistantAvatar }
+      if message.role == .system {
+        Label(message.text, systemImage: message.isError ? "exclamationmark.circle" : "stop.circle")
+          .font(.subheadline)
+          .foregroundStyle(message.isError ? Color.red : Color.secondary)
+          .textSelection(.enabled)
+          .padding(.leading, 6)
+      } else {
+        MessageBodyView(
+          text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
+        )
+        .equatable()
+        .foregroundStyle(
+          message.isError ? Color.red : (isWorkHistory ? Color.secondary : Color.primary)
+        )
+        .padding(.leading, message.role == .assistant ? 6 : 0)
       }
-      MessageBodyView(
-        text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
-      )
-      .equatable()
-      .foregroundStyle(message.isError ? Color.red : Color.primary)
-      .padding(.leading, message.role == .assistant ? 6 : 0)
       if let pendingRetry {
         HStack {
           Text(pendingRetry ? "Delivery not confirmed" : "Sending…")
@@ -182,15 +246,6 @@ struct ChatDetailView: View {
           }
         }
       }
-    }
-    .padding(message.role == .user ? 14 : 0)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      message.role == .user ? Color(.secondarySystemBackground) : .clear,
-      in: RoundedRectangle(cornerRadius: 16)
-    )
-    .contextMenu {
-      Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
     }
   }
 

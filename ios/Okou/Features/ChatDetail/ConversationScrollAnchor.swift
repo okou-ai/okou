@@ -21,12 +21,12 @@ final class ConversationScrollAnchor {
   var isPresentedMarker: (@MainActor (ConversationRowMarker) -> Bool)?
   var preservedPosition: ConversationReadingPosition? { position }
 
-  func capture() -> ConversationReadingPosition? {
+  func capture(messageID: String? = nil) -> ConversationReadingPosition? {
     guard let scrollView else { return nil }
     let top = scrollView.bounds.minY + scrollView.adjustedContentInset.top
     let bottom = scrollView.bounds.maxY - scrollView.adjustedContentInset.bottom
     let visible = markers.allObjects
-      .filter { isEligible($0, in: scrollView) }
+      .filter { isEligible($0, in: scrollView) && (messageID == nil || $0.messageID == messageID) }
       .map { ($0.messageID, $0.convert($0.bounds, to: scrollView)) }
       .filter { $0.1.maxY > top && $0.1.minY < bottom }
       .min { $0.1.minY < $1.1.minY }

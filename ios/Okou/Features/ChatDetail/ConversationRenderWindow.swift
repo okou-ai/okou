@@ -11,8 +11,8 @@ struct ConversationRenderWindow {
 
   var hasEarlierMessages: Bool { range.lowerBound > 0 }
 
-  mutating func update(_ messages: [ChatMessage]) {
-    let newIDs = messages.map(\.id)
+  mutating func update(_ items: [ConversationItem]) {
+    let newIDs = items.map(\.id)
     let oldBoundary = range.lowerBound
     var boundary: Int?
     if !followsLatest {
@@ -21,8 +21,8 @@ struct ConversationRenderWindow {
       boundary = ids.dropFirst(oldBoundary).lazy.compactMap { indexes[$0] }.first
     }
     ids = newIDs
-    groupStarts = messages.indices.filter { index in
-      index == 0 || messages[index].role != messages[index - 1].role
+    groupStarts = items.indices.filter { index in
+      index == 0 || items[index].beginsWorkSection || items[index].role != items[index - 1].role
     }
     let start: Int
     if let boundary {
@@ -30,7 +30,7 @@ struct ConversationRenderWindow {
     } else {
       start = latestStart
     }
-    range = start..<messages.count
+    range = start..<items.count
   }
 
   mutating func pauseFollowing() { followsLatest = false }

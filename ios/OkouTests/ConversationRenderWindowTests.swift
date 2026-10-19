@@ -9,7 +9,7 @@ final class ConversationRenderWindowTests: XCTestCase {
       windowMessage(index, role: (index / 3).isMultiple(of: 2) ? .user : .assistant)
     }
     var window = ConversationRenderWindow()
-    window.update(messages)
+    window.update(messages.map { .message($0) })
     XCTAssertEqual(Array(messages[window.range]).map(\.id), (30..<60).map(String.init))
     XCTAssertTrue(window.hasEarlierMessages)
     window.expand()
@@ -22,14 +22,14 @@ final class ConversationRenderWindowTests: XCTestCase {
   func testReadingBoundarySurvivesAppendAndRevocation() {
     var messages = (0..<35).map { windowMessage($0) }
     var window = ConversationRenderWindow()
-    window.update(messages)
+    window.update(messages.map { .message($0) })
     window.pauseFollowing()
     window.expand()
     messages.append(windowMessage(35))
-    window.update(messages)
+    window.update(messages.map { .message($0) })
     XCTAssertEqual(messages[window.range.lowerBound].id, "15")
     messages.removeAll { ["15", "16"].contains($0.id) }
-    window.update(messages)
+    window.update(messages.map { .message($0) })
     XCTAssertEqual(messages[window.range.lowerBound].id, "17")
     window.resetToLatest()
     XCTAssertEqual(messages[window.range.lowerBound].id, "26")
@@ -41,9 +41,9 @@ final class ConversationRenderWindowTests: XCTestCase {
     window.expand()
     XCTAssertEqual(window.range, 0..<0)
     XCTAssertFalse(window.hasEarlierMessages)
-    window.update((0..<4).map { windowMessage($0) })
+    window.update((0..<4).map { .message(windowMessage($0)) })
     XCTAssertEqual(window.range, 0..<4)
-    window.update((0..<100).map { windowMessage($0, role: .assistant) })
+    window.update((0..<100).map { .message(windowMessage($0, role: .assistant)) })
     XCTAssertEqual(window.range, 0..<100)
     XCTAssertFalse(window.hasEarlierMessages)
   }

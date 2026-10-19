@@ -5,19 +5,22 @@ import SwiftUI
 enum ConversationCollectionRow: Equatable, Identifiable {
   case earlier(isLoading: Bool)
   case message(
-    ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool)
+    ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
+    isWorkHistory: Bool = false)
+  case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState, hasMessages: Bool)
 
   var id: String {
     switch self {
     case .earlier: "conversation-earlier"
-    case .message(let message, _, _, _, _): message.id
+    case .message(let message, _, _, _, _, _): message.id
+    case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
     }
   }
 
   var message: ChatMessage? {
-    if case .message(let message, _, _, _, _) = self { return message }
+    if case .message(let message, _, _, _, _, _) = self { return message }
     return nil
   }
 }

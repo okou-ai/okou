@@ -74,6 +74,18 @@ final class ConversationScrollCoordinator {
     positionAtBottom(animated: true)
   }
 
+  func toggleWorkHistory(_ sectionID: String) {
+    guard isActive else { return }
+    invalidateRequests()
+    intent = .history
+    // Keep the tapped control at the same offset while its native child rows change.
+    let position = anchor.capture(messageID: sectionID) ?? anchor.capture()
+    anchor.cancel()
+    conversation.rememberReadingPosition(position)
+    conversation.toggleWorkHistory(sectionID)
+    if let position = conversation.readingPosition { anchor.restore(position) }
+  }
+
   /// Called by the view's cancellable task when the latest displayed message changes.
   func latestMessageChanged() async {
     guard isActive, !conversation.visibleMessages.isEmpty else { return }

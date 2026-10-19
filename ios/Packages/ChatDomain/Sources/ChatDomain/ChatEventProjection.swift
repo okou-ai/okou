@@ -91,10 +91,11 @@ public enum ChatEventProjection {
       default: state = .idle
       }
     }
+    let work = ChatWorkProjection.build(rows: rows, messages: messages)
     return ChatHistory(
-      messages: messages, executionState: state,
+      messages: work.messages, executionState: state,
       activeRunIDs: activeRuns.subtracting(interrupted).sorted(), queuedEventIDs: queuedInputs,
-      persistedEventIDs: Set(rows.map(\.id)))
+      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections)
   }
 
   /// Raw history may contain historical private memory-citation envelopes.
