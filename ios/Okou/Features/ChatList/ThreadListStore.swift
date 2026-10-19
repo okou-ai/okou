@@ -172,6 +172,10 @@ final class ThreadListStore {
     }
   }
 
+  func dismissError() {
+    error = nil
+  }
+
   func setArchived(_ thread: ChatThread, archived: Bool) async {
     await updateThread(thread.id) { [commands] in
       try await commands.setArchived(threadID: thread.id, archived: archived)
