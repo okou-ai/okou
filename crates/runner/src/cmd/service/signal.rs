@@ -1,4 +1,4 @@
-use std::process::ExitStatus;
+use std::process::{ExitStatus, Output};
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -47,15 +47,7 @@ pub(super) async fn signal_service_main(
             ))
         })?;
 
-    if output.status.success() {
-        return Ok(ServiceSignalOutcome::Sent);
-    }
-
-    let signal_error = systemctl_kill_error(unit, signal, output.status, &output.stderr);
-    match has_service_main_process(unit).await {
-        Ok(false) => Ok(ServiceSignalOutcome::AlreadyGone),
-        Ok(true) | Err(_) => Err(signal_error),
-    }
+    complete_service_signal(unit, signal, output, None).await
 }
 
 /// Ask systemd to signal the current main process within a cleanup deadline.
@@ -87,16 +79,31 @@ pub(super) async fn signal_service_main_bounded(
         ))
     })?;
 
+    complete_service_signal(unit, signal, output, Some(deadline)).await
+}
+
+async fn complete_service_signal(
+    unit: &RunnerServiceUnit,
+    signal: nix::sys::signal::Signal,
+    output: Output,
+    deadline: Option<Instant>,
+) -> RunnerResult<ServiceSignalOutcome> {
     if output.status.success() {
         return Ok(ServiceSignalOutcome::Sent);
     }
 
     let signal_error = systemctl_kill_error(unit, signal, output.status, &output.stderr);
-    let now = Instant::now();
-    if now >= deadline {
-        return Err(signal_error);
-    }
-    match has_service_main_process_bounded(unit, deadline - now).await {
+    let main_process = match deadline {
+        Some(deadline) => {
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(signal_error);
+            }
+            has_service_main_process_bounded(unit, deadline - now).await
+        }
+        None => has_service_main_process(unit).await,
+    };
+    match main_process {
         Ok(false) => Ok(ServiceSignalOutcome::AlreadyGone),
         Ok(true) | Err(_) => Err(signal_error),
     }
@@ -149,7 +156,7 @@ if [ "$1" = "kill" ]; then
   case "$OKOU_RUN_SERVICE_SIGNAL_SCENARIO" in
     success-*|bounded-success) exit 0 ;;
     bounded-timeout) while :; do :; done ;;
-    absent|bounded-absent|live|recheck-failed)
+    absent|bounded-absent|live|bounded-live|recheck-failed|bounded-recheck-failed|bounded-query-timeout)
       printf '%s\n' 'signal delivery failed' >&2
       exit 1
       ;;
@@ -162,14 +169,15 @@ if [ "$1" = "show" ]; then
       printf '%s\n' 'LoadState=loaded' 'MainPID=0'
       exit 0
       ;;
-    live)
+    live|bounded-live)
       printf '%s\n' 'LoadState=loaded' 'MainPID=123'
       exit 0
       ;;
-    recheck-failed)
+    recheck-failed|bounded-recheck-failed)
       printf '%s\n' 'state lookup failed' >&2
       exit 1
       ;;
+    bounded-query-timeout) while :; do :; done ;;
   esac
 fi
 
@@ -203,18 +211,33 @@ exit 2
     #[tokio::test]
     async fn signal_service_main_preserves_failure_when_main_process_is_present() {
         let signal = nix::sys::signal::Signal::SIGUSR2;
-        let invocations = run_signal_scenario("live", signal).await;
+        for scenario in ["live", "bounded-live"] {
+            let invocations = run_signal_scenario(scenario, signal).await;
 
-        assert_eq!(
-            invocations,
-            vec![expected_kill_invocation(signal), expected_show_invocation()]
-        );
+            assert_eq!(
+                invocations,
+                vec![expected_kill_invocation(signal), expected_show_invocation()]
+            );
+        }
     }
 
     #[tokio::test]
     async fn signal_service_main_preserves_failure_when_recheck_fails() {
         let signal = nix::sys::signal::Signal::SIGUSR1;
-        let invocations = run_signal_scenario("recheck-failed", signal).await;
+        for scenario in ["recheck-failed", "bounded-recheck-failed"] {
+            let invocations = run_signal_scenario(scenario, signal).await;
+
+            assert_eq!(
+                invocations,
+                vec![expected_kill_invocation(signal), expected_show_invocation()]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn signal_service_main_bounded_preserves_failure_when_recheck_times_out() {
+        let signal = nix::sys::signal::Signal::SIGUSR1;
+        let invocations = run_signal_scenario("bounded-query-timeout", signal).await;
 
         assert_eq!(
             invocations,
@@ -306,10 +329,10 @@ exit 2
         };
         let unit = RunnerServiceUnit::from_suffix("test").unwrap();
         let result = match scenario.as_str() {
-            "bounded-success" | "bounded-absent" => {
+            "bounded-success" | "bounded-absent" | "bounded-live" | "bounded-recheck-failed" => {
                 signal_service_main_bounded(&unit, signal, BOUNDED_OUTCOME_SCENARIO_BUDGET).await
             }
-            "bounded-timeout" => {
+            "bounded-timeout" | "bounded-query-timeout" => {
                 signal_service_main_bounded(&unit, signal, BOUNDED_TIMEOUT_SCENARIO_BUDGET).await
             }
             _ => signal_service_main(&unit, signal).await,
@@ -325,7 +348,11 @@ exit 2
             "absent" | "bounded-absent" => {
                 assert_eq!(result.unwrap(), ServiceSignalOutcome::AlreadyGone);
             }
-            "live" | "recheck-failed" => {
+            "live"
+            | "bounded-live"
+            | "recheck-failed"
+            | "bounded-recheck-failed"
+            | "bounded-query-timeout" => {
                 let error = result.unwrap_err().to_string();
                 assert!(
                     error.contains("signal delivery failed"),
