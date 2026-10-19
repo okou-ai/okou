@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
@@ -14,7 +14,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -26,7 +26,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   clearAllDetached,
   createDeferredPromise,
-  settle,
   settleIncludingAbort,
 } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
@@ -352,6 +351,235 @@ function incomingAttachment(fixture: DiscordFileProviderIdentity) {
       attachmentId: fileId,
     },
   };
+}
+
+type PreClaimWork = ReturnType<typeof createPreClaimWork>;
+type PreClaimBarrier = ReturnType<PreClaimWork["barrier"]>;
+type CanonicalUpload = Awaited<ReturnType<typeof canonicalUpload>>;
+type PreClaimResponse = Extract<
+  Awaited<ReturnType<ReturnType<typeof fileClients>["complete"]>>,
+  { status: 200 }
+>;
+type PreClaimObservation =
+  | { readonly stage: "pending"; readonly overlapping: PreClaimResponse }
+  | {
+      readonly stage: "delivered";
+      readonly overlapping: PreClaimResponse;
+      readonly completed: PreClaimResponse;
+      readonly operation: CanonicalUpload["operation"];
+      readonly messageId: string;
+      readonly sends: number;
+    };
+
+function createPreClaimWork(
+  lifecycle: ReturnType<typeof createFixtureLifecycle>,
+  registerRelease: (release: () => void) => void,
+) {
+  const operations: ReturnType<typeof settleIncludingAbort>[] = [];
+  const releases: (() => void)[] = [];
+  let closing = false;
+  const releaseAll = () => {
+    closing = true;
+    for (const release of releases) {
+      release();
+    }
+  };
+  registerRelease(releaseAll);
+  return {
+    run<T>(operation: () => Promise<T>): Promise<T> {
+      const pending = lifecycle.run(operation);
+      operations.push(
+        settleIncludingAbort(() => {
+          return pending;
+        }),
+      );
+      return pending;
+    },
+    barrier(phase: string) {
+      const entered = createDeferredPromise<void>(context.signal);
+      const released = createDeferredPromise<void>(context.signal);
+      const release = () => {
+        if (!released.settled()) {
+          released.resolve(undefined);
+        }
+      };
+      const finish = () => {
+        if (!entered.settled()) {
+          entered.resolve(undefined);
+        }
+        release();
+      };
+      releases.push(finish);
+      if (closing) {
+        finish();
+      }
+      return {
+        async wait() {
+          if (!entered.settled()) {
+            entered.resolve(undefined);
+          }
+          await released.promise;
+        },
+        async observe(response: Promise<{ status: number }>) {
+          await Promise.race([
+            entered.promise,
+            response.then((result) => {
+              throw new Error(
+                `Completion returned ${result.status} before ${phase}`,
+              );
+            }),
+          ]);
+        },
+        release,
+      };
+    },
+    async finish(result: Awaited<ReturnType<typeof settleIncludingAbort>>) {
+      releaseAll();
+      const outcomes = [result];
+      let drained = 0;
+      while (drained < operations.length) {
+        const accepted = operations.slice(drained);
+        drained = operations.length;
+        outcomes.push(...(await Promise.all(accepted)));
+      }
+      const errors = outcomes.flatMap((outcome) => {
+        return outcome.ok ? [] : [outcome.error];
+      });
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Pre-claim completion work failed");
+      }
+    },
+  };
+}
+
+function gatePreClaimStorage(
+  upload: CanonicalUpload,
+  work: PreClaimWork,
+  gates: readonly PreClaimBarrier[],
+) {
+  const previous = context.mocks.s3.send.getMockImplementation();
+  if (!previous) {
+    throw new Error("Canonical upload storage fixture is not installed");
+  }
+  const key = `private-artifacts/${upload.initialized.assetId}/${sanitizeArtifactFilename(upload.body.filename)}`;
+  let reads = 0;
+  context.mocks.s3.send.mockImplementation((...args: unknown[]) => {
+    const command = args[0];
+    if (
+      !(command instanceof GetObjectCommand) ||
+      command.input.Bucket !== "test-private-artifacts" ||
+      command.input.Key !== key
+    ) {
+      return previous(...args);
+    }
+    const gate = gates[reads++];
+    if (!gate) {
+      return Promise.reject(new Error("Unexpected canonical storage read"));
+    }
+    return work.run(async () => {
+      await gate.wait();
+      return await previous(...args);
+    });
+  });
+}
+
+function holdPreClaimDiscord(
+  fixture: BoundFixture,
+  upload: CanonicalUpload,
+  work: PreClaimWork,
+  gate: PreClaimBarrier,
+) {
+  const messageId = discordSnowflake();
+  const attachmentId = discordSnowflake();
+  let sends = 0;
+  server.use(
+    http.post(
+      `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+      ({ request }) => {
+        return work.run(async () => {
+          sends += 1;
+          await expectUploadedDiscordFile(request, upload.bytes);
+          await gate.wait();
+          return HttpResponse.json(
+            discordFileMessage({
+              channelId: fixture.channelId,
+              messageId,
+              authorId: fixture.botUserId,
+              bot: true,
+              attachment: {
+                id: attachmentId,
+                filename: upload.body.filename,
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${attachmentId}/report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
+        });
+      },
+    ),
+  );
+  return {
+    messageId,
+    sends: () => {
+      return sends;
+    },
+  };
+}
+
+async function runPreClaimOverlap(
+  fixture: BoundFixture,
+  lifecycle: ReturnType<typeof createFixtureLifecycle>,
+  registerRelease: (release: () => void) => void,
+  observe: (result: PreClaimObservation) => void,
+) {
+  const upload = await canonicalUpload(fixture);
+  const client = fileClients();
+  await accept(
+    client.materialize({ headers: fixture.headers, body: upload.operation }),
+    [200],
+  );
+  const work = createPreClaimWork(lifecycle, registerRelease);
+  const result = await settleIncludingAbort(async () => {
+    const firstRead = work.barrier("the first storage read");
+    const secondRead = work.barrier("the second storage read");
+    const sending = work.barrier("the Discord send");
+    gatePreClaimStorage(upload, work, [firstRead, secondRead]);
+    const provider = holdPreClaimDiscord(fixture, upload, work, sending);
+    const first = work.run(() => {
+      return client.complete({
+        headers: fixture.headers,
+        body: upload.operation,
+      });
+    });
+    await firstRead.observe(first);
+    const second = work.run(() => {
+      return client.complete({
+        headers: fixture.headers,
+        body: upload.operation,
+      });
+    });
+    await secondRead.observe(second);
+    firstRead.release();
+    await sending.observe(first);
+    secondRead.release();
+    const overlapping = await accept(second, [200]);
+    observe({ stage: "pending", overlapping });
+    sending.release();
+    const completed = await accept(first, [200]);
+    observe({
+      stage: "delivered",
+      overlapping,
+      completed,
+      operation: upload.operation,
+      messageId: provider.messageId,
+      sends: provider.sends(),
+    });
+  });
+  await work.finish(result);
 }
 
 describe("Discord file authorization and input validation", () => {
@@ -1353,81 +1581,65 @@ describe("Canonical Discord file publication and delivery", () => {
     }),
   );
 
-  it("allows only one external message when completion requests overlap", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    const client = fileClients();
-    await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    const sending = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const deliveredMessageId = discordSnowflake();
-    const deliveredAttachmentId = discordSnowflake();
-    let sends = 0;
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        async ({ request }) => {
-          sends += 1;
-          await expectUploadedDiscordFile(request, upload.bytes);
-          sending.resolve(undefined);
-          await release.promise;
-          return HttpResponse.json(
-            discordFileMessage({
-              channelId: fixture.channelId,
-              messageId: deliveredMessageId,
-              authorId: fixture.botUserId,
-              bot: true,
-              attachment: {
-                id: deliveredAttachmentId,
-                filename: upload.body.filename,
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
-                content_type: "text/csv",
-              },
-            }),
+  describe("pre-claim completion ownership", () => {
+    let finish = () => {
+      return Promise.resolve();
+    };
+    afterEach(async () => {
+      const result = await settleIncludingAbort(finish);
+      if (!result.ok) {
+        onTestFinished(() => {
+          throw result.error;
+        });
+      }
+    });
+
+    it("allows only one external message when completion requests overlap", () => {
+      const observe = (result: PreClaimObservation) => {
+        if (result.stage === "pending") {
+          expect(result.overlapping.body.delivery).toStrictEqual({
+            status: "pending",
+          });
+          return;
+        }
+        const { completed, overlapping, operation, messageId, sends } = result;
+        expect(completed.body.delivery).toMatchObject({
+          status: "delivered",
+          messageId,
+        });
+        expect(sends).toBe(1);
+        expect(overlapping.body.assetId).toBe(operation.assetId);
+        expect(overlapping.body.operationId).toBe(operation.operationId);
+        expect(completed.body.assetId).toBe(overlapping.body.assetId);
+        expect(completed.body.operationId).toBe(overlapping.body.operationId);
+        expect(completed.body.url).toBe(overlapping.body.url);
+      };
+      let release = () => {};
+      let closing = false;
+      let pending = Promise.resolve();
+      finish = async () => {
+        closing = true;
+        release();
+        await pending;
+      };
+      const registerRelease = (next: () => void) => {
+        release = next;
+        if (closing) {
+          release();
+        }
+      };
+      pending = Promise.resolve().then(
+        withPublishedDiscordFixture(async (fixture, lifecycle) => {
+          await runPreClaimOverlap(
+            fixture,
+            lifecycle,
+            registerRelease,
+            observe,
           );
-        },
-      ),
-    );
-
-    const first = client.complete({
-      headers: fixture.headers,
-      body: upload.operation,
+        }),
+      );
+      return pending;
     });
-    const overlapping = await settle(
-      (async () => {
-        await Promise.race([
-          sending.promise,
-          first.then((response) => {
-            throw new Error(
-              `Completion returned ${response.status} before reaching Discord`,
-            );
-          }),
-        ]);
-        return await accept(
-          client.complete({ headers: fixture.headers, body: upload.operation }),
-          [200],
-        );
-      })(),
-      context.signal,
-    );
-    release.resolve(undefined);
-    const completed = await accept(first, [200]);
-    if (!overlapping.ok) {
-      throw overlapping.error;
-    }
-
-    expect(overlapping.value.body.delivery).toStrictEqual({
-      status: "pending",
-    });
-    expect(completed.body.delivery).toMatchObject({
-      status: "delivered",
-      messageId: deliveredMessageId,
-    });
-    expect(sends).toBe(1);
   });
 
   it("does not replay a receipt after its verified connection is removed or replaced", async () => {
