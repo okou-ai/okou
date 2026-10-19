@@ -21,7 +21,7 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
   const card = method.card;
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4">
-      <div className="flex h-9 w-12 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-50 text-muted-foreground">
+      <div className="flex h-9 w-12 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-gray-50 text-muted-foreground">
         <CreditCard size={20} aria-hidden="true" />
       </div>
       <div className="min-w-0 flex-1">
@@ -30,8 +30,8 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
             {method.nickname || method.name}
           </span>
           {method.isDefault && (
-            <Badge className="gap-1 text-xs text-muted-foreground">
-              <Check size={12} aria-hidden="true" />
+            <Badge className="text-xs text-muted-foreground">
+              <Check aria-hidden="true" />
               {t(($) => {
                 return $.settings.wallet.cards.default;
               })}
@@ -115,13 +115,13 @@ export function WalletCards() {
           })}
         </p>
       ) : (
-        <ul aria-label={title} className="divide-y divide-gray-300">
+        <ul aria-label={title} className="divide-y divide-gray-400">
           {cards.data.map((method) => {
             return <WalletCardRow key={method.id} method={method} />;
           })}
         </ul>
       )}
-      <div className="flex justify-end border-t border-gray-300 bg-gray-50 px-5 py-4">
+      <div className="flex justify-end border-t border-t-gray-400 bg-gray-50 px-5 py-4">
         <a
           href="https://app.link.com/wallet"
           target="_blank"
