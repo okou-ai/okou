@@ -49,16 +49,19 @@ function ConnectorDetailHeader({
 }) {
   const { t } = useTranslation();
   const status = builtinConnectorCurrentConnectionStatus(connector);
+  const hasConflictingPresence =
+    connector.connection !== null && (accountSummary?.accountCount ?? 0) === 0;
   const needsAccountChoice =
-    accountSummary !== undefined &&
-    accountSummary.accountCount > 0 &&
-    (!accountSummary.defaultConnection ||
-      connector.connection?.id !== accountSummary.defaultConnection.id ||
-      (status === "reconnect-required") !==
-        (accountSummary.defaultConnection.connectionStatus ===
-          "reconnect-required") ||
-      (accountSummary.attentionCount > 0 &&
-        accountSummary.defaultConnection.connectionStatus === "connected"));
+    hasConflictingPresence ||
+    (accountSummary !== undefined &&
+      accountSummary.accountCount > 0 &&
+      (!accountSummary.defaultConnection ||
+        connector.connection?.id !== accountSummary.defaultConnection.id ||
+        (status === "reconnect-required") !==
+          (accountSummary.defaultConnection.connectionStatus ===
+            "reconnect-required") ||
+        (accountSummary.attentionCount > 0 &&
+          accountSummary.defaultConnection.connectionStatus === "connected")));
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-6 pt-6">

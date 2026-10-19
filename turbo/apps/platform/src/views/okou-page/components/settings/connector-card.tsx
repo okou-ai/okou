@@ -240,7 +240,7 @@ function DirectoryConnectorCard({
     if (!interactive) {
       return;
     }
-    if (connected) {
+    if (connected || connector.connection !== null) {
       onOpenDetail?.();
       return;
     }

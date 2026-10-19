@@ -27,6 +27,7 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
+import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
 import {
   connectorAgentAccess$,
   reloadConnectorAgentAccess$,
@@ -182,6 +183,7 @@ const bumpReload$ = command(({ set }) => {
   set(internalReload$, (v) => {
     return v + 1;
   });
+  set(reloadConnectorAccountSummaries$);
 });
 
 export const retryCustomConnectors$ = command(({ set }) => {

@@ -3,7 +3,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -16,6 +16,7 @@ import {
   connectorAccount,
   httpConnector,
   installComposerConnectorFixture,
+  manualAuthMethod,
   SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -67,8 +68,8 @@ async function openDirectory() {
   return screen.findByRole("dialog", { name: "Connectors" });
 }
 
-function openCustom(dialog: HTMLElement) {
-  click(within(dialog).getByRole("radio", { name: "Custom" }));
+async function openCustom(dialog: HTMLElement) {
+  click(await findFastControl("radio", "Custom", dialog));
 }
 
 test("Expired builtin and custom defaults with healthy siblings remain in Needs attention", async () => {
@@ -95,7 +96,7 @@ test("Expired builtin and custom defaults with healthy siblings remain in Needs 
   await expect(
     findFastControl("button", "Open GitHub details", dialog),
   ).resolves.toHaveTextContent("1/2 need attention");
-  openCustom(dialog);
+  await openCustom(dialog);
   await within(dialog).findByText("Needs attention");
   await expect(
     findFastControl("button", "Connect Acme Search", dialog),
@@ -133,7 +134,7 @@ test("Healthy saved accounts stay connected while zero-account connectors remain
     findFastControl("button", "Open GitHub details", dialog),
   ).resolves.toHaveTextContent("+1");
   await fill(within(dialog).getByPlaceholderText("Find connectors..."), "");
-  openCustom(dialog);
+  await openCustom(dialog);
   await expect(
     findFastControl("button", "Connect Acme Search", dialog),
   ).resolves.toHaveTextContent("2 accounts");
@@ -150,11 +151,82 @@ test("A saved custom account with incomplete setup is visible without claiming i
     accountSummaries: [accountSummary(target, savedAccounts(target))],
   });
   const dialog = await openDirectory();
-  openCustom(dialog);
+  await openCustom(dialog);
   await within(dialog).findByText("Needs attention");
   const card = await findFastControl("button", "Connect Acme Search", dialog);
   expect(card).toHaveTextContent("2 accounts");
   expect(card).toHaveTextContent("Reconnect required");
+});
+
+test("Connecting a custom account updates the directory when it is reopened", async () => {
+  installComposerConnectorFixture({ customConnectors: [acme()] });
+  const directory = await openDirectory();
+  await openCustom(directory);
+  const card = await findFastControl(
+    "button",
+    "Connect Acme Search",
+    directory,
+  );
+  expect(card).toHaveTextContent("No accounts");
+  click(card);
+  const connect = await screen.findByRole("dialog", {
+    name: "Connect Acme Search",
+  });
+  await fill(within(connect).getByLabelText("Secret"), "replacement-secret");
+  click(await findFastControl("button", "Save", connect));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  if (!queryFastControl("button", "Add connectors")) {
+    click(await findFastControl("button", "Connectors"));
+  }
+  click(await findFastControl("button", "Add connectors"));
+  const reopened = await screen.findByRole("dialog", { name: "Connectors" });
+  await openCustom(reopened);
+  await expect(
+    findFastControl("button", "Connect Acme Search", reopened),
+  ).resolves.toHaveTextContent("Work");
+  expect(within(reopened).queryByText("No accounts")).toBeNull();
+});
+
+test("Realtime custom account expiry refreshes the directory attention state", async () => {
+  const target = {
+    kind: "custom",
+    customConnectorId: ACME_CONNECTOR_ID,
+  } as const;
+  const healthyAccounts = savedAccounts(target);
+  const expiredAccounts = [
+    {
+      ...healthyAccounts[0]!,
+      connectionStatus: "reconnect-required" as const,
+      reconnectReason: "authorization_expired_or_revoked" as const,
+    },
+    healthyAccounts[1]!,
+  ];
+  let expired = false;
+  installComposerConnectorFixture({ customConnectors: [acme(true)] });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [acme(!expired)] });
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: [
+        accountSummary(target, expired ? expiredAccounts : healthyAccounts),
+      ],
+    });
+  });
+  const directory = await openDirectory();
+  await openCustom(directory);
+  await expect(
+    findFastControl("button", "Connect Acme Search", directory),
+  ).resolves.toHaveTextContent("2 accounts");
+  expect(within(directory).queryByText("Needs attention")).toBeNull();
+  expired = true;
+  context.mocks.ably.trigger("customConnectorListChanged");
+  await within(directory).findByText("Needs attention");
+  await expect(
+    findFastControl("button", "Connect Acme Search", directory),
+  ).resolves.toHaveTextContent("1/2 need attention");
 });
 
 test("Pending account summaries do not expose an ordinary add action as if no account exists", async () => {
@@ -171,7 +243,7 @@ test("Pending account summaries do not expose an ordinary add action as if no ac
     },
   );
   const dialog = await openDirectory();
-  openCustom(dialog);
+  await openCustom(dialog);
   await within(dialog).findByText("Loading connectors…");
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
   expect(within(dialog).queryByText("No accounts")).toBeNull();
@@ -210,7 +282,7 @@ test("Account-summary failure is retryable and leaves managed Feishu in its own 
   await within(dialog).findByText(
     "Accounts are unavailable for this connector.",
   );
-  openCustom(dialog);
+  await openCustom(dialog);
   await findFastControl("button", "Connect Feishu", dialog);
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
   expect(within(dialog).queryByText("No accounts")).toBeNull();
@@ -231,7 +303,7 @@ test("Custom definition failure keeps an explicit retry instead of an empty dire
     });
   });
   const dialog = await openDirectory();
-  openCustom(dialog);
+  await openCustom(dialog);
   await within(dialog).findByText("Couldn't load custom connectors.");
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -263,6 +335,25 @@ test("A builtin summary with no default sends the user to account management wit
   expect(manage).toHaveAttribute("href", "/connectors");
   expect(queryFastControl("button", "Connect", dialog)).toBeNull();
   expect(fixture.oauthConnectionRequests).toStrictEqual([]);
+});
+
+test("An empty summary with a stale builtin account identity keeps account management available", async () => {
+  const fixture = installComposerConnectorFixture({
+    catalog: [
+      builtinConnector({
+        slug: "github",
+        label: "GitHub",
+        authMethods: [manualAuthMethod()],
+      }),
+    ],
+    accountSummaries: [],
+  });
+  const directory = await openDirectory();
+  click(await findFastControl("button", "Connect GitHub", directory));
+  const manage = await findFastControl("link", "Manage GitHub accounts");
+  expect(manage).toHaveAttribute("href", "/connectors");
+  expect(screen.getByText("No accounts")).toBeInTheDocument();
+  expect(fixture.manualConnectionRequests).toStrictEqual([]);
 });
 
 test.each([true, false])(
