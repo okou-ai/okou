@@ -86,6 +86,7 @@ readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-memb
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
 readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-only
+readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
@@ -663,6 +664,22 @@ if [[ ! "$retired_integration_agent_tables_drop_commit" =~ ^[0-9a-f]{40}$ ]]; th
 fi
 if ! git merge-base --is-ancestor "$retired_integration_agent_tables_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired integration agent table drop: ${retired_integration_agent_tables_drop_commit}."
+fi
+
+# #41333 deployed the canonical Storage-output log reader before duplicate
+# artifact writes stopped. Read its explicit floor from current main so that
+# the shipped preparation remains eligible, independently of this cleanup.
+if ! run_storage_output_reader_commit=$(git show "origin/main:${RUN_STORAGE_OUTPUT_READER_PATH}"); then
+  fail "Cannot read the Run Storage-output reader rollback floor from main."
+fi
+if [[ ! "$run_storage_output_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Run Storage-output reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$run_storage_output_reader_commit" origin/main; then
+  fail "Run Storage-output reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$run_storage_output_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Run Storage-output log reader: ${run_storage_output_reader_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

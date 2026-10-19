@@ -246,23 +246,11 @@ function buildRunResult(
   mounts: readonly PersistedStorageMount[],
 ): RunResult {
   const framework = run.launchSnapshot?.framework;
-  const outputs = storageOutputs(mounts);
   return {
     ...(framework !== undefined && framework === body.cliAgentType
       ? { framework, frameworkSessionId: body.cliAgentSessionId }
       : {}),
-    storageOutputs: outputs,
-    // Outgoing API log readers still consume this map. Remove after this
-    // Storage-output reader preparation is deployed and drained (#41332).
-    ...(outputs.length > 0
-      ? {
-          artifact: Object.fromEntries(
-            outputs.map((output) => {
-              return [output.name, output.version];
-            }),
-          ),
-        }
-      : {}),
+    storageOutputs: storageOutputs(mounts),
   };
 }
 
