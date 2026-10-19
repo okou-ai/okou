@@ -463,6 +463,33 @@ export const vncEditor$ = computed((get) => {
 export const vncProfile$ = computed((get) => {
   return get(editor$).profile;
 });
+export const vncTransport$ = computed((get) => {
+  return get(editor$).transport;
+});
+export const vncKdcTransport$ = computed((get) => {
+  return get(editor$).kdcTransport;
+});
+export const vncCredentialSelection$ = computed((get) => {
+  return get(editor$).selection;
+});
+export const vncNetworkConfigId$ = computed((get) => {
+  return get(editor$).networkConfigId;
+});
+export const vncKdcNetworkConfigId$ = computed((get) => {
+  return get(editor$).kdcNetworkConfigId;
+});
+export const vncOriginTlsEnabled$ = computed((get) => {
+  return get(editor$).originTlsEnabled;
+});
+export const vncOriginTlsServerName$ = computed((get) => {
+  return get(editor$).originTlsServerName;
+});
+export const vncOriginTlsTrust$ = computed((get) => {
+  return get(editor$).originTlsTrust;
+});
+export const vncOriginTlsCaBundle$ = computed((get) => {
+  return get(editor$).originTlsCaBundle;
+});
 export const vncSaveUncertain$ = computed((get) => {
   return get(uncertain$);
 });
