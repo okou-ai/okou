@@ -106,7 +106,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
-    maintainer: "bingjie@okou.ai",
+    maintainer: "tongx@okou.ai",
     description:
       "Expose personal subscription linking in the composer model slot and the account menu.",
     enabled: false,
