@@ -9,6 +9,14 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.751.2](https://github.com/okou-ai/okou/compare/api-v1.751.1...api-v1.751.2) (2026-10-19)
+
+
+### Refactoring
+
+* **api:** localize catalog status forwarding ([#41143](https://github.com/okou-ai/okou/issues/41143)) ([c0412c0](https://github.com/okou-ai/okou/commit/c0412c082db5caa9a93ad8aa3cf047f8f747c09e))
+* **api:** localize runtime wakeup discovery ([#41146](https://github.com/okou-ai/okou/issues/41146)) ([a08bbae](https://github.com/okou-ai/okou/commit/a08bbaeddfc0106b7abda0841b9a70a258be0d8e))
+
 ## [1.751.1](https://github.com/okou-ai/okou/compare/api-v1.751.0...api-v1.751.1) (2026-10-19)
 
 
