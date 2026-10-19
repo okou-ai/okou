@@ -35,6 +35,12 @@ import {
   RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
   RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   RUNNER_JOB_TERMINAL_GRACE_MS,
+  RUNNER_JOB_TERMINAL_HOST_SLACK_MS,
+  GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS,
+  GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS,
+  GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS,
+  GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS,
+  GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS,
   BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -555,6 +561,50 @@ const expectedBindings = [
     value: rustU64(RUNNER_JOB_TERMINAL_GRACE_MS),
     rustDoc: [
       "Terminal observation grace, compile-time checked against Guest cleanup plus executor host slack.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_JOB_TERMINAL_HOST_SLACK_MS",
+    value: rustU64(RUNNER_JOB_TERMINAL_HOST_SLACK_MS),
+    rustDoc: [
+      "Host scheduling, observation, and terminal proof delivery allowance.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS",
+    value: rustU64(GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS),
+    rustDoc: ["Maximum Guest stdout/stderr drain time after child exit."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS",
+    value: rustU64(GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS),
+    rustDoc: [
+      "Maximum wait for a contained Guest cgroup to become empty after kill.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS",
+    value: rustU64(GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS),
+    rustDoc: ["Maximum retry window for removing an empty Guest exec cgroup."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS",
+    value: rustU64(GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS),
+    rustDoc: [
+      "Grace after signaling contained Guest descendants with SIGTERM.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS",
+    value: rustU64(GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS),
+    rustDoc: [
+      "Guest terminal cleanup: TERM grace plus kill, removal, and output drain.",
     ],
   },
   {

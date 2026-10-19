@@ -79,9 +79,20 @@ export const AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS =
     (AGENT_TELEMETRY_HTTP_TIMEOUT_MS +
       AGENT_TELEMETRY_INCIDENT_ATTEMPTS * AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS) +
   1_000;
-// The executor compile-time checks this against shared Guest terminal cleanup
-// (6,750 ms) plus its host observation slack (3,250 ms).
-export const RUNNER_JOB_TERMINAL_GRACE_MS = 10_000;
+// Terminal cleanup is shared with Guest exec; keep each phase in the sum so
+// predecessor waiting follows the same allowance as the actual cleanup path.
+export const GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS = 500;
+export const GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS = 1_000;
+export const GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS = 250;
+export const GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS = 5_000;
+export const GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS =
+  GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS +
+  GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS +
+  GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS +
+  GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS;
+export const RUNNER_JOB_TERMINAL_HOST_SLACK_MS = 3_250;
+export const RUNNER_JOB_TERMINAL_GRACE_MS =
+  GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS + RUNNER_JOB_TERMINAL_HOST_SLACK_MS;
 // A completed exact producer can retain its home until Guest exit is observed.
 // This dedicated window does not extend ordinary home/idle routing preference.
 export const RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS =

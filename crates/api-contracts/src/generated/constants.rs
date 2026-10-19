@@ -131,6 +131,21 @@ pub mod runners {
     /// Rust runners use this shared contract value to split target batches before calling the API.
     pub const CONNECTOR_RUNTIME_SYNC_TARGETS_MAX: u64 = 256;
 
+    /// Maximum Guest stdout/stderr drain time after child exit.
+    pub const GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS: u64 = 5000;
+
+    /// Maximum wait for a contained Guest cgroup to become empty after kill.
+    pub const GUEST_EXEC_PROCESS_CONTAINMENT_KILL_EMPTY_TIMEOUT_MS: u64 = 1000;
+
+    /// Maximum retry window for removing an empty Guest exec cgroup.
+    pub const GUEST_EXEC_PROCESS_CONTAINMENT_REMOVE_TIMEOUT_MS: u64 = 250;
+
+    /// Grace after signaling contained Guest descendants with SIGTERM.
+    pub const GUEST_EXEC_PROCESS_CONTAINMENT_TERM_GRACE_MS: u64 = 500;
+
+    /// Guest terminal cleanup: TERM grace plus kill, removal, and output drain.
+    pub const GUEST_EXEC_TERMINAL_CLEANUP_BUDGET_MS: u64 = 6750;
+
     /// Official token kind; the API still authenticates the secret and winning claim.
     pub const OFFICIAL_RUNNER_TOKEN_PREFIX: &str = "vm0_official_";
 
@@ -166,6 +181,9 @@ pub mod runners {
 
     /// Terminal observation grace, compile-time checked against Guest cleanup plus executor host slack.
     pub const RUNNER_JOB_TERMINAL_GRACE_MS: u64 = 10000;
+
+    /// Host scheduling, observation, and terminal proof delivery allowance.
+    pub const RUNNER_JOB_TERMINAL_HOST_SLACK_MS: u64 = 3250;
 
     /// Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.
     /// Rust runners use this shared contract value to bound local cooldown state and poll request size.
