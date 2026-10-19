@@ -75,7 +75,8 @@ def sanitize(line):
                 try:
                     if isinstance(record.get(key), str):
                         extra[key] = str(ipaddress.ip_address(record[key]))
-                except (KeyError, ValueError, TypeError):
+                except ValueError:
+                    # Invalid optional address metadata is omitted at publication.
                     pass
             reason = record.get("reason")
             if isinstance(reason, str) and re.fullmatch(r"[A-Z_]{1,32}", reason):
@@ -86,6 +87,7 @@ def sanitize(line):
                 if host and re.fullmatch(r"[A-Za-z0-9._:-]{1,253}", host):
                     extra["origin_host"] = host
             except ValueError:
+                # Malformed optional URLs cannot contribute a safe origin hostname.
                 pass
         record = {
             key: value

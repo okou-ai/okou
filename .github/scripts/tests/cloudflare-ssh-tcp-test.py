@@ -31,7 +31,8 @@ def wait_for(read, accept):
             result = read()
             if accept(result):
                 return result
-        except (FileNotFoundError, json.JSONDecodeError):
+        except FileNotFoundError:
+            # The observer has not yet published its first atomic snapshot.
             pass
         time.sleep(0.02)
     raise AssertionError("observable client diagnostic did not arrive")
