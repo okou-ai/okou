@@ -7,3 +7,6 @@ export type OfficialWorkflowCatalogReleasePayload =
   ApiOfficialWorkflowCatalogReleasePayload;
 export type OfficialWorkflowDefinitionRevisionPayload =
   ApiOfficialWorkflowDefinitionRevisionPayload;
+
+/** Additive release metadata; older releases default to no hidden threads. */
+export type OfficialWorkflowHiddenThreadDefinitionNames = readonly string[];

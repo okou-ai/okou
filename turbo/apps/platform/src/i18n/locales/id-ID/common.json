@@ -586,6 +586,23 @@
       "uploadSheets": "Unggah ke Google Sheets",
       "uploadSlides": "Unggah ke Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Semua item ditampilkan",
+      "arrayCount": "Item: {{formattedCount}}",
+      "collapse": "Ciutkan {{label}}",
+      "collapseAll": "Ciutkan semua",
+      "complexity": "JSON ini terlalu kompleks untuk tampilan pohon. Menampilkan sumber.",
+      "copyNode": "Salin {{label}}",
+      "copySource": "Salin sumber pratinjau",
+      "expand": "Perluas {{label}}",
+      "incomplete": "Hanya sebagian file yang dimuat. Menampilkan sumber; unduh file untuk melihat seluruh isinya.",
+      "invalid": "Ini bukan JSON yang valid. Menampilkan sumber.",
+      "limited": "Beberapa simpul disembunyikan. Beralih ke sumber untuk melihat semua teks yang dimuat.",
+      "more": "Tampilkan lebih banyak",
+      "objectCount": "Kunci: {{formattedCount}}",
+      "source": "Sumber",
+      "tree": "Pohon"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -4863,7 +4880,7 @@
         "accountFallback": "Akun {{number}}",
         "activeAccount": "Aktif",
         "autoCredits": "Memakai kredit Okou",
-        "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
+        "autoDescription": "Hubungkan akun ChatGPT atau Claude Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
         "claudeGroup": "Paket Claude Anda",
         "claudePlans": "Pro atau Max",

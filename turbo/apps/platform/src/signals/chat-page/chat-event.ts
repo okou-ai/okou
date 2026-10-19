@@ -21,6 +21,7 @@ import { settle } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
 import { firstChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import {
+  catchUpChatThreadEventSource$,
   eventDrivenChatThreads$,
   registerOptimisticChatThreadEvent$,
 } from "./chat-thread-event-sourcing.ts";
@@ -406,5 +407,7 @@ export const renameChatThread$ = command(
       [204],
     );
     signal.throwIfAborted();
+    // Reconcile the committed title even when its realtime notification is delayed.
+    await set(catchUpChatThreadEventSource$, signal);
   },
 );

@@ -217,6 +217,8 @@ const activeOfficialWorkflowSourceDefinitionSchema = z
     name: workflowNameSchema,
     lifecycle: z.literal("active"),
     workflow: officialWorkflowExecutableSchema,
+    /** Whether the installation's automation thread is hidden from ordinary Chat. */
+    hiddenThread: z.boolean().optional(),
     blueprints: z.array(officialWorkflowBlueprintSchema),
     presentation: officialWorkflowPresentationSchema,
   })
@@ -226,6 +228,7 @@ const retiredOfficialWorkflowSourceDefinitionSchema = z
   .object({
     name: workflowNameSchema,
     lifecycle: z.literal("retired"),
+    hiddenThread: z.boolean().optional(),
     presentation: officialWorkflowPresentationSchema,
   })
   .strict();

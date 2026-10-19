@@ -59,7 +59,9 @@ async function retainedState() {
       await sql`SELECT to_jsonb(r) - ARRAY['session_id', 'continued_from_session_id'] AS row FROM agent_runs r ORDER BY id`,
     ),
     threads: Array.from(
-      await sql`SELECT to_jsonb(t) - ARRAY['agent_session_id', 'agent_session_run_id'] AS row FROM chat_threads t ORDER BY id`,
+      await sql`SELECT (to_jsonb(t) - ARRAY['agent_session_id', 'agent_session_run_id'])
+        || jsonb_build_object('hidden', COALESCE(to_jsonb(t)->'hidden', 'false'::jsonb)) AS row
+        FROM chat_threads t ORDER BY id`,
     ),
     events: Array.from(
       await sql`SELECT to_jsonb(e) AS row FROM chat_events e ORDER BY id`,

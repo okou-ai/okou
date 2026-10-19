@@ -586,6 +586,23 @@
       "uploadSheets": "上傳至 Google 試算表",
       "uploadSlides": "上傳到 Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "已顯示全部項目",
+      "arrayCount": "項目：{{formattedCount}}",
+      "collapse": "收合 {{label}}",
+      "collapseAll": "全部收合",
+      "complexity": "此 JSON 結構過於複雜，已顯示原始碼。",
+      "copyNode": "複製 {{label}}",
+      "copySource": "複製預覽原始碼",
+      "expand": "展開 {{label}}",
+      "incomplete": "僅載入檔案的一部分，已顯示原始碼。下載檔案可查看完整內容。",
+      "invalid": "此內容不是有效的 JSON，已顯示原始碼。",
+      "limited": "部分節點已隱藏。切換至原始碼可查看已載入的全部文字。",
+      "more": "顯示更多",
+      "objectCount": "欄位：{{formattedCount}}",
+      "source": "原始碼",
+      "tree": "樹狀"
+    },
     "kinds": {
       "audio": "音訊",
       "avatar": "虛擬形象",
@@ -4863,7 +4880,7 @@
         "accountFallback": "帳號 {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "消耗 Okou 點數",
-        "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
+        "autoDescription": "連接你的 ChatGPT 或 Claude 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeGroup": "你的 Claude 方案",
         "claudePlans": "Pro 或 Max",

@@ -9,9 +9,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant as StdInstant};
 
-use tokio::sync::oneshot;
+use tokio::sync::{Notify, oneshot};
 
 mod custody;
+mod requests;
 
 fn test_config(dir: &Path) -> CowPoolConfig {
     CowPoolConfig {
@@ -124,25 +125,57 @@ type ControlledSlotRequest = oneshot::Sender<Result<PreparedCowSlot, CowPoolErro
 
 struct ControlledSpawner {
     requests: Arc<Mutex<VecDeque<ControlledSlotRequest>>>,
+    request_ready: Arc<Notify>,
 }
 
 impl ControlledSpawner {
     fn new() -> (Self, SlotSpawner) {
         let requests = Arc::new(Mutex::new(VecDeque::new()));
+        let request_ready = Arc::new(Notify::new());
         let spawner_requests = Arc::clone(&requests);
+        let spawner_request_ready = Arc::clone(&request_ready);
         let spawner: SlotSpawner = Arc::new(move |_config| {
             let (complete, complete_rx) = oneshot::channel();
             spawner_requests.lock().unwrap().push_back(complete);
+            spawner_request_ready.notify_one();
             tokio::spawn(async move {
                 complete_rx
                     .await
                     .unwrap_or_else(|_| Err(CowPoolError::CowFileCreation("cancelled".into())))
             })
         });
-        (Self { requests }, spawner)
+        (
+            Self {
+                requests,
+                request_ready,
+            },
+            spawner,
+        )
     }
 
-    fn take_request(&self) -> oneshot::Sender<Result<PreparedCowSlot, CowPoolError>> {
+    async fn wait_for_requests(&self, count: usize) {
+        // Tests have one controller consumer; the queue is the readiness predicate.
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let notified = self.request_ready.notified();
+                if self.request_count() >= count {
+                    return;
+                }
+                // notify_one retains a permit if publication races this await.
+                notified.await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "timed out waiting for {count} slot creation requests; queued: {}",
+                self.request_count()
+            )
+        });
+    }
+
+    async fn take_request(&self) -> ControlledSlotRequest {
+        self.wait_for_requests(1).await;
         self.requests
             .lock()
             .unwrap()
@@ -192,9 +225,9 @@ async fn warmup_creates_ready_slots() {
         async move { handle.warmup().await }
     });
     for index in 0..BUFFER_SIZE {
-        wait_for_snapshot(&handle, |snapshot| snapshot.pending > 0).await;
         controller
             .take_request()
+            .await
             .send(Ok(test_slot(tmp.path(), &format!("warm-{index}"))))
             .unwrap();
     }
@@ -225,6 +258,7 @@ async fn pipeline_slots_include_ready_and_pending_slots() {
 
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "ready")))
         .unwrap();
     wait_for_snapshot(&handle, |snapshot| {
@@ -234,6 +268,7 @@ async fn pipeline_slots_include_ready_and_pending_slots() {
 
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "pending")))
         .unwrap();
     warmup.await.unwrap();
@@ -275,16 +310,15 @@ async fn burst_acquire_starts_bounded_slot_creations() {
         snapshot.waiters == 5 && snapshot.pending == 2 && snapshot.pipeline_slots == 2
     })
     .await;
+    controller.wait_for_requests(2).await;
     assert_eq!(controller.request_count(), 2);
 
     for i in 0..5 {
         controller
             .take_request()
+            .await
             .send(Ok(test_slot(tmp.path(), &format!("slot-{i}"))))
             .unwrap();
-        if i < 3 {
-            wait_for_snapshot(&handle, |snapshot| snapshot.pending > 0).await;
-        }
     }
 
     for acquire in acquires {
@@ -307,6 +341,7 @@ async fn checked_out_slot_stops_consuming_pipeline_capacity() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "first")))
         .unwrap();
     let first_slot = first.await.unwrap().unwrap();
@@ -319,6 +354,7 @@ async fn checked_out_slot_stops_consuming_pipeline_capacity() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "second")))
         .unwrap();
     let second_slot = second.await.unwrap().unwrap();
@@ -348,6 +384,7 @@ async fn cancelled_acquire_does_not_lose_completed_slot() {
     });
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "survives-cancel")))
         .unwrap();
 
@@ -368,10 +405,7 @@ async fn cancelled_acquire_after_delivery_cleans_transferred_slot() {
 
     let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), "delivered-before-cancel");
     let workspace = slot.workspace().to_owned();
-    while controller.request_count() == 0 {
-        tokio::task::yield_now().await;
-    }
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
     let completion = pool.pending.join_next().await;
     pool.handle_creation_join(completion);
 
@@ -409,7 +443,7 @@ async fn cancelled_burst_does_not_leave_ready_slots_above_buffer() {
     let (retained, retained_dropped) =
         test_slot_with_drop_notify(tmp.path(), "retained-buffer-slot");
     let retained_workspace = retained.workspace().to_owned();
-    controller.take_request().send(Ok(retained)).unwrap();
+    controller.take_request().await.send(Ok(retained)).unwrap();
     wait_for_snapshot(&handle, |snapshot| {
         snapshot.ready == 1 && snapshot.pending == 2 && snapshot.pipeline_slots == 3
     })
@@ -418,7 +452,7 @@ async fn cancelled_burst_does_not_leave_ready_slots_above_buffer() {
     for index in 0..2 {
         let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), &format!("surplus-{index}"));
         let workspace = slot.workspace().to_owned();
-        controller.take_request().send(Ok(slot)).unwrap();
+        controller.take_request().await.send(Ok(slot)).unwrap();
         assert_eq!(dropped.await.unwrap(), workspace);
         assert!(!workspace.exists());
     }
@@ -467,7 +501,7 @@ async fn surplus_teardown_does_not_block_ready_acquire() {
     let (retained, retained_dropped) =
         test_slot_with_drop_notify(tmp.path(), "ready-during-surplus-teardown");
     let retained_workspace = retained.workspace().to_owned();
-    controller.take_request().send(Ok(retained)).unwrap();
+    controller.take_request().await.send(Ok(retained)).unwrap();
     wait_for_snapshot(&handle, |snapshot| {
         snapshot.ready == 1 && snapshot.pending == 1
     })
@@ -476,7 +510,7 @@ async fn surplus_teardown_does_not_block_ready_acquire() {
     let (surplus, teardown_started, release_teardown, surplus_dropped) =
         test_slot_with_teardown_gate(tmp.path(), "slow-surplus-teardown");
     let surplus_workspace = surplus.workspace().to_owned();
-    controller.take_request().send(Ok(surplus)).unwrap();
+    controller.take_request().await.send(Ok(surplus)).unwrap();
     assert_eq!(teardown_started.await.unwrap(), surplus_workspace);
     let snapshot = tokio::time::timeout(Duration::from_secs(1), handle.snapshot())
         .await
@@ -502,6 +536,7 @@ async fn surplus_teardown_does_not_block_ready_acquire() {
     });
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation(
             "cleanup replacement".into(),
         )))
@@ -533,6 +568,7 @@ async fn creation_failure_fails_one_waiter_and_retries_remaining_waiter() {
 
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("boom".into())))
         .unwrap();
 
@@ -546,6 +582,7 @@ async fn creation_failure_fails_one_waiter_and_retries_remaining_waiter() {
     .await;
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "second")))
         .unwrap();
     drop(second.await.unwrap().unwrap());
@@ -576,6 +613,7 @@ async fn creation_failure_skips_cancelled_waiter() {
 
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("boom".into())))
         .unwrap();
 
@@ -607,6 +645,7 @@ async fn single_demand_failure_backs_off_warm_retry_until_next_demand() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("demand failed".into())))
         .unwrap();
     assert!(matches!(
@@ -626,6 +665,7 @@ async fn single_demand_failure_backs_off_warm_retry_until_next_demand() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "demand-success")))
         .unwrap();
     drop(second.await.unwrap().unwrap());
@@ -635,6 +675,7 @@ async fn single_demand_failure_backs_off_warm_retry_until_next_demand() {
     .await;
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "warm-after-success")))
         .unwrap();
     wait_for_snapshot(&handle, |snapshot| {
@@ -665,6 +706,7 @@ async fn warm_replenishment_failure_uses_backoff() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("missing golden".into())))
         .unwrap();
     warmup.await.unwrap();
@@ -678,6 +720,7 @@ async fn warm_replenishment_failure_uses_backoff() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("still missing".into())))
         .unwrap();
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 0).await;
@@ -705,6 +748,7 @@ async fn due_warm_retry_runs_before_snapshot_command() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("missing golden".into())))
         .unwrap();
     warmup.await.unwrap();
@@ -721,6 +765,7 @@ async fn due_warm_retry_runs_before_snapshot_command() {
 
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "retry-before-snapshot")))
         .unwrap();
     wait_for_snapshot(&handle, |snapshot| {
@@ -751,6 +796,7 @@ async fn cleanup_cancels_scheduled_warm_retry() {
     wait_for_snapshot(&handle, |snapshot| snapshot.pending == 1).await;
     controller
         .take_request()
+        .await
         .send(Err(CowPoolError::CowFileCreation("missing golden".into())))
         .unwrap();
     warmup.await.unwrap();
@@ -785,7 +831,7 @@ async fn cleanup_waits_for_ready_slot_teardown() {
     let (slot, teardown_started, release_teardown, dropped) =
         test_slot_with_teardown_gate(tmp.path(), "ready-cleanup-waits");
     let workspace = slot.workspace().to_owned();
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
     warmup.await.unwrap();
     assert!(workspace.exists());
 
@@ -821,7 +867,7 @@ async fn cleanup_tears_down_ready_and_late_slots_concurrently() {
         let (slot, started, release, dropped) =
             test_slot_with_teardown_gate(tmp.path(), &format!("concurrent-cleanup-{index}"));
         slots.push((slot.workspace().to_owned(), started, release, dropped));
-        controller.take_request().send(Ok(slot)).unwrap();
+        controller.take_request().await.send(Ok(slot)).unwrap();
     }
     wait_for_snapshot(&handle, |snapshot| {
         snapshot.ready == 2 && snapshot.pending == 1
@@ -846,7 +892,7 @@ async fn cleanup_tears_down_ready_and_late_slots_concurrently() {
     let (late_slot, late_started, late_release, late_dropped) =
         test_slot_with_teardown_gate(tmp.path(), "concurrent-cleanup-late");
     let late_workspace = late_slot.workspace().to_owned();
-    controller.take_request().send(Ok(late_slot)).unwrap();
+    controller.take_request().await.send(Ok(late_slot)).unwrap();
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(1), late_started)
             .await
@@ -896,7 +942,7 @@ async fn cleanup_rejects_waiters_and_drops_late_pending_slot() {
     let (late_slot, teardown_started, release_teardown, dropped) =
         test_slot_with_teardown_gate(tmp.path(), "late");
     let late_workspace = late_slot.workspace().to_owned();
-    controller.take_request().send(Ok(late_slot)).unwrap();
+    controller.take_request().await.send(Ok(late_slot)).unwrap();
     assert_eq!(teardown_started.await.unwrap(), late_workspace);
     assert!(late_workspace.exists());
     assert!(!cleanup.is_finished());
@@ -931,6 +977,7 @@ async fn cleanup_is_not_starved_by_queued_acquires() {
     });
     controller
         .take_request()
+        .await
         .send(Ok(test_slot(tmp.path(), "cleanup")))
         .unwrap();
     cleanup.await.unwrap();
@@ -958,7 +1005,7 @@ async fn dropping_handle_cleans_ready_slots() {
 
     let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), "ready-drop");
     let workspace = slot.workspace().to_owned();
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
     warmup.await.unwrap();
     assert!(workspace.exists());
 
@@ -989,7 +1036,7 @@ async fn dropping_handle_drains_pending_slot_creation() {
     let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), "pending-drop");
     let workspace = slot.workspace().to_owned();
     drop(handle);
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
 
     assert_eq!(dropped.await.unwrap(), workspace);
     assert!(!workspace.exists());
@@ -1022,7 +1069,7 @@ async fn concurrent_cleanup_callers_complete_after_pending_slot_drains() {
 
     let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), "concurrent-cleanup");
     let workspace = slot.workspace().to_owned();
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
 
     cleanup_one.await.unwrap();
     cleanup_two.await.unwrap();
@@ -1063,7 +1110,7 @@ async fn cancelled_cleanup_waiter_does_not_cancel_actor_cleanup() {
 
     let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), "cancelled-cleanup");
     let workspace = slot.workspace().to_owned();
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
 
     assert_eq!(dropped.await.unwrap(), workspace);
     assert!(!workspace.exists());
@@ -1094,7 +1141,7 @@ async fn cancelled_warmup_waiter_keeps_pending_slot_for_cleanup() {
     });
     let (slot, dropped) = test_slot_with_drop_notify(tmp.path(), "cancelled-warmup");
     let workspace = slot.workspace().to_owned();
-    controller.take_request().send(Ok(slot)).unwrap();
+    controller.take_request().await.send(Ok(slot)).unwrap();
 
     cleanup.await.unwrap();
     assert_eq!(dropped.await.unwrap(), workspace);
@@ -1122,11 +1169,13 @@ async fn slot_limit_enforced_under_concurrent_acquire() {
         snapshot.waiters == 4 && snapshot.pending == 2 && snapshot.pipeline_slots == 2
     })
     .await;
+    controller.wait_for_requests(2).await;
     assert_eq!(controller.request_count(), 2);
 
     for i in 0..2 {
         controller
             .take_request()
+            .await
             .send(Ok(test_slot(tmp.path(), &format!("limited-{i}"))))
             .unwrap();
     }
@@ -1134,6 +1183,7 @@ async fn slot_limit_enforced_under_concurrent_acquire() {
     for i in 2..4 {
         controller
             .take_request()
+            .await
             .send(Ok(test_slot(tmp.path(), &format!("limited-{i}"))))
             .unwrap();
     }

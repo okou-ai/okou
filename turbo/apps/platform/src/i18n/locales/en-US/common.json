@@ -587,6 +587,23 @@
       "uploadSheets": "Upload to Google Sheets",
       "uploadSlides": "Upload to Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "All items shown",
+      "arrayCount": "Items: {{formattedCount}}",
+      "collapse": "Collapse {{label}}",
+      "collapseAll": "Collapse all",
+      "complexity": "This JSON is too complex for the tree. Showing the source.",
+      "copyNode": "Copy {{label}}",
+      "copySource": "Copy preview source",
+      "expand": "Expand {{label}}",
+      "incomplete": "Only part of this file is loaded. Showing the source; download the file for its full contents.",
+      "invalid": "This is not valid JSON. Showing the source.",
+      "limited": "Some nodes are hidden. Switch to source to inspect all loaded text.",
+      "more": "Show more",
+      "objectCount": "Keys: {{formattedCount}}",
+      "source": "Source",
+      "tree": "Tree"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -4874,7 +4891,7 @@
         "accountFallback": "Account {{number}}",
         "activeAccount": "Active",
         "autoCredits": "Uses Okou credits",
-        "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
+        "autoDescription": "Connect your ChatGPT or Claude account to use more models.",
         "autoTitle": "Use more models",
         "claudeGroup": "Your Claude plan",
         "claudePlans": "Pro or Max",

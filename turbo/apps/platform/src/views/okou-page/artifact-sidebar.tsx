@@ -41,8 +41,8 @@ import {
 } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
 import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
-import { jsonParseOr } from "../../signals/utils.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
+import { JsonPreview } from "../components/json-preview.tsx";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
 import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
@@ -959,7 +959,7 @@ function ArtifactPlainTextBody({
   const { t } = useTranslation();
   return (
     <TextPreviewLoader text$={text$}>
-      {({ status, text }) => {
+      {({ status, text, preview }) => {
         if (status === "loading") {
           return (
             <ArtifactStageShell>
@@ -1002,7 +1002,16 @@ function ArtifactPlainTextBody({
             </ArtifactStageShell>
           );
         }
-        const formatted = formatBodyText(kind, text);
+        if (kind === "json" && preview) {
+          return (
+            <ArtifactStageShell scrollable={false}>
+              <ArtifactStageCard fillHeight>
+                <JsonPreview preview={preview} />
+              </ArtifactStageCard>
+            </ArtifactStageShell>
+          );
+        }
+        const formatted = text;
         return (
           <ArtifactStageShell>
             <ArtifactStageCard>
@@ -1018,14 +1027,6 @@ function ArtifactPlainTextBody({
       }}
     </TextPreviewLoader>
   );
-}
-
-function formatBodyText(kind: "text" | "json", text: string): string {
-  if (kind === "json") {
-    const parsed = jsonParseOr<unknown>(text, null);
-    return parsed === null ? text : JSON.stringify(parsed, null, 2);
-  }
-  return text;
 }
 
 function ArtifactCsvBody({ text$ }: { text$: TextPreviewComputed }) {

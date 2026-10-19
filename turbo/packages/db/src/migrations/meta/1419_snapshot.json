@@ -1,5 +1,5 @@
 {
-  "id": "d156cfad-199d-40b3-b25f-8487d4a66b49",
+  "id": "06aec404-4f95-4ea0-bd20-e72615398fdc",
   "prevId": "75b0e6f7-1e42-4ef5-af9a-cca66ba20da1",
   "version": "7",
   "dialect": "postgresql",
@@ -1498,90 +1498,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agentphone_contact_card_deliveries": {
-      "name": "agentphone_contact_card_deliveries",
-      "schema": "",
-      "columns": {
-        "user_link_id": {
-          "name": "user_link_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt_message_id": {
-          "name": "attempt_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempted_at": {
-          "name": "attempted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_message_id": {
-          "name": "provider_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agentphone_contact_card_user_link_fk": {
-          "name": "agentphone_contact_card_user_link_fk",
-          "tableFrom": "agentphone_contact_card_deliveries",
-          "tableTo": "agentphone_user_links",
-          "columnsFrom": [
-            "user_link_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agentphone_contact_card_status": {
-          "name": "agentphone_contact_card_status",
-          "value": "\"agentphone_contact_card_deliveries\".\"status\" IN ('pending', 'unknown', 'sent', 'failed')"
-        },
-        "agentphone_contact_card_attempt": {
-          "name": "agentphone_contact_card_attempt",
-          "value": "\"agentphone_contact_card_deliveries\".\"status\" = 'pending' OR (\"agentphone_contact_card_deliveries\".\"conversation_id\" IS NOT NULL AND \"agentphone_contact_card_deliveries\".\"attempt_message_id\" IS NOT NULL AND \"agentphone_contact_card_deliveries\".\"attempted_at\" IS NOT NULL)"
-        },
-        "agentphone_contact_card_receipt": {
-          "name": "agentphone_contact_card_receipt",
-          "value": "(\"agentphone_contact_card_deliveries\".\"status\" = 'sent') = (\"agentphone_contact_card_deliveries\".\"provider_message_id\" IS NOT NULL)"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.agentphone_group_message_receipts": {
@@ -8257,6 +8173,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "hidden": {
+          "name": "hidden",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
         "selected_model": {
           "name": "selected_model",
           "type": "varchar(255)",
@@ -8767,6 +8689,13 @@
         },
         "archived": {
           "name": "archived",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "hidden": {
+          "name": "hidden",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -20098,6 +20027,13 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "hidden_thread_definition_names": {
+          "name": "hidden_thread_definition_names",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "created_at": {
           "name": "created_at",

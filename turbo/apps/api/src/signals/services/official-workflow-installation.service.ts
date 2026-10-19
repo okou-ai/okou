@@ -814,6 +814,8 @@ const activateInstallation$ = command(
         .select({
           releaseId: officialWorkflowCatalogState.acceptedReleaseId,
           payload: officialWorkflowCatalogReleases.payload,
+          hiddenThreadDefinitionNames:
+            officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
         })
         .from(officialWorkflowCatalogState)
         .innerJoin(

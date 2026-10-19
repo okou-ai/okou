@@ -586,6 +586,23 @@
       "uploadSheets": "上传到 Google 表格",
       "uploadSlides": "上传到 Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "已显示全部项目",
+      "arrayCount": "项目：{{formattedCount}}",
+      "collapse": "收起 {{label}}",
+      "collapseAll": "全部收起",
+      "complexity": "此 JSON 结构过于复杂，已显示源码。",
+      "copyNode": "复制 {{label}}",
+      "copySource": "复制预览源码",
+      "expand": "展开 {{label}}",
+      "incomplete": "仅加载了文件的一部分，已显示源码。下载文件可查看完整内容。",
+      "invalid": "此内容不是有效的 JSON，已显示源码。",
+      "limited": "部分节点已隐藏。切换到源码可查看已加载的全部文本。",
+      "more": "显示更多",
+      "objectCount": "字段：{{formattedCount}}",
+      "source": "源码",
+      "tree": "树形"
+    },
     "kinds": {
       "audio": "音频",
       "avatar": "虚拟形象",
@@ -4863,7 +4880,7 @@
         "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "消耗 Okou 积分",
-        "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
+        "autoDescription": "连接你的 ChatGPT 或 Claude 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeGroup": "你的 Claude 套餐",
         "claudePlans": "Pro 或 Max",

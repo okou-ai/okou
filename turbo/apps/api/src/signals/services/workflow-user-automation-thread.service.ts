@@ -1,9 +1,9 @@
+import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
 import {
   isMorningBriefDefinitionName,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import {
   userLocaleSchema,
   type UserLocale,
@@ -32,6 +32,7 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import {
+  autoSelectionPin,
   resolveDefaultModelFirstPin$,
   type DefaultModelFirstPin,
 } from "./model-selection.service";
@@ -60,12 +61,54 @@ const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
 };
 
 export interface WorkflowThreadPreparation {
-  readonly background?: boolean;
+  readonly hidden: boolean;
   readonly initialModel: DefaultModelFirstPin;
   readonly title: string;
   readonly modelSettings: ModelSettings;
   readonly cloudBrowserEnabled: boolean;
 }
+
+const officialWorkflowThreadPresentation$ = command(
+  async (
+    { set },
+    args: {
+      readonly definitionName: string;
+      readonly workflowTitle: string;
+      readonly locale?: string | null;
+    },
+    signal: AbortSignal,
+  ) => {
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition = catalog?.payload.definitions.find((candidate) => {
+      return candidate.name === args.definitionName;
+    });
+    if (!catalog || !definition) {
+      throw new OfficialWorkflowRunAdmissionError();
+    }
+    const locale = userLocaleSchema.parse(args.locale ?? "en-US");
+    const localized =
+      OFFICIAL_WORKFLOW_THREAD_TITLES[
+        isMorningBriefDefinitionName(args.definitionName)
+          ? MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
+          : args.definitionName
+      ]?.[locale];
+    let title = args.workflowTitle;
+    if (localized) {
+      title = localized;
+    } else {
+      const revision = await set(
+        readAcceptedOfficialWorkflowRevision$,
+        { name: definition.name, revision: definition.revision },
+        signal,
+      );
+      title = revision?.definition.workflow.displayName ?? title;
+    }
+    return {
+      title,
+      hidden: catalog.hiddenThreadDefinitionNames.includes(definition.name),
+    };
+  },
+);
 
 export const prepareWorkflowUserAutomationThread$ = command(
   async (
@@ -106,48 +149,33 @@ export const prepareWorkflowUserAutomationThread$ = command(
         .limit(1),
     ]);
     signal.throwIfAborted();
-    let title = args.workflowTitle;
-    if (context?.officialDefinitionName) {
-      const locale = userLocaleSchema.parse(member?.locale ?? "en-US");
-      const localized =
-        OFFICIAL_WORKFLOW_THREAD_TITLES[
-          isMorningBriefDefinitionName(context.officialDefinitionName)
-            ? MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-            : context.officialDefinitionName
-        ]?.[locale];
-      if (localized) {
-        title = localized;
-      } else {
-        const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-        const definition = catalog?.payload.definitions.find((candidate) => {
-          return candidate.name === context.officialDefinitionName;
-        });
-        if (definition) {
-          const revision = await set(
-            readAcceptedOfficialWorkflowRevision$,
-            { name: definition.name, revision: definition.revision },
-            signal,
-          );
-          title = revision?.definition.workflow.displayName ?? title;
-        }
-      }
-    }
-    const initialModel = await set(
-      resolveDefaultModelFirstPin$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        orgPlanCapabilities: undefined,
-      },
-      signal,
-    );
+    const definitionName = context?.officialDefinitionName;
+    const presentation = definitionName
+      ? await set(
+          officialWorkflowThreadPresentation$,
+          {
+            definitionName,
+            workflowTitle: args.workflowTitle,
+            locale: member?.locale,
+          },
+          signal,
+        )
+      : { title: args.workflowTitle, hidden: false };
+    const initialModel = definitionName
+      ? { ...autoSelectionPin(), serviceTier: null }
+      : await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
+        );
     signal.throwIfAborted();
     return {
-      background:
-        context?.officialDefinitionName ===
-        PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
+      ...presentation,
       initialModel,
-      title,
       modelSettings: modelSettingsSchema.parse(member?.modelSettings ?? {}),
       cloudBrowserEnabled: member?.cloudBrowserEnabled ?? true,
     };
@@ -229,7 +257,7 @@ export function preparedWorkflowThreadValues(
   const pin = preparation.initialModel;
   return {
     id: threadId,
-    ...(preparation.background ? { archived: true, muted: true } : {}),
+    hidden: preparation.hidden,
     userId: args.userId,
     agentId: args.agentId,
     title: preparation.title,
@@ -311,8 +339,7 @@ export const ensureWorkflowUserAutomationThread$ = command(
     const publication = chatThreadEventInsertSql(
       {
         kind: "created",
-        initiallyArchived: preparation.background,
-        muted: preparation.background === true,
+        hidden: preparation.hidden,
         orgId: args.orgId,
         userId: args.userId,
         chatThreadId: values.id,

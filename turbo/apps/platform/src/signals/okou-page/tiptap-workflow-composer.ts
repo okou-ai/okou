@@ -2206,8 +2206,8 @@ function createSuggestionMenuRefs(
       const releaseMenu = set(menuRef$, element);
       const key = new PluginKey<boolean>("composerSlashHint");
       const plugin = createSlashHintPlugin(key);
-      // The slash menu owns the hint's lifetime, including Escape, outside
-      // dismissal and feature-switch changes. Editor transactions own position.
+      // The slash menu owns the hint's lifetime, including Escape and outside
+      // dismissal. Editor transactions own position.
       editor.registerPlugin(plugin);
       signal.addEventListener("abort", () => {
         editor.unregisterPlugin(key);

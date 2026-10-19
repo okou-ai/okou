@@ -21,7 +21,6 @@ import { Check, ChevronRight, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   connectSubscriptionLinkingProvider$,
-  openSubscriptionLinkingSettings$,
   SUBSCRIPTION_PROVIDERS,
   subscriptionLinkingUnlinked$,
   trackSubscriptionLinkingOpened$,
@@ -227,6 +226,33 @@ export function SubscriptionLinkingComposerMenu() {
   );
 }
 
+/** One row per subscription; each opens that provider's sign-in. */
+export function SubscriptionLinkingProviderItems({
+  source,
+}: {
+  source: "account_menu" | "me_page";
+}) {
+  const { title, connect } = useConnectProvider(source);
+  return (
+    <>
+      {SUBSCRIPTION_PROVIDERS.map((type) => {
+        return (
+          <DropdownMenuItem
+            key={type}
+            className="gap-3 px-3"
+            onClick={() => {
+              connect(type);
+            }}
+          >
+            <ProviderIcon type={type} size={18} />
+            <span>{title(type)}</span>
+          </DropdownMenuItem>
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * Sits with the credits, the other way runs are paid for, under the same name
  * as the composer slot and Settings > Models. Linked members already see their
@@ -236,7 +262,6 @@ export function SubscriptionLinkingComposerMenu() {
 export function SubscriptionLinkingMenuItem() {
   const { t } = useTranslation();
   const available = useSubscriptionLinkingAvailable();
-  const { title, connect } = useConnectProvider("account_menu");
   if (!available) {
     return null;
   }
@@ -252,37 +277,26 @@ export function SubscriptionLinkingMenuItem() {
         <ChevronRight size={14} aria-hidden="true" />
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="w-[220px]">
-        {SUBSCRIPTION_PROVIDERS.map((type) => {
-          return (
-            <DropdownMenuItem
-              key={type}
-              className="gap-3 px-3"
-              onClick={() => {
-                connect(type);
-              }}
-            >
-              <ProviderIcon type={type} size={18} />
-              <span>{title(type)}</span>
-            </DropdownMenuItem>
-          );
-        })}
+        <SubscriptionLinkingProviderItems source="account_menu" />
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );
 }
 
+/** Me lists the same two subscriptions as the account menu, in its own menu. */
 export function useSubscriptionLinkingEntry() {
   const { t } = useTranslation();
   const available = useSubscriptionLinkingAvailable();
-  const open = useSet(openSubscriptionLinkingSettings$);
-  const pageSignal = useGet(pageSignal$);
+  const trackOpened = useSet(trackSubscriptionLinkingOpened$);
   return {
     available,
     label: t(($) => {
       return $.settings.models.personal.autoTitle;
     }),
-    onClick: () => {
-      detach(open("me_page", pageSignal), Reason.DomCallback);
+    onOpenChange: (open: boolean) => {
+      if (open) {
+        trackOpened("me_page");
+      }
     },
   };
 }

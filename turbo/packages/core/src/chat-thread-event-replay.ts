@@ -11,6 +11,7 @@ export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly sortAt: string;
   readonly archived: boolean;
   readonly muted: boolean;
+  readonly hidden: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly modelSettings: ModelSettings;
 }
@@ -98,6 +99,9 @@ function metadataTouchFields(
   if (event.kind !== "sort_touched") {
     return null;
   }
+  if (event.hidden !== undefined) {
+    return { hidden: event.hidden };
+  }
   if (event.muted !== undefined) {
     return { muted: event.muted };
   }
@@ -125,6 +129,7 @@ function applyEvent(
       updatedAt: event.createdAt,
       pinnedAt: null,
       archived: false,
+      hidden: event.hidden ?? false,
       muted: false,
       renamedAt: null,
       selectedModel: event.selectedModel,
@@ -198,6 +203,7 @@ export function replayChatThreadEvents(
       // Retained shared snapshots can omit mute; absence is the initial state.
       // Remove only after rewriting those snapshots and requiring the wire field.
       muted: thread.muted ?? false,
+      hidden: thread.hidden ?? false,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,
@@ -209,5 +215,9 @@ export function replayChatThreadEvents(
   for (const event of events) {
     applyEvent(threads, event, pendingThreadUpdates);
   }
-  return [...threads.values()].sort(compareThreadOrder);
+  return [...threads.values()]
+    .filter((thread) => {
+      return !thread.hidden;
+    })
+    .sort(compareThreadOrder);
 }

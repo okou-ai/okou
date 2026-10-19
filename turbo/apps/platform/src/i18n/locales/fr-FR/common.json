@@ -605,6 +605,23 @@
       "uploadSheets": "Importer dans Google Sheets",
       "uploadSlides": "Téléverser sur Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Tous les éléments sont affichés",
+      "arrayCount": "Éléments : {{formattedCount}}",
+      "collapse": "Replier {{label}}",
+      "collapseAll": "Tout replier",
+      "complexity": "Ce JSON est trop complexe pour l’arborescence. Le texte source est affiché.",
+      "copyNode": "Copier {{label}}",
+      "copySource": "Copier le texte source de l’aperçu",
+      "expand": "Déplier {{label}}",
+      "incomplete": "Seule une partie du fichier est chargée. Le texte source est affiché ; téléchargez le fichier pour consulter tout son contenu.",
+      "invalid": "Ce JSON n’est pas valide. Le texte source est affiché.",
+      "limited": "Certains nœuds sont masqués. Passez au texte source pour consulter tout le texte chargé.",
+      "more": "Afficher plus",
+      "objectCount": "Clés : {{formattedCount}}",
+      "source": "Source",
+      "tree": "Arborescence"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",
@@ -4946,7 +4963,7 @@
         "accountFallback": "Compte {{number}}",
         "activeAccount": "Actif",
         "autoCredits": "Utilise des crédits Okou",
-        "autoDescription": "Connectez votre compte Claude ou ChatGPT pour utiliser plus de modèles.",
+        "autoDescription": "Connectez votre compte ChatGPT ou Claude pour utiliser plus de modèles.",
         "autoTitle": "Utilisez plus de modèles",
         "claudeGroup": "Votre forfait Claude",
         "claudePlans": "Pro ou Max",

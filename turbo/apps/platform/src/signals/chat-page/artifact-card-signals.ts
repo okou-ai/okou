@@ -6,6 +6,7 @@ import {
 import {
   createTextPreviewComputed,
   isTextPreviewKind,
+  type TextPreviewComputed,
 } from "../text-preview.ts";
 import {
   createAttachmentPreviewSignals,
@@ -41,7 +42,7 @@ export interface ArtifactSignals
   /** Load state of the card's presented image (the image itself, or a poster). */
   readonly previewImageLoad: ImageLoadSignals;
   readonly previewImageUrl$: Computed<Promise<string | undefined>>;
-  readonly text$?: Computed<Promise<string>>;
+  readonly text$?: TextPreviewComputed;
 }
 
 export type ArtifactCardSignalsRegistry = CardSignalsRegistry<

@@ -586,6 +586,23 @@
       "uploadSheets": "Google Sheets에 업로드",
       "uploadSlides": "Google Slides에 업로드"
     },
+    "jsonPreview": {
+      "allShown": "모든 항목 표시됨",
+      "arrayCount": "항목: {{formattedCount}}",
+      "collapse": "{{label}} 접기",
+      "collapseAll": "모두 접기",
+      "complexity": "JSON이 너무 복잡하여 소스를 표시합니다.",
+      "copyNode": "{{label}} 복사",
+      "copySource": "미리보기 소스 복사",
+      "expand": "{{label}} 펼치기",
+      "incomplete": "파일의 일부만 불러왔습니다. 소스를 표시합니다. 전체 내용은 파일을 다운로드하여 확인하세요.",
+      "invalid": "유효한 JSON이 아닙니다. 소스를 표시합니다.",
+      "limited": "일부 노드가 숨겨져 있습니다. 소스로 전환하면 불러온 텍스트 전체를 볼 수 있습니다.",
+      "more": "더 보기",
+      "objectCount": "키: {{formattedCount}}",
+      "source": "소스",
+      "tree": "트리"
+    },
     "kinds": {
       "audio": "오디오",
       "avatar": "아바타",
@@ -4863,7 +4880,7 @@
         "accountFallback": "계정 {{number}}",
         "activeAccount": "활성",
         "autoCredits": "Okou 크레딧 사용",
-        "autoDescription": "Claude 또는 ChatGPT 계정을 연결하여 더 많은 모델을 사용하세요.",
+        "autoDescription": "ChatGPT 또는 Claude 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
         "claudeGroup": "내 Claude 요금제",
         "claudePlans": "Pro 또는 Max",

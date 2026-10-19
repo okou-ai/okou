@@ -250,7 +250,7 @@ export function artifactFallbackSubtitle(
   return artifactKindTitle(artifactTitleKind(kind, filename, undefined));
 }
 
-function hostedSiteLink(
+export function hostedSiteLink(
   aliasUrl: string | undefined,
 ): ArtifactTitleLink | null {
   if (!aliasUrl || !URL.canParse(aliasUrl)) {

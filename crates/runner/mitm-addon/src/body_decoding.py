@@ -41,6 +41,10 @@ _ZSTD_VALIDATE_INPUT_CHUNK_SIZE = 32
 # Preserve ordinary concatenation with substantial headroom while capping
 # per-frame decoder construction independently of compressed and decoded bytes.
 _ZSTD_VALIDATE_MAX_FRAMES = 64
+# Empty zstd frames do not consume decoded-output allowance in the initial
+# cross-frame reader. Bound optional request capture before that native pass,
+# with headroom for incompressible 64 KiB capture bodies and frame overhead.
+_ZSTD_REQUEST_CAPTURE_MAX_INPUT_BYTES = 128 * 1024
 # Empty gzip/deflate members consume no decoded-output allowance. Preserve
 # ordinary request concatenation without unbounded capture-only transitions.
 _ZLIB_REQUEST_CAPTURE_MAX_MEMBERS = 64
@@ -819,8 +823,9 @@ def decode_request_body_for_network_log_capture(
 
     Request capture hides unsupported encodings and supported-codec decode
     failures instead of keeping best-effort fallback bytes. Gzip/deflate member
-    traversal has a capture-only budget independent of decoded output; exhausted
-    input validation hides the body without affecting forwarded wire bytes.
+    traversal and zstd compressed input have capture-only budgets independent
+    of decoded output; exhausted input validation hides the body without
+    affecting forwarded wire bytes.
     This helper is separate from billing inspection and its fail-closed policy.
     """
     encoding = content_encoding.read_folded(headers)
@@ -829,6 +834,8 @@ def decode_request_body_for_network_log_capture(
     if not encoding or encoding == "identity":
         return data
     if encoding not in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS:
+        return None
+    if encoding == "zstd" and len(data) > _ZSTD_REQUEST_CAPTURE_MAX_INPUT_BYTES:
         return None
 
     if encoding in ("gzip", "deflate"):
