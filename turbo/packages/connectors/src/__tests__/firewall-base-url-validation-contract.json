@@ -2,6 +2,34 @@
   "hostnamePolicy": "vm0-uts46-16.0-v1",
   "baseUrlTemplateResolutionCases": [
     {
+      "category": "hostname-policy",
+      "name": "runtime host rejects an encoded context-valid zero width non-joiner",
+      "base": "https://${{ vars.HOST }}/v1",
+      "vars": { "HOST": "xn--mgba3gch31f060k.example" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "hostname-policy",
+      "name": "runtime host rejects an encoded context-valid zero width joiner",
+      "base": "https://${{ vars.HOST }}/v1",
+      "vars": { "HOST": "xn--11b2ezcw70k.example" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "hostname-policy",
+      "name": "split alabel rejects a resolved encoded joiner",
+      "base": "https://xn--${{ vars.SUFFIX }}.example/v1",
+      "vars": { "SUFFIX": "mgba3gch31f060k" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "hostname-policy",
+      "name": "runtime Persian host without a joiner keeps its identity",
+      "base": "https://${{ vars.HOST }}/v1",
+      "vars": { "HOST": "xn--mgba3gch31f.example" },
+      "expectedResolvedBase": "https://xn--mgba3gch31f.example/v1"
+    },
+    {
       "category": "authority-fragment",
       "name": "partial alabel rejects an invalid resolved payload",
       "base": "https://xn--${{ vars.SUFFIX }}.example.com",
@@ -153,6 +181,30 @@
     }
   ],
   "catalogBaseUrlValidationCases": [
+    {
+      "category": "hostname-policy",
+      "name": "catalog rejects an encoded context-valid zero width non-joiner",
+      "base": "https://xn--mgba3gch31f060k.example/v1",
+      "vars": {},
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "hostname-policy",
+      "name": "catalog rejects an encoded context-valid zero width joiner",
+      "base": "https://xn--11b2ezcw70k.example/v1",
+      "vars": {},
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "hostname-policy",
+      "name": "templated catalog rejects an encoded joiner in a fixed label",
+      "base": "https://${{ vars.SUB }}.xn--mgba3gch31f060k.example/v1",
+      "vars": { "SUB": "api" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
     {
       "category": "authority",
       "name": "partial alabel preserves rejection of an invalid fixed alabel",
@@ -508,6 +560,43 @@
     }
   ],
   "baseUrlValidationCases": [
+    {
+      "category": "hostname-policy",
+      "name": "canonical alabel rejects a context-valid zero width non-joiner",
+      "base": "https://xn--mgba3gch31f060k.example",
+      "expectedValid": false
+    },
+    {
+      "category": "hostname-policy",
+      "name": "canonical alabel rejects a context-valid zero width joiner",
+      "base": "https://xn--11b2ezcw70k.example",
+      "expectedValid": false
+    },
+    {
+      "category": "hostname-policy",
+      "name": "parameterized base rejects an encoded joiner in a fixed label",
+      "base": "https://{sub}.xn--mgba3gch31f060k.example",
+      "expectedValid": false
+    },
+    {
+      "category": "hostname-policy",
+      "name": "raw Unicode rejects a context-valid zero width non-joiner",
+      "base": "https://نامه‌ای.example",
+      "expectedValid": false
+    },
+    {
+      "category": "hostname-policy",
+      "name": "alabel rejects an invalid-context zero width non-joiner",
+      "base": "https://xn--ab-j1t.example",
+      "expectedValid": false
+    },
+    {
+      "category": "hostname-policy",
+      "name": "Persian alabel without a joiner keeps its identity",
+      "base": "https://xn--mgba3gch31f.example",
+      "expectedValid": true,
+      "expectedCanonicalBase": "https://xn--mgba3gch31f.example"
+    },
     {
       "category": "valid",
       "name": "static https base",
