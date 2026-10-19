@@ -2,11 +2,14 @@
 
 use super::*;
 use crate::test_fixtures::{diagnostic_attempt, diagnostic_text, remote_inventory};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 
 #[derive(Clone, Copy)]
 enum Scenario {
     SilentPeer,
+    ControlsOnly,
+    TargetGone,
+    UnrelatedGone,
     TcpReset,
     SshSilent,
     RelayPending,
@@ -40,6 +43,21 @@ async fn native_same_peer_concurrency_shares_transport_but_never_private_tcp_rep
 #[tokio::test]
 async fn native_timeout_keeps_flushed_peer_silence_distinct_from_unobserved_tcp() {
     exercise(Scenario::SilentPeer).await;
+}
+
+#[tokio::test]
+async fn native_control_only_relay_activity_does_not_prove_online_peer_tunnel_progress() {
+    exercise(Scenario::ControlsOnly).await;
+}
+
+#[tokio::test]
+async fn native_selected_peer_gone_keeps_offline_map_facts_and_immutable_history() {
+    exercise(Scenario::TargetGone).await;
+}
+
+#[tokio::test]
+async fn native_unrelated_peer_gone_never_becomes_target_evidence() {
+    exercise(Scenario::UnrelatedGone).await;
 }
 
 #[tokio::test]
@@ -82,9 +100,16 @@ async fn exercise(scenario: Scenario) {
         assert!(matches!((&mut other.task).await, Err(error) if error.is_cancelled()));
     }
     let key = NodeKeyPair::random();
+    let peer_key = key.public;
     let mut value: Value = serde_json::from_slice(&map(&home)).unwrap();
     let mut peer = node(2, "peer.synthetic.ts.net.", 2, &key);
     peer["HomeDERP"] = if other.is_some() { 2.into() } else { 1.into() };
+    if matches!(scenario, Scenario::TargetGone) {
+        peer["Online"] = false.into();
+        peer["LastSeen"] = "2026-10-18T03:20:00Z".into();
+    } else if matches!(scenario, Scenario::SilentPeer | Scenario::UnrelatedGone) {
+        peer.as_object_mut().unwrap().remove("Online");
+    }
     value["Peers"] = vec![peer].into();
     value["PacketFilter"] = json!([]);
     if let Some(other) = &other {
@@ -142,6 +167,7 @@ async fn exercise(scenario: Scenario) {
         })
         .await;
     control.allow_all();
+    let mut retained_relay = None;
     let result = {
         let operation = h.raw(
             json!({"version":1,"method":"ssh.exec","remaining_ms":2500,"params":params()})
@@ -156,17 +182,38 @@ async fn exercise(scenario: Scenario) {
         })
         .await;
         match scenario {
-            Scenario::SilentPeer => {
+            Scenario::SilentPeer
+            | Scenario::ControlsOnly
+            | Scenario::TargetGone
+            | Scenario::UnrelatedGone => {
                 // Consume actual DERP output but withhold all external peer replies.
-                loop {
+                let mut injected = matches!(scenario, Scenario::SilentPeer);
+                let result = loop {
                     tokio::select! {
                         result = &mut operation => break result,
                         frame = frames.next() => {
                             let frame = frame.unwrap().unwrap();
-                            assert!(frame.get().as_type::<frame::SendPacket>().is_some());
+                            assert!(frame.get().as_type::<frame::SendPacket>().is_some()
+                                || frame.get().as_type::<frame::Pong>().is_some());
+                            if !injected {
+                                injected = true;
+                                #[allow(deprecated)]
+                                let keep_alive = frame::RawFrame { header: frame::Header::new(frame::FrameType::KeepAlive, 0).unwrap(), raw_body: &[] };
+                                frames.send((keep_alive, &[][..])).await.unwrap();
+                                frames.send((frame::RawFrame::from_body(&frame::Ping { payload: *b"control!" }, 0).unwrap(), &[][..])).await.unwrap();
+                                if matches!(scenario, Scenario::TargetGone | Scenario::UnrelatedGone) {
+                                    let gone = frame::PeerGone {
+                                        key: if matches!(scenario, Scenario::TargetGone) { key.public } else { client },
+                                        raw_reason: frame::PeerGoneReason::Disconnected.into(),
+                                    };
+                                    frames.send((frame::RawFrame::from_body(&gone, 0).unwrap(), &[][..])).await.unwrap();
+                                }
+                            }
                         }
                     }
-                }
+                };
+                retained_relay = Some(frames);
+                result
             }
             Scenario::RelayPending | Scenario::RelayFailure => operation.await,
             Scenario::MapFailure => {
@@ -322,7 +369,10 @@ async fn exercise(scenario: Scenario) {
         "{text}"
     );
     match scenario {
-        Scenario::SilentPeer => {
+        Scenario::SilentPeer
+        | Scenario::ControlsOnly
+        | Scenario::TargetGone
+        | Scenario::UnrelatedGone => {
             assert_eq!(result["failure_reason"], "timed_out");
             assert!(
                 text.contains("Private TCP: pending at observation;"),
@@ -340,6 +390,85 @@ async fn exercise(scenario: Scenario) {
                 text.contains("peer-labelled frames received: not observed"),
                 "{text}"
             );
+            assert!(
+                observed(text, "shared peer: WireGuard initiation produced") > 0,
+                "{text}"
+            );
+            assert_eq!(
+                observed(text, "shared peer: WireGuard response header received"),
+                0,
+                "{text}"
+            );
+            assert_eq!(
+                observed(text, "shared peer: WireGuard transport-data produced"),
+                0,
+                "{text}"
+            );
+            assert!(
+                text.contains("SYNs may still be awaiting encryption"),
+                "{text}"
+            );
+            assert!(text.contains("credential preparation: passed."), "{text}");
+            assert!(text.contains("authentication: not reached."), "{text}");
+            assert!(text.contains("Background wait for peer data;"), "{text}");
+            let status = match scenario {
+                Scenario::TargetGone => "offline",
+                Scenario::ControlsOnly => "online",
+                _ => "unknown",
+            };
+            assert!(
+                text.contains(&format!("Selected peer control-plane status: {status};")),
+                "{text}"
+            );
+            if !matches!(scenario, Scenario::SilentPeer) {
+                assert_eq!(
+                    observed(text, "Shared selected relay KeepAlive"),
+                    1,
+                    "{text}"
+                );
+                assert_eq!(observed(text, "Shared selected relay Ping"), 1, "{text}");
+            }
+            if matches!(scenario, Scenario::TargetGone) {
+                assert!(
+                    text.contains("Selected peer PeerGone: disconnected;"),
+                    "{text}"
+                );
+                assert!(
+                    text.contains("Peer last seen by control: 2026-10-18T03:20:00"),
+                    "{text}"
+                );
+                assert!(
+                    text.contains("Peer offline notification estimated locally at:"),
+                    "{text}"
+                );
+                control.update_map(json!({"OnlineChange":{"2":true}})).await;
+                // A later actual operation must observe the updated authenticated
+                // map; querying the first attempt still returns its offline facts.
+                let later = h.raw(
+                    json!({"version":1,"method":"ssh.exec","remaining_ms":2500,"params":params()})
+                        .to_string(),
+                );
+                tokio::pin!(later);
+                let later = loop {
+                    tokio::select! {
+                        result = &mut later => break result,
+                        frame = retained_relay.as_mut().unwrap().next() => {
+                            assert!(frame.unwrap().unwrap().get().as_type::<frame::SendPacket>().is_some());
+                        }
+                    }
+                };
+                let updated = diagnostic_text(&later.last().unwrap()["data"]);
+                assert!(
+                    updated.contains("Selected peer control-plane status: online;"),
+                    "{updated}"
+                );
+                assert!(!updated.contains("Peer last seen by control:"), "{updated}");
+            } else {
+                assert!(
+                    !text.contains("Selected peer PeerGone: disconnected;"),
+                    "{text}"
+                );
+            }
         }
         Scenario::TcpReset => {
             assert_eq!(result["failure_reason"], "network_failure");
@@ -350,6 +479,21 @@ async fn exercise(scenario: Scenario) {
             assert!(text.contains("detail: reset or closed"), "{text}");
             assert!(
                 text.contains("Next step: An authenticated TCP RST was observed"),
+                "{text}"
+            );
+            assert!(
+                observed(text, "shared peer: WireGuard response header received") > 0,
+                "{text}"
+            );
+            assert!(
+                observed(text, "shared peer: WireGuard transport-data produced") > 0,
+                "{text}"
+            );
+            assert!(
+                observed(
+                    text,
+                    "shared peer: WireGuard transport-data header received"
+                ) > 0,
                 "{text}"
             );
         }
@@ -405,10 +549,10 @@ async fn exercise(scenario: Scenario) {
         }
         Scenario::RelayWritePending => {
             assert_eq!(result["failure_reason"], "timed_out");
-            assert!(
-                text.contains("Selected relay relay write: pending;"),
-                "{text}"
-            );
+            // Timeout retires this operation's binding. The native driver can
+            // abandon the partial write before capture, so its final stage need
+            // not remain pending. Queued versus flushed is stable in either case.
+            assert!(text.contains("Selected relay relay write: "), "{text}");
             assert!(
                 observed(text, "shared peer: relay frames queued") > 0,
                 "{text}"
@@ -463,6 +607,7 @@ async fn exercise(scenario: Scenario) {
         assert_eq!(retained, text);
     }
     assert!(text.len() <= 8192 && !text.contains("synthetic-secret"));
+    assert!(!text.contains(&peer_key.to_string()));
     // Repeated operations retain the existing resolved host-authority cache.
     resolve.assert_calls_async(1).await;
     inventory

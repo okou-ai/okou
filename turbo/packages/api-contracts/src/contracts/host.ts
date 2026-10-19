@@ -197,8 +197,6 @@ export const hostedSitePrepareResponseSchema = z.object({
   preview: z
     .object({ uploadUrl: z.string().url(), sha256: z.string() })
     .optional(),
-  /** Older APIs may skip a supplied cover; retire after the API rollout gate in #39754. */
-  previewSkipped: z.literal(true).optional(),
 });
 
 export const hostedSiteCompleteResponseSchema = z.object({
@@ -213,8 +211,6 @@ export const hostedSiteCompleteResponseSchema = z.object({
   activeDeploymentVersion: z.number().int().positive().optional(),
   status: z.literal("ready"),
   previewImageUrl: artifactUrlSchema.optional(),
-  /** Older APIs may finalize without a cover; retire after the API rollout gate in #39754. */
-  previewSkipped: z.literal(true).optional(),
 });
 
 export const hostedSiteFilesResponseSchema = z.object({

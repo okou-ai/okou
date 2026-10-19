@@ -7,17 +7,27 @@ export const historyCommand = new Command()
   .description("Read one page of WeChat messages recorded by Okou")
   .requiredOption("--channel-id <id>", "Conversation ID from channel list")
   .option("--before <id>", "Continue with nextBefore from the previous page")
+  .option(
+    "--oldest <timestamp>",
+    "Include messages at or after this ISO 8601 time (with timezone)",
+  )
+  .option(
+    "--latest <timestamp>",
+    "Include messages before this ISO 8601 time (with timezone)",
+  )
   .option("--limit <count>", "Messages per page (1-100)", "50")
   .option("--json", "Print messages, delivery states and pagination as JSON")
   .addHelpText(
     "after",
-    "\nResults are newest first. History contains only messages received or sent by this Okou connection; it cannot retrieve earlier personal WeChat chats, contacts, groups, or other conversations. Unknown delivery does not mean sent. Attachment metadata is not file content. Continue with nextBefore; unread pages are not empty history.",
+    "\nResults are newest first. History contains only messages received or sent by this Okou connection; it cannot retrieve earlier personal WeChat chats, contacts, groups, or other conversations. Unknown delivery does not mean sent. Attachment metadata is not file content. Continue with nextBefore and the same time filters; unread pages are not empty history.",
   )
   .action(
     withErrorHandler(
       async (options: {
         channelId: string;
         before?: string;
+        oldest?: string;
+        latest?: string;
         limit: string;
         json?: boolean;
       }) => {

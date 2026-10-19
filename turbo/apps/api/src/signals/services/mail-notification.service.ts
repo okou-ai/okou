@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { MORNING_BRIEF_PREFERENCES_PATH } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import type {
   NotificationResponse,
   NotifyMailBody,
@@ -310,11 +311,32 @@ const commitMailNotification$ = command(
 
 export const queueMailNotification$ = command(
   async (
-    { set },
+    { get, set },
     owner: Owner & { readonly runId: string },
     body: NotifyMailBody,
     signal: AbortSignal,
   ) => {
+    const [source] = await get(db$)
+      .select({ provenance: agentRuns.officialWorkflowProvenance })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, owner.runId),
+          eq(agentRuns.userId, owner.userId),
+          eq(agentRuns.orgId, owner.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      source?.provenance?.definitions.some((definition) => {
+        return definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME;
+      })
+    ) {
+      return resourceUnavailable(
+        "Proactive Suggestions only updates your home page and cannot send mail.",
+      );
+    }
     const idempotencyKey =
       body.kind === "morning-brief"
         ? await set(morningBriefNotificationKey$, owner.runId, signal)

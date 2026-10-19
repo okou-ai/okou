@@ -1,34 +1,18 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS } from "@okouai/api-contracts/contracts/agent-setup-prompts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { Loader2, Plus, Wand } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   surfaceVariants,
   Card,
   CardContent,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
   Button,
-  Input,
   SegmentControl,
   SegmentControlItem,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Textarea,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { createSubagentWithSetupThread$ } from "../../signals/okou-page/agents.ts";
 import {
   defaultAgentId$,
   defaultAgentName$,
@@ -39,102 +23,23 @@ import {
   type OrgMember,
 } from "../../signals/external/org-members.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { onDomEventFn, onRejection } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { AgentAvatarImg, AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
+import { AgentAvatarImg } from "../okou-page/sidebar-shared.tsx";
 import {
-  jobsDialogOpen$,
-  setJobsDialogOpen$,
-  jobsNewName$,
-  setJobsNewName$,
-  jobsResponsibility$,
-  setJobsResponsibility$,
-  jobsAvatarUrl$,
-  setJobsAvatarUrl$,
-  jobsVisibility$,
-  setJobsVisibility$,
   jobsActiveTab$,
   setJobsActiveTab$,
-  resetJobsDialog$,
+  openCreateAgentDialog$,
 } from "../../signals/okou-page/jobs-page.ts";
-import { serializeAvatarSvgConfig } from "../okou-page/avatar-svg-utils.ts";
-import { AvatarMaker } from "../okou-page/avatar-maker.tsx";
 import { platformEmptyPrivateAgentsImg } from "../../lib/static-assets.ts";
 
 type Visibility = "public" | "private";
 
-async function createWithErrorToast(
-  creation: Promise<void>,
-  message: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await onRejection(creation, () => {
-    if (!signal.aborted) {
-      toast.error(message);
-    }
-  });
-}
-
 export function AgentsPageTabs() {
   const { t } = useTranslation("agents");
-  const dialogOpen = useGet(jobsDialogOpen$);
-  const setDialogOpen = useSet(setJobsDialogOpen$);
-  const newName = useGet(jobsNewName$);
-  const setNewName = useSet(setJobsNewName$);
-  const responsibility = useGet(jobsResponsibility$);
-  const setResponsibility = useSet(setJobsResponsibility$);
-  const visibility = useGet(jobsVisibility$);
-  const setVisibility = useSet(setJobsVisibility$);
   const activeTab = useGet(jobsActiveTab$);
   const setActiveTab = useSet(setJobsActiveTab$);
-  const [createLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
-    createSubagentWithSetupThread$,
-  );
-  const creating = createLoadable.state === "loading";
-  const resetDialog = useSet(resetJobsDialog$);
-  const pageSignal = useGet(pageSignal$);
+  const openCreateDialog = useSet(openCreateAgentDialog$);
   const defaultAgentName = useLastResolved(defaultAgentName$);
-  const trimmedName = newName.trim();
-  const trimmedResponsibility = responsibility.trim();
-  const canCreate =
-    trimmedName !== "" && trimmedResponsibility !== "" && !creating;
-
-  const openCreateDialog = () => {
-    resetDialog();
-    setDialogOpen(true);
-  };
-
-  const handleCreateTeammate = onDomEventFn(async (avatarUrl: string) => {
-    if (!canCreate) {
-      return;
-    }
-    await createWithErrorToast(
-      createSubagentWithSetupThreadFn(
-        {
-          displayName: trimmedName,
-          avatarUrl,
-          visibility,
-          responsibility: trimmedResponsibility,
-        },
-        pageSignal,
-      ),
-      t(($) => {
-        return $.list.create.setupFailed;
-      }),
-      pageSignal,
-    );
-    setActiveTab(visibility);
-    setDialogOpen(false);
-    toast.success(
-      t(
-        ($) => {
-          return $.list.create.success;
-        },
-        { agentName: trimmedName },
-      ),
-    );
-  });
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -169,24 +74,12 @@ export function AgentsPageTabs() {
           <AgentTabsView
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            onCreate={openCreateDialog}
+            onCreate={() => {
+              openCreateDialog();
+            }}
           />
         </div>
       </main>
-
-      <CreateTeammateDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        newName={newName}
-        onNameChange={setNewName}
-        responsibility={responsibility}
-        onResponsibilityChange={setResponsibility}
-        onConfirm={handleCreateTeammate}
-        canCreate={canCreate}
-        creating={creating}
-        visibility={visibility}
-        onVisibilityChange={setVisibility}
-      />
     </div>
   );
 }
@@ -361,386 +254,6 @@ function AgentGridSkeleton() {
         );
       })}
     </div>
-  );
-}
-
-function CreateTeammateDialog({
-  open,
-  onOpenChange,
-  newName,
-  onNameChange,
-  responsibility,
-  onResponsibilityChange,
-  onConfirm,
-  canCreate,
-  creating,
-  visibility,
-  onVisibilityChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  newName: string;
-  onNameChange: (name: string) => void;
-  responsibility: string;
-  onResponsibilityChange: (responsibility: string) => void;
-  onConfirm: (avatarUrl: string) => void;
-  canCreate: boolean;
-  creating: boolean;
-  visibility: Visibility;
-  onVisibilityChange: (visibility: Visibility) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={creating ? undefined : onOpenChange}>
-      <CreateTeammateDialogContent
-        newName={newName}
-        onNameChange={onNameChange}
-        responsibility={responsibility}
-        onResponsibilityChange={onResponsibilityChange}
-        onConfirm={onConfirm}
-        onCancel={() => {
-          return onOpenChange(false);
-        }}
-        canCreate={canCreate}
-        creating={creating}
-        visibility={visibility}
-        onVisibilityChange={onVisibilityChange}
-      />
-    </Dialog>
-  );
-}
-
-function CreateAgentAvatarPreview() {
-  const { t } = useTranslation("agents");
-  const avatarUrl = useGet(jobsAvatarUrl$);
-  const setAvatarUrl = useSet(setJobsAvatarUrl$);
-
-  return (
-    <div className="flex flex-col items-center pt-10 pb-6 bg-muted/30">
-      <AvatarMaker
-        onConfirm={(cfg) => {
-          setAvatarUrl(serializeAvatarSvgConfig(cfg));
-          return Promise.resolve();
-        }}
-        trigger={(openMaker) => {
-          return (
-            <button
-              type="button"
-              onClick={openMaker}
-              className="relative rounded-full transition-transform duration-200 hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              aria-label={t(($) => {
-                return $.avatar.actions.customize;
-              })}
-            >
-              <AvatarFromUrl
-                avatarUrl={avatarUrl}
-                alt={t(($) => {
-                  return $.list.create.newAgentAlt;
-                })}
-                className="h-16 w-16 rounded-full object-cover object-top"
-              />
-              <TooltipProvider delay={200}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
-                        <Wand size={10} />
-                      </span>
-                    }
-                  />
-                  <TooltipContent side="bottom">
-                    <p className="text-xs">
-                      {t(($) => {
-                        return $.avatar.actions.customize;
-                      })}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </button>
-          );
-        }}
-      />
-    </div>
-  );
-}
-
-function AgentVisibilitySelect({
-  visibility,
-  onVisibilityChange,
-  disabled,
-}: {
-  visibility: Visibility;
-  onVisibilityChange: (visibility: Visibility) => void;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation("agents");
-  const visibilityItems = [
-    {
-      value: "private",
-      label: (
-        <>
-          {t(($) => {
-            return $.list.create.visibility.private.label;
-          })}{" "}
-          <span className="text-muted-foreground">
-            {t(($) => {
-              return $.list.create.visibility.private.description;
-            })}
-          </span>
-        </>
-      ),
-    },
-    {
-      value: "public",
-      label: (
-        <>
-          {t(($) => {
-            return $.list.create.visibility.public.label;
-          })}{" "}
-          <span className="text-muted-foreground">
-            {t(($) => {
-              return $.list.create.visibility.public.description;
-            })}
-          </span>
-        </>
-      ),
-    },
-  ];
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted-foreground">
-        {t(($) => {
-          return $.list.create.visibilityLabel;
-        })}
-      </span>
-      <Select
-        items={visibilityItems}
-        value={visibility}
-        onValueChange={(value, details) => {
-          if (value !== "public" && value !== "private") {
-            details.cancel();
-            return;
-          }
-          onVisibilityChange(value);
-        }}
-        disabled={disabled}
-      >
-        <SelectTrigger
-          className="h-9 w-full"
-          aria-label={t(($) => {
-            return $.list.create.visibilityLabel;
-          })}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {visibilityItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function CreateAgentFields({
-  newName,
-  onNameChange,
-  responsibility,
-  onResponsibilityChange,
-  creating,
-  visibility,
-  onVisibilityChange,
-}: {
-  newName: string;
-  onNameChange: (name: string) => void;
-  responsibility: string;
-  onResponsibilityChange: (responsibility: string) => void;
-  creating: boolean;
-  visibility: Visibility;
-  onVisibilityChange: (visibility: Visibility) => void;
-}) {
-  const { t } = useTranslation("agents");
-  return (
-    <div className="flex flex-col gap-4 px-6 py-6">
-      <div className="text-center">
-        <p className="text-base font-semibold">
-          {t(($) => {
-            return $.list.create.title;
-          })}
-        </p>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {t(($) => {
-            return $.list.create.description;
-          })}
-        </p>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor="new-agent-name"
-          className="text-sm font-medium text-foreground"
-        >
-          {t(($) => {
-            return $.profile.fields.name.label;
-          })}
-        </label>
-        <Input
-          id="new-agent-name"
-          value={newName}
-          onChange={(e) => {
-            return onNameChange(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
-            ) {
-              // Safari can end composition before the candidate-confirming
-              // keydown. Keep that Enter from implicitly submitting the form.
-              e.preventDefault();
-            }
-          }}
-          placeholder={t(($) => {
-            return $.list.create.namePlaceholder;
-          })}
-          autoFocus
-          disabled={creating}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor="new-agent-responsibility"
-          className="text-sm font-medium text-foreground"
-        >
-          {t(($) => {
-            return $.list.create.responsibilityLabel;
-          })}
-        </label>
-        <Textarea
-          id="new-agent-responsibility"
-          value={responsibility}
-          onChange={(e) => {
-            return onResponsibilityChange(e.target.value);
-          }}
-          placeholder={t(($) => {
-            return $.list.create.responsibilityPlaceholder;
-          })}
-          maxLength={AGENT_SETUP_RESPONSIBILITY_MAX_CHARS}
-          rows={4}
-          className="min-h-[96px] resize-y"
-          required
-          disabled={creating}
-        />
-      </div>
-      <AgentVisibilitySelect
-        visibility={visibility}
-        onVisibilityChange={onVisibilityChange}
-        disabled={creating}
-      />
-    </div>
-  );
-}
-
-function CreateTeammateDialogContent({
-  newName,
-  onNameChange,
-  responsibility,
-  onResponsibilityChange,
-  onConfirm,
-  onCancel,
-  canCreate,
-  creating,
-  visibility,
-  onVisibilityChange,
-}: {
-  newName: string;
-  onNameChange: (name: string) => void;
-  responsibility: string;
-  onResponsibilityChange: (responsibility: string) => void;
-  onConfirm: (avatarUrl: string) => void;
-  onCancel: () => void;
-  canCreate: boolean;
-  creating: boolean;
-  visibility: Visibility;
-  onVisibilityChange: (visibility: Visibility) => void;
-}) {
-  const { t } = useTranslation("agents");
-  const avatarUrl = useGet(jobsAvatarUrl$);
-
-  return (
-    <DialogContent
-      closeLabel={t(($) => {
-        return $.actions.close;
-      })}
-      smMaxWidth={480}
-      contentClassName="p-0 gap-0 overflow-hidden"
-    >
-      <DialogHeader className="sr-only">
-        <DialogTitle>
-          {t(($) => {
-            return $.list.create.title;
-          })}
-        </DialogTitle>
-        <DialogDescription>
-          {t(($) => {
-            return $.list.create.accessibilityDescription;
-          })}
-        </DialogDescription>
-      </DialogHeader>
-
-      <CreateAgentAvatarPreview />
-
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (canCreate) {
-            onConfirm(avatarUrl);
-          }
-        }}
-      >
-        <CreateAgentFields
-          newName={newName}
-          onNameChange={onNameChange}
-          responsibility={responsibility}
-          onResponsibilityChange={onResponsibilityChange}
-          creating={creating}
-          visibility={visibility}
-          onVisibilityChange={onVisibilityChange}
-        />
-
-        {/* Footer */}
-        <div className="flex justify-center gap-3 px-6 pt-4 pb-8">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={creating}
-          >
-            {t(($) => {
-              return $.actions.cancel;
-            })}
-          </Button>
-          <Button type="submit" disabled={!canCreate}>
-            {creating ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Loader2 size={14} className="animate-spin" />
-                {t(($) => {
-                  return $.list.create.creating;
-                })}
-              </span>
-            ) : (
-              t(($) => {
-                return $.actions.create;
-              })
-            )}
-          </Button>
-        </div>
-      </form>
-    </DialogContent>
   );
 }
 

@@ -864,6 +864,12 @@ importers:
 
   apps/wechat-gateway-worker:
     dependencies:
+      '@okouai/api-contracts':
+        specifier: workspace:*
+        version: link:../../packages/api-contracts
+      '@okouai/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       zod:
         specifier: ^4.3.6
         version: 4.5.4
@@ -1005,6 +1011,9 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.5.4
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*

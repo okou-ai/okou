@@ -1,5 +1,9 @@
 import { INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
+  PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
+  PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
+} from "@okouai/api-contracts/contracts/proactive-suggestions";
+import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
@@ -27,9 +31,6 @@ Prepare the briefing as concise Markdown and return it in the Chat. Choose short
 
 `;
 
-// The `--idempotency-key morning-brief` retry covers Runner rootfs CLIs that
-// still require the flag. Remove it, together with the contract's ignored
-// Morning Brief key, after Runners with those CLIs have drained.
 const MORNING_BRIEF_DELIVERY_INSTRUCTION = `## Decide whether to email the briefing
 
 You own the email decision. Send only when the verified briefing contains useful information worth notifying the user about, such as an upcoming commitment, a decision or request needing attention, a blocker, a conflict, or a clear next action. A completed run, an empty briefing, routine noise, or unavailable sources alone are not reasons to send. When there is nothing useful to notify, skip email and leave the briefing and coverage information in the Chat.
@@ -38,7 +39,7 @@ Use only \`okou notify mail --kind morning-brief\` to send to the user's account
 
 ## Send once per automation event
 
-Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID. If the command is rejected only because \`--idempotency-key\` is required, rerun it unchanged except for \`--idempotency-key morning-brief\`; Okou ignores that value for Morning Brief.
+Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 
@@ -48,13 +49,25 @@ Preserve the exact subject and file contents for retries. A \`queued\` receipt m
 
 Do not read application database tables or use internal application APIs, signed input or output URLs, or callback endpoints.`;
 
-const MORNING_BRIEF_SUGGESTION_INSTRUCTION = `## Curate next-step suggestions
+const SUGGESTION_CURATION_INSTRUCTION = `## Curate next-step suggestions
 
-Before completing the briefing or making its email decision, run \`okou suggestion list --json\` to inspect the user's active suggestions and recent consumed/removed identities. Only Okou, the primary Agent, manages this user-owned pool. Retain useful actions, update changed content or priority, withdraw obsolete actions, and create verified new actions. There may be zero to ten active suggestions; do not fill a quota or replace the pool by calendar date. Larger integer priorities appear first, with no requirement for consecutive or unique values.
+Run \`okou suggestion list --json\` to inspect the user's active suggestions and recent consumed/removed identities. Only Okou, the primary Agent, manages this user-owned pool. Retain useful actions, update changed content or priority, withdraw obsolete actions, and create verified new actions. There may be zero to ten active suggestions; do not fill a quota or replace the pool by calendar date. Larger integer priorities appear first, with no requirement for consecutive or unique values.
 
 Use \`okou suggestion create --file suggestion.json --json\`, \`okou suggestion update <id> --file changes.json --json\`, and \`okou suggestion delete <id> --json\`. A creation file contains a stable UUID \`id\`, concise \`title\` and \`rationale\`, integer \`priority\`, nullable \`threadId\`, and \`draft\` in the normal saved composer format: \`{ "draftUserMessage": { "version": 1, "parts": [{ "type": "text", "text": "A self-contained next-step prompt" }] }, "draftAttachments": null }\`. Existing authorized conversations use their exact thread ID; new conversations use null and are handled by Okou. Include verified background and source references in the draft. Do not modify the user's live composer or execute suggested work.
 
-Preserve the same UUID and exact creation file after an uncertain result. A consumed/removed identity is terminal; do not replay it to restore an item. A genuinely new next action needs a new UUID. If the pool is full, explicitly decide which item to withdraw before creating another. If the command or capability is unavailable, explicitly report that suggestion curation was unavailable and why; continue producing the useful briefing and its normal email decision without another publication channel. Otherwise, complete this phase even when no new suggestions are warranted, and briefly report whether existing suggestions were retained, updated, removed, or new ones published.`;
+Preserve the same UUID and exact creation file after an uncertain result. A consumed/removed identity is terminal; do not replay it to restore an item. A genuinely new next action needs a new UUID. Match existing active suggestions before creating another. For a new action, use \`okou suggestion identity --key '<provider>:<canonical object or event id>:<specific next action>' --json\` to derive a stable UUID. Use the same key across hourly checks and Morning Brief; never include the current hour, run ID, or wording of the title. A materially new request, review head, or event needs a new action identity, not a permanent blacklist of the subject. If the identity command is unavailable, report the missing capability and retain/update existing suggestions without inventing a new identity convention. If the pool is full, explicitly decide which item to withdraw before creating another. If suggestion curation is disabled or unavailable, report the reason and continue the task's ordinary result without another publication channel. Otherwise, complete this phase even when no new suggestions are warranted, and briefly report whether existing suggestions were retained, updated, removed, or new ones published.`;
+
+const PROACTIVE_SUGGESTIONS_INSTRUCTION = `# Proactive Suggestions
+
+Check whether the user's homepage suggestions need maintenance. This is an hourly background check, not a request to execute work or deliver a briefing.
+
+Fix the upper time bound at the start of this check. Review the preceding hour with a 15-minute overlap. For the first check, or after a known interruption, review at most the preceding 24 hours. State coverage gaps rather than claiming complete history recovery. Also inspect commitments and meetings approaching in the next 24 hours and re-evaluate current suggestions.
+
+Use ordinary connected skills and CLI commands for Gmail, GitHub, and Google Calendar. Read recent requests, decisions, review requests, failures, blockers, and approaching commitments. Skip disconnected sources without requesting setup. Use \`okou slack channel list --json\` and \`okou slack message history --channel <id> --oldest <start-ts> --latest <end-ts> --json\` for shared Slack channels. Follow nextCursor with --cursor, including empty pages with a cursor, keeping fixed time bounds. These commands do not expand thread replies or discover other DMs. Use \`okou chat list --unread --all-agents\` and \`okou chat messages --thread-id <id> --output-dir threads\` to read relevant authorized Chats. Do not treat unavailable sources, incomplete pages, or unread thread replies as absent work. Never withdraw an action just because its source could not be read.
+
+${SUGGESTION_CURATION_INSTRUCTION}
+
+Only read context and maintain suggestions. Never send email, notification mail, connector messages, or provider-side updates; never execute the suggested work or change the user's composer. Zero changes is a normal successful outcome. Leave only a concise diagnostic outcome in this background Chat. Do not read application database tables or internal APIs, signed input/output URLs, or callback endpoints.`;
 
 const MORNING_BRIEF_INSTRUCTION =
   MORNING_BRIEF_CONTEXT_INSTRUCTION + MORNING_BRIEF_DELIVERY_INSTRUCTION;
@@ -65,7 +78,7 @@ const MORNING_BRIEF_INSTRUCTION =
 // Retain immutable revisions needed by captured and historical Runs.
 const INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION = [
   MORNING_BRIEF_CONTEXT_INSTRUCTION.trimEnd(),
-  MORNING_BRIEF_SUGGESTION_INSTRUCTION,
+  SUGGESTION_CURATION_INSTRUCTION,
   MORNING_BRIEF_DELIVERY_INSTRUCTION,
 ].join("\n\n");
 
@@ -108,6 +121,40 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
+      {
+        name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
+        lifecycle: "active",
+        workflow: {
+          displayName: "Proactive Suggestions",
+          description:
+            "Check connected sources hourly and maintain useful next steps on your home page.",
+          instruction: PROACTIVE_SUGGESTIONS_INSTRUCTION,
+          files: [],
+        },
+        blueprints: [
+          {
+            key: PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
+            parameters: [
+              {
+                key: "cron",
+                type: "string",
+                required: true,
+                format: "text",
+                default: "0 * * * *",
+              },
+            ],
+            desiredState: {
+              kind: "schedule",
+              schedule: {
+                type: "cron",
+                cronExpression: { parameter: "cron" },
+                timezone: "UTC",
+              },
+            },
+          },
+        ],
+        presentation: { category: "productivity" },
+      },
       morningBriefDefinition("morning-brief", MORNING_BRIEF_INSTRUCTION),
       morningBriefDefinition(
         INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,

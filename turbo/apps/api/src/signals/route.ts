@@ -87,6 +87,7 @@ import { cronSyncSkillsRoutes } from "./routes/cron-sync-skills";
 import { cronTelegramCleanupRoutes } from "./routes/cron-telegram-cleanup";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
+import { wechatReceiverRoutes } from "./routes/wechat-receiver";
 import { wechatGatewayRoutes } from "./routes/wechat-gateway";
 import { integrationsWechatRoutes } from "./routes/integrations-wechat";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
@@ -150,6 +151,7 @@ import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-provi
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
+import { proactiveSuggestionsRoutes } from "./routes/proactive-suggestions";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
@@ -406,6 +408,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...proactiveSuggestionsRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,
@@ -423,6 +426,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsWechatMessagesRoutes,
   ...integrationsWechatFileRoutes,
   ...wechatGatewayRoutes,
+  ...wechatReceiverRoutes,
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,

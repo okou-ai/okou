@@ -1,5 +1,6 @@
 import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   type GoogleDriveUploadMode,
@@ -27,6 +28,7 @@ import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { webDownloadRoutes } from "../web-download";
 import {
   createBddApi,
   expectApiError,
@@ -60,9 +62,13 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import {
   mockSlidesImportFonts,
   slidesImportFixture,
+  slidesPictureCropFixture,
+  slidesPictureCropNoopFixture,
+  uploadedSlidesPictures,
   uploadedSlidesText,
 } from "./helpers/slides-import-fixture";
 const TEST_APP_ROUTES = Object.freeze([...chatThreadRoutes]);
@@ -3083,6 +3089,316 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     },
     120_000,
   );
+
+  const picturePptxMime =
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+  async function publicPictureSlidesSource(bytes: Buffer) {
+    const owned = await publicChatActor(context);
+    const { actor, agentId } = owned;
+    owned.ownsFeatureSwitches();
+    await owned.run(() => {
+      return createBillingMediaApi(context).updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.GoogleSlidesConversion]: true,
+        [FeatureSwitchKey.GoogleDocsSheetsConversion]: false,
+      });
+    });
+    const run = await owned.sendChatRun(actor, {
+      agentId,
+      prompt: "Create a presentation with off-page background artwork",
+    });
+    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+    // Drive imports consume public-storage files. Use the supported org-less
+    // upload producer, then publish with this user's real Run claim. Do not
+    // fabricate a legacy object key or relax the private-artifact boundary.
+    installSharedThreadStorage(context);
+    const prepared = await owned.run(() => {
+      return chat.prepareUpload(
+        { ...actor, orgId: null },
+        {
+          filename: "deck.pptx",
+          contentType: picturePptxMime,
+          size: bytes.byteLength,
+          purpose: "artifact",
+        },
+      );
+    });
+    if (!("uploadUrl" in prepared)) {
+      throw new Error("Expected a single-part artifact upload");
+    }
+    const put = await owned.run(() => {
+      return fetch(prepared.uploadUrl, {
+        method: "PUT",
+        headers: prepared.uploadHeaders,
+        body: Uint8Array.from(bytes),
+      });
+    });
+    expect(put.status).toBe(200);
+    await owned.run(() => {
+      return chat.completeUploadWithBearer(
+        `Bearer ${okouTokenFromClaim(claim)}`,
+        { id: prepared.id },
+        [200],
+      );
+    });
+    const artifactId = await owned.run(async () => {
+      const catalog = await chat.listArtifactCatalog(actor, {
+        chatThreadId: run.threadId,
+      });
+      expect(catalog.artifacts).toHaveLength(1);
+      const detail = await chat.getArtifactCatalogEntry(
+        actor,
+        catalog.artifacts[0]!.id,
+      );
+      expect(detail).toMatchObject({
+        kind: "file",
+        file: {
+          url: prepared.url,
+          filename: "deck.pptx",
+          contentType: picturePptxMime,
+          size: bytes.byteLength,
+        },
+      });
+      return detail.id;
+    });
+    mockGoogleDriveConnectorOAuth();
+    const oauth = await owned.run(() => {
+      return connectorsApi.startOauth(actor, "google-drive", "oauth");
+    });
+    await owned.run(() => {
+      return connectorsApi.completeOauthCallback("google-drive", {
+        code: "drive-picture-crop",
+        state: stateFromAuthorizationUrl(oauth.authorizationUrl),
+      });
+    });
+    await owned.run(() => {
+      return api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    });
+    const client = setupApp({
+      context,
+      routes: chatThreadsArtifactsSyncRoutes,
+    })(artifactGoogleDriveContract);
+    const files = setupApp({ context, routes: webDownloadRoutes })(
+      webFilesContract,
+    );
+    return {
+      upload: (mode: GoogleDriveUploadMode) => {
+        return owned.run(() => {
+          return accept(
+            client.uploadWithMode({
+              headers: authHeaders(actor),
+              params: { artifactId },
+              body: { agentId, mode },
+            }),
+            [200],
+          );
+        });
+      },
+      uploadLegacy: () => {
+        return owned.run(() => {
+          return chat.requestUploadArtifactToGoogleDrive(
+            actor,
+            artifactId,
+            { agentId },
+            [200],
+          );
+        });
+      },
+      sourceBytes: () => {
+        return owned.run(async () => {
+          const download = await accept(
+            files.download({
+              headers: authHeaders(actor),
+              query: { file_id: prepared.id },
+            }),
+            [200],
+          );
+          return Buffer.from(await download.body.arrayBuffer());
+        });
+      },
+    };
+  }
+
+  function outgoingPictureDeck(
+    uploaded: ReturnType<typeof mockGoogleDriveArtifactUpload>,
+    mimeType: string,
+  ): Buffer {
+    // Drive's JSON session POST and raw PUT are distinct, not multipart MIME.
+    expect(uploaded.metadata).toHaveLength(1);
+    expect(JSON.parse(uploaded.metadata[0]!)).toMatchObject({ mimeType });
+    expect(uploaded.uploadContentTypeHeaders).toStrictEqual([picturePptxMime]);
+    expect(uploaded.contentTypeHeaders).toStrictEqual([picturePptxMime]);
+    expect(uploaded.bodies).toHaveLength(1);
+    const outgoing = Buffer.from(uploaded.bodies[0]!);
+    expect(uploaded.contentRangeHeaders).toStrictEqual([
+      `bytes 0-${String(outgoing.byteLength - 1)}/${String(outgoing.byteLength)}`,
+    ]);
+    return outgoing;
+  }
+
+  function expectPicturePackagePreserved(source: Buffer, outgoing: Buffer) {
+    const before = new AdmZip(source);
+    const after = new AdmZip(outgoing);
+    const parts = before.getEntries().map((entry) => {
+      return entry.entryName;
+    });
+    expect(
+      after
+        .getEntries()
+        .map((entry) => {
+          return entry.entryName;
+        })
+        .sort(),
+    ).toStrictEqual([...parts].sort());
+    // Keep the source pixels, image relationships, slide list and page size.
+    for (const part of parts) {
+      if (
+        part.startsWith("ppt/media/") ||
+        part.endsWith(".rels") ||
+        part === "ppt/presentation.xml" ||
+        part === "[Content_Types].xml"
+      ) {
+        expect(after.readFile(part)).toStrictEqual(before.readFile(part));
+      }
+    }
+  }
+
+  function expectReportedPicture(
+    picture: ReturnType<typeof uploadedSlidesPictures>[number],
+  ) {
+    expect(picture).toMatchObject({
+      id: "2",
+      name: "reported-arc-yellow",
+      embed: "rIdImage",
+      preset: "rect",
+      frame: { x: 6_339_840, y: 757_637, cx: 5_852_160, cy: 6_100_363 },
+    });
+    expect(picture.crop).not.toBeNull();
+    expect(picture.crop!.l).toBe(0);
+    expect(picture.crop!.t).toBe(0);
+    expect(Math.abs(picture.crop!.r - 22_581)).toBeLessThanOrEqual(1);
+    expect(Math.abs(picture.crop!.b - 20_511)).toBeLessThanOrEqual(1);
+  }
+
+  it.each(["google", "original"] as const)(
+    "uploads native cropped picture frames only for Google Slides conversion (%s)",
+    async (mode) => {
+      const bytes = slidesPictureCropFixture();
+      const fixture = await publicPictureSlidesSource(bytes);
+      const native = {
+        id: "picture-deck",
+        name: "deck",
+        mimeType:
+          mode === "google"
+            ? GOOGLE_WORKSPACE_MIME_TYPES.presentation
+            : picturePptxMime,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      if (mode === "google") {
+        mockGoogleWorkspaceReadback(native);
+        mockGoogleSlidesReadback([{ pageElementCount: 5 }]);
+      }
+      const response = await fixture.upload(mode);
+      expect(response.body).toMatchObject(native);
+      const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
+      expectPicturePackagePreserved(bytes, outgoing);
+      const pictures = uploadedSlidesPictures(outgoing);
+      expect(
+        pictures.map((picture) => {
+          return [picture.id, picture.name, picture.grouped];
+        }),
+      ).toStrictEqual([
+        ["2", "reported-arc-yellow", false],
+        ["3", "left-top", false],
+        ["4", "already-cropped-all-edges", false],
+        ["5", "in-bounds-control", false],
+        ["7", "nested-off-page", true],
+      ]);
+      for (const picture of pictures) {
+        expect(picture).toMatchObject({ embed: "rIdImage", preset: "rect" });
+      }
+      if (mode === "original") {
+        expect(outgoing).toStrictEqual(bytes);
+      } else {
+        expectReportedPicture(pictures[0]!);
+        expect(pictures[1]).toMatchObject({
+          frame: { x: 0, y: 0, cx: 10_972_800, cy: 6_172_200 },
+          crop: { l: 10_000, t: 10_000, r: 0, b: 0 },
+        });
+        expect(pictures[2]).toMatchObject({
+          frame: { x: 0, y: 0, cx: 12_192_000, cy: 6_858_000 },
+          crop: { l: 16_000, t: 27_000, r: 36_000, b: 17_000 },
+        });
+        expect(pictures[3]).toMatchObject({
+          frame: { x: 1_219_200, y: 685_800, cx: 2_438_400, cy: 1_371_600 },
+          crop: null,
+        });
+        for (const picture of pictures) {
+          if (!picture.grouped) {
+            expect(picture.frame.x).toBeGreaterThanOrEqual(0);
+            expect(picture.frame.y).toBeGreaterThanOrEqual(0);
+            expect(picture.frame.x + picture.frame.cx).toBeLessThanOrEqual(
+              12_192_000,
+            );
+            expect(picture.frame.y + picture.frame.cy).toBeLessThanOrEqual(
+              6_858_000,
+            );
+          }
+        }
+        expect(pictures[4]).toMatchObject({
+          frame: { x: -1_219_200, y: 0, cx: 2_438_400, cy: 1_371_600 },
+          crop: null,
+        });
+      }
+      await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+    },
+    120_000,
+  );
+
+  it("uploads native cropped picture frames through the legacy Slides conversion route", async () => {
+    const bytes = slidesPictureCropFixture();
+    const fixture = await publicPictureSlidesSource(bytes);
+    const native = {
+      id: "legacy-picture-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 5 }]);
+    const response = await fixture.uploadLegacy();
+    expect(response.body).toMatchObject(native);
+    const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
+    expectReportedPicture(uploadedSlidesPictures(outgoing)[0]!);
+    expectPicturePackagePreserved(bytes, outgoing);
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+  }, 120_000);
+
+  it("preserves unsupported, fully outside and timed pictures during Slides conversion", async () => {
+    const bytes = slidesPictureCropNoopFixture();
+    const fixture = await publicPictureSlidesSource(bytes);
+    const native = {
+      id: "conservative-picture-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([
+      { pageElementCount: 13 },
+      { pageElementCount: 1 },
+      { pageElementCount: 1 },
+      { pageElementCount: 1 },
+    ]);
+    const response = await fixture.upload("google");
+    expect(response.body).toMatchObject(native);
+    const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
+    expect(uploadedSlidesPictures(outgoing)).toStrictEqual(
+      uploadedSlidesPictures(bytes),
+    );
+    expect(outgoing).toStrictEqual(bytes);
+    expectPicturePackagePreserved(bytes, outgoing);
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+  }, 120_000);
 
   it.each(["google", "original"] as const)(
     "prepares editable presentation text only for Slides conversion (%s)",

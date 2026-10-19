@@ -9,6 +9,15 @@ impl Report {
             return Some(());
         };
         text.push_str("\nActual path: embedded Tailscale over DERP, then private TCP.\n");
+        if let Some(peer) = &connection.peer {
+            text.push_str(&format!("- Selected peer control-plane status: {}; map fact recorded locally at {}. This may be stale and does not prove reachability.\n", words(peer.status)?, super::timestamp(peer.observed_at)));
+            if let Some(at) = peer.control_last_seen {
+                text.push_str(&format!("- Peer last seen by control: {}; provider clock, possibly rounded by about 10 minutes.\n", super::timestamp(at)));
+            }
+            if let Some(at) = peer.local_last_seen_estimate {
+                text.push_str(&format!("- Peer offline notification estimated locally at: {}; a separate clock, not a precise remote last-seen deadline.\n", super::timestamp(at)));
+            }
+        }
         if let Some(step) = connection
             .steps
             .iter()
@@ -29,6 +38,7 @@ impl Report {
                 if connection.relay_reused { "already started when selected" } else { "new or replaced" },
                 super::timestamp(relay.started_at)));
             relay_text(text, "Selected relay", relay)?;
+            controls_text(text, relay)?;
             for (index, dial) in relay.dial.iter().enumerate() {
                 relay_text(
                     text,
@@ -62,6 +72,10 @@ impl Report {
                 }
             }
             text.push_str("- Queue admission and local flush do not prove peer delivery. Peer labels do not prove cryptographic authentication; shared peer traffic can belong to another connection.\n");
+            text.push_str("- WireGuard headers do not prove authentication or handshake completion. Transport-data includes keepalives; shared output does not prove this SYN or application payload was delivered.\n");
+            if progress.handshake_only_output() {
+                text.push_str("- WireGuard initiation was produced without observed transport-data output in this window. Locally produced SYNs may still be awaiting encryption.\n");
+            }
         }
         Some(())
     }
@@ -135,12 +149,66 @@ fn relay_text(text: &mut String, label: &str, relay: &Snapshot) -> Option<()> {
     }
     for step in &relay.steps {
         text.push_str(&format!(
-            "- {label} {}: {}; detail: {}; elapsed {} ms.\n",
+            "- {label} {}: {}; detail: {}; elapsed {} ms.{}\n",
             words(step.stage)?,
             words(step.status)?,
             words(step.detail)?,
-            step.timing.elapsed_ms
+            step.timing.elapsed_ms,
+            wait_note(step.stage, step.status, relay),
         ));
     }
+    Some(())
+}
+
+pub(super) fn wait_note(stage: Stage, status: Status, snapshot: &Snapshot) -> &'static str {
+    if matches!(status, Status::Pending | Status::Running) {
+        match stage {
+            Stage::RelayRead => {
+                " Background wait for peer data; DERP controls may be consumed meanwhile."
+            }
+            Stage::MapHeader
+                if snapshot.steps.iter().any(|step| {
+                    step.stage == Stage::MapDecode && step.status == Status::Passed
+                }) =>
+            {
+                " Background wait for the next map frame after earlier progress."
+            }
+            _ => "",
+        }
+    } else {
+        ""
+    }
+}
+
+fn controls_text(text: &mut String, relay: &Snapshot) -> Option<()> {
+    let Some(controls) = &relay.controls else {
+        text.push_str("- Selected relay controls: KeepAlive/Ping/target PeerGone not observed.\n");
+        return Some(());
+    };
+    for (name, count) in [
+        ("KeepAlive", &controls.keep_alive),
+        ("Ping", &controls.ping),
+    ] {
+        if count.count == 0 {
+            text.push_str(&format!("- Shared selected relay {name}: not observed.\n"));
+        } else {
+            text.push_str(&format!(
+                "- Shared selected relay {name}: {}; last {} ms before capture.\n",
+                count.count,
+                controls.elapsed_ms.saturating_sub(count.last_ms)
+            ));
+        }
+    }
+    if let Some(gone) = &controls.target_gone {
+        text.push_str(&format!("- Selected peer PeerGone: {}; observed at {}; notification from this relay incarnation, possibly before this operation; not global peer/port state.\n", words(gone.reason)?, super::timestamp(gone.observed_at)));
+    } else {
+        text.push_str("- Selected peer PeerGone: not observed in retained relay controls.\n");
+    }
+    if controls.gone_history_omitted {
+        text.push_str(
+            "- Detail omitted: older PeerGone observations exceeded the bounded relay history.\n",
+        );
+    }
+    text.push_str("- DERP controls show relay activity, not a reply from the target or authenticated tunnel/TCP progress.\n");
     Some(())
 }

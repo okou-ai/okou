@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.18...runner-provider-v0.8.19) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share connector registry command values ([#41271](https://github.com/okou-ai/okou/issues/41271)) ([e3346f3](https://github.com/okou-ai/okou/commit/e3346f3c0448090e9c4a00fa12745f248d051233))
+
+## [0.8.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.17...runner-provider-v0.8.18) (2026-10-19)
+
 ## [0.8.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.16...runner-provider-v0.8.17) (2026-10-19)
 
 ## [0.8.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.15...runner-provider-v0.8.16) (2026-10-19)

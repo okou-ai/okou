@@ -129,7 +129,7 @@ export function createNotifyCommand(): Command {
     )
     .option(
       "--idempotency-key <key>",
-      "Stable key for a notification; reuse on retries (not used by morning-brief)",
+      "Stable key for a notification; reuse on retries (not accepted by morning-brief)",
     )
     .option("-t, --text <markdown>", "Markdown body (at most 8000 characters)")
     .option("-f, --file <path>", "Read Markdown body from a UTF-8 file")
@@ -158,7 +158,9 @@ Provider requests already in flight cannot be recalled. --text/--file take prece
           to: options.to,
           kind: options.kind,
           subject: options.subject,
-          idempotencyKey: options.idempotencyKey,
+          ...(options.idempotencyKey === undefined
+            ? {}
+            : { idempotencyKey: options.idempotencyKey }),
           text: await readBody(options),
         });
         if (!parsed.success) {

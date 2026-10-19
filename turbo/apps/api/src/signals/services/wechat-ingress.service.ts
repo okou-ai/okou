@@ -28,7 +28,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
-import type { WechatMessage } from "../external/wechat-client";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -57,6 +57,16 @@ import {
 } from "./chat-thread-queue-drain.service";
 
 type Connection = typeof wechatConnections.$inferSelect;
+
+export class WechatIngressError extends Error {
+  constructor(
+    readonly reason: "default_agent_unavailable" | "attachment_unavailable",
+    readonly retryable: boolean,
+  ) {
+    super(`WeChat input unavailable: ${reason}`);
+    this.name = "WechatIngressError";
+  }
+}
 
 function activeBinding(connection: Connection) {
   return and(
@@ -131,7 +141,7 @@ const ensureThread$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!agent) {
-      throw new Error("WeChat workspace has no default agent");
+      throw new WechatIngressError("default_agent_unavailable", false);
     }
     const owner = { orgId: connection.orgId, userId: connection.userId };
     const initialModel = await set(
@@ -298,7 +308,7 @@ const materializeWechatUserMessage$ = command(
       })
     ) {
       // Keep the durable provider batch until a transient import can be retried.
-      throw new Error("WeChat attachment import is temporarily unavailable");
+      throw new WechatIngressError("attachment_unavailable", true);
     }
     return createUserMessageDocument({
       text: args.text,

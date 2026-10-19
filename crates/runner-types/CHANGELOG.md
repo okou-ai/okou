@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.10](https://github.com/okou-ai/okou/compare/runner-types-v0.7.9...runner-types-v0.7.10) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share connector registry command values ([#41271](https://github.com/okou-ai/okou/issues/41271)) ([e3346f3](https://github.com/okou-ai/okou/commit/e3346f3c0448090e9c4a00fa12745f248d051233))
+
+## [0.7.9](https://github.com/okou-ai/okou/compare/runner-types-v0.7.8...runner-types-v0.7.9) (2026-10-19)
+
 ## [0.7.8](https://github.com/okou-ai/okou/compare/runner-types-v0.7.7...runner-types-v0.7.8) (2026-10-17)
 
 

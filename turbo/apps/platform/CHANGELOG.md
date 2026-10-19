@@ -12,6 +12,83 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1041.0](https://github.com/okou-ai/okou/compare/app-v0.1040.0...app-v0.1041.0) (2026-10-19)
+
+
+### Features
+
+* **suggestions:** add opt-in hourly proactive suggestions ([#41251](https://github.com/okou-ai/okou/issues/41251)) ([154bc8a](https://github.com/okou-ai/okou/commit/154bc8acb035843ea47c99f6f56f5779698c6bbb))
+
+
+### Bug Fixes
+
+* **app:** unify custom templates behind one feature switch ([#41304](https://github.com/okou-ai/okou/issues/41304)) ([cb96699](https://github.com/okou-ai/okou/commit/cb966995a4749e6c374ca624720bf89ba6bfea09))
+* load complete chat relationships before folding ([#41294](https://github.com/okou-ai/okou/issues/41294)) ([f54609b](https://github.com/okou-ai/okou/commit/f54609b895643b419e55321ebe25e0ef24057c08))
+
+
+### Refactoring
+
+* retire historical link wallet status compatibility ([#41303](https://github.com/okou-ai/okou/issues/41303)) ([353a229](https://github.com/okou-ai/okou/commit/353a229dc08f0691e37a48bcc0f3e9589c4889a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.574.0
+    * @okouai/core bumped to 8.769.2
+
+## [0.1040.0](https://github.com/okou-ai/okou/compare/app-v0.1039.0...app-v0.1040.0) (2026-10-19)
+
+
+### Features
+
+* **app:** slash second levels beside a fixed first level, searchable actions ([#40754](https://github.com/okou-ai/okou/issues/40754)) ([5d0e985](https://github.com/okou-ai/okou/commit/5d0e98538be4ea7652b45f60736af1068b984530))
+
+
+### Bug Fixes
+
+* **app:** simplify resource disclosure and sizing ([#41209](https://github.com/okou-ai/okou/issues/41209)) ([5e4b2f5](https://github.com/okou-ai/okou/commit/5e4b2f55adfd07fe1996f0ec4585c255903c9ad7))
+* preserve saved connector accounts when defaults need reconnect ([#41254](https://github.com/okou-ai/okou/issues/41254)) ([24a1ff5](https://github.com/okou-ai/okou/commit/24a1ff50b8b8bff3a8baeae1ebc55de5caf1eab6))
+* **wechat:** recover dm replies and improve conversation tools ([#41215](https://github.com/okou-ai/okou/issues/41215)) ([654e918](https://github.com/okou-ai/okou/commit/654e918b1962876fb33696475f836e5a9842cb27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.4
+    * @okouai/connectors bumped to 3.16.10
+    * @okouai/core bumped to 8.769.1
+
+## [0.1039.0](https://github.com/okou-ai/okou/compare/app-v0.1038.1...app-v0.1039.0) (2026-10-19)
+
+
+### Features
+
+* **app:** run suggestions when selected ([#41236](https://github.com/okou-ai/okou/issues/41236)) ([32868be](https://github.com/okou-ai/okou/commit/32868bebb1f8cabb09e2cab77f3742884278f23d))
+* enable document templates for staff and polish picker ([#41210](https://github.com/okou-ai/okou/issues/41210)) ([8a7aa72](https://github.com/okou-ai/okou/commit/8a7aa72fbb7542083fb2358f09e1e8e32b3da10b))
+
+
+### Bug Fixes
+
+* **activity:** align preview download and close controls ([#41220](https://github.com/okou-ai/okou/issues/41220)) ([f5f6344](https://github.com/okou-ai/okou/commit/f5f634496b9c29d43bb7af29fc85333004dde4b2))
+* gate chat relationships with chat resources ([#41222](https://github.com/okou-ai/okou/issues/41222)) ([70fb95a](https://github.com/okou-ai/okou/commit/70fb95a14daf3ba4ce7995ab188f9a57e616a01d))
+* send wechat welcome on connection and add reconnect page ([#41211](https://github.com/okou-ai/okou/issues/41211)) ([14f9545](https://github.com/okou-ai/okou/commit/14f95457d99c5b3dfa98918de4e888f94095217a))
+
+
+### Refactoring
+
+* **runtime:** remove retired session conversation code ([#41218](https://github.com/okou-ai/okou/issues/41218)) ([b88a27d](https://github.com/okou-ai/okou/commit/b88a27dd3bc4df3a11e4e8953547d9170421e804))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.3
+    * @okouai/core bumped to 8.769.0
+
 ## [0.1038.1](https://github.com/okou-ai/okou/compare/app-v0.1038.0...app-v0.1038.1) (2026-10-19)
 
 

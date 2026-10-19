@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
@@ -27,7 +26,6 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const integrations = createBddIntegrationApi(context);
@@ -70,7 +68,6 @@ function signedImageUrl(source: string) {
 async function fixture(
   options: {
     readonly scopes?: string;
-    readonly openGraph?: boolean;
   } = {},
 ) {
   integrations.configureSlackAppMocks();
@@ -84,11 +81,6 @@ async function fixture(
     botScopes: options.scopes ?? `${previousBotScopes},links:read,links:write`,
     installerSlackUserId: authorSlackUserId,
   });
-  if (options.openGraph !== undefined) {
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.SlackOpenGraphPreviews]: options.openGraph,
-    });
-  }
   await flushWaitUntilForTest();
   context.mocks.slack.chat.postMessage.mockClear();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
@@ -218,7 +210,7 @@ describe("Slack link previews", () => {
       type: "image",
       image_url: expect.stringMatching(
         new RegExp(
-          `/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=[^&]+&variant=slack$`,
+          `/api/artifact-og/slack\\.png\\?url=[^&]+kind%3Dhost%26id%3D${f.prepared.deploymentId}%26version%3D[^&]+%26variant%3Dslack&signature=`,
           "u",
         ),
       ),
@@ -266,8 +258,8 @@ describe("Slack link previews", () => {
     );
   });
 
-  it("gates Open Graph by the linked author without enabling other workspace members", async () => {
-    const f = await fixture({ openGraph: true });
+  it("uses Open Graph for workspace members, unconnected sharers and events without an author", async () => {
+    const f = await fixture();
     const pageUrl = new URL("/works", env("APP_URL")).href;
     const requests: string[] = [];
     server.use(
@@ -287,34 +279,16 @@ describe("Slack link previews", () => {
       workspaceId: f.teamId,
       slackUserId: peerSlackUserId,
     });
-    const cases = [
-      { user: peerSlackUserId, enabled: false },
-      { user: "U_NOT_CONNECTED_TO_OKOU", enabled: false },
-      { user: undefined, enabled: false },
-      { user: authorSlackUserId, enabled: true },
-      { user: peerSlackUserId, override: true, enabled: true },
-      { user: peerSlackUserId, override: false, enabled: false },
-      { user: authorSlackUserId, enabled: true },
+    const users = [
+      peerSlackUserId,
+      "U_NOT_CONNECTED_TO_OKOU",
+      undefined,
+      authorSlackUserId,
     ];
-    let expectedPageRequests = 0;
-    for (const scenario of cases) {
-      if (scenario.override !== undefined) {
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...peer, orgId: f.actor.orgId },
-          {
-            [FeatureSwitchKey.SlackOpenGraphPreviews]: scenario.override,
-          },
-        );
-      }
+    for (const [index, user] of users.entries()) {
       context.mocks.slack.chat.unfurl.mockClear();
-      await accept(
-        postLinks(f.teamId, [pageUrl], { event: { user: scenario.user } }),
-        [200],
-      );
+      await accept(postLinks(f.teamId, [pageUrl], { event: { user } }), [200]);
       await flushWaitUntilForTest();
-      const { enabled } = scenario;
-      const title = enabled ? "Published title" : "Okou";
       expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
         channel: "C_PREVIEW",
         ts: messageTs,
@@ -326,28 +300,27 @@ describe("Slack link previews", () => {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `*<${pageUrl}|${title}>*`,
+                  text: `*<${pageUrl}|Published title>*`,
                   verbatim: true,
                 },
               },
               {
                 type: "image",
-                image_url: enabled
-                  ? signedImageUrl("https://images.example.com/cover.png")
-                  : compactBrandImageUrl(),
-                alt_text: title,
+                image_url: signedImageUrl(
+                  "https://images.example.com/cover.png",
+                ),
+                alt_text: "Published title",
               },
             ],
           },
         },
       });
-      expectedPageRequests += Number(enabled);
-      expect(requests).toHaveLength(expectedPageRequests);
+      expect(requests).toHaveLength(index + 1);
     }
   });
 
   it("uses compact branding when anonymous App pages provide no Open Graph metadata", async () => {
-    const f = await fixture({ openGraph: true });
+    const f = await fixture();
     await flushWaitUntilForTest();
     context.mocks.s3.send.mockClear();
     const origin = new URL(env("APP_URL")).origin;
@@ -411,7 +384,7 @@ describe("Slack link previews", () => {
   });
 
   it("reads Open Graph for non-artifact App, shared-thread and hosted subpages", async () => {
-    const f = await fixture({ openGraph: true });
+    const f = await fixture();
     const origin = new URL(env("APP_URL")).origin;
     const appUrl = `${origin}/works?source=slack&view=cover#cover|v1`;
     const hostedUrl = `https://${f.prepared.publicSlug}.okou.app/guides/launch.html`;
@@ -491,7 +464,7 @@ describe("Slack link previews", () => {
   });
 
   it("uses partial Open Graph metadata for non-artifact pages", async () => {
-    const f = await fixture({ openGraph: true });
+    const f = await fixture();
     const origin = `https://og-${randomUUID()}.okou.app`;
     const artifactImageUrl = `${env("OKOU_API_BACKEND_URL")}/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=v1`;
     const fields = [
@@ -581,7 +554,7 @@ describe("Slack link previews", () => {
   });
 
   it("skips failed, non-HTML, redirected and oversized pages without losing valid sibling previews", async () => {
-    const f = await fixture({ openGraph: true });
+    const f = await fixture();
     const origin = new URL(env("APP_URL")).origin;
     const redirectedRequests: string[] = [];
     server.use(
@@ -720,7 +693,7 @@ describe("Slack link previews", () => {
           blocks: expect.arrayContaining([
             {
               type: "image",
-              image_url: compactBrandImageUrl(),
+              image_url: signedImageUrl(compactBrandImageUrl()),
               alt_text: ARTIFACT_OG_BRAND.title,
             },
           ]),
@@ -761,52 +734,40 @@ describe("Slack link previews", () => {
 
   it.each([
     {
-      openGraph: false,
       pageMetadata: "none",
       filename: "report.png",
       contentType: "image/png",
     },
     {
-      openGraph: true,
-      pageMetadata: "none",
-      filename: "report.png",
-      contentType: "image/png",
-    },
-    {
-      openGraph: true,
       pageMetadata: "brand",
       filename: "report.png",
       contentType: "image/png",
     },
     {
-      openGraph: true,
       pageMetadata: "artifact",
       filename: "report.png",
       contentType: "image/png",
     },
     {
-      openGraph: true,
       pageMetadata: "brand",
       filename: "report.pdf",
       contentType: "application/pdf",
     },
     {
-      openGraph: true,
       pageMetadata: "artifact",
       filename: "report.docx",
       contentType:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     },
     {
-      openGraph: true,
       pageMetadata: "brand",
       filename: "report.html",
       contentType: "text/html",
     },
   ])(
-    "preserves sharing for $filename with Open Graph $openGraph and $pageMetadata page metadata",
-    async ({ openGraph, pageMetadata, filename, contentType }) => {
-      const f = await fixture({ openGraph });
+    "preserves sharing for $filename with $pageMetadata page metadata",
+    async ({ pageMetadata, filename, contentType }) => {
+      const f = await fixture();
       const pageTitle =
         pageMetadata === "brand" ? "Okou branding" : "Published image title";
       const pageImage =
@@ -915,9 +876,7 @@ describe("Slack link previews", () => {
                   expect.objectContaining({
                     type: "image",
                     image_url: expect.stringContaining(
-                      openGraph
-                        ? "/api/artifact-og/slack.png?url="
-                        : "/api/artifact-og/image?kind=reference&id=",
+                      "/api/artifact-og/slack.png?url=",
                     ),
                     alt_text: filename,
                   }),
@@ -942,7 +901,7 @@ describe("Slack link previews", () => {
   );
 
   it("keeps public hosted artifact metadata instead of page Open Graph", async () => {
-    const f = await fixture({ openGraph: true });
+    const f = await fixture();
     const urls = [
       `https://dpl-${f.prepared.deploymentId}.okou.app/`,
       `https://${f.prepared.publicSlug}.okou.app/`,
@@ -994,21 +953,18 @@ describe("Slack link previews", () => {
     expect(f.pageRequests).toHaveLength(0);
   });
 
-  it.each([false, true])(
-    "does not preview a deleted site with Open Graph %s",
-    async (openGraph) => {
-      const f = await fixture({ openGraph });
-      const urls = [
-        `https://dpl-${f.prepared.deploymentId}.okou.app/`,
-        `https://${f.prepared.publicSlug}.okou.app/`,
-      ];
-      await host.deleteHostedSite(f.actor, f.prepared.publicSlug);
-      await accept(postLinks(f.teamId, urls), [200]);
-      await flushWaitUntilForTest();
-      expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-      expect(f.pageRequests).toHaveLength(0);
-    },
-  );
+  it("does not preview a deleted site", async () => {
+    const f = await fixture();
+    const urls = [
+      `https://dpl-${f.prepared.deploymentId}.okou.app/`,
+      `https://${f.prepared.publicSlug}.okou.app/`,
+    ];
+    await host.deleteHostedSite(f.actor, f.prepared.publicSlug);
+    await accept(postLinks(f.teamId, urls), [200]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+    expect(f.pageRequests).toHaveLength(0);
+  });
 
   it("verifies the webhook signature and link payload before acknowledging", async () => {
     integrations.configureSlackSigningSecret();

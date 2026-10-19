@@ -30,12 +30,13 @@ test("A file above the complete-preview limit remains fully downloadable", async
     actual.update(chunk);
   }
   const expected = createHash("sha256");
-  for (let offset = 0; offset < size; offset += 32_768) {
-    const bytes = Buffer.alloc(Math.min(32_768, size - offset));
-    for (let index = 0; index < bytes.length; index++) {
-      bytes[index] = (offset + index) % 251;
-    }
-    expected.update(bytes);
+  // Reuse whole periods while keeping the oracle independent of the guest.
+  const bytes = Buffer.alloc(251 * 128);
+  for (let index = 0; index < bytes.length; index++) {
+    bytes[index] = index % 251;
+  }
+  for (let offset = 0; offset < size; offset += bytes.length) {
+    expected.update(bytes.subarray(0, Math.min(bytes.length, size - offset)));
   }
   expect(actual.digest("hex")).toBe(expected.digest("hex"));
   await readyDownload(files);

@@ -1792,6 +1792,7 @@
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
       "slashActions": {
+        "actions": "Tindakan",
         "archive": "Arsipkan obrolan",
         "back": "Kembali",
         "connect": "Hubungkan alat",
@@ -1805,6 +1806,11 @@
         "pin": "Sematkan obrolan",
         "rename": "Ganti nama obrolan",
         "schedule": "Jadwalkan",
+        "scheduleCustom": "Jadwal khusus",
+        "scheduleEveryMonday": "Setiap Senin",
+        "scheduleEveryMonth": "Hari pertama setiap bulan",
+        "scheduleEveryMorning": "Setiap pagi",
+        "scheduleEveryWeekday": "Setiap hari kerja",
         "scheduleHint": "Jalankan sesuai jadwal",
         "share": "Bagikan obrolan",
         "shareHint": "Bagikan tautan ke percakapan ini",
@@ -2099,14 +2105,10 @@
       "communications": "Pesan",
       "idle": "Tidak aktif",
       "loadFailed": "Gagal memuat",
-      "loading": "Memuat…",
       "messageUnavailable": "Pesan tidak tersedia",
-      "more": "Lainnya",
-      "noMessages": "Belum ada pesan",
       "origin": "Dari",
       "queued": "Dalam antrean",
       "received": "Diterima",
-      "refresh": "Muat ulang",
       "running": "Berjalan",
       "sent": "Dikirim",
       "toggleMessages": "Pesan dengan {{title}}",
@@ -2131,15 +2133,13 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "emptyArtifacts": "Belum ada artefak",
       "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
-      "title": "Sumber daya chat",
-      "viewAll": "Lihat semua"
+      "title": "Sumber daya chat"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -5122,6 +5122,15 @@
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
+      },
+      "proactiveSuggestions": {
+        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "preparationFailed": "Penyiapan tidak dapat diselesaikan. Coba lagi.",
+        "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
+        "retry": "Coba lagi",
+        "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Saran proaktif"
       },
       "send": {
         "cmdEnter": "⌘ Enter",

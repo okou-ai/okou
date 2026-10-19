@@ -103,10 +103,10 @@ test.each(["messages", "artifacts"])(
       threads: [first, second],
     });
     context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-      return respond(200, { items: [], nextCursor: null });
+      return respond(200, { items: [] });
     });
     context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
-      return respond(200, { items: [], nextCursor: null });
+      return respond(200, { items: [] });
     });
     context.mocks.api(
       chatThreadEventsContract.rows,
@@ -208,16 +208,10 @@ test.each(["messages", "artifacts"])(
         "Second resources",
       );
     });
-    const loadingPanel = await screen.findByRole("region", {
-      name: "Resources",
-    });
-    expect(resourceButton()).toBeInTheDocument();
     expect(
-      within(loadingPanel).queryByText("First resources guide"),
+      screen.queryByRole("region", { name: "Resources" }),
     ).not.toBeInTheDocument();
-    expect(
-      within(loadingPanel).queryByText("first.pdf"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
     resourcesResponse.resolve();
     await waitFor(() => {
       expect(

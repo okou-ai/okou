@@ -37,7 +37,11 @@ test("WeChat is hidden with its feature disabled", async () => {
 test("Connect displays a QR and an expired code can be replaced", async () => {
   let expired = true;
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(
@@ -78,7 +82,11 @@ test("Connect displays a QR and an expired code can be replaced", async () => {
 });
 test("a scan requiring verification keeps the QR and shows a code field", async () => {
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(200, attempt);
@@ -103,6 +111,12 @@ test("verification connects the account and disconnect revokes it", async () => 
     return respond(200, {
       configured: true,
       status: connected ? "active" : "disconnected",
+      binding: connected
+        ? {
+            workspace: { id: "org_team", name: "Team" },
+            accountId: "scanner-owner",
+          }
+        : null,
     });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
@@ -146,7 +160,11 @@ test("verification connects the account and disconnect revokes it", async () => 
 
 test("keyboard activation and Escape restore focus to Connect", async () => {
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(200, attempt);
@@ -175,7 +193,11 @@ test("keyboard activation and Escape restore focus to Connect", async () => {
 test("a failed QR request can be retried from the dialog", async () => {
   let available = false;
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return available
@@ -204,6 +226,23 @@ test("a failed QR request can be retried from the dialog", async () => {
   expect(queryAction("button", "Create a new QR code")).not.toBeInTheDocument();
 });
 
+test("the connected card identifies its workspace and WeChat account", async () => {
+  context.mocks.api(contract.status, ({ respond }) => {
+    return respond(200, {
+      configured: true,
+      status: "active",
+      binding: {
+        workspace: { id: "org_operations", name: "Operations workspace" },
+        accountId: "scanner-owner",
+      },
+    });
+  });
+  await setup();
+  await expect(
+    screen.findByText("Operations workspace · scanner-owner"),
+  ).resolves.toBeInTheDocument();
+});
+
 test.each([
   { email: "owner@example.com", account: "owner@example.com" },
   { email: undefined, account: "user_wechat_confirm" },
@@ -216,6 +255,12 @@ test.each([
       return respond(200, {
         configured: true,
         status: restored ? "active" : "disconnected",
+        binding: restored
+          ? {
+              workspace: { id: "org_team", name: "Team" },
+              accountId: "scanner-owner",
+            }
+          : null,
       });
     });
     context.mocks.api(contract.reconnectStatus, ({ query, respond }) => {
@@ -290,6 +335,10 @@ test("an unavailable reconnect link offers the same QR connection flow on the se
     return respond(200, {
       configured: true,
       status: connected ? "active" : "reconnect_required",
+      binding: {
+        workspace: { id: "org_team", name: "Team" },
+        accountId: "scanner-owner",
+      },
     });
   });
   context.mocks.api(contract.reconnectStatus, ({ respond }) => {
@@ -333,7 +382,11 @@ test("an unavailable reconnect link offers the same QR connection flow on the se
 
 test("a rejected reconnect remains unconnected and shows recovery guidance", async () => {
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.reconnectStatus, ({ respond }) => {
     return respond(200, { available: true });

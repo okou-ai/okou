@@ -1,5 +1,6 @@
 use std::io;
 mod cancellation;
+mod deadline;
 mod timing;
 use std::path::PathBuf;
 use std::sync::Arc;

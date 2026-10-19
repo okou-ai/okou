@@ -9,6 +9,88 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.752.0](https://github.com/okou-ai/okou/compare/api-v1.751.6...api-v1.752.0) (2026-10-19)
+
+
+### Features
+
+* **suggestions:** add opt-in hourly proactive suggestions ([#41251](https://github.com/okou-ai/okou/issues/41251)) ([154bc8a](https://github.com/okou-ai/okou/commit/154bc8acb035843ea47c99f6f56f5779698c6bbb))
+
+
+### Bug Fixes
+
+* load complete chat relationships before folding ([#41294](https://github.com/okou-ai/okou/issues/41294)) ([f54609b](https://github.com/okou-ai/okou/commit/f54609b895643b419e55321ebe25e0ef24057c08))
+
+
+### Refactoring
+
+* retire artifact preview wire compatibility ([#41305](https://github.com/okou-ai/okou/issues/41305)) ([9b8bf22](https://github.com/okou-ai/okou/commit/9b8bf22ebd17f157abd67822f65c8771b6e314d6))
+* retire historical link wallet status compatibility ([#41303](https://github.com/okou-ai/okou/issues/41303)) ([353a229](https://github.com/okou-ai/okou/commit/353a229dc08f0691e37a48bcc0f3e9589c4889a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.574.0
+    * @okouai/core bumped to 8.769.2
+    * @okouai/db bumped to 1.346.0
+    * @okouai/pi-agent-runtime bumped to 1.50.24
+
+## [1.751.6](https://github.com/okou-ai/okou/compare/api-v1.751.5...api-v1.751.6) (2026-10-19)
+
+
+### Bug Fixes
+
+* preserve saved connector accounts when defaults need reconnect ([#41254](https://github.com/okou-ai/okou/issues/41254)) ([24a1ff5](https://github.com/okou-ai/okou/commit/24a1ff50b8b8bff3a8baeae1ebc55de5caf1eab6))
+* **wechat:** recover dm replies and improve conversation tools ([#41215](https://github.com/okou-ai/okou/issues/41215)) ([654e918](https://github.com/okou-ai/okou/commit/654e918b1962876fb33696475f836e5a9842cb27))
+
+
+### Refactoring
+
+* **api:** keep billing portal customer lookup local ([#41274](https://github.com/okou-ai/okou/issues/41274)) ([de80cc6](https://github.com/okou-ai/okou/commit/de80cc6ab44bf9fdcad84cd9de026cc5a8945be9)) [#41270](https://github.com/okou-ai/okou/issues/41270)
+* **api:** own canonical slack completion failure writes ([#41262](https://github.com/okou-ai/okou/issues/41262)) ([789d0d6](https://github.com/okou-ai/okou/commit/789d0d6ee829d6f51f5ec0fe0268a58d63b5087b)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own canonical slack preparation failure writes ([#41278](https://github.com/okou-ai/okou/issues/41278)) ([49f3e5e](https://github.com/okou-ai/okou/commit/49f3e5ed60068241fce8545fc906b3a8e0ab9566)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+
+
+### Performance Improvements
+
+* move wechat receiving to cloudflare workflows ([#41269](https://github.com/okou-ai/okou/issues/41269)) ([0c9a663](https://github.com/okou-ai/okou/commit/0c9a663d0c368cdbb489a0829a99642b12546905))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.4
+    * @okouai/connectors bumped to 3.16.10
+    * @okouai/core bumped to 8.769.1
+    * @okouai/db bumped to 1.345.10
+    * @okouai/pi-agent-runtime bumped to 1.50.23
+
+## [1.751.5](https://github.com/okou-ai/okou/compare/api-v1.751.4...api-v1.751.5) (2026-10-19)
+
+
+### Bug Fixes
+
+* gate chat relationships with chat resources ([#41222](https://github.com/okou-ai/okou/issues/41222)) ([70fb95a](https://github.com/okou-ai/okou/commit/70fb95a14daf3ba4ce7995ab188f9a57e616a01d))
+* send wechat welcome on connection and add reconnect page ([#41211](https://github.com/okou-ai/okou/issues/41211)) ([14f9545](https://github.com/okou-ai/okou/commit/14f95457d99c5b3dfa98918de4e888f94095217a))
+
+
+### Refactoring
+
+* **runtime:** remove retired session conversation code ([#41218](https://github.com/okou-ai/okou/issues/41218)) ([b88a27d](https://github.com/okou-ai/okou/commit/b88a27dd3bc4df3a11e4e8953547d9170421e804))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.3
+    * @okouai/core bumped to 8.769.0
+    * @okouai/db bumped to 1.345.9
+    * @okouai/pi-agent-runtime bumped to 1.50.22
+
 ## [1.751.4](https://github.com/okou-ai/okou/compare/api-v1.751.3...api-v1.751.4) (2026-10-19)
 
 

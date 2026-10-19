@@ -6,11 +6,11 @@ import { wechatConnections, wechatMessages } from "@okouai/db/schema/wechat";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
   sendWechatText,
   WechatSessionExpiredError,
-  type WechatMessage,
-} from "../external/wechat-client";
+} from "@okouai/core/wechat-client";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { wechatEnabled$ } from "./wechat-config";
 import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
@@ -165,6 +165,44 @@ export const sendWechatReconnectNotice$ = command(
           `reconnect:${message.message_id}`,
         ),
         text: `Your WeChat account isn't connected to ${BRAND_PRESENTATION.assistantName}. Connect your account to start chatting:\n${buildWechatConnectUrl(connection.id, connection.generation)}`,
+        contextToken: message.context_token,
+      },
+      signal,
+    );
+  },
+);
+
+/** A terminal input notice also records the disposition across redelivery. */
+export const sendWechatInputFailureNotice$ = command(
+  async (
+    { set },
+    args: {
+      readonly connection: Connection;
+      readonly message: WechatMessage;
+      readonly failure: "default_agent_unavailable" | "processing_failed";
+    },
+    signal: AbortSignal,
+  ) => {
+    const { connection, message, failure } = args;
+    if (
+      connection.status !== "active" ||
+      !isWechatOwnerMessage(connection, message)
+    ) {
+      return;
+    }
+    await set(
+      sendNotice$,
+      {
+        connection,
+        id: wechatEventId(
+          connection.id,
+          connection.generation,
+          `ingress-failed:${message.message_id}`,
+        ),
+        text:
+          failure === "default_agent_unavailable"
+            ? `Your workspace's agent is unavailable. Ask a workspace admin to configure it in ${BRAND_PRESENTATION.assistantName}, then send your message again.`
+            : "I couldn't process this message after retrying. Please send it again. If it includes a file, try sending the text separately.",
         contextToken: message.context_token,
       },
       signal,

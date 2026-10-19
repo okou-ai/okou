@@ -1,4 +1,7 @@
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
+import {
+  customConnectorAccount,
+  mockOAuthCompletions,
+} from "./connector-page-test-helpers.ts";
 import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
@@ -571,6 +574,19 @@ test("Reconnect the exact manual custom-connector account", async () => {
     missingRequiredFields: [],
     configuredFieldKeys: ["secret"],
   });
+  const account = customConnectorAccount(connector.id, { id: connectionId });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: [
+        {
+          target: account.target,
+          accountCount: 1,
+          attentionCount: 0,
+          defaultConnection: account,
+        },
+      ],
+    });
+  });
   let submittedValues: readonly {
     readonly key: string;
     readonly kind: "secret" | "variable";
@@ -778,6 +794,22 @@ test("Reconnect the exact custom OAuth account", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [{ ...connector, connectedAccountUpdatedAt }],
+    });
+  });
+  const account = customConnectorAccount(connector.id, {
+    id: connectionId,
+    authMethod: "oauth",
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: [
+        {
+          target: account.target,
+          accountCount: 2,
+          attentionCount: 0,
+          defaultConnection: account,
+        },
+      ],
     });
   });
   context.mocks.api(

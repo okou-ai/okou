@@ -44,8 +44,8 @@ assert_auto_route() {
 
     local nonce expected first_session successor_result successor_run_id
     nonce="$(_runner_uuid)"
-    expected="RESULT=auto-${nonce%%-*}"
-    run runner_chat_send "$AGENT_ID" "Reply only ${expected}" "" "auto"
+    expected="auto-${nonce%%-*}"
+    run runner_chat_send "$AGENT_ID" "Reply with only this token: ${expected}" "" "auto"
     assert_success
     RUN_ID="$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")"
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"

@@ -300,9 +300,7 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
             Some(FailureReason::ContextWindowExceeded)
         }
         Some("invalid_request_error")
-            if error.get("type").and_then(Value::as_str) == Some("invalid_request_error")
-                && error.get("code").and_then(Value::as_str) == Some("invalid_request_error")
-                && error.get("message").and_then(Value::as_str) == Some("Content Exists Risk") =>
+            if failure_patterns::is_content_policy_rejection_error(error) =>
         {
             Some(FailureReason::SafetyPolicyRefusal)
         }

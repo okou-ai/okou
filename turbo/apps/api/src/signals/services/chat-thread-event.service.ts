@@ -66,9 +66,38 @@ function chatThreadIdentitySql(chatThreadId: string | SQL): SQL {
     : chatThreadId;
 }
 
+function initialThreadEventPlan(
+  kind: ChatThreadEventKind,
+  eventId: string | undefined,
+  archived: boolean | undefined,
+) {
+  const id = eventId ?? randomUUID();
+  if (!archived) {
+    return {
+      count: 1,
+      id: sql`${id}::uuid`,
+      kind: sql`${kind}::chat_thread_event_kind`,
+      sequence: sql`last_seq_id`,
+      source: sql.empty(),
+    };
+  }
+  if (kind !== "created") {
+    throw new Error("Only a created thread can be initially archived");
+  }
+  return {
+    count: 2,
+    id: sql`CASE WHEN initial_event.ordinal = 0 THEN ${id}::uuid ELSE ${randomUUID()}::uuid END`,
+    kind: sql`CASE WHEN initial_event.ordinal = 0 THEN 'created'::chat_thread_event_kind ELSE 'archived'::chat_thread_event_kind END`,
+    sequence: sql`last_seq_id - 1 + initial_event.ordinal`,
+    source: sql`CROSS JOIN (VALUES (0), (1)) AS initial_event(ordinal)`,
+  };
+}
+
 /** Pure statement preparation; the owning command executes and commits it. */
 export function chatThreadEventInsertSql(
   args: Omit<ChatThreadEventAppend, "agentId" | "chatThreadId"> & {
+    /** Publish a creation and its archive in the same ordered event batch. */
+    readonly initiallyArchived?: boolean;
     readonly agentId?: string;
     readonly chatThreadId: string | SQL;
   },
@@ -79,6 +108,12 @@ export function chatThreadEventInsertSql(
     readonly result?: SQL;
   },
 ) {
+  const event = initialThreadEventPlan(
+    args.kind,
+    args.eventId,
+    args.initiallyArchived,
+  );
+  const eventCount = event.count;
   const chatThreadId: SQL = chatThreadIdentitySql(args.chatThreadId);
   let agentId: SQL;
   if (source) {
@@ -97,13 +132,13 @@ export function chatThreadEventInsertSql(
       : sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`;
   const beforeReservation = source ? sql`${source.cte},` : sql.empty();
   const reservationInput = source
-    ? sql`SELECT ${args.userId}, ${orgId}, 1 WHERE ${source.gate}`
-    : sql`VALUES (${args.userId}, ${orgId}, 1)`;
+    ? sql`SELECT ${args.userId}, ${orgId}, ${eventCount} WHERE ${source.gate}`
+    : sql`VALUES (${args.userId}, ${orgId}, ${eventCount})`;
   const reservation = sql`reserved AS (
       INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
       ${reservationInput}
       ON CONFLICT (user_id, org_id) DO UPDATE
-      SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
+      SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + ${eventCount}
       RETURNING last_seq_id
     )`;
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
@@ -112,8 +147,9 @@ export function chatThreadEventInsertSql(
       pin_order, muted, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
-      ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
-      ${chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
+      ${event.id},
+      ${args.userId}, ${orgId}, ${event.sequence},
+      ${chatThreadId}::uuid, ${event.kind},
       ${agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null},
       ${args.selectedModel ?? null},
@@ -122,7 +158,7 @@ export function chatThreadEventInsertSql(
       ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
       ${args.cloudBrowserEnabled ?? false},
       COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
-    FROM reserved
+    FROM reserved ${event.source}
     ON CONFLICT (id) DO NOTHING
     RETURNING id`;
   if (source?.result !== undefined) {

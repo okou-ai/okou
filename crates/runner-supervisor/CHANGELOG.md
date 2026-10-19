@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.13...runner-supervisor-v0.17.14) (2026-10-19)
+
+## [0.17.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.12...runner-supervisor-v0.17.13) (2026-10-19)
+
+## [0.17.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.11...runner-supervisor-v0.17.12) (2026-10-19)
+
 ## [0.17.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.10...runner-supervisor-v0.17.11) (2026-10-19)
 
 ## [0.17.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.9...runner-supervisor-v0.17.10) (2026-10-19)

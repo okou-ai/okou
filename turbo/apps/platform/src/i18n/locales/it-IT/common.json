@@ -1824,6 +1824,7 @@
       "selectedModelUnavailableToast": "Il modello selezionato non è disponibile",
       "selectModel": "Seleziona modello",
       "slashActions": {
+        "actions": "Azioni",
         "archive": "Archivia chat",
         "back": "Indietro",
         "connect": "Collega uno strumento",
@@ -1837,6 +1838,11 @@
         "pin": "Fissa chat",
         "rename": "Rinomina chat",
         "schedule": "Pianifica",
+        "scheduleCustom": "Pianificazione personalizzata",
+        "scheduleEveryMonday": "Ogni lunedì",
+        "scheduleEveryMonth": "Il primo giorno di ogni mese",
+        "scheduleEveryMorning": "Ogni mattina",
+        "scheduleEveryWeekday": "Ogni giorno feriale",
         "scheduleHint": "Esegui secondo una pianificazione",
         "share": "Condividi chat",
         "shareHint": "Condividi un link a questa conversazione",
@@ -2146,14 +2152,10 @@
       "communications": "Messaggi",
       "idle": "Inattiva",
       "loadFailed": "Caricamento non riuscito",
-      "loading": "Caricamento…",
       "messageUnavailable": "Messaggio non disponibile",
-      "more": "Altro",
-      "noMessages": "Ancora nessun messaggio",
       "origin": "Da",
       "queued": "In coda",
       "received": "Ricevuto",
-      "refresh": "Aggiorna",
       "running": "In esecuzione",
       "sent": "Inviato",
       "toggleMessages": "Messaggi con {{title}}",
@@ -2180,15 +2182,13 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "emptyArtifacts": "Non ci sono ancora artefatti",
       "emptyLinks": "Non ci sono ancora link in questa chat",
       "expand": "Espandi",
       "links": "Link",
       "loadFailed": "Impossibile caricare le risorse",
       "loadingLinks": "Caricamento dei link",
       "retry": "Riprova",
-      "title": "Risorse della chat",
-      "viewAll": "Mostra tutto"
+      "title": "Risorse della chat"
     },
     "run": {
       "collapseWorkHistory": "Comprimi la cronologia lavorativa",
@@ -5209,6 +5209,15 @@
         "retry": "Riprova",
         "retryMessage": "Non è stato possibile caricare o aggiornare le impostazioni di Morning Brief. Riprova per continuare.",
         "title": "Riepilogo mattutino"
+      },
+      "proactiveSuggestions": {
+        "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
+        "missingDefaultAgent": "Scegli un Agent predefinito disponibile per ricevere suggerimenti proattivi.",
+        "preparationFailed": "Impossibile completare la configurazione. Riprova.",
+        "preparing": "Preparazione dei suggerimenti orari. Puoi disattivarli in qualsiasi momento.",
+        "retry": "Riprova",
+        "retryMessage": "Impossibile caricare o aggiornare le impostazioni. Riprova.",
+        "title": "Suggerimenti proattivi"
       },
       "send": {
         "cmdEnter": "⌘ Invio",

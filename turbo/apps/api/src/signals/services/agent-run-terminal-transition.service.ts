@@ -4,6 +4,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
 import { and, eq, inArray, notExists, type SQL } from "drizzle-orm";
 
@@ -122,6 +123,17 @@ function cancellableRunCondition(
   );
 }
 
+function cancellationOwnerCondition(
+  runId: string,
+  owner: Pick<CancelRunArgs, "userId" | "orgId">,
+) {
+  return and(
+    eq(agentRuns.id, runId),
+    eq(agentRuns.userId, owner.userId),
+    eq(agentRuns.orgId, owner.orgId),
+  );
+}
+
 /**
  * The cancellation mutation owner. Classify under the existing tenant-scoped
  * Run lock, then commit terminal state, attached cleanup and queue deletion
@@ -148,13 +160,7 @@ export const cancelRun$ = command(
       const [run] = await tx
         .select(lockedCancellationRunFields)
         .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, runId),
-            eq(agentRuns.userId, args.userId),
-            eq(agentRuns.orgId, args.orgId),
-          ),
-        )
+        .where(cancellationOwnerCondition(runId, args))
         .for("update");
       if (!run) {
         return notFound(`No such run: '${args.runId}'`);
@@ -221,6 +227,13 @@ export const cancelRun$ = command(
       const transitionedRunIds = transitions.map((transition) => {
         return transition.runId;
       });
+      await tx.execute(
+        captureBillingRunTerminalSql({
+          condition: inArray(agentRuns.id, transitionedRunIds),
+          status: "cancelled",
+          completedAt: new Date(apiStartTime),
+        }),
+      );
       await tx
         .delete(agentRunConnectorDiagnosticRegistrations)
         .where(
@@ -378,6 +391,13 @@ export async function transitionAgentRunsToTerminal(
   const runIds = transitioned.map((run) => {
     return run.runId;
   });
+  await tx.execute(
+    captureBillingRunTerminalSql({
+      condition: inArray(agentRuns.id, runIds),
+      status: args.values.status,
+      completedAt: args.values.completedAt,
+    }),
+  );
   await tx
     .delete(agentRunConnectorDiagnosticRegistrations)
     .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds));
@@ -407,16 +427,27 @@ export const cancelClerkDeletedOwnerRuns$ = command(
       owner.kind === "user"
         ? eq(agentRuns.userId, owner.userId)
         : eq(agentRuns.orgId, owner.orgId);
+    const completedAt = nowDate();
     const cancelled = db.$with("clerk_stopped_runs").as(
       db
         .update(agentRuns)
         .set({
           status: "cancelled",
-          completedAt: nowDate(),
+          completedAt,
           runnerCancellationMode: "hard",
         })
         .where(and(runScope, inArray(agentRuns.status, ["pending", "running"])))
         .returning({ ...cancelledRunFields }),
+    );
+    const capturedBilling = db.$with("clerk_captured_run_billing", {}).as(
+      captureBillingRunTerminalSql({
+        condition: inArray(
+          agentRuns.id,
+          db.select({ runId: cancelled.runId }).from(cancelled),
+        ),
+        status: "cancelled",
+        completedAt,
+      }),
     );
     const removedJobs = db.$with("clerk_removed_runner_jobs").as(
       db
@@ -457,7 +488,13 @@ export const cancelClerkDeletedOwnerRuns$ = command(
         }),
     );
     const runs = await db
-      .with(cancelled, removedJobs, removedDiagnostics, released)
+      .with(
+        cancelled,
+        capturedBilling,
+        removedJobs,
+        removedDiagnostics,
+        released,
+      )
       .select({
         runId: cancelled.runId,
         orgId: cancelled.orgId,

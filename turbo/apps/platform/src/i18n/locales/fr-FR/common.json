@@ -1824,6 +1824,7 @@
       "selectedModelUnavailableToast": "Le modèle sélectionné n'est pas disponible",
       "selectModel": "Sélectionner le modèle",
       "slashActions": {
+        "actions": "Actions",
         "archive": "Archiver la discussion",
         "back": "Retour",
         "connect": "Connecter un outil",
@@ -1837,6 +1838,11 @@
         "pin": "Épingler la discussion",
         "rename": "Renommer la discussion",
         "schedule": "Planifier",
+        "scheduleCustom": "Planification personnalisée",
+        "scheduleEveryMonday": "Chaque lundi",
+        "scheduleEveryMonth": "Le premier jour de chaque mois",
+        "scheduleEveryMorning": "Chaque matin",
+        "scheduleEveryWeekday": "Chaque jour ouvré",
         "scheduleHint": "Exécuter selon un calendrier",
         "share": "Partager la discussion",
         "shareHint": "Partager un lien vers cette conversation",
@@ -2146,14 +2152,10 @@
       "communications": "Messages",
       "idle": "Inactive",
       "loadFailed": "Échec du chargement",
-      "loading": "Chargement…",
       "messageUnavailable": "Message indisponible",
-      "more": "Plus",
-      "noMessages": "Aucun message pour le moment",
       "origin": "Depuis",
       "queued": "En attente",
       "received": "Reçu",
-      "refresh": "Actualiser",
       "running": "En cours",
       "sent": "Envoyé",
       "toggleMessages": "Messages avec {{title}}",
@@ -2180,15 +2182,13 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyArtifacts": "Aucun artefact pour le moment",
       "emptyLinks": "Aucun lien dans ce chat pour le moment",
       "expand": "Développer",
       "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
       "loadingLinks": "Chargement des liens",
       "retry": "Réessayer",
-      "title": "Ressources du chat",
-      "viewAll": "Tout voir"
+      "title": "Ressources du chat"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
@@ -5209,6 +5209,15 @@
         "retry": "Réessayer",
         "retryMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour. Réessayez pour continuer.",
         "title": "Résumé du matin"
+      },
+      "proactiveSuggestions": {
+        "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
+        "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
+        "preparationFailed": "La configuration n’a pas pu aboutir. Réessayez.",
+        "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",
+        "retry": "Réessayer",
+        "retryMessage": "Impossible de charger ou de modifier ces paramètres. Réessayez.",
+        "title": "Suggestions proactives"
       },
       "send": {
         "cmdEnter": "⌘ Enter",

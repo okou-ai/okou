@@ -1,5 +1,44 @@
 # Guarded idle terminal fixture
 
+## Physical speculative rollback and batch recovery
+
+`native_speculative_repark_preserves_history_and_batch_recovery` runs fresh and
+matching-snapshot cases. While an original fixed batch waits at the pre-read
+admission gate, `GuardedSpeculativeIdleOwner` performs two actual unpark, Guest
+RPC and repark cycles, outside held pool/status locks. The second RPC verifies
+that the first repark retained the original private runtime marker, ordinary
+home bytes and complete original 64 KiB payload. Each speculative run differs
+from the original history and the other speculative run. The original backing,
+claim metadata and full lease remain owned throughout; repark uses the original
+16 GiB home identity.
+
+Only a verified parked owner restores into the vacant pool. Its insertion must
+already differ from the captured selection before the subsequent shared logical
+reserve/restore race. The shared batch checks below still require exact old
+refusal/current inventory, independent observer and acknowledged heartbeat
+progress, separate new guarded recovery, held real durable IO, original backing
+exit, complete original home restoration/private-runtime removal and every
+accepted cleanup join. Borrowed physical owners survive the scenario timeout;
+failure attempts covered required cleanup before tracker teardown and preserves
+unresolved ownership rather than producing successful proof.
+
+Compile from the exact committed source and prepare a new matching snapshot as
+described below. Retain the unchanged P1 guards and supplied policy, adding its
+exact raw JSON as `native_batch_repark_policy_json` in collector metadata. Run
+the frozen native test executable with:
+
+```sh
+<native-test-binary> native_speculative_repark_preserves_history_and_batch_recovery \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/batch_repark_report.py <p1-directory>
+```
+
+The dedicated reader requires both physical cycles and the complete shared batch
+proof. Its ordinary real-file/CLI regressions are synthetic consumer tests. This
+is physical speculative rollback followed by a logical insertion race; actual
+API claim loss, all cancellation points, physical RAM relief, complete residency,
+calibrated envelopes and parent C/D/P4 completion remain separate gates.
+
 ## Fixed-batch insertion ABA and new-batch recovery
 
 `native_fixed_batch_refuses_restored_insertion_and_recovers_original` runs fresh

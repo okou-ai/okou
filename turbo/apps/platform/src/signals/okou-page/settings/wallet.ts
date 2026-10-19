@@ -77,7 +77,7 @@ const onWalletChanged$ = command(
     }
     const identity = await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
-    if (!("orgId" in parsed.data) || parsed.data.orgId === identity.orgId) {
+    if (parsed.data.orgId === identity.orgId) {
       set(refreshWalletConnection$);
     }
     return false;

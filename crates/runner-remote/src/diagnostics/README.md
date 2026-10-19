@@ -8,9 +8,9 @@ schema or remediation-code translation.
 
 Runner and CLI always use matching versions. Existing SSH exec, session and file requests
 use their ordinary methods and parameters, without a version marker, opt-in,
-capability request or business retry. The default-off
-`remoteConnectionDiagnostics` switch and current assignment/subject checks
-gate evidence. Disabled diagnostics omit explanation text.
+capability request or business retry. The existing staff rollout of the
+`remoteConnectionDiagnostics` switch gates evidence alongside current
+assignment/subject checks. Disabled diagnostics omit explanation text.
 
 A failed result may contain one `diagnostic_text` string, at most
 8192 UTF-8 bytes. Runner renders the exact committed report, observed route,
@@ -39,6 +39,21 @@ and its shared counts are not attributed to one region. A DERP source label does
 prove cryptographic authentication. SDK reset-or-closed remains distinct from
 an observed authenticated TCP RST. Counts, durations and safe error categories
 retain no packet bodies, SDK error strings, credentials or physical resources.
+
+Selected-peer map status retains online/offline/unknown and separately labelled
+provider last-seen and local offline-notification estimates. These map facts may
+be stale and do not establish reachability. WireGuard initiation/response/cookie
+and transport-data headers are observed separately in each direction; inbound
+headers are not authentication evidence and transport-data includes keepalives.
+A local SYN can await encryption. Only admitted exact-tuple TCP facts establish
+that connection's replies.
+
+The existing bounded DERP reader optionally observes complete KeepAlive/Ping
+frames and SDK-typed PeerGone reasons. Controls belong to a regional incarnation;
+PeerGone is correlated to the selected peer before capture. A private 64-entry
+recent buffer discards keys from snapshots and marks history overflow explicitly.
+An old notification is not global peer state. Disabled diagnostics allocate no
+control observer and perform no diagnostic packet classification or peer traversal.
 
 Both retained evidence and rendered text keep the 8192-byte limit. Lower-priority
 completed detail can be omitted with an explicit notice to preserve the incident,
