@@ -3853,6 +3853,48 @@ async function findSubscriptionChangeForInvoice(
   return candidate ?? null;
 }
 
+function paidInvoiceContext(
+  stored: StoredSubscriptionChange | null,
+  root: UsagePackSubscriptionChangeRow,
+  invoice: UsagePackSubscriptionChangeInvoiceInput,
+): {
+  readonly stored: StoredSubscriptionChange;
+  readonly subscriptionId: string;
+} {
+  if (!stored?.subscription.stripeSubscriptionId) {
+    throw new Error(`Subscription change ${root.id} lost its subscription`);
+  }
+  const subscriptionId = invoiceSubscriptionId(invoice);
+  if (subscriptionId !== stored.subscription.stripeSubscriptionId) {
+    throw new Error(
+      `Subscription change invoice ${invoice.id} has the wrong subscription`,
+    );
+  }
+  if (
+    stripeObjectId(invoice.customer) !== stored.subscription.stripeCustomerId
+  ) {
+    throw new Error(
+      `Subscription change invoice ${invoice.id} has the wrong customer`,
+    );
+  }
+  return { stored, subscriptionId };
+}
+
+function assertImmediateInvoicePlan(
+  root: UsagePackSubscriptionChangeRow,
+  subscription: StripeSubscription,
+  invoice: UsagePackSubscriptionChangeInvoiceInput,
+): void {
+  const expectedImmediateTier = planIsUpgrade(root.sourceTier, root.targetTier)
+    ? root.targetTier
+    : root.sourceTier;
+  if (subscriptionPlanTier(subscription) !== expectedImmediateTier) {
+    throw new Error(
+      `Subscription change invoice ${invoice.id} was paid before the plan change was applied`,
+    );
+  }
+}
+
 export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
   async (
     { set },
@@ -3870,23 +3912,38 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
         `Usage pack subscription change invoice ${invoice.id} is not paid`,
       );
     }
-    const stored = await loadStoredSubscriptionChange(db, root.id);
-    if (!stored?.subscription.stripeSubscriptionId) {
-      throw new Error(`Subscription change ${root.id} lost its subscription`);
-    }
-    const subscriptionId = invoiceSubscriptionId(invoice);
-    if (subscriptionId !== stored.subscription.stripeSubscriptionId) {
-      throw new Error(
-        `Subscription change invoice ${invoice.id} has the wrong subscription`,
+    const changeId = root.id;
+    const loaded: StoredSubscriptionChange | null = await (async () => {
+      const [root] = await db
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(eq(usagePackSubscriptionChanges.id, changeId))
+        .limit(1);
+      if (!root) {
+        return null;
+      }
+      const [allocationChanges, subscriptions, allocations] = await Promise.all(
+        [
+          db
+            .select()
+            .from(usagePackAllocationChanges)
+            .where(storedAllocationChangeCondition(root)),
+          db
+            .select()
+            .from(usagePackSubscriptions)
+            .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
+            .limit(1),
+          db
+            .select()
+            .from(usagePackAllocations)
+            .where(storedAllocationCondition(root)),
+        ],
       );
-    }
-    if (
-      stripeObjectId(invoice.customer) !== stored.subscription.stripeCustomerId
-    ) {
-      throw new Error(
-        `Subscription change invoice ${invoice.id} has the wrong customer`,
-      );
-    }
+      const rows = { root, allocationChanges, subscriptions, allocations };
+      return storedSubscriptionChangeResult(rows);
+    })();
+    const invoiceContext = paidInvoiceContext(loaded, root, invoice);
+    const { stored, subscriptionId } = invoiceContext;
     const subscription = await getStripeClient().subscriptions.retrieve(
       subscriptionId,
       { expand: ["latest_invoice"] },
@@ -3916,17 +3973,7 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
       );
       return { handled: true, orgId: root.orgId, subscription };
     }
-    const expectedImmediateTier = planIsUpgrade(
-      root.sourceTier,
-      root.targetTier,
-    )
-      ? root.targetTier
-      : root.sourceTier;
-    if (subscriptionPlanTier(subscription) !== expectedImmediateTier) {
-      throw new Error(
-        `Subscription change invoice ${invoice.id} was paid before the plan change was applied`,
-      );
-    }
+    assertImmediateInvoicePlan(root, subscription, invoice);
     const period = usagePackPeriod(subscription);
     await set(reconcileUsagePackAllocationChangeSubscription$, subscription);
     await fulfillUsagePackSubscriptionChangeInvoice(db, {
