@@ -203,7 +203,14 @@ enum Interruption {
     Idle,
 }
 
-async fn undrained_reconnect(interruption: Interruption, drop_subscription: bool) {
+enum ConsumerAction {
+    DrainAndClose,
+    CloseAndWait,
+    Drop,
+}
+
+async fn undrained_reconnect(interruption: Interruption, consumer: ConsumerAction) {
+    const COUNT: usize = 500;
     let http = MockServer::start();
     mock_token_endpoint(&http, "testKey.testId");
     let ws = MockAblyServer::start().await.unwrap();
@@ -221,9 +228,25 @@ async fn undrained_reconnect(interruption: Interruption, drop_subscription: bool
             )
             .await
             .unwrap();
-        send_message(&mut conn, "ch", "before", serde_json::json!(1))
-            .await
-            .unwrap();
+        send_protocol(
+            &mut conn,
+            ProtocolMessage {
+                action: action::MESSAGE,
+                channel: Some("ch".into()),
+                messages: Some(
+                    (0..COUNT)
+                        .map(|i| AblyMessage {
+                            id: Some(format!("before-{i}")),
+                            name: Some("before".into()),
+                            data: Some(serde_json::json!(i)),
+                            ..Default::default()
+                        })
+                        .collect(),
+                ),
+                ..Default::default()
+            },
+        )
+        .await;
         match interruption {
             Interruption::WebSocketClose => {
                 conn.close(None).await.unwrap();
@@ -279,26 +302,38 @@ async fn undrained_reconnect(interruption: Interruption, drop_subscription: bool
         "reconnect and control PONG while no events are consumed",
     )
     .await;
-    if drop_subscription {
-        drop(sub);
-    } else {
-        expect_connected(&mut sub, "initial Connected")
-            .await
-            .unwrap();
-        assert!(
-            matches!(expect_event(&mut sub, "before message").await.unwrap(), Event::Message(m) if m.name.as_deref() == Some("before"))
-        );
-        assert!(matches!(
-            expect_event(&mut sub, "Disconnected").await.unwrap(),
-            Event::Disconnected { .. }
-        ));
-        expect_connected(&mut sub, "resumed Connected")
-            .await
-            .unwrap();
-        assert!(
-            matches!(expect_event(&mut sub, "resumed message").await.unwrap(), Event::Message(m) if m.name.as_deref() == Some("after"))
-        );
-        sub.close_and_wait().await.unwrap();
+    match consumer {
+        ConsumerAction::DrainAndClose => {
+            expect_connected(&mut sub, "initial Connected")
+                .await
+                .unwrap();
+            for i in 0..COUNT {
+                match expect_event(&mut sub, "queued message before reconnect")
+                    .await
+                    .unwrap()
+                {
+                    Event::Message(message) => {
+                        assert_eq!(message.name.as_deref(), Some("before"));
+                        assert_eq!(message.id, Some(format!("before-{i}")));
+                        assert_eq!(message.data, serde_json::json!(i));
+                    }
+                    other => panic!("expected message {i} before reconnect, got {other:?}"),
+                }
+            }
+            assert!(matches!(
+                expect_event(&mut sub, "Disconnected").await.unwrap(),
+                Event::Disconnected { .. }
+            ));
+            expect_connected(&mut sub, "resumed Connected")
+                .await
+                .unwrap();
+            assert!(
+                matches!(expect_event(&mut sub, "resumed message").await.unwrap(), Event::Message(m) if m.name.as_deref() == Some("after"))
+            );
+            sub.close_and_wait().await.unwrap();
+        }
+        ConsumerAction::CloseAndWait => sub.close_and_wait().await.unwrap(),
+        ConsumerAction::Drop => drop(sub),
     }
     join_server_task(server, "undrained reconnect peer")
         .await
@@ -382,13 +417,22 @@ async fn undrained_consumer_allows_recovery_fifo_delivery_and_shutdown() {
         Interruption::ProtocolDisconnect,
         Interruption::Idle,
     ] {
-        undrained_reconnect(interruption, false).await;
+        undrained_reconnect(interruption, ConsumerAction::DrainAndClose).await;
     }
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn drop_closes_resumed_socket_with_undrained_events() {
-    undrained_reconnect(Interruption::ProtocolDisconnect, true).await;
+    undrained_reconnect(Interruption::ProtocolDisconnect, ConsumerAction::Drop).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn tracked_close_finishes_with_undrained_events_after_reconnect() {
+    undrained_reconnect(
+        Interruption::ProtocolDisconnect,
+        ConsumerAction::CloseAndWait,
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "current_thread")]
