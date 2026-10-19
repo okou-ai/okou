@@ -9,7 +9,16 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import { useLastLoadable, useLastResolved, useLoadable } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+} from "ccstate-react";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "../../signals/hosted-site-url-changes.ts";
 import {
   Button,
   DropdownMenu,
@@ -612,6 +621,7 @@ function ArtifactSidebarPreviewActions({
 
 function ArtifactOpenExternalAction({ url }: { url: string }) {
   const { t } = useTranslation();
+  const changes = useGet(hostedSiteUrlChanges$);
   return (
     <ArtifactActionTooltip
       label={t(($) => {
@@ -619,7 +629,7 @@ function ArtifactOpenExternalAction({ url }: { url: string }) {
       })}
     >
       <a
-        href={publicAttachmentUrl(url)}
+        href={currentHostedSiteUrl(publicAttachmentUrl(url), changes)}
         target="_blank"
         rel="noopener noreferrer"
         aria-label={t(($) => {

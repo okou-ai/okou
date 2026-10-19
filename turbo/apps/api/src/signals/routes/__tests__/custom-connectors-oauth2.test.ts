@@ -133,7 +133,7 @@ describe("Custom connector OAuth callbacks", () => {
       ...input.oauthConfig,
       authorizationParams: {
         audience: "https://resource.example.test",
-        custom_hint: "keep-me",
+        prompt: "consent",
       },
     };
     const connector = await connectors.createCustomConnector(actor, {

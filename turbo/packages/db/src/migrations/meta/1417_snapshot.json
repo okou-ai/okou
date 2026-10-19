@@ -1,6 +1,6 @@
 {
-  "id": "fe1f897c-68b9-4d41-b2e3-134885abb902",
-  "prevId": "9eb3a899-c35a-463e-84af-a2df3816c054",
+  "id": "c74cca86-53a8-43fb-baea-c5e20bb49052",
+  "prevId": "ca838b6c-7fb8-47b9-ae10-d11f37e2b36f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2338,36 +2338,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "display_kind": {
-          "name": "display_kind",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "alias_url": {
-          "name": "alias_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "video_source_url": {
-          "name": "video_source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "projection_file_id": {
           "name": "projection_file_id",
           "type": "uuid",
@@ -2456,46 +2426,6 @@
           "method": "btree",
           "with": {}
         },
-        "artifacts_thread_author_created_idx": {
-          "name": "artifacts_thread_author_created_idx",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "author_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"chat_thread_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "artifacts_author_created_idx": {
           "name": "artifacts_author_created_idx",
           "columns": [
@@ -2569,21 +2499,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "artifacts_chat_thread_id_chat_threads_id_fk": {
-          "name": "artifacts_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "artifacts",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -16579,6 +16495,27 @@
           "method": "btree",
           "with": {}
         },
+        "idx_hosted_deployments_public_slug": {
+          "name": "idx_hosted_deployments_public_slug",
+          "columns": [
+            {
+              "expression": "(\"manifest\"->>'publicSlug')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "site_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_hosted_deployments_site_manifest_version": {
           "name": "idx_hosted_deployments_site_manifest_version",
           "columns": [
@@ -16760,6 +16697,21 @@
           "columns": [
             {
               "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_hosted_sites_slug": {
+          "name": "idx_hosted_sites_slug",
+          "columns": [
+            {
+              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

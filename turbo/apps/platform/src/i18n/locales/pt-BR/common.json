@@ -569,6 +569,7 @@
       },
       "kindIcon": "Artefato do tipo {{kind}}",
       "loading": "Carregando artefatos",
+      "loadMore": "Carregar mais",
       "retry": "Tentar novamente"
     },
     "fileBadges": {
@@ -581,7 +582,7 @@
       "agentLoading": "O agente ainda está carregando",
       "connect": "Conectar o Google Drive",
       "connectTooltip": "Conecte o Google Drive para enviar artefatos",
-      "conversionNotice": "Cria uma cópia editável. A formatação pode mudar; o arquivo original é preservado.",
+      "conversionNotice": "Cria uma cópia editável; a formatação pode variar.",
       "conversionUnconfirmed": "Não foi possível confirmar a conversão do Google. Verifique o Drive antes de tentar novamente.",
       "noArtifacts": "Nenhum artefato para sincronizar",
       "openDocs": "Abrir no Google Docs",
@@ -670,6 +671,23 @@
       "panelTitle": "Artefatos",
       "singularTitle": "Artefato",
       "unavailable": "Este artefato não está mais disponível."
+    },
+    "siteUrl": {
+      "available": "Disponível",
+      "cancel": "Cancelar",
+      "checkFailed": "Não foi possível verificar o endereço. Edite-o para tentar novamente.",
+      "checking": "Verificando disponibilidade…",
+      "customize": "Personalizar URL",
+      "hint": "Escolha um nome curto e fácil de lembrar",
+      "invalid": "Use de 3 a 63 letras minúsculas, números ou hífens; sem prefixos reservados",
+      "label": "URL do site",
+      "loadFailed": "Não foi possível carregar as configurações do site",
+      "oldUrlWarning": "A URL antiga deixará de funcionar. Atualize os links compartilhados.",
+      "published": "Publicado",
+      "save": "Salvar",
+      "saveFailed": "Não foi possível salvar. O endereço pode estar em uso ou ter mudado. Atualize e tente novamente.",
+      "taken": "Este endereço já está em uso",
+      "updated": "URL do site atualizada"
     },
     "templates": {
       "activeHtmlPreview": "Visualização HTML ativa de {{title}}",
@@ -5272,6 +5290,16 @@
     },
     "wallet": {
       "actionError": "Não foi possível concluir a ação. Verifique sua conexão, permita pop-ups e tente novamente.",
+      "cards": {
+        "default": "Padrão",
+        "description": "Adicione um cartão ou altere o padrão na sua carteira Link.",
+        "empty": "Ainda não há cartões na sua carteira Link",
+        "expires": "Validade {{date}}",
+        "loadError": "Não foi possível carregar seus cartões. Tente novamente.",
+        "loading": "Carregando cartões",
+        "manage": "Gerenciar cartões",
+        "title": "Seus cartões no Link"
+      },
       "connect": "Conectar",
       "description": "Seus agentes podem solicitar compras e consultar transações do Link. Você aprova cada compra.",
       "disconnect": "Desconectar",

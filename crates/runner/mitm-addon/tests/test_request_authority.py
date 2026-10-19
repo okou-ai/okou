@@ -354,6 +354,13 @@ class TestTrustedAuthoritySuccess:
                 id="punycode-sni-unicode-host",
             ),
             pytest.param(
+                "xn--mgba3gch31f.example",
+                "xn--mgba3gch31f.example",
+                "xn--mgba3gch31f.example",
+                "https://xn--mgba3gch31f.example/repos",
+                id="persian-without-joiner",
+            ),
+            pytest.param(
                 "faß.de",
                 "xn--fa-hia.de",
                 "xn--fa-hia.de",

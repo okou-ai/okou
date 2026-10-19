@@ -6,16 +6,20 @@ import { connectors } from "@okouai/db/schema/connector";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 
 /** Validate the current view before using its account or agent context. */
-export function ownedGoogleDriveThreadContext(args: {
-  readonly threadId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}) {
-  return computed(async (get) => {
+export const ownedGoogleDriveThreadContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly threadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
@@ -30,9 +34,10 @@ export function ownedGoogleDriveThreadContext(args: {
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     return thread !== undefined;
-  });
-}
+  },
+);
 
 /** Authorize the stored resource, never the chat that happened to produce it. */
 export const ownedGoogleDriveArtifact$ = command(

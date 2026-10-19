@@ -34,7 +34,7 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { connectors } from "@okouai/db/schema/connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { ZipArchive } from "archiver";
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
@@ -71,7 +71,10 @@ import {
   connectorRuntimeAuthSelectionReadPlan,
   connectorRuntimeAuthSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import {
+  loadUserFeatureSwitchContext$,
+  userFeatureSwitchOverrides,
+} from "./feature-switches.service";
 import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import {
@@ -587,7 +590,8 @@ export const googleDriveArtifactDetailStatus$ = command(
     // Uploads persist externalId, not the catalog ID or the projection row ID.
     const source = { runId: artifact.runId, fileId: artifact.externalId };
     const lookup = await set(
-      googleDriveArtifactStatusLookup({ ...args, source }),
+      googleDriveArtifactStatusLookup$,
+      { ...args, source },
       signal,
     );
     signal.throwIfAborted();
@@ -622,28 +626,30 @@ export function applyGoogleDriveArtifactSyncStatuses(
  * access token. A terminal OAuth failure persists reconnect state for the
  * exact credential revision and immediately projects as disconnected.
  */
-export function googleDriveArtifactStatusLookup(args: {
-  readonly threadId: string;
-  readonly orgId: string | undefined;
-  readonly userId: string;
-  readonly source?: DriveArtifactStatusSource;
-}): Command<Promise<DriveStatusLookup>, [AbortSignal]> {
-  return command(async ({ get, set }, signal): Promise<DriveStatusLookup> => {
+export const googleDriveArtifactStatusLookup$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly orgId: string | undefined;
+      readonly userId: string;
+      readonly source?: DriveArtifactStatusSource;
+    },
+    signal: AbortSignal,
+  ): Promise<DriveStatusLookup> => {
     if (!args.orgId) {
       return {
         type: "disconnected",
         recovery: { action: "unavailable" },
       };
     }
-    const featureSwitchOverrides = await get(
-      userFeatureSwitchOverrides(args.orgId, args.userId),
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
     );
     signal.throwIfAborted();
-    const featureSwitchContext = {
-      orgId: args.orgId,
-      userId: args.userId,
-      overrides: featureSwitchOverrides,
-    };
     const catalogDb = set(writeDb$);
     const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
       connectorSlugs: ["google-drive"],
@@ -726,8 +732,8 @@ export function googleDriveArtifactStatusLookup(args: {
       connectionId: tokens.connection.connectorId,
       syncedByKey: buildStatusMap(files),
     };
-  });
-}
+  },
+);
 
 // =====================================================================
 // Upload-side: sync a single artifact to the user's Google Drive.

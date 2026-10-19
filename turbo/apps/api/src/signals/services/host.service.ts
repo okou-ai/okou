@@ -113,8 +113,7 @@ function publicationIdentityViolation(
   }
   if (
     owned.identity.deploymentId !== args.deploymentId ||
-    owned.identity.siteId !== args.siteId ||
-    owned.identity.publicSlug !== args.publicSlug
+    owned.identity.siteId !== args.siteId
   ) {
     return "manifest_identity";
   }
@@ -144,6 +143,7 @@ export const authorizeHostedSiteDelivery$ = command(
       .select({
         prefix: hostedDeployments.r2Prefix,
         activeDeploymentId: hostedSites.activeDeploymentId,
+        currentPublicSlug: hostedSites.publicSlug,
         orgId: hostedDeployments.orgId,
         siteOrgId: hostedSites.orgId,
         identity: sql`jsonb_build_object(
@@ -170,7 +170,6 @@ export const authorizeHostedSiteDelivery$ = command(
         and(
           eq(hostedDeployments.id, args.deploymentId),
           eq(hostedSites.id, args.siteId),
-          eq(hostedSites.publicSlug, args.publicSlug),
           eq(hostedSites.linkLayoutSegment, args.publicBrand),
           eq(hostedDeployments.linkLayoutSegment, args.publicBrand),
           eq(hostedDeployments.status, "ready"),
@@ -193,10 +192,11 @@ export const authorizeHostedSiteDelivery$ = command(
     }
     return (
       !owned.identity.hasAccess &&
+      owned.identity.publicSlug === args.publicSlug &&
       owned.prefix === args.prefix &&
       args.manifestKey === `${args.prefix}/manifest.json` &&
       (args.alias === `dpl-${args.deploymentId}` ||
-        (args.alias === args.publicSlug &&
+        (args.alias === owned.currentPublicSlug &&
           owned.activeDeploymentId === args.deploymentId))
     );
   },
@@ -300,6 +300,7 @@ type HostedSiteFilesTargetResult =
   | { readonly status: "conflict"; readonly message: string };
 
 interface HostedSitePromotion {
+  readonly publicSlug: string;
   readonly activeDeploymentId: string | null;
   readonly activeDeploymentVersion: number | null;
 }
@@ -441,6 +442,19 @@ function deploymentVersionResponseFields(deployment: HostedDeploymentRow): {
   };
 }
 
+function hostedSiteResponseAddress(
+  deployment: HostedDeploymentRow,
+  publicSlug: string,
+) {
+  const aliasUrl = hostedLinkOrigin(rowLinkLayout(deployment), publicSlug);
+  return {
+    publicSlug,
+    url: deployment.manifest.access ? deployment.url : aliasUrl,
+    ...deploymentVersionResponseFields(deployment),
+    ...(deployment.manifest.access ? {} : { aliasUrl }),
+  };
+}
+
 function fileKey(prefix: string, path: string): string {
   return `${prefix}${path}`;
 }
@@ -494,7 +508,10 @@ function validateFiles(
   return null;
 }
 
-function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
+function hostedSiteArtifactArgs(
+  deployment: HostedDeploymentRow,
+  publicSlug: string,
+) {
   const artifactKind = deployment.manifest.artifactKind ?? "hosted-site";
   return {
     runId: deployment.runId,
@@ -506,8 +523,10 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
     deploymentVersion: legacyHostedDeploymentVersion(deployment.manifest),
     immutableContent: deployment.manifest.immutableContent === true,
     site: deployment.manifest.site ?? deployment.manifest.publicSlug,
-    publicSlug: deployment.manifest.publicSlug,
-    aliasUrl: deployment.manifest.access ? undefined : deployment.url,
+    publicSlug,
+    aliasUrl: deployment.manifest.access
+      ? undefined
+      : hostedLinkOrigin(rowLinkLayout(deployment), publicSlug),
     access: deployment.manifest.access,
     url: deployment.artifactUrl ?? deployment.url,
     fileCount: deployment.fileCount,
@@ -761,8 +780,7 @@ function ownedHostedBindingSite(
   if (
     site.deletedAt !== null ||
     site.userId !== deployment.userId ||
-    site.linkLayoutSegment !== deployment.linkLayoutSegment ||
-    site.publicSlug !== deployment.manifest.publicSlug
+    site.linkLayoutSegment !== deployment.linkLayoutSegment
   ) {
     throw new ArtifactDeliveryAliasConflict(
       "Hosted deployment no longer matches its owned site",
@@ -941,6 +959,7 @@ const bindHostedSiteDeployment$ = command(
           .where(eq(hostedSites.id, args.deployment.siteId));
       }
       return {
+        publicSlug: site.publicSlug,
         activeDeploymentId: published?.deploymentId ?? site.activeDeploymentId,
         activeDeploymentVersion: published
           ? (published.deploymentVersion ?? null)
@@ -1036,9 +1055,7 @@ function completedHostedSiteResponse(
     body: {
       siteId: deployment.siteId,
       deploymentId: deployment.id,
-      publicSlug: deployment.manifest.publicSlug,
-      url: deployment.url,
-      ...deploymentVersionResponseFields(deployment),
+      ...hostedSiteResponseAddress(deployment, promotion.publicSlug),
       ...(deploymentVersion === null
         ? {}
         : {
@@ -1176,7 +1193,7 @@ export const completeHostedSiteDeployment$ = command(
     await set(
       recordHostedSiteArtifact$,
       {
-        ...hostedSiteArtifactArgs(deployment),
+        ...hostedSiteArtifactArgs(deployment, promotion.publicSlug),
         ...(preview ? { previewImageUrl: preview.url } : {}),
       },
       signal,
@@ -1599,9 +1616,7 @@ export const getHostedSiteFiles$ = command(
           metadata: {
             siteId: site.id,
             deploymentId: deployment.id,
-            publicSlug: site.publicSlug,
-            url: deployment.url,
-            ...deploymentVersionResponseFields(deployment),
+            ...hostedSiteResponseAddress(deployment, site.publicSlug),
           },
           manifest: deployment.manifest,
           prefix: deployment.r2Prefix,

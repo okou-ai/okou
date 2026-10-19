@@ -70,10 +70,6 @@ import { createAcceptedConnectorServerFirewallCatalog } from "./connector-server
 
 const log = logger("connector-catalog:sync");
 
-type CatalogRuntimeWakeupArgs = ConnectorRuntimeWakeupBusinessArgs & {
-  readonly db: Db;
-};
-
 class ConnectorCatalogPersistenceError extends Error {
   constructor() {
     super("Connector catalog snapshot persistence failed");
@@ -178,8 +174,8 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
 
   await Promise.all(
     [...affectedByOrg].map(async ([orgId, customConnectorIds]) => {
-      const wakeup: CatalogRuntimeWakeupArgs = {
-        db: args.db,
+      const wakeupDb = args.db;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
         scope: { orgId },
         targets: customConnectorIds.map((customConnectorId) => {
           return { kind: "custom" as const, customConnectorId };
@@ -193,7 +189,7 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
               return;
             }
 
-            const rows = await wakeup.db
+            const rows = await wakeupDb
               .select({
                 runId: agentRuns.id,
                 runnerGroup: agentRuns.runnerGroup,
@@ -298,8 +294,8 @@ async function publishBuiltinCatalogWakeups(args: {
   const pending = byOrg.entries();
   async function publishOrgWakeups() {
     for (const [orgId, slugs] of pending) {
-      const wakeup: CatalogRuntimeWakeupArgs = {
-        db: args.db,
+      const wakeupDb = args.db;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
         scope: { orgId },
         targets: slugs.map((connectorSlug) => {
           return { kind: "builtin" as const, connectorSlug };
@@ -313,7 +309,7 @@ async function publishBuiltinCatalogWakeups(args: {
               return;
             }
 
-            const rows = await wakeup.db
+            const rows = await wakeupDb
               .select({
                 runId: agentRuns.id,
                 runnerGroup: agentRuns.runnerGroup,

@@ -304,6 +304,10 @@ impl Case {
         self.write_event("NATIVE_BATCH_REPARK_WITNESS ", phase, evidence)
     }
 
+    pub fn batch_replacement_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_BATCH_REPLACEMENT_WITNESS ", phase, evidence)
+    }
+
     pub fn require_original_lease_released(&self) -> io::Result<()> {
         let state = self
             .state

@@ -133,11 +133,17 @@ export const copyChatResourceArtifact$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (preview) {
-      const url = await get(preview.shareUrl$);
-      signal.throwIfAborted();
-      await set(copyChatResourceLink$, url, signal);
+    const url = preview ? await get(preview.shareUrl$) : null;
+    signal.throwIfAborted();
+    if (url === null) {
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.sharing.copyFailed;
+        }),
+      );
+      return;
     }
+    await set(copyChatResourceLink$, url, signal);
   },
 );
 
@@ -152,7 +158,8 @@ function createChatResourceContentSignals(
     const { artifacts } = await get(catalog.catalog$);
     const seen = new Set(
       artifacts.flatMap((artifact) => {
-        // Older APIs omit source URLs. Never hydrate summaries to dedup links.
+        // Source/alias URLs are optional metadata: shared snapshots can have
+        // neither. Only known URLs deduplicate links; do not hydrate details.
         return [artifact.sourceUrl, artifact.aliasUrl].flatMap((url) => {
           return url ? [publicAttachmentUrl(url)] : [];
         });

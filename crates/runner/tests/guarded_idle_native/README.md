@@ -1,5 +1,47 @@
 # Guarded idle terminal fixture
 
+## Same-key replacement against a captured batch
+
+`native_same_key_replacement_fences_captured_batch_and_preserves_incoming` runs
+fresh and newly matching snapshot cases. A separately leased actual incoming
+Guest completes Fresh preparation, Guest RPC and physical parking. An old fixed
+batch captures the original at the same reuse key, then waits at an owned
+one-shot pre-read gate. Other real readers remain free to admit production
+guarded replacement; no memory value or sample timestamp is manufactured.
+
+The original required home retirement reaches actual held post-exit durable IO.
+Both full leases and cleanup growth remain covered while an independent observer
+progresses under a held pool lock; releasing the pool permits an acknowledged
+HTTP 204 heartbeat while IO stays held. Only joined original saving releases its
+full lease. The distinct incoming remains live with its own full lease. Releasing
+the old read must produce exactly one original `AccountingChanged` refusal and
+zero completed selections. A positively observed final status wait and heartbeat
+precede publication of the current incoming at the same key. A separate newly
+captured batch then retires only that incoming and joins all owners. Complete
+original home bytes, the 64 KiB payload and private-runtime removal are verified
+by the common restoration fixture. Error paths release owned gates and join
+accepted producers outside the scenario timeout, retaining unresolved owners.
+
+Build the exact committed Host/all canonical Guests, verify installed rootfs
+bytes and prepare a new actual matching snapshot. Retain unchanged supplied
+policy and P1 guards, adding exact raw `native_batch_replacement_policy_json`
+to collector metadata with `native_terminal_artifacts` and the matching
+`snapshot-preparation.json`. Run the frozen executable and strict reader:
+
+```sh
+<native-test-binary> native_same_key_replacement_fences_captured_batch_and_preserves_incoming \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/batch_replacement_report.py <p1-directory>
+```
+
+Ordinary real-file/CLI regressions are synthetic consumer checks; KVM remains
+opt-in. Incoming is tenant-free with no required prior history. This proves the
+same-key distinct-Guest collision only; a second required incoming history,
+actual API claim loss, other fault families, complete parent C/D matrices,
+residency, numerical calibration, physical relief, OOM protection and P4
+activation remain separate gates. Historical base OS/bootstrap and unsigned,
+nonreproducible producer provenance remain explicit where applicable.
+
 ## Physical speculative rollback and batch recovery
 
 `native_speculative_repark_preserves_history_and_batch_recovery` runs fresh and

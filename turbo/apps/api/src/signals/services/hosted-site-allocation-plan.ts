@@ -19,6 +19,7 @@ import {
 } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
+import { hostedSiteAddressCondition } from "../../lib/hosted-site-address";
 import {
   hostedDeployments,
   hostedSites,
@@ -307,6 +308,28 @@ function* hostedSiteAllocationPlan(
       "organization",
       attempt,
     );
+    const previousOwner = (yield {
+      kind: "site",
+      condition: hostedSiteAddressCondition(publicSlug),
+      // This lookup may discover a concurrent creation missed above. Reusing
+      // that site must serialize deployment-version allocation on its row.
+      lock: true,
+    }).site;
+    // A renamed website keeps its publication history and old R2 pointers.
+    // Reusing those names for another site would fail publication or hijack links.
+    if (previousOwner) {
+      if (
+        previousOwner.orgId === args.orgId &&
+        previousOwner.linkLayoutSegment ===
+          linkLayoutSegment(CURRENT_LINK_LAYOUT) &&
+        previousOwner.deletedAt === null &&
+        (previousOwner.requestedSlug === args.body.site ||
+          previousOwner.slug === publicSlug)
+      ) {
+        return resolvedHostedSite(previousOwner, args);
+      }
+      continue;
+    }
     const created = (yield {
       kind: "site-insert",
       values: hostedSiteAllocationValues(args, publicSlug, attempt, now),

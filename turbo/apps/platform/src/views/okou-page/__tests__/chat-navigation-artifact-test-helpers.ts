@@ -158,7 +158,6 @@ interface MockArtifactConversationOptions {
   readonly details?: ReadonlyMap<string, ArtifactDetail | null>;
   readonly getDetail?: (artifactId: string) => ArtifactDetail | null;
   readonly onDetailQuery?: (chatThreadId: string | undefined) => void;
-  readonly onLegacyArtifacts?: () => void;
   readonly activeRunIds?: readonly string[];
   readonly onCatalogList?: (query: ArtifactCatalogListQuery) => void;
 }
@@ -199,7 +198,6 @@ export function mockArtifactConversation(
     },
   );
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    options.onLegacyArtifacts?.();
     return respond(200, {
       runs: [...(options.artifactRuns?.() ?? [])],
     });

@@ -2238,6 +2238,7 @@ test("gates session wallet management and rejects run tokens on settings endpoin
     await accept(userClient().connect({ headers, body: {} }), [403]);
     await accept(userClient().disconnect({ headers, body: {} }), [403]);
     await accept(userClient().transactions({ headers, query: {} }), [403]);
+    await accept(userClient().paymentMethods({ headers, query: {} }), [403]);
   }
 });
 
@@ -2293,6 +2294,7 @@ test("reads Link transactions with explicit financial consent and keeps a read-o
     ).body.error.code,
   ).toBe("WALLET_SCOPE_REQUIRED");
   await accept(client().paymentMethods({ headers: fixture.headers }), [403]);
+  await accept(userClient().paymentMethods({ headers: sessionHeaders }), [403]);
   let providerQuery: Record<string, string> = {};
   server.use(
     http.get("https://api.link.com/transactions", ({ request }) => {
@@ -2586,6 +2588,27 @@ test("projects saved methods and user limits without exposing credential or addr
     [200],
   );
   expect(listed.body.data).toStrictEqual([retrieved.body]);
+  const sessionMethods = await accept(
+    userClient().paymentMethods({ headers: sessionHeaders }),
+    [200],
+  );
+  expect(sessionMethods.body).toStrictEqual(listed.body);
+  expect(sessionMethods.headers.get("cache-control")).toBe("no-store");
+  await accept(
+    userClient().paymentMethods({ headers: fixture.headers }),
+    [403],
+  );
+  const bdd = createBddApi(context);
+  const peer = bdd.user({ orgId: fixture.actor.orgId });
+  const outsider = bdd.user();
+  for (const other of [peer, outsider]) {
+    mocks.clerk.session(other.userId, other.orgId, other.orgRole);
+    await accept(
+      userClient().paymentMethods({ headers: sessionHeaders }),
+      [409],
+    );
+  }
+  mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
   expect(retrieved.body.card).toStrictEqual({
     brand: "visa",
     last4: "4242",
@@ -2609,9 +2632,27 @@ test("projects saved methods and user limits without exposing credential or addr
     remaining: 6500,
   });
   expect(info.body.verification?.actionUrl).toBe(actionUrl);
-  expect(JSON.stringify([listed.body, retrieved.body, info.body])).not.toMatch(
-    /private-pan|private-cvc|private-token|private-address/,
+  expect(
+    JSON.stringify([
+      listed.body,
+      sessionMethods.body,
+      retrieved.body,
+      info.body,
+    ]),
+  ).not.toMatch(/private-pan|private-cvc|private-token|private-address/);
+  server.use(
+    http.get("https://api.link.com/payment-details", () => {
+      return HttpResponse.json({ payment_details: [] });
+    }),
   );
+  expect(
+    (
+      await accept(
+        userClient().paymentMethods({ headers: sessionHeaders }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ data: [] });
 });
 
 test("paginates owner-isolated recorded spend history and retains it after reauthorization", async () => {

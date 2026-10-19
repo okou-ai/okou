@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
   and,
   asc,
@@ -182,7 +184,18 @@ function catalogArtifactKind(
 }
 
 function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
-  return eq(artifacts.displayKind, kind);
+  // Summary metadata is optional independently of creating-thread ownership.
+  // An absent display projection retains the base kind (or the shared snapshot
+  // kind encoded in its logical key), exactly as toArtifactSummary does.
+  return eq(
+    sql`coalesce(${artifacts.displayKind}, case
+      when ${artifacts.kind} = 'file'
+        and ${artifacts.logicalKey} like 'shared-thread:%'
+      then 'shared-thread'
+      else ${artifacts.kind}
+    end)`,
+    kind,
+  );
 }
 
 function hostedArtifactKind(
@@ -1117,6 +1130,7 @@ export const reconcileArtifactCatalogFiles$ = command(
 function toArtifactSummary(row: {
   readonly id: string;
   readonly kind: ArtifactKind;
+  readonly logicalKey: string;
   readonly displayKind: ArtifactCatalogKind | null;
   readonly sourceUrl: string | null;
   readonly aliasUrl: string | null;
@@ -1126,7 +1140,8 @@ function toArtifactSummary(row: {
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }): ArtifactSummary {
-  const kind = row.displayKind ?? row.kind;
+  const kind =
+    row.displayKind ?? catalogArtifactKind(row.kind, null, row.logicalKey);
   return {
     id: row.id,
     kind,
@@ -1166,6 +1181,7 @@ export const listArtifactCatalog$ = command(
       .select({
         id: artifacts.id,
         kind: artifacts.kind,
+        logicalKey: artifacts.logicalKey,
         displayKind: artifacts.displayKind,
         aliasUrl: artifacts.aliasUrl,
         sourceUrl: artifacts.sourceUrl,
@@ -1331,7 +1347,7 @@ const hostedSiteDetail$ = command(
           sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
             nullableDriverValueDecoder(pgIntegerDecoder),
           ),
-        url: hostedDeployments.url,
+        linkLayoutSegment: hostedSites.linkLayoutSegment,
         entrypoint: hostedDeployments.entrypoint,
         spaFallback: hostedDeployments.spaFallback,
       })
@@ -1350,7 +1366,10 @@ const hostedSiteDetail$ = command(
       id: row.id,
       slug: row.requestedSlug ?? row.slug,
       publicSlug: row.publicSlug,
-      url: row.url,
+      url: hostedLinkOrigin(
+        linkLayoutFromSegment(row.linkLayoutSegment),
+        row.publicSlug,
+      ),
       deploymentVersion: row.deploymentVersion,
       entrypoint: row.entrypoint,
       spaFallback: row.spaFallback,

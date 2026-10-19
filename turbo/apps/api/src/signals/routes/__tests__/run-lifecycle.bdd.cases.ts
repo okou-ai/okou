@@ -7706,7 +7706,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
       });
 
-      it("reads a publicly configured canonical connector through runtime auth", async () => {
+      it("renders a publicly configured canonical IDN connector through runtime auth", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
@@ -7759,12 +7759,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         };
         onTestFinished(cleanup);
         const suffix = randomUUID().slice(0, 8);
-        const prefixTemplate = `https://canonical-${suffix}.example.test/api/`;
+        const prefixTemplate = `https://{{variables.host}}.tenant-${suffix}.example.test/api/`;
+        const hostname = "xn--mgba3gch31f";
         const runtimeConnector = await connectors.createCustomConnector(actor, {
           slug: `_bdd-canonical-${suffix}`,
           displayName: "BDD Canonical Runtime",
           prefixTemplates: [prefixTemplate],
           fields: [
+            {
+              key: "host",
+              label: "Host",
+              kind: "variable",
+              required: true,
+            },
             {
               key: "optional_secret",
               label: "Optional secret",
@@ -7782,11 +7789,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           authMode: "manual",
         });
         owned.connectorId = runtimeConnector.id;
-        await connectors.setCustomConnectorValues(
-          actor,
-          runtimeConnector.id,
-          [],
-        );
+        await connectors.setCustomConnectorValues(actor, runtimeConnector.id, [
+          { key: "host", kind: "variable", value: hostname },
+        ]);
         const runtimeConnectionId = await defaultCustomConnectorAccountId(
           connectors,
           actor,
@@ -7814,6 +7819,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           actor,
           runtimeConnector.id,
           [
+            { key: "host", kind: "variable", value: hostname },
             {
               key: "optional_secret",
               kind: "secret",
@@ -7835,10 +7841,38 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           claim,
           runtimeConnector.id,
         );
+        for (const unsupportedHostname of [
+          "xn--mgba3gch31f060k",
+          "xn--11b2ezcw70k",
+        ]) {
+          const [rejectedRuntime] = await api.syncConnectorRuntime(run.runId, {
+            targets: [
+              {
+                ...runtimeTarget,
+                baseUrlVars: { host: unsupportedHostname },
+              },
+            ],
+          });
+          expect(rejectedRuntime).toStrictEqual({
+            target: {
+              kind: "custom",
+              customConnectorId: runtimeConnector.id,
+            },
+            state: "unresolved",
+            reason: "runtime-configuration-unavailable",
+          });
+        }
         const [runtimeResult] = await api.syncConnectorRuntime(run.runId, {
           targets: [runtimeTarget],
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
+        expect(
+          runtime.firewall.firewall.apis.map((api) => {
+            return api.base;
+          }),
+        ).toStrictEqual([
+          `https://${hostname}.tenant-${suffix}.example.test/api/`,
+        ]);
         const { body: authBody } = customConnectorRuntimeAuthBody(
           runtime,
           fw.encryptedSecretsBody({}),
@@ -12558,11 +12592,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           const completed = await api.readRun(actor, created.runId);
           expect(completed.status).toBe("completed");
-          expect(completed.result?.artifact).toStrictEqual({
-            memory: memoryArtifact.versionId,
-          });
-          expect(completed.result?.volumes).toStrictEqual({
-            [cacheVolume]: cachePrepared.versionId,
+          expect(completed.result?.storageOutputs).toStrictEqual(
+            artifactSnapshots,
+          );
+          const log = await createRunReadsApi(context).requestReadLogById(
+            actor,
+            created.runId,
+            [200],
+          );
+          expect(log.body.artifact).toStrictEqual({
+            name: memoryArtifact.name,
+            version: memoryArtifact.versionId,
           });
 
           // A late duplicate report cannot flip the settled run.

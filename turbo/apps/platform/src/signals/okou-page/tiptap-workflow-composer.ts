@@ -242,6 +242,13 @@ export interface WorkflowComposerSignals {
   readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
   readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
+  /** The composer edge the open slash menu hugs: the half its `/` is in. */
+  readonly slashMenuSide$: Computed<SlashMenuSide>;
+  /** A ref for the slash menu: measures which half its `/` was typed in. */
+  readonly measureSlashMenuSide$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
     (() => void) | undefined,
@@ -3044,6 +3051,58 @@ function createSelectedSuggestionIndex(
   });
 }
 
+export type SlashMenuSide = "start" | "end";
+
+/**
+ * Which half of the composer the slash token starts in, so a menu narrower
+ * than the composer can sit above it. Start when it cannot be measured.
+ */
+function slashTokenSide(
+  editor: Editor,
+  range: SlashWorkflowRange,
+): SlashMenuSide {
+  const card = editor.view.dom.closest('[data-slot="chat-composer-card"]');
+  if (!card) {
+    return "start";
+  }
+  const tokenStart = Math.max(
+    editor.state.selection.head - (range.end - range.start),
+    0,
+  );
+  const { left } = editor.view.coordsAtPos(tokenStart);
+  const rect = card.getBoundingClientRect();
+  return left - rect.left > rect.width / 2 ? "end" : "start";
+}
+
+function createSlashMenuSideSignals(
+  editor: Editor,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  // Measured when the menu mounts, for the token it opened for: editing the
+  // token or reopening the menu measures again.
+  const sideState$ = state<{
+    readonly range: SlashWorkflowRange;
+    readonly side: SlashMenuSide;
+  } | null>(null);
+  return {
+    slashMenuSide$: computed((get): SlashMenuSide => {
+      const range = get(activeSlashRange$);
+      const measured = get(sideState$);
+      return range !== null && measured?.range === range
+        ? measured.side
+        : "start";
+    }),
+    measureSlashMenuSide$: onRef(
+      command(({ get, set }) => {
+        const range = get(activeSlashRange$);
+        if (range !== null) {
+          set(sideState$, { range, side: slashTokenSide(editor, range) });
+        }
+      }),
+    ),
+  };
+}
+
 function createSlashExpansionSignals(
   editor: Editor,
   activeSlashRange$: Computed<SlashWorkflowRange | null>,
@@ -3061,6 +3120,7 @@ function createSlashExpansionSignals(
     return range !== null && expansion?.range === range ? expansion : null;
   });
   return {
+    ...createSlashMenuSideSignals(editor, activeSlashRange$),
     recentWorkflowIds$: createRecentWorkflowIds(activeSlashRange$),
     slashWorkflowsExpanded$: computed((get) => {
       return get(expansion$) !== null;

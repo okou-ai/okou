@@ -1,6 +1,6 @@
 {
-  "id": "51d754a1-516f-4b3b-9756-a569a2669e55",
-  "prevId": "fe1f897c-68b9-4d41-b2e3-134885abb902",
+  "id": "8356a1a4-6a30-4876-9c17-f4bf28752dfc",
+  "prevId": "c74cca86-53a8-43fb-baea-c5e20bb49052",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2452,28 +2452,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "artifacts_projection_file_org_idx": {
-          "name": "artifacts_projection_file_org_idx",
-          "columns": [
-            {
-              "expression": "projection_file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -16601,6 +16579,27 @@
           "method": "btree",
           "with": {}
         },
+        "idx_hosted_deployments_public_slug": {
+          "name": "idx_hosted_deployments_public_slug",
+          "columns": [
+            {
+              "expression": "(\"manifest\"->>'publicSlug')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "site_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_hosted_deployments_site_manifest_version": {
           "name": "idx_hosted_deployments_site_manifest_version",
           "columns": [
@@ -16782,6 +16781,21 @@
           "columns": [
             {
               "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_hosted_sites_slug": {
+          "name": "idx_hosted_sites_slug",
+          "columns": [
+            {
+              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

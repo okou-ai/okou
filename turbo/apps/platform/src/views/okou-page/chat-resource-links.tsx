@@ -81,7 +81,6 @@ export function ChatResourceLinks({
           title={t(($) => {
             return $.chat.resources.links;
           })}
-          count={links.length}
         />
       )}
       <ul id={linksId} className="m-0 list-none p-0">

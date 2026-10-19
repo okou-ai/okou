@@ -253,7 +253,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               title={t(($) => {
                 return $.artifacts.sidebar.panelTitle;
               })}
-              count={data.artifacts.length}
             />
             <ul id={artifactsId} className="m-0 list-none p-0">
               {data.artifacts

@@ -13,15 +13,18 @@ import {
   normaliseCustomConnectorConnectionDefinition,
 } from "./custom-connector.service";
 import {
-  customConnectorConnectedConnections,
+  createCustomConnectorConnectedConnections,
   customConnectorDefinitionConnectedAccount,
-  customConnectorValueMarkers,
+  createCustomConnectorValueMarkers,
 } from "./custom-connector-credential-access.service";
 
 export function customConnectorOverview(
   owner$: Computed<{ readonly orgId: string; readonly userId: string }>,
   accountSummaries$: Computed<Promise<readonly ConnectorAccountSummary[]>>,
 ) {
+  const markers$ = createCustomConnectorValueMarkers(owner$);
+  const connectedConnections$ =
+    createCustomConnectorConnectedConnections(owner$);
   return computed(async (get) => {
     const args = get(owner$);
     const db = get(db$);
@@ -65,8 +68,8 @@ export function customConnectorOverview(
           )
           .where(eq(orgCustomConnectors.orgId, args.orgId))
           .orderBy(orgCustomConnectors.displayName),
-        get(customConnectorValueMarkers(args)),
-        get(customConnectorConnectedConnections(args)),
+        get(markers$),
+        get(connectedConnections$),
         get(accountSummaries$),
       ]);
     const customIdsWithAccounts = new Set(

@@ -553,6 +553,7 @@
       },
       "kindIcon": "{{kind}} アーティファクト",
       "loading": "アーティファクトをロードしています",
+      "loadMore": "さらに読み込む",
       "retry": "再試行"
     },
     "fileBadges": {
@@ -565,7 +566,7 @@
       "agentLoading": "エージェントを読み込み中",
       "connect": "Google Drive を接続します",
       "connectTooltip": "Google Drive を接続してアーティファクトをアップロードする",
-      "conversionNotice": "編集可能なコピーを作成します。書式が変わる場合があります。元のファイルは保持されます。",
+      "conversionNotice": "編集可能なコピーを作成します。書式が変わる場合があります。",
       "conversionUnconfirmed": "Google での変換結果を確認できませんでした。再試行する前にドライブを確認してください。",
       "noArtifacts": "同期するアーティファクトがありません",
       "openDocs": "Google ドキュメントで開く",
@@ -651,6 +652,23 @@
       "panelTitle": "アーティファクト",
       "singularTitle": "アーティファクト",
       "unavailable": "このアーティファクトはもう入手できません。"
+    },
+    "siteUrl": {
+      "available": "使用できます",
+      "cancel": "キャンセル",
+      "checkFailed": "確認できませんでした。編集して再試行してください。",
+      "checking": "確認中…",
+      "customize": "URL をカスタマイズ",
+      "hint": "短く覚えやすい名前を選択",
+      "invalid": "3〜63 文字の英小文字・数字・ハイフンを使用（予約済みの接頭辞は不可）",
+      "label": "ウェブサイトの URL",
+      "loadFailed": "ウェブサイト設定を読み込めませんでした",
+      "oldUrlWarning": "以前の URL は使えなくなります。共有済みのリンクを更新してください。",
+      "published": "公開済み",
+      "save": "保存",
+      "saveFailed": "保存できませんでした。使用済みまたは変更済みの可能性があります。再読み込みして再試行してください。",
+      "taken": "このアドレスは使用されています",
+      "updated": "ウェブサイトの URL を更新しました"
     },
     "templates": {
       "activeHtmlPreview": "{{title}} アクティブな HTML プレビュー",
@@ -5185,6 +5203,16 @@
     },
     "wallet": {
       "actionError": "操作を完了できませんでした。接続を確認し、ポップアップを許可して再試行してください。",
+      "cards": {
+        "default": "デフォルト",
+        "description": "Link ウォレットでカードの追加やデフォルトカードの変更ができます。",
+        "empty": "Link ウォレットにカードはまだありません",
+        "expires": "有効期限 {{date}}",
+        "loadError": "カードを読み込めませんでした。もう一度お試しください。",
+        "loading": "カードを読み込み中",
+        "manage": "カードを管理",
+        "title": "Link のカード"
+      },
       "connect": "接続",
       "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",

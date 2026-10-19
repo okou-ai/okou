@@ -157,7 +157,12 @@ are enforced by the integration ingress tests.
   `scripts/test-artifact-thread-catalog-permanent.ts` protects the nullable
   catalog read fields, partial composite index, validated SET NULL foreign key,
   and byte-preserved global catalog rows on both replayed and freshly generated
-  schemas; it has no historical migration-tag dependency.
+  schemas. Frozen outgoing-writer INSERTs followed by actual SQL category reads
+  cover every base kind and shared snapshots with NULL summary fields: storage
+  kind remains visible, shared-thread logical keys retain their classification,
+  and a base video without avatar metadata stays video rather than a fabricated
+  avatar. This permanent nullable-summary contract does not infer a thread or
+  join projection sources; it has no historical migration-tag dependency.
 
 - `scripts/test-run-native-facts-preparation.ts` replays the additive Run fact
   migration against populated Session/Conversation history. It preserves legacy

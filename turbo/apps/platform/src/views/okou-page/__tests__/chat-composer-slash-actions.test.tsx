@@ -10,7 +10,7 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-te
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   fill,
   queryAllByRoleFast,
@@ -579,4 +579,72 @@ test("A template type with nothing to show gets no tab", async () => {
       return tab.startsWith("Document");
     }),
   ).toBeUndefined();
+});
+
+test("A slash typed in the composer's right half puts the menu at the right edge", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  mockAgent();
+  mockPersonalModelRoutes();
+  mockBillingCapabilities({ restrictedBuiltInModels: false });
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(
+      200,
+      WORKFLOWS.map((name) => {
+        return composerWorkflow(name, `Description of ${name}`);
+      }),
+    );
+  });
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
+  });
+  const editor = await findComposerEditor();
+  const card = editor.closest('[data-slot="chat-composer-card"]');
+  if (!card) {
+    throw new Error("Expected the composer card");
+  }
+  // Happy DOM has no layout: place the card, and the typed text at its
+  // right-hand end, where a long line leaves the `/`.
+  vi.spyOn(card, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 900, 120),
+  );
+  vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
+    new DOMRect(700, 10, 8, 20),
+  ] as unknown as DOMRectList);
+  vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(700, 10, 8, 20),
+  );
+  const user = userEvent.setup();
+  await fill(editor, "Draft /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  await waitFor(() => {
+    expect(
+      menu.querySelector('[data-slot="slash-panel"][data-side="end"]'),
+    ).not.toBeNull();
+  });
+
+  // The second level opens on the left, so Left enters it and Right leaves.
+  await user.keyboard("{ArrowUp}{ArrowUp}");
+  expect(menuButton("Workflows")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowLeft}");
+  expect(menuButton("/axiom-red")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowRight}");
+  expect(menuButton("Workflows")).toHaveAttribute("data-active", "true");
+});
+
+test("A slash typed in the composer's left half keeps the menu at the left edge", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  const { menu } = await openSlashActions();
+  await waitFor(() => {
+    expect(menuButton("Workflows")).toBeInTheDocument();
+  });
+  expect(
+    menu.querySelector('[data-slot="slash-panel"][data-side="start"]'),
+  ).not.toBeNull();
 });

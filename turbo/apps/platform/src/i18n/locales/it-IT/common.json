@@ -569,6 +569,7 @@
       },
       "kindIcon": "{{kind}} artefatto",
       "loading": "Caricamento degli artefatti",
+      "loadMore": "Carica altro",
       "retry": "Riprova"
     },
     "fileBadges": {
@@ -581,7 +582,7 @@
       "agentLoading": "L'agente è ancora in fase di caricamento",
       "connect": "Connetti Google Drive",
       "connectTooltip": "Connetti Google Drive per caricare gli artefatti",
-      "conversionNotice": "Crea una copia modificabile. La formattazione potrebbe cambiare; il file originale viene conservato.",
+      "conversionNotice": "Crea una copia modificabile; la formattazione potrebbe variare.",
       "conversionUnconfirmed": "Impossibile confermare la conversione Google. Controlla Drive prima di riprovare.",
       "noArtifacts": "Nessun artefatto da sincronizzare",
       "openDocs": "Apri in Google Docs",
@@ -670,6 +671,23 @@
       "panelTitle": "Artefatti",
       "singularTitle": "Artefatto",
       "unavailable": "Questo artefatto non è più disponibile."
+    },
+    "siteUrl": {
+      "available": "Disponibile",
+      "cancel": "Annulla",
+      "checkFailed": "Impossibile verificare l’indirizzo. Modificalo e riprova.",
+      "checking": "Verifica disponibilità…",
+      "customize": "Personalizza URL",
+      "hint": "Scegli un nome breve e facile da ricordare",
+      "invalid": "Da 3 a 63 lettere minuscole, numeri o trattini; senza prefissi riservati",
+      "label": "URL del sito",
+      "loadFailed": "Impossibile caricare le impostazioni del sito",
+      "oldUrlWarning": "Il vecchio URL non funzionerà più. Aggiorna i link condivisi.",
+      "published": "Pubblicato",
+      "save": "Salva",
+      "saveFailed": "Salvataggio non riuscito. L’indirizzo potrebbe essere in uso o modificato. Aggiorna e riprova.",
+      "taken": "Questo indirizzo è già in uso",
+      "updated": "URL del sito aggiornato"
     },
     "templates": {
       "activeHtmlPreview": "{{title}} attivo HTML anteprima",
@@ -5272,6 +5290,16 @@
     },
     "wallet": {
       "actionError": "Impossibile completare l’azione. Controlla la connessione, consenti i popup e riprova.",
+      "cards": {
+        "default": "Predefinita",
+        "description": "Aggiungi una carta o cambia quella predefinita nel tuo portafoglio Link.",
+        "empty": "Non ci sono ancora carte nel tuo portafoglio Link",
+        "expires": "Scadenza {{date}}",
+        "loadError": "Impossibile caricare le carte. Riprova.",
+        "loading": "Caricamento delle carte",
+        "manage": "Gestisci carte",
+        "title": "Le tue carte su Link"
+      },
       "connect": "Collega",
       "description": "I tuoi agenti possono richiedere acquisti e consultare le transazioni Link. Tu approvi ogni acquisto.",
       "disconnect": "Scollega",

@@ -110,7 +110,7 @@ interface SlashTemplatePanelProps {
   readonly onNewWorkflow: () => void;
   /** Runs before the Manage workflows link navigates. */
   readonly onManageWorkflows: () => void;
-  /** The menu opens above the composer, so its most relevant row is last. */
+  /** Keep overview categories anchored nearest the composer on desktop. */
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
   /**
@@ -494,7 +494,7 @@ function SlashPanelWorkflowList({
               key={workflow.id}
               id={workflowOptionId(workflow.id)}
               ref={
-                reversed && selectedIndex === index
+                selectedIndex === index
                   ? scrollSelectedSlashOptionOnMount
                   : undefined
               }
@@ -778,7 +778,7 @@ function SlashPanelCategoryList({
                 key={category}
                 id={categoryOptionId(category)}
                 ref={
-                  reversed && selectedIndex === index
+                  selectedIndex === index
                     ? scrollSelectedSlashOptionOnMount
                     : undefined
                 }
@@ -830,7 +830,7 @@ export function SlashActionRow({
   readonly action: SlashAction;
   readonly index: number;
   readonly marked: boolean;
-  /** Bring the keyboard's row into view when a reversed list opens on it. */
+  /** Bring the keyboard's row into view when the list opens on it. */
   readonly scrollOnMount?: boolean;
   /**
    * Whether the second level this row opens is showing. Set only where the
@@ -873,7 +873,9 @@ export function SlashActionRow({
       {expanded !== undefined && (
         <ChevronRight
           size={16}
-          className="shrink-0 text-muted-foreground/50"
+          // Points at the second level, which opens on the left at the end
+          // edge of the slash-actions overview.
+          className="shrink-0 text-muted-foreground/50 group-data-[side=end]/slash-panel:-scale-x-100"
           aria-hidden
         />
       )}
@@ -919,7 +921,7 @@ function SlashPanelActionList({
                 action={action}
                 index={index}
                 marked={markedIndex === index}
-                scrollOnMount={reversed && selectedIndex === index}
+                scrollOnMount={selectedIndex === index}
                 onPreview={onPreview}
               />
             );

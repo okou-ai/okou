@@ -9,7 +9,7 @@ import {
   getArtifactCatalogEntry$,
   listArtifactCatalog$,
 } from "../services/artifact-catalog.service";
-import { ownedGoogleDriveThreadContext } from "../services/artifact-google-drive-authorization.service";
+import { ownedGoogleDriveThreadContext$ } from "../services/artifact-google-drive-authorization.service";
 import { googleDriveArtifactDetailStatus$ } from "../services/google-drive-artifact-sync.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -69,7 +69,11 @@ const getArtifactCatalogEntryInner$ = command(
       orgId: auth.orgId,
       userId: auth.userId,
     };
-    const ownedContext = await get(ownedGoogleDriveThreadContext(context));
+    const ownedContext = await set(
+      ownedGoogleDriveThreadContext$,
+      context,
+      signal,
+    );
     signal.throwIfAborted();
     if (!ownedContext) {
       return notFound("Chat thread not found");

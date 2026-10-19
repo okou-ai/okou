@@ -13,7 +13,15 @@ export async function validatePermanentArtifactThreadCatalog(
   await client.connect();
   const db = drizzle(client);
   const threadId = randomUUID();
-  const ids = [randomUUID(), randomUUID()] as const;
+  const ids = [
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+  ] as const;
   const userId = `artifact-owner-${threadId}`;
   try {
     await client.query(
@@ -42,12 +50,81 @@ export async function validatePermanentArtifactThreadCatalog(
     assert.ok(created);
     assert.equal(created.displayKind, "avatar");
     assert.equal(created.aliasUrl, values.aliasUrl);
-    // The old API's explicit column list must remain legal after expansion.
-    await client.query(
-      `INSERT INTO artifacts (id, org_id, author_user_id, kind, entity_id,
-       logical_key, projection_created_at, title)
-       VALUES ($1, $2, $3, 'file', $4, $5, now(), 'Old API output')`,
-      [ids[1], values.orgId, userId, randomUUID(), `file:old-${threadId}`],
+    // Frozen outgoing-writer column list, executed after schema/backfill replay.
+    // These legitimate NULL summaries are a permanent global-only contract.
+    const oldKinds = [
+      "file",
+      "hosted-site",
+      "image",
+      "video",
+      "presentation",
+      "shared-thread",
+    ] as const;
+    for (const [offset, kind] of oldKinds.entries()) {
+      await client.query(
+        `INSERT INTO artifacts (id, org_id, author_user_id, kind, entity_id,
+         logical_key, projection_created_at, title)
+         VALUES ($1, $2, $3, $4, $5, $6, now(), 'Old API output')`,
+        [
+          ids[offset + 1],
+          values.orgId,
+          userId,
+          kind === "shared-thread" ? "file" : kind,
+          randomUUID(),
+          kind === "shared-thread"
+            ? `shared-thread:${threadId}`
+            : `${kind}:old-${threadId}`,
+        ],
+      );
+    }
+    // Real SQL reads at the owning DB boundary: filtering happens before
+    // summary conversion and must not discard a NULL display_kind row.
+    // No projection/source join can invent avatar metadata or a thread.
+    for (const [offset, kind] of oldKinds.entries()) {
+      const category = await client.query<{ id: string; catalog_kind: string }>(
+        `SELECT id, COALESCE(display_kind,
+           CASE WHEN kind = 'file' AND logical_key LIKE 'shared-thread:%'
+             THEN 'shared-thread' ELSE kind END) AS catalog_kind
+         FROM artifacts
+         WHERE org_id = $1 AND author_user_id = $2
+           AND COALESCE(display_kind,
+             CASE WHEN kind = 'file' AND logical_key LIKE 'shared-thread:%'
+               THEN 'shared-thread' ELSE kind END) = $3`,
+        [values.orgId, userId, kind],
+      );
+      assert.deepEqual(category.rows, [
+        { id: ids[offset + 1], catalog_kind: kind },
+      ]);
+    }
+    const avatars = await client.query<{ id: string }>(
+      `SELECT id FROM artifacts
+       WHERE org_id = $1 AND author_user_id = $2
+         AND COALESCE(display_kind,
+           CASE WHEN kind = 'file' AND logical_key LIKE 'shared-thread:%'
+             THEN 'shared-thread' ELSE kind END) = 'avatar'`,
+      [values.orgId, userId],
+    );
+    assert.deepEqual(avatars.rows, [{ id: ids[0] }]);
+    const oldSummaries = await client.query(
+      `SELECT id, chat_thread_id, display_kind, source_url, alias_url,
+         video_source_url FROM artifacts WHERE id = ANY($1::uuid[]) ORDER BY id`,
+      [ids.slice(1)],
+    );
+    assert.deepEqual(
+      oldSummaries.rows,
+      ids
+        .slice(1)
+        .sort()
+        .map((id) => {
+          return {
+            id,
+            chat_thread_id: null,
+            display_kind: null,
+            source_url: null,
+            alias_url: null,
+            video_source_url: null,
+          };
+        }),
     );
     const [old] = await db
       .select()
@@ -117,7 +194,7 @@ export async function validatePermanentArtifactThreadCatalog(
       [old],
     );
     console.log(
-      "Artifact catalog retains global rows and display fields after thread deletion",
+      "Artifact catalog retains nullable global categories and display fields after thread deletion",
     );
   } finally {
     try {

@@ -65,7 +65,9 @@ export const artifacts = pgTable(
       },
       { onDelete: "set null" },
     ),
-    // Nullable while outgoing API versions can still write the old projection.
+    // Optional summary classification: NULL retains the base storage kind,
+    // except shared-thread logical keys identify shared snapshots. Without
+    // projection metadata, a base video cannot be reclassified as an avatar.
     displayKind: varchar("display_kind", {
       length: 32,
     }).$type<ArtifactCatalogKind>(),

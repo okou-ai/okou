@@ -553,6 +553,7 @@
       },
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak",
+      "loadMore": "Muat lebih banyak",
       "retry": "Coba lagi"
     },
     "fileBadges": {
@@ -565,7 +566,7 @@
       "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
-      "conversionNotice": "Membuat salinan yang dapat diedit. Format dapat berubah; file asli tetap disimpan.",
+      "conversionNotice": "Membuat salinan yang dapat diedit; format dapat berubah.",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "noArtifacts": "Tidak ada artefak untuk disinkronkan",
       "openDocs": "Buka di Google Docs",
@@ -651,6 +652,23 @@
       "panelTitle": "Artefak",
       "singularTitle": "Artefak",
       "unavailable": "Artefak ini tidak lagi tersedia."
+    },
+    "siteUrl": {
+      "available": "Tersedia",
+      "cancel": "Batal",
+      "checkFailed": "Tidak dapat memeriksa alamat. Ubah untuk mencoba lagi.",
+      "checking": "Memeriksa ketersediaan…",
+      "customize": "Sesuaikan URL",
+      "hint": "Pilih nama yang singkat dan mudah diingat",
+      "invalid": "Gunakan 3–63 huruf kecil, angka, atau tanda hubung; tanpa awalan yang dicadangkan",
+      "label": "URL situs",
+      "loadFailed": "Tidak dapat memuat pengaturan situs",
+      "oldUrlWarning": "URL lama tidak akan berfungsi. Perbarui tautan yang telah dibagikan.",
+      "published": "Dipublikasikan",
+      "save": "Simpan",
+      "saveFailed": "Tidak dapat menyimpan. Alamat mungkin sudah digunakan atau berubah. Muat ulang dan coba lagi.",
+      "taken": "Alamat ini sudah digunakan",
+      "updated": "URL situs diperbarui"
     },
     "templates": {
       "activeHtmlPreview": "Pratinjau HTML aktif {{title}}",
@@ -5185,6 +5203,16 @@
     },
     "wallet": {
       "actionError": "Tindakan tidak dapat diselesaikan. Periksa koneksi, izinkan pop-up, lalu coba lagi.",
+      "cards": {
+        "default": "Default",
+        "description": "Tambahkan kartu atau ubah kartu default di dompet Link Anda.",
+        "empty": "Belum ada kartu di dompet Link Anda",
+        "expires": "Berlaku hingga {{date}}",
+        "loadError": "Kartu Anda tidak dapat dimuat. Coba lagi.",
+        "loading": "Memuat kartu",
+        "manage": "Kelola kartu",
+        "title": "Kartu Anda di Link"
+      },
       "connect": "Hubungkan",
       "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
