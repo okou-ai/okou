@@ -1,12 +1,10 @@
 //! Current-assignment provider-token observations composed at query time.
 
-use std::{future::Future, io, sync::Arc, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 
-use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
+use runner_rpc_proto::{ErrorCode, Response, ResponseWriter};
 use runner_types::{ids::RunId, types::ExecutionContext};
 use serde::{Deserialize, Serialize};
-use tokio::time::Instant;
-use tokio_util::sync::CancellationToken;
 
 use crate::guest_rpc;
 use runner_network::proxy::{
@@ -62,87 +60,42 @@ impl Run {
             request,
         } = request;
         let _lease = lease;
-        let mut writer = ResponseWriter::new(input);
+        let scope = guest_rpc::Scope {
+            cancelled,
+            sandbox_cancelled,
+            deadline,
+        };
         let Some(remaining) = request.remaining_ms.filter(|remaining| *remaining > 1000) else {
-            send_error(
-                &mut writer,
-                &cancelled,
-                &sandbox_cancelled,
-                deadline,
-                ErrorCode::InvalidRequest,
-            )
-            .await;
+            scope.error(input, ErrorCode::InvalidRequest).await;
             return;
         };
-        let deadline = deadline.min(started + Duration::from_millis(remaining.min(60_000)));
+        let scope = guest_rpc::Scope {
+            deadline: deadline.min(started + Duration::from_millis(remaining.min(60_000))),
+            ..scope
+        };
         if serde_json::from_str::<Empty>(request.params.get()).is_err() {
-            send_error(
-                &mut writer,
-                &cancelled,
-                &sandbox_cancelled,
-                deadline,
-                ErrorCode::InvalidRequest,
-            )
-            .await;
+            scope.error(input, ErrorCode::InvalidRequest).await;
             return;
         }
-        let Some(result) = wait(
-            &cancelled,
-            &sandbox_cancelled,
-            deadline - TERMINAL_RESERVE,
-            self.snapshot(),
-        )
-        .await
-        else {
+        let snapshot_scope = guest_rpc::Scope {
+            cancelled: scope.cancelled.clone(),
+            sandbox_cancelled: scope.sandbox_cancelled.clone(),
+            deadline: scope.deadline - TERMINAL_RESERVE,
+        };
+        let Some(result) = snapshot_scope.wait(self.snapshot()).await else {
             return;
         };
         let Ok(data) = serde_json::value::to_raw_value(&result) else {
             return;
         };
-        let _ = wait(
-            &cancelled,
-            &sandbox_cancelled,
-            deadline,
-            writer.send(&Response::Result { data }),
-        )
-        .await;
+        let mut writer = ResponseWriter::new(input);
+        let _ = scope.wait(writer.send(&Response::Result { data })).await;
     }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Empty {}
-
-async fn wait<T>(
-    cancelled: &CancellationToken,
-    sandbox_cancelled: &CancellationToken,
-    deadline: Instant,
-    future: impl Future<Output = T>,
-) -> Option<T> {
-    tokio::select! {
-        biased;
-        () = cancelled.cancelled() => None,
-        () = sandbox_cancelled.cancelled() => None,
-        () = tokio::time::sleep_until(deadline) => None,
-        value = future => Some(value),
-    }
-}
-
-async fn send_error(
-    writer: &mut ResponseWriter<Box<dyn sandbox::GuestRpcStream>>,
-    cancelled: &CancellationToken,
-    sandbox_cancelled: &CancellationToken,
-    deadline: Instant,
-    code: ErrorCode,
-) {
-    let _ = wait(
-        cancelled,
-        sandbox_cancelled,
-        deadline,
-        writer.send(&Response::error(code, Delivery::NotDispatched)),
-    )
-    .await;
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

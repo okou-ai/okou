@@ -249,6 +249,21 @@ async fn usage_dispatches_without_ssh_and_rejects_guest_selected_params() {
 }
 
 #[tokio::test]
+async fn usage_rejects_missing_or_insufficient_remaining_budget() {
+    let h = Harness::with_usage();
+    for remaining in [None, Some(0), Some(1000)] {
+        let mut request = json!({"version":1,"method":"run.usage","params":{}});
+        if let Some(remaining) = remaining {
+            request["remaining_ms"] = json!(remaining);
+        }
+        let mut guest = h.open("assigned-sandbox").await;
+        send(&mut guest, request.to_string().as_bytes()).await;
+        assert_eq!(frames(guest).await, error("invalid_request"));
+    }
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn malformed_requests_are_rejected_before_consumer_availability() {
     let h = Harness::new();
     for request in [
