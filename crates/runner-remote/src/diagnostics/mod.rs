@@ -45,6 +45,22 @@ pub(crate) enum Operation {
     Native,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Effects {
+    NotStarted,
+    Unknown,
+    Completed,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(tag = "scope", content = "effects", rename_all = "snake_case")]
+pub(crate) enum EffectObservation {
+    Command(Effects),
+    SessionProgram(Effects),
+    SessionRequest(Effects),
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(tag = "source", content = "code", rename_all = "snake_case")]
 pub(crate) enum Cause {
@@ -201,6 +217,8 @@ pub(crate) struct Report {
     configuration_created_at: Option<DateTime<Utc>>,
     configuration_generation: Option<i64>,
     operation: Operation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effects: Option<EffectObservation>,
     stage: Stage,
     cause: Option<Cause>,
     pub(crate) dependencies: Vec<Dependency>,
@@ -218,6 +236,7 @@ pub(crate) struct Report {
 }
 
 pub(crate) struct Record {
+    pub(crate) effects: Option<EffectObservation>,
     pub(crate) protocol: Protocol,
     pub(crate) connection: Uuid,
     pub(crate) operation: Operation,
@@ -330,6 +349,7 @@ impl NativeWatch {
                 enabled: true,
             };
             let _ = handle.record(Record {
+                effects: None,
                 protocol: self.protocol,
                 connection: self.connection,
                 operation: Operation::Native,
@@ -452,6 +472,7 @@ impl Handle {
     }
     pub(crate) fn record(&self, record: Record) -> Option<Report> {
         let Record {
+            effects,
             protocol,
             connection,
             operation,
@@ -499,6 +520,7 @@ impl Handle {
             configuration_created_at: identity.created_at,
             configuration_generation: identity.generation,
             operation,
+            effects,
             stage: match cause {
                 Some(Cause::Native(_)) => Stage::NativeRuntime,
                 _ => match protocol {

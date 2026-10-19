@@ -22,6 +22,7 @@ import response_streaming
 import terminal_usage
 import usage
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.model_json_cooperative_helpers import make_model_json_pipeline_flow, model_json_body
 from tests.model_sse_cooperative_helpers import (
     make_model_sse_pipeline_flow,
     model_sse_terminal,
@@ -61,8 +62,10 @@ class _ResponsePeerLayer(layer.Layer):
     [
         pytest.param(False, "x", id="complete-x", marks=pytest.mark.shard_cost(10)),
         pytest.param(False, "model-sse", id="complete-model-sse", marks=pytest.mark.shard_cost(2)),
+        pytest.param(False, "model-json", id="complete-model-json"),
         pytest.param(True, "x", id="cancel-hook-x"),
         pytest.param(True, "model-sse", id="cancel-hook-model-sse"),
+        pytest.param(True, "model-json", id="cancel-hook-model-json"),
     ],
 )
 @pytest.mark.parametrize("split_first_chunk", [False, True], ids=["whole-gzip", "gzip-prefix"])
@@ -82,6 +85,13 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         first_wire = gzip.compress(b"{}\n" * 100_000)
         second_wire = gzip.compress(b'{"data":{"id":"1"}}\n')
         expected_first_work = 100_000
+    elif response_kind == "model-json":
+        flow = make_model_json_pipeline_flow(real_flow, tmp_path)
+        body = model_json_body()
+        first_wire = gzip.compress(body[:-2])
+        second_wire = gzip.compress(body[-2:])
+        # JSON has no authoritative prefix observations, even with usage first.
+        expected_first_work = 0
     else:
         flow = make_model_sse_pipeline_flow(real_flow, tmp_path)
         first_wire = gzip.compress(
@@ -98,7 +108,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     def observed_work():
         if response_kind == "x":
             return flow.metadata[metadata_keys.X_NDJSON_STATE]["lines_parsed"]
-        return flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE].get("tokens.output", 0)
+        return flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE, {}).get("tokens.output", 0)
 
     pulse = asyncio.Event()
     inspection_drained = asyncio.Event()
@@ -317,7 +327,10 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
 
     reads_at_pulse, rows_at_pulse, pending_at_pulse = await heartbeat
     assert reads_at_pulse == len(first_chunks)
-    assert 0 < rows_at_pulse <= 8
+    if response_kind == "model-json":
+        assert rows_at_pulse == 0
+    else:
+        assert 0 < rows_at_pulse <= 8
     assert pending_at_pulse is True
     assert read_sizes == [65535] * (len(wire_chunks) + 1)
     assert returned_sizes == [*(len(chunk) for chunk in wire_chunks), 0]
@@ -328,6 +341,8 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
             assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (
                 "response inspection interrupted"
             )
+        elif response_kind == "model-json":
+            assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
         else:
             assert 0 < observed_work() <= 8
         entries = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
@@ -336,6 +351,9 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         (event,) = webhook.usage_events()
         assert event["quantity"] == 1
         assert event["resources"] == [{"id": "1", "occurrences": 1}]
+    elif response_kind == "model-json":
+        assert observed_work() == 200
+        assert webhook.usage_events() == []
     else:
         assert observed_work() == 10_001
         assert webhook.usage_events() == []
@@ -345,7 +363,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
 
 
 @pytest.mark.parametrize("cancel_point", ["cooperative-drain", "paused-hook", "socket-read"])
-@pytest.mark.parametrize("response_kind", ["x", "model-sse"])
+@pytest.mark.parametrize("response_kind", ["x", "model-sse", "model-json"])
 async def test_native_reader_cancellation_preserves_connection_and_flow_cleanup(
     real_flow, tmp_path, sync_usage_executor, usage_webhook_api, cancel_point, response_kind
 ):
@@ -355,6 +373,9 @@ async def test_native_reader_cancellation_preserves_connection_and_flow_cleanup(
         )
         body = b'{"data":{"id":"1"}}\n' + b"{}\n" * 100
         body += b'{"data":{"id":"2"}}\n'
+    elif response_kind == "model-json":
+        flow = make_model_json_pipeline_flow(real_flow, tmp_path, billable=True)
+        body = model_json_body()
     else:
         flow = make_model_sse_pipeline_flow(real_flow, tmp_path, billable=True)
         body = model_sse_update("anthropic", 7) + b"\n" * 100
@@ -486,6 +507,7 @@ async def test_native_reader_cancellation_preserves_connection_and_flow_cleanup(
                 assert "_response_inspection" not in flow.metadata
                 assert "_response_stream_callback" not in flow.metadata
                 assert "model_sse_usage_finish" not in flow.metadata
+                assert "model_json_usage_finish" not in flow.metadata
                 assert "connector_response_finish" not in flow.metadata
                 assert not response_streaming.has_pending_response_inspection(flow)
                 usage.flush_usage_events(trigger="test")
@@ -519,6 +541,16 @@ async def test_native_reader_cancellation_preserves_connection_and_flow_cleanup(
             assert flow.metadata[metadata_keys.X_JSON_STATE]["parse_error"] == (
                 "response inspection interrupted"
             )
+    elif response_kind == "model-json":
+        if cancel_point == "socket-read":
+            assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 200
+            assert {event["category"]: event["quantity"] for event in reported} == {
+                "tokens.input": 50,
+                "tokens.output": 200,
+            }
+        else:
+            assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
+            assert reported == []
     else:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == (
             999 if cancel_point == "socket-read" else 7

@@ -4,6 +4,7 @@
 
 mod batch_aba;
 mod batch_repark;
+mod batch_replacement;
 mod cleanup_progress;
 mod continuation;
 mod continuation_api;
@@ -92,6 +93,7 @@ enum Corpus {
     LaterParking(bool),
     BatchAba,
     BatchRepark,
+    BatchReplacement,
 }
 
 enum PreparationProbe<'a> {
@@ -649,6 +651,29 @@ async fn native_speculative_repark_preserves_history_and_batch_recovery() -> Tes
     .await
 }
 
+#[test]
+fn native_replacement_report_requires_old_refusal_and_distinct_incoming_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/batch_replacement_report_test.py"
+        ))
+        .output()
+        .expect("native replacement report requires Python3");
+    assert!(
+        output.status.success(),
+        "replacement report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source same-key replacement P1 proof"]
+async fn native_same_key_replacement_fences_captured_batch_and_preserves_incoming() -> TestResult<()>
+{
+    measured_selected_corpus(&[NativeScope::Replacement], Corpus::BatchReplacement).await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
 async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
@@ -982,6 +1007,8 @@ async fn exercise_selected_factories(
                                 "BatchAba".into()
                             } else if corpus == Corpus::BatchRepark {
                                 "BatchRepark".into()
+                            } else if corpus == Corpus::BatchReplacement {
+                                "BatchReplacement".into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1132,6 +1159,7 @@ async fn exercise_retirement(
             | Corpus::ReturnedGuest(_)
             | Corpus::BatchAba
             | Corpus::BatchRepark
+            | Corpus::BatchReplacement
     ) || matches!(
         scope,
         NativeScope::Recovery
@@ -1326,6 +1354,7 @@ async fn exercise_retirement(
             | Corpus::LaterParking(_)
             | Corpus::BatchAba
             | Corpus::BatchRepark
+            | Corpus::BatchReplacement
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1416,6 +1445,15 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::Replacement if corpus == Corpus::BatchReplacement => {
+                batch_replacement::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, recovery_source.as_deref().ok_or_else(|| io::Error::other("replacement source missing"))?,
+                   proof.ok_or_else(|| io::Error::other("replacement proof missing"))?, paths.base_dir(), backing.clone()).await?;
+                Ok(None)
+            }
             NativeScope::LaterParking => {
                 let Corpus::LaterParking(blank) = corpus else {
                     return Err(io::Error::other("later parking corpus missing").into());

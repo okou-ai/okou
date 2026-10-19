@@ -157,6 +157,7 @@ export const walletPaymentMethodSchema = z.object({
     .nullable()
     .optional(),
 });
+export type WalletPaymentMethod = z.infer<typeof walletPaymentMethodSchema>;
 
 const walletLimitSchema = z.object({
   limit: z.number().int().nullable(),
@@ -520,6 +521,10 @@ export const walletCallbackContract = c.router({
 });
 
 export const walletUserContract = c.router({
+  paymentMethods: {
+    ...walletContract.paymentMethods,
+    path: "/api/wallet/connection/payment-methods",
+  },
   activity: {
     ...walletContract.transactions,
     path: "/api/wallet/connection/transactions",

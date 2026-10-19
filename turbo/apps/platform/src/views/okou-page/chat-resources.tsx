@@ -27,6 +27,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -216,7 +217,7 @@ function ResourceOutputRow({
           size="sm"
           className="shrink-0"
         />
-        <span className="truncate">{file.filename}</span>
+        <HoverScrollTitle title={file.filename} />
       </Button>
       <CopyResourceLink url={file.aliasUrl ?? file.url} />
     </li>
@@ -250,7 +251,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               title={t(($) => {
                 return $.artifacts.sidebar.panelTitle;
               })}
-              count={data.artifacts.length}
             />
             <ul id={artifactsId} className="m-0 list-none p-0">
               {data.artifacts

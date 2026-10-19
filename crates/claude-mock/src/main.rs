@@ -54,6 +54,10 @@
 //!   @guest-wide-tool-oom      - Opt-in real memory-pressure Guest-wide OOM
 //!   @guest-wide-tool-oom-injected
 //!                             - Trigger Guest-wide OOM after both tools are ready
+//!   @managed-task-oom         - Exercise nested tasks at the workload memory limit
+//!   @guest-wide-task-oom      - Opt-in real memory-pressure nested task OOM
+//!   @guest-wide-task-oom-injected
+//!                             - Trigger Guest-wide OOM after nested workers are ready
 //!   @runtime-only-oom         - Exhaust the managed runtime with no eligible tools
 //!   @ECHO@                    - First-line marker. Validate remaining non-empty
 //!                               lines as JSONL and emit them unchanged.

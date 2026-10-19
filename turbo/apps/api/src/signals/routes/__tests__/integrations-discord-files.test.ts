@@ -22,7 +22,12 @@ import { mockEnv } from "../../../lib/env";
 import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settle } from "../../utils";
+import {
+  clearAllDetached,
+  createDeferredPromise,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -50,6 +55,7 @@ import {
 } from "./helpers/discord";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { claimPublicDiscordTestRun } from "./helpers/discord-run";
+import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
 
@@ -86,12 +92,87 @@ function uploadBody(
   };
 }
 
-async function actorSession(options: Parameters<typeof bdd.user>[0] = {}) {
+async function finishPublishedDiscordFixture(disconnect: () => Promise<void>) {
+  const waiting = await settleIncludingAbort(flushWaitUntilForTest);
+  const detached = await settleIncludingAbort(clearAllDetached);
+  const disconnected = await settleIncludingAbort(disconnect);
+  const finalWaiting = await settleIncludingAbort(flushWaitUntilForTest);
+  const finalDetached = await settleIncludingAbort(clearAllDetached);
+  const errors = [
+    waiting,
+    detached,
+    disconnected,
+    finalWaiting,
+    finalDetached,
+  ].flatMap((result) => {
+    return result.ok ? [] : [result.error];
+  });
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "Discord publication cleanup failed");
+  }
+}
+
+function withPublishedDiscordFixture(
+  operation: (
+    fixture: BoundFixture,
+    lifecycle: ReturnType<typeof createFixtureLifecycle>,
+  ) => Promise<void>,
+) {
+  return async () => {
+    const cleanupController = new AbortController();
+    const cleanupContext = { ...context, signal: cleanupController.signal };
+    let disconnect = () => {
+      return Promise.resolve();
+    };
+    const lifecycle = createFixtureLifecycle({
+      teardown: () => {
+        return finishPublishedDiscordFixture(disconnect);
+      },
+      afterTeardown: () => {
+        return cleanupController.abort();
+      },
+    });
+    const result = await settleIncludingAbort(() => {
+      return lifecycle.run(async () => {
+        const fixture = await boundFixture({
+          isolatePg: true,
+          registerCleanup(actor) {
+            disconnect = async () => {
+              mockDiscordMemberships(cleanupContext, [actor]);
+              await removePublicDiscordBinding(cleanupContext, actor);
+            };
+          },
+        });
+        await operation(fixture, lifecycle);
+      });
+    });
+    const finished = await settleIncludingAbort(() => {
+      return lifecycle.finish();
+    });
+    const errors = [result, finished].flatMap((outcome) => {
+      return outcome.ok ? [] : [outcome.error];
+    });
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Discord publication fixture failed");
+    }
+  };
+}
+
+async function actorSession(
+  options: Parameters<typeof bdd.user>[0] = {},
+  requestOptions: { readonly isolatePg?: true } = {},
+) {
   const actor = bdd.user(options);
   if (!actor.orgId) {
     throw new Error("Discord file test actor must have an organization");
   }
-  await bdd.readMe(actor);
+  await bdd.readMe(actor, requestOptions);
   return { ...actor, orgId: actor.orgId };
 }
 
@@ -102,8 +183,14 @@ interface BoundFixture extends DiscordFileProviderIdentity {
   readonly headers: { readonly authorization: string };
 }
 
-async function boundFixture(): Promise<BoundFixture> {
-  const actor = await actorSession();
+async function boundFixture(
+  options: {
+    readonly isolatePg?: true;
+    readonly registerCleanup?: (actor: BoundFixture["actor"]) => void;
+  } = {},
+): Promise<BoundFixture> {
+  const actor = await actorSession({}, options);
+  options.registerCleanup?.(actor);
   const identity = {
     guildId: discordSnowflake(),
     discordUserId: discordSnowflake(),
@@ -127,10 +214,12 @@ async function boundFixture(): Promise<BoundFixture> {
     botUserId: identity.botUserId,
     discordUserId: identity.discordUserId,
   });
-  onTestFinished(async () => {
-    mockDiscordMemberships(context, [actor]);
-    await removePublicDiscordBinding(context, binding);
-  });
+  if (!options.registerCleanup) {
+    onTestFinished(async () => {
+      mockDiscordMemberships(context, [actor]);
+      await removePublicDiscordBinding(context, binding);
+    });
+  }
   return {
     ...identity,
     actor,
@@ -771,133 +860,139 @@ describe("Canonical Discord file publication and delivery", () => {
     expect(catalog.body.artifacts).toHaveLength(1);
   });
 
-  it("publishes one canonical artifact before delivery and reuses its receipt", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        input: expect.objectContaining({
-          Key: `private-artifacts/${upload.operation.assetId}/${upload.body.filename}`,
+  it(
+    "publishes one canonical artifact before delivery and reuses its receipt",
+    withPublishedDiscordFixture(async (fixture, lifecycle) => {
+      const headers = fixture.headers;
+      const upload = await canonicalUpload(fixture);
+      expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: `private-artifacts/${upload.operation.assetId}/${upload.body.filename}`,
+          }),
         }),
-      }),
-      expect.anything(),
-    );
-    const signedPut = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
-      return (
-        call[1] instanceof PutObjectCommand &&
-        call[1].input.Key?.endsWith(`/${upload.body.filename}`)
+        expect.anything(),
       );
-    });
-    if (!signedPut || !(signedPut[1] instanceof PutObjectCommand)) {
-      throw new Error("Expected a signed Discord PUT");
-    }
-    expect(signedPut[1].input.ChecksumSHA256).toBeUndefined();
-    const client = fileClients();
-    const materialized = await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
+      const signedCalls = context.mocks.s3.getSignedUrl.mock.calls;
+      const signedPut = signedCalls.find((call) => {
+        return (
+          call[1] instanceof PutObjectCommand &&
+          call[1].input.Key?.endsWith(`/${upload.body.filename}`)
+        );
+      });
+      if (!signedPut || !(signedPut[1] instanceof PutObjectCommand)) {
+        throw new Error("Expected a signed Discord PUT");
+      }
+      expect(signedPut[1].input.ChecksumSHA256).toBeUndefined();
+      const client = fileClients();
+      const materialized = await accept(
+        client.materialize({
+          headers,
+          body: upload.operation,
+        }),
+        [200],
+      );
 
-    expect(materialized.body).toStrictEqual({
-      ...upload.operation,
-      url: upload.initialized.url,
-      delivery: { status: "pending" },
-    });
-    const catalog = await accept(
-      catalogClient().list({ headers: fixture.headers }),
-      [200],
-    );
-    expect(catalog.body.artifacts).toHaveLength(1);
-    const artifact = catalog.body.artifacts[0];
-    if (!artifact) {
-      throw new Error(
-        "Expected the materialized canonical output in the catalog",
-      );
-    }
-    const detail = await accept(
-      catalogClient().get({
-        headers: fixture.headers,
-        params: { artifactId: artifact.id },
-      }),
-      [200],
-    );
-    expect(detail.body).toMatchObject({
-      kind: "file",
-      file: {
-        id: upload.operation.assetId,
-        filename: upload.body.filename,
-        contentType: "text/csv",
-        size: upload.bytes.byteLength,
+      expect(materialized.body).toStrictEqual({
+        ...upload.operation,
         url: upload.initialized.url,
-      },
-    });
-
-    const duplicateInit = await accept(
-      client.init({ headers: fixture.headers, body: upload.body }),
-      [200],
-    );
-    expect(duplicateInit.body).toStrictEqual({
-      ...upload.operation,
-      url: upload.initialized.url,
-    });
-    const deliveredMessageId = discordSnowflake();
-    const deliveredAttachmentId = discordSnowflake();
-    let sends = 0;
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        async ({ request }) => {
-          sends += 1;
-          await expectUploadedDiscordFile(request, upload.bytes);
-          return HttpResponse.json(
-            discordFileMessage({
-              channelId: fixture.channelId,
-              messageId: deliveredMessageId,
-              authorId: fixture.botUserId,
-              bot: true,
-              attachment: {
-                id: deliveredAttachmentId,
-                filename: upload.body.filename,
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
-                content_type: "text/csv",
-              },
-            }),
-          );
+        delivery: { status: "pending" },
+      });
+      const catalog = await accept(catalogClient().list({ headers }), [200]);
+      expect(catalog.body.artifacts).toHaveLength(1);
+      const artifact = catalog.body.artifacts[0];
+      if (!artifact) {
+        throw new Error(
+          "Expected the materialized canonical output in the catalog",
+        );
+      }
+      const detail = await accept(
+        catalogClient().get({
+          headers,
+          params: { artifactId: artifact.id },
+        }),
+        [200],
+      );
+      expect(detail.body).toMatchObject({
+        kind: "file",
+        file: {
+          id: upload.operation.assetId,
+          filename: upload.body.filename,
+          contentType: "text/csv",
+          size: upload.bytes.byteLength,
+          url: upload.initialized.url,
         },
-      ),
-    );
-    const completed = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    const repeated = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
+      });
 
-    expect(completed.body).toStrictEqual({
-      ...upload.operation,
-      url: upload.initialized.url,
-      delivery: {
-        status: "delivered",
-        channelId: fixture.channelId,
-        messageId: deliveredMessageId,
-        attachmentId: deliveredAttachmentId,
-        permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
-      },
-    });
-    expect(repeated.body).toStrictEqual(completed.body);
-    expect(sends).toBe(1);
-    const repeatedCatalog = await accept(
-      catalogClient().list({ headers: fixture.headers }),
-      [200],
-    );
-    expect(repeatedCatalog.body.artifacts).toStrictEqual(
-      catalog.body.artifacts,
-    );
-  });
+      const duplicateInit = await accept(
+        client.init({ headers, body: upload.body }),
+        [200],
+      );
+      expect(duplicateInit.body).toStrictEqual({
+        ...upload.operation,
+        url: upload.initialized.url,
+      });
+      const deliveredMessageId = discordSnowflake();
+      const deliveredAttachmentId = discordSnowflake();
+      let sends = 0;
+      server.use(
+        http.post(
+          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+          ({ request }) => {
+            return lifecycle.run(async () => {
+              sends += 1;
+              await expectUploadedDiscordFile(request, upload.bytes);
+              return HttpResponse.json(
+                discordFileMessage({
+                  channelId: fixture.channelId,
+                  messageId: deliveredMessageId,
+                  authorId: fixture.botUserId,
+                  bot: true,
+                  attachment: {
+                    id: deliveredAttachmentId,
+                    filename: upload.body.filename,
+                    size: upload.bytes.byteLength,
+                    url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
+                    content_type: "text/csv",
+                  },
+                }),
+              );
+            });
+          },
+        ),
+      );
+      const completed = await accept(
+        client.complete({ headers, body: upload.operation }),
+        [200],
+      );
+      const repeated = await accept(
+        client.complete({ headers, body: upload.operation }),
+        [200],
+      );
+
+      expect(completed.body).toStrictEqual({
+        ...upload.operation,
+        url: upload.initialized.url,
+        delivery: {
+          status: "delivered",
+          channelId: fixture.channelId,
+          messageId: deliveredMessageId,
+          attachmentId: deliveredAttachmentId,
+          permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
+        },
+      });
+      expect(repeated.body).toStrictEqual(completed.body);
+      expect(sends).toBe(1);
+      const repeatedCatalog = await accept(
+        catalogClient().list({ headers }),
+        [200],
+      );
+      expect(repeatedCatalog.body.artifacts).toStrictEqual(
+        catalog.body.artifacts,
+      );
+    }),
+  );
 
   it("reuses concurrent upload initialization for one operation", async () => {
     const fixture = await boundFixture();

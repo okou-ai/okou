@@ -78,12 +78,14 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly PI_MEMORY_INPUT_REVISION_WRITER_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
+readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
 readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
+readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-only
 readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
@@ -146,6 +148,17 @@ fi
 
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the structured-only disk telemetry reader: ${STRUCTURED_DISK_TELEMETRY_READER_COMMIT}."
+fi
+
+# Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
+# require the retired SQL ownership marker and cannot serve the contracted schema.
+wechat_workflows_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$WECHAT_WORKFLOWS_ONLY_PATH" | sed -n '1p')
+if [[ ! "$wechat_workflows_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged WeChat Workflows-only receiver on main."
+fi
+if ! git merge-base --is-ancestor "$wechat_workflows_only_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the WeChat Workflows-only receiver: ${wechat_workflows_only_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$LINK_WALLET_GRANT_WRITER_COMMIT" "$TARGET_COMMIT"; then
@@ -591,6 +604,17 @@ if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
+fi
+
+# Host Worker aliases resolve through the API even while URL editing is disabled.
+# Earlier APIs cannot authorize a renamed site or preserve it on publication.
+hosted_site_url_routing_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$HOSTED_SITE_URL_ROUTING_PATH" | sed -n '1p')
+if [[ ! "$hosted_site_url_routing_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged hosted-site URL routing contract on main."
+fi
+if ! git merge-base --is-ancestor "$hosted_site_url_routing_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the hosted-site URL routing contract: ${hosted_site_url_routing_commit}."
 fi
 
 # Installed Native Desktop versions use Ably wakeups and heartbeat hints rather

@@ -10,6 +10,7 @@
 1 cloudflare-ssh-preconnect-test.sh
 1 cloudflare-ssh-proxy-test.sh
 1 cloudflare-ssh-native-diagnostics-test.sh
+1 cloudflare-ssh-tcp-test.sh
 1 crates-runner-image-waiters-test.sh
 1 discover-runner-pr-namespaces-test.sh
 1 embedded-cli-workflow-test.sh
@@ -47,6 +48,7 @@
 2 crates/runner/tests/behavior/tests/runner-behavior-agent-ready-benchmark-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-submit-test.sh
+2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-pressure-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-balloon-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-keep-alive-test.sh
 2 runner-binary-early-publication-test.sh

@@ -10,6 +10,7 @@ import {
 } from "./chat-resource-section.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 
 export function CopyResourceLink({ url }: { readonly url: string }) {
   const { t } = useTranslation();
@@ -23,7 +24,7 @@ export function CopyResourceLink({ url }: { readonly url: string }) {
       aria-label={t(($) => {
         return $.chat.resources.copyLink;
       })}
-      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100 [&_svg]:size-3.5"
+      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
       onClick={() => {
         return detach(copy(url, signal), Reason.DomCallback);
       }}
@@ -64,7 +65,6 @@ export function ChatResourceLinks({
           title={t(($) => {
             return $.chat.resources.links;
           })}
-          count={links.length}
         />
       )}
       <ul id={linksId} className="m-0 list-none p-0">
@@ -80,12 +80,15 @@ export function ChatResourceLinks({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-8 min-w-0 flex-1 truncate rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
-                  title={link.url}
+                  className="flex min-h-8 min-w-0 flex-1 items-center rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
                 >
-                  {link.title === link.url
-                    ? link.title.replace(/^https?:\/\//u, "")
-                    : link.title}
+                  <HoverScrollTitle
+                    title={
+                      link.title === link.url
+                        ? link.title.replace(/^https?:\/\//u, "")
+                        : link.title
+                    }
+                  />
                 </a>
                 <CopyResourceLink url={link.url} />
               </li>

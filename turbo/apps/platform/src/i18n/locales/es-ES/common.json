@@ -581,7 +581,7 @@
       "agentLoading": "El agente sigue cargando",
       "connect": "Conectar Google Drive",
       "connectTooltip": "Conecta Google Drive para subir artefactos",
-      "conversionNotice": "Crea una copia editable. El formato puede cambiar; se conserva el archivo original.",
+      "conversionNotice": "Crea una copia editable; el formato puede variar.",
       "conversionUnconfirmed": "No se pudo confirmar la conversión de Google. Revisa Drive antes de reintentar.",
       "noArtifacts": "No hay artefactos que sincronizar",
       "openDocs": "Abrir en Google Docs",
@@ -670,6 +670,23 @@
       "panelTitle": "Artefactos",
       "singularTitle": "Artefacto",
       "unavailable": "Este artefacto ya no está disponible."
+    },
+    "siteUrl": {
+      "available": "Disponible",
+      "cancel": "Cancelar",
+      "checkFailed": "No se pudo comprobar la dirección. Edítala para volver a intentarlo.",
+      "checking": "Comprobando disponibilidad…",
+      "customize": "Personalizar URL",
+      "hint": "Elige un nombre corto y fácil de recordar",
+      "invalid": "De 3 a 63 letras minúsculas, números o guiones; sin prefijos reservados",
+      "label": "URL del sitio",
+      "loadFailed": "No se pudo cargar la configuración del sitio",
+      "oldUrlWarning": "La URL anterior dejará de funcionar. Actualiza los enlaces compartidos.",
+      "published": "Publicado",
+      "save": "Guardar",
+      "saveFailed": "No se pudo guardar. La dirección puede estar en uso o haber cambiado. Actualiza y vuelve a intentarlo.",
+      "taken": "Esta dirección ya está en uso",
+      "updated": "URL del sitio actualizada"
     },
     "templates": {
       "activeHtmlPreview": "Vista previa HTML activa de {{title}}",
@@ -5272,6 +5289,16 @@
     },
     "wallet": {
       "actionError": "No se pudo completar la acción. Comprueba la conexión, permite las ventanas emergentes e inténtalo de nuevo.",
+      "cards": {
+        "default": "Predeterminada",
+        "description": "Añade una tarjeta o cambia la predeterminada en tu cartera de Link.",
+        "empty": "Aún no hay tarjetas en tu cartera de Link",
+        "expires": "Vence en {{date}}",
+        "loadError": "No se han podido cargar tus tarjetas. Inténtalo de nuevo.",
+        "loading": "Cargando tarjetas",
+        "manage": "Gestionar tarjetas",
+        "title": "Tus tarjetas en Link"
+      },
       "connect": "Conectar",
       "description": "Tus agentes pueden solicitar compras y consultar transacciones de Link. Tú apruebas cada compra.",
       "disconnect": "Desconectar",

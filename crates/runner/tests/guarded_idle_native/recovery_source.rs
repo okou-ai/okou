@@ -23,6 +23,37 @@ pub struct Source {
     samples: Mutex<Vec<Value>>,
     failure: Mutex<Option<String>>,
     next_delivery_delay: Mutex<Option<Duration>>,
+    next_read: Mutex<Option<Arc<ReadGate>>>,
+}
+
+/// An owned one-shot pre-read hold; all subsequent real readers remain free.
+pub struct ReadGate {
+    entered: watch::Sender<bool>,
+    released: watch::Sender<bool>,
+}
+
+impl ReadGate {
+    pub async fn wait_entered(&self) -> TestResult<()> {
+        let mut entered = self.entered.subscribe();
+        while !*entered.borrow_and_update() {
+            entered.changed().await?;
+        }
+        Ok(())
+    }
+
+    pub fn release(&self) {
+        self.released.send_replace(true);
+    }
+
+    async fn wait(&self) {
+        let mut released = self.released.subscribe();
+        self.entered.send_replace(true);
+        while !*released.borrow_and_update() {
+            if released.changed().await.is_err() {
+                break;
+            }
+        }
+    }
 }
 
 impl Source {
@@ -36,7 +67,24 @@ impl Source {
             samples: Mutex::new(Vec::new()),
             failure: Mutex::new(None),
             next_delivery_delay: Mutex::new(None),
+            next_read: Mutex::new(None),
         }
+    }
+
+    pub fn hold_next_read(&self) -> TestResult<Arc<ReadGate>> {
+        let mut next = self
+            .next_read
+            .lock()
+            .map_err(|_| io::Error::other("native next-read gate poisoned"))?;
+        if next.is_some() {
+            return Err(io::Error::other("native next-read gate already armed").into());
+        }
+        let gate = Arc::new(ReadGate {
+            entered: watch::channel(false).0,
+            released: watch::channel(false).0,
+        });
+        *next = Some(gate.clone());
+        Ok(gate)
     }
 
     pub fn pause(&self) {
@@ -119,6 +167,18 @@ impl Source {
 impl MemoryObservationSource for Source {
     fn observe(&self) -> BoxFuture<'_, HostMemoryObservation> {
         Box::pin(async move {
+            let gate = match self.next_read.lock() {
+                Ok(mut next) => next.take(),
+                Err(_) => {
+                    if let Ok(mut failure) = self.failure.lock() {
+                        *failure = Some("native next-read gate poisoned".into());
+                    }
+                    return HostMemoryObservation::unknown(HostMemoryUnknown::InvalidTiming);
+                }
+            };
+            if let Some(gate) = gate {
+                gate.wait().await;
+            }
             self.wait().await;
             // Timestamp and read are both after release. A delayed waiter cannot
             // return a cached pre-gate sample with a manufactured fresh age.
@@ -170,4 +230,30 @@ impl MemoryObservationSource for Source {
             }
         })
     }
+}
+
+#[tokio::test]
+async fn one_held_proc_reader_does_not_block_subsequent_fresh_readers() -> TestResult<()> {
+    let source = Arc::new(Source::new());
+    let gate = source.hold_next_read()?;
+    let reader = source.clone();
+    let held = tokio::spawn(async move { reader.observe().await });
+    let result: TestResult<()> = async {
+        tokio::time::timeout(Duration::from_secs(5), gate.wait_entered()).await??;
+        let observation = tokio::time::timeout(Duration::from_secs(5), source.observe()).await?;
+        observation.available_bytes_at(tokio::time::Instant::now(), Duration::from_secs(5))?;
+        if held.is_finished() || source.samples()?.len() != 1 {
+            return Err(
+                io::Error::other("one-shot gate blocked or consumed the wrong reader").into(),
+            );
+        }
+        Ok(())
+    }
+    .await;
+    gate.release();
+    let observation = held.await?;
+    observation.available_bytes_at(tokio::time::Instant::now(), Duration::from_secs(5))?;
+    result?;
+    assert_eq!(source.samples()?.len(), 2);
+    Ok(())
 }

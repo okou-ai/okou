@@ -167,6 +167,13 @@ type TeamsMessageDispatchResult =
     }
   | { readonly kind: "accepted" };
 
+interface TeamsMessageDispatchArgs {
+  readonly activity: TeamsInboundActivity;
+  readonly installation?: TeamsInstallation | null;
+  readonly apiStartTime: number;
+  readonly timing: ApiDispatchTimingCollector;
+}
+
 function isTeamsBotCommand(value: string): value is TeamsBotCommand {
   return value === "help" || value === "connect" || value === "disconnect";
 }
@@ -546,67 +553,51 @@ async function sendTeamsRunStartIndicator(
   await bestEffort(indicator, signal);
 }
 
-async function resolveEffectiveCompose(args: {
-  readonly db: Db;
-  readonly userId: string;
-  readonly orgId: string;
-}): Promise<EffectiveComposeResolution> {
-  const db = args.db;
-  const orgId = args.orgId;
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  const defaultAgentId = metadata?.defaultAgentId ?? null;
-  if (!defaultAgentId) {
-    return { status: "not_configured" };
-  }
-  const configuredAgentDb = args.db;
-  const configuredAgentOrgId = args.orgId;
-  const [configuredDefaultAgent] = await configuredAgentDb
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, defaultAgentId),
-        eq(agents.orgId, configuredAgentOrgId),
-      ),
-    )
-    .limit(1);
-  if (!configuredDefaultAgent) {
-    return { status: "not_found" };
-  }
-  const visibleAgentDb = args.db;
-  const visibleComposeId = defaultAgentId;
-  const visibleOrgId = args.orgId;
-  const visibleUserId = args.userId;
-  const [visibleDefaultAgent] = await visibleAgentDb
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, visibleComposeId),
-        eq(agents.orgId, visibleOrgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, visibleUserId)),
-      ),
-    )
-    .limit(1);
-  if (!visibleDefaultAgent) {
+function composeAgentFields() {
+  return {
+    id: agents.id,
+    name: agents.name,
+    displayName: agents.displayName,
+  };
+}
+
+function configuredAgentCondition(composeId: string, orgId: string) {
+  return and(eq(agents.id, composeId), eq(agents.orgId, orgId));
+}
+
+function visibleAgentCondition(
+  composeId: string,
+  orgId: string,
+  userId: string,
+) {
+  return and(
+    eq(agents.id, composeId),
+    eq(agents.orgId, orgId),
+    or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
+  );
+}
+
+function visibleComposeResolution(
+  composeId: string,
+  agent: TeamsAgent | undefined,
+): EffectiveComposeResolution {
+  if (!agent) {
     return { status: "not_accessible" };
   }
   return {
     status: "resolved",
-    composeId: defaultAgentId,
-    agent: visibleDefaultAgent,
+    composeId,
+    agent,
+  };
+}
+
+function emptyPromptNotice(
+  installation: TeamsInstallation | null | undefined,
+): TeamsMessageDispatchResult {
+  const { botName } = teamsIdentity(installation);
+  return {
+    kind: "notice",
+    replyText: `Please include a message for ${botName}.`,
   };
 }
 
@@ -1803,12 +1794,7 @@ function teamsAgentPrompt(activity: TeamsMessageActivity): string {
 export const dispatchTeamsMessageToAgent$ = command(
   async (
     { set },
-    args: {
-      readonly activity: TeamsInboundActivity;
-      readonly installation?: TeamsInstallation | null;
-      readonly apiStartTime: number;
-      readonly timing: ApiDispatchTimingCollector;
-    },
+    args: TeamsMessageDispatchArgs,
     signal: AbortSignal,
   ): Promise<TeamsMessageDispatchResult> => {
     const { activity } = args;
@@ -1834,11 +1820,7 @@ export const dispatchTeamsMessageToAgent$ = command(
 
     const promptFiles = teamsPromptFiles(activity);
     if (!prompt && promptFiles.length === 0) {
-      const { botName } = teamsIdentity(args.installation);
-      return {
-        kind: "notice",
-        replyText: `Please include a message for ${botName}.`,
-      };
+      return emptyPromptNotice(args.installation);
     }
 
     const db = set(writeDb$);
@@ -1897,11 +1879,35 @@ export const dispatchTeamsMessageToAgent$ = command(
       return commandResult;
     }
 
-    const effectiveCompose = await resolveEffectiveCompose({
-      db,
-      userId: connection.userId,
-      orgId: boundInstallation.orgId,
-    });
+    const composeDb = db;
+    const userId = connection.userId;
+    const orgId = boundInstallation.orgId;
+    const effectiveCompose =
+      await (async (): Promise<EffectiveComposeResolution> => {
+        const [metadata] = await composeDb
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .limit(1);
+        const defaultAgentId = metadata?.defaultAgentId ?? null;
+        if (!defaultAgentId) {
+          return { status: "not_configured" };
+        }
+        const [configuredDefaultAgent] = await composeDb
+          .select(composeAgentFields())
+          .from(agents)
+          .where(configuredAgentCondition(defaultAgentId, orgId))
+          .limit(1);
+        if (!configuredDefaultAgent) {
+          return { status: "not_found" };
+        }
+        const [visibleDefaultAgent] = await composeDb
+          .select(composeAgentFields())
+          .from(agents)
+          .where(visibleAgentCondition(defaultAgentId, orgId, userId))
+          .limit(1);
+        return visibleComposeResolution(defaultAgentId, visibleDefaultAgent);
+      })();
     signal.throwIfAborted();
 
     if (effectiveCompose.status !== "resolved") {

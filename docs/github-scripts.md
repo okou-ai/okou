@@ -70,7 +70,7 @@ connection failure.
 
 Preconnection, probes and actual guarded callers pass the selected master's
 `<master-log>.proxies` namespace to any proxy they create. Each proxy owns a
-unique `proxy.*` directory containing `events.log`, `stderr.log` and native
+unique `proxy.*` directory containing `events.log`, `stderr.log`, `tcp.log` and native
 `application/cloudflared*.log` files. Directories are private (0700); an inherited
 077 umask restricts files, including native rotations. The setup action installs
 the proxy's diagnostic helper and Python renderer together. Raw managed evidence
@@ -89,16 +89,49 @@ status and proxy status. UTC/epoch times are recorded at the event; Linux uptime
 provides a local monotonic reference when available. GitHub's later dump time is
 not the original event time of timestamp-free SSH lines.
 
+The wrapper keeps an in-memory history of probe, recovery, selection and caller
+milestones. Failure output joins these source UTC/epoch/uptime observations by
+call and selected-master identity, with elapsed centiseconds from Linux uptime.
+Recovery observations identify the replacement master. The rootfs process-test
+upload explicitly requests native SCP `-v` diagnostics; generic wrapper arguments
+and verbosity remain owned by their callers.
+
+Each proxy owns a Python standard-library TCP observer for its cloudflared child.
+Once per second it joins that PID's procfs socket inodes and process start time
+to Linux inet-diag/TCP_INFO observations, rechecking ownership before publication.
+It samples endpoints, numeric TCP state, queues, RTT, retransmission timeout,
+retransmissions, time since last sent/received data, and
+kernel-length-available byte/window counters. These are kernel TCP observations,
+not SFTP progress or application-level stream byte counts. Reads inspect at most
+1,024 descriptors/four socket inodes and 1 MiB of kernel responses per round,
+with a half-second query deadline. The private snapshot atomically retains at
+most 16 records; the proxy terminates and reaps its observer on exit or handled
+cancellation. Observer stdin/stdout/stderr cannot keep the SSH stream open.
+
+Sample timestamps identify collection start, bounded by that query window.
+Permission/unsupported/partial observations include an unavailable record;
+already observed sockets survive a later dump failure. Missing counters are not
+zero counters, and no observed socket does not establish why one disappeared.
+Short-lived sockets or final state can be missed between samples. TCP resets,
+retransmissions and queues alone cannot identify the responsible network hop.
+The observer performs no payload reads, external connections or remote probes.
+
 When a guarded SSH, SCP, or SFTP operation fails, its wrapper prints the target,
-original exit status, UTC start/end times, and folded, sanitized proxy/master
-evidence limited to 100 lines and 64 KiB. Reads are capped at 64 KiB per file;
-the collector considers four recent proxy instances and two native log files per
-instance, with explicit truncation/unavailable markers. Different instances are
-shown separately, not automatically declared the cause of an operation. A missing
+original exit status, run/attempt/call/master context, source-timed phases and
+folded, sanitized proxy/master evidence. The renderer is limited to 384 lines and
+64 KiB. Reads are capped at 64 KiB per file; the collector considers four recent
+proxy instances and two native log files per
+instance, with explicit truncation/unavailable markers. Each instance reserves
+2 KiB for lifecycle, 4 KiB for native application, 4 KiB for TCP, and 1 KiB for
+proxy stderr; SSH master stderr reserves another 12 KiB. Per-source line limits
+and these byte quotas keep one noisy source from erasing another category.
+Different instances are shown separately, not automatically declared the cause of
+an operation. A missing
 final lifecycle event means no final status was observed in that snapshot; it
 does not prove whether the process remains alive or was killed. Preconnection
 failure/retry reports and probe failures also include the selected master's
-evidence. Successful operations keep added diagnostics out of their output.
+evidence. Successful wrappers keep the added phase/observer report out of their
+output; explicitly requested native caller verbosity remains effective.
 Reads preserve caller stdout/status and never
 reconnect, replay a caller, or close a live master to flush logs.
 The operation deadline's native `timeout --verbose` message records when it
@@ -108,8 +141,14 @@ snapshot; status 124/137 alone is not used to invent a deadline or OOM diagnosis
 
 The renderer requires Python 3's standard library and fails closed if optional
 diagnostics cannot be rendered. It removes native request/header dumps, omits
-malformed structured records, allowlists native event fields, and redacts
-authentication headers, cookies, token query parameters and legacy secret forms.
+malformed structured records, allowlists native event fields and numeric/IP TCP
+metadata, and redacts authentication headers, cookies, token query parameters
+and legacy secret forms.
+Native `originURL` contributes only a validated hostname, without userinfo,
+path or query. The pinned access client does not log successful service-token
+handshake response metadata or normal stream EOF/byte outcomes through another
+verbosity flag. These client diagnostics use the existing job console and add
+no artifact upload or durable store.
 Do not print/upload raw native DEBUG logs: they contain authentication headers.
 Keep SSH at `DEBUG1`; do not enable packet-level or `--debug-stream` payload logs.
 

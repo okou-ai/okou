@@ -51,6 +51,9 @@ async function menuItem(text: string) {
 }
 
 beforeEach(() => {
+  context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
+    return respond(200, { data: [] });
+  });
   context.mocks.api(walletUserContract.transactions, ({ respond }) => {
     return respond(200, { transactions: [], nextCursor: null });
   });
@@ -167,6 +170,9 @@ test.each([FeatureSwitchKey.LinkWallet, FeatureSwitchKey.WalletSettings])(
       return never();
     });
     context.mocks.api(walletUserContract.transactions, ({ never }) => {
+      return never();
+    });
+    context.mocks.api(walletUserContract.paymentMethods, ({ never }) => {
       return never();
     });
     await openWallet({ [feature]: false });

@@ -47,12 +47,23 @@ async function openComposer(
 }
 
 function selectText(editor: HTMLElement, from: number, to = from): void {
-  const text = editor.querySelector("p")?.firstChild;
+  const position = (index: number): [Text, number] => {
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node instanceof Text) {
+      if (index <= node.length) {
+        return [node, index];
+      }
+      index -= node.length;
+      node = walker.nextNode();
+    }
+    throw new Error("Composer text position is unavailable");
+  };
   const selection = window.getSelection();
-  if (!(text instanceof Text) || !selection) {
+  if (!selection) {
     throw new Error("Composer text selection is unavailable");
   }
-  selection.setBaseAndExtent(text, from, text, to);
+  selection.setBaseAndExtent(...position(from), ...position(to));
   fireEvent(document, new Event("selectionchange"));
 }
 
@@ -91,58 +102,100 @@ test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
   },
 );
 
-test("Keep the hint out of copied and sent text and hide it for a selection", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
-  await fill(editor, "Draft /");
-  await waitFor(() => {
-    expect(slashHint(editor)).toBeInTheDocument();
-  });
-  selectText(editor, 0, 7);
-  await waitFor(() => {
+test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
+  "Show the hint immediately after a bare slash before existing text at %s",
+  async (path) => {
+    const user = userEvent.setup({ delay: null });
+    const editor = await openComposer(path);
+    await fill(editor, "/ 131");
+    selectText(editor, 1);
+    await waitFor(() => {
+      expect(slashHint(editor)).toBeInTheDocument();
+    });
+    expect(slashHint(editor)?.nextSibling?.textContent).toBe(" 131");
+    expect(editor.textContent).toBe("/ 131");
+    expect(editor).toHaveFocus();
+
+    await user.keyboard("weekly");
+    expect(editor.textContent).toBe("/weekly 131");
     expect(slashHint(editor)).toBeNull();
-  });
-  const clipboardData = new DataTransfer();
-  fireEvent.copy(editor, { clipboardData });
-  expect(clipboardData.getData("text/plain")).toBe("Draft /");
-  expect(clipboardData.getData("text/html")).not.toContain(HINT.trim());
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(editor.textContent).toBe("/weekly-recap 131");
+    });
+  },
+);
 
-  selectText(editor, 7);
-  await waitFor(() => {
-    expect(slashHint(editor)).toBeInTheDocument();
-  });
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(sentPrompts).toStrictEqual(["Draft /"]);
-  });
-});
+test.each([
+  ["Draft /", 7],
+  ["/ 131", 1],
+])(
+  "Keep the hint out of copied and sent %s and hide it for a selection",
+  async (draft, caret) => {
+    const user = userEvent.setup({ delay: null });
+    const sentPrompts: string[] = [];
+    const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
+    await fill(editor, draft);
+    selectText(editor, caret);
+    await waitFor(() => {
+      expect(slashHint(editor)).toBeInTheDocument();
+    });
+    selectText(editor, 0, draft.length);
+    await waitFor(() => {
+      expect(slashHint(editor)).toBeNull();
+    });
+    const clipboardData = new DataTransfer();
+    fireEvent.copy(editor, { clipboardData });
+    expect(clipboardData.getData("text/plain")).toBe(draft);
+    expect(clipboardData.getData("text/html")).not.toContain(HINT.trim());
 
-test("Preserve IME confirmation while the slash hint is present", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
-  await fill(editor, "Draft /");
-  await waitFor(() => {
-    expect(slashHint(editor)).toBeInTheDocument();
-  });
-  fireEvent.compositionStart(editor, { data: "周报" });
-  expect(slashHint(editor)).toBeNull();
-  fireEvent.keyDown(editor, {
-    key: "Enter",
-    isComposing: true,
-    keyCode: 229,
-  });
-  expect(editor).toHaveFocus();
-  expect(editor.textContent).toBe("Draft /");
-  expect(sentPrompts).toStrictEqual([]);
-  expect(screen.getByTestId("slash-workflow-menu")).toBeInTheDocument();
-  fireEvent.compositionEnd(editor, { data: "周报" });
-  expect(slashHint(editor)).toBeInTheDocument();
-  await user.keyboard("周报");
-  expect(editor.textContent).toBe("Draft /周报");
-  expect(slashHint(editor)).toBeNull();
-});
+    selectText(editor, caret);
+    await waitFor(() => {
+      expect(slashHint(editor)).toBeInTheDocument();
+    });
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(sentPrompts).toStrictEqual([draft]);
+    });
+  },
+);
+
+test.each([
+  ["Draft /", 7],
+  ["/ 131", 1],
+])(
+  "Preserve IME confirmation while the slash hint is present in %s",
+  async (draft, caret) => {
+    const user = userEvent.setup({ delay: null });
+    const sentPrompts: string[] = [];
+    const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
+    await fill(editor, draft);
+    selectText(editor, caret);
+    await waitFor(() => {
+      expect(slashHint(editor)).toBeInTheDocument();
+    });
+    fireEvent.compositionStart(editor, { data: "周报" });
+    expect(slashHint(editor)).toBeNull();
+    fireEvent.keyDown(editor, {
+      key: "Enter",
+      isComposing: true,
+      keyCode: 229,
+    });
+    expect(editor).toHaveFocus();
+    expect(editor.textContent).toBe(draft);
+    expect(sentPrompts).toStrictEqual([]);
+    expect(screen.getByTestId("slash-workflow-menu")).toBeInTheDocument();
+    fireEvent.compositionEnd(editor, { data: "周报" });
+    await waitFor(() => {
+      expect(slashHint(editor)).toBeInTheDocument();
+    });
+    await user.keyboard("周报");
+    expect(editor.textContent).toBe(
+      `${draft.slice(0, caret)}周报${draft.slice(caret)}`,
+    );
+    expect(slashHint(editor)).toBeNull();
+  },
+);
 
 test("Follow a slash on a new line without treating a URL or token suffix as an empty query", async () => {
   const user = userEvent.setup({ delay: null });

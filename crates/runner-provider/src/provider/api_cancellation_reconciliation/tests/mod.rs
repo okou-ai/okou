@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::future::Future;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
@@ -76,14 +76,27 @@ struct Server {
     task: JoinHandle<()>,
 }
 
+struct FirstRequestGate {
+    accepted: oneshot::Sender<Instant>,
+    release: oneshot::Receiver<()>,
+}
+
 impl Server {
     async fn new() -> Self {
+        Self::with_first_request_gate(None).await
+    }
+
+    async fn with_first_request_gate(mut gate: Option<FirstRequestGate>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let (tx, requests) = mpsc::channel(128);
         let task = tokio::spawn(async move {
             loop {
                 let (mut socket, _) = listener.accept().await.unwrap();
+                if let Some(gate) = gate.take() {
+                    gate.accepted.send(Instant::now()).unwrap();
+                    gate.release.await.unwrap();
+                }
                 let text = read_http_request(&mut socket).await.unwrap();
                 if tx
                     .send(Request {

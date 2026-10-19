@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  // Enable only after canonical Host Worker delivery authority and compatible
+  // serving/rollback API writers support public address changes.
+  [FeatureSwitchKey.HostedSiteUrlEditing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Website URL editing",
+    description: "Customize a published website address from its Share menu.",
+    enabled: false,
+  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
@@ -98,7 +106,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
-    maintainer: "bingjie@okou.ai",
+    maintainer: "tongx@okou.ai",
     description:
       "Expose personal subscription linking in the composer model slot and the account menu.",
     enabled: false,

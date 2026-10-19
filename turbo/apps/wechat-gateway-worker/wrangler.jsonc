@@ -8,7 +8,6 @@
   "preview_urls": false,
   "vars": {
     "WECHAT_GATEWAY_ENABLED": "false",
-    "WECHAT_WORKFLOWS_ENABLED": "false",
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WechatReceiver"] }],
   "env": {
@@ -28,7 +27,6 @@
       "workers_dev": true,
       "vars": {
         "WECHAT_GATEWAY_ENABLED": "false",
-        "WECHAT_WORKFLOWS_ENABLED": "false",
       },
       "durable_objects": {
         "bindings": [
@@ -52,7 +50,6 @@
       "workers_dev": true,
       "vars": {
         "WECHAT_GATEWAY_ENABLED": "false",
-        "WECHAT_WORKFLOWS_ENABLED": "false",
       },
       "durable_objects": {
         "bindings": [

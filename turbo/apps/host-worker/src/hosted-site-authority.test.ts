@@ -13,7 +13,11 @@ import worker from "./index";
 import { fetchWorker } from "./test-helpers";
 
 type Env = Parameters<typeof worker.fetch>[1];
-const server = setupServer();
+const server = setupServer(
+  http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+    return HttpResponse.json({ pointer: null });
+  }),
+);
 beforeAll(() => {
   return server.listen({ onUnhandledRequest: "error" });
 });
@@ -162,6 +166,86 @@ it("retains the existing reader until owner validation is configured", async () 
   );
   expect(response.status).toBe(200);
   expect(await response.text()).toBe("<p>ok</p>");
+});
+
+it("serves a renamed alias through the current binding without changing immutable URLs", async () => {
+  server.use(
+    http.get(
+      "https://authority.test/api/host/aliases/:publicSlug",
+      ({ params }) => {
+        return HttpResponse.json({
+          pointer:
+            params.publicSlug === "renamed"
+              ? {
+                  version: 1,
+                  publicBrand: "okou",
+                  publicSlug: "demo",
+                  siteId,
+                  deploymentId,
+                  prefix,
+                  manifestKey: `${prefix}/manifest.json`,
+                  spaFallback: false,
+                  updatedAt: "2026-10-19T00:00:00Z",
+                }
+              : null,
+        });
+      },
+    ),
+    http.get(endpoint, ({ request }) => {
+      const alias = new URL(request.url).searchParams.get("alias");
+      return HttpResponse.json({
+        allowed: alias === "renamed" || alias === `dpl-${deploymentId}`,
+      });
+    }),
+  );
+  const env = environment(true, undefined, "okou", true);
+  const renamed = await fetchWorker(
+    new Request("https://renamed.okou.app/"),
+    env,
+  );
+  expect(renamed.status).toBe(200);
+  expect(await renamed.text()).toBe("<p>ok</p>");
+  expect(renamed.headers.get("Cache-Control")).toContain("no-store");
+  expect(
+    (await fetchWorker(new Request("https://demo.okou.app/"), env)).status,
+  ).toBe(404);
+  expect(
+    (
+      await fetchWorker(
+        new Request(`https://dpl-${deploymentId}.okou.app/`),
+        env,
+      )
+    ).status,
+  ).toBe(200);
+});
+
+it("requires current authority even when an alias resolver returns a pointer", async () => {
+  server.use(
+    http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+      return HttpResponse.json({
+        pointer: {
+          version: 1,
+          publicBrand: "okou",
+          publicSlug: "demo",
+          siteId,
+          deploymentId,
+          prefix,
+          manifestKey: `${prefix}/manifest.json`,
+          spaFallback: false,
+          updatedAt: "2026-10-19T00:00:00Z",
+        },
+      });
+    }),
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: false });
+    }),
+  );
+  const response = await fetchWorker(
+    new Request("https://renamed.okou.app/"),
+    environment(),
+  );
+  expect(response.status).toBe(404);
+  expect(response.headers.get("Cache-Control")).toContain("no-store");
 });
 
 it.each(["demo", `dpl-${deploymentId}`])(

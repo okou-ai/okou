@@ -22,6 +22,33 @@ _BROWSER_USER_AGENT = (
 _MAX_HOST_HEADER_BYTES = 4096
 
 
+@pytest.mark.parametrize("host", ["xn--mgba3gch31f060k.example", "xn--11b2ezcw70k.example"])
+async def test_matching_sni_and_host_reject_encoded_joiners_before_auth(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, host
+):
+    reg_path = _write_github_firewall_registry(tmp_path)
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="203.0.113.10",
+        sni=host,
+        path="/repos",
+        request_headers=headers(("Host", host)),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["error"] == "invalid_sni"
+    auth_fetch.assert_not_called()
+    assert "Authorization" not in flow.request.headers
+
+
 class _DecodeGuardHost(bytes):
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         raise AssertionError("over-budget Host must not be decoded")

@@ -1111,7 +1111,7 @@ jobs:
           HOST=$(.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
           REMOTE="${METAL_USER}@${HOST}"
           REMOTE_BIN="/tmp/runner-rootfs-process-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RUNNER_HOST_GROUP_ID}"
-          scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
+          scp -v "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
           ssh "$REMOTE" sh -s -- "$REMOTE_BIN" <<'REMOTE_TEST'
           set -eu
           trap 'rm -f -- "$1"' EXIT
