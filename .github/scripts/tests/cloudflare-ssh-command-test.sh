@@ -438,15 +438,24 @@ invoke_wrapper "$scp_failure" healthy preconnect metal dev-1.aws.vm3.ai \
   > "$scp_failure/preconnect.stdout" 2> "$scp_failure/preconnect.stderr"
 scp_master_log=$(find "$scp_failure/runner-temp" -name 'cloudflare-ssh-master-*.stderr' -print -quit)
 [ -n "$scp_master_log" ] || fail "setup must retain initial master diagnostics"
-for index in {1..150}; do
-  printf 'debug1: earlier channel event %s\n' "$index" >> "$scp_master_log"
-done
-printf '::error title=Cloudflare tunnel failed::--secret proxy-secret --id proxy-id\n' \
-  >> "$scp_master_log"
-printf '%s\n' \
-  "debug1: Sending command: /bin/sh -c 'sudo R2_ACCOUNT_ID=fixture-r2-account R2_ACCESS_KEY_ID=fixture-r2-access R2_SECRET_ACCESS_KEY=fixture-r2-secret runner build --token fixture-command-token'" \
-  "R2_ACCOUNT_ID='fixture-r2-account' R2_ACCESS_KEY_ID=\"fixture-r2-access\" R2_SECRET_ACCESS_KEY=fixture-r2-secret" \
-  >> "$scp_master_log"
+{
+  for index in {1..150}; do
+    printf 'debug1: earlier channel event %s\n' "$index"
+  done
+  printf '::error title=Cloudflare tunnel failed::--secret proxy-secret --id proxy-id\n'
+  printf '%s\n' \
+    "debug1: Sending command: /bin/sh -c 'sudo R2_ACCOUNT_ID=fixture-r2-account R2_ACCESS_KEY_ID=fixture-r2-access R2_SECRET_ACCESS_KEY=fixture-r2-secret runner build --token fixture-command-token'"
+  # A multiline command can start before the retained 45-line display window.
+  printf "debug1: Sending command: /bin/sh -c '\n"
+  for _ in {1..60}; do
+    printf ':\n'
+  done
+  printf '%s\n' \
+    '--token fixture-multiline-token' \
+    "'" \
+    "debug1: channel 0: setting env R2_ACCOUNT_ID='fixture-r2-account' R2_ACCESS_KEY_ID=\"fixture-r2-access\" R2_SECRET_ACCESS_KEY=fixture-r2-secret" \
+    'client_loop: send disconnect: Broken pipe'
+} >> "$scp_master_log"
 FAKE_MASTER_DIAGNOSTICS_FILE="$scp_master_log" \
   run_wrapper "$scp_failure" actual-failure scp \
     /tmp/source metal@dev-1.aws.vm3.ai:/tmp/target
@@ -467,9 +476,13 @@ assert_contains "$scp_failure/stderr" "debug1: Sending command: [remote command 
 for variable in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
   assert_contains "$scp_failure/stderr" "${variable}=[redacted]"
 done
-for credential in fixture-r2-account fixture-r2-access fixture-r2-secret fixture-command-token; do
+for credential in fixture-r2-account fixture-r2-access fixture-r2-secret fixture-command-token fixture-multiline-token; do
   assert_not_contains "$scp_failure/stderr" "$credential"
 done
+assert_contains "$scp_failure/stderr" 'client_loop: send disconnect: Broken pipe'
+python3 "$SCRIPT_DIR/../runner/cloudflare-ssh-log.py" sanitize - \
+  < "$scp_master_log" > "$scp_failure/sanitized"
+assert_not_contains "$scp_failure/sanitized" fixture-multiline-token
 if [ -s "$scp_failure/stdout" ]; then
   fail "failed transfer diagnostics must stay out of caller stdout"
 fi
@@ -739,10 +752,21 @@ setup_case "$large_log"
 invoke_wrapper "$large_log" healthy preconnect metal dev-1.aws.vm3.ai \
   > "$large_log/preconnect.stdout" 2> "$large_log/preconnect.stderr"
 large_master_log=$(find "$large_log/runner-temp" -name 'cloudflare-ssh-master-*.stderr' -print -quit)
-printf '%100000s\n' '' >> "$large_master_log"
+{
+  printf '%100000s\n' ''
+  # A byte-capped tail cannot establish whether an unframed line is command data.
+  printf 'fixture-orphaned-command-token\n'
+  printf 'debug1: connection closed after command\n'
+} >> "$large_master_log"
 run_wrapper "$large_log" actual-failure ssh \
   metal@dev-1.aws.vm3.ai run-once
 assert_contains "$large_log/status" "42"
+assert_not_contains "$large_log/stderr" fixture-orphaned-command-token
+assert_contains "$large_log/stderr" 'debug1: connection closed'
+python3 "$SCRIPT_DIR/../runner/cloudflare-ssh-log.py" sanitize "$large_master_log" \
+  > "$large_log/sanitized"
+assert_not_contains "$large_log/sanitized" fixture-orphaned-command-token
+assert_contains "$large_log/sanitized" 'debug1: connection closed'
 if [ "$(wc -c < "$large_log/stderr")" -gt 66000 ]; then
   fail "master diagnostics must be limited to 64 KiB plus caller context"
 fi

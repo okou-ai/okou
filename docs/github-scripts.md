@@ -146,6 +146,8 @@ metadata, and redacts authentication headers, cookies, token query parameters
 and legacy secret forms.
 Native SSH `Sending command` payloads are omitted, and R2 credential assignments
 are redacted even when GitHub has not registered those values for masking.
+Command continuations are omitted through the next SSH diagnostic before display
+line limits apply; a byte-capped master tail resumes at an SSH diagnostic.
 Native `originURL` contributes only a validated hostname, without userinfo,
 path or query. The pinned access client does not log successful service-token
 handshake response metadata or normal stream EOF/byte outcomes through another

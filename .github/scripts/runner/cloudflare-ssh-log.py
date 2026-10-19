@@ -50,7 +50,11 @@ ASSIGNMENT = re.compile(
     r"(?:\"[^\"]*\"|'[^']*'|\S+)",
     re.IGNORECASE,
 )
-REMOTE_COMMAND = re.compile(r"(?m)(\bdebug[123]: Sending command:)[^\r\n]*")
+REMOTE_COMMAND = re.compile(r"(\bdebug[123]: Sending command:).*", re.DOTALL)
+SSH_RECORD = re.compile(
+    r"^(?:debug[123]: |(?:ssh|kex_exchange_identification|client_loop): |"
+    r"(?:Connection|Read from|Received disconnect from|Disconnected from|Shared connection to) )"
+)
 ARGUMENT = re.compile(r"(--(?:secret|id)(?:=|\s+))\S+")
 QUERY_SECRET = re.compile(
     r"(?i)([?&](?:access_token|token|client_secret|secret|password|authorization)=)"
@@ -124,7 +128,23 @@ def redact(text):
     return "".join(c if c >= " " or c in "\n\t" else "?" for c in text)
 
 
-def tail(path, limit=MAX_LINES):
+def sanitize_lines(lines, *, partial_ssh=False):
+    """Omit command continuations before applying any display-line limit."""
+    result = []
+    in_command = partial_ssh
+    for line in lines:
+        line = ANSI.sub("", line)
+        if not line.lstrip().startswith(("{", "[")) and REMOTE_COMMAND.search(line):
+            in_command = True
+        elif in_command:
+            if not SSH_RECORD.match(line):
+                continue
+            in_command = False
+        result.append(sanitize(line))
+    return result
+
+
+def tail(path, limit=MAX_LINES, *, ssh=False):
     """Read regular files without following symlinks, with a byte and line cap."""
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -141,8 +161,14 @@ def tail(path, limit=MAX_LINES):
         lines = raw.decode("utf-8", errors="replace").splitlines()
         if not lines:
             return ["[diagnostic empty or partial record omitted]"]
-        result = [sanitize(line) for line in lines[-limit:]]
-        if offset or len(lines) > limit:
+        # A byte-capped master log may start inside an unframed command. Resume
+        # only at the next SSH diagnostic, and sanitize before slicing lines.
+        result = sanitize_lines(lines, partial_ssh=ssh and bool(offset))
+        truncated = offset or len(result) > limit
+        result = result[-limit:]
+        if not result:
+            result = ["[diagnostic empty or partial record omitted]"]
+        if truncated:
             result.insert(0, "[earlier diagnostic content truncated]")
         return result
     except OSError:
@@ -239,11 +265,9 @@ def main():
     if mode == "sanitize":
         if argument == "-":
             raw = sys.stdin.buffer.read(MAX_BYTES)
-            publish(
-                [sanitize(line) for line in raw.decode("utf-8", "replace").splitlines()]
-            )
+            publish(sanitize_lines(raw.decode("utf-8", "replace").splitlines()))
         else:
-            publish(tail(Path(argument)))
+            publish(tail(Path(argument), ssh=True))
         return
     if mode == "proxy":
         publish(proxy_evidence(Path(argument)))
@@ -263,7 +287,7 @@ def main():
     lines.append(
         f"----- SSH master stderr (master={master_id}; including probes; bounded redacted tail) -----"
     )
-    lines += bounded(tail(master, 45), 12288, 47)
+    lines += bounded(tail(master, 45, ssh=True), 12288, 47)
     publish(lines)
 
 
