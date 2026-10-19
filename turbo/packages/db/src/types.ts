@@ -16,13 +16,6 @@ export type PersistedPiMemoryRecallSelection =
       readonly tokenCount: number;
     };
 
-export interface ContextArtifact {
-  name: string;
-  version?: string;
-  mountPath: string;
-  missingRootPolicy?: ArtifactMissingRootPolicy;
-}
-
 /**
  * Canonical Storage mount for Run execution and storage preparation.
  *
