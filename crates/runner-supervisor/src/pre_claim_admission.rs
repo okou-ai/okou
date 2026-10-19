@@ -668,25 +668,24 @@ async fn prepare_ranked_preference_candidate(
 
     let selected_finalizing =
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
-    if selected_finalizing {
-        if let Some(history_generation_run_id) = history_generation_run_id
-            && let Some(predecessor) = ctx.active_runs.finalizing_predecessor(
-                history_generation_run_id,
-                reuse_key,
-                profile_name,
-            )
-        {
-            return finalizing_preparation(
-                candidate,
-                predecessor,
-                preference.deadline(),
-                reuse_key,
-                history_generation_run_id,
-            );
-        }
-        // Publication can resolve the producer between discovery and admission.
-        // Consume its ready generic resource through ordinary guarded activation.
+    if selected_finalizing
+        && let Some(history_generation_run_id) = history_generation_run_id
+        && let Some(predecessor) = ctx.active_runs.finalizing_predecessor(
+            history_generation_run_id,
+            reuse_key,
+            profile_name,
+        )
+    {
+        return finalizing_preparation(
+            candidate,
+            predecessor,
+            preference.deadline(),
+            reuse_key,
+            history_generation_run_id,
+        );
     }
+    // Publication can resolve the selected producer between discovery and
+    // admission. Consume its ready resource through ordinary guarded activation.
 
     if (selected_finalizing
         || ranked_preference_allows(
