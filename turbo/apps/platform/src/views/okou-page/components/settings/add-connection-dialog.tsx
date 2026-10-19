@@ -82,7 +82,10 @@ import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 
 function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
   const connectionStatus = builtinConnectorCurrentConnectionStatus(item);
-  if (connectionStatus === "reconnect-required") {
+  if (
+    item.connection?.reconnectReason ||
+    connectionStatus === "reconnect-required"
+  ) {
     return i18n.t(($) => {
       return $.connectors.card.connectionExpired;
     });
@@ -1611,7 +1614,7 @@ export function ConnectModal({
           </div>
         </DialogHeader>
 
-        {item.connected && !accountMode && (
+        {item.connection && !accountMode && (
           <p className="wrap-anywhere text-sm text-muted-foreground">
             {connectedStatusText(item)}
           </p>

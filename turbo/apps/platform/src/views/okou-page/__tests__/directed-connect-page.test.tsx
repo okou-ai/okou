@@ -9,7 +9,10 @@ import {
   builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   agentCustomConnectorsContract,
@@ -42,6 +45,43 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
+
+function mockCustomAccounts(read: () => readonly ConnectorAccountConnection[]) {
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      const account = read().find((candidate) => {
+        return candidate.id === params.connectionId;
+      });
+      return account
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    const accounts = read();
+    const account = accounts[0];
+    return respond(200, {
+      summaries: account
+        ? [
+            {
+              target: account.target,
+              accountCount: accounts.length,
+              attentionCount: 0,
+              defaultConnection: account,
+            },
+          ]
+        : [],
+    });
+  });
+}
+
+function savedBuiltinResponse(connector: BuiltinConnectorResponse) {
+  context.mocks.data.connectors([connector]);
+  return connector;
+}
 
 function connectorIcon(connectorSlug: string) {
   return {
@@ -405,6 +445,7 @@ function getButtonByText(text: string, container?: ParentNode): HTMLElement {
 }
 
 test("Connect and authorize a manual MCP connector", async () => {
+  const connectionId = crypto.randomUUID();
   let connected = false;
   let grants: AgentCustomConnectorGrant[] = [];
   let submittedValues: readonly {
@@ -413,6 +454,16 @@ test("Connect and authorize a manual MCP connector", async () => {
     readonly value: string;
   }[] = [];
   const connector = mcpCustomConnector();
+  mockCustomAccounts(() => {
+    return connected
+      ? [
+          customConnectorAccount(connector.id, {
+            id: connectionId,
+            configuredFieldKeys: ["secret"],
+          }),
+        ]
+      : [];
+  });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [
@@ -433,6 +484,7 @@ test("Connect and authorize a manual MCP connector", async () => {
       connected = true;
       return respond(200, {
         ...connector,
+        connectionId,
         connected: true,
         missingRequiredFields: [],
         configuredFieldKeys: ["secret"],
@@ -488,6 +540,16 @@ test("Let an MCP server discover authentication from a directed connection", asy
     authMode: "automatic",
     missingRequiredFields: [],
     configuredFieldKeys: [],
+  });
+  mockCustomAccounts(() => {
+    return connected
+      ? [
+          customConnectorAccount(connector.id, {
+            id: connectionId,
+            authMethod: "oauth",
+          }),
+        ]
+      : [];
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
@@ -574,7 +636,13 @@ test("Reconnect the exact manual custom-connector account", async () => {
     missingRequiredFields: [],
     configuredFieldKeys: ["secret"],
   });
-  const account = customConnectorAccount(connector.id, { id: connectionId });
+  const account = customConnectorAccount(connector.id, {
+    id: connectionId,
+    configuredFieldKeys: ["secret"],
+  });
+  mockCustomAccounts(() => {
+    return [account];
+  });
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
     return respond(200, {
       summaries: [
@@ -673,6 +741,16 @@ test("Connect and authorize a custom OAuth connector", async () => {
       scopes: ["read"],
       authorizationParams: {},
     },
+  });
+  mockCustomAccounts(() => {
+    return connected
+      ? [
+          customConnectorAccount(connector.id, {
+            id: connectionId,
+            authMethod: "oauth",
+          }),
+        ]
+      : [];
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
@@ -800,6 +878,9 @@ test("Reconnect the exact custom OAuth account", async () => {
     id: connectionId,
     authMethod: "oauth",
   });
+  mockCustomAccounts(() => {
+    return [account];
+  });
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
     return respond(200, {
       summaries: [
@@ -897,6 +978,16 @@ test("Preserve existing agent permissions after connecting custom OAuth", async 
       scopes: ["read"],
       authorizationParams: {},
     },
+  });
+  mockCustomAccounts(() => {
+    return connected
+      ? [
+          customConnectorAccount(connector.id, {
+            id: connectionId,
+            authMethod: "oauth",
+          }),
+        ]
+      : [];
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
@@ -1102,20 +1193,23 @@ test("Connect a no-auth connector and continue the originating chat", async () =
         agentId: AGENT_ID,
         authorizeAgent: true,
       });
-      return respond(200, {
-        id: crypto.randomUUID(),
-        slug: "stripe",
-        authMethod: body.authMethod,
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        oauthScopes: null,
-        connectionStatus: "connected",
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      });
+      return respond(
+        200,
+        savedBuiltinResponse({
+          id: crypto.randomUUID(),
+          slug: "stripe",
+          authMethod: body.authMethod,
+          externalId: null,
+          externalUsername: null,
+          externalEmail: null,
+          oauthScopes: null,
+          connectionStatus: "connected",
+          reconnectReason: null,
+          tokenExpiresAt: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        }),
+      );
     },
   );
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
@@ -1216,6 +1310,18 @@ test("Complete OpenID and continue the originating chat", async () => {
 
 test("Reconnect the expired public OAuth account shown on the page", async () => {
   const connectionId = crypto.randomUUID();
+  context.mocks.data.connectors([
+    {
+      ...connectedConnectorResponse({
+        slug: "github",
+        authMethod: "oauth",
+        updatedAt: "2026-01-01T00:00:00Z",
+      }),
+      id: connectionId,
+      connectionStatus: "reconnect-required",
+      reconnectReason: "authorization_expired_or_revoked",
+    },
+  ]);
   const connector = publicOAuthConnectorStatus({
     slug: "github",
     label: "Public GitHub",
@@ -1290,8 +1396,9 @@ test("Reconnect the expired public OAuth account shown on the page", async () =>
     path: `/connectors/github/connect?agentId=${AGENT_ID}`,
   });
 
-  await screen.findByText("Public GitHub connected");
-  click(getButtonByText("Reconnect"));
+  await screen.findByText("Okou needs Public GitHub to proceed");
+  expect(screen.queryByText("Public GitHub connected")).not.toBeInTheDocument();
+  click(getButtonByText("Connect"));
   const dialog = await screen.findByRole("dialog", {
     name: "Public GitHub",
   });
@@ -1340,8 +1447,13 @@ test("Reconnect the exact account and continue the originating chat only after s
         externalUsername: null,
         externalEmail: null,
         oauthScopes: [],
-        connectionStatus: "reconnect-required",
-        reconnectReason: "authorization_expired_or_revoked",
+        connectionStatus:
+          submittedAccount === null ? "reconnect-required" : "connected",
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["apiToken"],
+        reconnectReason:
+          submittedAccount === null ? "authorization_expired_or_revoked" : null,
         tokenExpiresAt: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
@@ -1419,20 +1531,23 @@ test("Connect a manual grant and continue the originating chat", async () => {
       expect(params.connectorSlug).toBe("axiom");
       expect(body.agentId).toBe(AGENT_ID);
       submittedValues = body.values;
-      return respond(200, {
-        id: crypto.randomUUID(),
-        slug: "axiom",
-        authMethod: body.authMethod,
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        oauthScopes: null,
-        connectionStatus: "connected",
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      });
+      return respond(
+        200,
+        savedBuiltinResponse({
+          id: crypto.randomUUID(),
+          slug: "axiom",
+          authMethod: body.authMethod,
+          externalId: null,
+          externalUsername: null,
+          externalEmail: null,
+          oauthScopes: null,
+          connectionStatus: "connected",
+          reconnectReason: null,
+          tokenExpiresAt: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        }),
+      );
     },
   );
   context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
