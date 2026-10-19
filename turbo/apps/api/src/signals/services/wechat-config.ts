@@ -5,6 +5,25 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { env } from "../../lib/env";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+export const loadWechatWorkspace$ = command(
+  async ({ get }, orgId: string, signal: AbortSignal) => {
+    const result = await settle(
+      get(clerk$).organizations.getOrganization(
+        { organizationId: orgId },
+        undefined,
+        signal,
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      if (isClerkResourceNotFound(result.error)) {
+        return null;
+      }
+      throw result.error;
+    }
+    return { id: result.value.id, name: result.value.name };
+  },
+);
 export const wechatEnabled$ = command(
   async ({ get, set }, orgId: string, userId: string, signal: AbortSignal) => {
     if (

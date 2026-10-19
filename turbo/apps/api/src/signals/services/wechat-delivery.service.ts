@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { sendArchivedWechatText$ } from "./wechat-message-send.service";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { nowDate } from "../../lib/time";
@@ -14,7 +14,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { agents } from "@okouai/db/schema/agent";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { wechatEnabled$ } from "./wechat-config";
@@ -42,10 +42,7 @@ export const sendWechatChatReply$ = command(
     }
     const db = set(writeDb$);
     const [binding] = await db
-      .select({
-        id: wechatConnections.id,
-        agentId: agents.id,
-      })
+      .select({ agentId: agents.id })
       .from(wechatConnections)
       .innerJoin(
         wechatChatThreadRoutes,
@@ -109,18 +106,28 @@ export const sendWechatChatReply$ = command(
     if (!event?.content) {
       return;
     }
-    let content =
-      args.content ??
-      (await set(
-        renderWechatReply$,
-        {
-          orgId: args.orgId,
-          agentId: binding.agentId,
-          runId: event.runId,
-          content: event.content,
-        },
-        signal,
-      ));
+    let content = args.content;
+    if (content === undefined) {
+      const presentationArgs = {
+        db,
+        orgId: args.orgId,
+        agentId: binding.agentId,
+      };
+      const presentation =
+        event.runId === null
+          ? await resolveIntegrationAdmissionFailurePresentation(
+              presentationArgs,
+              signal,
+            )
+          : await resolveIntegrationAgentResponsePresentation(
+              { ...presentationArgs, runId: event.runId },
+              signal,
+            );
+      signal.throwIfAborted();
+      content = presentation.footerText
+        ? `${event.content}\n\n${presentation.footerText}`
+        : event.content;
+    }
     if (args.deliveryCallbackId) {
       const snapshot = await set(
         snapshotWechatReply$,
@@ -133,8 +140,18 @@ export const sendWechatChatReply$ = command(
       content = snapshot;
     }
 
-    const points = Array.from(content);
-    const requestHash = createHash("sha256").update(content).digest("hex");
+    return await set(sendWechatReplyChunks$, { ...args, content }, signal);
+  },
+);
+
+const sendWechatReplyChunks$ = command(
+  async (
+    { set },
+    args: WechatReplyRequest & { readonly content: string },
+    signal: AbortSignal,
+  ) => {
+    const points = Array.from(args.content);
+    const requestHash = createHash("sha256").update(args.content).digest("hex");
     for (let offset = 0; offset < points.length; offset += 2000) {
       const result = await set(
         sendArchivedWechatText$,
@@ -160,39 +177,6 @@ export const sendWechatChatReply$ = command(
         throw new Error(result.response.body.error.message);
       }
     }
-  },
-);
-
-const renderWechatReply$ = command(
-  async (
-    { get },
-    args: {
-      orgId: string;
-      agentId: string;
-      runId: string | null;
-      content: string;
-    },
-    signal: AbortSignal,
-  ): Promise<string> => {
-    const presentationArgs = {
-      db: get(db$),
-      orgId: args.orgId,
-      agentId: args.agentId,
-    };
-    const presentation =
-      args.runId === null
-        ? await resolveIntegrationAdmissionFailurePresentation(
-            presentationArgs,
-            signal,
-          )
-        : await resolveIntegrationAgentResponsePresentation(
-            { ...presentationArgs, runId: args.runId },
-            signal,
-          );
-    signal.throwIfAborted();
-    return presentation.footerText
-      ? `${args.content}\n\n${presentation.footerText}`
-      : args.content;
   },
 );
 
@@ -232,31 +216,38 @@ const snapshotWechatReply$ = command(
   },
 );
 
-function deliveryLeaseAvailable() {
-  return sql`(${agentRunCallbacks.payload}->>'leaseExpiresAt' IS NULL OR (${agentRunCallbacks.payload}->>'leaseExpiresAt')::timestamptz <= ${nowDate()})`;
-}
-
 /** The source chat callback owns retries until this durable delivery settles. */
 export const dispatchWechatChatDelivery$ = command(
   async ({ set }, callbackId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    const leaseExpiresAt = new Date(nowDate().getTime() + 90_000).toISOString();
+    const attemptedAt = nowDate();
     const [callback] = await db
       .update(agentRunCallbacks)
       .set({
         attempts: sql`${agentRunCallbacks.attempts} + 1`,
-        lastAttemptAt: nowDate(),
-        payload: sql`jsonb_set(${agentRunCallbacks.payload}, '{leaseExpiresAt}', to_jsonb(${leaseExpiresAt}::text))`,
+        lastAttemptAt: attemptedAt,
       })
       .where(
         and(
           eq(agentRunCallbacks.id, callbackId),
           eq(agentRunCallbacks.internalKind, "wechat:chat"),
           eq(agentRunCallbacks.status, "pending"),
-          deliveryLeaseAvailable(),
+          // vite.config.ts limits each API invocation to 300 seconds. Keep the
+          // existing attempt exclusive until its owner must have finished;
+          // one 40-second provider timeout does not bound a multi-chunk reply.
+          or(
+            isNull(agentRunCallbacks.lastAttemptAt),
+            lt(
+              agentRunCallbacks.lastAttemptAt,
+              new Date(attemptedAt.getTime() - 300_000),
+            ),
+          ),
         ),
       )
-      .returning({ payload: agentRunCallbacks.payload });
+      .returning({
+        payload: agentRunCallbacks.payload,
+        attempts: agentRunCallbacks.attempts,
+      });
     signal.throwIfAborted();
     if (!callback) {
       const [current] = await db
@@ -287,14 +278,14 @@ export const dispatchWechatChatDelivery$ = command(
     const owned = and(
       eq(agentRunCallbacks.id, callbackId),
       eq(agentRunCallbacks.status, "pending"),
-      sql`${agentRunCallbacks.payload}->>'leaseExpiresAt' = ${leaseExpiresAt}`,
+      eq(agentRunCallbacks.attempts, callback.attempts),
     );
     if (!delivery.ok) {
-      // Release only our claim. A crash leaves the lease to expire; a known
-      // failure allows the runner to retry immediately without another send claim.
+      // Release only this attempt after a known failure. A lost invocation
+      // remains pending until its enforced runtime limit has passed.
       await db
         .update(agentRunCallbacks)
-        .set({ payload: sql`${agentRunCallbacks.payload} - 'leaseExpiresAt'` })
+        .set({ lastAttemptAt: null })
         .where(owned);
       signal.throwIfAborted();
       throw delivery.error;

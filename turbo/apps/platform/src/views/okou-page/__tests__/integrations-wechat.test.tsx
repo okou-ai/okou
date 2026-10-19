@@ -35,7 +35,11 @@ test("WeChat is hidden with its feature disabled", async () => {
 test("Connect displays a QR and an expired code can be replaced", async () => {
   let expired = true;
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(
@@ -76,7 +80,11 @@ test("Connect displays a QR and an expired code can be replaced", async () => {
 });
 test("a scan requiring verification keeps the QR and shows a code field", async () => {
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(200, attempt);
@@ -101,6 +109,12 @@ test("verification connects the account and disconnect revokes it", async () => 
     return respond(200, {
       configured: true,
       status: connected ? "active" : "disconnected",
+      binding: connected
+        ? {
+            workspace: { id: "org_team", name: "Team" },
+            accountId: "scanner-owner",
+          }
+        : null,
     });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
@@ -144,7 +158,11 @@ test("verification connects the account and disconnect revokes it", async () => 
 
 test("keyboard activation and Escape restore focus to Connect", async () => {
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return respond(200, attempt);
@@ -173,7 +191,11 @@ test("keyboard activation and Escape restore focus to Connect", async () => {
 test("a failed QR request can be retried from the dialog", async () => {
   let available = false;
   context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, { configured: true, status: "disconnected" });
+    return respond(200, {
+      configured: true,
+      status: "disconnected",
+      binding: null,
+    });
   });
   context.mocks.api(contract.connect, ({ respond }) => {
     return available

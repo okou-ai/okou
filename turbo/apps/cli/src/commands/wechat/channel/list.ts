@@ -14,11 +14,9 @@ export const listCommand = new Command()
       }
       for (const channel of result.channels) {
         console.log(`${channel.id}  ${channel.name}  ${channel.status}`);
-        if (channel.binding) {
-          const { workspace, accountId } = channel.binding;
-          console.log(`  Workspace: ${workspace.name} (${workspace.id})`);
-          console.log(`  WeChat account: ${accountId}`);
-        }
+        const { workspace, accountId } = channel.binding;
+        console.log(`  Workspace: ${workspace.name} (${workspace.id})`);
+        console.log(`  WeChat account: ${accountId}`);
       }
       if (!result.channels.length)
         console.log("No WeChat connection. Run okou wechat connect.");

@@ -10,6 +10,10 @@ import { listCommand } from "../channel/list";
 import { connectCommand } from "../connect";
 const origin = "http://localhost:3000/api/integrations/wechat";
 const channelId = randomUUID();
+const binding = {
+  workspace: { id: "org_team", name: "Operations" },
+  accountId: "scanner-owner",
+};
 const messageId = randomUUID();
 const before = randomUUID();
 const message = {
@@ -67,7 +71,9 @@ describe("okou wechat", () => {
     });
   });
   it("discovers the verified conversation", async () => {
-    const channels = [{ id: channelId, name: "WeChat", status: "active" }];
+    const channels = [
+      { id: channelId, name: "WeChat", status: "active", binding },
+    ];
     server.use(
       http.get(`${origin}/channels`, () => {
         return HttpResponse.json({ channels });
@@ -110,7 +116,9 @@ describe("okou wechat", () => {
     server.use(
       http.get(`${origin}/channels`, () => {
         return HttpResponse.json({
-          channels: [{ id: channelId, name: "WeChat", status: "active" }],
+          channels: [
+            { id: channelId, name: "WeChat", status: "active", binding },
+          ],
         });
       }),
       http.post(`${origin}/message`, async ({ request }) => {
@@ -142,6 +150,7 @@ describe("okou wechat", () => {
         id: channelId,
         name: "WeChat",
         status: state === "reconnect_required" ? state : "active",
+        binding,
       };
       let sends = 0;
       server.use(

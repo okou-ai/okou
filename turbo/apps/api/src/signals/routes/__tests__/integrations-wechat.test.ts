@@ -63,6 +63,10 @@ async function fixture() {
     orgRole: "org:admin" as const,
     email: "wechat@example.test",
   };
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+    id: actor.orgId,
+    name: "WeChat test workspace",
+  });
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
       data: [
@@ -512,6 +516,7 @@ describe("WeChat reply presentation and processing status", () => {
         );
         mockNow(now() + 31_000);
         await pollGateway(z.uuid().parse(fixture.provider.starts[0]));
+        await flushWaitUntilForTest();
         expect(chunks).toHaveLength(2);
       }
       await fixture.webhooks.requestAgentComplete(
@@ -529,50 +534,127 @@ describe("WeChat reply presentation and processing status", () => {
     },
   );
 
-  it("serializes overlapping completion delivery attempts", async () => {
+  it("accepts new input while reply recovery is waiting for WeChat", async () => {
     const fixture = await responseFixture();
-    await fixture.receive("Reply once");
+    await fixture.receive("First prompt");
     const run = await fixture.claim();
+    await flushWaitUntilForTest();
+    const memberships =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const available = await memberships({
+      organizationId: fixture.actor.orgId,
+      userId: [fixture.actor.userId],
+      limit: 1,
+    });
+    memberships.mockRejectedValue(new Error("Clerk temporarily unavailable"));
+    await fixture.finish(run, "Recovered answer", 0, 500);
+    memberships.mockResolvedValue(available);
+
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
-    let attempts = 0;
+    const replies: string[] = [];
     server.use(
-      http.post(`${origin}/ilink/bot/sendmessage`, async () => {
-        attempts++;
+      http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+        const body = z
+          .object({
+            msg: z.object({
+              item_list: z.array(
+                z.object({
+                  text_item: z.object({ text: z.string() }),
+                }),
+              ),
+            }),
+          })
+          .parse(await request.json());
+        replies.push(
+          ...body.msg.item_list.map((item) => {
+            return item.text_item.text;
+          }),
+        );
         entered.resolve();
         await release.promise;
         return HttpResponse.json({ ret: 0 });
       }),
     );
-    const completing = settleIncludingAbort(
-      fixture.finish(run, "Only one reply"),
-    );
-    const overlapping = await settleIncludingAbort(async () => {
+    mockNow(now() + 31_000);
+    const received = await settleIncludingAbort(async () => {
+      await fixture.receive("A later prompt");
       await entered.promise;
+      const history = await accept(
+        setupApp({ context, routes: integrationsWechatMessagesRoutes })(
+          integrationsWechatMessagesContract,
+        ).history({
+          headers,
+          query: {
+            channelId: z.uuid().parse(fixture.provider.starts[0]),
+            limit: 50,
+          },
+        }),
+        [200],
+      );
+      expect(history.body.messages).toContainEqual(
+        expect.objectContaining({
+          direction: "inbound",
+          content: "A later prompt",
+        }),
+      );
+    });
+    release.resolve();
+    await flushWaitUntilForTest();
+    if (!received.ok) {
+      throw received.error;
+    }
+    expect(replies).toStrictEqual(["Recovered answer\n\nClaude Fable 5.1"]);
+  });
+
+  it.each([0, 91_000])(
+    "serializes overlapping completion delivery attempts after %s ms",
+    async (elapsed) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Reply once");
+      const run = await fixture.claim();
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let attempts = 0;
+      server.use(
+        http.post(`${origin}/ilink/bot/sendmessage`, async () => {
+          attempts++;
+          entered.resolve();
+          await release.promise;
+          return HttpResponse.json({ ret: 0 });
+        }),
+      );
+      const completing = settleIncludingAbort(
+        fixture.finish(run, "Only one reply"),
+      );
+      const overlapping = await settleIncludingAbort(async () => {
+        await entered.promise;
+        mockNow(now() + elapsed);
+        await fixture.webhooks.requestAgentComplete(
+          { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
+          { authorization: `Bearer ${run.sandboxToken}` },
+          [500],
+        );
+        expect(attempts).toBe(1);
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
+      const finished = await completing;
+      if (!overlapping.ok) {
+        throw overlapping.error;
+      }
+      if (!finished.ok) {
+        throw finished.error;
+      }
       await fixture.webhooks.requestAgentComplete(
         { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
         { authorization: `Bearer ${run.sandboxToken}` },
-        [500],
+        [200],
       );
       expect(attempts).toBe(1);
-    });
-    if (!release.settled()) {
-      release.resolve();
-    }
-    const finished = await completing;
-    if (!overlapping.ok) {
-      throw overlapping.error;
-    }
-    if (!finished.ok) {
-      throw finished.error;
-    }
-    await fixture.webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
-      { authorization: `Bearer ${run.sandboxToken}` },
-      [200],
-    );
-    expect(attempts).toBe(1);
-  });
+    },
+  );
 
   it("clears typing even when the reply cannot be delivered", async () => {
     const fixture = await responseFixture();
@@ -601,6 +683,7 @@ describe("WeChat reply presentation and processing status", () => {
     );
     mockNow(now() + 31_000);
     await pollGateway(z.uuid().parse(fixture.provider.starts[0]));
+    await flushWaitUntilForTest();
     await fixture.webhooks.requestAgentComplete(
       { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
       { authorization: `Bearer ${run.sandboxToken}` },
@@ -721,7 +804,7 @@ describe("WeChat QR owner binding", () => {
       status: "active",
       configured: true,
       binding: {
-        workspace: { id: actor.orgId, name: expect.any(String) },
+        workspace: { id: actor.orgId, name: "WeChat test workspace" },
         accountId: `scanner-${actor.userId}`,
       },
     });

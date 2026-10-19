@@ -1,4 +1,3 @@
-import { orgCache } from "@okouai/db/schema/org-cache";
 import { settle } from "../utils";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { randomUUID } from "node:crypto";
@@ -28,11 +27,13 @@ import {
   wechatEnabled$,
   wechatConfigured,
   startWechatPoller,
+  loadWechatWorkspace$,
 } from "../services/wechat-config";
 import type { RouteEntry } from "../route-entry";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
+import { notFound } from "../../lib/error";
 
 const checkAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -52,10 +53,8 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
       status: wechatConnections.status,
       accountId: wechatConnections.senderId,
       workspaceId: wechatConnections.orgId,
-      workspaceName: orgCache.name,
     })
     .from(wechatConnections)
-    .leftJoin(orgCache, eq(orgCache.orgId, wechatConnections.orgId))
     .where(
       and(
         eq(wechatConnections.orgId, auth.orgId),
@@ -68,16 +67,23 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (row && row.status !== "reconnect_required" && wechatConfigured()) {
     await startWechatPoller(row.id, signal);
   }
+  const workspace =
+    row && row.status !== "disconnected"
+      ? await set(loadWechatWorkspace$, auth.orgId, signal)
+      : null;
+  if (row && row.status !== "disconnected" && !workspace) {
+    return notFound("This workspace is unavailable.");
+  }
   return {
     status: 200 as const,
     body: {
       configured: wechatConfigured(),
       binding:
-        row && row.status !== "disconnected"
+        row && workspace
           ? {
               workspace: {
                 id: row.workspaceId,
-                name: row.workspaceName || row.workspaceId,
+                name: workspace.name,
               },
               accountId: row.accountId,
             }

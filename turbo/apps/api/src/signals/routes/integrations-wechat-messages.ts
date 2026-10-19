@@ -1,4 +1,3 @@
-import { orgCache } from "@okouai/db/schema/org-cache";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
@@ -11,7 +10,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { wechatEnabled$ } from "../services/wechat-config";
+import {
+  wechatEnabled$,
+  loadWechatWorkspace$,
+} from "../services/wechat-config";
 import { requireWechatConnection$ } from "../services/wechat-access.service";
 import { sendArchivedWechatText$ } from "../services/wechat-message-send.service";
 import { integrationMessageSendLabels$ } from "../services/integration-message-context.service";
@@ -31,10 +33,8 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
       status: wechatConnections.status,
       accountId: wechatConnections.senderId,
       workspaceId: wechatConnections.orgId,
-      workspaceName: orgCache.name,
     })
     .from(wechatConnections)
-    .leftJoin(orgCache, eq(orgCache.orgId, wechatConnections.orgId))
     .where(
       and(
         eq(wechatConnections.orgId, auth.orgId),
@@ -42,6 +42,17 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   signal.throwIfAborted();
+  if (
+    !channels.some((channel) => {
+      return channel.status !== "disconnected";
+    })
+  ) {
+    return { status: 200, body: { channels: [] } } as const;
+  }
+  const workspace = await set(loadWechatWorkspace$, auth.orgId, signal);
+  if (!workspace) {
+    return notFound("This workspace is unavailable.");
+  }
   return {
     status: 200,
     body: {
@@ -55,7 +66,7 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
             binding: {
               workspace: {
                 id: channel.workspaceId,
-                name: channel.workspaceName || channel.workspaceId,
+                name: workspace.name,
               },
               accountId: channel.accountId,
             },

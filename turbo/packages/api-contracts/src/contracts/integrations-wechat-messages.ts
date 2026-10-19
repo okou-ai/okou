@@ -83,7 +83,7 @@ export const integrationsWechatMessagesContract = c.router({
         channels: z.array(
           z.object({
             id: z.uuid(),
-            binding: wechatBindingSchema.optional(),
+            binding: wechatBindingSchema,
             name: z.string(),
             status: z.enum(["active", "reconnect_required"]),
           }),

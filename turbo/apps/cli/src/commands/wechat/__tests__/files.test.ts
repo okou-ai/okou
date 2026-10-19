@@ -12,6 +12,10 @@ import { uploadFileCommand } from "../upload-file";
 import { downloadFileCommand } from "../download-file";
 const origin = "http://localhost:3000/api/integrations/wechat";
 const channelId = randomUUID();
+const binding = {
+  workspace: { id: "org_team", name: "Operations" },
+  accountId: "scanner-owner",
+};
 const messageId = randomUUID();
 const assetId = randomUUID();
 const operationId = randomUUID();
@@ -61,7 +65,9 @@ describe("okou wechat files", () => {
       server.use(
         http.get(`${origin}/channels`, () => {
           return HttpResponse.json({
-            channels: [{ id: channelId, name: "WeChat", status: "active" }],
+            channels: [
+              { id: channelId, name: "WeChat", status: "active", binding },
+            ],
           });
         }),
         http.post(`${origin}/upload-file/init`, async ({ request }) => {

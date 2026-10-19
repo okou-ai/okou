@@ -9,6 +9,7 @@ import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { verifyWechatGatewaySignature } from "../../lib/wechat-gateway-verification";
 import { request$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import {
   getWechatUpdates,
@@ -37,15 +38,13 @@ const log = logger("api:wechat:gateway");
 const MAX_INPUT_ATTEMPTS = 3;
 // Stored only inside the encrypted pending batch, scoped to its binding generation.
 const pendingBatchSchema = wechatUpdatesSchema.extend({
-  retries: z
-    .record(
-      z.string(),
-      z.object({
-        failures: z.number().int().nonnegative(),
-        nextAttemptAt: z.number(),
-      }),
-    )
-    .default({}),
+  retries: z.record(
+    z.string(),
+    z.object({
+      failures: z.number().int().nonnegative(),
+      nextAttemptAt: z.number(),
+    }),
+  ),
 });
 
 type InputRetry = z.infer<typeof pendingBatchSchema>["retries"][string];
@@ -150,6 +149,7 @@ const processPendingBatch$ = command(
     const batch = pendingBatchSchema.parse(
       JSON.parse(await decryptStoredSecretValue(batchCiphertext)) as unknown,
     );
+    signal.throwIfAborted();
 
     let remaining = batch.msgs ?? [];
     for (const message of batch.msgs ?? []) {
@@ -180,6 +180,7 @@ const processPendingBatch$ = command(
             JSON.stringify({ ...batch, msgs: remaining }),
           )
         : null;
+      signal.throwIfAborted();
       const [saved] = await db
         .update(wechatConnections)
         .set({ pendingBatchCiphertext: nextCiphertext, updatedAt: nowDate() })
@@ -258,7 +259,15 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   if (connection.status === "active") {
-    await set(recoverWechatChatDeliveries$, connection, signal);
+    // Recovery belongs to this API invocation, independently of the receiver's
+    // 80-second HTTP poll. Slow replies must not hold up incoming messages.
+    waitUntil(
+      set(
+        recoverWechatChatDeliveries$,
+        connection,
+        AbortSignal.timeout(300_000),
+      ),
+    );
   }
 
   const live = and(
@@ -297,7 +306,10 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (updates === null) {
       return Response.json({ active: true });
     }
-    batchCiphertext = await encryptStoredSecretValue(JSON.stringify(updates));
+    batchCiphertext = await encryptStoredSecretValue(
+      JSON.stringify({ ...updates, retries: {} }),
+    );
+    signal.throwIfAborted();
 
     const [saved] = await db
       .update(wechatConnections)

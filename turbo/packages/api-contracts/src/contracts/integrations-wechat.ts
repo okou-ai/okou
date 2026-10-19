@@ -16,7 +16,7 @@ export const wechatBindingSchema = z.object({
 });
 export const wechatStatusSchema = z.object({
   configured: z.boolean(),
-  binding: wechatBindingSchema.nullable().optional(),
+  binding: wechatBindingSchema.nullable(),
   status: z.enum(["disconnected", "active", "reconnect_required"]),
 });
 export const wechatAttemptSchema = z.object({
