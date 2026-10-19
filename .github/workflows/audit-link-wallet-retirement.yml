@@ -1,0 +1,59 @@
+name: Audit Link Wallet Retirement
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-wallet-retirement-audit-40206
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install database inventory clients
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y --no-install-recommends python3-venv
+          python3 -m venv "$RUNNER_TEMP/wallet-audit-venv"
+          "$RUNNER_TEMP/wallet-audit-venv/bin/pip" install --disable-pip-version-check 'psycopg[binary]==3.2.13'
+          npm install -g --no-audit --no-fund neonctl@2.15.0
+      - name: Read aggregate production wallet inventory
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(neonctl connection-string production --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
+          WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
+          DATABASE_URL="$DATABASE_URL" "$RUNNER_TEMP/wallet-audit-venv/bin/python" ops/link-wallet-retirement-40206/audit.py "$RUNNER_TEMP/wallet-inventory.json"
+          jq --arg operatorCommit "$GITHUB_SHA" '. + {operatorCommit: $operatorCommit}' \
+            "$RUNNER_TEMP/wallet-inventory.json" > "$RUNNER_TEMP/link-wallet-retirement.json"
+          cat "$RUNNER_TEMP/link-wallet-retirement.json"
+      - name: Retain aggregate inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: link-wallet-retirement-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/link-wallet-retirement.json
+          if-no-files-found: error
+          retention-days: 30
