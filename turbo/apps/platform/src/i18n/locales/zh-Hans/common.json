@@ -1820,6 +1820,7 @@
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
       },
+      "mentionHint": "搜索智能体或聊天…",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",

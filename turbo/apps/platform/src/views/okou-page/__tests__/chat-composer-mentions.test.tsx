@@ -206,7 +206,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
-async function openAgentMentionWorkspace(newChat = false) {
+async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
   const current = withAgent(
     continuityThread(62, 1, "Scout planning"),
     AGENT_ID,
@@ -249,9 +249,81 @@ async function openAgentMentionWorkspace(newChat = false) {
     context,
     path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
     ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.ComposerMentionHint]: mentionHint },
   });
   return { current, savedMentionThread, workspace };
 }
+
+test.each([false, true])(
+  "Show the @ search hint until typing, selection or dismissal (new chat: %s)",
+  async (newChat) => {
+    await openAgentMentionWorkspace(newChat, true);
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    const user = userEvent.setup({ delay: null });
+    const hint = () => {
+      return composer.querySelector(
+        '[data-placeholder=" Search agents or chats…"]',
+      );
+    };
+
+    await fill(composer, "Draft @");
+    await waitFor(() => {
+      expect(hint()).toBeInTheDocument();
+    });
+    expect(composer.textContent).toBe("Draft @");
+    expect(composer).toHaveFocus();
+
+    fireEvent.compositionStart(composer, { data: "中文" });
+    expect(hint()).toBeNull();
+    fireEvent.keyDown(composer, {
+      key: "Enter",
+      isComposing: true,
+      keyCode: 229,
+    });
+    expect(mentionMenu()).toBeInTheDocument();
+    expect(composer.textContent).toBe("Draft @");
+    fireEvent.compositionEnd(composer, { data: "中文" });
+    await waitFor(() => {
+      expect(hint()).toBeInTheDocument();
+    });
+
+    await user.keyboard("zeta");
+    expect(hint()).toBeNull();
+    await waitFor(() => {
+      expect(menuButton("Zeta Agent")).toHaveAttribute("data-active", "true");
+    });
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(agentMention(composer, ZETA_ID)).toBeInTheDocument();
+    });
+    expect(hint()).toBeNull();
+
+    await fill(composer, "Draft @");
+    await waitFor(() => {
+      expect(hint()).toBeInTheDocument();
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
+      expect(hint()).toBeNull();
+    });
+    expect(composer.textContent).toBe("Draft @");
+    expect(composer).toHaveFocus();
+  },
+);
+
+test("Keep @ search available without its hint when the switch is off", async () => {
+  await openAgentMentionWorkspace();
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  const user = userEvent.setup({ delay: null });
+  await user.click(composer);
+  await user.keyboard("@");
+  await screen.findByTestId("chat-thread-suggestion-menu");
+  expect(
+    composer.querySelector('[data-placeholder=" Search agents or chats…"]'),
+  ).toBeNull();
+  expect(menuButton("Zeta Agent")).toBeInTheDocument();
+});
 
 test.each([false, true])(
   "Composer-anchored mentions reverse groups and select the bottom candidate by default (new chat: %s)",
