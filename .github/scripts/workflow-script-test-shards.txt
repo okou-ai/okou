@@ -10,6 +10,7 @@
 1 cloudflare-ssh-preconnect-test.sh
 1 cloudflare-ssh-proxy-test.sh
 1 cloudflare-ssh-native-diagnostics-test.sh
+1 cloudflare-ssh-tcp-test.sh
 1 crates-runner-image-waiters-test.sh
 1 discover-runner-pr-namespaces-test.sh
 1 embedded-cli-workflow-test.sh
