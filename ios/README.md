@@ -8,7 +8,13 @@ require XcodeGen, CocoaPods, or a pnpm workspace wrapper.
 
 The app uses existing production APIs for native authentication, workspace
 selection, chat lists, conversation history, creating chats, sending text,
-retrying uncertain sends, and stopping work. Its home screen follows the mobile
+retrying uncertain sends, and stopping work. The `iosChatAttachments` switch
+enables native photo, video and file selection in new and existing chats, with
+local previews, upload progress, removal and retry. Uploads use the existing
+direct-to-storage API and its 1 GB limit; files of 5 MB or more use multipart
+uploads. A message can contain files with or without text. Selected files and
+uploads belong to their workspace and draft, and are cleaned up when removed,
+sent or closed. Its home screen follows the mobile
 web agent-chat structure with an agent avatar, greeting, and composer; focusing
 the compact composer animates it into a multiline field. The ChatGPT-style
 sliding sidebar contains pinned agents and recent chats scoped to the selected
@@ -25,7 +31,7 @@ Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output and tool cards are not rendered. Sharing, Cloud Browser,
-Computer Use, artifact controls, attachment input, model selection, and connector
+Computer Use, artifact controls, model selection, and connector
 selection are outside this local UI. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft
 control can stop active work.

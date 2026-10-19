@@ -44,11 +44,22 @@ public actor ChatCommands {
       pinnedAt: nil, pinOrder: nil, indicator: nil)
   }
 
-  public func send(thread: ChatThread, text: String, clientEventID: String = UUID().uuidString)
+  public func uploadAttachment(
+    file: URL, filename: String, contentType: String,
+    progress: @escaping @Sendable (Double) -> Void = { _ in }
+  ) async throws -> ChatAttachment {
+    try await ChatAttachmentUpload(client: client).upload(
+      file: file, filename: filename, contentType: contentType, progress: progress)
+  }
+
+  public func send(
+    thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
+    clientEventID: String = UUID().uuidString
+  )
     async throws -> SendReceipt
   {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prompt.isEmpty else {
+    guard !prompt.isEmpty || !attachments.isEmpty else {
       throw ChatError.invalidContract("Enter a message before sending.")
     }
     guard UUID(uuidString: clientEventID) != nil else {
@@ -61,9 +72,12 @@ public actor ChatCommands {
 
     let metadata = try await normalizeMobileSettings(threadID: thread.id)
     let body = SendBody(
-      agentId: metadata.agentId, threadId: thread.id, prompt: prompt,
+      agentId: metadata.agentId, threadId: thread.id,
+      prompt: prompt.isEmpty ? "(see attached files)" : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
-      userMessage: .init(parts: [.init(text: prompt)]))
+      userMessage: .init(
+        parts: (prompt.isEmpty ? [] : [.text(prompt)]) + attachments.map { .file($0) }),
+      hasTextContent: !prompt.isEmpty)
     do {
       let result: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -180,12 +194,29 @@ public actor ChatCommands {
     let clientEventId: String
     let chatThreadSortEventId: String
     let userMessage: Document
+    let hasTextContent: Bool
     struct Document: Encodable {
       let version = 1
       let parts: [Part]
-      struct Part: Encodable {
-        let type = "text"
-        let text: String
+      enum Part: Encodable {
+        case text(String)
+        case file(ChatAttachment)
+
+        enum Keys: String, CodingKey { case type, text, fileId, filenameSnapshot, contentType }
+
+        func encode(to encoder: Encoder) throws {
+          var container = encoder.container(keyedBy: Keys.self)
+          switch self {
+          case .text(let text):
+            try container.encode("text", forKey: .type)
+            try container.encode(text, forKey: .text)
+          case .file(let file):
+            try container.encode("file", forKey: .type)
+            try container.encode(file.id, forKey: .fileId)
+            try container.encode(file.filename, forKey: .filenameSnapshot)
+            try container.encode(file.contentType, forKey: .contentType)
+          }
+        }
       }
     }
     enum Keys: String, CodingKey {
@@ -200,7 +231,7 @@ public actor ChatCommands {
       try container.encode(clientEventId, forKey: .clientEventId)
       try container.encode(chatThreadSortEventId, forKey: .chatThreadSortEventId)
       try container.encode(userMessage, forKey: .userMessage)
-      try container.encode(true, forKey: .hasTextContent)
+      try container.encode(hasTextContent, forKey: .hasTextContent)
       try container.encodeNil(forKey: .computerUseHostId)
       try container.encode(false, forKey: .cloudBrowserEnabled)
     }

@@ -10,6 +10,7 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var canArchiveChats = false
+  private(set) var canAttachFiles = false
   private(set) var navigationError: String?
   private(set) var error: String?
   private(set) var isLoading = false
@@ -98,6 +99,7 @@ final class ThreadListStore {
     }
     guard !closed, !Task.isCancelled else { return }
     canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
+    canAttachFiles = switches?.effectiveSwitches["iosChatAttachments"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {

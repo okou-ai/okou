@@ -4,12 +4,14 @@ import Textual
 
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
+  let supportsAttachments: Bool
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var scrolling: ConversationScrollCoordinator
 
-  init(conversation: ConversationStore) {
+  init(conversation: ConversationStore, supportsAttachments: Bool = false) {
     self.conversation = conversation
+    self.supportsAttachments = supportsAttachments
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -82,9 +84,11 @@ struct ChatDetailView: View {
         showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+        attachments: conversation.attachmentDraft, supportsAttachments: supportsAttachments,
         submit: {
           if history.canStop
             && conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !conversation.attachmentDraft.hasAttachments
           {
             await conversation.stop()
           } else {

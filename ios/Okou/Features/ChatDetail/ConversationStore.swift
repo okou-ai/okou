@@ -10,17 +10,24 @@ final class ConversationStore {
     let id: String
     let text: String
     let createdAt: Date
+    let attachments: [ChatAttachment]
     var needsRetry = false
 
     var message: ChatMessage {
       ChatMessage(
-        id: id, role: .user, text: text, createdAt: createdAt,
+        id: id, role: .user,
+        text: ([text].filter { !$0.isEmpty }
+          + attachments.map {
+            "Attachment: \($0.filename) (open this chat on the website to view)"
+          }).joined(separator: "\n"), createdAt: createdAt,
         runID: nil, isQueued: false, isError: false)
     }
   }
 
   var thread: ChatThread
   var draft = ""
+  @ObservationIgnored lazy var attachmentDraft = AttachmentDraftStore(
+    commands: commands, didFail: didFail)
   private(set) var history: ChatHistory?
   private(set) var pending: [PendingMessage] = []
   private(set) var messages: [ChatMessage] = []
@@ -77,7 +84,8 @@ final class ConversationStore {
   }
 
   var canRelease: Bool {
-    draft.isEmpty && pending.isEmpty && !isLoading && !isSending && !isStopping && !isLoadingEarlier
+    draft.isEmpty && !attachmentDraft.hasAttachments && pending.isEmpty
+      && !isLoading && !isSending && !isStopping && !isLoadingEarlier
       && history?.executionState.isActive != true
   }
 
@@ -131,11 +139,16 @@ final class ConversationStore {
 
   func send() async {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, !isSending, !closed, !needsUpgrade, !Task.isCancelled else { return }
-    let message = PendingMessage(id: UUID().uuidString.lowercased(), text: text, createdAt: Date())
+    guard !text.isEmpty || attachmentDraft.hasAttachments, attachmentDraft.isReady,
+      !isSending, !closed, !needsUpgrade, !Task.isCancelled
+    else { return }
+    let message = PendingMessage(
+      id: UUID().uuidString.lowercased(), text: text, createdAt: Date(),
+      attachments: attachmentDraft.uploaded)
     pending.append(message)
     rebuildMessages()
     draft = ""
+    attachmentDraft.reset()
     await submit(message)
   }
 
@@ -158,7 +171,9 @@ final class ConversationStore {
         didSettle()
       }
       do {
-        _ = try await commands.send(thread: thread, text: message.text, clientEventID: message.id)
+        _ = try await commands.send(
+          thread: thread, text: message.text, attachments: message.attachments,
+          clientEventID: message.id)
         try Task.checkCancellation()
         guard !closed else { return }
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
@@ -208,6 +223,7 @@ final class ConversationStore {
     stopTask?.cancel()
     expansionTask?.cancel()
     measurements.clear()
+    attachmentDraft.close()
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {
