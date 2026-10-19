@@ -46,7 +46,11 @@ function bytes(value: unknown): Buffer {
   return Buffer.from(`${JSON.stringify(value)}\n`);
 }
 
-function httpConnector(slug: string, label: string) {
+function httpConnector(
+  slug: string,
+  label: string,
+  tokenName = "FIXTURE_TOKEN",
+) {
   return {
     slug,
     label,
@@ -60,12 +64,12 @@ function httpConnector(slug: string, label: string) {
         label: "API Token",
         description: null,
         visible: true,
-        storage: { version: 1, secrets: ["FIXTURE_TOKEN"], variables: [] },
+        storage: { version: 1, secrets: [tokenName], variables: [] },
         grant: {
           kind: "manual",
           fields: [
             {
-              privateName: "FIXTURE_TOKEN",
+              privateName: tokenName,
               publicId: "credential",
               label: "Credential",
               required: true,
@@ -76,7 +80,7 @@ function httpConnector(slug: string, label: string) {
         },
         access: {
           kind: "static",
-          envBindings: { FIXTURE_TOKEN: "$secrets.FIXTURE_TOKEN" },
+          envBindings: { [tokenName]: `$secrets.${tokenName}` },
         },
         revoke: { kind: "none" },
       },
@@ -87,8 +91,8 @@ function httpConnector(slug: string, label: string) {
   };
 }
 
-function mcpConnector(slug = "plaud-mcp") {
-  const tokenBindings = { accessToken: "$secrets.NOTES_ACCESS_TOKEN" };
+function mcpConnector(slug = "plaud-mcp", tokenName = "NOTES_ACCESS_TOKEN") {
+  const tokenBindings = { accessToken: `$secrets.${tokenName}` };
   return {
     ...httpConnector(slug, "Notes"),
     mcp: {
@@ -103,7 +107,7 @@ function mcpConnector(slug = "plaud-mcp") {
         visible: true,
         storage: {
           version: 1,
-          secrets: ["NOTES_ACCESS_TOKEN"],
+          secrets: [tokenName],
           variables: [],
         },
         grant: {
@@ -664,16 +668,34 @@ describe("connector catalog v4 preparation", () => {
     const candidate = release({
       mutate(catalog) {
         catalog.connectors = [
-          httpConnector("pipedrive", "Pipedrive"),
-          { ...mcpConnector("attio-mcp"), label: "Attio" },
-          httpConnector("apollo", "Apollo"),
-          httpConnector("clickup", "ClickUp"),
-          { ...mcpConnector("monday-mcp"), label: "Monday.com" },
-          httpConnector("todoist", "Todoist"),
-          httpConnector("pipedrive-mcp", "A similar MCP identity"),
-          httpConnector("custom-attio-mcp", "A custom Attio"),
+          httpConnector("pipedrive", "Pipedrive", "PIPEDRIVE_TOKEN"),
+          {
+            ...mcpConnector("attio-mcp", "ATTIO_MCP_ACCESS_TOKEN"),
+            label: "Attio",
+          },
+          httpConnector("apollo", "Apollo", "APOLLO_TOKEN"),
+          httpConnector("clickup", "ClickUp", "CLICKUP_TOKEN"),
+          {
+            ...mcpConnector("monday-mcp", "MONDAY_MCP_ACCESS_TOKEN"),
+            label: "Monday.com",
+          },
+          httpConnector("todoist", "Todoist", "TODOIST_TOKEN"),
+          httpConnector(
+            "pipedrive-mcp",
+            "A similar MCP identity",
+            "PIPEDRIVE_MCP_TOKEN",
+          ),
+          httpConnector(
+            "custom-attio-mcp",
+            "A custom Attio",
+            "CUSTOM_ATTIO_MCP_TOKEN",
+          ),
           ...Array.from({ length: 12 }, (_, index) => {
-            return httpConnector(`unranked-${index}`, `A service ${index}`);
+            return httpConnector(
+              `unranked-${index}`,
+              `A service ${index}`,
+              `UNRANKED_${index}_TOKEN`,
+            );
           }),
         ];
       },
