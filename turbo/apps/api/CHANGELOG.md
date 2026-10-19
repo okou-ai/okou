@@ -9,6 +9,37 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.751.6](https://github.com/okou-ai/okou/compare/api-v1.751.5...api-v1.751.6) (2026-10-19)
+
+
+### Bug Fixes
+
+* preserve saved connector accounts when defaults need reconnect ([#41254](https://github.com/okou-ai/okou/issues/41254)) ([24a1ff5](https://github.com/okou-ai/okou/commit/24a1ff50b8b8bff3a8baeae1ebc55de5caf1eab6))
+* **wechat:** recover dm replies and improve conversation tools ([#41215](https://github.com/okou-ai/okou/issues/41215)) ([654e918](https://github.com/okou-ai/okou/commit/654e918b1962876fb33696475f836e5a9842cb27))
+
+
+### Refactoring
+
+* **api:** keep billing portal customer lookup local ([#41274](https://github.com/okou-ai/okou/issues/41274)) ([de80cc6](https://github.com/okou-ai/okou/commit/de80cc6ab44bf9fdcad84cd9de026cc5a8945be9)) [#41270](https://github.com/okou-ai/okou/issues/41270)
+* **api:** own canonical slack completion failure writes ([#41262](https://github.com/okou-ai/okou/issues/41262)) ([789d0d6](https://github.com/okou-ai/okou/commit/789d0d6ee829d6f51f5ec0fe0268a58d63b5087b)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own canonical slack preparation failure writes ([#41278](https://github.com/okou-ai/okou/issues/41278)) ([49f3e5e](https://github.com/okou-ai/okou/commit/49f3e5ed60068241fce8545fc906b3a8e0ab9566)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+
+
+### Performance Improvements
+
+* move wechat receiving to cloudflare workflows ([#41269](https://github.com/okou-ai/okou/issues/41269)) ([0c9a663](https://github.com/okou-ai/okou/commit/0c9a663d0c368cdbb489a0829a99642b12546905))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.4
+    * @okouai/connectors bumped to 3.16.10
+    * @okouai/core bumped to 8.769.1
+    * @okouai/db bumped to 1.345.10
+    * @okouai/pi-agent-runtime bumped to 1.50.23
+
 ## [1.751.5](https://github.com/okou-ai/okou/compare/api-v1.751.4...api-v1.751.5) (2026-10-19)
 
 
