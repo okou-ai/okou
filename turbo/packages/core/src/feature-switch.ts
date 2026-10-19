@@ -45,7 +45,7 @@ export interface FeatureSwitchContext {
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.JsonTreePreview]: {
-    maintainer: "liangyou@vm0.ai",
+    maintainer: "liangyou@okou.ai",
     displayName: "JSON tree previews",
     description: "Explore JSON nodes in file and artifact previews.",
     enabled: false,
