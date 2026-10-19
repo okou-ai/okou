@@ -36,7 +36,7 @@ pub(crate) fn event_queue() -> (EventSender, EventReceiver) {
 }
 
 impl EventSender {
-    pub(crate) fn send(&self, event: Event) -> Result<(), mpsc::error::SendError<Event>> {
+    pub(crate) fn send(&self, event: Event) -> Result<(), mpsc::error::SendError<()>> {
         // Account before publishing so a concurrent receiver cannot underflow.
         let depth = self.stats.depth.fetch_add(1, Ordering::Relaxed) + 1;
         match self.tx.send(event) {
@@ -44,9 +44,10 @@ impl EventSender {
                 self.stats.peak.fetch_max(depth, Ordering::Relaxed);
                 Ok(())
             }
-            Err(error) => {
+            Err(_) => {
                 self.stats.depth.fetch_sub(1, Ordering::Relaxed);
-                Err(error)
+                // Callers only observe closure; the undeliverable event is no longer needed.
+                Err(mpsc::error::SendError(()))
             }
         }
     }
