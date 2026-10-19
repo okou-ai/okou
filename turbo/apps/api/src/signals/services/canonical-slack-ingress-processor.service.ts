@@ -306,19 +306,18 @@ function retryDelayMs(attemptCount: number): number {
   return RETRY_DELAYS_MS[index] ?? RETRY_DELAYS_MS.at(-1) ?? 0;
 }
 
-async function markIngressFailure(
-  db: Db,
-  args: {
-    readonly ingressId: string;
-    readonly attemptCount: number;
-    readonly error: unknown;
-    readonly currentTime: Date;
-  },
-): Promise<IngressFailureOutcome> {
+function ingressFailureWritePlan(args: {
+  readonly ingressId: string;
+  readonly attemptCount: number;
+  readonly error: unknown;
+  readonly currentTime: Date;
+}) {
   const classification = classifyIngressFailure(args.error);
   const canRetry =
     classification.retryable && args.attemptCount < MAX_PROCESSING_ATTEMPTS;
-  const status = canRetry ? "retryable" : "terminal";
+  const status: IngressFailureOutcome["status"] = canRetry
+    ? "retryable"
+    : "terminal";
   const errorClass =
     classification.retryable && !canRetry
       ? "attempts_exhausted"
@@ -334,28 +333,22 @@ async function markIngressFailure(
     : null;
   const message =
     args.error instanceof Error ? args.error.message : "Unknown error";
-  const [updated] = await db
-    .update(slackChatIngress)
-    .set({
+  return {
+    status,
+    errorClass,
+    retryAt,
+    values: {
       status,
       retryAt,
       lastErrorClass: errorClass,
       lastError: message.slice(0, 4000),
       updatedAt: args.currentTime,
-    })
-    .where(
-      and(
-        eq(slackChatIngress.id, args.ingressId),
-        eq(slackChatIngress.status, "processing"),
-        eq(slackChatIngress.processingAttemptCount, args.attemptCount),
-      ),
-    )
-    .returning({ id: slackChatIngress.id });
-  return {
-    status,
-    errorClass,
-    retryAt,
-    applied: updated !== undefined,
+    },
+    condition: and(
+      eq(slackChatIngress.id, args.ingressId),
+      eq(slackChatIngress.status, "processing"),
+      eq(slackChatIngress.processingAttemptCount, args.attemptCount),
+    ),
   };
 }
 
@@ -939,12 +932,26 @@ export const processCanonicalSlackIngress$ = command(
       return result.value;
     }
 
-    const failure = await markIngressFailure(db, {
+    const failureArgs = {
       ingressId: args.ingressId,
       attemptCount: claimed.attemptCount,
       error: result.error,
       currentTime: nowDate(),
-    });
+    };
+    const failure = await (async (): Promise<IngressFailureOutcome> => {
+      const plan = ingressFailureWritePlan(failureArgs);
+      const [updated] = await db
+        .update(slackChatIngress)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({ id: slackChatIngress.id });
+      return {
+        status: plan.status,
+        errorClass: plan.errorClass,
+        retryAt: plan.retryAt,
+        applied: updated !== undefined,
+      };
+    })();
     signal.throwIfAborted();
     await tapError(
       (async () => {
