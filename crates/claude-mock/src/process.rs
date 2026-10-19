@@ -166,6 +166,10 @@ fn run_scenario(scenario: MockScenario<'_>, prompt: &str, output_format: &str) -
             output_format,
             fixtures::ToolOomMode::TaskGuestPressure,
         ),
+        MockScenario::GuestWideTaskOomInjected => fixtures::run_parallel_shell_tool_oom_scenario(
+            output_format,
+            fixtures::ToolOomMode::TaskGuestInjected,
+        ),
         MockScenario::RuntimeOnlyOom => fixtures::run_runtime_only_oom_scenario(output_format),
         MockScenario::Shell => shell_execution::run(prompt, output_format),
     }

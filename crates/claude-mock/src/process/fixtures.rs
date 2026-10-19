@@ -112,6 +112,7 @@ pub(super) enum ToolOomMode {
     GuestInjected,
     TaskWorkloadLimit,
     TaskGuestPressure,
+    TaskGuestInjected,
 }
 
 impl ToolOomMode {
@@ -124,7 +125,14 @@ impl ToolOomMode {
     }
 
     fn managed_tasks(self) -> bool {
-        matches!(self, Self::TaskWorkloadLimit | Self::TaskGuestPressure)
+        matches!(
+            self,
+            Self::TaskWorkloadLimit | Self::TaskGuestPressure | Self::TaskGuestInjected
+        )
+    }
+
+    fn injected(self) -> bool {
+        matches!(self, Self::GuestInjected | Self::TaskGuestInjected)
     }
 }
 
@@ -691,6 +699,8 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         TOOL_OOM_SURVIVOR_RELEASE,
         task_oom::STARTUP,
         task_oom::RELEASE,
+        task_oom::READY,
+        task_oom::DIAGNOSTICS,
     ] {
         match std::fs::remove_file(marker) {
             Ok(()) => {}
@@ -701,6 +711,9 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
 
     let mut fixture = ParallelToolOomFixture::new(memory_max_path, original_memory_max);
     fixture.managed_tasks = mode.managed_tasks();
+    if mode.managed_tasks() {
+        fixture.task_diagnostics = Some(task_oom::diagnostics_file()?);
+    }
     // Test-only limit changes, confined to a disposable Guest operation. The
     // guard restores the original value on every returning path.
     write_cgroup_value_as_root(
@@ -746,7 +759,11 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     } else {
         TOOL_OOM_OFFENDER_SCRIPT
     };
-    let offender_bytes = if mode == ToolOomMode::GuestInjected {
+    let offender_bytes = if mode == ToolOomMode::TaskGuestInjected {
+        // Four resident workers total 384 MiB. Each is smaller than the main
+        // runtime, so kernel victim selection must honor tool OOM priority.
+        TOOL_OOM_INJECTED_OFFENDER_BYTES / 4
+    } else if mode == ToolOomMode::GuestInjected {
         TOOL_OOM_INJECTED_OFFENDER_BYTES
     } else {
         runtime_bytes / 2
@@ -754,19 +771,35 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     let mut offender_command = bash_tool_command();
     offender_command
         .args(["-c", offender_script])
-        .env("VM0_TEST_OOM_ALLOCATOR_BYTES", offender_bytes.to_string());
+        .env("VM0_TEST_OOM_ALLOCATOR_BYTES", offender_bytes.to_string())
+        .stderr(Stdio::null());
     if mode.managed_tasks() {
         offender_command
             .env("VM0_TEST_TASK_SUPPORT", task_oom::LAUNCH_SUPPORT)
             .env("VM0_TEST_TASK_CONTROLLER", task_oom::CONTROLLER_PROGRAM)
             .env("VM0_TEST_TASK_RUNTIME", task_oom::RUNTIME_PROGRAM)
-            .env("VM0_TEST_TASK_ALLOCATOR", task_oom::ALLOCATOR_PROGRAM);
+            .env("VM0_TEST_TASK_ALLOCATOR", task_oom::ALLOCATOR_PROGRAM)
+            .env(
+                "VM0_TEST_TASK_INJECTED",
+                if mode.injected() { "1" } else { "0" },
+            )
+            .env(
+                "VM0_TEST_TASK_TIMEOUT_SECONDS",
+                TOOL_OOM_CONVERGENCE_TIMEOUT.as_secs().to_string(),
+            )
+            .stderr(
+                fixture
+                    .task_diagnostics
+                    .as_ref()
+                    .ok_or("task diagnostics are missing")?
+                    .try_clone()
+                    .map_err(|error| format!("clone task diagnostics: {error}"))?,
+            );
     }
     fixture.offender = Some(
         offender_command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
             .spawn()
             .map_err(|error| format!("spawn offender Bash tool: {error}"))?,
     );
@@ -799,7 +832,25 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     }
 
     let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
-    if mode == ToolOomMode::GuestInjected {
+    if mode == ToolOomMode::TaskGuestInjected {
+        let controller = fixture
+            .offender
+            .as_mut()
+            .ok_or("task controller is missing")?;
+        let ready_relative = wait_for_tool_marker(task_oom::READY, controller)?;
+        if ready_relative != offender_relative {
+            return Err("resident task readiness belongs to a different cgroup".into());
+        }
+        if let Some(status) = controller
+            .try_wait()
+            .map_err(|error| format!("inspect task controller before OOM injection: {error}"))?
+        {
+            return Err(format!(
+                "task controller exited before Guest OOM injection: {status}"
+            ));
+        }
+    }
+    if mode.injected() {
         // The disposable Guest runs the kernel's global OOM victim selection
         // after both tools have reached their readiness markers.
         write_cgroup_value_as_root(Path::new("/proc/sysrq-trigger"), "f")?;
@@ -914,6 +965,8 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     std::hint::black_box(&runtime_memory);
     drop(runtime_memory);
     fixture.restore_memory_max()?;
+    // Child output is retained for failure diagnostics only.
+    fixture.task_diagnostics = None;
     Ok(format!(
         "{} oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} trigger={} reclaimed_bytes={reclaimed_bytes} offender={offender_relative} survivor={survivor_relative}",
         if mode.managed_tasks() {
@@ -921,11 +974,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         } else {
             "parallel-shell-tool-oom-survived"
         },
-        if mode == ToolOomMode::GuestInjected {
-            "sysrq"
-        } else {
-            "pressure"
-        }
+        if mode.injected() { "sysrq" } else { "pressure" }
     ))
 }
 
@@ -974,6 +1023,7 @@ struct ParallelToolOomFixture {
     survivor: Option<Child>,
     offender: Option<Child>,
     managed_tasks: bool,
+    task_diagnostics: Option<std::fs::File>,
 }
 
 impl ParallelToolOomFixture {
@@ -985,6 +1035,7 @@ impl ParallelToolOomFixture {
             survivor: None,
             offender: None,
             managed_tasks: false,
+            task_diagnostics: None,
         }
     }
 
@@ -1030,6 +1081,12 @@ impl Drop for ParallelToolOomFixture {
         }
         if !self.memory_max_restored {
             let _ = write_cgroup_value_as_root(&self.memory_max_path, &self.original_memory_max);
+        }
+        if let Some(file) = &self.task_diagnostics {
+            eprintln!(
+                "nested task OOM diagnostics (bounded tail):\n{}",
+                task_oom::diagnostics_tail(file).unwrap_or_else(|error| error)
+            );
         }
     }
 }
