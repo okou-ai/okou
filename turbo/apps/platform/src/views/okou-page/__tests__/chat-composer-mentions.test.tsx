@@ -134,7 +134,7 @@ function withAgent(
   return { ...thread, agentId };
 }
 
-async function setupMentionSearch() {
+async function setupMentionSearch(newChat: boolean) {
   const current = withAgent(
     continuityThread(61, 1, "Current mention chat"),
     AGENT_ID,
@@ -143,34 +143,66 @@ async function setupMentionSearch() {
     continuityThread(61, 2, "Project Beta"),
     AGENT_ID,
   );
+  const projectBetaFollowUp = withAgent(
+    continuityThread(61, 4, "Project Beta follow-up"),
+    AGENT_ID,
+  );
   const untitled = withAgent(continuityThread(61, 3, "Untitled"), AGENT_ID);
   const untitledThread = { ...untitled, title: null };
   const workspace = installContinuityWorkspace(context, {
     caseId: 61,
-    threads: [current, projectBeta, untitledThread],
+    threads: [current, projectBeta, untitledThread, projectBetaFollowUp],
   });
   installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
 
   await setupPage({
     context,
-    path: `/chats/${current.id}`,
+    path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
     ...workspace.pageOptions,
   });
 
   const user = userEvent.setup({ delay: null });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await user.click(composer);
-  return { composer, user };
+  return { composer, user, projectBetaFollowUp };
 }
 
-test("Show a matching chat mention suggestion", async () => {
-  const { user } = await setupMentionSearch();
-  await user.keyboard("@beta");
-  const menu = await screen.findByTestId("chat-thread-suggestion-menu");
+test.each([false, true])(
+  "Show matching chat threads in priority order from the top (new chat: %s)",
+  async (newChat) => {
+    context.mocks.browser.matchMedia(newChat);
+    const { composer, user, projectBetaFollowUp } =
+      await setupMentionSearch(newChat);
+    await user.keyboard("@beta");
+    const menu = await screen.findByTestId("chat-thread-suggestion-menu");
 
-  expect(within(menu).getByText("Project Beta")).toBeVisible();
-  expect(within(menu).queryByText("New chat")).toBeNull();
-});
+    expect(
+      queryAllByRoleFast("button", menu).map((button) => {
+        return button.textContent?.trim();
+      }),
+    ).toStrictEqual(["Project Beta follow-up", "Project Beta"]);
+    expect(menuButton("Project Beta follow-up")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    expect(within(menu).queryByText("New chat")).toBeNull();
+    await user.keyboard("{ArrowUp}");
+    expect(menuButton("Project Beta follow-up")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await user.keyboard("{ArrowDown}");
+    expect(menuButton("Project Beta")).toHaveAttribute("data-active", "true");
+    await user.keyboard("{ArrowUp}{Enter}");
+    await waitFor(() => {
+      expect(threadMention(composer, projectBetaFollowUp.id)).toHaveTextContent(
+        "Project Beta follow-up",
+      );
+    });
+    expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
+    expect(composer).toHaveFocus();
+  },
+);
 
 test("Keep archived chats in @ mention suggestions when archiving is enabled", async () => {
   const current = withAgent(
@@ -326,7 +358,7 @@ test("Keep @ search available without its hint when the switch is off", async ()
 });
 
 test.each([false, true])(
-  "Composer-anchored mentions reverse groups and select the bottom candidate by default (new chat: %s)",
+  "Composer-anchored mentions keep priority order and select the top candidate by default (new chat: %s)",
   async (newChat) => {
     context.mocks.browser.matchMedia(false);
     await openAgentMentionWorkspace(newChat);
@@ -337,25 +369,25 @@ test.each([false, true])(
     const menu = await screen.findByTestId("chat-thread-suggestion-menu");
     const buttons = queryAllByRoleFast("button", menu);
     expect(
-      buttons.slice(-3).map((button) => {
+      buttons.slice(0, 3).map((button) => {
         return button.textContent?.trim();
       }),
-    ).toStrictEqual(["Zeta Agent", "Private Ops", "Reviewer"]);
+    ).toStrictEqual(["Reviewer", "Private Ops", "Zeta Agent"]);
     expect(
       within(menu)
-        .getByText("Chat threads")
-        .compareDocumentPosition(within(menu).getByText("Agents")) &
+        .getByText("Agents")
+        .compareDocumentPosition(within(menu).getByText("Chat threads")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
     expect(within(menu).queryByText("Scout")).toBeNull();
     expect(within(menu).getByText("Zeta launch notes")).toBeInTheDocument();
     expect(composer).toHaveFocus();
-    await user.keyboard("{ArrowDown}");
-    expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
     await user.keyboard("{ArrowUp}");
+    expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
+    await user.keyboard("{ArrowDown}");
     expect(menuButton("Private Ops")).toHaveAttribute("data-active", "true");
-    await user.keyboard("{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowUp}{Enter}");
     await waitFor(() => {
       expect(agentMention(composer, REVIEWER_ID)).toHaveTextContent("Reviewer");
     });
@@ -366,7 +398,7 @@ test.each([false, true])(
 
 test("Composer-anchored mentions open above the centred start page composer too", async () => {
   // A wide window centres the start page's composer; the menu still opens
-  // above it, with the most relevant row nearest the composer.
+  // above it, with the most relevant row at the top of the menu.
   context.mocks.browser.matchMedia(true);
   await openAgentMentionWorkspace(true);
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -377,19 +409,19 @@ test("Composer-anchored mentions open above the centred start page composer too"
   expect(menu).toHaveAttribute("data-side", "top");
   expect(
     queryAllByRoleFast("button", menu)
-      .slice(-3)
+      .slice(0, 3)
       .map((button) => {
         return button.textContent?.trim();
       }),
-  ).toStrictEqual(["Zeta Agent", "Private Ops", "Reviewer"]);
-  expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
-  await user.keyboard("{ArrowDown}");
+  ).toStrictEqual(["Reviewer", "Private Ops", "Zeta Agent"]);
   expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
   await user.keyboard("{ArrowUp}");
+  expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowDown}");
   expect(menuButton("Private Ops")).toHaveAttribute("data-active", "true");
 });
 
-test("Composer-anchored mentions navigate upward across groups and insert the visual target", async () => {
+test("Composer-anchored mentions navigate downward across groups and insert the visual target", async () => {
   await openAgentMentionWorkspace();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
@@ -397,12 +429,12 @@ test("Composer-anchored mentions navigate upward across groups and insert the vi
   await user.keyboard("@");
   const menu = await screen.findByTestId("chat-thread-suggestion-menu");
   const buttons = queryAllByRoleFast("button", menu);
-  const threadTarget = buttons.at(-4);
+  const threadTarget = buttons[3];
   if (!threadTarget?.textContent) {
-    throw new Error("Expected a thread immediately above the agent group");
+    throw new Error("Expected a thread immediately below the agent group");
   }
   const threadTitle = threadTarget.textContent.trim();
-  await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+  await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
   expect(threadTarget).toHaveAttribute("data-active", "true");
   await user.keyboard("{Tab}");
   await waitFor(() => {
@@ -423,7 +455,7 @@ test.each([false, true])(
     await user.click(composer);
     await user.keyboard("@");
     await screen.findByTestId("chat-thread-suggestion-menu");
-    await user.keyboard("{ArrowUp}");
+    await user.keyboard("{ArrowDown}");
     expect(menuButton("Private Ops")).toHaveAttribute("data-active", "true");
     await fill(composer, "@zeta");
     await waitFor(() => {
@@ -439,7 +471,7 @@ test.each([false, true])(
     expect(agentMention(composer, ZETA_ID)).toBeNull();
     expect(composer).toHaveTextContent("@zeta");
     fireEvent.compositionEnd(composer, { data: "中文" });
-    await user.keyboard("{ArrowUp}");
+    await user.keyboard("{ArrowDown}");
     expect(menuButton("Zeta Agent")).not.toHaveAttribute("data-active");
     await user.keyboard("{Escape}");
     await waitFor(() => {
