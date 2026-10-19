@@ -19,7 +19,11 @@ pub(crate) enum PeerStatus {
 #[derive(Clone, Serialize)]
 pub(crate) struct Peer {
     pub(crate) status: PeerStatus,
-    pub(crate) observed_at: DateTime<Utc>,
+    // Preserve the existing structured evidence name for the local sample.
+    #[serde(rename = "observed_at")]
+    pub(crate) sampled_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) status_received_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) control_last_seen: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,7 +54,11 @@ pub(crate) struct Controls {
 }
 
 impl Trace {
-    pub(in crate::tailscale) fn peer_status(&self, status: NodeStatus) {
+    pub(in crate::tailscale) fn peer_status(
+        &self,
+        status: NodeStatus,
+        received_at: Option<DateTime<Utc>>,
+    ) {
         self.update(|state| {
             let (status, control_last_seen, local_last_seen_estimate) = match status {
                 NodeStatus::Unknown => (PeerStatus::Unknown, None, None),
@@ -61,7 +69,8 @@ impl Trace {
             };
             state.peer = Some(Peer {
                 status,
-                observed_at: Utc::now(),
+                sampled_at: Utc::now(),
+                status_received_at: received_at,
                 control_last_seen,
                 local_last_seen_estimate,
             });

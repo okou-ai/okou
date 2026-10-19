@@ -234,6 +234,7 @@ struct Peer {
     node: Node,
     identity: Identity,
     handle: PeerId,
+    status_received_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 struct HeldBinding {
@@ -416,6 +417,8 @@ impl Peers {
         let Some(update) = update else {
             return Ok(());
         };
+        let received_at = self.diagnostics.then(chrono::Utc::now);
+        let mut status_updates = self.diagnostics.then(HashSet::new);
         let mut nodes = self
             .peers
             .iter()
@@ -428,6 +431,11 @@ impl Peers {
                 }
                 nodes.clear();
                 for node in full {
+                    if let Some(updates) = &mut status_updates
+                        && !matches!(node.status, ts_control::NodeStatus::Unknown)
+                    {
+                        updates.insert(node.id);
+                    }
                     if nodes.insert(node.id, node).is_some() {
                         return Err(Failure::DomainFailed);
                     }
@@ -446,10 +454,20 @@ impl Peers {
                     nodes.remove(&id);
                 }
                 for node in upsert {
+                    if let Some(updates) = &mut status_updates
+                        && !matches!(node.status, ts_control::NodeStatus::Unknown)
+                    {
+                        updates.insert(node.id);
+                    }
                     nodes.insert(node.id, node);
                 }
                 for patch in patch {
                     if let Some(node) = nodes.get_mut(&patch.id) {
+                        if let Some(updates) = &mut status_updates
+                            && !matches!(patch.status, ts_control::NodeStatus::Unknown)
+                        {
+                            updates.insert(patch.id);
+                        }
                         node.apply_update(&patch);
                     }
                 }
@@ -526,6 +544,16 @@ impl Peers {
         let mut next = HashMap::new();
         for (id, node) in nodes {
             let identity = identities.remove(&id).ok_or(Failure::DomainFailed)?;
+            let status_received_at = status_updates.as_ref().and_then(|updates| {
+                if updates.contains(&id) {
+                    received_at
+                } else {
+                    self.peers
+                        .get(&id)
+                        .filter(|old| old.identity == identity && old.node.status == node.status)
+                        .and_then(|old| old.status_received_at)
+                }
+            });
             let handle =
                 if let Some(old) = self.peers.get(&id).filter(|old| old.identity == identity) {
                     old.handle
@@ -546,6 +574,7 @@ impl Peers {
                     node,
                     identity,
                     handle,
+                    status_received_at,
                 },
             );
         }
@@ -884,7 +913,9 @@ impl Peers {
             && self.current(binding).is_ok()
             && let Some(peer) = self.peers.get(&binding.identity.id)
         {
-            binding.trace.peer_status(peer.node.status);
+            binding
+                .trace
+                .peer_status(peer.node.status, peer.status_received_at);
         }
     }
 
