@@ -184,7 +184,6 @@ describe("workflow schema physical identity", () => {
       },
       workflowAutomations: {
         indexes: [
-          "idx_workflow_automations_deferred_retry",
           "idx_workflow_automations_event_connector",
           "idx_workflow_automations_next_run",
           "idx_workflow_automations_official_blueprint_unique",

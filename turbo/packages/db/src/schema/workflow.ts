@@ -257,9 +257,6 @@ export const workflowAutomations = pgTable(
       index("idx_workflow_automations_next_run")
         .on(table.nextRunAt)
         .where(sql`enabled = true`),
-      index("idx_workflow_automations_deferred_retry")
-        .on(table.deferredUntil, table.nextRunAt)
-        .where(sql`${table.deferredUntil} IS NOT NULL`),
       check(
         "workflow_automations_deferral_pair_check",
         sql`(
