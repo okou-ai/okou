@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   heartbeatBodySchema,
   heldHomeStateSchema,
@@ -32,6 +33,35 @@ const home = {
 };
 
 describe("canonical home affinity contracts", () => {
+  it("keeps shared-home scope capabilities additive across API and Runner versions", () => {
+    const oldHeartbeat = canonicalHeartbeat();
+    expect(
+      heartbeatBodySchema.parse(oldHeartbeat).homeCacheScopes,
+    ).toBeUndefined();
+    const newHeartbeat = {
+      ...oldHeartbeat,
+      homeCacheScopes: { "vm0/default": "a".repeat(64) },
+    };
+    expect(heartbeatBodySchema.parse(newHeartbeat).homeCacheScopes).toEqual(
+      newHeartbeat.homeCacheScopes,
+    );
+    // The outgoing API's non-strict object schema strips the new field.
+    const outgoingSchema = z
+      .object(heartbeatBodySchema.shape)
+      .omit({ homeCacheScopes: true });
+    expect(outgoingSchema.parse(newHeartbeat)).toStrictEqual(
+      outgoingSchema.parse(oldHeartbeat),
+    );
+    for (const scope of ["", "hostname", "f".repeat(63), "g".repeat(64)]) {
+      expect(
+        heartbeatBodySchema.safeParse({
+          ...oldHeartbeat,
+          homeCacheScopes: { "vm0/default": scope },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("requires whole home inventory, including explicit empty state", () => {
     const { heldHomeStates, ...missingInventory } = canonicalHeartbeat();
     expect(heartbeatBodySchema.safeParse(missingInventory).success).toBe(false);

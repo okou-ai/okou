@@ -682,6 +682,27 @@ async fn prepare_ranked_preference_candidate(
                 history_generation_run_id,
             );
         }
+        // A capable replacement can observe a home committed by the draining
+        // source through the shared-cache watcher. It owns no source sandbox
+        // or ActiveRuns proof, so reserve ordinary capacity before claiming.
+        if has_compatible_home(reuse_key, profile_name, ctx)
+            && let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+                &candidate,
+                profile_name,
+                job_vcpu,
+                job_memory,
+                device_rate_limits,
+                false,
+                ctx,
+            )
+            .await
+        {
+            return PreferencePreparation::Ready(PreparedCandidate {
+                candidate,
+                resource: Some(resource),
+                blank_pool_selection,
+            });
+        }
         return defer_preference_candidate(
             candidate,
             preference,

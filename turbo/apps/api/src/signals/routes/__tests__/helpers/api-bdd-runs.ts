@@ -260,6 +260,7 @@ function runnerHeartbeatBody(
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
+    readonly homeCacheScopes?: RunnerHeartbeatBody["homeCacheScopes"];
     readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
@@ -279,6 +280,9 @@ function runnerHeartbeatBody(
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldHomeStates: args.heldHomeStates ?? [],
     activeReuseProducers: args.activeReuseProducers ?? [],
+    ...(args.homeCacheScopes === undefined
+      ? {}
+      : { homeCacheScopes: args.homeCacheScopes }),
     ...(args.wssIngressServiceActive === undefined
       ? {}
       : { wssIngressServiceActive: args.wssIngressServiceActive }),
@@ -1367,6 +1371,7 @@ export function createRunsApi(context: TestContext) {
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
+        readonly homeCacheScopes?: RunnerHeartbeatBody["homeCacheScopes"];
         readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},

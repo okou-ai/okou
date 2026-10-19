@@ -1750,6 +1750,9 @@ pub struct HeartbeatState {
     /// Inventory updates use the shared snapshot order.
     pub held_home_states: Vec<HeldHomeState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
+    /// Official heartbeat opt-in to waiting for a home published by another
+    /// process with the same physical cache/lock scope and profile shape.
+    pub home_cache_scopes: std::collections::BTreeMap<String, String>,
     /// Host-local WSS ingress service state, not public WSS reachability.
     pub wss_ingress_service_active: bool,
     pub mode: String,
@@ -2662,6 +2665,7 @@ mod tests {
             }],
             wss_ingress_service_active: true,
             mode: "running".into(),
+            home_cache_scopes: Default::default(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
         assert_eq!(
@@ -2699,6 +2703,7 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "profile": "vm0/default"
                 }],
+                "homeCacheScopes": {},
                 "wssIngressServiceActive": true,
                 "mode": "running"
             })
@@ -2741,6 +2746,7 @@ mod tests {
             held_sandbox_states: Vec::new(),
             held_home_states: Vec::new(),
             active_reuse_producers: Vec::new(),
+            home_cache_scopes: Default::default(),
             wss_ingress_service_active: false,
             mode: "running".into(),
         };

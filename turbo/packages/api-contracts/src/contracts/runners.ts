@@ -1509,6 +1509,17 @@ export const heartbeatBodySchema = z
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldHomeStates: z.array(heldHomeStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
+    // Opt-in to cross-process home waiting. Equality binds the physical host,
+    // cache/lock directories, logical scope, format and profile/image size.
+    // Old Runners omit it; old APIs strip this additive field. Retire official
+    // omission tolerance only after verified fleet/API drain and compatible
+    // rollback floors; tracked in #41481. PAT cannot assert this authority.
+    homeCacheScopes: z
+      .record(z.string(), z.string().regex(/^[a-f0-9]{64}$/))
+      .refine((scopes) => {
+        return Object.keys(scopes).length <= 1024;
+      })
+      .optional(),
     // This shared endpoint also accepts PAT and older Runner heartbeats without
     // a host observation. Absence is a first-class unknown, never WSS-eligible.
     wssIngressServiceActive: z.boolean().optional(),

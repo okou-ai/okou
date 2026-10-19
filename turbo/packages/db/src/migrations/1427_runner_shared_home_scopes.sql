@@ -1,0 +1,1 @@
+ALTER TABLE "runner_state" ADD COLUMN "home_cache_scopes" jsonb;

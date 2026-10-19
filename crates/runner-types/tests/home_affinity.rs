@@ -19,6 +19,7 @@ fn heartbeat() -> HeartbeatState {
         held_sandbox_states: vec![],
         held_home_states: vec![],
         active_reuse_producers: Vec::<ActiveReuseProducer>::new(),
+        home_cache_scopes: Default::default(),
         wss_ingress_service_active: false,
         mode: "running".into(),
     }

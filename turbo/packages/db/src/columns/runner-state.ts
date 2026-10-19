@@ -12,6 +12,7 @@ import type {
   RunnerActiveReuseProducers,
   RunnerHeldSandboxStates,
   RunnerHeldHomeStates,
+  RunnerHomeCacheScopes,
 } from "@okouai/db/jsonb-contracts/runner-state";
 
 export function runnerStateColumns() {
@@ -48,6 +49,7 @@ export function runnerStateColumns() {
       .$type<RunnerActiveReuseProducers>()
       .default([])
       .notNull(),
+    homeCacheScopes: jsonb("home_cache_scopes").$type<RunnerHomeCacheScopes>(),
     mode: varchar("mode", { length: 20 }).notNull().default("running"),
     /** Host-local WSS ingress service observation; not public DNS/TLS reachability. */
     wssIngressServiceActive: boolean("wss_ingress_service_active")

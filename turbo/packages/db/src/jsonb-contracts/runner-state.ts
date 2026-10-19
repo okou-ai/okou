@@ -1,5 +1,11 @@
 export type RunnerAdmittableProfiles = string[];
 
+export interface RunnerHomeCacheScopes {
+  readonly snapshotGeneration: number;
+  readonly snapshotSequence: number;
+  readonly profiles: Record<string, string>;
+}
+
 export interface RunnerActiveReuseProducer {
   readonly runId: string;
   readonly reuseKey: string;

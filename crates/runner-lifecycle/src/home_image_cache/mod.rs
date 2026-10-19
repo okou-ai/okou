@@ -35,6 +35,7 @@ mod metadata;
 mod path_safety;
 mod pressure;
 mod reclamation;
+mod reuse_scope;
 use reclamation::IdleHomeReclamation;
 pub use reclamation::IdleHomeReclamationPermit;
 pub mod snapshot;

@@ -2706,6 +2706,7 @@ mod tests {
                 }],
             }],
             active_reuse_producers: vec![],
+            home_cache_scopes: Default::default(),
             wss_ingress_service_active: false,
             mode: "running".to_string(),
         }

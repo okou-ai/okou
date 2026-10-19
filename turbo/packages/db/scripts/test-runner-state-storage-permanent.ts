@@ -65,6 +65,11 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
         profile: "vm0/default",
       },
     ],
+    homeCacheScopes: {
+      snapshotGeneration: 9,
+      snapshotSequence: 4,
+      profiles: { "vm0/default": "a".repeat(64) },
+    },
     wssIngressServiceActive: true,
     lastSeenAt: new Date("2026-10-12T01:00:00Z"),
   } satisfies typeof runnerState.$inferInsert;
@@ -119,6 +124,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.deepEqual(defaults.heldSandboxStates, []);
     assert.deepEqual(defaults.admittableProfiles, []);
     assert.deepEqual(defaults.activeReuseProducers, []);
+    assert.equal(defaults.homeCacheScopes, null);
     assert.equal(defaults.heartbeatGeneration, 0);
     assert.equal(defaults.heartbeatSequence, 0);
     assert.equal(defaults.wssIngressServiceActive, false);
@@ -130,6 +136,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.ok(inserted);
     assert.deepEqual(Object.keys(inserted).sort(), keys);
     assert.deepEqual(inserted.heldHomeStates, observation.heldHomeStates);
+    assert.deepEqual(inserted.homeCacheScopes, observation.homeCacheScopes);
     assert.deepEqual(inserted.heldSandboxStates, observation.heldSandboxStates);
     assert.deepEqual(
       inserted.activeReuseProducers,
@@ -153,7 +160,12 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       [inserted],
     );
     assert.deepEqual(await holders(), [{ runnerId }]);
-    const empty = { ...observation, heartbeatSequence: 5, heldHomeStates: [] };
+    const empty = {
+      ...observation,
+      heartbeatSequence: 5,
+      heldHomeStates: [],
+      homeCacheScopes: null,
+    };
     const [cleared] = await db
       .insert(runnerState)
       .values(empty)
@@ -166,6 +178,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.ok(cleared);
     assert.deepEqual(Object.keys(cleared).sort(), keys);
     assert.deepEqual(cleared.heldHomeStates, []);
+    assert.equal(cleared.homeCacheScopes, null);
     assert.equal(cleared.heartbeatSequence, 5);
     assert.deepEqual(cleared.heldSandboxStates, observation.heldSandboxStates);
     assert.deepEqual(
@@ -177,6 +190,11 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       ...observation,
       heartbeatGeneration: 10,
       heartbeatSequence: 1,
+      homeCacheScopes: {
+        ...observation.homeCacheScopes,
+        snapshotGeneration: 10,
+        snapshotSequence: 1,
+      },
     };
     const [reset] = await db
       .insert(runnerState)
@@ -190,6 +208,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(reset?.heartbeatGeneration, 10);
     assert.equal(reset?.heartbeatSequence, 1);
     assert.deepEqual(reset?.heldHomeStates, observation.heldHomeStates);
+    assert.deepEqual(reset?.homeCacheScopes, restarted.homeCacheScopes);
     assert.deepEqual(await holders(), [{ runnerId }]);
     const [updated] = await db
       .update(runnerState)

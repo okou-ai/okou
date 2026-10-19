@@ -1120,6 +1120,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         provider: Arc::clone(&provider_state.provider),
         active_runs: &active_runs,
         home_cache_snapshot: home_cache_snapshot.clone(),
+        home_cache: exec_config.home_cache.clone(),
         wss_ingress_service_probe,
         sandbox_op_reporter: sandbox_op_reporter.clone(),
     });
@@ -1500,6 +1501,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
                             heartbeat.request_home_cache(live_mode, change)?;
                         }
+                        // External publication can satisfy a retained
+                        // replacement preference before its fixed deadline.
+                        pending_candidate.request_retry(live_mode);
                     }
                     HomeCacheObservationEvent::Unavailable(error) => {
                         warn!(error = %error, "home cache watcher failed; using periodic reconciliation");

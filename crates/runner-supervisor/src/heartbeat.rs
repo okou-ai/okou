@@ -72,6 +72,7 @@ struct BaseHeartbeatContext {
     profiles: Arc<BTreeMap<String, HeartbeatProfile>>,
     budget: Arc<ResourceBudget>,
     provider: Arc<dyn JobProvider>,
+    home_cache: Option<HomeImageCache>,
 }
 
 pub struct HeartbeatContextInit<'a> {
@@ -83,6 +84,7 @@ pub struct HeartbeatContextInit<'a> {
     pub provider: Arc<dyn JobProvider>,
     pub active_runs: &'a ActiveRuns,
     pub home_cache_snapshot: HomeCacheStateSnapshot,
+    pub home_cache: Option<HomeImageCache>,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
     pub sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
 }
@@ -97,6 +99,7 @@ impl HeartbeatContext {
                 profiles: Arc::new(init.profiles.clone()),
                 budget: Arc::clone(init.budget),
                 provider: init.provider,
+                home_cache: init.home_cache,
             },
             active_runs: init.active_runs.clone(),
             home_cache_snapshot: init.home_cache_snapshot,
@@ -109,7 +112,7 @@ impl HeartbeatContext {
 impl BaseHeartbeatContext {
     async fn collect_state(&self, mode: RunnerMode, snapshot_sequence: u64) -> HeartbeatState {
         let pool = self.idle_pool.lock().await;
-        let state = collect_heartbeat_state(
+        let mut state = collect_heartbeat_state(
             HeartbeatSnapshotMetadata {
                 runner_identity: self.runner_identity,
                 group: &self.group,
@@ -121,6 +124,11 @@ impl BaseHeartbeatContext {
             mode,
         );
         drop(pool);
+        if let Some(cache) = &self.home_cache {
+            state.home_cache_scopes = cache
+                .reuse_scopes(&profile_home_sizes(&self.profiles))
+                .await;
+        }
         state
     }
 }
@@ -562,6 +570,7 @@ pub fn collect_heartbeat_state(
         held_sandbox_states: idle_pool.held_sandbox_states(),
         held_home_states: Vec::new(),
         active_reuse_producers: Vec::new(),
+        home_cache_scopes: BTreeMap::new(),
         wss_ingress_service_active: false,
         mode: match mode {
             RunnerMode::Starting => "starting".to_string(),
@@ -701,6 +710,7 @@ mod tests {
             provider: provider.clone(),
             active_runs: &active_runs,
             home_cache_snapshot: snapshot.clone(),
+            home_cache: None,
             sandbox_op_reporter: Some(observations.handle()),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
@@ -1108,6 +1118,7 @@ mod tests {
             active_runs: &active_runs,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe,
+            home_cache: None,
         });
 
         send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
@@ -1152,6 +1163,7 @@ mod tests {
             provider,
             active_runs: &active_runs,
             home_cache_snapshot: home_cache_snapshot.clone(),
+            home_cache: None,
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
@@ -1258,6 +1270,7 @@ mod tests {
                 provider: provider.clone(),
                 active_runs: &active_runs,
                 home_cache_snapshot: snapshot,
+                home_cache: None,
                 wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
             });
             hb.home_cache_snapshot.note_home_cache_change(&change);
@@ -1340,6 +1353,7 @@ mod tests {
             active_runs: &active_runs,
             home_cache_snapshot,
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
+            home_cache: None,
         });
 
         send_heartbeat(
@@ -1476,6 +1490,7 @@ mod tests {
             active_runs: &active_runs,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
+            home_cache: None,
         });
 
         send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;

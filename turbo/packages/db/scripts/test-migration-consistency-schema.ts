@@ -57,6 +57,7 @@ import { validatePermanentComputerUseHostStorage } from "./test-computer-use-hos
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 import { validateChatRelations } from "./test-chat-relations-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
+import { validateRunnerSharedHomeScopeMigration } from "./test-runner-shared-home-scopes";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
@@ -2787,6 +2788,7 @@ async function validatePermanentUsagePackPendingSnapshotState(
 
 async function main(): Promise<void> {
   console.log("🧪 Testing Migration Consistency (Schema Comparison)\n");
+  await validateRunnerSharedHomeScopeMigration(dbUrl.toString());
 
   const TEST_DB_1 = "migration_test_existing";
   const TEST_DB_2 = "migration_test_generated";

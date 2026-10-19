@@ -582,6 +582,16 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
   };
+  // Outgoing APIs update only their known columns. Bind this observation to
+  // the whole heartbeat order so those writes cannot refresh stale scopes.
+  const homeCacheScopes =
+    auth.type === "official-runner" && body.data.homeCacheScopes !== undefined
+      ? {
+          snapshotGeneration: snapshotOrder.generation,
+          snapshotSequence: snapshotOrder.sequence,
+          profiles: body.data.homeCacheScopes,
+        }
+      : null;
   const db = set(writeDb$);
   await db
     .insert(runnerState)
@@ -600,6 +610,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       heldSandboxStates,
       heldHomeStates,
       activeReuseProducers: body.data.activeReuseProducers,
+      homeCacheScopes,
       mode: body.data.mode,
       wssIngressServiceActive,
       lastSeenAt: currentDate,
@@ -623,6 +634,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         heldSandboxStates: sql`CASE WHEN ${runnerState.heldSandboxStates} IS DISTINCT FROM excluded.held_sandbox_states THEN excluded.held_sandbox_states ELSE ${runnerState.heldSandboxStates} END`,
         heldHomeStates: sql`CASE WHEN ${runnerState.heldHomeStates} IS DISTINCT FROM excluded.held_home_states THEN excluded.held_home_states ELSE ${runnerState.heldHomeStates} END`,
         activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
+        homeCacheScopes: sql`CASE WHEN ${runnerState.homeCacheScopes} IS DISTINCT FROM excluded.home_cache_scopes THEN excluded.home_cache_scopes ELSE ${runnerState.homeCacheScopes} END`,
         mode: body.data.mode,
         wssIngressServiceActive,
         lastSeenAt: currentDate,

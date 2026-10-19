@@ -38,6 +38,7 @@ const RUNNER_FINALIZING_COMPLETION_BRIDGE_MS = 1500;
 const RUNNER_REUSE_HOLDER_FRESH_MS = 30_000;
 
 const finalizingSourceRun = alias(agentRuns, "finalizing_source_run");
+const drainingSourceRunner = alias(runnerState, "draining_source_runner");
 
 function runnerReuseHolderFreshAfter(currentDate: Date): Date {
   return new Date(currentDate.getTime() - RUNNER_REUSE_HOLDER_FRESH_MS);
@@ -68,14 +69,102 @@ function activeProducerCondition(args: {
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly historyGenerationRunId: SQLWrapper;
+  readonly producers?: SQLWrapper;
 }): SQL {
   return arrayContains(
-    runnerState.activeReuseProducers,
+    args.producers ?? runnerState.activeReuseProducers,
     sql`jsonb_build_array(jsonb_build_object(
       'runId', cast(${args.historyGenerationRunId} as text),
       'reuseKey', cast(${args.reuseKey} as text),
       'profile', cast(${args.profile} as text)
     ))`,
+  );
+}
+
+function ownedProducerCondition(args: {
+  readonly reuseKey: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly historyGenerationRunId: SQLWrapper;
+}): SQL {
+  return sql`(
+    ${isNotNull(finalizingSourceRun.runnerId)}
+    AND ${isNotNull(finalizingSourceRun.runnerHeartbeatGeneration)}
+    AND ${eq(runnerState.runnerId, finalizingSourceRun.runnerId)}
+    AND ${eq(runnerState.heartbeatGeneration, finalizingSourceRun.runnerHeartbeatGeneration)}
+    AND ${activeProducerCondition(args)}
+  )`;
+}
+
+function drainingHomePredecessorCondition(args: {
+  readonly runnerGroup: string;
+  readonly reuseKey: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly freshAfter: Date;
+  readonly requireActiveProducer?: boolean;
+}): SQL {
+  // This is a home-only capability, never authority to adopt the source's VM.
+  // Its presence also proves the recipient supports cross-process waiting.
+  return exists(
+    new QueryBuilder()
+      .select({ runnerId: drainingSourceRunner.runnerId })
+      .from(drainingSourceRunner)
+      .where(
+        and(
+          eq(drainingSourceRunner.runnerId, finalizingSourceRun.runnerId),
+          eq(
+            drainingSourceRunner.heartbeatGeneration,
+            finalizingSourceRun.runnerHeartbeatGeneration,
+          ),
+          eq(drainingSourceRunner.runnerGroup, args.runnerGroup),
+          eq(drainingSourceRunner.mode, "draining"),
+          gt(drainingSourceRunner.lastSeenAt, args.freshAfter),
+          currentHomeCacheObservation({
+            observation: drainingSourceRunner.homeCacheScopes,
+            generation: drainingSourceRunner.heartbeatGeneration,
+            sequence: drainingSourceRunner.heartbeatSequence,
+          }),
+          currentHomeCacheObservation({
+            observation: runnerState.homeCacheScopes,
+            generation: runnerState.heartbeatGeneration,
+            sequence: runnerState.heartbeatSequence,
+          }),
+          eq(
+            sql`${drainingSourceRunner.homeCacheScopes}->'profiles'->>cast(${args.profile} as text)`,
+            sql`${runnerState.homeCacheScopes}->'profiles'->>cast(${args.profile} as text)`,
+          ),
+          arrayContains(
+            runnerState.admittableProfiles,
+            sql`jsonb_build_array(cast(${args.profile} as text))`,
+          ),
+          ...(args.requireActiveProducer
+            ? [
+                activeProducerCondition({
+                  reuseKey: args.reuseKey,
+                  profile: args.profile,
+                  historyGenerationRunId: finalizingSourceRun.id,
+                  producers: drainingSourceRunner.activeReuseProducers,
+                }),
+              ]
+            : []),
+        ),
+      ),
+  );
+}
+
+function currentHomeCacheObservation(args: {
+  readonly observation: SQLWrapper;
+  readonly generation: SQLWrapper;
+  readonly sequence: SQLWrapper;
+}): SQL | undefined {
+  return and(
+    eq(
+      sql`${args.observation}->>'snapshotGeneration'`,
+      sql`cast(${args.generation} as text)`,
+    ),
+    eq(
+      sql`${args.observation}->>'snapshotSequence'`,
+      sql`cast(${args.sequence} as text)`,
+    ),
   );
 }
 
@@ -122,6 +211,7 @@ function finalizingPredecessorCondition(args: {
   readonly runnerGroup: string;
   readonly completedAfter: Date;
   readonly activeProducer: SQL;
+  readonly sameHostReplacement: SQL;
 }): SQL | undefined {
   // The recent-completion guard also covers a current Runner whose first
   // producer-bearing heartbeat has not reached the API yet. The process
@@ -138,10 +228,15 @@ function finalizingPredecessorCondition(args: {
     eq(finalizingSourceRun.runnerGroup, args.runnerGroup),
     isNotNull(finalizingSourceRun.runnerId),
     isNotNull(finalizingSourceRun.runnerHeartbeatGeneration),
-    eq(runnerState.runnerId, finalizingSourceRun.runnerId),
-    eq(
-      runnerState.heartbeatGeneration,
-      finalizingSourceRun.runnerHeartbeatGeneration,
+    or(
+      and(
+        eq(runnerState.runnerId, finalizingSourceRun.runnerId),
+        eq(
+          runnerState.heartbeatGeneration,
+          finalizingSourceRun.runnerHeartbeatGeneration,
+        ),
+      ),
+      args.sameHostReplacement,
     ),
   );
 }
@@ -153,6 +248,7 @@ function runnerStateHasFinalizingPredecessor(args: {
   readonly freshAfter: Date;
   readonly completedAfter: Date;
   readonly activeProducer: SQL;
+  readonly sameHostReplacement: SQL;
 }): SQL {
   return exists(
     new QueryBuilder()
@@ -178,6 +274,7 @@ function runnerStateHasFinalizingPredecessor(args: {
             runnerGroup: args.runnerGroup,
             completedAfter: args.completedAfter,
             activeProducer: args.activeProducer,
+            sameHostReplacement: args.sameHostReplacement,
           }),
         ),
       ),
@@ -199,12 +296,6 @@ export function runnerReusePreferencePollPriority(args: {
   );
   const generationProtectedAfter = new Date(
     args.currentDate.getTime() - RUNNER_EXACT_HISTORY_PROTECTION_MS,
-  );
-  const finalizingCompletedAfter = new Date(
-    args.currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
-  );
-  const producerProtectedAfter = new Date(
-    args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   );
   const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
   const targetGenerationRunId = sql`${runnerJobQueue.executionContext}->'nativeContinuation'->>'generationRunId'`;
@@ -238,33 +329,8 @@ export function runnerReusePreferencePollPriority(args: {
   const hasLocalReusable = local(reusableCondition);
   const hasGlobalHome = global(homeCondition);
   const hasLocalHome = local(homeCondition);
-  const pendingProducer =
-    and(
-      or(
-        isNull(runnerJobQueue.discoveryStartedAt),
-        gt(runnerJobQueue.discoveryStartedAt, producerProtectedAfter),
-      ),
-      activeProducerCondition({
-        reuseKey,
-        profile,
-        historyGenerationRunId: targetGenerationRunId,
-      }),
-    ) ?? sql`false`;
-  const hasGlobalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
-    runnerGroup: args.runnerGroup,
-    historyGenerationRunId: targetGenerationRunId,
-    freshAfter,
-    completedAfter: finalizingCompletedAfter,
-    activeProducer: pendingProducer,
-  });
-  const hasLocalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
-    runnerId: args.runnerId,
-    runnerGroup: args.runnerGroup,
-    historyGenerationRunId: targetGenerationRunId,
-    freshAfter,
-    completedAfter: finalizingCompletedAfter,
-    activeProducer: pendingProducer,
-  });
+  const { hasGlobalFinalizingPredecessor, hasLocalFinalizingPredecessor } =
+    finalizingPollConditions({ ...args, targetGenerationRunId, freshAfter });
   return sql`CASE
     WHEN ${and(
       or(
@@ -310,6 +376,67 @@ export function runnerReusePreferencePollPriority(args: {
     END
     ELSE 0
   END`;
+}
+
+function finalizingPollConditions(args: {
+  readonly runnerId: string;
+  readonly runnerGroup: string;
+  readonly currentDate: Date;
+  readonly targetGenerationRunId: SQLWrapper;
+  readonly freshAfter: Date;
+}) {
+  const { targetGenerationRunId, freshAfter } = args;
+  const producerProtectedAfter = new Date(
+    args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+  );
+  const finalizingCompletedAfter = new Date(
+    args.currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
+  );
+  const reuseKey = runnerJobQueue.reuseKey;
+  const profile = runnerJobQueue.profile;
+  const sharedHomeArgs = {
+    runnerGroup: args.runnerGroup,
+    reuseKey,
+    profile,
+    freshAfter,
+  };
+  const sameHostReplacement = drainingHomePredecessorCondition(sharedHomeArgs);
+  const pendingProducer =
+    and(
+      or(
+        isNull(runnerJobQueue.discoveryStartedAt),
+        gt(runnerJobQueue.discoveryStartedAt, producerProtectedAfter),
+      ),
+      or(
+        ownedProducerCondition({
+          reuseKey,
+          profile,
+          historyGenerationRunId: targetGenerationRunId,
+        }),
+        drainingHomePredecessorCondition({
+          ...sharedHomeArgs,
+          requireActiveProducer: true,
+        }),
+      ),
+    ) ?? sql`false`;
+  const hasGlobalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
+    runnerGroup: args.runnerGroup,
+    historyGenerationRunId: targetGenerationRunId,
+    freshAfter,
+    completedAfter: finalizingCompletedAfter,
+    activeProducer: pendingProducer,
+    sameHostReplacement,
+  });
+  const hasLocalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
+    runnerId: args.runnerId,
+    runnerGroup: args.runnerGroup,
+    historyGenerationRunId: targetGenerationRunId,
+    freshAfter,
+    completedAfter: finalizingCompletedAfter,
+    activeProducer: pendingProducer,
+    sameHostReplacement,
+  });
+  return { hasGlobalFinalizingPredecessor, hasLocalFinalizingPredecessor };
 }
 
 type PositiveRunnerPreference = Extract<
@@ -413,13 +540,26 @@ function runnerReuseHolderPlan(args: {
           historyGenerationRunId: sql.param(args.historyGenerationRunId),
         })
       : sql`false`;
+  const sharedHomeArgs = {
+    runnerGroup: args.runnerGroup,
+    reuseKey: sql.param(args.reuseKey),
+    profile: sql.param(args.profile),
+    freshAfter: args.freshAfter,
+  };
+  const sameHostReplacement = drainingHomePredecessorCondition(sharedHomeArgs);
   const producerCondition =
     args.shouldLookUpFinalizingProducer && args.historyGenerationRunId
-      ? activeProducerCondition({
-          reuseKey: sql.param(args.reuseKey),
-          profile: sql.param(args.profile),
-          historyGenerationRunId: sql.param(args.historyGenerationRunId),
-        })
+      ? sql`(
+          ${ownedProducerCondition({
+            reuseKey: sql.param(args.reuseKey),
+            profile: sql.param(args.profile),
+            historyGenerationRunId: sql.param(args.historyGenerationRunId),
+          })}
+          OR ${drainingHomePredecessorCondition({
+            ...sharedHomeArgs,
+            requireActiveProducer: true,
+          })}
+        )`
       : sql`false`;
   const finalizingCondition =
     (args.historyGenerationRunId
@@ -427,6 +567,7 @@ function runnerReuseHolderPlan(args: {
           runnerGroup: args.runnerGroup,
           completedAfter: args.finalizingCompletedAfter,
           activeProducer: producerCondition,
+          sameHostReplacement,
         })
       : undefined) ?? sql`false`;
   const resourceRank = sql`CASE
