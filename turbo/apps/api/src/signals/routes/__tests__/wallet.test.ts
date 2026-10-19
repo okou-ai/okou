@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   walletCallbackContract,
   walletContract,
@@ -3001,7 +3001,7 @@ test("requests payment, profile and transaction consent from both CLI and settin
   }
 });
 
-const APPROVAL_WORKER_SECRET = "link-approval-worker-test-secret-0001";
+const APPROVAL_WORKER_SECRET = randomBytes(32).toString("hex");
 
 async function trackedPurchase(startFails = false, expiresIn = 3600) {
   await setupApp({ context, routes: walletRoutes, isolatePg: true });

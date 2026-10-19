@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath, URL } from "node:url";
 import {
   convertV4MiniflareOptions,
@@ -9,7 +9,7 @@ import {
 import { expect, it, onTestFinished } from "vitest";
 import type { Env } from "../workflow";
 
-const secret = "approval-hmac-test-secret-000000000000";
+const secret = randomBytes(32).toString("hex");
 const control = "approval-control-test-secret-11111111";
 
 function fixture(
