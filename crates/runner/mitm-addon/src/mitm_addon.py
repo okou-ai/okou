@@ -2236,22 +2236,24 @@ def _handle_error(flow: http.HTTPFlow) -> None:
 
 
 def done():
-    """Flush pending reports and forwarding workers before mitmproxy exits.
+    """Flush pending billing usage and stop addon workers before mitmproxy exits.
 
-    The runner flush lifecycle waits for any active delivery worker,
-    retries buffered usage and retained diagnostic reports, drains accepted
-    requests, and closes admission before this hook shuts down the usage
-    executor. Control admission is already closed; pending log prefixes remain
-    owned by the JSONL writer. Any retryable usage outcome
-    retained by completed workers is then retried synchronously.
+    The runner flush lifecycle closes delivery admission, waits for any active
+    delivery worker, and flushes buffered billing usage before this hook shuts
+    down and joins the usage executor. Billing usage retained by
+    completed workers is then drained synchronously under the existing
+    retry/idempotency policy. Control admission is already closed; pending log
+    prefixes remain owned by the independent JSONL writer.
+    Process diagnostics use ``addon_process_logging`` for one best-effort
+    nonblocking stderr write, with no retained queue, retry, or shutdown drain.
+    Delivery controls and this hook cannot replay a dropped process event.
     Auth.base forwarding does not need to finish running work during shutdown.
     Its `wait=False` worker shutdown closes admission, wakes or terminates
     affected forwards, cancels pending futures, and best-effort aborts active
     upstream work without joining daemon workers or waiting for slow upstream
     responses. JSONL writer shutdown is also bounded and best-effort; if it times
     out, process shutdown continues with accepted log entries possibly still
-    pending. After joining the usage executor, retained billing and diagnostic
-    work is drained through synchronous delivery.
+    pending.
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """
