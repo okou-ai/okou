@@ -1855,7 +1855,6 @@ export const saveVnc$ = command(
     const retrying = get(uncertain$);
     set(saveMessage$, null);
     set(uncertain$, true);
-    let activeDialog = dialog;
     let result = await accept<
       Awaited<ReturnType<typeof request>>,
       200 | 201 | 204 | 400 | 404 | 409 | 500
@@ -1880,7 +1879,7 @@ export const saveVnc$ = command(
       login?.success &&
       dialog.loginCredential
     ) {
-      activeDialog = {
+      const activeDialog = {
         ...dialog,
         connection: result.body,
         connectionSaved: true,
