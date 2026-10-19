@@ -175,25 +175,6 @@ async function deliveryResultAfterTransitionConflict(
   });
 }
 
-async function markDeliveryFailed(
-  db: Db,
-  row: CanonicalSlackDeliveryRow,
-  error: CanonicalSlackDeliveryFailure,
-): Promise<CanonicalSlackDeliveryResult> {
-  const [failed] = await db
-    .update(canonicalAssetDeliveries)
-    .set({
-      status: "failed",
-      lastError: error,
-      updatedAt: sql`now()`,
-    })
-    .where(deliveryTransitionCondition(row))
-    .returning({ id: canonicalAssetDeliveries.id });
-  return failed
-    ? failedResult(error)
-    : await deliveryResultAfterTransitionConflict(db, row);
-}
-
 async function markDeliveryDelivered(
   db: Db,
   row: CanonicalSlackDeliveryRow,
@@ -243,6 +224,22 @@ async function completeExistingSlackFile(
   if (!row.externalId) {
     return null;
   }
+  const recordReconciliationFailure = async (
+    error: CanonicalSlackDeliveryFailure,
+  ): Promise<CanonicalSlackDeliveryResult> => {
+    const [failed] = await db
+      .update(canonicalAssetDeliveries)
+      .set({
+        status: "failed",
+        lastError: error,
+        updatedAt: sql`now()`,
+      })
+      .where(deliveryTransitionCondition(row))
+      .returning({ id: canonicalAssetDeliveries.id });
+    return failed
+      ? failedResult(error)
+      : await deliveryResultAfterTransitionConflict(db, row);
+  };
   const completed = await client.completeUploadExternal({
     fileId: row.externalId,
     channel: row.destination.channelId,
@@ -257,7 +254,7 @@ async function completeExistingSlackFile(
     ) {
       return null;
     }
-    return await markDeliveryFailed(db, row, {
+    return await recordReconciliationFailure({
       code: completed.error,
       message: `Slack delivery failed: ${completed.error}`,
       retryable: true,
@@ -266,7 +263,7 @@ async function completeExistingSlackFile(
   const info = await client.getFileInfo(row.externalId);
   const permalinkResult = resolveSlackFilePermalink(info);
   if (!permalinkResult.ok) {
-    return await markDeliveryFailed(db, row, permalinkResult.error);
+    return await recordReconciliationFailure(permalinkResult.error);
   }
   return await markDeliveryDelivered(db, row, permalinkResult.permalink);
 }
