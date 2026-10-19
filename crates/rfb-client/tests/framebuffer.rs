@@ -218,6 +218,30 @@ async fn copies_overlapping_rows_and_columns_with_snapshot_semantics() {
 }
 
 #[tokio::test]
+async fn copies_same_row_overlaps_with_snapshot_semantics() {
+    for (source_x, target_x, expected) in [
+        (0, 1, [RED, RED, GREEN, BLUE, BLACK]),
+        (1, 0, [GREEN, BLUE, WHITE, WHITE, BLACK]),
+    ] {
+        let (client, mut peer) = initialized(5, 1).await;
+        let initial = [RED, GREEN, BLUE, WHITE, BLACK];
+        let client = apply(client, &mut peer, false, &[raw(0, 0, 5, 1, &initial)]).await;
+        let client = apply(
+            client,
+            &mut peer,
+            true,
+            &[copy_rect(target_x, 0, 3, 1, source_x, 0)],
+        )
+        .await;
+        assert_eq!(
+            client.pixels().unwrap(),
+            pixels(&expected),
+            "same-row copy from x={source_x} to x={target_x}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn copy_rect_propagates_missing_coverage_and_can_clear_valid_destination_pixels() {
     let (client, mut peer) = initialized(3, 1).await;
     let client = apply(client, &mut peer, false, &[raw(0, 0, 1, 1, &[RED])]).await;
