@@ -77,6 +77,11 @@ export function WechatCard() {
                       return $.works.wechat.description;
                     })}
             </p>
+            {status?.binding ? (
+              <p className="break-all text-sm text-muted-foreground">
+                {status.binding.workspace.name} · {status.binding.accountId}
+              </p>
+            ) : null}
           </div>
           {connected ? (
             <ConnectedIndicator />

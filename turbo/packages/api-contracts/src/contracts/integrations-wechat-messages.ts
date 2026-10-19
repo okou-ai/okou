@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
+import { wechatBindingSchema } from "./integrations-wechat";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
@@ -19,11 +20,27 @@ export const wechatStoredMessageSchema = z.object({
   attachments: z.array(wechatAttachmentSchema),
   timestamp: z.iso.datetime(),
 });
-export const wechatHistoryQuerySchema = z.object({
-  channelId: z.uuid(),
-  before: z.uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+export const wechatHistoryQuerySchema = z
+  .object({
+    channelId: z.uuid(),
+    before: z.uuid().optional(),
+    oldest: z.iso.datetime({ offset: true }).optional(),
+    latest: z.iso.datetime({ offset: true }).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .refine(
+    (query) => {
+      return (
+        !query.oldest ||
+        !query.latest ||
+        Date.parse(query.oldest) < Date.parse(query.latest)
+      );
+    },
+    {
+      message: "oldest must be earlier than latest",
+      path: ["oldest"],
+    },
+  );
 export const wechatSendBodySchema = z.object({
   channelId: z.uuid(),
   operationId: z.uuid(),
@@ -66,6 +83,7 @@ export const integrationsWechatMessagesContract = c.router({
         channels: z.array(
           z.object({
             id: z.uuid(),
+            binding: wechatBindingSchema,
             name: z.string(),
             status: z.enum(["active", "reconnect_required"]),
           }),

@@ -37,6 +37,7 @@ function isInlineOnlyCanonicalDeliveryCallback(
   return (
     internalKind === "agentphone:chat" ||
     internalKind === "slack:chat" ||
+    internalKind === "wechat:chat" ||
     internalKind === "feishu:chat" ||
     internalKind === "teams:chat" ||
     internalKind === "telegram:chat"
@@ -83,6 +84,7 @@ export const dispatchProgressCallbacks$ = command(
             isNull(agentRunCallbacks.internalKind),
             notInArray(agentRunCallbacks.internalKind, [
               "slack:chat",
+              "wechat:chat",
               "feishu:chat",
               "teams:chat",
               "telegram:chat",

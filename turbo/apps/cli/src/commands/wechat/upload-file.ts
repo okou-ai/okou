@@ -126,7 +126,7 @@ function printDelivery(
 }
 
 async function uploadFile(options: UploadFileOptions): Promise<void> {
-  const channelId = wechatChannelId(options.to);
+  const channelId = await wechatChannelId(options.to);
   const content = await readUploadFile(options.file);
   const contentType = new MIMEType(
     options.contentType ?? inferWebUploadContentType(options.file),
@@ -184,7 +184,7 @@ export const uploadFileCommand = new Command()
   )
   .requiredOption(
     TO_OPTION_FLAGS,
-    "Destination: chat:<id> or a conversation UUID from channel list",
+    "Destination: me, chat:<id> or a conversation UUID from channel list",
   )
   .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")

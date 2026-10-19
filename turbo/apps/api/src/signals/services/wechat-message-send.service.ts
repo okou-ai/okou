@@ -85,6 +85,17 @@ const existingReceipt$ = command(
   },
 );
 
+const releaseUnsentWechatClaim$ = command(
+  async ({ set }, id: string, signal: AbortSignal): Promise<void> => {
+    await set(writeDb$)
+      .delete(wechatMessages)
+      .where(
+        and(eq(wechatMessages.id, id), eq(wechatMessages.status, "unknown")),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 interface WechatTextChunk {
   readonly operationId: string;
   readonly index: number;
@@ -131,13 +142,20 @@ export const sendPreparedWechatText$ = command(
         signal,
       );
     }
-    // An ambiguous transport outcome leaves the durable claim in unknown state.
-    const live = await set(
-      requireLiveWechatSendConnection$,
-      connection,
+    // Recheck the live binding after claiming, immediately before provider I/O.
+    // A known pre-send failure can release the claim; an interrupted provider
+    // attempt must remain unknown and must never be resent.
+    const checked = await settle(
+      set(requireLiveWechatSendConnection$, connection, signal),
       signal,
     );
+    if (!checked.ok) {
+      await set(releaseUnsentWechatClaim$, id, signal);
+      throw checked.error;
+    }
+    const live = checked.value;
     if (live.kind === "denied") {
+      await set(releaseUnsentWechatClaim$, id, signal);
       return live;
     }
     const timing = {

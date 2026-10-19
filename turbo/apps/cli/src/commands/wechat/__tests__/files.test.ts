@@ -12,6 +12,10 @@ import { uploadFileCommand } from "../upload-file";
 import { downloadFileCommand } from "../download-file";
 const origin = "http://localhost:3000/api/integrations/wechat";
 const channelId = randomUUID();
+const binding = {
+  workspace: { id: "org_team", name: "Operations" },
+  accountId: "scanner-owner",
+};
 const messageId = randomUUID();
 const assetId = randomUUID();
 const operationId = randomUUID();
@@ -52,75 +56,85 @@ describe("okou wechat files", () => {
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
   });
-  it("publishes before delivery and prints a receipt with no invented WeChat URL", async () => {
-    const path = join(directory, "report.csv");
-    await writeFile(path, "a,b\n1,2\n");
-    const calls: string[] = [];
-    server.use(
-      http.post(`${origin}/upload-file/init`, async ({ request }) => {
-        calls.push("init");
-        expect(await request.json()).toMatchObject({
-          filename: "report.csv",
-          length: 8,
-          contentType: "text/csv",
-          channelId,
-          operationId,
-        });
-        return HttpResponse.json({
-          assetId,
-          operationId,
-          url,
-          uploadUrl: "https://storage.example/upload",
-        });
-      }),
-      http.put("https://storage.example/upload", async ({ request }) => {
-        calls.push("put");
-        expect(request.headers.has("authorization")).toBe(false);
-        expect(await request.text()).toBe("a,b\n1,2\n");
-        return new HttpResponse(null);
-      }),
-      http.post(`${origin}/upload-file/materialize`, () => {
-        calls.push("materialize");
-        return HttpResponse.json({
-          assetId,
-          operationId,
-          url,
-          delivery: { status: "pending" },
-        });
-      }),
-      http.post(`${origin}/upload-file/complete`, () => {
-        calls.push("complete");
-        return HttpResponse.json({
-          assetId,
-          operationId,
-          url,
-          delivery: {
-            status: "delivered",
+  it.each([channelId, "me"])(
+    "publishes to %s before delivery and prints a receipt without an invented URL",
+    async (target) => {
+      const path = join(directory, "report.csv");
+      await writeFile(path, "a,b\n1,2\n");
+      const calls: string[] = [];
+      server.use(
+        http.get(`${origin}/channels`, () => {
+          return HttpResponse.json({
+            channels: [
+              { id: channelId, name: "WeChat", status: "active", binding },
+            ],
+          });
+        }),
+        http.post(`${origin}/upload-file/init`, async ({ request }) => {
+          calls.push("init");
+          expect(await request.json()).toMatchObject({
+            filename: "report.csv",
+            length: 8,
+            contentType: "text/csv",
             channelId,
-            messageId,
-            permalink: null,
-          },
-        });
-      }),
-    );
-    await run([
-      "upload-file",
-      "--file",
-      path,
-      "--to",
-      channelId,
-      "--operation-id",
-      operationId,
-      "--json",
-    ]);
-    expect(calls).toStrictEqual(["init", "put", "materialize", "complete"]);
-    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
-      integration: "wechat",
-      messages: [{ id: messageId, url: null }],
-      file: { url },
-      delivery: { status: "delivered", operationId },
-    });
-  });
+            operationId,
+          });
+          return HttpResponse.json({
+            assetId,
+            operationId,
+            url,
+            uploadUrl: "https://storage.example/upload",
+          });
+        }),
+        http.put("https://storage.example/upload", async ({ request }) => {
+          calls.push("put");
+          expect(request.headers.has("authorization")).toBe(false);
+          expect(await request.text()).toBe("a,b\n1,2\n");
+          return new HttpResponse(null);
+        }),
+        http.post(`${origin}/upload-file/materialize`, () => {
+          calls.push("materialize");
+          return HttpResponse.json({
+            assetId,
+            operationId,
+            url,
+            delivery: { status: "pending" },
+          });
+        }),
+        http.post(`${origin}/upload-file/complete`, () => {
+          calls.push("complete");
+          return HttpResponse.json({
+            assetId,
+            operationId,
+            url,
+            delivery: {
+              status: "delivered",
+              channelId,
+              messageId,
+              permalink: null,
+            },
+          });
+        }),
+      );
+      await run([
+        "upload-file",
+        "--file",
+        path,
+        "--to",
+        target,
+        "--operation-id",
+        operationId,
+        "--json",
+      ]);
+      expect(calls).toStrictEqual(["init", "put", "materialize", "complete"]);
+      expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
+        integration: "wechat",
+        messages: [{ id: messageId, url: null }],
+        file: { url },
+        delivery: { status: "delivered", operationId },
+      });
+    },
+  );
   it("preserves a published file when delivery is unconfirmed", async () => {
     const path = join(directory, "report.txt");
     await writeFile(path, "hello");
