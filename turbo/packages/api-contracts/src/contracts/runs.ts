@@ -202,8 +202,6 @@ const runResultSchema = z.object({
   storageOutputs: z.array(runStorageOutputSchema).optional(),
   framework: z.enum(["pi", "claude-code", "codex"]).optional(),
   frameworkSessionId: z.string().optional(),
-  // Retained for outgoing API log readers until the reader preparation drains (#41332).
-  artifact: z.record(z.string(), z.string()).optional(),
 });
 
 /**
