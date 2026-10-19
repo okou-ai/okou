@@ -119,6 +119,280 @@ export function slidesImportFixture({
   return archive.toBuffer();
 }
 
+const presentationNamespace =
+  "http://schemas.openxmlformats.org/presentationml/2006/main";
+const drawingNamespace =
+  "http://schemas.openxmlformats.org/drawingml/2006/main";
+const relationshipNamespace =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function cropPicture(
+  id: number,
+  name: string,
+  frame: readonly [x: number, y: number, cx: number, cy: number],
+  crop = "",
+): string {
+  const [x, y, cx, cy] = frame;
+  // The blip's drawing prefix is deliberately NOT in scope for a new sibling.
+  return `<p:pic><p:nvPicPr><p:cNvPr id="${String(id)}" name="${name}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><image:blip xmlns:image="${drawingNamespace}" r:embed="rIdImage"/>${crop}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${String(x)}" y="${String(y)}"/><a:ext cx="${String(cx)}" cy="${String(cy)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+}
+
+function pictureSlide(pictures: string, properties = ""): string {
+  return `<p:sld xmlns:p="${presentationNamespace}" xmlns:a="${drawingNamespace}" xmlns:r="${relationshipNamespace}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${pictures}</p:spTree></p:cSld>${properties}</p:sld>`;
+}
+
+function pictureDeck(slides: readonly string[]): Buffer {
+  const archive = new AdmZip(slidesImportFixture());
+  for (const [index, slide] of slides.entries()) {
+    const number = String(index + 1);
+    archive.addFile(`ppt/slides/slide${number}.xml`, Buffer.from(slide));
+    archive.addFile(
+      `ppt/slides/_rels/slide${number}.xml.rels`,
+      Buffer.from(
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="${relationshipNamespace}/image" Target="../media/picture-crop.png"/></Relationships>`,
+      ),
+    );
+  }
+  archive.addFile(
+    "ppt/presentation.xml",
+    Buffer.from(
+      archive.readAsText("ppt/presentation.xml").replace(
+        '<p:sldId id="256" r:id="rId1"/>',
+        slides
+          .map((_slide, index) => {
+            return `<p:sldId id="${String(256 + index)}" r:id="rId${String(index + 1)}"/>`;
+          })
+          .join(""),
+      ),
+    ),
+  );
+  archive.addFile(
+    "ppt/_rels/presentation.xml.rels",
+    Buffer.from(
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${slides
+        .map((_slide, index) => {
+          const number = String(index + 1);
+          return `<Relationship Id="rId${number}" Type="${relationshipNamespace}/slide" Target="slides/slide${number}.xml"/>`;
+        })
+        .join("")}</Relationships>`,
+    ),
+  );
+  archive.addFile(
+    "[Content_Types].xml",
+    Buffer.from(
+      archive.readAsText("[Content_Types].xml").replace(
+        "</Types>",
+        `<Default Extension="png" ContentType="image/png"/>${slides
+          .slice(1)
+          .map((_slide, index) => {
+            return `<Override PartName="/ppt/slides/slide${String(index + 2)}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
+          })
+          .join("")}</Types>`,
+      ),
+    ),
+  );
+  archive.addFile(
+    "ppt/media/picture-crop.png",
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwHwyBNBgAAEnICff5q7YNAAAAAElFTkSuQmCC",
+      "base64",
+    ),
+  );
+  return archive.toBuffer();
+}
+
+/** Native pictures only: image edits must be saved without any text rewrite. */
+export function slidesPictureCropFixture(): Buffer {
+  const pictures = [
+    cropPicture(
+      2,
+      "reported-arc-yellow",
+      [6_339_840, 757_637, 7_559_040, 7_674_445],
+    ),
+    cropPicture(3, "left-top", [-1_219_200, -685_800, 12_192_000, 6_858_000]),
+    cropPicture(
+      4,
+      "already-cropped-all-edges",
+      [-1_524_000, -857_250, 15_240_000, 8_572_500],
+      `<crop:srcRect xmlns:crop="${drawingNamespace}" l="10000" t="20000" r="30000" b="10000"/>`,
+    ),
+    cropPicture(
+      5,
+      "in-bounds-control",
+      [1_219_200, 685_800, 2_438_400, 1_371_600],
+    ),
+    // A group disqualifies text preparation, not unrelated direct pictures.
+    `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="6" name="unrelated-group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>${cropPicture(7, "nested-off-page", [-1_219_200, 0, 2_438_400, 1_371_600])}</p:grpSp>`,
+  ].join("");
+  return pictureDeck([pictureSlide(pictures)]);
+}
+
+/** Keep unsupported pictures and slide-wide animation/transform cases intact. */
+export function slidesPictureCropNoopFixture(): Buffer {
+  const offPage = (id: number, name: string, crop = "") => {
+    return cropPicture(
+      id,
+      name,
+      [-100_000, -200_000, 1_000_000, 1_000_000],
+      crop,
+    );
+  };
+  const unsupported = [
+    cropPicture(2, "fully-outside", [12_192_000, 0, 1_000_000, 1_000_000]),
+    offPage(3, "rotated").replace("<a:xfrm>", '<a:xfrm rot="5400000">'),
+    offPage(4, "flip-attribute").replace("<a:xfrm>", '<a:xfrm flipH="0">'),
+    offPage(5, "ellipse").replace('prst="rect"', 'prst="ellipse"'),
+    offPage(6, "tiled").replace(
+      "<a:stretch><a:fillRect/></a:stretch>",
+      "<a:tile/>",
+    ),
+    offPage(7, "partial-fill").replace(
+      "<a:fillRect/>",
+      '<a:fillRect l="1000"/>',
+    ),
+    offPage(8, "effect").replace(
+      "</p:spPr>",
+      '<a:effectLst><a:glow rad="1000"><a:srgbClr val="FFFFFF"/></a:glow></a:effectLst></p:spPr>',
+    ),
+    offPage(9, "inherited-style").replace(
+      "</p:pic>",
+      '<p:style><a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></p:style></p:pic>',
+    ),
+    offPage(10, "visible-stroke").replace(
+      "</p:spPr>",
+      '<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></p:spPr>',
+    ),
+    offPage(11, "negative-crop", '<a:srcRect l="-1"/>'),
+    offPage(12, "fractional-crop", '<a:srcRect t="0.5"/>'),
+    offPage(13, "empty-source", '<a:srcRect l="60000" r="40000"/>'),
+    cropPicture(14, "zero-width", [-100_000, -200_000, 0, 1_000_000]),
+  ].join("");
+  return pictureDeck([
+    pictureSlide(unsupported),
+    pictureSlide(
+      offPage(2, "timed"),
+      '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"/></p:par></p:tnLst></p:timing>',
+    ),
+    pictureSlide(
+      offPage(2, "transition"),
+      "<p:transition><p:fade/></p:transition>",
+    ),
+    pictureSlide(offPage(2, "root-transform")).replace(
+      "<p:grpSpPr/>",
+      '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>',
+    ),
+  ]);
+}
+
+/** Inspect native picture geometry using expanded names, not XML prefixes. */
+export function uploadedSlidesPictures(bytes: Uint8Array) {
+  const archive = new AdmZip(Buffer.from(bytes));
+  const result: {
+    slide: string;
+    grouped: boolean;
+    id: string;
+    name: string;
+    embed: string;
+    preset: string;
+    frame: { x: number; y: number; cx: number; cy: number };
+    crop: { l: number; t: number; r: number; b: number } | null;
+  }[] = [];
+  const p = (local: string) => {
+    return `{${presentationNamespace}}${local}`;
+  };
+  const a = (local: string) => {
+    return `{${drawingNamespace}}${local}`;
+  };
+  const isPicturePath = (path: readonly string[]) => {
+    return (
+      path.at(-1) === p("pic") &&
+      path[0] === p("sld") &&
+      path[1] === p("cSld") &&
+      path[2] === p("spTree") &&
+      path.slice(3, -1).every((ancestor) => {
+        return ancestor === p("grpSp");
+      })
+    );
+  };
+  for (const entry of archive.getEntries()) {
+    if (!/^ppt\/slides\/slide\d+\.xml$/u.test(entry.entryName)) {
+      continue;
+    }
+    const parser = new SaxesParser({ xmlns: true });
+    const path: string[] = [];
+    let current: (typeof result)[number] | undefined;
+    let pictureDepth = 0;
+    parser.on("opentag", (tag) => {
+      const element = `{${tag.uri}}${tag.local}`;
+      path.push(element);
+      const attr = (local: string, uri = "") => {
+        return Object.values(tag.attributes).find((attribute) => {
+          return attribute.local === local && attribute.uri === uri;
+        })?.value;
+      };
+      if (!current && isPicturePath(path)) {
+        pictureDepth = path.length;
+        current = {
+          slide: entry.entryName,
+          grouped: pictureDepth !== 4,
+          id: "",
+          name: "",
+          embed: "",
+          preset: "",
+          frame: {
+            x: Number.NaN,
+            y: Number.NaN,
+            cx: Number.NaN,
+            cy: Number.NaN,
+          },
+          crop: null,
+        };
+      }
+      if (!current) {
+        return;
+      }
+      const at = (...tail: string[]) => {
+        return (
+          path.length === pictureDepth + tail.length &&
+          tail.every((part, index) => {
+            return path[pictureDepth + index] === part;
+          })
+        );
+      };
+      if (at(p("nvPicPr"), p("cNvPr"))) {
+        current.id = attr("id") ?? "";
+        current.name = attr("name") ?? "";
+      } else if (at(p("blipFill"), a("blip"))) {
+        current.embed = attr("embed", relationshipNamespace) ?? "";
+      } else if (at(p("spPr"), a("xfrm"), a("off"))) {
+        current.frame.x = Number(attr("x"));
+        current.frame.y = Number(attr("y"));
+      } else if (at(p("spPr"), a("xfrm"), a("ext"))) {
+        current.frame.cx = Number(attr("cx"));
+        current.frame.cy = Number(attr("cy"));
+      } else if (at(p("spPr"), a("prstGeom"))) {
+        current.preset = attr("prst") ?? "";
+      } else if (at(p("blipFill"), a("srcRect"))) {
+        current.crop = {
+          l: Number(attr("l") ?? 0),
+          t: Number(attr("t") ?? 0),
+          r: Number(attr("r") ?? 0),
+          b: Number(attr("b") ?? 0),
+        };
+      }
+    });
+    parser.on("closetag", () => {
+      if (current && path.length === pictureDepth) {
+        result.push(current);
+        current = undefined;
+      }
+      path.pop();
+    });
+    parser.write(entry.getData().toString()).close();
+  }
+  return result;
+}
+
 /** Inspect the Office document sent across the real Drive upload boundary. */
 export function uploadedSlidesText(bytes: Uint8Array) {
   const archive = new AdmZip(Buffer.from(bytes));
