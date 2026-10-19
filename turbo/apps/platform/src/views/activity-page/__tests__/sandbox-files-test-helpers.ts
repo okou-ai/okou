@@ -114,6 +114,7 @@ export async function setupFilesPage(
     readonly queued?: boolean;
     readonly status?: RunStatus;
     readonly enabled?: boolean;
+    readonly jsonTree?: boolean;
     readonly mobile?: boolean;
     readonly viewportHeight?: number;
     readonly activityHeaderHeight?: number;
@@ -346,6 +347,7 @@ export async function setupFilesPage(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: options.enabled ?? true,
+      [FeatureSwitchKey.JsonTreePreview]: options.jsonTree ?? false,
     },
   });
   return {

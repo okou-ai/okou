@@ -269,3 +269,41 @@ describe("independently committed activity touches", () => {
     });
   });
 });
+
+describe("hidden thread replay", () => {
+  const visibility = {
+    ...created,
+    kind: "sort_touched" as const,
+    seqId: 2,
+    hidden: true,
+    createdAt: "2026-09-09T01:00:00.000Z",
+  };
+
+  it("hides a cached ordinary thread without changing archive state or activity", () => {
+    const snapshot = replayChatThreadEvents([], [created]);
+    expect(replayChatThreadEvents(snapshot, [visibility])).toEqual([]);
+    expect(
+      replayChatThreadEvents(snapshot, [
+        visibility,
+        { ...visibility, seqId: 3, hidden: false },
+      ]),
+    ).toEqual(snapshot);
+  });
+
+  it("hides created and snapshotted threads even after ordinary activity or unarchive", () => {
+    const visible = replayChatThreadEvents([], [created])[0];
+    if (!visible) throw new Error("Expected visible thread");
+    expect(
+      replayChatThreadEvents(
+        [{ ...visible, hidden: true }],
+        [
+          { ...created, kind: "unarchived" },
+          { ...created, kind: "sort_touched" },
+        ],
+      ),
+    ).toEqual([]);
+    expect(
+      replayChatThreadEvents([], [{ ...created, hidden: true }, selected]),
+    ).toEqual([]);
+  });
+});

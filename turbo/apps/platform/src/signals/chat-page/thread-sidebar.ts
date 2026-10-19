@@ -224,7 +224,7 @@ export interface ThreadSidebarSignals {
    * with the thread signals themselves on a thread switch.
    */
   readonly artifactCatalog: ArtifactCatalogSignals;
-  readonly selectedArtifactText$: Computed<Promise<string>>;
+  readonly selectedArtifactText$: TextPreviewComputed;
   readonly selectedArtifactMarkdownTree$: MarkdownPreviewTreeComputed;
 }
 

@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "611a407a45c91ced218d5108572cce66d2b9b663",
-  "method": "balanced acyclic dependency partition; generated, do not hand-classify packages",
+  "sourceCommit": "e76cb73d85434d46e815735cf42bd553a2cd538f",
+  "method": "existing acyclic partition extended with dependency-free base-layer additions; generated, do not hand-classify packages",
   "packages": {
     "@axiomhq/js": 3,
     "@base-ui/react": 2,
@@ -92,6 +92,7 @@
     "is-decimal": 1,
     "is-hexadecimal": 1,
     "is-plain-obj": 1,
+    "jsonc-parser": 1,
     "lucide-react": 3,
     "marked": 3,
     "micromark-util-character": 1,

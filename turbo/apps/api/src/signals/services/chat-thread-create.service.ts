@@ -24,6 +24,7 @@ interface NewChatThreadArgs {
   readonly id?: string;
   readonly title?: string | null;
   readonly selectedModel: string | null;
+  readonly hidden?: boolean;
   readonly modelSettings?: ModelSettings;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId?: string | null;
@@ -40,6 +41,7 @@ type CreatedThread = Pick<
   | "userId"
   | "title"
   | "selectedModel"
+  | "hidden"
   | "modelSettings"
   | "codexServiceTier"
   | "computerUseHostId"
@@ -85,6 +87,7 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
         : [defaults],
     values: {
       ...values,
+      hidden: args.hidden ?? false,
       selectedModel:
         args.selectedModel === null || isAutoSelectedModel(args.selectedModel)
           ? AUTO_SELECTED_MODEL
@@ -118,6 +121,7 @@ export function chatThreadCreatedEventSql(args: {
     eventId: args.eventId,
     title: thread.title,
     selectedModel: thread.selectedModel,
+    hidden: thread.hidden,
     modelSettings: thread.modelSettings,
     serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
     computerUseHostId: thread.computerUseHostId,
@@ -128,11 +132,14 @@ export function chatThreadCreatedEventSql(args: {
 
 /** Validate the stored preferences before the creation owner may commit. */
 export function createdChatThreadFromRow(
-  row: Omit<CreatedThread, "agentId">,
+  row: Omit<CreatedThread, "agentId" | "hidden"> & {
+    readonly hidden?: boolean;
+  },
   agentId: string,
 ): CreatedThread {
   return {
     ...row,
+    hidden: row.hidden ?? false,
     modelSettings: modelSettingsSchema.parse(row.modelSettings),
     agentId,
   };

@@ -35,8 +35,8 @@ event-loop yield before each quantum. SSE steps cover at most one blank-line
 event boundary or 4 KiB of decoded framing/data, including ignored, malformed
 and unterminated lines. Provider-specific JSON limits and usage semantics remain
 unchanged.
-HTTP model JSON steps feed at most 4 KiB of decoded input to one response-scoped
-selective extractor, including escaped text. The existing 65,536-unit document
+HTTP model and ordinary X JSON steps feed at most 4 KiB of decoded input to one
+response-scoped selective extractor, including escaped text. The existing 65,536-unit document
 budget spans all steps and decoder deliveries. Usage becomes authoritative only
 after complete-document and compression validation; an abandoned inspection
 never finalizes an already valid prefix or reports partial selected fields.
@@ -92,6 +92,9 @@ protocols, partitions, event/fragment bounds and terminal/cancellation handling.
 `tests/test_model_json_cooperative_streaming.py` covers decoded-input steps,
 escaped/UTF-8 partitions, the exact document budget, terminal validation and
 abandonment without partial JSON usage.
+`tests/test_x_json_cooperative_streaming.py` covers ordinary X JSON scheduling,
+document budgets, complete-document counts and identities, request-hint fallback
+and cancellation recovery.
 `tests/test_mitmproxy_response_inspection.py` uses the real runtime read loop,
 native HTTP stream hooks and fixture-owned TCP peers for these paths to verify
 fairness, byte forwarding and read backpressure. These tests do not claim

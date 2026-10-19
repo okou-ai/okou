@@ -587,6 +587,23 @@
       "uploadSheets": "In Google Sheets hochladen",
       "uploadSlides": "Auf Google Slides hochladen"
     },
+    "jsonPreview": {
+      "allShown": "Alle Einträge angezeigt",
+      "arrayCount": "Einträge: {{formattedCount}}",
+      "collapse": "{{label}} einklappen",
+      "collapseAll": "Alle einklappen",
+      "complexity": "Dieses JSON ist für die Baumansicht zu komplex. Der Quelltext wird angezeigt.",
+      "copyNode": "{{label}} kopieren",
+      "copySource": "Quelltext der Vorschau kopieren",
+      "expand": "{{label}} ausklappen",
+      "incomplete": "Nur ein Teil der Datei wurde geladen. Der Quelltext wird angezeigt. Laden Sie die Datei für den vollständigen Inhalt herunter.",
+      "invalid": "Dies ist kein gültiges JSON. Der Quelltext wird angezeigt.",
+      "limited": "Einige Knoten sind ausgeblendet. Wechseln Sie zum Quelltext, um den gesamten geladenen Text zu sehen.",
+      "more": "Mehr anzeigen",
+      "objectCount": "Schlüssel: {{formattedCount}}",
+      "source": "Quelltext",
+      "tree": "Baum"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",

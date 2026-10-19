@@ -1,3 +1,5 @@
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
+import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
   applyThreadModelReplacement,
   resolveEnqueuedChatInputModel$,
@@ -184,6 +186,25 @@ const workflowAutomationInputModel$ = command(
     due: RunWorkflowAutomationNowArgs["due"],
     signal: AbortSignal,
   ) => {
+    const official = await set(
+      synchronizeOfficialWorkflowThread$,
+      {
+        workflowId: due.automation.workflowId,
+        orgId: due.automation.orgId,
+        userId: due.automation.ownerUserId,
+      },
+      signal,
+    );
+    if (official) {
+      return {
+        modelSelection: {
+          selectedModel: AUTO_SELECTED_MODEL,
+          codexServiceTier: null,
+          reasoningEffort: null,
+        },
+        threadModelReplacement: null,
+      };
+    }
     return await set(
       resolveEnqueuedChatInputModel$,
       {

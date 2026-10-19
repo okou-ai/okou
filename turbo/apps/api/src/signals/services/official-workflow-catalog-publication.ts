@@ -253,6 +253,7 @@ export function catalogPublicationPlan(
       readonly outcome: "publish";
       readonly releaseId: string;
       readonly payload: OfficialWorkflowCatalogReleasePayload;
+      readonly hiddenThreadDefinitionNames: readonly string[];
     } {
   const currentReleaseId = current?.releaseId ?? null;
   // Every decodable accepted catalog (v2 or v3) is at or below the publication
@@ -281,7 +282,20 @@ export function catalogPublicationPlan(
       diagnostics: [...candidate.diagnostics],
     };
   }
-  const releaseId = officialWorkflowFingerprint(candidate.payload);
+  const hiddenThreadDefinitionNames = input.catalog.source.definitions
+    .filter((definition) => {
+      return definition.hiddenThread === true;
+    })
+    .map((definition) => {
+      return definition.name;
+    })
+    .sort(compareStrings);
+  // Preserve historical release identities when there is no visibility policy.
+  const releaseId = officialWorkflowFingerprint(
+    hiddenThreadDefinitionNames.length === 0
+      ? candidate.payload
+      : { payload: candidate.payload, hiddenThreadDefinitionNames },
+  );
   if (stale) {
     return currentReleaseId === releaseId
       ? {
@@ -315,7 +329,12 @@ export function catalogPublicationPlan(
       diagnostics: [],
     };
   }
-  return { outcome: "publish", releaseId, payload: candidate.payload };
+  return {
+    outcome: "publish",
+    releaseId,
+    payload: candidate.payload,
+    hiddenThreadDefinitionNames,
+  };
 }
 
 export function catalogAuthorityCondition() {
@@ -406,19 +425,33 @@ export function definitionRevisionMatches(
   );
 }
 
-export function changedBlueprintDefinitions(
+export function changedWorkflowDefinitions(
   previous: AcceptedOfficialWorkflowCatalog | null,
-  payload: OfficialWorkflowCatalogReleasePayload,
+  next: {
+    readonly payload: OfficialWorkflowCatalogReleasePayload;
+    readonly hiddenThreadDefinitionNames: readonly string[];
+  },
 ) {
+  const { payload, hiddenThreadDefinitionNames } = next;
   const previousByName = new Map(
     previous?.payload.definitions.map((definition) => {
       return [definition.name, definition] as const;
     }) ?? [],
   );
   return payload.definitions.filter((definition) => {
-    return blueprintDesiredStateChanged(
-      previousByName.get(definition.name),
-      definition,
+    if (
+      definition.lifecycle !== "active" ||
+      !previousByName.has(definition.name)
+    ) {
+      return false;
+    }
+    return (
+      blueprintDesiredStateChanged(
+        previousByName.get(definition.name),
+        definition,
+      ) ||
+      (previous?.hiddenThreadDefinitionNames.includes(definition.name) ??
+        false) !== hiddenThreadDefinitionNames.includes(definition.name)
     );
   });
 }
@@ -500,12 +533,22 @@ export function catalogActivationResult<T>(
   throw activation.error;
 }
 export function assertCatalogReleasePayload(
-  stored: { readonly payload: unknown } | undefined,
-  payload: OfficialWorkflowCatalogReleasePayload,
+  stored:
+    | {
+        readonly payload: unknown;
+        readonly hiddenThreadDefinitionNames: unknown;
+      }
+    | undefined,
+  next: {
+    readonly payload: OfficialWorkflowCatalogReleasePayload;
+    readonly hiddenThreadDefinitionNames: readonly string[];
+  },
 ): void {
   if (
     !stored ||
-    canonicalJsonString(stored.payload) !== canonicalJsonString(payload)
+    canonicalJsonString(stored.payload) !== canonicalJsonString(next.payload) ||
+    canonicalJsonString(stored.hiddenThreadDefinitionNames) !==
+      canonicalJsonString(next.hiddenThreadDefinitionNames)
   ) {
     throw new OfficialWorkflowCatalogRegistrationError();
   }

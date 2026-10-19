@@ -1,3 +1,4 @@
+import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import { isDeepStrictEqual } from "node:util";
 
 import type {
@@ -4134,6 +4135,15 @@ export const reconcileOfficialWorkflowInstallation$ = command(
     if (!context) {
       return { kind: "not-found" };
     }
+    await set(
+      synchronizeOfficialWorkflowThread$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        workflowId: args.workflowId,
+      },
+      signal,
+    );
     const indexes = buildReconciliationIndexes(context);
     const [metadata] = await get(db$)
       .select({ timezone: orgMembersMetadata.timezone })

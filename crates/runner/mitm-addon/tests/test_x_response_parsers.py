@@ -477,13 +477,14 @@ class TestXJsonFinalize:
         assert "response_result_count" not in state
         assert "response_total_tweet_count" not in state
 
-    def test_protocol_shaped_data_array_stays_within_work_limit(self, real_flow):
+    async def test_protocol_shaped_data_array_stays_within_work_limit(self, real_flow):
         flow = self._billable_x_json_flow(real_flow)
         data_item = b'{"id":"123456"}'
         body = b'{"data":[' + b",".join([data_item] * 3_600) + b"]}"
 
         mitm_addon.responseheaders(flow)
         assert response_stream(flow)(body) == body
+        await mitm_addon.responseinspection(flow)
         response_streaming.finalize_connector_response_state(flow)
 
         state = flow.metadata[metadata_keys.X_JSON_STATE]
@@ -499,7 +500,7 @@ class TestXJsonFinalize:
             pytest.param(None, id="whole-body"),
         ],
     )
-    def test_escaped_discarded_strings_stay_within_work_limit_across_chunks(
+    async def test_escaped_discarded_strings_stay_within_work_limit_across_chunks(
         self,
         real_flow,
         chunk_size,
@@ -515,6 +516,7 @@ class TestXJsonFinalize:
         for offset in range(0, len(body), resolved_chunk_size):
             chunk = body[offset : offset + resolved_chunk_size]
             assert callback(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
         response_streaming.finalize_connector_response_state(flow)
 
         state = flow.metadata[metadata_keys.X_JSON_STATE]
@@ -523,7 +525,7 @@ class TestXJsonFinalize:
         assert state["response_data_count"] == 1
         assert "parse_error" not in state
 
-    def test_x_json_work_limit_discards_partial_state_and_next_flow_recovers(self, real_flow):
+    async def test_x_json_work_limit_discards_partial_state_and_next_flow_recovers(self, real_flow):
         body = json_body_that_exceeds_x_json_work_limit()
         flow = self._billable_x_json_flow(real_flow)
         mitm_addon.responseheaders(flow)
@@ -531,7 +533,9 @@ class TestXJsonFinalize:
         midpoint = len(body) // 2
 
         assert callback(body[:midpoint]) == body[:midpoint]
+        await mitm_addon.responseinspection(flow)
         assert callback(body[midpoint:]) == body[midpoint:]
+        await mitm_addon.responseinspection(flow)
         response_streaming.finalize_connector_response_state(flow)
 
         state = dict(flow.metadata[metadata_keys.X_JSON_STATE])
@@ -554,7 +558,7 @@ class TestXJsonFinalize:
         assert next_state["response_data_count"] == 1
         assert "parse_error" not in next_state
 
-    def test_forensic_buffer_truncation_does_not_stop_x_json_parser(self, real_flow):
+    async def test_forensic_buffer_truncation_does_not_stop_x_json_parser(self, real_flow):
         flow = make_x_response_flow(
             real_flow,
             path="/2/users/by",
@@ -566,6 +570,7 @@ class TestXJsonFinalize:
         callback = response_stream(flow)
         callback(b'{"data":[{"id":"1","text":"')
         callback(b"x" * (200 * 1024))
+        await mitm_addon.responseinspection(flow)
         callback(
             b'"}],"includes":{"users":[{"id":"u1"}]},'
             b'"meta":{"result_count":1,"total_tweet_count":2}}'

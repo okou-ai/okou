@@ -1,5 +1,5 @@
 {
-  "id": "20e99a99-b74b-49f7-9f70-f3c2f92b5b6c",
+  "id": "06aec404-4f95-4ea0-bd20-e72615398fdc",
   "prevId": "75b0e6f7-1e42-4ef5-af9a-cca66ba20da1",
   "version": "7",
   "dialect": "postgresql",
@@ -1141,12 +1141,6 @@
         },
         "description": {
           "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "instructions": {
-          "name": "instructions",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -8179,6 +8173,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "hidden": {
+          "name": "hidden",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
         "selected_model": {
           "name": "selected_model",
           "type": "varchar(255)",
@@ -8689,6 +8689,13 @@
         },
         "archived": {
           "name": "archived",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "hidden": {
+          "name": "hidden",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -20020,6 +20027,13 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "hidden_thread_definition_names": {
+          "name": "hidden_thread_definition_names",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "created_at": {
           "name": "created_at",

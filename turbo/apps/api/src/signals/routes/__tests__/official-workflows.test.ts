@@ -70,6 +70,7 @@ import { suggestionsRoutes } from "../suggestions";
 import {
   chatThreadsContract,
   chatThreadMetadataContract,
+  chatThreadModelSelectionContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
@@ -128,8 +129,7 @@ function authHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-// Official workflow Runs complete through the native Runner claim protocol,
-// so fixtures select Fable, whose personal subscription route never uses Pi.
+// Keep a connected personal default to exercise the Official Auto override.
 async function selectPersonalDefaultModel(actor: ApiTestUser): Promise<void> {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -227,20 +227,23 @@ async function syncDeployedCatalog() {
   return result;
 }
 
-async function syncMorningBriefCatalog() {
+async function syncMorningBriefCatalog(hiddenThread = false) {
   return await syncCatalog(
     catalog(
       MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
-        return activeDefinition(name, [
-          {
-            key: "daily-delivery",
-            parameters: [],
-            desiredState: {
-              kind: "schedule",
-              schedule: { type: "cron", cronExpression: "0 7 * * *" },
+        return {
+          ...activeDefinition(name, [
+            {
+              key: "daily-delivery",
+              parameters: [],
+              desiredState: {
+                kind: "schedule",
+                schedule: { type: "cron", cronExpression: "0 7 * * *" },
+              },
             },
-          },
-        ]);
+          ]),
+          hiddenThread,
+        };
       }),
     ),
   );
@@ -817,7 +820,7 @@ describe("Proactive Suggestions preference", () => {
       }),
       [200],
     );
-    expect(thread.body).toMatchObject({ archived: true, muted: true });
+    expect(thread.body).toMatchObject({ hidden: true, selectedModel: "auto" });
     await accept(
       setupApp({ context, routes: notificationsRoutes })(
         notificationsContract,
@@ -2291,9 +2294,13 @@ describe("Debug Morning Brief", () => {
           schedule: automation.schedule,
         });
         if (enabled) {
-          await createChatEventsFixture(context).completeChatRunOk(runId, {
-            authorization: `Bearer ${claim.sandboxToken}`,
-          });
+          await createChatEventsFixture(context).completeChatRunOk(
+            runId,
+            {
+              authorization: `Bearer ${claim.sandboxToken}`,
+            },
+            { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
+          );
         } else {
           await webhooks.requestAgentComplete(
             { runId, exitCode: 1, error: "Debug brief finished" },
@@ -2436,6 +2443,7 @@ describe("Debug Morning Brief", () => {
         await createChatEventsFixture(context).completeChatRunOk(
           scheduledRunId,
           { authorization: `Bearer ${scheduledClaim.sandboxToken}` },
+          { cliAgentType: "pi", cliAgentSessionId: scheduledClaim.piSessionId },
         );
         await flushWaitUntilForTest();
         const settled = (
@@ -3443,6 +3451,118 @@ describe("Official schedule expiry", () => {
 });
 
 describe("Official Workflow installations", () => {
+  it("pins Official threads to Auto and follows both directions of the definition visibility policy", async () => {
+    const { actor, createdAt } = await prepareBriefMember({
+      catalogAvailable: false,
+      bootstrap: false,
+    });
+    await syncMorningBriefCatalog(true);
+    await deliverClerkOrganizationCreated(actor, createdAt);
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await selectPersonalDefaultModel(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected Official installation");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected Official automation");
+    }
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const started = await fireOfficialSchedule(actor, automation);
+    expect((await runs.readRun(actor, started.runId)).source).toMatchObject({
+      model: "auto",
+      providerType: "built-in",
+    });
+    await runs.requestCancelRun(actor, started.runId, [200, 400]);
+    const threadId = started.chatThreadId;
+    const metadata = () => {
+      return setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      ).get({ headers: authHeaders(actor), params: { id: threadId } });
+    };
+    expect((await accept(metadata(), [200])).body).toMatchObject({
+      selectedModel: "auto",
+      hidden: true,
+    });
+    await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadModelSelectionContract,
+      ).update({
+        headers: authHeaders(actor),
+        params: { id: threadId },
+        body: { model: "claude-fable-5-1" },
+      }),
+      [400],
+    );
+    const listEvents = () => {
+      return setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({ headers: authHeaders(actor), query: {} });
+    };
+    expect((await accept(listEvents(), [200])).body.events).toContainEqual(
+      expect.objectContaining({
+        chatThreadId: threadId,
+        kind: "created",
+        selectedModel: "auto",
+        hidden: true,
+      }),
+    );
+    // The same accepted skill can become visible without replacing its thread.
+    expect((await syncMorningBriefCatalog(false)).body.outcome).toBe(
+      "accepted",
+    );
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect((await accept(metadata(), [200])).body).toMatchObject({
+      id: threadId,
+      selectedModel: "auto",
+      hidden: false,
+    });
+    expect((await syncMorningBriefCatalog(true)).body.outcome).toBe("accepted");
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect((await accept(metadata(), [200])).body).toMatchObject({
+      id: threadId,
+      hidden: true,
+    });
+    const visibilityEvents = (
+      await accept(listEvents(), [200])
+    ).body.events.filter((event) => {
+      return (
+        event.chatThreadId === threadId &&
+        event.kind === "sort_touched" &&
+        event.hidden !== undefined
+      );
+    });
+    expect(
+      visibilityEvents.map((event) => {
+        return event.hidden;
+      }),
+    ).toStrictEqual([false, true]);
+  });
+
   it("names a new Morning Brief thread in the default locale", async () => {
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Shanghai");
@@ -3471,7 +3591,11 @@ describe("Official Workflow installations", () => {
     const started = await fireOfficialSchedule(actor, automation);
     await expect(
       chat.readThreadMetadata(actor, started.chatThreadId),
-    ).resolves.toMatchObject({ title: "Okou Morning Brief" });
+    ).resolves.toMatchObject({
+      title: "Okou Morning Brief",
+      selectedModel: "auto",
+      hidden: true,
+    });
     await runs.requestCancelRun(actor, started.runId, [200, 400]);
   });
 

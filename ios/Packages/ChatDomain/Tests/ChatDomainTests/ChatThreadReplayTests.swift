@@ -7,6 +7,23 @@ private let replayOtherThread = "10000000-0000-4000-8000-000000000102"
 private let replayAgent = "10000000-0000-4000-8000-000000000103"
 
 final class ChatThreadReplayTests: XCTestCase {
+
+  func testHiddenThreadsCanBecomeVisibleWithoutLosingConversationMetadata() throws {
+    let snapshot = ChatThreadReplay.replay(
+      snapshot: [], events: [event(.created, at: 1, title: "Brief")])
+    let hide = ChatThreadChange(
+      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      hidden: true, createdAt: date(10))
+    let show = ChatThreadChange(
+      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      hidden: false, createdAt: date(11))
+    XCTAssertTrue(ChatThreadReplay.replay(snapshot: snapshot, events: [hide]).isEmpty)
+    XCTAssertEqual(ChatThreadReplay.replay(snapshot: snapshot, events: [hide, show]), snapshot)
+    var hiddenSnapshot = try XCTUnwrap(snapshot.first)
+    hiddenSnapshot.isHidden = true
+    XCTAssertTrue(ChatThreadReplay.replay(snapshot: [hiddenSnapshot], events: []).isEmpty)
+    XCTAssertEqual(ChatThreadReplay.replay(snapshot: [hiddenSnapshot], events: [show]), snapshot)
+  }
   func testCreationReplaysOnlyNewerDeferredSettingsAndDropsOtherPreCreationEvents() throws {
     let events = [
       event(.renamed, at: 11, title: "Ignored"),

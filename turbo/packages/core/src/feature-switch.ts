@@ -44,20 +44,19 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.JsonTreePreview]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "JSON tree previews",
+    description: "Explore JSON nodes in file and artifact previews.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
   [FeatureSwitchKey.HostedSiteUrlEditing]: {
     maintainer: "yuma@okou.ai",
     displayName: "Website URL editing",
     description: "Customize a published website address from its Share menu.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerSlashHint]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Composer slash hint",
-    description:
-      "Show an inline hint after / to search workflows or choose a template.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -100,6 +100,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       title: "CLI renamed title",
       pinnedAt: null,
       archived: false,
+      hidden: false,
       muted: false,
       selectedModel: "auto",
       modelSettings: {},

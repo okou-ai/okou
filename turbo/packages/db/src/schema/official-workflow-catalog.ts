@@ -15,6 +15,7 @@ import {
 import type {
   OfficialWorkflowCatalogReleasePayload,
   OfficialWorkflowDefinitionRevisionPayload,
+  OfficialWorkflowHiddenThreadDefinitionNames,
 } from "@okouai/db/jsonb-contracts/official-workflow-catalog";
 import { storages, storageVersions } from "./storage";
 
@@ -59,6 +60,11 @@ export const officialWorkflowCatalogReleases = pgTable(
     id: varchar("id", { length: 64 }).primaryKey(),
     payload: jsonb("payload")
       .$type<OfficialWorkflowCatalogReleasePayload>()
+      .notNull(),
+    /** Platform presentation policy, outside immutable skill payloads. */
+    hiddenThreadDefinitionNames: jsonb("hidden_thread_definition_names")
+      .$type<OfficialWorkflowHiddenThreadDefinitionNames>()
+      .default([])
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

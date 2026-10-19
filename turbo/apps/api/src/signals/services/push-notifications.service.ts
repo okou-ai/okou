@@ -50,7 +50,7 @@ export async function sendUserPushNotifications(
 
   // Read at delivery time, not Run admission: the user may mute a running chat.
   const [thread] = await args.db
-    .select({ muted: chatThreads.muted })
+    .select({ muted: chatThreads.muted, hidden: chatThreads.hidden })
     .from(chatThreads)
     .where(
       and(
@@ -59,7 +59,7 @@ export async function sendUserPushNotifications(
       ),
     )
     .limit(1);
-  if (!thread || thread.muted) {
+  if (!thread || thread.muted || thread.hidden) {
     return;
   }
 

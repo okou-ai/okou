@@ -569,6 +569,7 @@
     "src/signals/services/official-workflow-reconciliation-sql.ts",
     "src/signals/services/official-workflow-reconciliation.service.ts",
     "src/signals/services/official-workflow-reconciliation.types.ts",
+    "src/signals/services/official-workflow-thread.service.ts",
     "src/signals/services/storage-prefix-purge.service.ts",
     "src/signals/services/storage-publication-fence.service.ts",
     "src/signals/services/stripe-invoice-paid-workflow-automation-feature-switch.service.ts",
