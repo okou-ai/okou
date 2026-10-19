@@ -44,6 +44,8 @@ type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
 
 const earlierRunEvent = alias(chatEvents, "earlier_run_event");
 
+const eligibleRun = alias(agentRuns, "eligible_run");
+
 const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
 
 const incompleteAnchorCandidate = alias(
@@ -161,18 +163,29 @@ function createIncompleteRoundAnchors(
         const firstOwnedEvent = db
           .select({ seqId: min(earlierRunEvent.seqId).as("first_seq") })
           .from(earlierRunEvent)
-          .innerJoin(agentRuns, eq(agentRuns.id, earlierRunEvent.runId))
           .where(
             and(
               eq(earlierRunEvent.chatThreadId, threadId),
               eq(earlierRunEvent.runId, incompleteRunAnchor.runId),
               ne(earlierRunEvent.eventType, "control.interrupt"),
-              or(
-                isSuccessfulRun,
-                inArray(
-                  agentRuns.status,
-                  sql`('cancelled', 'failed', 'timeout')`,
-                ),
+              // Key status eligibility to the candidate run, not each owned
+              // event, so repeated events do not repeat the run PK lookup.
+              exists(
+                db
+                  .select({ id: eligibleRun.id })
+                  .from(eligibleRun)
+                  .where(
+                    and(
+                      eq(eligibleRun.id, incompleteRunAnchor.runId),
+                      or(
+                        eq(eligibleRun.status, "completed"),
+                        inArray(
+                          eligibleRun.status,
+                          sql`('cancelled', 'failed', 'timeout')`,
+                        ),
+                      ),
+                    ),
+                  ),
               ),
             ),
           )
@@ -322,24 +335,38 @@ function createIncompleteRounds(
     const runIds = selection.map((round) => {
       return round.runId;
     });
-    const rows = await db
-      .select({
-        runId: chatEvents.runId,
-        eventType: chatEvents.eventType,
-        content: canonicalChatEventContent(),
-        agentPrompt: agentRuns.prompt,
-      })
+    const selectedEvents = db
+      .select()
       .from(chatEvents)
-      .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
       .where(
         and(
           eq(chatEvents.chatThreadId, threadId),
           inArray(chatEvents.runId, runIds),
+        ),
+      )
+      // Keep acquisition before the prompt join without moving visibility/text
+      // guards. A bound zero retains OFFSET, which Drizzle omits for .offset(0).
+      .offset(sql.placeholder("incomplete_content_offset"))
+      .as("chat_events");
+    const rows = await db
+      .select({
+        runId: selectedEvents.runId,
+        eventType: selectedEvents.eventType,
+        content: canonicalChatEventContent(selectedEvents.payload),
+        agentPrompt: agentRuns.prompt,
+      })
+      .from(selectedEvents)
+      .innerJoin(agentRuns, eq(agentRuns.id, selectedEvents.runId))
+      .where(
+        and(
+          eq(selectedEvents.chatThreadId, threadId),
+          inArray(selectedEvents.runId, runIds),
           chatEventTextCondition(),
           visibleChatEventCondition(),
         ),
       )
-      .orderBy(asc(chatEvents.seqId));
+      .orderBy(asc(selectedEvents.seqId))
+      .execute({ incomplete_content_offset: 0 });
     const roundsByRunId = new Map<string, IncompleteRound>();
     for (const round of selection) {
       roundsByRunId.set(round.runId, { ...round, events: [] });

@@ -92,56 +92,21 @@ export function createChatThreadContinuationRead(
     if (!event) {
       return undefined;
     }
-    const [row] = await get(db$)
+    // The event PK makes this a nullable scalar, including before attribution.
+    // Candidate Run IDs are non-null, so IS DISTINCT FROM preserves exclusion
+    // when the current event has no Run (or no longer exists).
+    const currentInputRun = new QueryBuilder()
+      .select({ runId: chatEvents.runId })
+      .from(chatEvents)
+      .where(eq(chatEvents.id, event.id));
+    const nativeSourceRun = new QueryBuilder()
       .select({
+        id: agentRuns.id,
+        agentId: agentRuns.agentId,
         selectedModel: agentRuns.selectedModel,
-        cliAgentType: chatThreads.framework,
-        previousRun: {
-          id: agentRuns.id,
-          agentId: agentRuns.agentId,
-          selectedModel: agentRuns.selectedModel,
-        },
-        hasPriorConversationRound: sql`(${exists(
-          new QueryBuilder()
-            .select({ id: chatEvents.id })
-            .from(chatEvents)
-            .where(
-              and(
-                eq(chatEvents.chatThreadId, event.chatThreadId),
-                lt(chatEvents.seqId, event.seqId),
-                isNotNull(chatEvents.runId),
-                chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
-                visibleChatEventCondition(),
-              ),
-            ),
-        )}) OR (${exists(
-          new QueryBuilder()
-            .select({ id: priorRun.id })
-            .from(priorRun)
-            .where(
-              and(
-                eq(priorRun.chatThreadId, event.chatThreadId),
-                isNotNull(priorRun.triggerSource),
-                // Run records survive Chat archival. Exclude the current input's own
-                // Run if this graph is revisited after its immutable attribution.
-                notExists(
-                  new QueryBuilder()
-                    .select({ id: chatEvents.id })
-                    .from(chatEvents)
-                    .where(
-                      and(
-                        eq(chatEvents.id, event.id),
-                        eq(chatEvents.runId, priorRun.id),
-                      ),
-                    ),
-                ),
-              ),
-            ),
-        )})`.mapWith(pgBooleanDecoder),
       })
-      .from(chatThreads)
-      .leftJoin(
-        agentRuns,
+      .from(agentRuns)
+      .where(
         and(
           eq(agentRuns.id, chatThreads.frameworkSessionRunId),
           eq(agentRuns.chatThreadId, chatThreads.id),
@@ -160,22 +125,55 @@ export function createChatThreadContinuationRead(
                   ne(laterNativeRun.id, agentRuns.id),
                   gte(laterNativeRun.createdAt, agentRuns.createdAt),
                   isNotNull(laterNativeRun.frameworkSessionId),
-                  notExists(
-                    new QueryBuilder()
-                      .select({ id: chatEvents.id })
-                      .from(chatEvents)
-                      .where(
-                        and(
-                          eq(chatEvents.id, event.id),
-                          eq(chatEvents.runId, laterNativeRun.id),
-                        ),
-                      ),
-                  ),
+                  sql`${laterNativeRun.id} IS DISTINCT FROM (${currentInputRun})`,
                 ),
               ),
           ),
         ),
       )
+      // The PK already bounds cardinality; LIMIT keeps provenance checks inside
+      // the lateral lookup rather than flattening them into the thread join.
+      .limit(1)
+      .as("native_source_run");
+    const [row] = await get(db$)
+      .select({
+        selectedModel: nativeSourceRun.selectedModel,
+        cliAgentType: chatThreads.framework,
+        previousRun: {
+          id: nativeSourceRun.id,
+          agentId: nativeSourceRun.agentId,
+          selectedModel: nativeSourceRun.selectedModel,
+        },
+        // Run records survive Chat archival. Check them first and only inspect
+        // visible message history when no earlier attributed Run exists.
+        hasPriorConversationRound: sql`CASE WHEN ${exists(
+          new QueryBuilder()
+            .select({ id: priorRun.id })
+            .from(priorRun)
+            .where(
+              and(
+                eq(priorRun.chatThreadId, event.chatThreadId),
+                isNotNull(priorRun.triggerSource),
+                sql`${priorRun.id} IS DISTINCT FROM (${currentInputRun})`,
+              ),
+            ),
+        )} THEN true ELSE ${exists(
+          new QueryBuilder()
+            .select({ id: chatEvents.id })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.chatThreadId, event.chatThreadId),
+                lt(chatEvents.seqId, event.seqId),
+                isNotNull(chatEvents.runId),
+                chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
+                visibleChatEventCondition(),
+              ),
+            ),
+        )} END`.mapWith(pgBooleanDecoder),
+      })
+      .from(chatThreads)
+      .leftJoinLateral(nativeSourceRun, sql`true`)
       .where(
         and(
           eq(chatThreads.id, event.chatThreadId),
