@@ -282,7 +282,7 @@ function officialMorningBriefSettlementPlan(
     intervalSeconds: automation.intervalSeconds,
     timezone: automation.timezone,
     completedAt: settledAt,
-    shouldDisable,
+    shouldDisable: false,
   });
   return {
     shouldDisable,
@@ -290,7 +290,6 @@ function officialMorningBriefSettlementPlan(
     automationValues: {
       consecutiveFailures,
       ...(shouldDisable ? { enabled: false } : {}),
-      ...(shouldDisable ? { officialIntendedEnabled: false } : {}),
       nextRunAt,
       updatedAt: settledAt,
     },
@@ -407,8 +406,8 @@ const commitMorningBriefScheduleSettlement$ = command(
       throw result.error;
     }
     if (result.value) {
-      log.debug(
-        "Morning Brief schedule auto-disabled after consecutive failures",
+      log.warn(
+        "Morning Brief paused after consecutive failures; recovery is scheduled",
         { automationId: args.automationId, ...result.value },
       );
     }

@@ -32,13 +32,14 @@ function ProactiveSuggestionsPreference() {
   const failed =
     preference.state === "hasError" || mutation.state === "hasError";
   const busy = preference.state === "loading" || mutation.state === "loading";
+  const hasPreferenceError = value?.status === "error";
   const statusKey = failed
     ? "retryMessage"
     : value?.unavailableReason
       ? "missingDefaultAgent"
       : value?.status === "preparing"
         ? "preparing"
-        : value?.status === "error"
+        : hasPreferenceError
           ? "preparationFailed"
           : null;
 
@@ -67,14 +68,14 @@ function ProactiveSuggestionsPreference() {
         }
       >
         <div className="flex shrink-0 items-center gap-2">
-          {(failed || value?.status === "error") && (
+          {(failed || (hasPreferenceError && !value.enabled)) && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               disabled={busy}
               onClick={() => {
-                if (value?.status === "error") {
+                if (hasPreferenceError) {
                   detach(update(value.enabled, signal), Reason.DomCallback);
                 } else {
                   reload();

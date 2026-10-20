@@ -14,6 +14,7 @@ import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
+import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 
 const log = logger("WorkflowScheduleFailure");
@@ -37,11 +38,7 @@ export function preRunFailureFromError(error: unknown): PreRunFailure {
 function advanceAfterPreRunFailure(
   automation: AutomationRow,
   failureTime: Date,
-  shouldDisable: boolean,
 ): Date | null {
-  if (shouldDisable) {
-    return null;
-  }
   if (automation.scheduleType === "cron" && automation.cronExpression) {
     return calculateNextRun(
       automation.cronExpression,
@@ -120,18 +117,12 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
         const shouldDisable =
           !failure.isCreditError &&
           current.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES;
-        const nextRunAt = advanceAfterPreRunFailure(
-          current,
-          failureTime,
-          shouldDisable,
-        );
+        const nextRunAt = advanceAfterPreRunFailure(current, failureTime);
         const [updated] = await db
           .update(workflowAutomations)
           .set({
             consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${failure.isCreditError ? 0 : 1}`,
-            ...(shouldDisable
-              ? { enabled: false, officialIntendedEnabled: false }
-              : {}),
+            ...(shouldDisable ? { enabled: false } : {}),
             nextRunAt,
             updatedAt: failureTime,
           })
@@ -161,8 +152,8 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
       return false;
     }
     if (outcome.disabled) {
-      log.debug(
-        "Workflow automation auto-disabled after consecutive failures",
+      log.warn(
+        "Official Workflow paused after consecutive failures; recovery is scheduled",
         {
           automationId: automation.id,
           workflowId: automation.workflowId,
@@ -192,19 +183,14 @@ export const recordPreRunFailure$ = command(
     const failureTime = nowDate();
     const increment = failure.isCreditError ? 0 : 1;
     const threshold = sql`${workflowAutomations.consecutiveFailures} + ${increment} >= ${MAX_CONSECUTIVE_FAILURES}`;
-    const nextRunAt = advanceAfterPreRunFailure(automation, failureTime, false);
+    const nextRunAt = advanceAfterPreRunFailure(automation, failureTime);
     const [updated] = await db
       .update(workflowAutomations)
       .set({
         consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${increment}`,
         ...(failure.isCreditError
-          ? {}
-          : {
-              enabled: sql`CASE WHEN ${threshold} THEN false ELSE ${workflowAutomations.enabled} END`,
-            }),
-        nextRunAt: failure.isCreditError
-          ? nextRunAt
-          : sql`CASE WHEN ${threshold} THEN NULL ELSE ${nextRunAt}::timestamp END`,
+          ? { nextRunAt }
+          : scheduleFailurePauseValues(threshold, nextRunAt)),
         updatedAt: failureTime,
       })
       .where(
@@ -220,11 +206,13 @@ export const recordPreRunFailure$ = command(
       )
       .returning({
         consecutiveFailures: workflowAutomations.consecutiveFailures,
+        enabled: workflowAutomations.enabled,
       });
     signal.throwIfAborted();
     if (
       !failure.isCreditError &&
       updated &&
+      !updated.enabled &&
       updated.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
     ) {
       log.debug(
