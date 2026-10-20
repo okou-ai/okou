@@ -110,18 +110,11 @@ class RequestRejectedError(ValueError):
 class BodyLengthRejectedError(RequestRejectedError):
     """Retain bounded scalar evidence from the rejected declaration, never headers."""
 
-    def __init__(self, result: content_length.ContentLengthResult, values: list[str]) -> None:
+    def __init__(self, result: content_length.ContentLengthResult) -> None:
         super().__init__("body_length")
         self.kind = "zero" if result.kind == "valid" and result.value == 0 else result.kind
         self.limit_bytes = NETWORK_LOG_MAX_SAFE_SIZE
         self.declared_bytes: int | None = result.value if result.kind == "valid" else None
-        if result.kind == "over_limit":
-            # The admission parser can return limit + 1 as a sentinel. Reuse its
-            # bounded conversion on this rejection path to retain exact ordinary
-            # sizes without serializing arbitrary integers or raw header text.
-            diagnostic = content_length.parse(values, max_value=NETWORK_LOG_MAX_SAFE_SIZE)
-            if diagnostic.kind == "valid":
-                self.declared_bytes = diagnostic.value
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +186,7 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
     values = flow.request.headers.get_all("Content-Length")
     length = content_length.parse(values, max_value=NETWORK_LOG_MAX_SAFE_SIZE)
     if length.kind != "valid" or length.value == 0:
-        raise BodyLengthRejectedError(length, values)
+        raise BodyLengthRejectedError(length)
     return length.value
 
 
