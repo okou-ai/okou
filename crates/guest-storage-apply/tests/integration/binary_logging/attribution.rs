@@ -422,12 +422,12 @@ fn binary_records_redacted_target_preparation_failure() {
             .any(|action| action.starts_with("guest_storage_apply_task_count_")),
         "target preparation failure reached scheduler attribution: {actions:?}"
     );
-    for absent in ["guest_storage_apply_archive_scheduler"] {
-        assert!(
-            !actions.iter().any(|action| action == absent),
-            "unexpected {absent} in {actions:?}"
-        );
-    }
+    assert!(
+        !actions
+            .iter()
+            .any(|action| action == "guest_storage_apply_archive_scheduler"),
+        "target preparation failure reached scheduler: {actions:?}"
+    );
     let total = operation(&ops, "download_total")
         .unwrap_or_else(|| panic!("missing download_total in {ops:?}"));
     assert_eq!(total["success"], false);
