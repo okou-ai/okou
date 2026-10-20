@@ -1,5 +1,6 @@
 import {
   connectorAccountsContract,
+  type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -119,7 +120,69 @@ function sentPrompts(sends: readonly CapturedChatSend[]): string[] {
 function installCatalogLookup(
   lookup: (slug: ConnectorSlug) => ReturnType<typeof catalogConnector> | null,
 ): void {
+  const slugs = new Set<ConnectorSlug>();
+  const accountFor = (
+    slug: ConnectorSlug,
+  ): ConnectorAccountConnection | null => {
+    const item = lookup(slug);
+    if (!item?.connection) {
+      return null;
+    }
+    return {
+      id: item.connection.id ?? CONNECTOR_CONNECTION_ID,
+      target: { kind: "builtin", connectorSlug: slug },
+      authMethod: item.connection.authMethod,
+      displayName: null,
+      isDefault: true,
+      externalId: null,
+      externalUsername: item.connection.externalUsername,
+      externalEmail: item.connection.externalEmail,
+      oauthScopes: [],
+      connectionStatus:
+        item.connectionStatus === "reconnect-required"
+          ? "reconnect-required"
+          : "connected",
+      reconnectReason: item.connection.reconnectReason,
+      tokenExpiresAt: item.tokenExpiresAt,
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
+      createdAt: "2026-08-01T08:00:00.000Z",
+      updatedAt: "2026-08-01T09:00:00.000Z",
+    };
+  };
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ query, params, respond }) => {
+      const account =
+        query.kind === "builtin" ? accountFor(query.connectorSlug) : null;
+      return account?.id === params.connectionId
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, {
+      summaries: [...slugs].flatMap((slug) => {
+        const account = accountFor(slug);
+        return account
+          ? [
+              {
+                target: account.target,
+                accountCount: 1,
+                attentionCount:
+                  account.connectionStatus === "reconnect-required" ? 1 : 0,
+                defaultConnection: account,
+              },
+            ]
+          : [];
+      }),
+    });
+  });
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    slugs.add(params.connectorSlug);
     const connector = lookup(params.connectorSlug);
     return connector
       ? respond(200, { connector })
@@ -135,6 +198,40 @@ function installCustomConnectorApi(args: {
   readonly authorizationUpdates?: AgentCustomConnectorGrant[][];
 }): void {
   let grants = args.grants ?? [];
+  const account = () => {
+    return args.connector().connected
+      ? customConnectorAccount(CUSTOM_CONNECTOR_ID, {
+          id: CONNECTOR_CONNECTION_ID,
+          configuredFieldKeys: ["apiSecret"],
+        })
+      : null;
+  };
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      const current = account();
+      return current?.id === params.connectionId
+        ? respond(200, current)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    const current = account();
+    return respond(200, {
+      summaries: current
+        ? [
+            {
+              target: current.target,
+              accountCount: 1,
+              attentionCount: 0,
+              defaultConnection: current,
+            },
+          ]
+        : [],
+    });
+  });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [args.connector()] });
   });
@@ -582,16 +679,23 @@ async function attemptCustomMcpConnection(
   });
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
     return respond(200, {
-      summaries: hasSavedAccount
-        ? [
-            {
-              target: account.target,
-              accountCount: 2,
-              attentionCount: 1,
-              defaultConnection: account,
-            },
-          ]
-        : [],
+      summaries:
+        hasSavedAccount || connected
+          ? [
+              {
+                target: account.target,
+                accountCount: 2,
+                attentionCount: connected ? 0 : 1,
+                defaultConnection: {
+                  ...account,
+                  connectionStatus: connected
+                    ? "connected"
+                    : "reconnect-required",
+                  reconnectReason: connected ? null : account.reconnectReason,
+                },
+              },
+            ]
+          : [],
     });
   });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {

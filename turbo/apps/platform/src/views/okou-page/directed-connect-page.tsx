@@ -72,7 +72,7 @@ import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
   type ConnectorAccountMutationOptions,
-  type DefaultCustomConnectorAccountMutationOptions,
+  type CustomConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 
 function ManualGrantForm({
@@ -716,7 +716,7 @@ function customConnectorForSlug(
 
 interface CustomConnectorConnection {
   readonly connector: CustomConnectorResponse;
-  readonly accountOptions: DefaultCustomConnectorAccountMutationOptions;
+  readonly accountOptions: CustomConnectorAccountMutationOptions;
 }
 
 function customConnectorConnection(

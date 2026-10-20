@@ -3,10 +3,14 @@ import { Command, Option } from "commander";
 import chalk from "chalk";
 import {
   connectBuiltinConnectorManualGrant,
-  getBuiltinConnector,
+  listConnectorAccountSummaries,
   getCustomConnector,
+  type BuiltinConnectorManualGrantAccountMutation,
 } from "../../lib/api/domains/connectors";
-import { connectCustomConnectorMember } from "../../lib/api/domains/connector-management";
+import {
+  connectCustomConnectorMember,
+  showConnectorAccount,
+} from "../../lib/api/domains/connector-management";
 import { readManagementInput } from "../../lib/management-input";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { resolveManualGrantAuthMethod } from "./public-catalog";
@@ -17,6 +21,7 @@ import {
   resolveManagementConnector,
   type AccountMutationOptions,
 } from "./management";
+import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 
 interface ConnectOptions extends AccountMutationOptions {
   readonly authMethod?: string;
@@ -30,6 +35,23 @@ function collectValue(value: string, previous: string[]): string[] {
 }
 
 const valuesSchema = z.record(z.string().min(1), z.string());
+
+async function builtinAccountMutation(
+  connectorSlug: string,
+  options: ConnectOptions,
+): Promise<BuiltinConnectorManualGrantAccountMutation> {
+  if (options.add || options.reconnect) return accountMutation(options);
+  const summary = (await listConnectorAccountSummaries()).get(
+    connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+  );
+  if (summary?.defaultConnection)
+    return { intent: "reconnect", connectionId: summary.defaultConnection.id };
+  if (summary && summary.accountCount > 0)
+    throw new Error(
+      "Choose a saved account with --reconnect; no default account is selected.",
+    );
+  return { intent: "add" };
+}
 
 async function connectorValues(options: ConnectOptions) {
   if (options.input !== undefined)
@@ -75,6 +97,23 @@ async function connectCustom(
     account,
     values: inputValues,
   });
+  const connectionId = result.connectionId ?? result.connectedAccountId;
+  if (
+    !connectionId ||
+    (account.intent === "reconnect" && connectionId !== account.connectionId)
+  )
+    throw new Error("Connector account response identity mismatch.");
+  const connectedAccount = await showConnectorAccount({
+    target: { kind: "custom", customConnectorId: id },
+    connectionId,
+  });
+  if (
+    connectedAccount?.connectionStatus !== "connected" ||
+    connectedAccount.setupStatus !== "complete"
+  )
+    throw new Error(
+      "Connector account setup is incomplete or unavailable; inspect connector account show.",
+    );
   if (!options.json)
     console.log(chalk.green(`✓ ${connector.displayName} connected`));
   console.log(JSON.stringify(result, null, 2));
@@ -140,16 +179,7 @@ Examples:
           "At least one --value NAME=VALUE or --input field is required.",
         );
       const method = resolveManualGrantAuthMethod(metadata, options.authMethod);
-      const existing =
-        options.add || options.reconnect
-          ? null
-          : await getBuiltinConnector(metadata.slug);
-      const account =
-        options.add || options.reconnect
-          ? accountMutation(options)
-          : existing
-            ? { intent: "reconnect" as const, connectionId: existing.id }
-            : { intent: "add" as const };
+      const account = await builtinAccountMutation(metadata.slug, options);
       const connector = await connectBuiltinConnectorManualGrant(
         metadata.slug,
         method.id,
@@ -158,10 +188,23 @@ Examples:
       );
       if (
         connector.slug !== metadata.slug ||
+        (connector.connectionId !== undefined &&
+          connector.connectionId !== connector.id) ||
         (account.intent === "reconnect" &&
           connector.id !== account.connectionId)
       )
         throw new Error("Connector account response identity mismatch.");
+      const connectedAccount = await showConnectorAccount({
+        target: { kind: "builtin", connectorSlug: metadata.slug },
+        connectionId: connector.connectionId ?? connector.id,
+      });
+      if (
+        connectedAccount?.connectionStatus !== "connected" ||
+        connectedAccount.setupStatus !== "complete"
+      )
+        throw new Error(
+          "Connector account setup is incomplete or unavailable; inspect connector account show.",
+        );
       if (options.json) {
         console.log(JSON.stringify(connector, null, 2));
         return;

@@ -3095,6 +3095,8 @@
       "noAccountsFound": "कोई खाता नहीं मिला",
       "reconnectRequired": "दोबारा कनेक्ट करना आवश्यक है",
       "rename": "नाम बदलें",
+      "setupIncomplete": "सेटअप अधूरा है",
+      "setupUnavailable": "खाते की स्थिति उपलब्ध नहीं है",
       "skipName": "छोड़ें",
       "summaryMany": "{{value}} खाते",
       "summaryMany_one": "",

@@ -3080,6 +3080,8 @@
       "noAccountsFound": "アカウントが見つかりません",
       "reconnectRequired": "再接続が必要です",
       "rename": "名前を変更",
+      "setupIncomplete": "設定が未完了",
+      "setupUnavailable": "アカウントの状態を取得できません",
       "skipName": "スキップ",
       "summaryMany": "{{value}} 件のアカウント",
       "summaryMany_other": "",

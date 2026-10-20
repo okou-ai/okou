@@ -3080,6 +3080,8 @@
       "noAccountsFound": "没有找到账号",
       "reconnectRequired": "需要重新连接",
       "rename": "重命名",
+      "setupIncomplete": "配置未完成",
+      "setupUnavailable": "账号状态暂不可用",
       "skipName": "跳过",
       "summaryMany": "{{value}} 个账号",
       "summaryMany_other": "",

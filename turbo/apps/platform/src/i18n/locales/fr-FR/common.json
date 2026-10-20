@@ -3147,6 +3147,8 @@
       "noAccountsFound": "Aucun compte trouvé",
       "reconnectRequired": "Reconnexion requise",
       "rename": "Renommer",
+      "setupIncomplete": "Configuration incomplète",
+      "setupUnavailable": "Statut du compte indisponible",
       "skipName": "Ignorer",
       "summaryMany": "{{value}} comptes",
       "summaryMany_one": "",

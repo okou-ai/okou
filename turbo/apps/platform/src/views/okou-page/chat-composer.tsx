@@ -222,7 +222,7 @@ import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
   type DefaultConnectorAccountMutationOptions,
-  type DefaultCustomConnectorAccountMutationOptions,
+  type CustomConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import {
   matchesConnectorSearch,
@@ -8467,7 +8467,7 @@ function ComposerConnectorConnectDialogs({
   readonly selectedConnector: PlatformConnectorCatalogStatusItem | undefined;
   readonly selectedConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
-  readonly selectedCustomConnectorAccountOptions: DefaultCustomConnectorAccountMutationOptions | null;
+  readonly selectedCustomConnectorAccountOptions: CustomConnectorAccountMutationOptions | null;
   readonly agentId: string;
   readonly onBuiltinClose: () => void;
   readonly onBuiltinSuccess: ConnectorConnectSuccess;

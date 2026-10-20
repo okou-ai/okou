@@ -3147,6 +3147,8 @@
       "noAccountsFound": "Nessun account trovato",
       "reconnectRequired": "Riconnessione necessaria",
       "rename": "Rinomina",
+      "setupIncomplete": "Configurazione incompleta",
+      "setupUnavailable": "Stato dell'account non disponibile",
       "skipName": "Salta",
       "summaryMany": "{{value}} account",
       "summaryMany_one": "",

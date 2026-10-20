@@ -205,8 +205,12 @@ export async function connectCustomConnectorMember(
   );
   if (
     connector.id !== id ||
+    (connector.connectionId !== undefined &&
+      connector.connectedAccountId !== undefined &&
+      connector.connectionId !== connector.connectedAccountId) ||
     (body.account.intent === "reconnect" &&
-      connector.connectedAccountId !== body.account.connectionId)
+      (connector.connectionId ?? connector.connectedAccountId) !==
+        body.account.connectionId)
   )
     throw new Error("Custom connector account response identity mismatch.");
   return connector;
@@ -249,7 +253,7 @@ function verifyAuthorizationAccount<T extends z.output<typeof automaticSchema>>(
   if (account.intent === "reconnect") {
     const connectionId =
       result.result === "connected"
-        ? result.connectedAccountId
+        ? (result.connectionId ?? result.connectedAccountId)
         : result.connectionId;
     if (connectionId !== undefined && connectionId !== account.connectionId) {
       throw new Error(

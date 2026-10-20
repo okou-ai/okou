@@ -2,7 +2,12 @@ import type {
   ConnectorCheckRequestBody,
   ConnectorCheckTargetAwareDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
-import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountTargetKey,
+  type ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import { memberAccountStatus } from "./member-status";
 
 import {
   getAgentCustomConnectorGrants,
@@ -11,6 +16,7 @@ import {
 import {
   getBuiltinConnector,
   getCustomConnector,
+  listConnectorAccountSummaries,
 } from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
@@ -181,7 +187,24 @@ async function loadCheckEvidence(
   if (account === undefined) {
     throw new Error("Missing run account lookup for connector");
   }
-  return { definition, currentConnection, account, authorized, origin };
+  const summaries =
+    !runBound &&
+    !(definition && isIntegrationManagedCustomConnector(definition))
+      ? await listConnectorAccountSummaries()
+      : null;
+  const accountSummary =
+    summaries?.get(connectorAccountTargetKey(target)) ?? null;
+  const memberStatus =
+    summaries === null ? null : memberAccountStatus(accountSummary);
+  return {
+    definition,
+    currentConnection,
+    account,
+    authorized,
+    origin,
+    accountSummary,
+    memberStatus,
+  };
 }
 
 function checkConnectionActions(
@@ -189,7 +212,7 @@ function checkConnectionActions(
   label: string,
   evidence: Awaited<ReturnType<typeof loadCheckEvidence>>,
 ): ConnectorSearchAction[] {
-  const { definition, currentConnection, account, authorized } = evidence;
+  const { definition, account, authorized, memberStatus } = evidence;
   const connectionActions: ConnectorSearchAction[] = [];
   if (account !== null) {
     const action = runConnectorSearchAction(
@@ -208,16 +231,26 @@ function checkConnectionActions(
     }
   } else if (target.kind === "builtin") {
     if (
-      currentConnection === null ||
-      currentConnection.connectionStatus === "reconnect-required"
+      memberStatus === "not-connected" ||
+      memberStatus === "reconnect-required"
     ) {
       connectionActions.push({
         label: `Connect or reconnect ${label}`,
         path: `/connectors/${target.connectorSlug}/connect`,
         supportsCallback: true,
       });
+    } else if (memberStatus !== "connected") {
+      connectionActions.push({
+        label: `Review ${label} accounts and setup`,
+        path: "/connectors",
+        supportsCallback: false,
+      });
     }
-  } else if (definition === null || !definition.connected) {
+  } else if (
+    memberStatus !== null
+      ? memberStatus !== "connected"
+      : definition === null || !definition.connected
+  ) {
     connectionActions.push({
       label: `Review ${label} accounts and agent access`,
       path: "/connectors",
@@ -336,6 +369,8 @@ export async function printConnectorCheckJson(
                 return { name, present: Boolean(process.env[name]) };
               }),
         account,
+        accountSummary: evidence.accountSummary,
+        memberStatus: evidence.memberStatus,
         connection: runBound
           ? null
           : target.kind === "builtin"

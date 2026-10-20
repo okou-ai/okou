@@ -267,7 +267,7 @@ test("Connecting a custom account updates the directory when it is reopened", as
   await openCustom(reopened);
   await expect(
     findFastControl("button", "Connect Acme Search", reopened),
-  ).resolves.toHaveTextContent("Work");
+  ).resolves.toHaveTextContent("Unnamed account");
   expect(within(reopened).queryByText("No accounts")).toBeNull();
 });
 

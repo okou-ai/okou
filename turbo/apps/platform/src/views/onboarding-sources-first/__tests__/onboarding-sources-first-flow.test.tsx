@@ -6,6 +6,7 @@ import {
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
@@ -801,7 +802,7 @@ test("The sheet's connector card connects the tool the prompt link names", async
     builtinConnectorManualGrantContract.connect,
     ({ params, respond }) => {
       expect(params.connectorSlug).toBe("ahrefs");
-      return respond(200, {
+      const connector: BuiltinConnectorResponse = {
         id: "11111111-1111-4111-8111-111111111112",
         slug: "ahrefs",
         authMethod: "api-token",
@@ -814,7 +815,9 @@ test("The sheet's connector card connects the tool the prompt link names", async
         tokenExpiresAt: null,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
-      });
+      };
+      context.mocks.data.connectors([connector]);
+      return respond(200, { ...connector, connectionId: connector.id });
     },
   );
 

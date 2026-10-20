@@ -5,6 +5,7 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 
 import type { BuiltinConnectorListResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   onboardingIndustrySchema,
@@ -53,6 +54,7 @@ import {
   connectorRuntimeSlugSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
 import { builtinConnectorList } from "./connector-data.service";
+import { readConnectorAccountsByIds$ } from "./connector-account-lifecycle.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   ONBOARDING_CONTEXT_COLLECTORS,
@@ -528,6 +530,45 @@ function connectedOnboardingSources(
   });
 }
 
+function assertInitialOnboardingCheckpoint(checkpoint: unknown) {
+  if (generationAttemptCheckpointSchema.safeParse(checkpoint).success) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation generation was already attempted",
+    );
+  }
+  if (
+    typeof checkpoint !== "object" ||
+    checkpoint === null ||
+    Array.isArray(checkpoint) ||
+    Object.keys(checkpoint).length > 0
+  ) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation checkpoint is invalid",
+    );
+  }
+}
+
+function completeOnboardingSources(
+  candidates: readonly ConnectedSource[],
+  accounts: readonly ConnectorAccountConnection[],
+) {
+  const completeIds = new Set(
+    accounts
+      .filter((account) => {
+        return (
+          account.connectionStatus === "connected" &&
+          account.setupStatus === "complete"
+        );
+      })
+      .map((account) => {
+        return account.id;
+      }),
+  );
+  return candidates.filter((source) => {
+    return completeIds.has(source.id);
+  });
+}
+
 const runJob$ = command(
   async (
     { get, set },
@@ -535,21 +576,7 @@ const runJob$ = command(
     signal: AbortSignal,
   ): Promise<OnboardingRecommendation> => {
     const input = jobInputSchema.parse(job.input);
-    if (generationAttemptCheckpointSchema.safeParse(job.checkpoint).success) {
-      throw new OnboardingGenerationAttemptedError(
-        "Onboarding recommendation generation was already attempted",
-      );
-    }
-    if (
-      typeof job.checkpoint !== "object" ||
-      job.checkpoint === null ||
-      Array.isArray(job.checkpoint) ||
-      Object.keys(job.checkpoint).length > 0
-    ) {
-      throw new OnboardingGenerationAttemptedError(
-        "Onboarding recommendation checkpoint is invalid",
-      );
-    }
+    assertInitialOnboardingCheckpoint(job.checkpoint);
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       job.orgId,
@@ -557,9 +584,21 @@ const runJob$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const sources = connectedOnboardingSources(
+    const candidates = connectedOnboardingSources(
       await get(builtinConnectorList({ orgId: job.orgId, userId: job.userId })),
     );
+    const accounts = await set(
+      readConnectorAccountsByIds$,
+      {
+        orgId: job.orgId,
+        userId: job.userId,
+        connectionIds: candidates.map((source) => {
+          return source.id;
+        }),
+      },
+      signal,
+    );
+    const sources = completeOnboardingSources(candidates, accounts);
     signal.throwIfAborted();
     if (sources.length === 0) {
       throw new Error("No supported connected source was available");

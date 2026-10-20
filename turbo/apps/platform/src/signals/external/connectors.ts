@@ -5,6 +5,12 @@ import {
   type PublicConnectorCatalogDiscoveryResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountSummaryByTarget$,
+  connectorAccountTargetKey,
+  reloadConnectorAccountSummaries$,
+} from "../okou-page/connector-accounts.ts";
 import { apiClient$ } from "../api-client";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "./feature-switch.ts";
@@ -18,6 +24,39 @@ import type {
  * Increment to force recomputation of connectors$.
  */
 const internalReloadBuiltinConnectors$ = state(0);
+
+/** UI completion is the saved default's configuration and credential facts. */
+export function withMemberAccountStatus<
+  T extends { readonly slug: ConnectorSlug; readonly connected: boolean },
+>(item: T, summaries: ReadonlyMap<string, ConnectorAccountSummary>): T {
+  const account = summaries.get(
+    connectorAccountTargetKey({ kind: "builtin", connectorSlug: item.slug }),
+  )?.defaultConnection;
+  if (account && account.setupStatus === undefined) {
+    throw new Error(
+      "Connector account setup information is unavailable. Refresh and try again.",
+    );
+  }
+  return {
+    ...item,
+    connected:
+      account?.connectionStatus === "connected" &&
+      account.setupStatus === "complete",
+    ...("connection" in item
+      ? {
+          connection: account
+            ? {
+                id: account.id,
+                authMethod: account.authMethod,
+                externalUsername: account.externalUsername,
+                externalEmail: account.externalEmail,
+                reconnectReason: account.reconnectReason,
+              }
+            : null,
+        }
+      : {}),
+  };
+}
 
 export const builtinConnectorsReloadVersion$ = computed((get) => {
   return get(internalReloadBuiltinConnectors$);
@@ -46,7 +85,13 @@ export const connectorCatalogStatus$ = computed(async (get) => {
   const createClient = get(apiClient$);
   const client = createClient(connectorCatalogContract);
   const result = await accept(client.status(), [200]);
-  return result.body;
+  const summaries = await get(connectorAccountSummaryByTarget$);
+  return {
+    ...result.body,
+    connectors: result.body.connectors.map((item) => {
+      return withMemberAccountStatus(item, summaries);
+    }),
+  };
 });
 
 /**
@@ -61,7 +106,10 @@ export const oneClickConnectorCatalog$ = computed(
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
     const result = await accept(client.oneClick(), [200]);
-    return result.body.connectors;
+    const summaries = await get(connectorAccountSummaryByTarget$);
+    return result.body.connectors.map((item) => {
+      return withMemberAccountStatus(item, summaries);
+    });
   },
 );
 
@@ -115,7 +163,12 @@ export function connectorCatalogItemBySlug(
       client.get({ params: { connectorSlug } }),
       [200, 404],
     );
-    return result.status === 200 ? result.body.connector : null;
+    return result.status === 200
+      ? withMemberAccountStatus(
+          result.body.connector,
+          await get(connectorAccountSummaryByTarget$),
+        )
+      : null;
   });
 }
 
@@ -187,6 +240,7 @@ export const loadConnectorCatalogItem$ = command(
       signal,
       { showErrorToast: false },
     );
+    // Callback pages need public metadata even when the user is signed out.
     return result.status === 200 ? result.body.connector : null;
   },
 );
@@ -195,6 +249,7 @@ export const loadConnectorCatalogItem$ = command(
  * Trigger a reload of connectors data.
  */
 export const reloadBuiltinConnectors$ = command(({ set }) => {
+  set(reloadConnectorAccountSummaries$);
   set(internalReloadBuiltinConnectors$, (x) => {
     return x + 1;
   });

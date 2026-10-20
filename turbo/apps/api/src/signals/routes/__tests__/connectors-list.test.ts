@@ -423,6 +423,9 @@ describe("GET /api/connectors", () => {
         externalEmail: account.externalEmail,
         connectionStatus: account.connectionStatus,
         reconnectReason: account.reconnectReason,
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["accessToken", "host"],
       },
     ]);
   });

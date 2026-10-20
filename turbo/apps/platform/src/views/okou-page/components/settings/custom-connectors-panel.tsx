@@ -597,6 +597,7 @@ function CustomAccountDialogs() {
             openAccountConnect(managedAccounts, {
               kind: "reconnect",
               connectionId: account.id,
+              account,
             });
           }}
         />

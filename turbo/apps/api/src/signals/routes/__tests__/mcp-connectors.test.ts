@@ -198,6 +198,10 @@ describe("GET /api/mcp-connectors", () => {
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
           connected: true,
+          connectionStatus: "connected",
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: ["secret"],
         },
       ]);
 
@@ -256,6 +260,10 @@ describe("GET /api/mcp-connectors", () => {
             transport: "streamable-http",
             endpoint: "https://selected-mcp.example.test/server",
             connected: false,
+            connectionStatus: "reconnect-required",
+            setupStatus: "invalid",
+            missingRequiredFields: ["secret"],
+            configuredFieldKeys: [],
           },
         ],
       });
@@ -289,6 +297,10 @@ describe("GET /api/mcp-connectors", () => {
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
           connected: true,
+          connectionStatus: "connected",
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: ["secret"],
         },
       ]);
     });
@@ -341,6 +353,10 @@ describe("GET /api/mcp-connectors", () => {
           transport: body.transport,
           endpoint: body.endpoint,
           connected: true,
+          connectionStatus: "reconnect-required",
+          setupStatus: "invalid",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
         },
       ]);
     });

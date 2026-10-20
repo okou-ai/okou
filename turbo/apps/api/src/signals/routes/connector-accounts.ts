@@ -137,6 +137,9 @@ const inspectInner$ = computed(async (get) => {
           externalEmail: account.externalEmail,
           connectionStatus: account.connectionStatus,
           reconnectReason: account.reconnectReason,
+          setupStatus: account.setupStatus,
+          missingRequiredFields: account.missingRequiredFields,
+          configuredFieldKeys: account.configuredFieldKeys,
         };
       }),
     },

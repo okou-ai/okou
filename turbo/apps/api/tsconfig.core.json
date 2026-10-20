@@ -217,6 +217,7 @@
     "src/signals/services/chat-thread-model.service.ts",
     "src/signals/services/chat-usage-event.service.ts",
     "src/signals/services/connector-account-lifecycle.service.ts",
+    "src/signals/services/connector-account-setup.ts",
     "src/signals/services/connector-auth-method-feature-switches.ts",
     "src/signals/services/connector-catalog-compatibility.service.ts",
     "src/signals/services/connector-catalog-connection.ts",

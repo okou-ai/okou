@@ -3095,6 +3095,8 @@
       "noAccountsFound": "Keine Konten gefunden",
       "reconnectRequired": "Erneute Verbindung erforderlich",
       "rename": "Umbenennen",
+      "setupIncomplete": "Einrichtung unvollständig",
+      "setupUnavailable": "Kontostatus nicht verfügbar",
       "skipName": "Überspringen",
       "summaryMany": "{{value}} Konten",
       "summaryMany_one": "",

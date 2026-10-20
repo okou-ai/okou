@@ -103,11 +103,14 @@ export function customConnectorOverview(
       // Visibility does not make an account usable for authentication.
       if (
         !customIdsWithAccounts.has(connector.id) &&
-        !customConnectorIsConnected({
-          row: connector,
-          connectedAccountId: connectedAccount?.id ?? null,
-          missingRequiredFields,
-        })
+        !(
+          isIntegrationManagedCustomConnector(connector) &&
+          customConnectorIsConnected({
+            row: connector,
+            connectedAccountId: connectedAccount?.id ?? null,
+            missingRequiredFields,
+          })
+        )
       ) {
         return [];
       }
