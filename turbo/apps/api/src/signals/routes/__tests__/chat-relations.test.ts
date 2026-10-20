@@ -340,11 +340,19 @@ describe("chat relationships", () => {
         );
         return clientEventId;
       };
-      const sentMessageIds = await Promise.all(
-        Array.from({ length: messageCount - 1 }, (_, messageIndex) => {
-          return sendMessage(messageIndex);
-        }),
-      );
+      const sentMessageIds: string[] = [];
+      const batchSize = 4;
+      for (let offset = 0; offset < messageCount - 1; offset += batchSize) {
+        const batch = await Promise.all(
+          Array.from(
+            { length: Math.min(batchSize, messageCount - 1 - offset) },
+            (_, messageIndex) => {
+              return sendMessage(offset + messageIndex);
+            },
+          ),
+        );
+        sentMessageIds.push(...batch);
+      }
       // Keep a later accepted message so timestamp ordering remains meaningful.
       sentMessageIds.push(await sendMessage(messageCount - 1));
       if (index === 0) {
