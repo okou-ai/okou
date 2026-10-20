@@ -238,7 +238,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
-async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
+async function openAgentMentionWorkspace(newChat = false) {
   const current = withAgent(
     continuityThread(62, 1, "Scout planning"),
     AGENT_ID,
@@ -281,7 +281,6 @@ async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
     context,
     path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.ComposerMentionHint]: mentionHint },
   });
   return { current, savedMentionThread, workspace };
 }
@@ -289,7 +288,7 @@ async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
 test.each([false, true])(
   "Show the @ search hint until typing, selection or dismissal (new chat: %s)",
   async (newChat) => {
-    await openAgentMentionWorkspace(newChat, true);
+    await openAgentMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     const hint = () => {
@@ -343,19 +342,6 @@ test.each([false, true])(
     expect(composer).toHaveFocus();
   },
 );
-
-test("Keep @ search available without its hint when the switch is off", async () => {
-  await openAgentMentionWorkspace();
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const user = userEvent.setup({ delay: null });
-  await user.click(composer);
-  await user.keyboard("@");
-  await screen.findByTestId("chat-thread-suggestion-menu");
-  expect(
-    composer.querySelector('[data-placeholder=" Search agents or chats…"]'),
-  ).toBeNull();
-  expect(menuButton("Zeta Agent")).toBeInTheDocument();
-});
 
 test.each([false, true])(
   "Composer-anchored mentions keep priority order and select the top candidate by default (new chat: %s)",
