@@ -5934,11 +5934,11 @@
       "policyHelp": "यह नियम tag:okou को सभी पोर्ट और प्रोटोकॉल पर सभी उपयोगकर्ताओं और डिवाइस तक पहुँच देता है। इसे मौजूदा grants में जोड़ें और बाकी नीति बनाए रखें।",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "Access controls → Policies → General access rules के तहत Add rule पर क्लिक करें और नीचे दिए सुझाए गए मान दर्ज करें।",
+      "rulesHelp": "Access controls → Visual editor → General access rules में Add rule चुनें और ये सुझाए गए मान इस्तेमाल करें।",
       "source": "Source",
       "stepsLabel": "Tailscale सेटअप के चरण",
       "tags": "Tags",
-      "tagsHelp": "Access controls → Definitions → Tags के तहत Create tag पर क्लिक करें। Tag name में okou दर्ज करें और Tag owners चुनें। नीचे पंजीकरण टैग में tag:okou दर्ज करें।",
+      "tagsHelp": "लक्षित डिवाइस की tailnet इस्तेमाल करें। Access controls → Visual editor → Tags में Create tag चुनें। Tag name में okou भरें और Tag owners चुनें। नीचे पंजीकरण टैग में tag:okou भरें।",
       "title": "Tailscale कैसे कॉन्फ़िगर करें?",
       "trustCredentials": "Trust credentials"
     },

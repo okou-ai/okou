@@ -5915,11 +5915,11 @@
       "policyHelp": "此规则允许 tag:okou 访问所有用户和设备的所有端口与协议。将它添加到现有 grants 中，保留其他策略。",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "在 Access controls → Policies → General access rules 中点击 Add rule，填写以下推荐值。",
+      "rulesHelp": "在 Access controls → Visual editor → General access rules 中选择 Add rule，使用以下推荐值。",
       "source": "Source",
       "stepsLabel": "Tailscale 配置步骤",
       "tags": "Tags",
-      "tagsHelp": "在 Access controls → Definitions → Tags 中点击 Create tag。Tag name 填写 okou，Tag owners 选择标签管理者，下方注册标签填写 tag:okou。",
+      "tagsHelp": "请选择目标设备所在的 tailnet。在 Access controls → Visual editor → Tags 中选择 Create tag，Tag name 填写 okou，并选择 Tag owners。下方注册标签填写 tag:okou。",
       "title": "如何配置 Tailscale？",
       "trustCredentials": "Trust credentials"
     },

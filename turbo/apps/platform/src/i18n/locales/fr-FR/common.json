@@ -6002,11 +6002,11 @@
       "policyHelp": "Cette règle autorise tag:okou à accéder à tous les utilisateurs et appareils sur tous les ports et protocoles. Ajoutez-la à vos grants existants et conservez le reste de votre politique.",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "Sous Access controls → Policies → General access rules, cliquez sur Add rule et saisissez les valeurs recommandées ci-dessous.",
+      "rulesHelp": "Dans Access controls → Visual editor → General access rules, sélectionnez Add rule et utilisez ces valeurs recommandées.",
       "source": "Source",
       "stepsLabel": "Étapes de configuration de Tailscale",
       "tags": "Tags",
-      "tagsHelp": "Sous Access controls → Definitions → Tags, cliquez sur Create tag. Saisissez okou dans Tag name et sélectionnez Tag owners. Saisissez tag:okou dans les tags d’enregistrement ci-dessous.",
+      "tagsHelp": "Utilisez le tailnet de votre appareil cible. Dans Access controls → Visual editor → Tags, sélectionnez Create tag. Saisissez okou dans Tag name et choisissez Tag owners. Saisissez tag:okou dans les tags d’enregistrement ci-dessous.",
       "title": "Comment configurer Tailscale ?",
       "trustCredentials": "Trust credentials"
     },

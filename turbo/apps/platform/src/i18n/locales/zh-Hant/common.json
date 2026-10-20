@@ -5915,11 +5915,11 @@
       "policyHelp": "此規則允許 tag:okou 存取所有使用者和裝置的所有連接埠與通訊協定。將它加入現有 grants，保留其他政策。",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "在 Access controls → Policies → General access rules 下點選 Add rule，並輸入下方建議值。",
+      "rulesHelp": "在 Access controls → Visual editor → General access rules 選擇 Add rule，使用以下建議值。",
       "source": "Source",
       "stepsLabel": "Tailscale 設定步驟",
       "tags": "Tags",
-      "tagsHelp": "在 Access controls → Definitions → Tags 中點選 Create tag。Tag name 填寫 okou，Tag owners 選擇標籤管理者，下方「註冊標籤」填寫 tag:okou。",
+      "tagsHelp": "請選擇目標裝置所在的 tailnet。在 Access controls → Visual editor → Tags 選擇 Create tag，Tag name 填寫 okou，並選擇 Tag owners。下方註冊標籤填寫 tag:okou。",
       "title": "如何設定 Tailscale？",
       "trustCredentials": "Trust credentials"
     },

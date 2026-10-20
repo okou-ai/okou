@@ -5934,11 +5934,11 @@
       "policyHelp": "Diese Regel erlaubt tag:okou den Zugriff auf alle Benutzer und Geräte über alle Ports und Protokolle. Ergänze deine bestehenden grants und behalte die übrige Richtlinie bei.",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "Klicke unter Access controls → Policies → General access rules auf Add rule und gib die empfohlenen Werte unten ein.",
+      "rulesHelp": "Wähle unter Access controls → Visual editor → General access rules die Option Add rule und verwende diese empfohlenen Werte.",
       "source": "Source",
       "stepsLabel": "Schritte zur Tailscale-Einrichtung",
       "tags": "Tags",
-      "tagsHelp": "Klicke unter Access controls → Definitions → Tags auf Create tag. Gib unter Tag name okou ein und wähle Tag owners aus. Gib unten unter Registrierungstags tag:okou ein.",
+      "tagsHelp": "Verwende das Tailnet deines Zielgeräts. Wähle unter Access controls → Visual editor → Tags die Option Create tag. Gib okou als Tag name an und wähle Tag owners. Trage unten tag:okou als Registrierungstag ein.",
       "title": "Wie richte ich Tailscale ein?",
       "trustCredentials": "Trust credentials"
     },

@@ -5915,11 +5915,11 @@
       "policyHelp": "이 규칙은 tag:okou가 모든 포트와 프로토콜로 모든 사용자와 기기에 접근하도록 허용합니다. 기존 grants에 추가하고 나머지 정책은 유지하세요.",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "Access controls → Policies → General access rules에서 Add rule을 클릭하고 아래의 권장 값을 입력하세요.",
+      "rulesHelp": "Access controls → Visual editor → General access rules에서 Add rule을 선택하고 다음 권장 값을 사용하세요.",
       "source": "Source",
       "stepsLabel": "Tailscale 설정 단계",
       "tags": "Tags",
-      "tagsHelp": "Access controls → Definitions → Tags에서 Create tag를 클릭하세요. Tag name에 okou를 입력하고 Tag owners를 선택하세요. 아래 등록 태그에는 tag:okou를 입력하세요.",
+      "tagsHelp": "대상 기기의 tailnet을 사용하세요. Access controls → Visual editor → Tags에서 Create tag를 선택하고 Tag name에 okou를 입력한 뒤 Tag owners를 선택하세요. 아래 등록 태그에는 tag:okou를 입력하세요.",
       "title": "Tailscale은 어떻게 설정하나요?",
       "trustCredentials": "Trust credentials"
     },

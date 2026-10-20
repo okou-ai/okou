@@ -5932,11 +5932,11 @@
       "policyHelp": "This rule lets tag:okou reach all users and devices on all ports and protocols. Add it to your existing grants; keep the rest of your policy.",
       "portAndProtocol": "Port and protocol",
       "rules": "General access rules",
-      "rulesHelp": "Under Access controls → Policies → General access rules, click Add rule and enter the recommended values below.",
+      "rulesHelp": "In Access controls → Visual editor → General access rules, select Add rule and use these recommended values.",
       "source": "Source",
       "stepsLabel": "Tailscale setup steps",
       "tags": "Tags",
-      "tagsHelp": "Under Access controls → Definitions → Tags, click Create tag. Enter okou in Tag name and select Tag owners. Enter tag:okou in Registration tags below.",
+      "tagsHelp": "Use your target device's tailnet. In Access controls → Visual editor → Tags, select Create tag. Enter okou as Tag name and choose Tag owners. Enter tag:okou in Registration tags below.",
       "title": "How do I configure Tailscale?",
       "trustCredentials": "Trust credentials"
     },
