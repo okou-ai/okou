@@ -538,7 +538,7 @@ describe("current-publication account readers", () => {
         );
       });
 
-      const legacyList = await accept(
+      const plainList = await accept(
         accountClient().connections({
           headers: authHeaders(),
           query: { kind: "builtin", connectorSlug: "github", limit: 100 },
@@ -546,11 +546,17 @@ describe("current-publication account readers", () => {
         [200],
       );
       expect(
-        legacyList.body.connections.every((account) => {
+        plainList.body.connections.every((account) => {
           return !("scopeMismatch" in account);
         }),
       ).toBeTruthy();
-      expect("defaultConnection" in legacyList.body).toBeFalsy();
+      expect(plainList.body.defaultConnection).toMatchObject({
+        id: currentId,
+        isDefault: true,
+      });
+      expect(plainList.body.defaultConnection).not.toHaveProperty(
+        "scopeMismatch",
+      );
 
       const enrichedList = await accept(
         accountClient().connections({
@@ -595,7 +601,11 @@ describe("current-publication account readers", () => {
       );
       expect(filteredList.body.connections).toHaveLength(1);
       expect(filteredList.body.connections[0]?.id).toBe(firstId);
-      expect("defaultConnection" in filteredList.body).toBeFalsy();
+      expect(filteredList.body.defaultConnection).toMatchObject({
+        id: currentId,
+        isDefault: true,
+        scopeMismatch: false,
+      });
 
       const firstDiff = await accept(
         accountClient().scopeDiff({
