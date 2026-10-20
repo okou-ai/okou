@@ -20,6 +20,24 @@ const PROVIDER_FAILURE_CODES = new Map<string, KnownRunFailureReason>([
   ["unsupported_model", "unsupported_model"],
 ]);
 
+const PROVIDER_FAILURE_MESSAGES = new Map<string, KnownRunFailureReason>([
+  ["downloaded image content cannot exceed 30mb", "provider_image_too_large"],
+  // Verification is unavailable, not an entitlement denial. Require the full
+  // provider retry instruction at the failed-result boundary.
+  [
+    "unable to verify model access right now. please retry.",
+    "provider_server_error",
+  ],
+  [
+    "our servers are currently overloaded. please try again later.",
+    "provider_overloaded",
+  ],
+  [
+    "selected model is at capacity. please try a different model.",
+    "provider_overloaded",
+  ],
+]);
+
 /** A provider-owned error code, never a word extracted from ordinary output. */
 export function classifyProviderFailureCode(
   code: unknown,
@@ -78,21 +96,10 @@ function providerTextFailureReason(
     /^(?:error code )?(?:unknown|invalid_request_error): /u,
     "",
   );
-  // Verification is unavailable, not an entitlement denial. Match the full
-  // provider retry instruction only at this failed-result boundary.
-  if (
-    semanticMessage === "unable to verify model access right now. please retry."
-  )
-    return "provider_server_error";
+  const semanticReason = PROVIDER_FAILURE_MESSAGES.get(semanticMessage);
+  if (semanticReason) return semanticReason;
   if (isRequestProcessingFailure(semanticMessage))
     return "provider_server_error";
-  if (
-    semanticMessage ===
-      "our servers are currently overloaded. please try again later." ||
-    semanticMessage ===
-      "selected model is at capacity. please try a different model."
-  )
-    return "provider_overloaded";
   if (
     semanticMessage === "provider finish_reason: content_filter" ||
     semanticMessage.startsWith(
@@ -208,6 +215,7 @@ function providerErrorPayload(
   if (!(
     prefix === "" ||
     prefix === "codex error:" ||
+    /^\d{3}:$/u.test(prefix) ||
     /^(?:openai|anthropic) api error \(\d{3}\):$/u.test(prefix) ||
     /^(?:api error: |unexpected status |\d{3}(?:\s|$))/u.test(prefix)
   ))

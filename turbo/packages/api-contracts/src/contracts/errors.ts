@@ -752,6 +752,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   terms_acceptance_required: "terms",
   context_window_exceeded: "generic",
   input_too_large: "generic",
+  provider_image_too_large: "generic",
   output_token_limit: "output-token-limit",
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",

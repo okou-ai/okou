@@ -1,5 +1,49 @@
 [
   {
+    "message": "413: {\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}",
+    "reason": "provider_image_too_large"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413}}",
+    "reason": "provider_image_too_large"
+  },
+  {
+    "message": "Downloaded image content cannot exceed 30MB",
+    "reason": "provider_image_too_large"
+  },
+  {
+    "message": "unknown: Downloaded image content cannot exceed 30MB",
+    "reason": "provider_image_too_large"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":\"invalid_api_key\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":\"server_error\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "413: {\"message\":\"Request payload too large\",\"code\":413}",
+    "reason": null
+  },
+  {
+    "message": "Downloaded image content cannot exceed 32MB",
+    "reason": null
+  },
+  {
+    "message": "Downloaded image content cannot exceed 30MB is an example.",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: Downloaded image content cannot exceed 30MB",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413}}}",
+    "reason": null
+  },
+  {
     "message": "Provider finish_reason: content_filter",
     "reason": "safety_policy_refusal"
   },

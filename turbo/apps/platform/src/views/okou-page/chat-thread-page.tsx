@@ -5415,6 +5415,12 @@ function AssistantErrorCard({
 
 type StructuredFailureTitle = () => string;
 
+function inputTooLargeTitle(): string {
+  return i18n.t(($) => {
+    return $.chat.errors.recovery.inputTooLargeTitle;
+  });
+}
+
 function filesystemFullTitle(): string {
   return i18n.t(($) => {
     return $.chat.errors.recovery.filesystemFullTitle;
@@ -5464,11 +5470,8 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.contextWindowTitle;
     });
   },
-  input_too_large: () => {
-    return i18n.t(($) => {
-      return $.chat.errors.recovery.inputTooLargeTitle;
-    });
-  },
+  input_too_large: inputTooLargeTitle,
+  provider_image_too_large: inputTooLargeTitle,
   output_token_limit: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.outputLimitTitle;
@@ -5619,6 +5622,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
   context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
   input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
+  provider_image_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
   output_token_limit: FAILURE_DESCRIPTIONS.outputLimit,
   provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
   provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
@@ -5661,6 +5665,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "terms_acceptance_required" ||
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
+    reason === "provider_image_too_large" ||
     reason === "session_history_limit"
   ) {
     return AlertCircle;
@@ -5669,7 +5674,11 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 }
 
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
-  return reason !== "insufficient_credits" && reason !== "input_too_large";
+  return (
+    reason !== "insufficient_credits" &&
+    reason !== "input_too_large" &&
+    reason !== "provider_image_too_large"
+  );
 }
 
 function assistantRecoveryTitle(

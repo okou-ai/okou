@@ -3866,6 +3866,9 @@ pub mod webhooks {
                 /// The Codex app-server input limit was exceeded.
                 #[serde(rename = "input_too_large")]
                 InputTooLarge,
+                /// The provider rejected image input exceeding its size limit.
+                #[serde(rename = "provider_image_too_large")]
+                ProviderImageTooLarge,
                 /// The provider output-token limit was reached.
                 #[serde(rename = "output_token_limit")]
                 OutputTokenLimit,

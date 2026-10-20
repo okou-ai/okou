@@ -240,6 +240,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "New chat",
   },
   input_too_large: { title: "Your message is too large" },
+  provider_image_too_large: { title: "Your message is too large" },
   output_token_limit: {
     title: "The response reached its length limit",
     action: "Continue",

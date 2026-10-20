@@ -721,6 +721,9 @@ export const rustTypeBindings = [
           ],
           context_window_exceeded: ["The model context window was exceeded."],
           input_too_large: ["The Codex app-server input limit was exceeded."],
+          provider_image_too_large: [
+            "The provider rejected image input exceeding its size limit.",
+          ],
           output_token_limit: ["The provider output-token limit was reached."],
           provider_rate_limited: ["The provider rate limited the request."],
           provider_overloaded: ["The provider reported overload."],

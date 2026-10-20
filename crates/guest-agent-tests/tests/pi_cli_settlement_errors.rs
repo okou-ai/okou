@@ -247,6 +247,33 @@ fi
                 Some(0)
             );
         }
+        if expected_failure_reason == Some(FailureReason::ProviderImageTooLarge) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            assert_eq!(
+                terminal_failure.diagnostic.model_request,
+                Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                    http_status: Some(413),
+                    transport_attempts: 1,
+                    retry_attempts: 0,
+                    retry_limit: None,
+                    transport_failure: None,
+                })
+            );
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "provider_image_too_large");
+        }
         if expected_failure_reason == Some(FailureReason::ProviderRateLimited) {
             assert_eq!(
                 result
@@ -496,6 +523,30 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
             })],
             ExpectedTerminalResult::Exact(text),
             reason,
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    const IMAGE_LIMIT: &str = r#"413: {"message":"Downloaded image content cannot exceed 30MB","code":413,"metadata":{"provider_name":null}}"#;
+    for (index, reason) in [Some("provider_image_too_large"), None]
+        .into_iter()
+        .enumerate()
+    {
+        let mut details = serde_json::json!({"httpStatus": 413, "transportAttempts": 1});
+        if let Some(reason) = reason {
+            details["failureReason"] = serde_json::json!(reason);
+        }
+        run_settlement_case(
+            &format!("00000000-0000-4000-8000-{:012}", 190 + index),
+            &[serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-completions",
+                "content": [], "errorMessage": IMAGE_LIMIT,
+                "diagnostics": [{"type": "okou_model_request", "details": details}]
+            })],
+            ExpectedTerminalResult::Exact(IMAGE_LIMIT),
+            Some(FailureReason::ProviderImageTooLarge),
             None,
             &base_path,
             &original_directory,

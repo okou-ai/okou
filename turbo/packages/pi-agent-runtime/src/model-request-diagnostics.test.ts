@@ -299,6 +299,7 @@ describe("Codex model request diagnostics", () => {
   );
 
   it.each([
+    "Downloaded image content cannot exceed 30MB",
     cyberSafetyRefusal.errorMessage,
     requestProcessingError.errorMessage,
   ])(
@@ -483,6 +484,81 @@ describe("Codex model request diagnostics", () => {
       } else {
         expect(final).toMatchObject(rateLimitMessage);
       }
+    },
+  );
+});
+
+describe("OpenRouter image input rejection", () => {
+  it.each(["openai-completions", "openai-responses"] as const)(
+    "keeps %s image-size failures classified without retrying",
+    async (dialect) => {
+      const directory = await mkdtemp(join(tmpdir(), "pi-image-limit-"));
+      onTestFinished(() => {
+        return rm(directory, { recursive: true, force: true });
+      });
+      await writeFile(
+        join(directory, "settings.json"),
+        JSON.stringify({
+          retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+        }),
+      );
+      const imageError = {
+        message: "Downloaded image content cannot exceed 30MB",
+        code: 413,
+        metadata: { provider_name: null },
+      };
+      let requests = 0;
+      server.use(
+        http.post(
+          `https://openrouter.ai/api/v1/${dialect === "openai-completions" ? "chat/completions" : "responses"}`,
+          () => {
+            requests++;
+            return HttpResponse.json({ error: imageError }, { status: 413 });
+          },
+        ),
+      );
+      const created = await createPiAgentSessionForRuntime({
+        cwd: directory,
+        agentDir: directory,
+        sessionManager: SessionManager.inMemory(directory),
+        model: {
+          provider: "openrouter",
+          baseUrl: "https://openrouter.ai/api/v1",
+          model: "@preset/okou-1-0",
+          apiKey: "synthetic-token",
+          dialect,
+          transport: "sse",
+        },
+        appendSystemPrompt: null,
+      });
+      onTestFinished(() => {
+        return created.session.dispose();
+      });
+      let retries = 0;
+      created.session.subscribe((event) => {
+        if (event.type === "auto_retry_start") retries++;
+      });
+      await created.session.prompt("hello");
+      expect(requests).toBe(1);
+      expect(retries).toBe(0);
+      const final = created.session.messages.at(-1);
+      expect(final).toMatchObject({ role: "assistant", stopReason: "error" });
+      if (final?.role !== "assistant") throw new Error("Missing model result");
+      expect(final.errorMessage).toContain(imageError.message);
+      expect(piModelFailureReason(final)).toBe("provider_image_too_large");
+      expect(final.diagnostics).toMatchObject([
+        {
+          type: "okou_model_request",
+          details: {
+            httpStatus: 413,
+            transportAttempts: 1,
+            failureReason: "provider_image_too_large",
+          },
+        },
+      ]);
+      expect(JSON.stringify(final.diagnostics)).not.toContain(
+        imageError.message,
+      );
     },
   );
 });
