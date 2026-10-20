@@ -205,7 +205,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
           id: "official",
           botUsername: "okou_bot",
           loginBotId: "987654321",
-          authCallbackProtocol: 2,
           domainConfigured: true,
         },
       });

@@ -58,7 +58,6 @@ const telegramLinkStatusResponseSchema = z.discriminatedUnion("linked", [
         botUsername: z.string(),
         loginBotId: z.string().optional(),
         domainConfigured: z.boolean().optional(),
-        authCallbackProtocol: z.literal(2).optional(),
       })
       .optional(),
   }),
@@ -135,7 +134,6 @@ export const integrationsTelegramContract = c.router({
       botId: z.string().optional(),
       origin: z.string().optional(),
       source: z.enum(["onboarding", "works", "connect_page"]).optional(),
-      callbackProtocol: z.literal("2").optional(),
     }),
     responses: {
       200: telegramLinkStatusResponseSchema,

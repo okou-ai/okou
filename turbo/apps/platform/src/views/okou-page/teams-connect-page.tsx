@@ -10,7 +10,7 @@ import {
   teamsConnectPageState$,
   type TeamsConnectPageState,
 } from "../../signals/okou-page/teams-connect-signals.ts";
-import { teamsCompletionUrl } from "../../signals/okou-page/teams-connect-context.ts";
+import { teamsConnectUrl } from "../../signals/okou-page/teams-connect-context.ts";
 import { refreshTeamsOrg$ } from "../../signals/okou-page/teams.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -282,7 +282,7 @@ function AuthorizationHelp({ page }: PageProps) {
   const { t } = useTranslation();
   const { data } = page;
   const pending = data.pendingInstallation === true && !data.isInstalled;
-  const oauthUrl = teamsCompletionUrl(data.connectUrl);
+  const oauthUrl = teamsConnectUrl(data.connectUrl);
   const canAuthorize =
     !page.success &&
     (!pending || !data.installUrl) &&

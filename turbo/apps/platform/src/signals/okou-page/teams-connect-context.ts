@@ -4,18 +4,14 @@ import type {
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 
-/** Only new App actions opt in; old API starts safely ignore this field. */
-export function teamsCompletionUrl(
+/** Resolve the API-provided connect URL against the current page origin. */
+export function teamsConnectUrl(
   value: string | null | undefined,
 ): string | null {
   if (!value) {
     return null;
   }
-  const url = new URL(value, window.location.origin);
-  if (url.pathname === "/api/teams/oauth/connect") {
-    url.searchParams.set("completion", "settings");
-  }
-  return url.toString();
+  return new URL(value, window.location.origin).toString();
 }
 
 export function teamsEntryUrl(status: TeamsConnectStatus): string | null {
@@ -23,7 +19,7 @@ export function teamsEntryUrl(status: TeamsConnectStatus): string | null {
     return INTEGRATION_SETTINGS_PATHS.teams;
   }
   return (
-    teamsCompletionUrl(status.connectUrl) ??
+    teamsConnectUrl(status.connectUrl) ??
     (status.installUrl ? INTEGRATION_SETTINGS_PATHS.teams : null)
   );
 }

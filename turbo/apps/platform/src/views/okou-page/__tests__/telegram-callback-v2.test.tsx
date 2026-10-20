@@ -63,8 +63,7 @@ async function begin() {
   context.mocks.data.telegramIntegration({ statuses: [bot] });
   context.mocks.api(
     integrationsTelegramContract.getLinkStatus,
-    ({ query, respond }) => {
-      expect(query.callbackProtocol).toBe("2");
+    ({ respond }) => {
       return respond(200, {
         linked: false,
         installation: {
@@ -72,7 +71,6 @@ async function begin() {
           botUsername: "support_bot",
           loginBotId: "123456789",
           domainConfigured: true,
-          authCallbackProtocol: 2,
         },
       });
     },

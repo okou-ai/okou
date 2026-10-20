@@ -112,7 +112,6 @@ const connectTelegramInTab$ = command(
             botId,
             origin: location.origin,
             source,
-            callbackProtocol: "2",
           },
           fetchOptions: { signal },
         }),
