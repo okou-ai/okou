@@ -1552,9 +1552,11 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   click(getAction("button", "Continue"));
   expect(screen.getByText("tag:office, tag:review")).toBeInTheDocument();
   await user.click(getAction("button", "Copy Tags"));
-  expect(await navigator.clipboard.readText()).toBe("tag:office, tag:review");
+  await expect(navigator.clipboard.readText()).resolves.toBe(
+    "tag:office, tag:review",
+  );
   await user.click(getAction("button", "Copy Keys → Auth keys"));
-  expect(await navigator.clipboard.readText()).toBe("Write");
+  await expect(navigator.clipboard.readText()).resolves.toBe("Write");
   click(screen.getByText("Can’t find the tag?"));
   expect(
     screen.getByText(/Definitions → Tags and click Create tag/u),
