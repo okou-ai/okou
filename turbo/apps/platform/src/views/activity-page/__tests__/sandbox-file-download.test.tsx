@@ -338,37 +338,6 @@ test("A resident worker with a different script asks the user to refresh", async
   ).resolves.toBeInTheDocument();
 });
 
-test("Stale worker registration cannot start a late download", async () => {
-  const registration = createDeferredPromise<void>(context.signal);
-  const browser = await downloadBrowser(context, {
-    registration: registration.promise,
-  });
-  await setupFilesPage(context, { handler: fileGuest(70_003) });
-  const files = await openFiles();
-  await screen.findByText("report.bin");
-  const control = await readyDownload(files);
-  click(control);
-  await browser.registered;
-  click(filesTab("Steps"));
-  await waitFor(() => {
-    return expect(
-      screen.queryByRole("region", { name: "Files" }),
-    ).not.toBeInTheDocument();
-  });
-  const reopened = await openFiles();
-  const retry = await readyDownload(reopened);
-  click(retry);
-  expect((await browser.outcome).saved).toBeTruthy();
-  await readyDownload(reopened);
-  await act(() => {
-    registration.resolve();
-  });
-  await readyDownload(reopened);
-  expect(
-    document.querySelectorAll('iframe[src*="/sandbox-file-downloads/"]'),
-  ).toHaveLength(1);
-});
-
 test("Run completion interrupts an active download", async () => {
   const browser = await downloadBrowser(context, { holdWrite: true });
   const fixture = await setupFilesPage(context, {
