@@ -376,7 +376,7 @@ export async function transitionAgentRunsToTerminal(
       .update(agentRuns)
       .set(args.values)
       .where(and(...args.conditions))
-      .returning(cancelledRunFields),
+      .returning({ ...cancelledRunFields }),
   );
   // The terminal UPDATE and its billing capture are one atomic statement.
   const capturedBilling = tx.$with("terminal_run_billing", {}).as(
