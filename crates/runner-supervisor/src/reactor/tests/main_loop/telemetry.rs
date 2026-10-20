@@ -396,7 +396,9 @@ async fn cancelled_finalizing_handoff_flushes_outcome_without_executor() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -463,7 +465,9 @@ async fn finalizing_no_exact_fallback_reports_atomic_idle_miss() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -528,7 +532,9 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(1),
                 )),
         )
@@ -610,7 +616,9 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -694,7 +702,9 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -812,7 +822,9 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )

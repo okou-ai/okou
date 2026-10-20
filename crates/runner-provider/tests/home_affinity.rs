@@ -15,10 +15,7 @@ fn canonical_closed_reader_accepts_home() {
     let parsed: RunnerPreference = serde_json::from_value(body.clone()).unwrap();
     assert!(matches!(
         parsed,
-        RunnerPreference::Preference {
-            tier: RunnerPreferenceTier::HomeCache,
-            ..
-        }
+        RunnerPreference::Preference(runner_provider::RunnerPreferenceDecision::HomeCache { .. })
     ));
     assert!(parse_runner_preference(Some(body)).unwrap().is_some());
     assert_eq!(RunnerPreferenceTier::HomeCache.rank(), 1);

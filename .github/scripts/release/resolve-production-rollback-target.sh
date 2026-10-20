@@ -16,6 +16,10 @@ readonly STRUCTURED_DISK_TELEMETRY_READER_COMMIT=e01702c7d762b5d2a76d557db77ccaf
 # Final receiving cleanup must not restart a Runner whose embedded Guest still
 # emits the retired disk pair. Check the selected Runner tag independently.
 readonly PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT=625c4607ccdcd2d46a5c7227f61419928035e13f
+# Source-only finalizing readers require an API that always emits the UUID.
+readonly FINALIZING_SOURCE_API_WRITER_COMMIT=968063848aea8cf54acd6f56facdf7cdcbd79051
+# Runner is selected independently and must understand the source-bearing wire shape.
+readonly FINALIZING_SOURCE_RUNNER_READER_COMMIT=b610ff61043274157618e3925b13a66dc56ef84b
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -158,6 +162,10 @@ fi
 
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the structured-only disk telemetry reader: ${STRUCTURED_DISK_TELEMETRY_READER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$FINALIZING_SOURCE_API_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the independent finalizing source writer: ${FINALIZING_SOURCE_API_WRITER_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -779,6 +787,10 @@ if ! git merge-base --is-ancestor "$BUNDLED_ONLY_CLI_RUNNER_COMMIT" "$runner_tag
 fi
 if ! git merge-base --is-ancestor "$PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the pair-free disk telemetry writer: ${PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$FINALIZING_SOURCE_RUNNER_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the independent finalizing source reader: ${FINALIZING_SOURCE_RUNNER_READER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then

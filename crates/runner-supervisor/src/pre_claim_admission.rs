@@ -683,14 +683,9 @@ async fn prepare_ranked_preference_candidate(
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
     let selected_peer =
         advertised_tier == RunnerPreferenceTier::PeerFinalizingPredecessor && selected;
-    // Old API writers still identify finalizing sources through native history.
-    // Remove this bridge in #41657 after old writers, retained discovery payloads
-    // and incompatible API/Runner rollback artifacts are no longer reachable.
-    let finalizing_source_run_id = preference
-        .finalizing_source_run_id()
-        .or(history_generation_run_id);
     if selected_finalizing
-        && let Some(source_run_id) = finalizing_source_run_id
+        && let runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source_run_id) =
+            preference.target()
         && source_run_id != candidate.run_id()
         && let Some(predecessor) =
             ctx.active_runs
@@ -1178,7 +1173,7 @@ mod tests {
         JobCandidate::new(run_id, "vm0/default".into()).with_runner_preference(
             ActiveRunnerPreference::new(
                 RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap(),
-                RunnerPreferenceTier::FinalizingPredecessor,
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4()),
                 deadline,
             ),
         )
