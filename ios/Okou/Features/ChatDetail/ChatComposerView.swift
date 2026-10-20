@@ -54,9 +54,6 @@ struct ChatComposerView: View {
           }
         }
       }
-      if let modelSelection {
-        ChatModelPickerButton(selection: modelSelection)
-      }
       if !attachments.items.isEmpty {
         ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
       }
@@ -126,7 +123,7 @@ struct ChatComposerView: View {
       }
       .accessibilityIdentifier("message-input")
       .padding(.leading, expandsInput ? 18 : 58)
-      .padding(.trailing, expandsInput ? 18 : 58)
+      .padding(.trailing, expandsInput ? 18 : (modelSelection == nil ? 58 : 106))
       .padding(.top, expandsInput ? 17 : 15)
       .padding(.bottom, expandsInput ? 62 : 15)
       .frame(minHeight: expandsInput ? 116 : 54, alignment: expandsInput ? .topLeading : .leading)
@@ -150,39 +147,44 @@ struct ChatComposerView: View {
         .padding(.bottom, expandsInput ? 8 : 0)
       }
       .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
-        Button {
-          if !showsStop {
-            draftState?.editor.dismissKeyboard()
-            isFocused = false
+        HStack(spacing: 4) {
+          if let modelSelection {
+            ChatModelPickerButton(selection: modelSelection)
           }
-          Task { await submit() }
-        } label: {
-          Group {
-            if showsProgress {
-              ProgressView()
-                .controlSize(.small)
-                .tint(Color(uiColor: .systemBackground))
-            } else {
-              Image(systemName: showsStop ? "stop.fill" : "arrow.up")
+          Button {
+            if !showsStop {
+              draftState?.editor.dismissKeyboard()
+              isFocused = false
             }
+            Task { await submit() }
+          } label: {
+            Group {
+              if showsProgress {
+                ProgressView()
+                  .controlSize(.small)
+                  .tint(Color(uiColor: .systemBackground))
+              } else {
+                Image(systemName: showsStop ? "stop.fill" : "arrow.up")
+              }
+            }
+            .font(.system(size: 16, weight: .semibold))
+            .frame(width: 22, height: 22)
+            .foregroundStyle(Color(uiColor: .systemBackground))
           }
-          .font(.system(size: 16, weight: .semibold))
-          .frame(width: 22, height: 22)
-          .foregroundStyle(Color(uiColor: .systemBackground))
+          .buttonStyle(.glassProminent)
+          .buttonBorderShape(.circle)
+          .controlSize(.small)
+          .tint(Color.primary)
+          .disabled(
+            (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
+              || draftState?.canSend == false
+              || (!showsStop && modelSelection?.canSend == false)
+          )
+          .accessibilityLabel(showsStop ? "Stop" : "Send message")
+          .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
+          .frame(width: 44, height: 44)
+          .contentShape(Circle())
         }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.circle)
-        .controlSize(.small)
-        .tint(Color.primary)
-        .disabled(
-          (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
-            || draftState?.canSend == false
-            || (!showsStop && modelSelection?.canSend == false)
-        )
-        .accessibilityLabel(showsStop ? "Stop" : "Send message")
-        .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-        .frame(width: 44, height: 44)
-        .contentShape(Circle())
         .padding(.trailing, 7)
         .padding(.bottom, expandsInput ? 8 : 0)
       }
