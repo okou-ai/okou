@@ -1876,10 +1876,17 @@ async function pauseBriefWithoutTimezone(intendedEnabled: boolean) {
   if (!before) {
     throw new Error("Expected its existing automation");
   }
-  // Member cleanup removes preferences while preserving the Official install.
-  // A fresh authoritative provider response determines eligibility to recover.
+  // Departure removes preferences but retains the existing installation and
+  // choice. A real rejoin supplies fresh authority without initializing them.
   await deliverClerkOrganizationMembershipDeleted(actor);
-  mockBriefMemberships([{ actor, createdAt }]);
+  const rejoinedAt = new Date(createdAt.getTime() + 1000);
+  const membershipId = `rejoined-${actor.userId}-${actor.orgId}`;
+  mockBriefMemberships([{ actor, createdAt: rejoinedAt, membershipId }]);
+  await deliverClerkOrganizationMembershipCreated(
+    actor,
+    rejoinedAt,
+    membershipId,
+  );
   await publishRecoveryBrief();
   await executeAutomationCron();
   await flushWaitUntilForTest();

@@ -179,9 +179,9 @@ describe("unified preference settings", () => {
       });
       context.mocks.api(
         morningBriefPreferenceContract.retry,
-        async ({ respond }) => {
+        async ({ respond, withSignal }) => {
           requested.resolve();
-          await release.promise;
+          await withSignal(release.promise);
           needsReconciliation = false;
           return respond(200, preference);
         },
