@@ -1,5 +1,46 @@
 # sandbox-firecracker native drivers
 
+## Request controls for native fixture authors
+
+The non-default `test-support` API
+`sandbox_firecracker::api_request_gate::gate_request` owns one caller-bound Unix
+listener and an explicit invocation-owned backend path. Select `Transition::Resume`
+or `Transition::Pause`. Keep the returned producer and complete native resource
+owner outside observer timeouts; the separate arrival/release controls own neither.
+Arrival means a complete validated request is captured **before backend dispatch**.
+Only explicit release connects and forwards the original bytes once.
+
+`producer.join()` borrows its handle, so cancelling a bounded wait leaves accepted
+work joinable. Dropped arrival/release observers or a cancelled client cannot abort
+an already dispatched backend drain. Before release, losing its sender produces
+`NotForwarded` without backend dispatch. Explicitly join accepted producers or retain
+them with unresolved native owners. Dropping a producer detaches rather than aborts
+its task; detachment or runtime shutdown is not completed cleanup. Capture and
+drain have no internal deadline: bound observation and preserve the owners when
+work remains pending. Inspect `RequestFailure::stage` for uncertainty after a
+partial write or incomplete response.
+
+The gate validates bounded HTTP/1 Content-Length framing and the exact selected
+PATCH /vm command; it does not support chunked framing, replace/adopt live sockets
+or change production ApiClient/lifecycle cancellation. `ResponseDrained` preserves
+the actual backend status/body independently of local client delivery. Even a
+successful delivery is no acknowledgement from the client application. Transport
+completion grants no Guest readiness, reuse, required saving or backing-exit
+authority. A pre-dispatch receipt is not native backend acceptance. Native tests
+must independently establish those boundaries and retain original data/full leases.
+
+Ordinary real ApiClient/Unix-peer regressions run with:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p sandbox-firecracker --features test-support --test api_request_gate \
+  -- --test-threads=1
+```
+
+These tests do not execute Firecracker/KVM or prove in-flight native cancellation.
+
+## Native execution
+
 `runner-behavior-host-cpu-fairness.sh` executes the `host_cpu_fairness` integration
 target. `runner-behavior-guest-rpc.sh` executes the `guest_rpc` target. Their names
 describe the host fixture; the binary targets and test ownership belong to this
