@@ -492,6 +492,9 @@ test("A late document catalog and later refresh preserve an explicit category ch
   // reached the UI before checking that it did not overwrite Reports.
   click(button("More templates", shelf));
   const dialog = await screen.findByRole("dialog");
+  // The picker opens at the shelf's Reports filter; its own Custom filter
+  // lists the member's documents.
+  click(button("Custom", dialog));
   await within(dialog).findByText("Initial document");
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
   expect(button("Reports", shelf)).toHaveAttribute("aria-pressed", "true");

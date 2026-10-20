@@ -295,7 +295,7 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
   click(control(dialog, "button", "Preview Mutual NDA"));
-  expect(control(dialog, "button", "Back to templates")).toHaveFocus();
+  expect(control(dialog, "button", "Document")).toHaveFocus();
   expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
   const firstPage = within(dialog).getByAltText("Page 1");
   const firstUrl = firstPage.getAttribute("src");
@@ -318,17 +318,19 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Document"));
   click(control(dialog, "button", "Preview Mutual NDA"));
   expect(within(dialog).getByAltText("Page 1")).toHaveAttribute(
     "src",
     firstUrl,
   );
-  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Document"));
   click(control(dialog, "button", "Preview Simple invoice"));
-  expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
-  expect(control(dialog, "button", "Next sample page")).toBeDisabled();
-  click(control(dialog, "button", "Use"));
+  // A single sample page has nowhere to page to, so it shows no arrows.
+  expect(
+    within(dialog).queryByLabelText("Next sample page"),
+  ).not.toBeInTheDocument();
+  click(control(dialog, "button", "Use this template"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

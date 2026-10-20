@@ -4028,7 +4028,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Un punto de partida para tu acuerdo. Revisa las condiciones de tu proyecto y jurisdicción antes de firmar.",
-    "back": "Volver a las plantillas",
     "categories": {
       "all": "Todas",
       "business-record": "Registros comerciales",
@@ -4079,7 +4078,6 @@
     "preview": "Vista previa de {{title}}",
     "previousPage": "Página de ejemplo anterior",
     "retry": "Reintentar",
-    "samplePages": "Páginas de ejemplo: {{total}}",
     "title": "Documento",
     "useNamed": "Usar {{title}}"
   },

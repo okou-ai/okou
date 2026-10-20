@@ -3619,7 +3619,6 @@ export function TemplateImportCard({
                 ? "aspect-[210/297]"
                 : "aspect-[4/3]"
               : "aspect-video",
-          compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
       >
         <Plus
@@ -3647,34 +3646,39 @@ export function TemplateImportCard({
           }}
         />
       </span>
-      <span
-        className={cn(
-          TEMPLATE_TILE_CAPTION,
-          // On a shelf the import tile is one cover among many, so its caption
-          // takes the shelf's metrics rather than the picker dialog's.
-          compact
-            ? "flex-col items-stretch gap-0 px-0 pb-0 pt-0"
-            : "flex-col items-stretch gap-0.5",
-        )}
-      >
+      {compact ? (
+        // On a shelf the import tile is one cover among many, so its caption
+        // is one line in the shelf's metrics, like every cover beside it. A
+        // second line made this tile 32px taller than its row, and on the
+        // document shelf -- where it shows under Custom only -- switching
+        // filters grew and shrank the shelf, which moved the whole centred
+        // page under the pointer. The full name stays the input's label; the
+        // shelf already says which type the file becomes, so the visible
+        // caption drops the type word where the tile is too narrow for it.
+        <span className={RAIL_TILE_CAPTION}>
+          {kind === "presentation" ? label : labels.illustration}
+        </span>
+      ) : (
         <span
           className={cn(
-            compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
-            (kind === "illustration" || kind === "document") &&
-              "whitespace-normal",
+            TEMPLATE_TILE_CAPTION,
+            "flex-col items-stretch gap-0.5",
           )}
         >
-          {label}
+          <span
+            className={cn(
+              TEMPLATE_TILE_NAME,
+              (kind === "illustration" || kind === "document") &&
+                "whitespace-normal",
+            )}
+          >
+            {label}
+          </span>
+          <span className="shrink-0 truncate text-xs text-muted-foreground">
+            {hints[kind]}
+          </span>
         </span>
-        <span
-          className={cn(
-            "shrink-0 truncate text-muted-foreground",
-            compact ? "text-[12px] leading-4" : "text-xs",
-          )}
-        >
-          {hints[kind]}
-        </span>
-      </span>
+      )}
     </label>
   );
 }
@@ -5502,6 +5506,7 @@ function TemplatePickerCategoryContent({
     return (
       <DocumentTemplatePickerPane
         signals={signals}
+        value={value}
         onSelect={onSelectDocument}
         customTemplates={customSection("document")}
       />

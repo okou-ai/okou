@@ -1,23 +1,22 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowRight,
   ArrowUpRight,
   Check,
   ChevronLeft,
   ChevronRight,
   FileText,
 } from "lucide-react";
-import {
-  Badge,
-  Button,
-  DialogHeader,
-  DialogTitle,
-  IconButton,
-} from "@okouai/ui";
+import { Badge, Button, DialogHeader, DialogTitle, cn } from "@okouai/ui";
 import type { DocumentTemplateItem } from "@okouai/core/document-template-items";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import {
+  TEMPLATE_DETAIL_BODY,
+  TEMPLATE_DETAIL_FOOTER,
+  TEMPLATE_DETAIL_STAGE_ARROW,
+} from "./template-detail-layout.tsx";
+import { TEMPLATE_TILE_MEDIA } from "./template-tile.ts";
 
 type Props = {
   readonly signals: ComposerSignals;
@@ -25,6 +24,14 @@ type Props = {
   readonly onSelect: (item: DocumentTemplateItem) => void;
 };
 
+/**
+ * A built-in document's detail, in the shell every template detail shares
+ * (`template-detail-layout.tsx`): the name said once, in the breadcrumb; the
+ * sample page on a bordered stage that pages with the stage's own arrows; a
+ * 220px column for what the document contains; and the one action in the
+ * footer, as on the presentation and custom details. The page is portrait, so
+ * the stage takes the body's height rather than a 16:9 box.
+ */
 export function DocumentTemplatePreviewPage({
   signals,
   item,
@@ -34,7 +41,6 @@ export function DocumentTemplatePreviewPage({
   const close = useSet(signals.template.closeDocumentPreview$);
   const focusBack = useSet(signals.template.focusDocumentPreviewRef$);
   const page = useGet(signals.template.documentPreviewPage$);
-  const setPage = useSet(signals.template.setDocumentPreviewPage$);
   const url = item.previewPages[page];
   if (!url) {
     throw new Error("Document preview page not found");
@@ -47,13 +53,13 @@ export function DocumentTemplatePreviewPage({
             ref={focusBack}
             type="button"
             className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={t(($) => {
-              return $.documentTemplates.back;
-            })}
             onClick={() => {
               close();
             }}
           >
+            {/* Named by what it says, like the custom detail's breadcrumb:
+                an aria-label that replaced the visible "Document" made the
+                control announce words no one could see. */}
             {t(($) => {
               return $.documentTemplates.title;
             })}
@@ -64,38 +70,71 @@ export function DocumentTemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto sm:grid sm:grid-cols-[minmax(0,1fr)_320px] sm:overflow-hidden">
-        <DocumentPreviewImage signals={signals} url={url} page={page} />
-        <DocumentPreviewDetails item={item} onSelect={onSelect} />
+      <div className={TEMPLATE_DETAIL_BODY}>
+        <div className="flex flex-col gap-6 lg:h-full lg:flex-row">
+          <DocumentPreviewStage
+            signals={signals}
+            url={url}
+            page={page}
+            total={item.previewPages.length}
+          />
+          <DocumentPreviewDetails item={item} />
+        </div>
       </div>
-      <DocumentPreviewPagination
-        page={page}
-        total={item.previewPages.length}
-        url={url}
-        onChange={setPage}
-      />
+      <div className={TEMPLATE_DETAIL_FOOTER}>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {t(($) => {
+            return $.documentTemplates.openLarger;
+          })}
+          <ArrowUpRight className="size-3.5" aria-hidden />
+        </a>
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => {
+            onSelect(item);
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.templates.useThisTemplate;
+          })}
+        </Button>
+      </div>
     </div>
   );
 }
 
-function DocumentPreviewImage({
+function DocumentPreviewStage({
   signals,
   url,
   page,
+  total,
 }: {
   readonly signals: ComposerSignals;
   readonly url: string;
   readonly page: number;
+  readonly total: number;
 }) {
   const { t } = useTranslation();
   const failures = useGet(signals.template.documentImageFailures$);
   const failImage = useSet(signals.template.failDocumentImage$);
   const retryImage = useSet(signals.template.retryDocumentImage$);
+  const setPage = useSet(signals.template.setDocumentPreviewPage$);
   return (
-    <div className="flex h-[440px] min-h-0 items-center justify-center bg-muted p-6 sm:h-auto">
+    <div
+      className={cn(
+        TEMPLATE_TILE_MEDIA,
+        "group/stage flex h-[440px] items-center justify-center p-6 lg:h-auto lg:min-h-0 lg:min-w-0 lg:flex-1",
+      )}
+    >
       {failures.has(url) ? (
         <div className="flex flex-col items-center gap-4 text-muted-foreground">
-          <FileText className="size-8" />
+          <FileText className="size-8" aria-hidden />
           <p>
             {t(($) => {
               return $.documentTemplates.imageError;
@@ -128,11 +167,60 @@ function DocumentPreviewImage({
           }}
         />
       )}
+      {/* A single sample page has nowhere to go: no arrows and no "1 / 1". */}
+      {total > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label={t(($) => {
+              return $.documentTemplates.previousPage;
+            })}
+            disabled={page === 0}
+            onClick={() => {
+              setPage(page - 1);
+            }}
+            className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "left-3")}
+          >
+            <ChevronLeft size={16} aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-label={t(($) => {
+              return $.documentTemplates.nextPage;
+            })}
+            disabled={page === total - 1}
+            onClick={() => {
+              setPage(page + 1);
+            }}
+            className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "right-3")}
+          >
+            <ChevronRight size={16} aria-hidden />
+          </button>
+          <span
+            aria-live="polite"
+            className="pointer-events-none absolute bottom-3 right-3 z-50 rounded-md bg-[rgb(0_0_0_/_0.55)] px-2 py-0.5 text-xs font-medium tabular-nums text-[#ffffff]"
+          >
+            {t(
+              ($) => {
+                return $.artifacts.templates.slideCounter;
+              },
+              {
+                current: formatLocalizedNumber(page + 1),
+                total: formatLocalizedNumber(total),
+              },
+            )}
+          </span>
+        </>
+      ) : null}
     </div>
   );
 }
 
-function DocumentPreviewDetails({ item, onSelect }: Omit<Props, "signals">) {
+function DocumentPreviewDetails({
+  item,
+}: {
+  readonly item: DocumentTemplateItem;
+}) {
   const { t } = useTranslation();
   const agreement =
     item.category === "contract" || item.category === "service-agreement";
@@ -149,22 +237,23 @@ function DocumentPreviewDetails({ item, onSelect }: Omit<Props, "signals">) {
     },
     { returnObjects: true },
   );
+  const category = t(($) => {
+    return $.documentTemplates.categories[item.category];
+  });
   return (
-    <aside className="flex flex-col items-start gap-4 border-t border-border p-6 sm:min-h-0 sm:overflow-y-auto sm:border-l sm:border-t-0">
-      <Badge className="text-xs text-muted-foreground">
-        {t(($) => {
-          return $.documentTemplates.categories[item.category];
-        })}
-      </Badge>
-      <h3 className="text-xl font-semibold leading-snug">{item.title}</h3>
+    <div className="flex flex-col items-start gap-4 lg:w-[220px] lg:shrink-0 lg:overflow-y-auto">
+      {/* The purpose, unless it is the name the breadcrumb already says. */}
+      {category === item.title ? null : (
+        <Badge className="text-xs text-muted-foreground">{category}</Badge>
+      )}
       <p className="text-sm leading-relaxed text-muted-foreground">
         {item.description}
       </p>
-      <h4 className="mt-1 text-sm font-medium">
+      <h3 className="mt-1 text-sm font-medium">
         {t(($) => {
           return $.documentTemplates.included;
         })}
-      </h4>
+      </h3>
       <ul className="flex flex-col gap-3 text-xs leading-relaxed">
         {[
           contents.overview,
@@ -174,7 +263,10 @@ function DocumentPreviewDetails({ item, onSelect }: Omit<Props, "signals">) {
         ].map((content) => {
           return (
             <li key={content} className="flex items-start gap-2">
-              <Check className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <Check
+                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
               {content}
             </li>
           );
@@ -192,88 +284,13 @@ function DocumentPreviewDetails({ item, onSelect }: Omit<Props, "signals">) {
           })}
         </Badge>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {t(
-          ($) => {
-            return $.documentTemplates.samplePages;
-          },
-          { total: formatLocalizedNumber(item.previewPages.length) },
-        )}
-      </p>
       {agreement ? (
-        <p className="border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {t(($) => {
             return $.documentTemplates.agreementNote;
           })}
         </p>
       ) : null}
-      <div className="sticky bottom-0 mt-auto w-full bg-background pt-3 sm:static sm:bg-transparent">
-        <Button
-          className="w-full"
-          onClick={() => {
-            onSelect(item);
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-          <ArrowRight className="size-4" />
-        </Button>
-      </div>
-    </aside>
-  );
-}
-
-function DocumentPreviewPagination({
-  page,
-  total,
-  url,
-  onChange,
-}: {
-  readonly page: number;
-  readonly total: number;
-  readonly url: string;
-  readonly onChange: (page: number) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <footer className="flex shrink-0 items-center gap-2 border-t border-border px-5 py-2 text-xs text-muted-foreground">
-      <IconButton
-        aria-label={t(($) => {
-          return $.documentTemplates.previousPage;
-        })}
-        disabled={page === 0}
-        onClick={() => {
-          onChange(page - 1);
-        }}
-      >
-        <ChevronLeft className="size-4" />
-      </IconButton>
-      <span aria-live="polite">
-        {formatLocalizedNumber(page + 1)} / {formatLocalizedNumber(total)}
-      </span>
-      <IconButton
-        aria-label={t(($) => {
-          return $.documentTemplates.nextPage;
-        })}
-        disabled={page === total - 1}
-        onClick={() => {
-          onChange(page + 1);
-        }}
-      >
-        <ChevronRight className="size-4" />
-      </IconButton>
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="ml-auto inline-flex items-center gap-1 hover:text-foreground hover:underline"
-      >
-        {t(($) => {
-          return $.documentTemplates.openLarger;
-        })}
-        <ArrowUpRight className="size-3.5" />
-      </a>
-    </footer>
+    </div>
   );
 }

@@ -3969,7 +3969,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
-    "back": "Zurück zu Vorlagen",
     "categories": {
       "all": "Alle",
       "business-record": "Geschäftsunterlagen",
@@ -4020,7 +4019,6 @@
     "preview": "Vorschau: {{title}}",
     "previousPage": "Vorherige Beispielseite",
     "retry": "Erneut versuchen",
-    "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
     "useNamed": "{{title}} verwenden"
   },

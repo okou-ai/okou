@@ -184,13 +184,16 @@ function SlashTemplateCover({
   const { t } = useTranslation();
   const aspect = preview.aspect;
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
+  // A document page is cropped to its head rather than fitted whole; other
+  // custom artwork has no known shape, so it is fitted.
+  const documentPage = category === "document";
   return (
     <button
       type="button"
       data-slot="slash-template-cover"
       className={cn(
         "group min-w-0 text-left",
-        aspect &&
+        isSlashTemplateNativeAspectCategory(category) &&
           "mb-2.5 block w-full break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
       )}
       aria-label={t(
@@ -221,10 +224,11 @@ function SlashTemplateCover({
             loading="lazy"
             className={cn(
               "h-full w-full",
-              preview.template.type === "document" ||
-                preview.template.type === "custom"
-                ? "object-contain"
-                : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
+              documentPage
+                ? "bg-[#ffffff] object-cover object-top"
+                : preview.template.type === "custom"
+                  ? "object-contain"
+                  : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
             )}
           />
         ) : (

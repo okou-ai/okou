@@ -4028,7 +4028,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
-    "back": "Torna ai modelli",
     "categories": {
       "all": "Tutti",
       "business-record": "Documenti commerciali",
@@ -4079,7 +4078,6 @@
     "preview": "Anteprima di {{title}}",
     "previousPage": "Pagina di esempio precedente",
     "retry": "Riprova",
-    "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
     "useNamed": "Usa {{title}}"
   },

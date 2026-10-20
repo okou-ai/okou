@@ -3951,7 +3951,6 @@
   },
   "documentTemplates": {
     "agreementNote": "此範本可作為協議起點。簽署前，請根據專案與適用法律審閱條款。",
-    "back": "返回範本清單",
     "categories": {
       "all": "全部",
       "business-record": "收據與報價",
@@ -4002,7 +4001,6 @@
     "preview": "預覽 {{title}}",
     "previousPage": "上一頁樣張",
     "retry": "重試",
-    "samplePages": "樣張頁數：{{total}}",
     "title": "文件",
     "useNamed": "使用 {{title}}"
   },

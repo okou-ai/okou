@@ -3961,7 +3961,6 @@
   },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
-    "back": "Back to templates",
     "categories": {
       "all": "All",
       "business-record": "Business records",
@@ -4012,7 +4011,6 @@
     "preview": "Preview {{title}}",
     "previousPage": "Previous sample page",
     "retry": "Retry",
-    "samplePages": "Sample pages: {{total}}",
     "title": "Document",
     "useNamed": "Use {{title}}"
   },

@@ -118,11 +118,21 @@ const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 416 } as const;
  * and 3 landscape, so a shared ratio would crop most of them — a 2:3 style
  * keeps only 37% of its height in a 16:9 box. A deck cover, by contrast, is a
  * slide and genuinely is 16:9.
+ *
+ * Documents are not here: every one is a portrait page, so they share one
+ * ratio and keep the row-ordered grid (see `SLASH_DOCUMENT_COVER_ASPECT`).
  */
-const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = [
-  "illustration",
-  "document",
-] as const;
+const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = ["illustration"] as const;
+
+/**
+ * A document cover shows the head of its first page, as the picker's document
+ * card does: a whole A4 page scaled into a 170px tile sets its title at about
+ * five pixels, and two of them stood 240px tall in a pane the command list
+ * holds near 194px, so not one caption was in view. The head is where the
+ * format lives -- masthead, columns, a row of fields -- and 4:3 keeps a row of
+ * covers and their names inside the pane.
+ */
+const SLASH_DOCUMENT_COVER_ASPECT = { width: 4, height: 3 } as const;
 
 export function isSlashTemplateNativeAspectCategory(
   category: SlashTemplatePreviewCategory,
@@ -156,7 +166,7 @@ export function customSlashTemplatePreview(
         ? (template.previewAssets[0]?.url ?? template.coverUrl)
         : template.coverUrl,
     ...(template.kind === "document"
-      ? { aspect: { width: 210, height: 297 } }
+      ? { aspect: SLASH_DOCUMENT_COVER_ASPECT }
       : template.kind === "illustration"
         ? { aspect: { width: 1, height: 1 } }
         : {}),
@@ -241,7 +251,7 @@ function documentPreview(item: DocumentTemplateItem): SlashTemplatePreview {
     slug: item.slug,
     title: item.title,
     coverUrl: nativeCoverUrl(item.previewImageUrl),
-    aspect: { width: 210, height: 297 },
+    aspect: SLASH_DOCUMENT_COVER_ASPECT,
     template: toDocumentGenerationTemplate(item),
     attachment: {
       type: "document",

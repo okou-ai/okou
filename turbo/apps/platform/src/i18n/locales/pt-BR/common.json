@@ -4028,7 +4028,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Um ponto de partida para seu acordo. Revise os termos do projeto e da jurisdição aplicável antes de assinar.",
-    "back": "Voltar aos modelos",
     "categories": {
       "all": "Todos",
       "business-record": "Registros comerciais",
@@ -4079,7 +4078,6 @@
     "preview": "Visualizar {{title}}",
     "previousPage": "Página de exemplo anterior",
     "retry": "Tentar novamente",
-    "samplePages": "Páginas de exemplo: {{total}}",
     "title": "Documento",
     "useNamed": "Usar {{title}}"
   },

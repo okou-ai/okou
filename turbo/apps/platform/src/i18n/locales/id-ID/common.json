@@ -3951,7 +3951,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
-    "back": "Kembali ke templat",
     "categories": {
       "all": "Semua",
       "business-record": "Catatan bisnis",
@@ -4002,7 +4001,6 @@
     "preview": "Pratinjau {{title}}",
     "previousPage": "Halaman contoh sebelumnya",
     "retry": "Coba lagi",
-    "samplePages": "Halaman contoh: {{total}}",
     "title": "Dokumen",
     "useNamed": "Gunakan {{title}}"
   },

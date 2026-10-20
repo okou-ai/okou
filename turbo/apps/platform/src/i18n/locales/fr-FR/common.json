@@ -4028,7 +4028,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Un point de départ pour votre accord. Vérifiez les conditions de votre projet et le droit applicable avant de signer.",
-    "back": "Retour aux modèles",
     "categories": {
       "all": "Tous",
       "business-record": "Documents commerciaux",
@@ -4079,7 +4078,6 @@
     "preview": "Aperçu de {{title}}",
     "previousPage": "Page d’exemple précédente",
     "retry": "Réessayer",
-    "samplePages": "Pages d’exemple : {{total}}",
     "title": "Document",
     "useNamed": "Utiliser {{title}}"
   },
