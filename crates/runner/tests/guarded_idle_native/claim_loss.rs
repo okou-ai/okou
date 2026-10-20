@@ -262,6 +262,27 @@ pub async fn exercise(
     backing: Arc<dyn SandboxBackingProcess>,
     history: RunId,
 ) -> TestResult<()> {
+    exercise_failure(
+        context,
+        inputs,
+        proof,
+        directory,
+        backing,
+        history,
+        claim_peer::Outcome::Unavailable,
+    )
+    .await
+}
+
+pub async fn exercise_failure(
+    context: transitions::Context,
+    inputs: &fixture::Inputs,
+    proof: &Arc<evidence::Case>,
+    directory: &Path,
+    backing: Arc<dyn SandboxBackingProcess>,
+    history: RunId,
+    outcome: claim_peer::Outcome,
+) -> TestResult<()> {
     let initial = context.pool.lock().await.status_snapshot();
     let held_states = serde_json::to_value(context.pool.lock().await.held_sandbox_states())?;
     let [entry] = initial.idle_sandboxes.as_slice() else {
@@ -288,7 +309,12 @@ pub async fn exercise(
     )
     .await?;
     let run = RunId::new_v4();
-    let (provider, claim_gate) = match probe.hold_claim(run) {
+    let held_claim = if outcome == claim_peer::Outcome::Unavailable {
+        probe.hold_claim(run)
+    } else {
+        probe.hold_claim_failure(run, outcome)
+    };
+    let (provider, claim_gate) = match held_claim {
         Ok(value) => value,
         Err(error) => {
             probe.finish().await?;

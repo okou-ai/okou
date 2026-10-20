@@ -16,6 +16,8 @@ pub enum GuestPreparationStage {
     Mount,
     /// The real blank-pool park completed with reusable eligibility.
     Park,
+    /// The real fixed Guest state-restore RPC returned success.
+    Restore,
 }
 
 impl GuestPreparationStage {
@@ -25,6 +27,7 @@ impl GuestPreparationStage {
             Self::Start => "start",
             Self::Mount => "mount",
             Self::Park => "park",
+            Self::Restore => "restore",
         }
     }
 }
