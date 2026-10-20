@@ -236,7 +236,7 @@ describe("connector account contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps scope mismatch enrichment optional for legacy account lists", () => {
+  it("keeps scope mismatch enrichment optional on account lists", () => {
     const connection = {
       id: connectionId,
       target: { kind: "builtin" as const, connectorSlug: "github" },
@@ -256,8 +256,16 @@ describe("connector account contracts", () => {
     const response = connectorAccountsContract.connections.responses[200];
 
     expect(
-      response.parse({ connections: [connection], nextCursor: null }),
-    ).toStrictEqual({ connections: [connection], nextCursor: null });
+      response.parse({
+        connections: [connection],
+        nextCursor: null,
+        defaultConnection: connection,
+      }),
+    ).toStrictEqual({
+      connections: [connection],
+      nextCursor: null,
+      defaultConnection: connection,
+    });
     expect(
       response.parse({
         connections: [{ ...connection, scopeMismatch: true }],
