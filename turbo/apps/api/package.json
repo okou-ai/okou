@@ -66,7 +66,7 @@
     "hono": "^4.13.12",
     "html-to-text": "^10.0.1",
     "jose": "^6.2.3",
-    "markdown-it": "14.3.1",
+    "markdown-it": "14.3.2",
     "music-metadata": "^11.16.0",
     "pg": "^8.23.0",
     "resend": "^6.12.4",
