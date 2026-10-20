@@ -82,11 +82,12 @@ mod tests {
         let path = directory.path().join("samples.jsonl");
         let mut file = std::fs::File::create(&path)?;
         file.write_all(line(1).as_bytes())?;
-        let wait = wait(&path, 1);
-        tokio::pin!(wait);
-        assert!(futures_util::poll!(&mut wait).is_pending());
         let next = line(2);
         file.write_all(next.trim_end().as_bytes())?;
+        // The first poll must actually inspect this incomplete line; relying
+        // on an undelivered inotify event could hide a premature release.
+        let wait = wait(&path, 1);
+        tokio::pin!(wait);
         assert!(futures_util::poll!(&mut wait).is_pending());
         file.write_all(b"\n")?;
         assert_eq!(
