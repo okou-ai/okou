@@ -5,7 +5,8 @@ import { Laptop, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
-import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
+import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
+import { Link } from "../router/link.tsx";
 import {
   enterRemoteSetup$,
   updateRemoteSetup$,
@@ -89,9 +90,16 @@ export function RemoteNetworkSummary({
         )}
         {hosts.map((host) => {
           return (
-            <a
+            <Link
               key={`${host.protocol}:${host.id}`}
-              href={remoteResourceHref(params, host.protocol, host.id)}
+              pathname="/connectors"
+              options={{
+                searchParams: remoteResourceSearchParams(
+                  params,
+                  host.protocol,
+                  host.id,
+                ),
+              }}
               className="flex items-center gap-3 rounded-lg py-3 hover:bg-gray-50"
             >
               <span className="rounded-lg bg-gray-50 p-2">
@@ -104,7 +112,7 @@ export function RemoteNetworkSummary({
                 </span>
               </span>
               <ChevronRight size={16} aria-hidden />
-            </a>
+            </Link>
           );
         })}
       </section>

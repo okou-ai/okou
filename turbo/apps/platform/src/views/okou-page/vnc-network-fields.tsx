@@ -42,6 +42,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { RemoteConnectionMethodHelp } from "./remote-field-help.tsx";
 
 function VncNetworkConfigGroups({
   configs,
@@ -80,6 +81,33 @@ function VncNetworkConfigGroups({
   });
 }
 
+function VncNetworkEmpty({
+  type,
+}: {
+  readonly type: "cloudflare_access" | "tailscale";
+}) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return (
+    <p className="rounded-lg bg-gray-50 p-4 text-muted-foreground">
+      {t(
+        ($) => {
+          return guided
+            ? $.remoteConnectionHelp.networkEmpty
+            : $.vnc.native.empty;
+        },
+        {
+          provider: t(($) => {
+            return type === "cloudflare_access"
+              ? $.cloudflareAccess.title
+              : $.tailscale.title;
+          }),
+        },
+      )}
+    </p>
+  );
+}
+
 function VncNetworkConfig({
   role,
   type,
@@ -91,6 +119,7 @@ function VncNetworkConfig({
 }) {
   const { t } = useTranslation();
   const access = useLoadable(cloudflareAccessConfigs$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   const tailscale = useLoadable(scopedTailscaleConfigs$);
   const configs = type === "cloudflare_access" ? access : tailscale;
   const id = useGet(
@@ -143,30 +172,36 @@ function VncNetworkConfig({
   }
   return (
     <div className="grid min-w-0 gap-2 text-sm">
-      <label htmlFor={`vnc-${role}-network-config`}>
-        {t(($) => {
-          return $.vnc.native.configuration;
-        })}
-      </label>
-      <Select
-        items={items}
-        disabled={disabled || !available}
-        value={id || null}
-        onValueChange={(value) => {
-          choose(role, value);
-        }}
-      >
-        <SelectTrigger id={`vnc-${role}-network-config`}>
-          <SelectValue
-            placeholder={t(($) => {
-              return $.vnc.native.select;
+      {items.length > 0 && (
+        <>
+          <label htmlFor={`vnc-${role}-network-config`}>
+            {t(($) => {
+              return guided
+                ? $.remoteControlSetup.network
+                : $.vnc.native.configuration;
             })}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <VncNetworkConfigGroups configs={available ?? []} />
-        </SelectContent>
-      </Select>
+          </label>
+          <Select
+            items={items}
+            disabled={disabled || !available}
+            value={id || null}
+            onValueChange={(value) => {
+              choose(role, value);
+            }}
+          >
+            <SelectTrigger id={`vnc-${role}-network-config`}>
+              <SelectValue
+                placeholder={t(($) => {
+                  return $.vnc.native.select;
+                })}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <VncNetworkConfigGroups configs={available ?? []} />
+            </SelectContent>
+          </Select>
+        </>
+      )}
       {id &&
         !available?.some((config) => {
           return config.id === id;
@@ -177,13 +212,7 @@ function VncNetworkConfig({
             })}
           </p>
         )}
-      {available?.length === 0 && (
-        <p>
-          {t(($) => {
-            return $.vnc.native.empty;
-          })}
-        </p>
-      )}
+      {available?.length === 0 && <VncNetworkEmpty type={type} />}
       {available === null && (
         <p role="alert">
           {t(($) => {
@@ -191,15 +220,17 @@ function VncNetworkConfig({
           })}
         </p>
       )}
-      <p className="text-muted-foreground">
-        {type === "cloudflare_access"
-          ? t(($) => {
-              return $.vnc.native.gatewayHelp;
-            })
-          : t(($) => {
-              return $.vnc.native.peerHelp;
-            })}
-      </p>
+      {!guided && (
+        <p className="text-muted-foreground">
+          {type === "cloudflare_access"
+            ? t(($) => {
+                return $.vnc.native.gatewayHelp;
+              })
+            : t(($) => {
+                return $.vnc.native.peerHelp;
+              })}
+        </p>
+      )}
     </div>
   );
 }
@@ -247,17 +278,20 @@ export function VncNetworkFields({
   return (
     <div className="grid min-w-0 gap-4">
       <div className="grid gap-2 text-sm">
-        <label htmlFor={`vnc-${role}-route`}>
-          {role === "rfb"
-            ? t(($) => {
-                return guided
-                  ? $.remoteControlSetup.connectionMethod
-                  : $.vnc.transport.title;
-              })
-            : t(($) => {
-                return $.vnc.kerberos.kdcRoute;
-              })}
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label htmlFor={`vnc-${role}-route`}>
+            {role === "rfb"
+              ? t(($) => {
+                  return guided
+                    ? $.remoteControlSetup.connectionMethod
+                    : $.vnc.transport.title;
+                })
+              : t(($) => {
+                  return $.vnc.kerberos.kdcRoute;
+                })}
+          </label>
+          {guided && role === "rfb" && <RemoteConnectionMethodHelp />}
+        </div>
         <Select
           items={items}
           disabled={disabled}
@@ -281,13 +315,39 @@ export function VncNetworkFields({
             })}
           </SelectContent>
         </Select>
+        {guided && role === "rfb" && (
+          <p className="text-muted-foreground">
+            {t(($) => {
+              return type === "direct"
+                ? $.remoteConnectionHelp.directRoute
+                : type === "ssh"
+                  ? $.remoteConnectionHelp.sshRoute
+                  : type === "tailscale"
+                    ? $.remoteConnectionHelp.tailscaleRoute
+                    : $.remoteConnectionHelp.cloudflareRoute;
+            })}
+          </p>
+        )}
       </div>
       {(type === "cloudflare_access" || type === "tailscale") && (
         <VncNetworkConfig role={role} type={type} disabled={disabled} />
       )}
-      {role === "rfb" && type === "cloudflare_access" && (
-        <VncOriginTlsFields required={protectedRoute} disabled={disabled} />
-      )}
+      {role === "rfb" &&
+        type === "cloudflare_access" &&
+        (guided && !protectedRoute ? (
+          <details className="rounded-lg border border-divider p-3">
+            <summary className="cursor-pointer rounded-md text-sm text-muted-foreground hover:text-foreground">
+              {t(($) => {
+                return $.remoteConnectionHelp.advancedNetwork;
+              })}
+            </summary>
+            <div className="pt-4">
+              <VncOriginTlsFields required={false} disabled={disabled} />
+            </div>
+          </details>
+        ) : (
+          <VncOriginTlsFields required={protectedRoute} disabled={disabled} />
+        ))}
     </div>
   );
 }
@@ -300,6 +360,7 @@ function VncOriginTlsFields({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const originTlsEnabled = useGet(vncOriginTlsEnabled$);
   const serverName = useGet(vncOriginTlsServerName$);
   const trust = useGet(vncOriginTlsTrust$);
@@ -336,7 +397,9 @@ function VncOriginTlsFields({
       </label>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.vnc.native.originTlsHelp;
+          return guided
+            ? $.remoteConnectionHelp.originTls
+            : $.vnc.native.originTlsHelp;
         })}
       </p>
       {enabled && (

@@ -197,6 +197,32 @@ test("Private network links to connection management without starting device set
     screen.queryByRole("heading", { name: "Set up a connection" }),
   ).toBeNull();
 });
+test.each(["tailscale", "cloudflare"] as const)(
+  "Opening a %s network card navigates to its details and back in the app",
+  async (provider) => {
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: provider === "tailscale" ? [network] : [],
+      });
+    });
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: provider === "cloudflare" ? [cloudflareNetwork] : [],
+      });
+    });
+    await page("/connectors?scope=private-network");
+    click(await screen.findByText(network.name));
+    await screen.findByRole("heading", { name: network.name });
+    expect(getAction("button", "Edit settings")).toBeInTheDocument();
+    click(getAction("button", "Back to private networks"));
+    expect(
+      (await screen.findByText(network.name)).closest("a"),
+    ).toHaveAttribute(
+      "href",
+      expect.stringContaining(`remoteResource=${provider}%3A${network.id}`),
+    );
+  },
+);
 test.each([
   ["ssh", false],
   ["vnc", false],
@@ -288,7 +314,7 @@ test("Existing Tailscale settings open the saved network and device login form, 
     }),
   ).toBeNull();
   await expect(
-    screen.findByRole("combobox", { name: "Tailscale" }),
+    screen.findByRole("combobox", { name: "Saved network" }),
   ).resolves.toHaveTextContent("Office network");
   await fill(username, "draft-user");
   await fill(
@@ -711,6 +737,41 @@ test("VNC groups actual service methods and retains the connection step while ad
     await screen.findByRole("option", { name: "Certificate-protected VNC" }),
   );
   expect(group).toHaveTextContent("Certificate-protected VNC");
+});
+test("VNC with no saved network shows an actionable empty state and preserves the address through help", async () => {
+  await page("/connectors?scope=remote-control&setup=vnc");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(getAction("button", "Start setup"));
+  await screen.findByRole("heading", { name: "Target operating system" });
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", {
+    name: "Enable screen access on the target computer",
+  });
+  click(getAction("button", "The service is ready"));
+  await screen.findByLabelText("Login method");
+  click(getAction("button", "Continue"));
+  const address = await screen.findByLabelText("Device address");
+  await fill(address, "screen.example.com");
+  click(screen.getByLabelText("Connection method"));
+  click(await screen.findByRole("option", { name: "Cloudflare Access" }));
+  await screen.findByText(/No Cloudflare Access network saved yet/u);
+  expect(screen.queryByRole("combobox", { name: "Saved network" })).toBeNull();
+  expect(getAction("button", "Add a private network")).toBeEnabled();
+  expect(getAction("button", "Continue")).toBeDisabled();
+  click(getAction("button", "Where can I find the address?"));
+  await screen.findByText(/open Zero Trust → Access controls → Applications/u);
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("screen.example.com");
+  click(getAction("button", "Add a private network"));
+  const picker = await screen.findByRole("dialog", {
+    name: "Choose a network provider",
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(picker).not.toBeInTheDocument();
+  });
+  expect(address).toHaveValue("screen.example.com");
+  expect(getAction("button", "Continue")).toBeDisabled();
 });
 test("Private network dependencies block deletion of a referenced network", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {

@@ -1,4 +1,5 @@
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
+import { RemoteAddressHelp } from "./remote-field-help.tsx";
 import {
   RemoteConnectionSummary,
   RemoteConnectionCheckUnavailable,
@@ -212,18 +213,24 @@ function GuidedSshEndpointFields({
   const editor = useGet(sshConnectionModeEditor$);
   return (
     <div className="grid gap-4">
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.remoteControlSetup.address;
-        })}
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label htmlFor="guided-ssh-host">
+            {t(($) => {
+              return $.remoteControlSetup.address;
+            })}
+          </label>
+          <RemoteAddressHelp route={editor.mode} />
+        </div>
         <Input
+          id="guided-ssh-host"
           name="host"
           defaultValue={initialHost}
           required
           pattern=".*\S.*"
           maxLength={SSH_HOST_MAX_LENGTH}
         />
-      </label>
+      </div>
       {editor.mode === "direct" && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {

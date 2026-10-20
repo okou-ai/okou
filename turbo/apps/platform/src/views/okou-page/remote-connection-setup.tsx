@@ -1,5 +1,6 @@
 import { RemoteServiceInstructions } from "./remote-service-instructions.tsx";
-import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
+import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
+import { Link } from "../router/link.tsx";
 import { searchParams$ } from "../../signals/route.ts";
 import { NetworkProviderPicker } from "./remote-network-picker.tsx";
 import type { ReactNode } from "react";
@@ -1303,8 +1304,15 @@ function RemoteSetupSaved({ setup }: { readonly setup: RemoteSetup }) {
         })}
       </p>
       {setup.savedId && (
-        <a
-          href={remoteResourceHref(params, setup.protocol, setup.savedId)}
+        <Link
+          pathname="/connectors"
+          options={{
+            searchParams: remoteResourceSearchParams(
+              params,
+              setup.protocol,
+              setup.savedId,
+            ),
+          }}
           className={cn(
             buttonVariants(),
             REMOTE_PAGE_ACTION,
@@ -1314,7 +1322,7 @@ function RemoteSetupSaved({ setup }: { readonly setup: RemoteSetup }) {
           {t(($) => {
             return $.remoteControlSetup.viewConnection;
           })}
-        </a>
+        </Link>
       )}
       <Button variant="quiet" className="justify-self-center" onClick={leave}>
         {t(($) => {

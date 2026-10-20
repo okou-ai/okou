@@ -1,7 +1,7 @@
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { useRemoteNetworkOrganization } from "./remote-network-scope.tsx";
 import { searchParams$ } from "../../signals/route.ts";
-import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
+import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
@@ -54,6 +54,73 @@ import {
   CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 
+function RemoteVncConnectionRow({
+  connection,
+  sshRows,
+}: {
+  readonly connection: VncConnectionResponse;
+  readonly sshRows: readonly SshConnectionResponse[] | null;
+}) {
+  const { t } = useTranslation();
+  const params = useGet(searchParams$);
+  return (
+    <Link
+      pathname="/connectors"
+      options={{
+        searchParams: remoteResourceSearchParams(params, "vnc", connection.id),
+      }}
+      className="block"
+    >
+      <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
+        <span className="rounded-lg bg-gray-50 p-2">
+          <Monitor size={20} aria-hidden />
+        </span>
+        <span className="grid min-w-0 flex-1 gap-1">
+          <strong className="truncate text-sm">{connection.displayName}</strong>
+          <span className="break-all text-xs text-muted-foreground">
+            {t(($) => {
+              return $.vnc.label;
+            })}{" "}
+            · {connection.host}:{connection.port} ·{" "}
+            {connection.transport?.type === "ssh"
+              ? `${t(($) => {
+                  return $.ssh.label;
+                })} · ${
+                  sshRows?.find((host) => {
+                    return (
+                      connection.transport?.type === "ssh" &&
+                      host.id === connection.transport.connectionId
+                    );
+                  })?.displayName ?? connection.transport.connectionId
+                }`
+              : connection.transport?.type === "tailscale"
+                ? t(($) => {
+                    return $.tailscale.title;
+                  })
+                : connection.transport?.type === "cloudflare_access"
+                  ? t(($) => {
+                      return $.cloudflareAccess.title;
+                    })
+                  : t(($) => {
+                      return $.remoteControlSetup.direct;
+                    })}
+          </span>
+        </span>
+        <VncLastCheck
+          connectionId={connection.id}
+          generation={connection.generation}
+          createdAt={connection.createdAt}
+        />
+        <ChevronRight
+          size={18}
+          aria-hidden
+          className="shrink-0 text-muted-foreground"
+        />
+      </div>
+    </Link>
+  );
+}
+
 function RemoteConnectionRows({
   sshRows,
   vncRows,
@@ -69,9 +136,16 @@ function RemoteConnectionRows({
     <div className="overflow-hidden rounded-3xl border-divider bg-card has-[a]:border divide-y divide-divider">
       {sshRows?.map((connection) => {
         return (
-          <a
+          <Link
             key={connection.id}
-            href={remoteResourceHref(params, "ssh", connection.id)}
+            pathname="/connectors"
+            options={{
+              searchParams: remoteResourceSearchParams(
+                params,
+                "ssh",
+                connection.id,
+              ),
+            }}
             className="block"
           >
             <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
@@ -110,65 +184,16 @@ function RemoteConnectionRows({
                 className="shrink-0 text-muted-foreground"
               />
             </div>
-          </a>
+          </Link>
         );
       })}
       {vncRows?.map((connection) => {
         return (
-          <a
+          <RemoteVncConnectionRow
             key={connection.id}
-            href={remoteResourceHref(params, "vnc", connection.id)}
-            className="block"
-          >
-            <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
-              <span className="rounded-lg bg-gray-50 p-2">
-                <Monitor size={20} aria-hidden />
-              </span>
-              <span className="grid min-w-0 flex-1 gap-1">
-                <strong className="truncate text-sm">
-                  {connection.displayName}
-                </strong>
-                <span className="break-all text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.vnc.label;
-                  })}{" "}
-                  · {connection.host}:{connection.port} ·{" "}
-                  {connection.transport?.type === "ssh"
-                    ? `${t(($) => {
-                        return $.ssh.label;
-                      })} · ${
-                        sshRows?.find((host) => {
-                          return (
-                            connection.transport?.type === "ssh" &&
-                            host.id === connection.transport.connectionId
-                          );
-                        })?.displayName ?? connection.transport.connectionId
-                      }`
-                    : connection.transport?.type === "tailscale"
-                      ? t(($) => {
-                          return $.tailscale.title;
-                        })
-                      : connection.transport?.type === "cloudflare_access"
-                        ? t(($) => {
-                            return $.cloudflareAccess.title;
-                          })
-                        : t(($) => {
-                            return $.remoteControlSetup.direct;
-                          })}
-                </span>
-              </span>
-              <VncLastCheck
-                connectionId={connection.id}
-                generation={connection.generation}
-                createdAt={connection.createdAt}
-              />
-              <ChevronRight
-                size={18}
-                aria-hidden
-                className="shrink-0 text-muted-foreground"
-              />
-            </div>
-          </a>
+            connection={connection}
+            sshRows={sshRows}
+          />
         );
       })}
     </div>
@@ -364,9 +389,12 @@ function PrivateNetworkGroupRows({
     <div className="overflow-hidden rounded-3xl border-divider bg-card divide-y divide-divider has-[a]:border">
       {rows.map(({ config, kind, label }) => {
         return (
-          <a
+          <Link
             key={`${kind}:${config.id}`}
-            href={remoteResourceHref(params, kind, config.id)}
+            pathname="/connectors"
+            options={{
+              searchParams: remoteResourceSearchParams(params, kind, config.id),
+            }}
             className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5"
           >
             <span className="rounded-lg bg-gray-50 p-2">
@@ -409,7 +437,7 @@ function PrivateNetworkGroupRows({
               className="shrink-0 text-muted-foreground"
               aria-hidden
             />
-          </a>
+          </Link>
         );
       })}
     </div>

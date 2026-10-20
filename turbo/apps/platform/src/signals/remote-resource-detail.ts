@@ -70,7 +70,7 @@ export const privateNetworkDirectorySummary$ = computed(async (get) => {
 });
 
 export type RemoteResourceKind = "ssh" | "vnc" | "tailscale" | "cloudflare";
-export function remoteResourceHref(
+export function remoteResourceSearchParams(
   params: URLSearchParams,
   kind: RemoteResourceKind,
   id: string,
@@ -82,7 +82,7 @@ export function remoteResourceHref(
     kind === "ssh" || kind === "vnc" ? "remote-control" : "private-network",
   );
   next.set("remoteResource", `${kind}:${id}`);
-  return `/connectors?${next.toString()}`;
+  return next;
 }
 export const remoteResource$ = computed((get) => {
   if (!get(remoteControlGuidedEnabled$)) {

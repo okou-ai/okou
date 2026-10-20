@@ -264,12 +264,6 @@ function useTailscaleStartSteps(values: {
         t(($) => {
           return $.remoteNetworkGuide.ts1a;
         }, values),
-        t(($) => {
-          return $.remoteNetworkGuide.ts1b;
-        }, values),
-        t(($) => {
-          return $.remoteNetworkGuide.ts1c;
-        }, values),
       ],
       href: "https://console.tailscale.com/admin/settings/trust-credentials",
       link: t(($) => {
@@ -412,18 +406,22 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
           <ExternalLink size={14} aria-hidden />
         </a>
       )}
-      <ol className="grid gap-4">
-        {step.actions.map((action, index) => {
-          return (
-            <li key={action} className="flex items-start gap-4">
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {index + 1}
-              </span>
-              <span>{action}</span>
-            </li>
-          );
-        })}
-      </ol>
+      {step.actions.length === 1 ? (
+        <p>{step.actions[0]}</p>
+      ) : (
+        <ol className="grid gap-4">
+          {step.actions.map((action, index) => {
+            return (
+              <li key={action} className="flex items-start gap-4">
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {index + 1}
+                </span>
+                <span>{action}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
       {step.rows && (
         <dl className="grid overflow-hidden rounded-lg border border-divider bg-gray-50 divide-y divide-divider">
           {step.rows.map((row) => {
