@@ -395,23 +395,6 @@ async function connectionForSlackUser(
   return connection;
 }
 
-async function slackCommandWorkspaceContext(
-  db: Db,
-  payload: SlackCommandPayload,
-  signal: AbortSignal,
-): Promise<{
-  readonly installation: SlackInstallation | undefined;
-  readonly connection: SlackConnection | undefined;
-}> {
-  const installation = await installationForWorkspace(db, payload.team_id);
-  signal.throwIfAborted();
-  const connection = installation
-    ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
-    : undefined;
-  signal.throwIfAborted();
-  return { installation, connection };
-}
-
 function slackPersistentSecretContext(args: {
   readonly orgId: string | null;
   readonly userId: string | undefined;
@@ -849,11 +832,18 @@ export const handleSlackCommands$ = command(
     const db = set(writeDb$);
     const args = payload.text.trim().split(/\s+/);
     const subCommand = args[0]?.toLowerCase() ?? "";
-    const { installation, connection } = await slackCommandWorkspaceContext(
-      db,
-      payload,
-      signal,
-    );
+    const { installation, connection } = await (async (): Promise<{
+      readonly installation: SlackInstallation | undefined;
+      readonly connection: SlackConnection | undefined;
+    }> => {
+      const installation = await installationForWorkspace(db, payload.team_id);
+      signal.throwIfAborted();
+      const connection = installation
+        ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
+        : undefined;
+      signal.throwIfAborted();
+      return { installation, connection };
+    })();
     if (subCommand === "help" || subCommand === "") {
       return ephemeral(
         buildOfficialSlackHelpMessage({
