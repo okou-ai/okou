@@ -12,6 +12,8 @@ final class ConversationStore {
     let createdAt: Date
     let attachments: [ChatAttachment]
     var document: ChatDraftDocument? = nil
+    var modelSelection: ChatModelSelection? = nil
+    var reasoningEffort: String? = nil
     var needsRetry = false
 
     var message: ChatMessage {
@@ -26,6 +28,7 @@ final class ConversationStore {
     }
   }
 
+  let modelSelection: ChatModelSelectionStore?
   var thread: ChatThread
   var draft: String {
     get { composer.text }
@@ -84,11 +87,13 @@ final class ConversationStore {
     didSend: @escaping @MainActor () -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     didSettle: @escaping @MainActor () -> Void,
+    modelSelection: ChatModelSelectionStore? = nil,
     activitySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil
   ) {
+    self.modelSelection = modelSelection
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
@@ -121,6 +126,7 @@ final class ConversationStore {
 
   var canRelease: Bool {
     (!composer.hasContent || composer.isDurable) && pending.isEmpty
+      && modelSelection?.isBusy != true
       && !isLoading && !isSending && !isStopping && !isLoadingEarlier
       && history?.executionState.isActive != true
   }
@@ -179,9 +185,14 @@ final class ConversationStore {
     guard composer.hasContent, composer.canSend, attachmentDraft.isReady,
       !isSending, !closed, !needsUpgrade, !Task.isCancelled
     else { return }
-    let message = PendingMessage(
+    guard modelSelection?.canSend != false else { return }
+    var message = PendingMessage(
       id: UUID().uuidString.lowercased(), text: text, createdAt: Date(),
       attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
+    if modelSelection?.enabled == true {
+      message.modelSelection = modelSelection?.selection
+      message.reasoningEffort = modelSelection?.requestedEffort
+    }
     pending.append(message)
     rebuildMessages()
     composer.clear()
@@ -200,10 +211,12 @@ final class ConversationStore {
   private func submit(_ message: PendingMessage) async {
     guard !isSending, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isSending = true
+    modelSelection?.isSending = true
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
         isSending = false
+        modelSelection?.isSending = false
         sendTask = nil
         didSettle()
       }
@@ -211,7 +224,8 @@ final class ConversationStore {
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,
           document: message.document,
-          clientEventID: message.id)
+          clientEventID: message.id, modelSelection: message.modelSelection,
+          reasoningEffort: message.reasoningEffort)
         try Task.checkCancellation()
         guard !closed else { return }
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
@@ -281,6 +295,7 @@ final class ConversationStore {
   func close() {
     closed = true
     activitySummary.stop()
+    modelSelection?.close()
     refreshTask?.cancel()
     sendTask?.cancel()
     stopTask?.cancel()

@@ -12,14 +12,24 @@ public actor ChatCommands {
     self.sync = sync
   }
 
-  public func createThread(agentID: String? = nil) async throws -> ChatThread {
+  public func createThread(
+    agentID: String? = nil, modelSelection: ChatModelSelection? = nil,
+    reasoningEffort: String? = nil
+  ) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
-    async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
-    async let modelsRequest: AvailableRunModels = client.request("/api/run-models")
-    async let catalogRequest: ModelCatalog = client.request("/api/model-catalog")
-    let (agents, preference, availableModels, catalog) = try await (
-      agentsRequest, preferenceRequest, modelsRequest, catalogRequest
-    )
+    let selection: ThreadModelSelection
+    if let modelSelection {
+      selection = ThreadModelSelection(
+        model: modelSelection.model, serviceTier: modelSelection.serviceTier,
+        reasoningEffort: reasoningEffort)
+    } else {
+      async let preference: ModelPreference = client.request("/api/user-model-preference")
+      async let models: AvailableRunModels = client.request("/api/run-models")
+      async let catalog: ModelCatalog = client.request("/api/model-catalog")
+      selection = try await resolveThreadModelSelection(
+        preference: preference, availableModels: models, catalog: catalog)
+    }
+    let agents = try await agentsRequest
     guard
       let agent = agents.first(where: {
         $0.agentId == agentID || (agentID == nil && $0.isDefaultAgent)
@@ -28,8 +38,6 @@ public actor ChatCommands {
       if agentID != nil { throw ChatError.agentUnavailable }
       throw ChatError.noDefaultAgent
     }
-    let selection = resolveThreadModelSelection(
-      preference: preference, availableModels: availableModels, catalog: catalog)
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: selection.model,
@@ -41,7 +49,10 @@ public actor ChatCommands {
       id: created.id, agentID: agent.agentId, title: created.title ?? "",
       selectedModel: created.selectedModel, createdAt: created.createdAt,
       updatedAt: created.createdAt, sortAt: created.createdAt,
-      pinnedAt: nil, pinOrder: nil, indicator: nil)
+      pinnedAt: nil, pinOrder: nil,
+      modelSettings: selection.model.flatMap { model in
+        selection.reasoningEffort.map { [model: ThreadModelSetting(effort: $0)] }
+      } ?? [:], serviceTier: selection.serviceTier, indicator: nil)
   }
 
   public func validateAttachment(_ id: String) async throws {
@@ -66,7 +77,8 @@ public actor ChatCommands {
   public func send(
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
     document: ChatDraftDocument? = nil,
-    clientEventID: String = UUID().uuidString
+    clientEventID: String = UUID().uuidString,
+    modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil
   )
     async throws -> SendReceipt
   {
@@ -97,7 +109,8 @@ public actor ChatCommands {
                 "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
               ])
             }),
-      hasTextContent: !prompt.isEmpty)
+      hasTextContent: !prompt.isEmpty, modelSelection: modelSelection,
+      reasoningEffort: reasoningEffort)
     do {
       let result: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -215,9 +228,11 @@ public actor ChatCommands {
     let chatThreadSortEventId: String
     let userMessage: ChatDraftDocument
     let hasTextContent: Bool
+    let modelSelection: ChatModelSelection?
+    let reasoningEffort: String?
     enum Keys: String, CodingKey {
       case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
-      case hasTextContent, computerUseHostId, cloudBrowserEnabled
+      case hasTextContent, computerUseHostId, cloudBrowserEnabled, model, runOptions
     }
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: Keys.self)
@@ -228,6 +243,13 @@ public actor ChatCommands {
       try container.encode(chatThreadSortEventId, forKey: .chatThreadSortEventId)
       try container.encode(userMessage, forKey: .userMessage)
       try container.encode(hasTextContent, forKey: .hasTextContent)
+      if let modelSelection {
+        try container.encode(modelSelection.model, forKey: .model)
+        var options: [String: String] = [:]
+        if modelSelection.serviceTier == "priority" { options["codexServiceTier"] = "fast" }
+        if let reasoningEffort { options["reasoningEffort"] = reasoningEffort }
+        if !options.isEmpty { try container.encode(options, forKey: .runOptions) }
+      }
       try container.encodeNil(forKey: .computerUseHostId)
       try container.encode(false, forKey: .cloudBrowserEnabled)
     }

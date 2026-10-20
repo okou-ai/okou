@@ -29,16 +29,16 @@ settings menu provides account actions. Native list actions support pinning,
 archiving, and renaming chats; archive controls follow the existing
 `chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
-agent and the existing saved model preference. Workspace setup and account
-management remain on the web.
+agent and the existing saved model preference. The `iosChatModelSelection` switch
+enables a native model sheet and personal subscription account management.
+Workspace setup and Okou account management remain on the web.
 
 Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output and tool cards are not rendered. Sharing, Cloud Browser,
-Computer Use, artifact controls, model selection, and connector
-selection are outside this local UI. The composer uses a combined send/stop
+Computer Use, artifact controls, and connector selection are outside this local UI. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft
 control can stop active work.
 

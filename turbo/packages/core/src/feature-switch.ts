@@ -52,6 +52,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.IosChatModelSelection]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "iOS chat model selection",
+    description:
+      "Choose chat models and manage personal subscriptions in the native iOS app.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.IosChatAttachments]: {
     maintainer: "lancy@okou.ai",
     displayName: "iOS chat attachments",

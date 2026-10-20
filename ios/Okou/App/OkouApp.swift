@@ -29,7 +29,6 @@ struct OkouApp: App {
         }
       }
       .tint(Color.primary)
-      .environment(\.locale, Locale(identifier: "en"))
       .task { await authentication?.start() }
       .onOpenURL { url in Task { await authentication?.handleURL(url) } }
     }
@@ -154,7 +153,8 @@ private struct WorkspaceRootView: View {
                   attachments: store.newAttachmentDraft,
                   supportsAttachments: store.list.canAttachFiles,
                   draftState: store.newComposer,
-                  submit: { await store.sendNewChat() }, refresh: nil)
+                  submit: { await store.sendNewChat() }, refresh: nil,
+                  modelSelection: store.newModelSelection)
               }
           }
         }

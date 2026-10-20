@@ -43,8 +43,8 @@ final class ModelSelectionTests: XCTestCase {
 
   private func decodeCatalog() throws -> ModelCatalog {
     let json = """
-      {"systemDefaultModel":"okou-1.0","models":[{"model":"retired","resolvedModel":"active"},\
-      {"model":"active","resolvedModel":"active"}],"routes":[]}
+      {"systemDefaultModel":"okou-1.0","models":[{"model":"retired","resolvedModel":"active","displayName":"Retired","sortOrder":1},\
+      {"model":"active","resolvedModel":"active","displayName":"Active","sortOrder":2}],"routes":[]}
       """
     return try APIClient.decoder().decode(ModelCatalog.self, from: Data(json.utf8))
   }

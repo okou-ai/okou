@@ -331,7 +331,8 @@ private final class AttachmentFlowFixture: Sendable {
           body:
             "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
       case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
-      case "/api/run-models", "/api/model-catalog": return ChatHTTPResponse(body: "{\"models\":[]}")
+      case "/api/run-models", "/api/model-catalog":
+        return ChatHTTPResponse(body: "{\"models\":[],\"routes\":[]}")
       case "/api/chat-threads":
         guard await creation() else {
           return ChatHTTPResponse(
