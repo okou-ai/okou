@@ -248,7 +248,6 @@
       "documentTitle": "ログを検査",
       "errors": {
         "invalid": "無効な JSON ファイルです。エクスポートされたアクティビティ ログ JSON ファイルをアップロードします。",
-        "load": "JSONファイルを読み込めませんでした。エクスポートされたアクティビティ ログ JSON ファイルをアップロードします。",
         "oversized": "JSON ファイルが大きすぎます。エクスポートされた 25 MB 未満のアクティビティ ログ JSON ファイルをアップロードします。"
       },
       "fallbackName": "インポートされたログ",
@@ -1336,7 +1335,6 @@
       "downgradeScheduledPeriod": "ダウングレードが予定されています。現在のプランは、請求期間が終了するまで有効のままです。",
       "planRestored": "計画が復元されました。サブスクリプションは通常どおり更新されます。",
       "preparingReceiptDownload": "領収書のダウンロードを準備しています...",
-      "receiptDownloadFailed": "領収書のダウンロードに失敗しました",
       "receiptsDownloaded": "領収書をダウンロードしました",
       "subscriptionChangeConfirmed": "サブスクリプションの変更が確認されました。"
     },
@@ -1604,9 +1602,7 @@
       "title": "添付ファイル",
       "unavailable": "{{filename}} は利用できなくなりました。送信するにはもう一度アップロードしてください。",
       "unavailableCount_other": "{{count}} 件の添付ファイルは利用できなくなりました。送信するにはもう一度アップロードしてください。",
-      "uploadFailed": "{{filename}} のアップロードに失敗しました",
-      "uploadFailedRetry": "{{filename}} のアップロードに失敗しました。もう一度やり直してください。",
-      "uploadsFailed": "一部の添付ファイルのアップロードに失敗しました。もう一度やり直してください。"
+      "uploadFailedRetry": "{{filename}} のアップロードに失敗しました。もう一度やり直してください。"
     },
     "automations": {
       "active": "アクティブ",
@@ -1707,7 +1703,6 @@
     },
     "banking": {
       "accountFallback": "銀行口座",
-      "actionFailed": "銀行の操作に失敗しました",
       "active_other": "{{count}}口座へのアクセスが有効です",
       "automationOff": "自動化の実行では読み取り専用アクセスを利用できません。",
       "cancel": "キャンセル",
@@ -4860,7 +4855,6 @@
           "codeRequired": "Claudeの認証コードを貼り付けて続行します。",
           "connectedToast": "Claudeが接続されました",
           "connectTitle": "Claudeを接続する",
-          "error": "Claudeの接続に失敗しました。もう一度やり直してください。",
           "expired": "Claudeの接続セッションの有効期限が切れました。もう一度やり直してください。",
           "instructions": "まず、[Claude 承認ページを開く] をクリックします。次に、Claude の {{brandName}} を承認し、承認後に表示される認証コードをコピーします。最後にそのコードをここに貼り付けて、「接続」をクリックします。",
           "openApproval": "Claude 承認ページを開く",
@@ -4875,7 +4869,6 @@
           "connectedToast": "ChatGPT が接続されました",
           "connectTitle": "Codex を接続します",
           "deviceCode": "デバイスコード",
-          "error": "ChatGPT 接続に失敗しました。もう一度やり直してください。",
           "expired": "Codex 接続セッションの有効期限が切れました。もう一度やり直してください。",
           "freePlanRejected": "無料の ChatGPT プランでは、{{brandName}} 経由で Codex を使用できません。 Plus または Pro にアップグレードして、もう一度試してください。",
           "instructions": "まず、コピーボタンでデバイス コードをコピーし、承認ページを開きます。次に、プロンプトが表示されたら、デバイス コードを OpenAI に貼り付けます。最後にアクセスを承認し、{{brandName}} が接続を完了するまでこのダイアログを開いたままにします。",

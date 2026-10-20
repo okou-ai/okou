@@ -261,7 +261,6 @@
       "documentTitle": "Ispeziona registro",
       "errors": {
         "invalid": "File JSON non valido. Carica un file JSON del registro delle attività esportato.",
-        "load": "Impossibile caricare il file JSON. Carica un file JSON del registro delle attività esportato.",
         "oversized": "Il file JSON è troppo grande. Carica un file di registro attività esportato JSON inferiore a 25 MB."
       },
       "fallbackName": "Registro importato",
@@ -1360,7 +1359,6 @@
       "downgradeScheduledPeriod": "Downgrade programmato. Il tuo piano attuale rimane attivo fino al termine del periodo di fatturazione.",
       "planRestored": "Piano ripristinato. Il tuo abbonamento si rinnoverà normalmente.",
       "preparingReceiptDownload": "Preparazione download ricevuta...",
-      "receiptDownloadFailed": "Impossibile scaricare le ricevute",
       "receiptsDownloaded": "Ricevute scaricate",
       "subscriptionChangeConfirmed": "La modifica dell'abbonamento è stata confermata."
     },
@@ -1631,9 +1629,7 @@
       "unavailableCount_one": "{{count}} allegato non è più disponibile. Caricalo di nuovo per inviarlo.",
       "unavailableCount_many": "{{count}} allegati non sono più disponibili. Caricali di nuovo per inviarli.",
       "unavailableCount_other": "{{count}} allegati non sono più disponibili. Caricali di nuovo per inviarli.",
-      "uploadFailed": "Impossibile caricare {{filename}}",
-      "uploadFailedRetry": "Impossibile caricare {{filename}}. Riprova.",
-      "uploadsFailed": "Impossibile caricare alcuni allegati. Riprova."
+      "uploadFailedRetry": "Impossibile caricare {{filename}}. Riprova."
     },
     "automations": {
       "active": "Attivo",
@@ -1737,7 +1733,6 @@
     },
     "banking": {
       "accountFallback": "Conto bancario",
-      "actionFailed": "Operazione bancaria non riuscita",
       "active_one": "Accesso attivo per {{count}} conto",
       "active_many": "Accesso attivo per {{count}} conti",
       "active_other": "Accesso attivo per {{count}} conti",
@@ -4935,7 +4930,6 @@
           "codeRequired": "Incolla il codice di autorizzazione Claude per continuare.",
           "connectedToast": "Claude connesso",
           "connectTitle": "Connetti Claude",
-          "error": "Connessione a Claude non riuscita. Ricomincia per riprovare.",
           "expired": "La sessione di connessione a Claude è scaduta. Ricomincia per riprovare.",
           "instructions": "Per prima cosa fai clic su Apri la pagina di approvazione Claude. Quindi approva {{brandName}} in Claude e copia il codice di autorizzazione mostrato dopo l'approvazione. Infine incolla il codice qui e fai clic su Connetti.",
           "openApproval": "Apri la pagina di approvazione Claude",
@@ -4950,7 +4944,6 @@
           "connectedToast": "ChatGPT connesso",
           "connectTitle": "Connetti Codex",
           "deviceCode": "Codice dispositivo",
-          "error": "Connessione ChatGPT non riuscita. Ricomincia per riprovare.",
           "expired": "La sessione di connessione Codex è scaduta. Ricomincia per riprovare.",
           "freePlanRejected": "I piani gratuiti ChatGPT non possono utilizzare Codex tramite {{brandName}}. Passa a Plus o Pro e riprova.",
           "instructions": "Per prima cosa copia il codice del dispositivo con il pulsante di copia, quindi apri la pagina di approvazione. Quindi incolla il codice del dispositivo in OpenAI quando richiesto. Infine, approva l'accesso e mantieni aperta questa finestra di dialogo mentre {{brandName}} termina la connessione.",

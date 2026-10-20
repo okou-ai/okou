@@ -261,7 +261,6 @@
       "documentTitle": "Inspecter le journal",
       "errors": {
         "invalid": "Fichier JSON invalide. Téléchargez un fichier JSON de journal d'activité exporté.",
-        "load": "Impossible de charger le fichier JSON. Téléchargez un fichier JSON de journal d'activité exporté.",
         "oversized": "Le fichier JSON est trop volumineux. Téléchargez un fichier JSON de journal d'activité exporté de moins de 25 Mo."
       },
       "fallbackName": "Journal importé",
@@ -1360,7 +1359,6 @@
       "downgradeScheduledPeriod": "Rétrogradation programmée. Votre forfait actuel reste actif jusqu'à la fin de la période de facturation.",
       "planRestored": "Forfait restauré. Votre abonnement se renouvellera normalement.",
       "preparingReceiptDownload": "Préparation du téléchargement du reçu...",
-      "receiptDownloadFailed": "Échec du téléchargement des reçus",
       "receiptsDownloaded": "Reçus téléchargés",
       "subscriptionChangeConfirmed": "La modification de l’abonnement a été confirmée."
     },
@@ -1631,9 +1629,7 @@
       "unavailableCount_one": "{{count}} pièce jointe n'est plus disponible. Importez-la à nouveau pour l'envoyer.",
       "unavailableCount_many": "{{count}} pièces jointes ne sont plus disponibles. Importez-les à nouveau pour les envoyer.",
       "unavailableCount_other": "{{count}} pièces jointes ne sont plus disponibles. Importez-les à nouveau pour les envoyer.",
-      "uploadFailed": "Échec du téléchargement de {{filename}}",
-      "uploadFailedRetry": "Échec du téléchargement de {{filename}}. Réessayez.",
-      "uploadsFailed": "Certaines pièces jointes n'ont pas pu être téléchargées. Réessayez."
+      "uploadFailedRetry": "Échec du téléchargement de {{filename}}. Réessayez."
     },
     "automations": {
       "active": "Actif",
@@ -1737,7 +1733,6 @@
     },
     "banking": {
       "accountFallback": "Compte bancaire",
-      "actionFailed": "L'action bancaire a échoué",
       "active_one": "Accès actif pour {{count}} compte",
       "active_many": "Accès actif pour {{count}} comptes",
       "active_other": "Accès actif pour {{count}} comptes",
@@ -4935,7 +4930,6 @@
           "codeRequired": "Collez le code d'autorisation Claude pour continuer.",
           "connectedToast": "Claude connecté",
           "connectTitle": "Connecter Claude",
-          "error": "Échec de la connexion de Claude. Recommencez pour réessayer.",
           "expired": "Session de connexion Claude expirée. Recommencez pour réessayer.",
           "instructions": "Cliquez d'abord sur Ouvrir la page d'approbation Claude. Ensuite, approuvez {{brandName}} dans Claude et copiez le code d'autorisation affiché après l'approbation. Enfin, collez ce code ici et cliquez sur Connecter.",
           "openApproval": "Ouvrir la page d'approbation Claude",
@@ -4950,7 +4944,6 @@
           "connectedToast": "ChatGPT connecté",
           "connectTitle": "Connecter Codex",
           "deviceCode": "Code de l'appareil",
-          "error": "Échec de la connexion à ChatGPT. Recommencez pour réessayer.",
           "expired": "La session de connexion Codex a expiré. Recommencez pour réessayer.",
           "freePlanRejected": "Les plans gratuits ChatGPT ne peuvent pas utiliser Codex via {{brandName}}. Passez à Plus ou Pro et réessayez.",
           "instructions": "Copiez d'abord le code de l'appareil avec le bouton de copie, puis ouvrez la page d'approbation. Ensuite, collez le code de l'appareil dans OpenAI lorsqu'il est demandé. Enfin, approuvez l'accès et gardez cette fenêtre ouverte pendant que {{brandName}} termine la connexion.",

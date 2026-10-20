@@ -211,7 +211,7 @@ test("Persist pasted text and attachments after the copied file resolves", async
   });
   await resolutionStarted.promise;
   expect(composer).toHaveTextContent("Copied notes to keep");
-  expect(fastButton("Remove copied-notes.txt")).toBeInTheDocument();
+  expect(fastButton("Cancel upload copied-notes.txt")).toBeInTheDocument();
   resolveFile.resolve();
   const savedDraft = await saved.promise;
   expect(savedDraft.draftUserMessage?.parts).toStrictEqual(

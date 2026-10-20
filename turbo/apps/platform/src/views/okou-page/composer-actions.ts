@@ -3,6 +3,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useLoadableState,
   useSet,
 } from "ccstate-react";
@@ -51,12 +52,20 @@ export function useComposerPrimaryAction(
   // "disabled" on every recompute would unmount and remount Stop mid-run.
   const action =
     useLastResolved(signals.submission.primaryAction$) ?? "disabled";
+  const uploads = useLoadable(signals.draft.attachmentUploadsReady$);
+  const sending = useLastResolved(signals.submission.sending$) ?? false;
+  const availableAction =
+    uploads.state === "hasData" && uploads.data
+      ? action
+      : sending
+        ? "stop"
+        : "disabled";
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   return selectedModelOauthAvailable &&
-    (!actions.submitting || action === "stop") &&
+    (!actions.submitting || availableAction === "stop") &&
     voiceAction === null
-    ? action
+    ? availableAction
     : "disabled";
 }
 

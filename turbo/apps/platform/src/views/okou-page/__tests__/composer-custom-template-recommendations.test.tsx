@@ -370,7 +370,7 @@ test("A failed image import keeps the draft and does not start an analysis", asy
     within(shelf).getByLabelText("Import your own"),
     new File(["brand"], "brand.png", { type: "image/png" }),
   );
-  await screen.findByText("Failed to upload brand.png");
+  await screen.findByText("Upload failed");
   expect(capture.sentMessages).toHaveLength(0);
   expect(editor).toHaveTextContent("Keep my launch brief");
   expect(window.location.pathname).toBe(`/agents/${AGENT_ID}/chat`);

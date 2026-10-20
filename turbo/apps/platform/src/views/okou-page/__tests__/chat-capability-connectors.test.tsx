@@ -469,7 +469,7 @@ test("Banking connect closes its blank popup on session failure", async () => {
     await startPendingBankingConnect("session failure");
   response.resolve(undefined);
   await expect(
-    within(card).findByText("Bank connection unavailable"),
+    screen.findByText("Bank connection unavailable"),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(getButton("Connect a bank", card)).toBeEnabled();

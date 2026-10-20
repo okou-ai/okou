@@ -261,7 +261,6 @@
       "documentTitle": "Inspecionar log",
       "errors": {
         "invalid": "Arquivo JSON inválido. Envie um arquivo JSON exportado de um log de atividade.",
-        "load": "Não foi possível carregar o arquivo JSON. Envie um arquivo JSON exportado de um log de atividade.",
         "oversized": "O arquivo JSON é muito grande. Envie um arquivo JSON exportado de um log de atividade com menos de 25 MB."
       },
       "fallbackName": "Log importado",
@@ -1360,7 +1359,6 @@
       "downgradeScheduledPeriod": "Downgrade agendado. Seu plano atual permanece ativo até o fim do período de cobrança.",
       "planRestored": "Plano restaurado. Sua assinatura será renovada normalmente.",
       "preparingReceiptDownload": "Preparando o download dos recibos...",
-      "receiptDownloadFailed": "Não foi possível baixar os recibos",
       "receiptsDownloaded": "Recibos baixados",
       "subscriptionChangeConfirmed": "Alteração da assinatura confirmada."
     },
@@ -1631,9 +1629,7 @@
       "unavailableCount_one": "{{count}} anexo não está mais disponível. Faça o upload novamente para enviar.",
       "unavailableCount_many": "{{count}} anexos não estão mais disponíveis. Faça o upload novamente para enviar.",
       "unavailableCount_other": "{{count}} anexos não estão mais disponíveis. Faça o upload novamente para enviar.",
-      "uploadFailed": "Falha ao enviar {{filename}}",
-      "uploadFailedRetry": "Falha ao enviar {{filename}}. Tente novamente.",
-      "uploadsFailed": "Falha ao enviar alguns anexos. Tente novamente."
+      "uploadFailedRetry": "Falha ao enviar {{filename}}. Tente novamente."
     },
     "automations": {
       "active": "Ativa",
@@ -1737,7 +1733,6 @@
     },
     "banking": {
       "accountFallback": "Conta bancária",
-      "actionFailed": "A ação bancária falhou",
       "active_one": "Acesso ativo para {{count}} conta",
       "active_many": "Acesso ativo para {{count}} contas",
       "active_other": "Acesso ativo para {{count}} contas",
@@ -4935,7 +4930,6 @@
           "codeRequired": "Cole o código de autorização do Claude para continuar.",
           "connectedToast": "Claude conectado",
           "connectTitle": "Conectar o Claude",
-          "error": "Falha na conexão com o Claude. Inicie novamente para tentar de novo.",
           "expired": "A sessão de conexão com o Claude expirou. Inicie novamente para tentar de novo.",
           "instructions": "Primeiro, clique em Abrir página de aprovação do Claude. Depois, aprove o {{brandName}} no Claude e copie o código de autorização exibido após a aprovação. Por fim, cole o código aqui e clique em Conectar.",
           "openApproval": "Abrir página de aprovação do Claude",
@@ -4950,7 +4944,6 @@
           "connectedToast": "ChatGPT conectado",
           "connectTitle": "Conectar o Codex",
           "deviceCode": "Código do dispositivo",
-          "error": "Falha na conexão com o ChatGPT. Inicie novamente para tentar de novo.",
           "expired": "A sessão de conexão com o Codex expirou. Inicie novamente para tentar de novo.",
           "freePlanRejected": "Os planos gratuitos do ChatGPT não podem usar o Codex pelo {{brandName}}. Faça upgrade para o Plus ou Pro e tente de novo.",
           "instructions": "Primeiro, copie o código do dispositivo com o botão de copiar e abra a página de aprovação. Depois, cole o código do dispositivo na OpenAI quando solicitado. Por fim, aprove o acesso e mantenha esta caixa de diálogo aberta enquanto o {{brandName}} conclui a conexão.",

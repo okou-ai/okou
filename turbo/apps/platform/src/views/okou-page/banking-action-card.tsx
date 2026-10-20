@@ -36,7 +36,6 @@ import {
   Reason,
   detach,
   onRejection,
-  tapError,
   withCleanup,
 } from "../../signals/utils.ts";
 
@@ -93,14 +92,6 @@ interface BankingCardController {
   ) => void;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : i18n.t(($) => {
-        return $.chat.banking.actionFailed;
-      });
-}
-
 function isBankingGrantDuration(value: string): value is BankingGrantDuration {
   return BANKING_GRANT_DURATIONS.some((duration) => {
     return duration === value;
@@ -137,22 +128,15 @@ function openBankingConnect(
   detach(
     withCleanup(
       (async () => {
-        const url = await tapError(
-          onRejection(
-            () => {
-              return startSession({ mode, institutionLoginId }, pageSignal);
-            },
-            () => {
-              return popup.close();
-            },
-          ),
-          (error) => {
-            updateUi({ localError: errorMessage(error) });
+        const url = await onRejection(
+          () => {
+            return startSession({ mode, institutionLoginId }, pageSignal);
+          },
+          () => {
+            return popup.close();
           },
         );
-        if (url) {
-          popup.location.replace(url);
-        }
+        popup.location.replace(url);
       })(),
       () => {
         return updateUi({ busy: null });
@@ -193,15 +177,8 @@ function saveBankingGrant(
   detach(
     withCleanup(
       (async () => {
-        const saved = await tapError(
-          saveGrant({ accountIds: [...accountIds], duration }, pageSignal),
-          (error) => {
-            updateUi({ localError: errorMessage(error) });
-          },
-        );
-        if (saved) {
-          updateUi({ editing: false });
-        }
+        await saveGrant({ accountIds: [...accountIds], duration }, pageSignal);
+        updateUi({ editing: false });
       })(),
       () => {
         return updateUi({ busy: null });
@@ -230,16 +207,12 @@ function revokeBankingGrant(
   detach(
     withCleanup(
       (async () => {
-        const revoked = await tapError(revokeGrant(pageSignal), (error) => {
-          updateUi({ localError: errorMessage(error) });
+        await revokeGrant(pageSignal);
+        updateUi({
+          confirmingRevoke: false,
+          editing: true,
+          selectedAccountIds: [],
         });
-        if (revoked) {
-          updateUi({
-            confirmingRevoke: false,
-            editing: true,
-            selectedAccountIds: [],
-          });
-        }
       })(),
       () => {
         return updateUi({ busy: null });
@@ -266,16 +239,9 @@ function continueBankingChat(
     return;
   }
   detach(
-    withCleanup(
-      (async () => {
-        await tapError(continueChat(pageSignal), (error) => {
-          updateUi({ localError: errorMessage(error) });
-        });
-      })(),
-      () => {
-        return updateUi({ busy: null });
-      },
-    ),
+    withCleanup(continueChat(pageSignal), () => {
+      return updateUi({ busy: null });
+    }),
     Reason.DomCallback,
     "continue banking chat callback",
   );

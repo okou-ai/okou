@@ -248,7 +248,6 @@
       "documentTitle": "로그 검사",
       "errors": {
         "invalid": "잘못된 JSON 파일입니다. 내보낸 활동 로그 JSON 파일을 업로드하세요.",
-        "load": "JSON 파일을 불러올 수 없습니다. 내보낸 활동 로그 JSON 파일을 업로드하세요.",
         "oversized": "JSON 파일이 너무 큽니다. 25MB 이하의 내보낸 활동 로그 JSON 파일을 업로드하세요."
       },
       "fallbackName": "가져온 로그",
@@ -1336,7 +1335,6 @@
       "downgradeScheduledPeriod": "다운그레이드가 예약되었습니다. 현재 플랜은 청구 기간 종료 시까지 활성 상태입니다.",
       "planRestored": "플랜이 복원되었습니다. 구독이 정상적으로 갱신됩니다.",
       "preparingReceiptDownload": "영수증 다운로드 준비 중...",
-      "receiptDownloadFailed": "영수증 다운로드에 실패했습니다",
       "receiptsDownloaded": "영수증이 다운로드되었습니다",
       "subscriptionChangeConfirmed": "구독 변경이 확인되었습니다."
     },
@@ -1604,9 +1602,7 @@
       "title": "첨부파일",
       "unavailable": "{{filename}}을(를) 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
       "unavailableCount_other": "첨부파일 {{count}}개를 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
-      "uploadFailed": "{{filename}} 업로드 실패",
-      "uploadFailedRetry": "{{filename}} 업로드 실패. 다시 시도하세요.",
-      "uploadsFailed": "일부 첨부파일 업로드에 실패했습니다. 다시 시도하세요."
+      "uploadFailedRetry": "{{filename}} 업로드 실패. 다시 시도하세요."
     },
     "automations": {
       "active": "활성",
@@ -1707,7 +1703,6 @@
     },
     "banking": {
       "accountFallback": "은행 계좌",
-      "actionFailed": "은행 작업에 실패했습니다",
       "active_other": "{{count}}개 계좌에 대한 접근이 활성화되었습니다",
       "automationOff": "자동화 실행에서는 읽기 전용 접근을 사용할 수 없습니다.",
       "cancel": "취소",
@@ -4860,7 +4855,6 @@
           "codeRequired": "계속하려면 Claude 승인 코드를 붙여넣으세요.",
           "connectedToast": "Claude 연결됨",
           "connectTitle": "Claude 연결",
-          "error": "Claude 연결 실패. 다시 시작하여 재시도하세요.",
           "expired": "Claude 연결 세션이 만료되었습니다. 다시 시작하여 재시도하세요.",
           "instructions": "먼저 Claude 승인 페이지 열기를 클릭하세요. 그런 다음 Claude에서 {{brandName}}을 승인하고 승인 후 표시되는 승인 코드를 복사하세요. 마지막으로 그 코드를 여기에 붙여넣고 연결을 클릭하세요.",
           "openApproval": "Claude 승인 페이지 열기",
@@ -4875,7 +4869,6 @@
           "connectedToast": "ChatGPT에 연결됨",
           "connectTitle": "Codex 연결",
           "deviceCode": "기기 코드",
-          "error": "ChatGPT 연결 실패. 다시 시작하여 재시도하세요.",
           "expired": "Codex 연결 세션이 만료되었습니다. 다시 시작하여 재시도하세요.",
           "freePlanRejected": "무료 ChatGPT 플랜은 {{brandName}}를 통한 Codex 사용이 불가합니다. Plus 또는 Pro로 업그레이드 후 다시 시도하세요.",
           "instructions": "먼저 복사 버튼으로 기기 코드를 복사한 다음 승인 페이지를 여세요. 그런 다음 요청 시 OpenAI에 기기 코드를 붙여넣으세요. 마지막으로 접근을 승인하고 {{brandName}}가 연결을 완료할 때까지 이 대화창을 열어두세요.",

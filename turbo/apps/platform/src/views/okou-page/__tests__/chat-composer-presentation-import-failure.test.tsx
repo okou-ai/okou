@@ -33,9 +33,7 @@ test("Do not send a presentation that failed to upload", async () => {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }),
   );
-  await expect(
-    screen.findByText("Failed to upload broken-deck.pptx"),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Upload failed")).resolves.toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
   expect(capture.runPrompts).toHaveLength(0);
 });
