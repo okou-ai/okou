@@ -300,6 +300,11 @@ and final measurement acceptance remain in #39998.
 
 ## Current P1 diagnostic contract
 
+The separate [owned charged-memory window tool](charged_windows.md) qualifies
+isolated kernel counters with a bounded disposable workload and strict original
+file replay. Its charge scope and false native/full-residency claims do not
+change P1 or this suite's native acceptance.
+
 New native runs consume `runner-memory-calibration-v2` from the matching
 [owned collector](../../../../.github/scripts/runner-memory-calibrate.md).
 Every process sample carries PID/start generation, explicit residency state and
