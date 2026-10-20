@@ -1,4 +1,6 @@
-import { expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
 import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   sharedThreadArtifactPolicyKey,
@@ -8,6 +10,54 @@ import worker from "./index";
 import { fetchWorker } from "./test-helpers";
 
 type Env = Parameters<typeof worker.fetch>[1];
+
+const server = setupServer();
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "error" });
+});
+afterEach(() => {
+  server.resetHandlers();
+});
+afterAll(() => {
+  server.close();
+});
+
+test("activated hosted snapshots retain no-store headers and recheck access for every resource", async () => {
+  const f = fixture();
+  const env = {
+    ...f.env,
+    HOSTED_SITE_API_ORIGIN: "https://authority.test",
+    HOSTED_SITE_ACCESS_ENABLED: "true",
+  };
+  let allowed = true;
+  server.use(
+    http.get("https://authority.test/api/host/sites/:siteId/access", () => {
+      return HttpResponse.json({
+        allowed,
+        decision: allowed ? "allow" : "deny",
+      });
+    }),
+  );
+  const urls = [f.siteUrl, `${f.siteUrl}assets/style.css`];
+  for (const url of urls) {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetchWorker(new Request(url, { method }), env);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+  }
+  allowed = false;
+  for (const url of urls) {
+    const response = await fetchWorker(new Request(url), env);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  }
+  const file = await fetchWorker(new Request(f.fileUrl), env);
+  expect(file.status).toBe(200);
+  expect(file.headers.get("Cache-Control")).toBe(
+    "private, max-age=31536000, immutable",
+  );
+});
 
 function fixture(tokenLength = 10) {
   const threadId = crypto.randomUUID();

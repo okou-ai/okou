@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   JsonTreePreview = "jsonTreePreview",
+  HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
   TailscaleAccess = "tailscaleAccess",

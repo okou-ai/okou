@@ -541,12 +541,18 @@ importers:
 
   apps/host-worker:
     dependencies:
+      '@clerk/backend':
+        specifier: 3.13.1
+        version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts
       '@okouai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*
