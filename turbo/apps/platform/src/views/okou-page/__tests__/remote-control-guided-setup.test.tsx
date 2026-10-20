@@ -104,7 +104,7 @@ async function page(
   path = "/connectors?scope=remote-control",
   enabled = true,
   role?: "admin" | "member",
-  legacyEnabled = !enabled,
+  capabilities: { vnc?: boolean; tailscale?: boolean } = {},
 ) {
   if (role) {
     context.mocks.data.org({
@@ -129,8 +129,8 @@ async function page(
       : {}),
     featureSwitches: {
       [FeatureSwitchKey.RemoteControlGuidedSetup]: enabled,
-      [FeatureSwitchKey.VncAccess]: legacyEnabled,
-      [FeatureSwitchKey.TailscaleAccess]: legacyEnabled,
+      [FeatureSwitchKey.VncAccess]: capabilities.vnc ?? true,
+      [FeatureSwitchKey.TailscaleAccess]: capabilities.tailscale ?? true,
     },
   });
 }
@@ -157,7 +157,7 @@ test.each([
       `/connectors?scope=remote-control&setup=${protocol}`,
       false,
       undefined,
-      legacyEnabled,
+      { vnc: legacyEnabled, tailscale: legacyEnabled },
     );
     await waitFor(() => {
       expect(getAction("button", "Add host")).toBeInTheDocument();
@@ -168,7 +168,7 @@ test.each([
     expect(queryAction("button", "Add connection")).toBeNull();
   },
 );
-test("The guided switch alone exposes both SSH and VNC from connection management", async () => {
+test("Guided connection management shows the protocols enabled by their existing switches", async () => {
   await page();
   await screen.findByRole("heading", { name: "No devices added yet" });
   expect(
@@ -183,6 +183,65 @@ test("The guided switch alone exposes both SSH and VNC from connection managemen
     screen.getByText("Control the device’s screen with a mouse and keyboard."),
   ).toBeInTheDocument();
 });
+test("The UI switch does not expose disabled VNC or Tailscale setup", async () => {
+  await page("/connectors?scope=remote-control&setup=vnc", true, undefined, {
+    vnc: false,
+    tailscale: false,
+  });
+  await screen.findByRole("heading", { name: "No devices added yet" });
+  expect(screen.queryByLabelText("Login method")).toBeNull();
+  click(getAction("button", "Add connection"));
+  await screen.findByRole("heading", {
+    name: "Use existing connection details",
+  });
+  expect(screen.getByText("Run commands on the device.")).toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      "Control the device’s screen with a mouse and keyboard.",
+    ),
+  ).toBeNull();
+  expect(queryAction("button", "Start setup")).toBeNull();
+  click(getAction("button", "Use existing connection details"));
+  await screen.findByText("Direct connection");
+  expect(
+    screen.queryByText("For devices already connected to Tailscale."),
+  ).toBeNull();
+  expect(queryAction("button", "Set up your device step by step")).toBeNull();
+  click(screen.getByText("Direct connection"));
+  await screen.findByLabelText("SSH username");
+});
+test.each([false, true])(
+  "With Tailscale SSH disabled, reusable Tailscale networks follow the existing VNC gate (%s)",
+  async (vnc) => {
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, { configs: [network] });
+    });
+    await page("/connectors?scope=private-network", true, undefined, {
+      vnc,
+      tailscale: false,
+    });
+    if (vnc) {
+      const card = await screen.findByText(network.name);
+      click(card);
+      await screen.findByRole("heading", { name: network.name });
+      click(getAction("button", "Back to private networks"));
+      await screen.findByText(network.name);
+    } else {
+      await screen.findByRole("heading", {
+        name: "No private networks added yet",
+      });
+    }
+    expect(screen.queryAllByText(network.name)).toHaveLength(vnc ? 1 : 0);
+    click(getAction("button", "Add private network"));
+    await screen.findByRole("heading", { name: "Add a private network" });
+    expect(
+      screen.getByText("Cloudflare Access", { exact: true }),
+    ).toBeInTheDocument();
+    expect(screen.queryAllByText("Tailscale", { exact: true })).toHaveLength(
+      vnc ? 1 : 0,
+    );
+  },
+);
 test("Private network links to connection management without starting device setup", async () => {
   await page("/connectors?scope=private-network&setup=ssh");
   click(
@@ -221,20 +280,10 @@ test.each(["tailscale", "cloudflare"] as const)(
     );
   },
 );
-test.each([
-  ["ssh", false],
-  ["vnc", false],
-  ["ssh", true],
-  ["vnc", true],
-] as const)(
-  "%s offers distinct setup paths with legacy switches=%s",
-  async (protocol, legacyEnabled) => {
-    await page(
-      `/connectors?scope=remote-control&setup=${protocol}`,
-      true,
-      undefined,
-      legacyEnabled,
-    );
+test.each(["ssh", "vnc"] as const)(
+  "%s offers distinct setup paths when its existing access switch is enabled",
+  async (protocol) => {
+    await page(`/connectors?scope=remote-control&setup=${protocol}`);
     await screen.findByRole("heading", { name: "Set up a connection" });
     expect(queryAction("button", "View saved connections")).toBeNull();
     click(getAction("button", "Start setup"));

@@ -4,7 +4,6 @@ import type {
   InitClientReturn,
   InitClientArgs,
 } from "@okouai/api-contracts/contracts/trpc-contract";
-import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
@@ -66,7 +65,7 @@ import { invalidateTailscale$ } from "./tailscale.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 export const vncEnabled$ = computed((get) => {
-  return isVncAccessEnabled({ overrides: get(featureSwitch$) });
+  return get(featureSwitch$)[FeatureSwitchKey.VncAccess];
 });
 
 export const vncIdentity$ = computed(async (get) => {

@@ -1,4 +1,3 @@
-import { isTailscaleAccessEnabled } from "@okouai/core/remote-control-features";
 import {
   SSH_ERROR_CODES,
   type SshErrorCode,
@@ -13,6 +12,8 @@ import {
   updateSshCredential$,
 } from "../services/ssh-credential.service";
 import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
@@ -99,7 +100,7 @@ const createSshConnectionInner$ = command(
 
     if (
       bodyResult.data.transport?.type === "tailscale_ssh" &&
-      !isTailscaleAccessEnabled(featureContext)
+      !isFeatureEnabled(FeatureSwitchKey.TailscaleAccess, featureContext)
     ) {
       return sshErrorResponse(
         403,
@@ -146,7 +147,7 @@ const updateSshConnectionInner$ = command(
 
     if (
       bodyResult.data.transport?.type === "tailscale_ssh" &&
-      !isTailscaleAccessEnabled(featureContext)
+      !isFeatureEnabled(FeatureSwitchKey.TailscaleAccess, featureContext)
     ) {
       return sshErrorResponse(
         403,

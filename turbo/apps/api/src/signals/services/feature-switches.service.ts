@@ -192,10 +192,7 @@ export const updateUserFeatureSwitches$ = command(
         });
       signal.throwIfAborted();
     }
-    if (
-      Object.hasOwn(userSwitches, FeatureSwitchKey.VncAccess) ||
-      Object.hasOwn(userSwitches, FeatureSwitchKey.RemoteControlGuidedSetup)
-    ) {
+    if (Object.hasOwn(userSwitches, FeatureSwitchKey.VncAccess)) {
       await set(
         publishRemoteRunnerInvalidation$,
         {

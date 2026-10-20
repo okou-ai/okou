@@ -1,6 +1,7 @@
-import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { command } from "ccstate";
 import type { RunnerVncResolveRequest } from "@okouai/api-contracts/contracts/runner-vnc";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -208,7 +209,9 @@ export const currentRunnerVncAuthority$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return isVncAccessEnabled(featureContext) ? row : null;
+    return isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)
+      ? row
+      : null;
   },
 );
 

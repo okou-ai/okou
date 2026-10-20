@@ -241,8 +241,6 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.DiscordIntegration, "discord:write"],
     [FeatureSwitchKey.VncAccess, "vnc:read"],
     [FeatureSwitchKey.VncAccess, "vnc:write"],
-    [FeatureSwitchKey.RemoteControlGuidedSetup, "vnc:read"],
-    [FeatureSwitchKey.RemoteControlGuidedSetup, "vnc:write"],
   ] as const)(
     "gates %s capability behind its feature switch",
     (feature, capability) => {

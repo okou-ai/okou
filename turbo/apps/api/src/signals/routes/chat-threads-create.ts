@@ -1,4 +1,3 @@
-import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { command } from "ccstate";
 import {
   type CodexServiceTier,
@@ -7,6 +6,8 @@ import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
@@ -118,7 +119,7 @@ const validateInitialRemoteAccess$ = command(
       args.overrides.some((item) => {
         return item.protocol === "vnc";
       }) &&
-      (!isVncAccessEnabled(featureContext) ||
+      (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext) ||
         !(await hasCurrentVncMembership(get(clerk$), args.owner, signal)))
     ) {
       return badRequestMessage("VNC access is not available");

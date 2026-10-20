@@ -15,7 +15,7 @@ import {
   saveTailscale$,
   tailscaleDialog$,
   tailscaleConfigs$,
-  tailscaleEnabled$,
+  tailscaleSettingsEnabled$,
   openTailscaleDialog$,
   replaceTailscaleCredentials$,
 } from "./tailscale.ts";
@@ -108,7 +108,7 @@ export const remoteResource$ = computed((get) => {
   if (kind === "vnc" && !get(vncEnabled$)) {
     return null;
   }
-  if (kind === "tailscale" && !get(tailscaleEnabled$)) {
+  if (kind === "tailscale" && !get(tailscaleSettingsEnabled$)) {
     return null;
   }
   return { kind, id };

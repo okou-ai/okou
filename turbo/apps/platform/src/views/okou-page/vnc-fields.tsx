@@ -13,11 +13,7 @@ import {
   chooseRemoteVncProfile$,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteUsernameHelp } from "./remote-editor-frame.tsx";
-import {
-  RemoteAddressHelp,
-  VncCertificateHelp,
-  VncPasswordHelp,
-} from "./remote-field-help.tsx";
+import { RemoteAddressHelp, VncPasswordHelp } from "./remote-field-help.tsx";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -672,11 +668,6 @@ function VncProfileGuidance({ profile }: { readonly profile: VncProfile }) {
           <ul className="grid list-disc gap-2 pl-4">
             <li>
               {t(($) => {
-                return $.remoteConnectionHelp.appleGroup;
-              })}
-            </li>
-            <li>
-              {t(($) => {
                 return $.remoteConnectionHelp.certificateGroup;
               })}
             </li>
@@ -1099,16 +1090,13 @@ function VncCertificateNameField() {
   const editServerName = useSet(editVncServerName$);
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <label htmlFor="vnc-server-name" className="text-sm">
-          {t(($) => {
-            return guided
-              ? $.remoteConnectionHelp.certificateLabel
-              : $.vnc.security.serverName;
-          })}
-        </label>
-        <VncCertificateHelp />
-      </div>
+      <label htmlFor="vnc-server-name" className="text-sm">
+        {t(($) => {
+          return guided
+            ? $.remoteConnectionHelp.certificateLabel
+            : $.vnc.security.serverName;
+        })}
+      </label>
       <Input
         id="vnc-server-name"
         name="serverName"
@@ -1121,17 +1109,15 @@ function VncCertificateNameField() {
         placeholder={t(($) => {
           return $.vnc.security.serverNameHint;
         })}
-        aria-describedby="vnc-server-name-help"
+        aria-describedby={guided ? undefined : "vnc-server-name-help"}
       />
-      <p id="vnc-server-name-help" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return guided
-            ? editor.transport === "cloudflare_access"
-              ? $.remoteConnectionHelp.certificateRequired
-              : $.remoteConnectionHelp.certificateOptional
-            : $.vnc.security.serverNameHelp;
-        })}
-      </p>
+      {!guided && (
+        <p id="vnc-server-name-help" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.security.serverNameHelp;
+          })}
+        </p>
+      )}
     </>
   );
 }

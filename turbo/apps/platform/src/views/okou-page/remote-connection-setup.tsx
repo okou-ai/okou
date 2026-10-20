@@ -314,6 +314,8 @@ function SetupEntry({
   const [starting, start] = useLoadableSet(beginRemoteGuide$);
   const [opening, openExisting] = useLoadableSet(openExistingRemoteSetup$);
   const signal = useGet(pageSignal$);
+  const tailscale = useGet(tailscaleEnabled$);
+  const canGuide = setup.protocol === "vnc" || tailscale;
   const busy = starting.state === "loading" || opening.state === "loading";
   return (
     <div>
@@ -337,30 +339,40 @@ function SetupEntry({
         <div className="grid gap-1">
           <h2 className="text-lg font-semibold tracking-tight">
             {t(($) => {
-              return $.remoteControlSetup.setupTitle;
+              return canGuide
+                ? $.remoteControlSetup.setupTitle
+                : $.remoteControlSetup.existingTitle;
             })}
           </h2>
           <p className="text-sm text-muted-foreground">
             {t(($) => {
-              return $.remoteControlSetup.setupDescription;
+              return canGuide
+                ? $.remoteControlSetup.setupDescription
+                : $.remoteControlSetup.existingDescription;
             })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+          {canGuide && (
+            <Button
+              className={REMOTE_PAGE_ACTION}
+              disabled={busy}
+              onClick={() => {
+                detach(start(signal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return $.remoteControlSetup.start;
+              })}
+            </Button>
+          )}
           <Button
-            className={REMOTE_PAGE_ACTION}
-            disabled={busy}
-            onClick={() => {
-              detach(start(signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.remoteControlSetup.start;
-            })}
-          </Button>
-          <Button
-            variant="quiet"
-            className="h-auto whitespace-normal px-0 text-left text-[13px]"
+            variant={canGuide ? "quiet" : "default"}
+            className={
+              canGuide
+                ? "h-auto whitespace-normal px-0 text-left text-[13px]"
+                : REMOTE_PAGE_ACTION
+            }
             disabled={busy}
             onClick={() => {
               detach(openExisting(signal), Reason.DomCallback);
@@ -1158,19 +1170,21 @@ function ExistingStep() {
           });
         }}
       />
-      <Button
-        variant="quiet"
-        className="justify-self-start"
-        disabled={busy}
-        onClick={() => {
-          detach(start(signal), Reason.DomCallback);
-        }}
-      >
-        <ArrowLeft size={16} aria-hidden />
-        {t(($) => {
-          return $.remoteControlSetup.firstTimeSetup;
-        })}
-      </Button>
+      {tailscale && (
+        <Button
+          variant="quiet"
+          className="justify-self-start"
+          disabled={busy}
+          onClick={() => {
+            detach(start(signal), Reason.DomCallback);
+          }}
+        >
+          <ArrowLeft size={16} aria-hidden />
+          {t(($) => {
+            return $.remoteControlSetup.firstTimeSetup;
+          })}
+        </Button>
+      )}
       <OperationError
         failed={opening.state === "hasError" || starting.state === "hasError"}
       />

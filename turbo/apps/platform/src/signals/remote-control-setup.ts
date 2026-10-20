@@ -36,6 +36,7 @@ import {
   saveTailscale$,
   tailscaleConfigs$,
   tailscaleDialog$,
+  tailscaleEnabled$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
@@ -208,6 +209,9 @@ export const beginRemoteGuide$ = command(
     set(updateRemoteSetup$, { entryMode: "guided" });
     if (current.protocol === "vnc") {
       set(updateRemoteSetup$, { step: "os" });
+      return;
+    }
+    if (!get(tailscaleEnabled$)) {
       return;
     }
     set(updateRemoteSetup$, {
