@@ -24,7 +24,8 @@
         "src/signals/external/stripe-client.ts",
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
-        "src/**/*.{test,spec}.ts"
+        "src/**/*.{test,spec}.ts",
+        "src/signals/routes/__tests__/runners-competing-claims.native.ts"
       ],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["@hono/node-server-v1", "clerk"],

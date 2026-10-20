@@ -200,11 +200,13 @@ describe("builtin MCP Run admission", () => {
         expect.objectContaining({
           target: { kind: "builtin", connectorSlug: "manual-mcp" },
           connectionId: admittedAccount.id,
+          runtimeAvailable: true,
           connected: true,
         }),
         expect.objectContaining({
           target: { kind: "builtin", connectorSlug: "public-mcp" },
           connectionId: publicAccountId,
+          runtimeAvailable: true,
           connected: true,
         }),
       ]),

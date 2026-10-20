@@ -8,6 +8,28 @@ private let replayAgent = "10000000-0000-4000-8000-000000000103"
 
 final class ChatThreadReplayTests: XCTestCase {
 
+  func testMuteReplaySuppressesUnreadWithoutChangingActivityOrPinRanking() throws {
+    var original = try XCTUnwrap(
+      ChatThreadReplay.replay(
+        snapshot: [], events: [event(.created, at: 1, title: "Brief")]
+      ).first)
+    original.unreadAt = date(5)
+    original.indicator = .active
+    let muted = ChatThreadChange(
+      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      muted: true, createdAt: date(10))
+    let result = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [original], events: [muted]).first)
+    XCTAssertTrue(result.isMuted)
+    XCTAssertFalse(result.isUnread)
+    XCTAssertEqual(result.indicator, .active)
+    XCTAssertEqual(result.sortAt, original.sortAt)
+    XCTAssertEqual(result.updatedAt, original.updatedAt)
+    let unmuted = ChatThreadChange(
+      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      muted: false, createdAt: date(11))
+    XCTAssertEqual(ChatThreadReplay.replay(snapshot: [result], events: [unmuted]), [original])
+  }
+
   func testHiddenThreadsCanBecomeVisibleWithoutLosingConversationMetadata() throws {
     let snapshot = ChatThreadReplay.replay(
       snapshot: [], events: [event(.created, at: 1, title: "Brief")])

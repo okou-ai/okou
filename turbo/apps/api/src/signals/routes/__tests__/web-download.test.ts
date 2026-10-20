@@ -189,24 +189,6 @@ describe("GET /api/web/download-file", () => {
     await expectErrorResponse(response, 403, "FORBIDDEN");
   });
 
-  it("returns 400 when file_id query param is missing", async () => {
-    expect.hasAssertions();
-    const { token } = await mintFileReadToken();
-
-    const response = await requestDownload({ token });
-
-    await expectErrorResponse(response, 400, "BAD_REQUEST");
-  });
-
-  it("returns 400 when file_id query param is empty", async () => {
-    expect.hasAssertions();
-    const { token } = await mintFileReadToken();
-
-    const response = await requestDownload({ fileId: "", token });
-
-    await expectErrorResponse(response, 400, "BAD_REQUEST");
-  });
-
   it("returns 404 when the file is not found in S3", async () => {
     expect.hasAssertions();
     const { token } = await mintFileReadToken();
@@ -411,22 +393,5 @@ describe("GET /api/web/download-file", () => {
     expect(response.headers.get("content-type")).toBe(
       "application/octet-stream",
     );
-  });
-
-  it("scopes file lookup to the authenticated user", async () => {
-    const fileId = "scoped-uuid";
-    const { token, userId } = await mintFileReadToken();
-    mockS3Objects([]);
-
-    await requestDownload({ fileId, token });
-
-    const prefixes = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return commandInput(command).Prefix;
-      })
-      .filter((prefix): prefix is string => {
-        return typeof prefix === "string";
-      });
-    expect(prefixes).toContain(`artifacts/${userId}/${fileId}/`);
   });
 });

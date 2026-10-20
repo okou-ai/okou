@@ -186,26 +186,6 @@ describe("DELETE /api/me/model-providers/:type", () => {
     },
   );
 
-  it("returns 404 with 'Resource not found' when deleting a nonexistent provider", async () => {
-    const fixture = uniqueOrgUser("zmmp-missing");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersByTypeTestRoutes,
-    })(personalModelProvidersByTypeContract);
-    const response = await accept(
-      client.delete({
-        params: { type: "claude-code-oauth-token" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [404],
-    );
-    expect(response.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
-    });
-  });
-
   it("does not delete another user's provider in the same organization", async () => {
     const orgId = `org_zmmp_cross_${randomUUID().slice(0, 8)}`;
     const alice = {

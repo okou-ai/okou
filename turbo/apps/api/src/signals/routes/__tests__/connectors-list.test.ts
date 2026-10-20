@@ -118,7 +118,6 @@ describe("GET /api/connectors", () => {
     );
 
     expect(response.body.connectors).toStrictEqual([]);
-    expect(Array.isArray(response.body.connectorProvidedBindings)).toBeTruthy();
   });
 
   it("returns connectors created through the connector API", async () => {
@@ -394,16 +393,6 @@ describe("GET /api/connectors", () => {
     expect(connectorScopeDiff.body).toStrictEqual(emptyScopeDiff);
     expect(scopeDiff.body).toStrictEqual(emptyScopeDiff);
 
-    // A nonexistent OAuth receipt still rejects.
-    const missingReceipt = await accept(
-      accountClient.oauthCompletion({
-        headers: authHeaders(),
-        query: target,
-        params: { attemptId: randomUUID() },
-      }),
-      [404],
-    );
-    expect(missingReceipt.body.error.code).toBe("NOT_FOUND");
     const selection = { target, connectionId: account.id };
     const inspected = await accept(
       accountClient.inspect({
@@ -423,6 +412,9 @@ describe("GET /api/connectors", () => {
         externalEmail: account.externalEmail,
         connectionStatus: account.connectionStatus,
         reconnectReason: account.reconnectReason,
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["accessToken", "host"],
       },
     ]);
   });

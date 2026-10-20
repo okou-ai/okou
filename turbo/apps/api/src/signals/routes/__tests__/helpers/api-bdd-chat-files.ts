@@ -1607,22 +1607,6 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async requestUploadArtifactToGoogleDriveUnchecked(
-      actor: ApiTestUser,
-      artifactId: string,
-      body: unknown,
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-    ) {
-      return await accept(
-        artifactGoogleDriveClient().upload({
-          headers: authenticate(context, actor),
-          params: { artifactId },
-          body: body as { agentId: string },
-        }),
-        statuses,
-      );
-    },
-
     async requestSendEvent(
       actor: ApiTestUser | null,
       body: BddSendEventBody,

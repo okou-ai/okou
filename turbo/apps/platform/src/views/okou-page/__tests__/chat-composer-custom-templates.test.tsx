@@ -363,8 +363,6 @@ test("A colleague's template names its owner and offers no management", async ()
     within(dialog).findByText("Theirs"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Shared by Robin Ito")).toBeInTheDocument();
-  // The identity-provider handle is what the row used to show in its place.
-  expect(within(dialog).queryByText(/user_colleague/u)).not.toBeInTheDocument();
   expect(buttonByName("Actions for Theirs", dialog)).toBeUndefined();
   expect(buttonByName("Actions for Mine", dialog)).toBeTruthy();
 });
@@ -435,11 +433,9 @@ test("An empty Custom section keeps the import tile and built-in styles usable",
   await within(dialog).findByText("Q3 board review");
   click(tabByText("Image"));
   const custom = within(dialog).getByRole("region", { name: "Custom" });
-  await within(custom).findByText("0");
-  expect(within(custom).getByLabelText("Import your own")).toHaveAttribute(
-    "accept",
-    ".png,.jpg,.jpeg,.webp,.bmp",
-  );
+  await expect(
+    within(custom).findByLabelText("Import your own"),
+  ).resolves.toHaveAttribute("accept", ".png,.jpg,.jpeg,.webp,.bmp");
   expect(
     within(dialog).getByRole("region", { name: "Built-in" }),
   ).toBeInTheDocument();
@@ -484,16 +480,13 @@ test("Returning to a type retains the loaded custom catalog", async () => {
   expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
 });
 
-test("An empty custom catalog offers its import tile without an onboarding panel", async () => {
+test("An empty custom catalog offers its import tile", async () => {
   mockCustomTemplates([]);
   const { dialog } = await openCustomPanel();
   const custom = within(dialog).getByRole("region", { name: "Custom" });
-  await within(custom).findByText("0");
-  expect(within(custom).getByLabelText("Import your own deck")).toHaveAttribute(
-    "accept",
-    ".pptx,.ppt,.pdf",
-  );
-  expect(within(custom).queryByRole("paragraph")).not.toBeInTheDocument();
+  await expect(
+    within(custom).findByLabelText("Import your own deck"),
+  ).resolves.toHaveAttribute("accept", ".pptx,.ppt,.pdf");
   expect(
     within(dialog).getByRole("region", { name: "Built-in" }),
   ).toBeInTheDocument();
@@ -1289,15 +1282,26 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
   });
 });
 
-test("Built-in document categories do not filter out custom documents", async () => {
+test("Custom is a document filter beside All and the built-in purposes", async () => {
   mockCustomTemplates([documentTemplate()]);
   const { dialog } = await openCustomPanel(true, "Document", true);
   const custom = within(dialog).getByRole("region", { name: "Custom" });
   await within(custom).findByText("Brand report");
-  const builtIn = within(dialog).getByRole("region", { name: "Built-in" });
-  click(buttonByName("Reports", builtIn)!);
-  expect(within(custom).getByText("Brand report")).toBeInTheDocument();
-  expect(within(builtIn).getByText("Two-column report")).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
+  click(buttonByName("Reports", dialog)!);
+  expect(
+    within(dialog).queryByRole("region", { name: "Custom" }),
+  ).not.toBeInTheDocument();
+  expect(within(dialog).getByText("Two-column report")).toBeInTheDocument();
+  click(buttonByName("Custom", dialog)!);
+  await expect(
+    within(dialog).findByText("Brand report"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("region", { name: "Built-in" }),
+  ).not.toBeInTheDocument();
 });
 
 test("A failed custom catalog leaves built-in templates available and can retry", async () => {

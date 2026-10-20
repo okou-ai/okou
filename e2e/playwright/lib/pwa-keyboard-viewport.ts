@@ -79,8 +79,14 @@ export async function checkShortPwaComposer(
       }
     }
     for (const sheet of document.styleSheets) {
-      // The app stylesheet is same-origin. Third-party fonts need no override.
-      if (sheet.href && new URL(sheet.href).origin !== location.origin) {
+      // Vite loads app styles from the asset CDN with crossorigin. Unrelated
+      // non-CORS sheets (such as hosted fonts) cannot expose their CSSOM.
+      const owner = sheet.ownerNode;
+      if (
+        sheet.href &&
+        new URL(sheet.href).origin !== location.origin &&
+        !(owner instanceof HTMLLinkElement && owner.hasAttribute("crossorigin"))
+      ) {
         continue;
       }
       enableStandaloneMedia(sheet.cssRules);
@@ -138,7 +144,9 @@ export async function checkShortPwaComposer(
       )
       .toBe(true);
     await send.click({ trial: true });
-    await expect.poll(() => editor.innerText()).toBe(draft);
+    await expect
+      .poll(async () => (await editor.innerText()).split(/\n+/u))
+      .toEqual(draft.split("\n"));
   }
   await editor.evaluate((element) => element.blur());
   await page.evaluate(() => {

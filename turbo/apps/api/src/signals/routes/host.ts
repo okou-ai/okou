@@ -1,3 +1,7 @@
+import { hostedSiteAccessRoutes } from "./hosted-site-access";
+import { hostedSiteViewer$ } from "../services/hosted-site-viewer.service";
+import { hostedLinkOrigin } from "../../lib/link-layout";
+import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 
@@ -91,13 +95,23 @@ const deliveryQuery$ = queryOf(hostContract.deliveryAuthorization);
 const deliveryAuthorization$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "private, no-store");
-    const allowed = await set(
-      authorizeHostedSiteDelivery$,
-      { ...get(deliveryParams$), ...get(deliveryQuery$) },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { allowed } };
+    const args = { ...get(deliveryParams$), ...get(deliveryQuery$) };
+    let body = await set(authorizeHostedSiteDelivery$, args, signal);
+    if (body.decision === "authenticate") {
+      const userId = await set(
+        hostedSiteViewer$,
+        hostedLinkOrigin(linkLayoutFromSegment(args.publicBrand), args.alias),
+        signal,
+      );
+      if (userId) {
+        body = await set(
+          authorizeHostedSiteDelivery$,
+          { ...args, viewerUserId: userId },
+          signal,
+        );
+      }
+    }
+    return { status: 200 as const, body };
   },
 );
 const filesParams$ = pathParamsOf(hostContract.files);
@@ -223,6 +237,7 @@ const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 export const hostRoutes: readonly RouteEntry[] = [
   ...hostedSiteUrlRoutes,
+  ...hostedSiteAccessRoutes,
   {
     route: hostContract.deliveryAuthorization,
     handler: deliveryAuthorization$,

@@ -4,11 +4,10 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  IosChatAttachments = "iosChatAttachments",
   JsonTreePreview = "jsonTreePreview",
+  HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
-  RemoteControlCliManagement = "remoteControlCliManagement",
   TailscaleAccess = "tailscaleAccess",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
@@ -65,12 +64,10 @@ export enum FeatureSwitchKey {
   CustomTemplates = "customTemplates",
   BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
-  DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
-  ComposerMentionHint = "composerMentionHint",
 }

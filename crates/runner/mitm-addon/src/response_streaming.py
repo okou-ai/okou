@@ -13,7 +13,7 @@ Lifecycle:
   ``flow.metadata``.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import NamedTuple
 
 from mitmproxy import http
@@ -45,6 +45,8 @@ _MODEL_JSON_USAGE_FINISH = "model_json_usage_finish"
 _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
 _CONNECTOR_RESPONSE_FINISH = "connector_response_finish"
 _CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION = "connector_response_report_on_interruption"
+_BUFFERED_CONNECTOR_INSPECTION_START = "_buffered_connector_inspection_start"
+_BUFFERED_MODEL_INSPECTION_START = "_buffered_model_inspection_start"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _RESPONSE_INSPECTION = "_response_inspection"
 
@@ -158,6 +160,55 @@ def _log_response_encoding_fail_closed(
         request_encoding_negotiation=flow.metadata.get(metadata_keys.RESPONSE_ENCODING_NEGOTIATION),
         decode_skip_reason=skip_reason,
     )
+
+
+def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
+    """Defer bounded capture inspection to the normal response hook's owner."""
+    parser = usage.create_connector_response_parser(flow)
+    if parser is None or parser.feed_steps is None or parser.finish_decode_error is None:
+        raise RuntimeError("buffered connector inspection requires cooperative parser hooks")
+    feed_steps = parser.feed_steps
+    finish_decode_error = parser.finish_decode_error
+    inspection_failed = False
+
+    def inspect_body(_chunk: bytes) -> Generator[None, None, None]:
+        nonlocal inspection_failed
+        captured = stream_capture.captured_response_stream_body(flow)
+        if captured is None or flow.response is None:
+            raise RuntimeError("buffered connector inspection requires a response capture")
+        body, error = body_decoding.decode_captured_json_usage_body(captured, flow.response.headers)
+        if error is not None:
+            inspection_failed = True
+            finish_decode_error(error)
+            return
+        yield from feed_steps(body)
+
+    def fail_inspection(error: str) -> None:
+        nonlocal inspection_failed
+        inspection_failed = True
+        finish_decode_error(error)
+        log_usage_underbilling(
+            flow_metadata.proxy_log_path(flow.metadata),
+            "Deferred connector response inspection was interrupted",
+            "response_inspection_interrupted",
+            "risk",
+            run_id=flow_metadata.run_id(flow.metadata),
+            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            parse_error=error,
+        )
+
+    inspection = response_inspection.CooperativeResponseInspection(inspect_body, fail_inspection)
+
+    def start_inspection() -> None:
+        inspection.feed(b"")
+
+    def finish_response() -> None:
+        if not inspection_failed and parser.finish is not None:
+            parser.finish()
+
+    flow.metadata[_RESPONSE_INSPECTION] = inspection
+    flow.metadata[_BUFFERED_CONNECTOR_INSPECTION_START] = start_inspection
+    flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finish_response
 
 
 def _configure_response_inspection_stream(
@@ -344,55 +395,67 @@ def _configure_response_inspection_stream(
         inspection: usage.ModelJsonResponseInspection | None = None
         decode_error: str | None = None
         finished = False
-        json_inspection: response_inspection.CooperativeResponseInspection | None = None
+
+        def fail_json_inspection(error: str) -> None:
+            nonlocal decode_error, finished
+            # A selected prefix is never authoritative for a JSON document.
+            # Do not finish it after closing the pending decoder/parser iterator.
+            decode_error = error
+            finished = True
+            run_usage.mark(flow, "parse_error")
+            run_usage.mark(flow, "interrupted")
+            log_usage_underbilling(
+                flow_metadata.proxy_log_path(flow.metadata),
+                "Deferred model JSON response inspection was interrupted",
+                "response_inspection_interrupted",
+                "risk",
+                run_id=flow_metadata.run_id(flow.metadata),
+                firewall_name=flow_metadata.firewall_name(flow.metadata),
+                usage_protocol=model_protocol,
+                parse_error=error,
+            )
+
         if decode_session is not None:
-
-            def fail_json_inspection(error: str) -> None:
-                nonlocal decode_error, finished
-                # A selected prefix is never authoritative for a JSON document.
-                # Do not finish it after closing the pending decoder/parser iterator.
-                decode_error = error
-                finished = True
-                run_usage.mark(flow, "parse_error")
-                run_usage.mark(flow, "interrupted")
-                log_usage_underbilling(
-                    flow_metadata.proxy_log_path(flow.metadata),
-                    "Deferred model JSON response inspection was interrupted",
-                    "response_inspection_interrupted",
-                    "risk",
-                    run_id=flow_metadata.run_id(flow.metadata),
-                    firewall_name=flow_metadata.firewall_name(flow.metadata),
-                    usage_protocol=model_protocol,
-                    parse_error=error,
-                )
-
             json_inspection = response_inspection.CooperativeResponseInspection(
                 lambda chunk: response_inspection.decoded_steps(
                     decode_session.iter_chunks, extractor.feed_steps, chunk
                 ),
                 fail_json_inspection,
             )
-            flow.metadata[_RESPONSE_INSPECTION] = json_inspection
+        else:
+
+            def inspect_buffered_body(_chunk: bytes) -> Generator[None, None, None]:
+                nonlocal decode_error, finished
+                stream_body = stream_capture.captured_response_stream_body(flow)
+                if stream_body is None:
+                    raise RuntimeError(
+                        "buffered model JSON inspection requires a response stream buffer"
+                    )
+                decoded_body, decode_error = body_decoding.decode_captured_json_usage_body(
+                    stream_body, response.headers
+                )
+                if decode_error is None:
+                    if stream_body.buffer:
+                        yield from extractor.feed_steps(decoded_body)
+                    else:
+                        finished = True
+
+            json_inspection = response_inspection.CooperativeResponseInspection(
+                inspect_buffered_body, fail_json_inspection
+            )
+
+            def start_inspection() -> None:
+                json_inspection.feed(b"")
+
+            flow.metadata[_BUFFERED_MODEL_INSPECTION_START] = start_inspection
+
+        flow.metadata[_RESPONSE_INSPECTION] = json_inspection
 
         def finish_json_response() -> None:
             nonlocal decode_error, finished, inspection
             if not finished:
                 if decode_session is not None:
                     decode_error = decode_session.finish_error()
-                else:
-                    stream_body = stream_capture.captured_response_stream_body(flow)
-                    if stream_body is None:
-                        raise RuntimeError(
-                            "buffered model JSON finalizer requires a response stream buffer"
-                        )
-                    decoded_body, decode_error = body_decoding.decode_captured_json_usage_body(
-                        stream_body, response.headers
-                    )
-                    if decode_error is None:
-                        if stream_body.buffer:
-                            extractor.feed(decoded_body)
-                        else:
-                            finished = True
                 if not finished and decode_error is None:
                     inspection = extractor.finish()
                     run_usage.observe(flow, inspection.usage)
@@ -412,7 +475,7 @@ def _configure_response_inspection_stream(
 
         flow.metadata[_MODEL_JSON_USAGE_FINISH] = finish_json_usage
         return _ResponseStreamSetup(
-            json_inspection.feed if json_inspection is not None else None,
+            json_inspection.feed if decode_session is not None else None,
             needs_buffered_fallback,
         )
 
@@ -429,6 +492,8 @@ def _configure_response_inspection_stream(
             and body_decoding.can_decode_json_usage_body(response.headers)
             and usage.needs_connector_response_buffer_fallback(flow)
         )
+        if needs_buffered_fallback:
+            _configure_buffered_connector_inspection(flow)
         return _ResponseStreamSetup(
             None,
             needs_buffered_fallback,
@@ -631,6 +696,15 @@ def configure_response_stream(
     flow.metadata[_RESPONSE_STREAM_CALLBACK] = stream_and_observe
 
 
+def start_buffered_response_inspection(flow: http.HTTPFlow, *, interrupted: bool = False) -> None:
+    """Start once; only model observation can inspect a newly interrupted capture."""
+    start = flow.metadata.pop(_BUFFERED_MODEL_INSPECTION_START, None)
+    if start is None and not interrupted:
+        start = flow.metadata.pop(_BUFFERED_CONNECTOR_INSPECTION_START, None)
+    if start is not None:
+        start()
+
+
 def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:
     inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     return isinstance(inspection, response_inspection.CooperativeResponseInspection) and (
@@ -671,6 +745,8 @@ def finalize_model_json_usage(flow: http.HTTPFlow, proxy_log_path: str) -> None:
     On success, writes ``metadata_keys.MODEL_PROVIDER_USAGE``. Parse failures
     are logged to ``proxy_log_path``.
     """
+    if has_pending_response_inspection(flow):
+        raise RuntimeError("pending response inspection must be joined before finalization")
     finish = flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     if finish is None:
         return
@@ -706,6 +782,8 @@ def finalize_model_sse_usage(flow: http.HTTPFlow) -> None:
 
 def observe_interrupted_model_json(flow: http.HTTPFlow) -> None:
     """Preserve complete JSON evidence on errors without changing billing admission."""
+    if has_pending_response_inspection(flow):
+        raise RuntimeError("pending response inspection must be joined before finalization")
     finish = flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     if finish is not None:
         finish()
@@ -768,5 +846,7 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION, None)
+    flow.metadata.pop(_BUFFERED_CONNECTOR_INSPECTION_START, None)
+    flow.metadata.pop(_BUFFERED_MODEL_INSPECTION_START, None)
     if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
         flow.response.stream = False

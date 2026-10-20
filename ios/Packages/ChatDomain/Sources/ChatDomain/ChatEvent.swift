@@ -76,6 +76,8 @@ public struct ChatEvent: Sendable {
       public let text: String?
       public let titleSnapshot: String?
       public let nameSnapshot: String?
+      public let fileId: String?
+      public let contentType: String?
       public let filenameSnapshot: String?
       public let workflowName: String?
 
@@ -84,6 +86,8 @@ public struct ChatEvent: Sendable {
         text: String? = nil,
         titleSnapshot: String? = nil,
         nameSnapshot: String? = nil,
+        fileId: String? = nil,
+        contentType: String? = nil,
         filenameSnapshot: String? = nil,
         workflowName: String? = nil
       ) {
@@ -91,6 +95,8 @@ public struct ChatEvent: Sendable {
         self.text = text
         self.titleSnapshot = titleSnapshot
         self.nameSnapshot = nameSnapshot
+        self.fileId = fileId
+        self.contentType = contentType
         self.filenameSnapshot = filenameSnapshot
         self.workflowName = workflowName
       }

@@ -93,6 +93,14 @@ fn log_job_execution_failed(
                     .map(|reason| reason.as_str()),
                 model_http_status = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.http_status),
+                codex_reported_failure_stage = diagnostic.and_then(|diagnostic| diagnostic.codex_failure)
+                    .and_then(|evidence| evidence.reported_stage)
+                    .map(|stage| stage.as_str()),
+                codex_native_failure_kind = diagnostic.and_then(|diagnostic| diagnostic.codex_failure)
+                    .and_then(|evidence| evidence.native_kind)
+                    .map(|kind| kind.as_str()),
+                codex_http_status = diagnostic.and_then(|diagnostic| diagnostic.codex_failure)
+                    .and_then(|evidence| evidence.http_status),
                 model_transport_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .map(|request| request.transport_attempts),
                 model_retry_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
@@ -517,6 +525,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
                     | FailureReason::InvalidCredentials
                     | FailureReason::TermsAcceptanceRequired
                     | FailureReason::ContextWindowExceeded
+                    | FailureReason::ProviderImageTooLarge
                     | FailureReason::OutputTokenLimit
                     | FailureReason::ProviderRateLimited
                     | FailureReason::ProviderOverloaded
@@ -741,6 +750,7 @@ mod tests {
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,
             FailureReason::ContextWindowExceeded,
+            FailureReason::ProviderImageTooLarge,
             FailureReason::OutputTokenLimit,
             FailureReason::ProviderRateLimited,
             FailureReason::ProviderOverloaded,
@@ -809,6 +819,65 @@ mod tests {
 
         assert_eq!(event.level, Level::ERROR);
         assert!(!event.fields.contains_key("failure_reason"));
+    }
+
+    #[test]
+    fn codex_send_evidence_preserves_unknown_failure_severity_and_absent_transport_counts() {
+        use guest_contracts::codex_failure::{
+            CodexFailureEvidence, CodexFailureStage, CodexNativeFailureKind,
+        };
+        let mut diagnostic = job_failure_diagnostic(None);
+        diagnostic.codex_failure = Some(CodexFailureEvidence {
+            reported_stage: Some(CodexFailureStage::RequestSend),
+            native_kind: Some(CodexNativeFailureKind::Other),
+            http_status: None,
+        });
+        let failure = executor::ExecutionFailure::new(
+            1,
+            "stream disconnected before completion: error sending request",
+            Some(diagnostic),
+        );
+        let event = capture_job_failure_log(&failure);
+        assert_eq!(event.level, Level::ERROR);
+        assert_field_eq(&event, "codex_reported_failure_stage", "request_send");
+        assert_field_eq(&event, "codex_native_failure_kind", "other");
+        for field in [
+            "failure_reason",
+            "codex_http_status",
+            "model_http_status",
+            "model_transport_attempts",
+            "model_retry_attempts",
+            "model_transport_cause_code",
+        ] {
+            assert!(!event.fields.contains_key(field), "{field}");
+        }
+    }
+
+    #[test]
+    fn codex_native_response_evidence_logs_observed_status_without_inventing_attempts() {
+        use guest_contracts::codex_failure::{
+            CodexFailureEvidence, CodexFailureStage, CodexNativeFailureKind,
+        };
+        let mut diagnostic = job_failure_diagnostic(Some(FailureReason::ResponseConnectionLost));
+        diagnostic.codex_failure = Some(CodexFailureEvidence {
+            reported_stage: Some(CodexFailureStage::ResponseStream),
+            native_kind: Some(CodexNativeFailureKind::ResponseStreamDisconnected),
+            http_status: Some(200),
+        });
+        let failure =
+            executor::ExecutionFailure::new(1, "response stream disconnected", Some(diagnostic));
+        let event = capture_job_failure_log(&failure);
+        assert_eq!(event.level, Level::INFO);
+        assert_field_eq(&event, "failure_reason", "response_connection_lost");
+        assert_field_eq(&event, "codex_reported_failure_stage", "response_stream");
+        assert_field_eq(
+            &event,
+            "codex_native_failure_kind",
+            "response_stream_disconnected",
+        );
+        assert_field_eq(&event, "codex_http_status", "200");
+        assert!(!event.fields.contains_key("model_transport_attempts"));
+        assert!(!event.fields.contains_key("model_retry_attempts"));
     }
 
     #[test]
@@ -897,6 +966,13 @@ mod tests {
     fn pi_provider_failures_log_info_with_observed_request_and_retry_evidence() {
         for (reason, status, retries, retry_limit, message) in [
             (
+                FailureReason::ProviderImageTooLarge,
+                413,
+                0,
+                None,
+                r#"413: {"message":"Downloaded image content cannot exceed 30MB","code":413,"metadata":{"provider_name":null}}"#,
+            ),
+            (
                 FailureReason::ProviderRateLimited,
                 429,
                 3,
@@ -924,7 +1000,9 @@ mod tests {
                 PromptMetadata::from_prompt("plain prompt"),
             )
             .with_failure_reason(reason)
-            .with_failure_detail_source(FailureDetailSource::PiResult);
+            .with_failure_detail_source(FailureDetailSource::PiResult)
+            .with_cli_exit_code(1)
+            .with_cli_observed_exit(CliObservedExitDiagnostic::from_exit_code(0));
             diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
                 http_status: Some(status),
                 transport_attempts: 1,
@@ -939,6 +1017,10 @@ mod tests {
             assert_field_eq(&event, "failure_framework", "pi");
             assert_field_eq(&event, "failure_class", "cli_nonzero");
             assert_field_eq(&event, "failure_detail_source", "pi_result");
+            assert_field_eq(&event, "error", message);
+            assert_field_eq(&event, "exit_code", "1");
+            assert_field_eq(&event, "failure_cli_exit_code", "1");
+            assert_field_eq(&event, "cli_observed_exit_code", "0");
             assert_field_eq(&event, "model_http_status", &status.to_string());
             assert_field_eq(&event, "model_transport_attempts", "1");
             assert_field_eq(&event, "model_retry_attempts", &retries.to_string());
@@ -1144,6 +1226,7 @@ mod tests {
     #[test]
     fn info_level_reason_on_non_cli_failure_logs_job_execution_failed_at_error() {
         for reason in [
+            FailureReason::ProviderImageTooLarge,
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,

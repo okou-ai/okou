@@ -5,7 +5,10 @@ import {
   desktopShellResultSchema,
   type DesktopShellRequest,
 } from "@okouai/api-contracts/contracts/desktop-shell";
-import { createDesktopShellCommand } from "../../lib/api/domains/computer-use";
+import {
+  createDesktopShellCommand,
+  requestDesktopShellAccess,
+} from "../../lib/api/domains/computer-use";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -169,6 +172,9 @@ No session + a command creates one. One live session is reused; multiple require
 An observation returning running is not command completion. Never replay uncertain input.
 Use the returned nextCursor to observe more output. list/status do not renew the 15-minute idle timer.
 Output and background jobs do not prevent idle closure. Desktop Stop, logout and Shell Access off close sessions.
+All Shell operations also require one-hour approval for this chat and computer.
+Use request-access, share its link, and end this Run. Approval starts the next chat round.
+Expiry or revocation blocks new operations without closing PTYs; existing idle cleanup still applies.
 
 Examples:
   okou computer-use shell cmd 'pwd'
@@ -179,6 +185,50 @@ Examples:
   okou computer-use shell cmd --session <id> --key Ctrl+C
   okou computer-use shell list
   okou computer-use shell close --all`,
+    )
+    .addCommand(
+      new Command("request-access")
+        .description(
+          "Ask the user to allow Shell access for this chat and computer for one hour",
+        )
+        .requiredOption(
+          "--reason <text>",
+          "Why the current task needs terminal access",
+        )
+        .option("--json", "Structured application and authorization state")
+        .action(
+          withErrorHandler(
+            async (options: { reason: string; json?: boolean }) => {
+              const result = await requestDesktopShellAccess(options.reason);
+              if (options.json) {
+                console.log(JSON.stringify(result));
+                return;
+              }
+              if (result.status === "approved") {
+                console.log(
+                  `Shell access is already approved for this chat on ${result.computerName} until ${result.grantExpiresAt}. Continue using Shell without requesting another approval.`,
+                );
+                return;
+              }
+              console.log(
+                `Shell access request for ${result.computerName}: ${result.status}`,
+              );
+              console.log(result.authorizationUrl);
+              if (result.status !== "pending") {
+                console.log(
+                  "This request is closed and grants no Shell access. End this Run; request access from a new chat round if the task still needs it.",
+                );
+                return;
+              }
+              console.log(
+                `The pending request expires at ${result.requestExpiresAt}. Access lasts one hour from approval.`,
+              );
+              console.log(
+                "Share this link with the user and end the current Run. After this Run ends, approval automatically starts the next chat round. Do not wait for approval or replay input with an uncertain outcome.",
+              );
+            },
+          ),
+        ),
     )
     .addCommand(cmd)
     .addCommand(

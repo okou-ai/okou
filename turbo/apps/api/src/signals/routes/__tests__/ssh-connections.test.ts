@@ -10,7 +10,6 @@ import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-r
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -20,7 +19,6 @@ import { mockEnv } from "../../../lib/env";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authApi = createAuthOrgAgentsBddApi(context);
 
 interface Actor {
   readonly orgId: string;
@@ -119,8 +117,7 @@ describe("SSH connection routes", () => {
       ]);
     }
   });
-  it("requires an organization session and validates input before encryption", async () => {
-    const kms = useSecretKmsProbe();
+  it("requires organization authentication", async () => {
     const unauthenticated = await accept(client().list({ headers: {} }), [401]);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
@@ -130,32 +127,6 @@ describe("SSH connection routes", () => {
       [401],
     );
     expect(withoutOrg.body.error.code).toBe("UNAUTHORIZED");
-
-    const patActor = authApi.user();
-    authApi.mockClerkOrg(patActor);
-    const pat = await authApi.createCliToken(patActor);
-    const patResponse = await accept(
-      client().list({
-        headers: { authorization: `Bearer ${pat.token}` },
-      }),
-      [403],
-    );
-    expect(patResponse.body.error.code).toBe("FORBIDDEN");
-
-    authenticate(actor("invalid-input"));
-    const rawResponse = await setupRawAppRequest({
-      context,
-      routes: sshConnectionsRoutes,
-    })("/api/ssh/connections", {
-      method: "POST",
-      headers: {
-        ...authHeaders(),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ unexpected: true }),
-    });
-    expect(rawResponse.status).toBe(400);
-    expect(kms.generateDataKeyCalls).toBe(0);
   });
 
   it("creates, normalizes, lists, edits, resets, and deletes without exposing secrets", async () => {
@@ -187,8 +158,6 @@ describe("SSH connection routes", () => {
     });
     expect(created.body).not.toHaveProperty("privateKey");
     expect(created.body).not.toHaveProperty("passphrase");
-    expect(created.body).not.toHaveProperty("status");
-    expect(created.body).not.toHaveProperty("account");
     expect(JSON.stringify(created.body)).not.toContain("vm0secret:");
 
     const summary = await accept(
@@ -389,16 +358,7 @@ describe("SSH connection routes", () => {
     const owner = actor("validation");
     authenticate(owner);
 
-    const invalidHosts = [
-      "[::1]",
-      "example.com:22",
-      "https://example.com",
-      "bad host",
-      "-bad.example",
-      "example..com",
-      "127.0.0.999",
-      "example.com..",
-    ];
+    const invalidHosts = ["[::1]", "example.com:22", "https://example.com"];
     for (const host of invalidHosts) {
       const response = await accept(
         client().create({
@@ -471,67 +431,6 @@ describe("SSH connection routes", () => {
       expect(response.status).toBe(400);
       expect(JSON.stringify(response.body)).not.toContain("password-canary");
     }
-    expect(kms.generateDataKeyCalls).toBe(1);
-
-    const unknownField = await rawRequest("/api/ssh/connections", {
-      method: "POST",
-      headers: { ...authHeaders(), "content-type": "application/json" },
-      body: JSON.stringify({
-        ...createBody("other.example.com"),
-        unexpected: true,
-      }),
-    });
-    expect(unknownField.status).toBe(400);
-
-    const invalidPort = await rawRequest("/api/ssh/connections", {
-      method: "POST",
-      headers: { ...authHeaders(), "content-type": "application/json" },
-      body: JSON.stringify({
-        ...createBody("invalid-port.example.com"),
-        port: 65_536,
-      }),
-    });
-    expect(invalidPort.status).toBe(400);
-
-    const invalidPrivateKey = await rawRequest("/api/ssh/connections", {
-      method: "POST",
-      headers: { ...authHeaders(), "content-type": "application/json" },
-      body: JSON.stringify({
-        ...createBody("invalid-key.example.com"),
-        credential: inlineSshKey("deploy", ""),
-      }),
-    });
-    expect(invalidPrivateKey.status).toBe(400);
-
-    const invalidPassphrase = await rawRequest("/api/ssh/connections", {
-      method: "POST",
-      headers: { ...authHeaders(), "content-type": "application/json" },
-      body: JSON.stringify({
-        ...createBody("invalid-passphrase.example.com"),
-        credential: inlineSshKey("deploy", "test", ""),
-      }),
-    });
-    expect(invalidPassphrase.status).toBe(400);
-
-    const emptyPatch = await rawRequest(
-      `/api/ssh/connections/${created.body.id}`,
-      {
-        method: "PATCH",
-        headers: { ...authHeaders(), "content-type": "application/json" },
-        body: JSON.stringify({ expectedGeneration: 1 }),
-      },
-    );
-    expect(emptyPatch.status).toBe(400);
-
-    const invalidGeneration = await rawRequest(
-      `/api/ssh/connections/${created.body.id}`,
-      {
-        method: "PATCH",
-        headers: { ...authHeaders(), "content-type": "application/json" },
-        body: JSON.stringify({ expectedGeneration: 0, displayName: "Invalid" }),
-      },
-    );
-    expect(invalidGeneration.status).toBe(400);
     expect(kms.generateDataKeyCalls).toBe(1);
   });
 

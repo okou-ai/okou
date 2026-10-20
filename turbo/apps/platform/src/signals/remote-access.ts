@@ -5,7 +5,7 @@ import {
   type ThreadRemoteHostAccess,
   type InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
@@ -85,8 +85,12 @@ export function createPendingRemoteAccessSignals() {
   return { overrides$, setOverride$, reset$ };
 }
 
-export function threadRemoteAccess$(threadId: string) {
+export function threadRemoteAccess$(
+  threadId: string,
+  openedVersion$: Computed<number>,
+) {
   return computed(async (get) => {
+    get(openedVersion$);
     get(threadRemoteAccessReload$);
     if (!threadId) {
       return null;

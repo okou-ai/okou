@@ -17,13 +17,41 @@ final class WorkspaceStore {
   private(set) var isCreating = false
   var error: String?
   var selectedThreadID: String? {
-    didSet { selectedConversation = selectedThreadID.flatMap { conversation(for: $0) } }
+    didSet {
+      let previous = selectedConversation
+      selectedConversation = selectedThreadID.flatMap { conversation(for: $0) }
+      previous?.reconcileActivitySummary()
+      selectedConversation?.reconcileActivitySummary()
+    }
   }
-  var selectedAgentID: String?
-  var newChatDraft = ""
-  @ObservationIgnored lazy var newAttachmentDraft = AttachmentDraftStore(
-    commands: commands, didFail: { [weak self] in self?.handle($0) })
+  var selectedAgentID: String? {
+    didSet {
+      guard oldValue != selectedAgentID else { return }
+      if let selectedAgentID {
+        do { try draftStorage?.save(selectedAgentID, key: "active-agent") } catch {
+          self.error = "Cannot save the draft's Agent. " + error.localizedDescription
+        }
+      }
+      activateAgentDraft()
+    }
+  }
+  var newChatDraft: String {
+    get { newComposer.text }
+    set { newComposer.text = newValue }
+  }
+  var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
+  private(set) var newComposer: ComposerDraftStore
+  private let draftStorage: ChatDraftStorage?
+  private let draftRepository: ChatDraftRepository?
+  @ObservationIgnored private var agentDrafts: [String: ComposerDraftStore] = [:]
+  private var agentDraftTask: Task<Void, Never>?
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
+
+  @ObservationIgnored lazy var modelStore = ChatModelStore(
+    client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
+  @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
+  @ObservationIgnored lazy var search = ChatSearchStore(
+    sync: sync, didFail: { [weak self] in self?.handle($0) })
 
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands,
@@ -44,14 +72,27 @@ final class WorkspaceStore {
   private var isForeground = false
   private var startupGeneration = UUID()
 
-  init(client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8) {
+  init(
+    client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
+    draftStorage: ChatDraftStorage? = nil
+  ) {
     self.client = client
+    self.draftStorage = draftStorage
+    draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = ChatSync(client: client, cache: cache)
     self.sync = sync
-    self.commands = ChatCommands(client: client, sync: sync)
+    let commands = ChatCommands(client: client, sync: sync)
+    self.commands = commands
     self.webURL = webURL
     self.messageMarkdown = MessageMarkdownCache(baseURL: webURL)
     self.conversationLimit = max(0, conversationLimit)
+    newComposer = ComposerDraftStore(
+      target: .unassigned, commands: commands, storage: draftStorage,
+      didFail: { _ in })
+    do {
+      selectedAgentID = try draftStorage?.load("active-agent", as: String.self)
+      if selectedAgentID != nil { activateAgentDraft() }
+    } catch { self.error = "Cannot restore the draft's Agent. " + error.localizedDescription }
   }
 
   func start(userID: String, workspaceID: String) async {
@@ -109,10 +150,12 @@ final class WorkspaceStore {
       thread: thread, sync: sync, commands: commands, webURL: webURL,
       messageMarkdown: messageMarkdown,
       isVisible: { [weak self] in self?.isForeground == true && self?.selectedThreadID == id },
-      didMarkRead: { [weak self] in self?.list.markRead(id) },
+      didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
-      didSettle: { [weak self] in self?.requestPrune() })
+      didSettle: { [weak self] in self?.requestPrune() },
+      modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
+      draftRepository: draftRepository, draftStorage: draftStorage)
     conversations[id] = conversation
     return conversation
   }
@@ -124,15 +167,52 @@ final class WorkspaceStore {
     creationTask?.cancel()
     pruneTask?.cancel()
     warmingTask?.cancel()
+    modelStore.close()
+    newModelSelection.close()
     list.close()
+    search.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
     realtime = nil
     messageMarkdown.clear()
-    newAttachmentDraft.close()
+    agentDraftTask?.cancel()
+    newComposer.close()
+    for composer in agentDrafts.values { composer.close() }
   }
 
-  func setForeground(_ active: Bool) { isForeground = active }
+  func setForeground(_ active: Bool) {
+    isForeground = active
+    selectedConversation?.reconcileActivitySummary()
+    if !active {
+      Task { [weak self] in await self?.synchronizeDrafts() }
+    }
+  }
+
+  func synchronizeDrafts() async {
+    guard !closed else { return }
+    await newComposer.synchronize()
+    for conversation in conversations.values { await conversation.composer.synchronize() }
+  }
+
+  private func activateAgentDraft() {
+    guard !closed, let id = selectedAgentID else { return }
+    if let existing = agentDrafts[id] {
+      newComposer = existing
+    } else {
+      let composer = ComposerDraftStore(
+        target: .agent(id), commands: commands,
+        repository: draftRepository, storage: draftStorage,
+        didFail: { [weak self] in self?.handle($0) })
+      // Preserve input entered before navigation resolves the default Agent.
+      if !isCreating && newComposer.hasContent && agentDrafts.isEmpty {
+        newComposer.move(to: composer)
+      }
+      agentDrafts[id] = composer
+      newComposer = composer
+    }
+    let composer = newComposer
+    agentDraftTask = Task { await composer.synchronize() }
+  }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
     guard !closed, !needsUpgrade else { return }
@@ -153,6 +233,10 @@ final class WorkspaceStore {
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     let full = batch.contains(.reconnected)
+    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
+    {
+      await modelStore.refresh()
+    }
     if full || batch.contains(.threadList) {
       await list.refresh()
     } else if batch.contains(.readCursor)
@@ -171,7 +255,7 @@ final class WorkspaceStore {
       default: break
       }
     }
-    if full, let selectedThreadID { ids.insert(selectedThreadID) }
+    if full || batch.contains(.readCursor), let selectedThreadID { ids.insert(selectedThreadID) }
     for id in ids.sorted() {
       // Dormant conversations read their durable state when opened.
       if let conversation = conversations[id] {
@@ -179,6 +263,10 @@ final class WorkspaceStore {
       } else if selectedThreadID == id {
         await conversation(for: id)?.refresh()
       }
+    }
+    if full { await synchronizeDrafts() }
+    if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
+      await selectedConversation?.modelSelection?.refresh()
     }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
@@ -217,8 +305,38 @@ final class WorkspaceStore {
 
   func selectChat(_ id: String) {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return }
+    let reselected = selectedThreadID == id
     selectedThreadID = id
     selectedAgentID = thread.agentID
+    selectedConversation?.setAutomaticReadSuppressed(false, resetReadWatermark: true)
+    if reselected { requestRefresh(.history(threadID: id)) }
+  }
+
+  func openSearchResult(_ id: String) async -> Bool {
+    guard !closed, !needsUpgrade else { return false }
+    let searchID = search.requestID
+    guard search.ownsPresentation(searchID) else { return false }
+    search.setOpeningError(nil)
+    let needsRefresh = !list.threads.contains(where: { $0.id == id })
+    if needsRefresh { await list.refresh(waitForCurrent: true) }
+    guard !closed, !Task.isCancelled else { return false }
+    guard search.ownsPresentation(searchID) else { return false }
+    guard !needsRefresh || list.error == nil else { return false }
+    guard list.threads.contains(where: { $0.id == id }) else {
+      search.setOpeningError("This chat is no longer available. Refresh and try again.")
+      return false
+    }
+    // Like the PWA, message hits open the chat at its existing reading position.
+    selectChat(id)
+    search.dismiss()
+    return true
+  }
+
+  func setRead(_ thread: ChatThread, read: Bool) async {
+    let conversation = conversations[thread.id]
+    if !read { conversation?.setAutomaticReadSuppressed(true) }
+    let succeeded = await list.setRead(thread, read: read)
+    if read || !succeeded { conversation?.setAutomaticReadSuppressed(false) }
   }
 
   func startNewChat(agentID: String? = nil) {
@@ -226,23 +344,30 @@ final class WorkspaceStore {
     selectedThreadID = nil
     selectedAgentID =
       agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
-    newChatDraft = ""
-    newAttachmentDraft.reset()
+    newModelSelection.resetNewChat()
     error = nil
   }
 
   @discardableResult
   func createChat(agentID: String? = nil) async -> ChatThread? {
     guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
+    guard newModelSelection.canSend else { return nil }
+    let selection = modelStore.configuration.map { _ in
+      newModelSelection.captureNewChatSelection()
+    }
+    let effort = newModelSelection.requestedEffort
+    newModelSelection.isSending = true
     isCreating = true
     let task = Task<ChatThread?, Never> { [weak self] in
       guard let self else { return nil }
       defer {
         isCreating = false
+        newModelSelection.isSending = false
         creationTask = nil
       }
       do {
-        let thread = try await commands.createThread(agentID: agentID)
+        let thread = try await commands.createThread(
+          agentID: agentID, modelSelection: selection, reasoningEffort: effort)
         try Task.checkCancellation()
         guard !closed else { return nil }
         list.insertCreated(thread)
@@ -263,8 +388,9 @@ final class WorkspaceStore {
   }
 
   func sendNewChat() async {
-    let text = newChatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || newAttachmentDraft.hasAttachments, newAttachmentDraft.isReady,
+    let sourceComposer = newComposer
+    let wasAwaitingAgent = selectedAgentID == nil
+    guard sourceComposer.hasContent, sourceComposer.canSend, newAttachmentDraft.isReady,
       selectedThreadID == nil, !isCreating, !needsUpgrade, !closed
     else {
       return
@@ -272,10 +398,13 @@ final class WorkspaceStore {
     guard let created = await createChat(agentID: selectedAgentID), !closed,
       let conversation = conversation(for: created.id)
     else { return }
-    conversation.draft = text
-    newAttachmentDraft.moveReadyFiles(to: conversation.attachmentDraft)
-    newChatDraft = ""
-    await conversation.send()
+    sourceComposer.move(to: conversation.composer)
+    if wasAwaitingAgent && newComposer !== sourceComposer {
+      newComposer.clear()
+      newComposer.requestSync()
+    }
+    sourceComposer.requestSync()
+    await conversation.send(initialSelection: ChatModelSelection(thread: created))
   }
 
   func reduceMemory() async {

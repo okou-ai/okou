@@ -1,5 +1,9 @@
 use std::collections::BTreeSet;
+use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use codex_mock::{read_session_file, session_files};
@@ -10,19 +14,23 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use crate::app_server::{
-    MOCK_CODEX_SESSION_TIMESTAMP_ENV, initialize_params, spawn_app_server_with_env, text_input,
+    AppServerProcess, MOCK_CODEX_RESUME_PERSISTENCE_SOCKET_ENV, MOCK_CODEX_SESSION_TIMESTAMP_ENV,
+    initialize_params, spawn_app_server_with_env, text_input,
 };
 
 const THREAD_ID: &str = "0199a213-81c0-7800-8aa1-bbab2a035a53";
 const SESSION_TIMESTAMP: &str = "2026-06-09T12:34:56Z";
+const PERSISTENCE_GATE_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn persist_resume_turn(codex_home: &Path, thread_id: &str, prompt: &str) -> std::io::Result<()> {
-    let mut server = spawn_app_server_with_env(
-        codex_home,
-        &["app-server", "--stdio"],
-        None,
-        &[(MOCK_CODEX_SESSION_TIMESTAMP_ENV, SESSION_TIMESTAMP)],
-    )?;
+fn resume_app_server(
+    codex_home: &Path,
+    thread_id: &str,
+    env: &[(&str, &str)],
+) -> std::io::Result<AppServerProcess> {
+    let mut mock_env = vec![(MOCK_CODEX_SESSION_TIMESTAMP_ENV, SESSION_TIMESTAMP)];
+    mock_env.extend_from_slice(env);
+    let mut server =
+        spawn_app_server_with_env(codex_home, &["app-server", "--stdio"], None, &mock_env)?;
     server.request(1, "initialize", initialize_params())?;
     let resumed = server.request(
         2,
@@ -35,14 +43,27 @@ fn persist_resume_turn(codex_home: &Path, thread_id: &str, prompt: &str) -> std:
         resumed.pointer("/result/thread/id").and_then(Value::as_str),
         Some(thread_id)
     );
-    let started = server.request(
-        3,
-        "turn/start",
-        json!({
+    Ok(server)
+}
+
+fn send_resume_turn(
+    server: &mut AppServerProcess,
+    thread_id: &str,
+    prompt: &str,
+) -> std::io::Result<()> {
+    server.send(&json!({
+        "id": 3,
+        "method": "turn/start",
+        "params": {
             "threadId": thread_id,
             "input": [text_input(prompt)],
-        }),
-    )?;
+        },
+    }))
+}
+
+fn finish_resume_turn(server: &mut AppServerProcess) -> std::io::Result<()> {
+    let started = server.read_required()?;
+    assert_eq!(started.get("id").and_then(Value::as_i64), Some(3));
     assert!(
         started
             .pointer("/result/turn/id")
@@ -51,6 +72,37 @@ fn persist_resume_turn(codex_home: &Path, thread_id: &str, prompt: &str) -> std:
     );
     assert_eq!(server.close_and_wait()?, 0);
     Ok(())
+}
+
+fn persist_resume_turn(codex_home: &Path, thread_id: &str, prompt: &str) -> std::io::Result<()> {
+    let mut server = resume_app_server(codex_home, thread_id, &[])?;
+    send_resume_turn(&mut server, thread_id, prompt)?;
+    finish_resume_turn(&mut server)
+}
+
+fn accept_persistence_writer(listener: &UnixListener) -> std::io::Result<UnixStream> {
+    let deadline = Instant::now() + PERSISTENCE_GATE_TIMEOUT;
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false)?;
+                stream.set_read_timeout(Some(PERSISTENCE_GATE_TIMEOUT))?;
+                stream.set_write_timeout(Some(PERSISTENCE_GATE_TIMEOUT))?;
+                return Ok(stream);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timed out waiting for a resume persistence writer",
+                    ));
+                }
+                // Poll for an actual connection; elapsed time never establishes contention.
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn expected_fallback_path(codex_home: &Path) -> std::io::Result<std::path::PathBuf> {
@@ -119,19 +171,55 @@ fn concurrent_app_server_resume_writes_preserve_all_inputs() -> std::io::Result<
     }
     std::fs::write(&session_path, "{\"type\":\"existing\"}\n")?;
 
-    let mut handles = Vec::new();
-    for prompt in ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"] {
-        let codex_home = dir.path().to_path_buf();
-        handles.push((
-            prompt,
-            std::thread::spawn(move || persist_resume_turn(&codex_home, THREAD_ID, prompt)),
-        ));
+    let socket_path = dir.path().join("persistence.sock");
+    let listener = UnixListener::bind(&socket_path)?;
+    listener.set_nonblocking(true)?;
+    let socket_path = socket_path.to_str().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "non-UTF-8 socket path")
+    })?;
+    let prompts = ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"];
+    let mut servers = prompts
+        .iter()
+        .map(|_| {
+            resume_app_server(
+                dir.path(),
+                THREAD_ID,
+                &[(MOCK_CODEX_RESUME_PERSISTENCE_SOCKET_ENV, socket_path)],
+            )
+        })
+        .collect::<std::io::Result<Vec<_>>>()?;
+    for (server, prompt) in servers.iter_mut().zip(prompts) {
+        send_resume_turn(server, THREAD_ID, prompt)?;
     }
 
-    for (prompt, handle) in handles {
-        handle
-            .join()
-            .map_err(|_| std::io::Error::other(format!("{prompt}: resume thread panicked")))??;
+    for _ in &servers {
+        let mut writer = accept_persistence_writer(&listener)?;
+        let mut ready = [0];
+        writer.read_exact(&mut ready)?;
+        assert_eq!(ready, *b"R");
+
+        let lock_path = dir
+            .path()
+            .join(".session-locks")
+            .join(format!("{THREAD_ID}.lock"));
+        let probe = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        // SAFETY: `probe` owns an open file descriptor. A separate open-file
+        // description must contend with the writer paused after reading history.
+        let result = unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        let error = std::io::Error::last_os_error();
+        assert_eq!(
+            result, -1,
+            "resume writer must hold the session lock after reading history"
+        );
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        writer.write_all(b"C")?;
+    }
+
+    for server in &mut servers {
+        finish_resume_turn(server)?;
     }
 
     let events = read_session_file(&session_path)?;

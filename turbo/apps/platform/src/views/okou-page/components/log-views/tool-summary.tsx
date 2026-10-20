@@ -72,18 +72,12 @@ function ToolSummaryHeader({
         </span>
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {keyParam && (
-            <code
-              className="text-xs text-muted-foreground font-mono truncate"
-              title={keyParam}
-            >
+            <code className="text-xs text-muted-foreground font-mono truncate">
               {keyParamElement}
             </code>
           )}
           {isError && errorMessage && (
-            <span
-              className="text-xs text-red-600 truncate"
-              title={errorMessage}
-            >
+            <span className="text-xs text-red-600 truncate">
               {errorMessage.split("\n")[0]}
             </span>
           )}
@@ -339,7 +333,7 @@ function ToolInputDetails({
     .join(", ");
 
   return (
-    <span className="text-xs text-muted-foreground" title={fullText}>
+    <span className="text-xs text-muted-foreground" aria-description={fullText}>
       (
       {entries
         .map(([key, val]) => {

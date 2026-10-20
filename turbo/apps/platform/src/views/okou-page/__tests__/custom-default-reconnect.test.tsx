@@ -3,9 +3,10 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
+  connectorAccountTargetKey,
   connectorAccountsContract,
+  type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
-  type ConnectorAccountSummary,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   customConnectorOAuth2Contract,
@@ -22,15 +23,51 @@ import {
   customConnectorAccount,
   getConnectorAction,
   mockOAuthCompletions,
+  queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
-function mockSummaries(summaries: readonly ConnectorAccountSummary[]): void {
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [...summaries] });
-  });
+function mockAccountReads(
+  read: () => readonly ConnectorAccountConnection[],
+): void {
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      const accounts = read().filter((account) => {
+        return (
+          connectorAccountTargetKey(account.target) ===
+          connectorAccountTargetKey(query)
+        );
+      });
+      return respond(200, {
+        connections: accounts,
+        nextCursor: null,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
+      });
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      const account = read().find((account) => {
+        return (
+          account.id === params.connectionId &&
+          connectorAccountTargetKey(account.target) ===
+            connectorAccountTargetKey(query)
+        );
+      });
+      return account
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
 }
 
 async function openConnection(
@@ -60,18 +97,26 @@ test.each([1, 2])(
       slug: "_acme-search",
       configuredFieldKeys: ["secret"],
     });
-    const account = customConnectorAccount(connector.id, {
+    let account = customConnectorAccount(connector.id, {
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
+      configuredFieldKeys: ["secret"],
     });
-    mockSummaries([
-      {
-        target: account.target,
-        accountCount,
-        attentionCount: 1,
-        defaultConnection: account,
-      },
-    ]);
+    const siblingAccountIds = Array.from({ length: accountCount - 1 }, () => {
+      return crypto.randomUUID();
+    });
+    mockAccountReads(() => {
+      return [
+        account,
+        ...siblingAccountIds.map((id) => {
+          return {
+            ...account,
+            id,
+            isDefault: false,
+          };
+        }),
+      ];
+    });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
@@ -80,13 +125,18 @@ test.each([1, 2])(
       customConnectorValuesContract.set,
       ({ body, respond }) => {
         mutations.push(body.account);
+        account = {
+          ...account,
+          connectionStatus: "connected",
+          reconnectReason: null,
+        };
         connector = {
           ...connector,
           connected: true,
           connectedAccountId: account.id,
           missingRequiredFields: [],
         };
-        return respond(200, connector);
+        return respond(200, { ...connector, connectionId: account.id });
       },
     );
     let grants: AgentCustomConnectorGrant[] = [];
@@ -121,22 +171,20 @@ test.each([1, 2])(
 );
 
 test("Resolve the current default instead of stale definition identity", async () => {
+  const staleConnectionId = crypto.randomUUID();
   let connector = customConnector({
     slug: "_acme-search",
     connected: true,
-    connectedAccountId: crypto.randomUUID(),
+    connectedAccountId: staleConnectionId,
     configuredFieldKeys: ["secret"],
     missingRequiredFields: [],
   });
-  const account = customConnectorAccount(connector.id);
-  mockSummaries([
-    {
-      target: account.target,
-      accountCount: 2,
-      attentionCount: 0,
-      defaultConnection: account,
-    },
-  ]);
+  const account = customConnectorAccount(connector.id, {
+    configuredFieldKeys: ["secret"],
+  });
+  mockAccountReads(() => {
+    return [account, { ...account, id: staleConnectionId, isDefault: false }];
+  });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
@@ -144,7 +192,7 @@ test("Resolve the current default instead of stale definition identity", async (
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     mutations.push(body.account);
     connector = { ...connector, connectedAccountId: account.id };
-    return respond(200, connector);
+    return respond(200, { ...connector, connectionId: account.id });
   });
   const dialog = await openConnection(connector);
   await fill(within(dialog).getByLabelText("Secret"), "replacement-secret");
@@ -183,7 +231,7 @@ function installOAuthFlow(state: PreflightState, complete = false) {
       authorizationParams: {},
     },
   });
-  const account = customConnectorAccount(connector.id, {
+  let account = customConnectorAccount(connector.id, {
     authMethod: "oauth",
     connectionStatus: "reconnect-required",
     reconnectReason: "authorization_expired_or_revoked",
@@ -193,42 +241,61 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   });
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
+  let preflight = false;
   context.mocks.api(
-    connectorAccountsContract.summaries,
-    async ({ respond }) => {
-      requested.resolve();
-      if (state === "pending") {
+    connectorAccountsContract.connections,
+    async ({ query, respond }) => {
+      expect(query).toMatchObject(account.target);
+      if (preflight && !requested.settled()) {
+        requested.resolve();
+      }
+      if (preflight && state === "pending") {
         await release.promise;
       }
-      if (state === "failed") {
+      if (preflight && state === "failed") {
         return respond(403, {
           error: { code: "FORBIDDEN", message: "Account access unavailable" },
         });
       }
       return respond(200, {
-        summaries:
+        connections:
           state === "expired" || state === "no-default"
-            ? [
-                {
-                  target: account.target,
-                  accountCount: 2,
-                  attentionCount: 1,
-                  defaultConnection: state === "expired" ? account : null,
-                },
-              ]
+            ? [{ ...account, isDefault: state === "expired" }]
             : [],
+        nextCursor: null,
+        defaultConnection: state === "expired" ? account : null,
       });
     },
   );
   const completed = mockOAuthCompletions(context);
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      return (state === "expired" || connector.connected) &&
+        params.connectionId === account.id &&
+        connectorAccountTargetKey(query) ===
+          connectorAccountTargetKey(account.target)
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
   const attemptId = crypto.randomUUID();
   const mutations: ConnectorAccountMutationIntent[] = [];
   context.mocks.api(
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
       mutations.push(body.account);
-      completed.set(attemptId, account.id);
+      if (complete || state === "expired") {
+        completed.set(attemptId, account.id);
+      }
       if (complete) {
+        account = {
+          ...account,
+          connectionStatus: "connected",
+          reconnectReason: null,
+        };
         connector = {
           ...connector,
           connected: true,
@@ -240,7 +307,9 @@ function installOAuthFlow(state: PreflightState, complete = false) {
         result: "authorization",
         oauthAttemptId: attemptId,
         authorizationUrl: "https://acme.test/oauth/authorize",
-        connectionId: account.id,
+        ...(body.account.intent === "reconnect"
+          ? { connectionId: account.id }
+          : {}),
       });
     },
   );
@@ -268,12 +337,52 @@ function installOAuthFlow(state: PreflightState, complete = false) {
     mutations,
     grants,
     authWindow,
+    startPreflight: () => {
+      preflight = true;
+    },
   };
 }
 
+async function openOAuthConnection(
+  flow: ReturnType<typeof installOAuthFlow>,
+): Promise<HTMLElement> {
+  const dialog = await openConnection(flow.connector());
+  flow.startPreflight();
+  return dialog;
+}
+
+test("Wait for the initial account inventory before offering a custom connection", async () => {
+  const flow = installOAuthFlow("pending");
+  flow.startPreflight();
+  await setupPage({
+    context,
+    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+  });
+  await flow.requested.promise;
+  expect(queryConnectorAction("button", "Connect")).toBeNull();
+  flow.release.resolve();
+  await screen.findByText("Okou needs Acme Search to proceed");
+  expect(getConnectorAction("button", "Connect")).toBeEnabled();
+  expect(flow.mutations).toStrictEqual([]);
+});
+
+test("Keep a failed initial account inventory from offering a custom connection", async () => {
+  const flow = installOAuthFlow("failed");
+  flow.startPreflight();
+  await setupPage({
+    context,
+    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+  });
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Account access unavailable",
+  );
+  expect(getConnectorAction("button", "Connect")).toBeDisabled();
+  expect(flow.mutations).toStrictEqual([]);
+});
+
 test("Add the first custom OAuth account after confirming zero accounts", async () => {
   const flow = installOAuthFlow("zero");
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await waitFor(() => {
     expect(flow.authWindow.location.href).toBe(
@@ -289,7 +398,7 @@ test("Add the first custom OAuth account after confirming zero accounts", async 
 
 test("Cancel a pending default lookup before starting provider authorization", async () => {
   const flow = installOAuthFlow("pending");
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await flow.requested.promise;
   expect(flow.authWindow.location.href).toBe("about:blank");
@@ -314,7 +423,7 @@ test.each([
   "Keep a $state default lookup from creating another account",
   async ({ state, error }) => {
     const flow = installOAuthFlow(state);
-    const dialog = await openConnection(flow.connector());
+    const dialog = await openOAuthConnection(flow);
     click(getConnectorAction("button", "Continue", dialog));
     await within(dialog).findByText(error);
     expect(flow.authWindow.closed).toBeTruthy();
@@ -325,7 +434,7 @@ test.each([
 
 test("Authorize an expired OAuth default only after ready completion", async () => {
   const flow = installOAuthFlow("expired", true);
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await waitFor(() => {
     expect(flow.authWindow.location.href).toBe(
@@ -349,7 +458,7 @@ test("Authorize an expired OAuth default only after ready completion", async () 
 
 test("Keep an incomplete OAuth reconnect unauthorized", async () => {
   const flow = installOAuthFlow("expired");
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await waitFor(() => {
     expect(flow.authWindow.location.href).toBe(

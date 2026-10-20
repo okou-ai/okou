@@ -70,7 +70,8 @@ final class ConversationChromeTests: XCTestCase {
           body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }

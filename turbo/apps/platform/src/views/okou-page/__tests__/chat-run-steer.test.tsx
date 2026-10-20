@@ -244,16 +244,10 @@ test("Keep separate histories, artifacts and actions on both sides of a steer in
   const nextGroup = assistantGroup(NEXT_RESULT);
   expect(previousGroup).not.toBe(nextGroup);
   expect(previousGroup).toContainElement(relatedArtifacts);
-  expect(
-    previousGroup.querySelector("[data-chat-run-work-history-list]"),
-  ).toBeNull();
   for (const text of oldHistory) {
     expect(screen.queryByText(text)).toBeNull();
   }
   expect(screen.queryByText("Checked the token validation path")).toBeNull();
-  expect(
-    nextGroup.querySelector("[data-chat-run-work-history-list]"),
-  ).toBeNull();
   expect(queryButton("Expand work history", nextGroup)).toBeVisible();
   expect(queryButton("Copy message", mainResult(NEXT_RESULT))).toBeVisible();
   expect(screen.getAllByTestId("chat-event-actions")).toHaveLength(2);

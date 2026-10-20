@@ -1,12 +1,14 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorOverview } from "@okouai/api-contracts/contracts/connector-overview";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { pageSignal$ } from "../page-signal.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
 import { withCleanup } from "../utils.ts";
@@ -15,7 +17,7 @@ import {
   composerAgentConnectors,
   invalidateAgentConnectorAccess$,
 } from "./composer-agent-connectors.ts";
-import { connectorOverview$ } from "./connector-overview.ts";
+import { createConnectorResourceSignals } from "./connector-overview.ts";
 import { reloadOnboardingStatus$ } from "./onboarding.ts";
 import type {
   PlatformConnectorCatalogStatusItem,
@@ -58,10 +60,10 @@ export interface ComposerConnectorUiState {
   readonly addDialogSearch: string;
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
-  readonly popoverHasOpened: boolean;
   readonly remoteMenuOpen: boolean;
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
+  readonly permissionConnector: BuiltinConnectorBrief | null;
   readonly directoryTab: ConnectorDirectoryTab;
   readonly directoryCategory: string | null;
   readonly directoryDetailSlug: ConnectorSlug | null;
@@ -75,12 +77,13 @@ export interface ComposerConnectorUiState {
 export type ConnectorDirectoryTab = "discover" | "custom";
 
 export interface ComposerConnectorData {
-  readonly overview: ConnectorOverview;
+  readonly overview: ConnectedConnectors;
   readonly authorization: ComposerConnectorAuthorizationState;
 }
 
 export interface ComposerConnectorSignals {
   readonly data$: Computed<Promise<ComposerConnectorData>>;
+  readonly resources: ReturnType<typeof createConnectorResourceSignals>;
   readonly connectorAuthorization$: Computed<
     Promise<ComposerConnectorAuthorizationState>
   >;
@@ -130,10 +133,10 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     addDialogSearch: "",
     popoverSearch: "",
     popoverOpen: false,
-    popoverHasOpened: false,
     remoteMenuOpen: false,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
+    permissionConnector: null,
     directoryTab: "discover",
     directoryCategory: null,
     directoryDetailSlug: null,
@@ -230,7 +233,7 @@ function createCustomConnectorAuthorizationCommand(
 
 function createConnectorAuthorizationCommand(
   agentId: string,
-  data$: Computed<Promise<ComposerConnectorData>>,
+  authorization$: Computed<Promise<ComposerConnectorAuthorizationState>>,
 ): ComposerConnectorSignals["setConnectorAuthorization$"] {
   const setBuiltinAuthorization$ =
     createBuiltinConnectorAuthorizationCommand(agentId);
@@ -260,13 +263,15 @@ function createConnectorAuthorizationCommand(
           signal,
         );
       }
-      await get(data$);
+      await get(authorization$);
       signal.throwIfAborted();
     },
   );
 }
 
-function createConnectorUiSignals(): Pick<
+function createConnectorUiSignals(
+  resources: ReturnType<typeof createConnectorResourceSignals>,
+): Pick<
   ComposerConnectorSignals,
   "connectorUiState$" | "updateConnectorUiState$" | "openAddConnectorsDialog$"
 > {
@@ -275,7 +280,12 @@ function createConnectorUiSignals(): Pick<
     return get(internalUiState$);
   });
   const updateConnectorUiState$ = command(
-    ({ set }, patch: Partial<ComposerConnectorUiState>): void => {
+    ({ get, set }, patch: Partial<ComposerConnectorUiState>): void => {
+      if (patch.popoverOpen === true && !get(internalUiState$).popoverOpen) {
+        set(resources.open$, get(pageSignal$));
+      } else if (patch.popoverOpen === false) {
+        set(resources.close$);
+      }
       if (patch.selectedConnectorSlug) {
         set(resetBuiltinManualGrantForm$, patch.selectedConnectorSlug);
       }
@@ -306,11 +316,12 @@ export function createComposerConnectorSignals(
   agentId: string,
   threadId?: string,
 ): ComposerConnectorSignals {
-  const ui = createConnectorUiSignals();
+  const resources = createConnectorResourceSignals();
+  const ui = createConnectorUiSignals(resources);
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
     const [overview, authorization] = await Promise.all([
-      get(connectorOverview$),
+      get(resources.connected$),
       get(authorization$),
     ]);
     return { overview, authorization };
@@ -372,8 +383,11 @@ export function createComposerConnectorSignals(
     },
   );
 
+  const accounts = createComposerConnectorAccountSignals(threadId);
+
   return {
     data$,
+    resources,
     connectorAuthorization$: authorization$,
     addDialogCatalog$,
     addDialogBrowseCatalog$,
@@ -381,11 +395,11 @@ export function createComposerConnectorSignals(
     addDialogCustomConnectors$,
     setConnectorAuthorization$: createConnectorAuthorizationCommand(
       agentId,
-      data$,
+      authorization$,
     ),
     ...ui,
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
-    accounts: createComposerConnectorAccountSignals(threadId),
+    accounts,
   };
 }

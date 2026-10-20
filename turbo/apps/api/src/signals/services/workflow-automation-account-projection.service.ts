@@ -1,13 +1,36 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
-import { reprojectGmailAutomationsForOwner } from "./gmail-automation-account.service";
-import { reprojectGoogleCalendarAutomationsForOwner } from "./google-calendar-automation-account.service";
+import {
+  gmailAutomationProjectionColumns,
+  gmailAutomationProjectionConfig,
+  gmailAutomationProjectionCondition,
+} from "./gmail-automation-account.service";
+import {
+  googleCalendarAutomationProjectionColumns,
+  googleCalendarAutomationProjectionCondition,
+} from "./google-calendar-automation-account.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
 import { reprojectNotionAutomationsForOwner } from "./notion-automation-account.service";
 import { reprojectStripeInvoicePaidAutomationsForOwner } from "./stripe-invoice-paid-workflow-automation.service";
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
+import {
+  workflowAutomationDefaultAccountReadPlan,
+  workflowAutomationSelectedAccountReadPlan,
+} from "./workflow-automation-account.service";
+
+type ProjectedAutomation =
+  | Pick<
+      typeof workflowAutomations.$inferSelect,
+      "id" | "workflowId" | "eventConnectorId" | "eventType" | "eventConfig"
+    >
+  | Pick<
+      typeof workflowAutomations.$inferSelect,
+      "id" | "workflowId" | "eventConnectorId"
+    >;
 
 export async function reprojectWorkflowAutomationsForOwner(
   db: Db,
@@ -24,14 +47,75 @@ export async function reprojectWorkflowAutomationsForOwner(
   ) {
     return;
   }
-  switch (args.target.connectorSlug) {
-    case "gmail": {
-      await reprojectGmailAutomationsForOwner(db, args);
-      signal.throwIfAborted();
-      return;
-    }
+  const connectorSlug = args.target.connectorSlug;
+  switch (connectorSlug) {
+    case "gmail":
     case "google-calendar": {
-      await reprojectGoogleCalendarAutomationsForOwner(db, args);
+      const projectionDb = db;
+      const projectionArgs = args;
+      await (async () => {
+        const automations: ProjectedAutomation[] =
+          connectorSlug === "gmail"
+            ? await projectionDb
+                .select(gmailAutomationProjectionColumns())
+                .from(workflowAutomations)
+                .where(gmailAutomationProjectionCondition(projectionArgs))
+            : await projectionDb
+                .select(googleCalendarAutomationProjectionColumns())
+                .from(workflowAutomations)
+                .where(
+                  googleCalendarAutomationProjectionCondition(projectionArgs),
+                );
+
+        for (const automation of automations) {
+          const workflowScope = {
+            ...projectionArgs,
+            workflowId: automation.workflowId,
+          };
+          const eventConnectorId = await (async () => {
+            const accountScope = {
+              ...workflowScope,
+              connectorSlug,
+            };
+            return await (async () => {
+              const selected =
+                workflowAutomationSelectedAccountReadPlan(accountScope);
+              const [selection] = await projectionDb
+                .select(selected.columns)
+                .from(selected.from)
+                .innerJoin(selected.join.table, selected.join.on)
+                .where(selected.where)
+                .limit(selected.limit);
+              if (selection) {
+                return selection.connectorId;
+              }
+              const fallback =
+                workflowAutomationDefaultAccountReadPlan(accountScope);
+              const [defaultAccount] = await projectionDb
+                .select(fallback.columns)
+                .from(fallback.from)
+                .where(fallback.where)
+                .limit(fallback.limit);
+              return defaultAccount?.connectorId ?? null;
+            })();
+          })();
+          if (automation.eventConnectorId === eventConnectorId) {
+            continue;
+          }
+          if ("eventType" in automation) {
+            const eventConfig = gmailAutomationProjectionConfig(automation);
+            await projectionDb
+              .update(workflowAutomations)
+              .set({ eventConnectorId, eventConfig })
+              .where(eq(workflowAutomations.id, automation.id));
+          } else {
+            await projectionDb
+              .update(workflowAutomations)
+              .set({ eventConnectorId })
+              .where(eq(workflowAutomations.id, automation.id));
+          }
+        }
+      })();
       signal.throwIfAborted();
       return;
     }
@@ -55,5 +139,5 @@ export async function reprojectWorkflowAutomationsForOwner(
       return;
     }
   }
-  return args.target.connectorSlug satisfies never;
+  return connectorSlug satisfies never;
 }

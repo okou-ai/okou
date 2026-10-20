@@ -2,6 +2,8 @@
 
 //! Real ApiClient/Unix transport contracts; no KVM or Guest completion claim.
 
+mod routing;
+
 use std::io;
 use std::time::Duration;
 

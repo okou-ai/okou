@@ -18,6 +18,9 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
   public var isArchived = false
   public var isHidden = false
   public var indicator: ChatIndicator?
+  public var unreadAt: Date?
+  public var isMuted: Bool
+  public var isUnread: Bool { unreadAt != nil && !isMuted }
 
   public init(
     id: String,
@@ -36,7 +39,9 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     cloudBrowserEnabled: Bool = false,
     isArchived: Bool = false,
     isHidden: Bool = false,
-    indicator: ChatIndicator? = nil
+    indicator: ChatIndicator? = nil,
+    unreadAt: Date? = nil,
+    isMuted: Bool = false
   ) {
     self.id = id
     self.agentID = agentID
@@ -55,6 +60,8 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     self.isArchived = isArchived
     self.isHidden = isHidden
     self.indicator = indicator
+    self.unreadAt = unreadAt
+    self.isMuted = isMuted
   }
 
   public var displayTitle: String { title.isEmpty ? "New chat" : title }
@@ -64,12 +71,28 @@ public enum ChatIndicator: String, Decodable, Sendable {
   case active, unread
 }
 
+/// Durable file identity and display snapshots; temporary download URLs never enter history.
+public struct ChatMessageAttachment: Equatable, Identifiable, Sendable {
+  public let id: String
+  public let filename: String
+  public let contentType: String
+  public let size: Int?
+
+  public init(id: String, filename: String, contentType: String, size: Int? = nil) {
+    self.id = id
+    self.filename = filename
+    self.contentType = contentType
+    self.size = size
+  }
+}
+
 public struct ChatMessage: Identifiable, Equatable, Sendable {
   public enum Role: String, Sendable { case user, assistant, system }
 
   public let id: String
   public let role: Role
   public let text: String
+  public let attachments: [ChatMessageAttachment]
   public let createdAt: Date
   public let runID: String?
   public let isQueued: Bool
@@ -79,6 +102,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     id: String,
     role: Role,
     text: String,
+    attachments: [ChatMessageAttachment] = [],
     createdAt: Date,
     runID: String? = nil,
     isQueued: Bool,
@@ -87,6 +111,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     self.id = id
     self.role = role
     self.text = text
+    self.attachments = attachments
     self.createdAt = createdAt
     self.runID = runID
     self.isQueued = isQueued
@@ -123,21 +148,27 @@ public struct ChatHistory: Equatable, Sendable {
   public let workSections: [ChatWorkSection]
   public let executionState: ChatExecutionState
   public let activeRunIDs: [String]
+  public let activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
+  public let latestRunFinishAt: Date?
 
   public init(
     messages: [ChatMessage],
     executionState: ChatExecutionState,
     activeRunIDs: [String],
+    activityRunID: String? = nil,
     queuedEventIDs: [String],
     persistedEventIDs: Set<String> = [],
-    workSections: [ChatWorkSection] = []
+    workSections: [ChatWorkSection] = [],
+    latestRunFinishAt: Date? = nil
   ) {
     self.messages = messages
     self.workSections = workSections
+    self.latestRunFinishAt = latestRunFinishAt
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
+    self.activityRunID = activityRunID
     self.queuedEventIDs = queuedEventIDs
     self.persistedEventIDs = persistedEventIDs
   }

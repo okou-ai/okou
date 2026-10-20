@@ -42,6 +42,7 @@ describe("provider failure contract shared with guest-agent", () => {
     [200, undefined],
     [401, undefined],
     [403, undefined],
+    [413, undefined],
     [600, undefined],
     [503.5, undefined],
     [NaN, undefined],

@@ -10,6 +10,10 @@
 //! not a positive join. This fixture never adopts or replaces a live socket.
 
 mod framing;
+mod routing;
+
+pub use routing::RequestRoute;
+pub(crate) use routing::request_socket;
 
 use std::io;
 use std::path::PathBuf;

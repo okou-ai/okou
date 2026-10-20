@@ -709,7 +709,6 @@
       "multiAccent": "Multi-Akzent",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",
-      "placeholder": "{{title}} Platzhalter für die Website-Vorschau",
       "previewCurrentSlide": "Vorschau von {{title}} auf der aktuellen Folie",
       "previewSlide": "Vorschaufolie {{slideNumber}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
@@ -1912,7 +1911,6 @@
       "back": "Zurück",
       "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
       "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
-      "defaultAccountFor": "{{connector}} · Standardkonto wird verwendet: {{account}}",
       "directory": {
         "allCategories": "Alle",
         "askAdmin": "Lassen Sie diese Integration von einem Admin freischalten",
@@ -1929,8 +1927,6 @@
         "emptyCustomTitle": "Noch keine eigenen Integrationen",
         "matchCount_one": "{{count}} Treffer",
         "matchCount_other": "{{count}} Treffer",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Braucht Aufmerksamkeit",
         "nextCategories": "Nächste Kategorien",
         "noResultsBody": "Versuchen Sie einen Produktnamen oder erstellen Sie eine eigene aus einer API oder einem MCP-Server.",
@@ -1947,6 +1943,7 @@
       },
       "fallsBackTo": "Wechselt zu {{account}} zurück",
       "find": "Integrationen suchen...",
+      "loadFailed": "Integrationen konnten nicht geladen werden.",
       "noUsableAccount": "Kein verwendbares Konto",
       "remove": "{{connectorName}} entfernen",
       "selectedAccountFor": "{{connector}} · Ausgewähltes Konto: {{account}}",
@@ -2146,16 +2143,11 @@
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
     "relations": {
-      "communications": "Nachrichten",
-      "idle": "Inaktiv",
+      "chats": "Chats",
       "loadFailed": "Laden fehlgeschlagen",
-      "messageUnavailable": "Nachricht nicht verfügbar",
       "origin": "Von",
       "queued": "In Warteschlange",
-      "received": "Empfangen",
       "running": "Läuft",
-      "sent": "Gesendet",
-      "toggleMessages": "Nachrichten mit {{title}}",
       "unavailable": "Nicht verfügbar",
       "untitled": "Unbenannt"
     },
@@ -2178,11 +2170,10 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "emptyLinks": "Noch keine Links in diesem Chat",
+      "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
       "expand": "Ausklappen",
-      "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
-      "loadingLinks": "Links werden geladen",
+      "loading": "Ressourcen werden geladen",
       "retry": "Erneut versuchen",
       "title": "Chat-Ressourcen"
     },
@@ -3096,16 +3087,9 @@
       "noAccountsFound": "Keine Konten gefunden",
       "reconnectRequired": "Erneute Verbindung erforderlich",
       "rename": "Umbenennen",
-      "skipName": "Überspringen",
-      "summaryMany": "{{value}} Konten",
-      "summaryMany_one": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} Konto",
-      "summaryOne_one": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} erfordern Aufmerksamkeit",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_other": ""
+      "setupIncomplete": "Einrichtung unvollständig",
+      "setupUnavailable": "Kontostatus nicht verfügbar",
+      "skipName": "Überspringen"
     },
     "actions": {
       "apply": "Anwenden",
@@ -3270,7 +3254,6 @@
       },
       "scope": {
         "aria": "Connector-Bereich",
-        "attention": "Benötigt Aufmerksamkeit",
         "connected": "Verbunden",
         "custom": "Eigene",
         "discover": "Entdecken",
@@ -3966,9 +3949,28 @@
       "connected": "{{connector}} verbunden"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Autorisierung konnte nicht aktualisiert werden. Aktualisiere die Seite und versuche es erneut.",
+    "allow": "Für 1 Stunde erlauben",
+    "approved": "Shell-Zugriff erlaubt",
+    "deadline": "Läuft ab: {{date}}",
+    "denied": "Anfrage abgelehnt",
+    "deny": "Ablehnen",
+    "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
+    "details": "Details öffnen",
+    "expired": "Autorisierung abgelaufen",
+    "loading": "Autorisierung wird geladen…",
+    "pending": "Bereit zur Genehmigung",
+    "refresh": "Aktualisieren",
+    "revoke": "Zugriff widerrufen",
+    "revoked": "Shell-Zugriff widerrufen",
+    "scope": "Nur dieser Chat und Computer. Bestehende Terminals bleiben nach Ablauf geöffnet.",
+    "title": "Desktop-Shell-Zugriff",
+    "unavailable": "Autorisierung nicht verfügbar",
+    "waiting": "Eine Genehmigung ist während eines aktiven Runs oder nach einem Computerwechsel nicht möglich."
+  },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
-    "back": "Zurück zu Vorlagen",
     "categories": {
       "all": "Alle",
       "business-record": "Geschäftsunterlagen",
@@ -4019,7 +4021,6 @@
     "preview": "Vorschau: {{title}}",
     "previousPage": "Vorherige Beispielseite",
     "retry": "Erneut versuchen",
-    "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
     "useNamed": "{{title}} verwenden"
   },
@@ -5086,6 +5087,10 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
+        "resources": {
+          "description": "Zeigt Artefakte und verwandte Chats neben dem Gespräch an, wenn Platz ist.",
+          "title": "Ressourcen automatisch öffnen"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5176,7 +5181,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
-        "description": "Tägliche Prioritäten um 7 Uhr in deiner Zeitzone.",
+        "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",

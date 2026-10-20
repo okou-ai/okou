@@ -11,6 +11,7 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import {
   getHostedSiteShareScope,
   type HostedSiteShareSession,
@@ -198,6 +199,80 @@ function WebsiteUrlEditor({
   );
 }
 
+function HostedSiteShareActions({
+  session,
+  editing,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly editing: boolean;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(session.signal$);
+  const details = useLoadable(session.details$);
+  const link = useLoadable(session.copyUrl$);
+  const returnFocus = useGet(session.returnFocus$);
+  const edit = useSet(session.edit$);
+  const refresh = useSet(session.refresh$);
+  const [copying, copy] = useLoadableSet(session.copy$);
+  if (editing || !signal) {
+    return null;
+  }
+  return (
+    <>
+      <ShareLinkRow
+        copying={copying.state === "loading"}
+        link={
+          link.state === "hasData"
+            ? link.data.replace(/^https?:\/\//u, "")
+            : null
+        }
+        onCopy={() => {
+          detach(copy(signal), Reason.DomCallback);
+        }}
+      />
+      {details.state === "hasData" &&
+        details.data?.isActive &&
+        new URL(details.data.url).hostname.endsWith(
+          `.${resolveEditableHostedSiteDomain()}`,
+        ) && (
+          <Button
+            autoFocus={returnFocus}
+            variant="quiet"
+            className="mt-1 w-full justify-between px-2"
+            onClick={() => {
+              detach(edit(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.siteUrl.customize;
+            })}
+            <ChevronRight size={14} className="text-muted-foreground" />
+          </Button>
+        )}
+      {details.state === "hasError" && (
+        <div className="flex items-center justify-between gap-2 px-2 py-1">
+          <span role="status" className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.siteUrl.loadFailed;
+            })}
+          </span>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => {
+              refresh();
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.sharing.retry;
+            })}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
 function HostedSiteShareSessionMenu({
   session,
   ariaLabel,
@@ -206,15 +281,9 @@ function HostedSiteShareSessionMenu({
 }: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
-  const details = useLoadable(session.details$);
-  const link = useLoadable(session.copyUrl$);
   const open = useGet(session.open$);
-  const draft = useGet(session.draft$);
-  const returnFocus = useGet(session.returnFocus$);
+  const editing = useGet(session.editing$);
   const setOpen = useSet(session.setOpen$);
-  const edit = useSet(session.edit$);
-  const refresh = useSet(session.refresh$);
-  const [copying, copy] = useLoadableSet(session.copy$);
   const [saving, save] = useLoadableSet(session.save$);
   if (!signal) {
     return null;
@@ -253,7 +322,7 @@ function HostedSiteShareSessionMenu({
           </span>
           <Check size={16} />
         </div>
-        {draft !== null ? (
+        {editing && (
           <WebsiteUrlEditor
             session={session}
             saving={saving.state === "loading"}
@@ -262,56 +331,8 @@ function HostedSiteShareSessionMenu({
               detach(save(signal), Reason.DomCallback);
             }}
           />
-        ) : (
-          <>
-            <ShareLinkRow
-              copying={copying.state === "loading"}
-              link={
-                link.state === "hasData"
-                  ? link.data.replace(/^https?:\/\//u, "")
-                  : null
-              }
-              onCopy={() => {
-                detach(copy(signal), Reason.DomCallback);
-              }}
-            />
-            {details.state === "hasData" && details.data?.isActive && (
-              <Button
-                autoFocus={returnFocus}
-                variant="quiet"
-                className="mt-1 w-full justify-between px-2"
-                onClick={() => {
-                  detach(edit(signal), Reason.DomCallback);
-                }}
-              >
-                {t(($) => {
-                  return $.artifacts.siteUrl.customize;
-                })}
-                <ChevronRight size={14} className="text-muted-foreground" />
-              </Button>
-            )}
-            {details.state === "hasError" && (
-              <div className="flex items-center justify-between gap-2 px-2 py-1">
-                <span role="status" className="text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.artifacts.siteUrl.loadFailed;
-                  })}
-                </span>
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  onClick={() => {
-                    refresh();
-                  }}
-                >
-                  {t(($) => {
-                    return $.artifacts.sharing.retry;
-                  })}
-                </Button>
-              </div>
-            )}
-          </>
         )}
+        <HostedSiteShareActions session={session} editing={editing} />
       </PopoverContent>
     </Popover>
   );

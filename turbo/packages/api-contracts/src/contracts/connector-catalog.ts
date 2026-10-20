@@ -16,6 +16,9 @@ const publicConnectorCatalogAuthMethodSummarySchema = z.object({
   id: connectorAuthMethodIdSchema,
   label: z.string(),
   description: z.string().nullable(),
+  // Optional while prepared readers can still reach an older serving API.
+  // #41699 requires this method-owned fact after preparation and API drain.
+  supportsRefresh: z.boolean().optional(),
   grantKind: z.enum([
     "none",
     "automatic",
@@ -116,11 +119,15 @@ const publicConnectorCatalogConnectionSchema = z.object({
   reconnectReason: connectorReconnectReasonSchema.nullable(),
 });
 
-const publicConnectorCatalogStatusItemSchema =
+export const publicConnectorCatalogStatusItemSchema =
   publicConnectorCatalogDetailSchema.extend({
     connection: publicConnectorCatalogConnectionSchema.nullable(),
     connected: z.boolean(),
     connectionStatus: publicConnectorCatalogConnectionStatusSchema,
+    setupStatus: z
+      .enum(["complete", "incomplete", "invalid"])
+      .nullable()
+      .optional(),
     scopeMismatch: z.boolean(),
     authMethodSupportsRefresh: z.boolean(),
     tokenExpiresAt: z.string().nullable(),
@@ -145,6 +152,7 @@ export const publicConnectorCatalogConnectItemSchema =
     connection: true,
     connected: true,
     connectionStatus: true,
+    setupStatus: true,
     scopeMismatch: true,
     authMethodSupportsRefresh: true,
     tokenExpiresAt: true,

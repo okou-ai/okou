@@ -34,7 +34,7 @@ export function chatThreadColumns() {
     /** Native identity for the retained files; no remote history ownership. */
     framework: varchar("framework", { length: 64 }),
     frameworkSessionId: varchar("framework_session_id", { length: 255 }),
-    /** Run that reported this native identity, used for model compatibility. */
+    /** Producer identity for generation-bound native files, without a Run FK. */
     frameworkSessionRunId: uuid("framework_session_run_id"),
     /**
      * Slack-style watermark: the last timestamp up to which the user has read

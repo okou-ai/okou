@@ -37,6 +37,7 @@ import {
 } from "./private-artifact-storage.service";
 import { hostedPreviewArtifactId } from "./hosted-preview.service";
 import { authorizeHostedSiteDelivery$ } from "./host.service";
+import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 
 interface ImageSource {
   readonly bucket: string;
@@ -129,7 +130,7 @@ const hostedOgSource$ = command(
       },
       signal,
     );
-    if (!allowed) {
+    if (!allowed.allowed) {
       return null;
     }
     return {
@@ -179,6 +180,13 @@ const snapshotOgSource$ = command(
       throw new Error("Shared artifact snapshot does not match its owner");
     }
     const { target, previewTarget } = snapshot;
+    if (
+      target.kind === "html" &&
+      !(await set(checkHostedSiteAccess$, { siteId: target.siteId }, signal))
+        .allowed
+    ) {
+      return null;
+    }
     return {
       version: createHash("sha256")
         .update(JSON.stringify([record, target, previewTarget]))

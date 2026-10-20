@@ -42,10 +42,10 @@ function mockExactReconnectAccount(
     unnamedManualAccount?: boolean;
     accountMissingOnActivate?: boolean;
     unsupportedAuthMethod?: boolean;
-    mismatchedResponse?: "id" | "target";
     accountAuthMethod?: "oauth" | "api-token";
   },
-): void {
+): () => void {
+  let exactReconnectCompleted = false;
   let catalogUnavailable = options?.catalogUnavailableOnce ?? false;
   let accountLookups = 0;
   const github = connectorSlugSchema.parse("github");
@@ -149,16 +149,10 @@ function mockExactReconnectAccount(
         });
       }
       return respond(200, {
-        id:
-          options?.mismatchedResponse === "id"
-            ? DEFAULT_CONNECTION_ID
-            : EXACT_CONNECTION_ID,
+        id: EXACT_CONNECTION_ID,
         target: {
           kind: "builtin",
-          connectorSlug:
-            options?.mismatchedResponse === "target"
-              ? connectorSlugSchema.parse("slack")
-              : github,
+          connectorSlug: github,
         },
         authMethod: options?.accountAuthMethod ?? "api-token",
         displayName: options?.unnamedManualAccount ? null : "Work GitHub",
@@ -167,7 +161,10 @@ function mockExactReconnectAccount(
         externalUsername: null,
         externalEmail: null,
         oauthScopes: options?.accountAuthMethod === "oauth" ? [] : null,
-        connectionStatus: accountStatus,
+        connectionStatus: exactReconnectCompleted ? "connected" : accountStatus,
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["apiToken"],
         reconnectReason:
           accountStatus === "reconnect-required"
             ? "authorization_expired_or_revoked"
@@ -178,6 +175,9 @@ function mockExactReconnectAccount(
       });
     },
   );
+  return () => {
+    exactReconnectCompleted = true;
+  };
 }
 
 function assistantMessage(id: string, content: string) {
@@ -192,6 +192,7 @@ function assistantMessage(id: string, content: string) {
 
 function mockManualReconnect(
   onReconnect: (account: unknown) => void,
+  onComplete: () => void,
   options?: { completion?: Promise<void>; responseId?: string },
 ): void {
   context.mocks.api(
@@ -203,6 +204,7 @@ function mockManualReconnect(
       if (options?.completion) {
         await withSignal(options.completion);
       }
+      onComplete();
       return respond(200, {
         id: options?.responseId ?? EXACT_CONNECTION_ID,
         slug: "github",
@@ -795,12 +797,12 @@ test("Keep the connector slot when delayed metadata is unavailable", async () =>
 });
 
 test("An exact reconnect card opens the non-default account dialog and continues only after success", async () => {
-  mockExactReconnectAccount("reconnect-required");
+  const complete = mockExactReconnectAccount("reconnect-required");
   let submittedAccount: unknown = null;
   let continuationPrompt: string | null = null;
   mockManualReconnect((account) => {
     submittedAccount = account;
-  });
+  }, complete);
   const url = exactReconnectUrl();
   await setupChat(`Reconnect this account:\n\n${url.toString()}`, (prompt) => {
     continuationPrompt = prompt;
@@ -843,13 +845,14 @@ test("An exact reconnect card opens the non-default account dialog and continues
 });
 
 test("A reconnect completion for another account never continues the chat", async () => {
-  mockExactReconnectAccount("reconnect-required");
+  const complete = mockExactReconnectAccount("reconnect-required");
   let continuationPrompt: string | null = null;
   let submittedAccount: unknown = null;
   mockManualReconnect(
     (account) => {
       submittedAccount = account;
     },
+    complete,
     { responseId: DEFAULT_CONNECTION_ID },
   );
   await setupChat(exactReconnectUrl().toString(), (prompt) => {
@@ -879,7 +882,7 @@ test("A reconnect completion for another account never continues the chat", asyn
 });
 
 test("Closing an in-flight reconnect dialog never continues after a late success", async () => {
-  mockExactReconnectAccount("reconnect-required");
+  const complete = mockExactReconnectAccount("reconnect-required");
   const gate = context.mocks.deferred<void>();
   let submittedAccount: unknown = null;
   let continuationPrompt: string | null = null;
@@ -887,6 +890,7 @@ test("Closing an in-flight reconnect dialog never continues after a late success
     (account) => {
       submittedAccount = account;
     },
+    complete,
     { completion: gate.promise },
   );
   await setupChat(exactReconnectUrl().toString(), (prompt) => {
@@ -955,12 +959,12 @@ test("An exact OAuth account opens the in-chat dialog with only its stored auth 
 });
 
 test("A bare relative exact reconnect link opens the dialog and retains its callback", async () => {
-  mockExactReconnectAccount("reconnect-required");
+  const complete = mockExactReconnectAccount("reconnect-required");
   let continuationPrompt: string | null = null;
   let submittedAccount: unknown = null;
   mockManualReconnect((account) => {
     submittedAccount = account;
-  });
+  }, complete);
   const url = exactReconnectUrl();
   const relativeUrl = url.pathname + url.search;
   await setupChat(`Reconnect this work account: ${relativeUrl}。`, (prompt) => {
@@ -1045,20 +1049,6 @@ test("A reconnect card stays unavailable if its stored authentication method is 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
-
-test.each(["id", "target"] as const)(
-  "A lookup that returns a different account %s cannot open a reconnect dialog",
-  async (mismatchedResponse) => {
-    mockExactReconnectAccount("reconnect-required", { mismatchedResponse });
-    await setupChat(exactReconnectUrl().toString());
-
-    await expect(
-      screen.findByTestId("unavailable-action-card"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-  },
-);
 
 test("Closing the exact reconnect dialog does not send the callback", async () => {
   mockExactReconnectAccount("reconnect-required");

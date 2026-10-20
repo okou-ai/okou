@@ -13,7 +13,6 @@ import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import {
   entry,
   filesButton,
-  filesTab,
   filesPath,
   listing,
   openFiles,
@@ -152,17 +151,6 @@ test("Run completion clears files and releases demand without reconnecting", asy
     within(panel).findByText("Files are available while a run is active."),
   ).resolves.toBeInTheDocument();
   expect(within(panel).queryByText("workspace")).toBeNull();
-  expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
-});
-
-test("Switching from Files to Steps releases the connection", async () => {
-  const fixture = await setupFilesPage(context);
-  const panel = await openFiles();
-  await expect(
-    within(panel).findByText("workspace"),
-  ).resolves.toBeInTheDocument();
-  click(filesTab("Steps"));
-  expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
 });
 

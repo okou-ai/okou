@@ -128,7 +128,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(
       screen.queryByLabelText("Verification Token"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Default agent")).not.toBeInTheDocument();
   });
 
   it.each(["Enter", "click"] as const)(
@@ -429,7 +428,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
     click(getAction("button", "Next"));
     expect(screen.getByText("Publish the app")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Default agent")).not.toBeInTheDocument();
 
     click(getAction("button", "Done"));
 

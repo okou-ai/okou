@@ -4,32 +4,24 @@ import { useGet, type LoadableState } from "ccstate-react";
 import { connectorConnectionPending$ } from "../../../../signals/connector-connection-progress.ts";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
 import { surfaceVariants, cn } from "@okouai/ui";
 import { builtinConnectorCurrentConnectionStatus } from "../../../../signals/okou-page/settings/connectors.ts";
 import { ConnectorPermissionRow } from "./connector-permission-row.tsx";
-import {
-  ConnectorEntryCard,
-  ConnectorEntryStatus,
-} from "./connector-entry-card.tsx";
+import { ConnectorEntryCard } from "./connector-entry-card.tsx";
 import { ConnectorIcon } from "./connector-icons.tsx";
 import {
   launchConnectorConnect,
   type ConnectorConnectHandlers,
 } from "./launch-connector-connect.ts";
-import { useConnectorAccountLabel } from "./use-connector-account-label.ts";
 import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 
-export type ConnectorAccountSummaryStatus = "loading" | "unavailable" | "ready";
-export type ConnectorAccountDisplaySummary =
-  ConnectorAccountSummary | ConnectorAccountBriefSummary;
+export type ConnectorInventoryStatus = "loading" | "unavailable" | "ready";
 
-export function connectorAccountSummaryStatus(
+export function connectorInventoryStatus(
   state: LoadableState,
-): ConnectorAccountSummaryStatus {
+): ConnectorInventoryStatus {
   if (state === "hasData") {
     return "ready";
   }
@@ -42,8 +34,8 @@ export function connectorAccountSummaryStatus(
 type AccountsConnectorCardProps = {
   readonly variant: "accounts";
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly summary: ConnectorAccountDisplaySummary | undefined;
-  readonly summaryStatus: ConnectorAccountSummaryStatus;
+  readonly hasAccounts: boolean;
+  readonly inventoryStatus: ConnectorInventoryStatus;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly manageAccess?: ReactNode;
@@ -73,7 +65,6 @@ export interface PermissionConnectorCardItem {
 type PermissionConnectorCardProps = {
   readonly variant: "permission";
   readonly connector: PermissionConnectorCardItem;
-  readonly summary: ConnectorAccountBriefSummary | undefined;
   readonly enabled: boolean;
   readonly loading: boolean;
   readonly showManage: boolean;
@@ -88,7 +79,6 @@ type DirectoryConnectorCardProps = {
   readonly busy: boolean;
   readonly blocked: boolean;
   readonly connected: boolean;
-  readonly summary: ConnectorAccountSummary | undefined;
   readonly unavailable?: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly onOpenDetail?: () => void;
@@ -147,80 +137,35 @@ export function ConnectorIconTile({
 
 function DirectoryConnectorStatusLine({
   connector,
-  summary,
   unavailable,
 }: {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly summary: ConnectorAccountSummary | undefined;
   readonly unavailable: boolean;
 }) {
   const { t } = useTranslation();
-  const accountLabelOf = useConnectorAccountLabel();
-  const accountCount = summary?.accountCount ?? 0;
-  const connectionStatus = summary?.defaultConnection?.connectionStatus;
-  if (unavailable) {
-    return (
-      <>
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-500" />
-        <span className="truncate text-muted-foreground">
-          {t(($) => {
-            return $.chat.connectors.directory.askAdmin;
-          })}
-        </span>
-      </>
-    );
-  }
-  if (connectionStatus === "reconnect-required") {
-    return (
-      <>
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-        <span className="truncate text-amber-600 dark:text-amber-400">
-          {t(($) => {
-            return $.connectors.card.connectionExpired;
-          })}
-        </span>
-        {summary && summary.accountCount > 1 && (
-          <ConnectorAccountSummaryText summary={summary} status="ready" />
-        )}
-      </>
-    );
-  }
-  if (builtinConnectorCurrentConnectionStatus(connector) === "scope-mismatch") {
-    return (
-      <>
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-        <span className="truncate text-amber-600 dark:text-amber-400">
-          {t(($) => {
-            return $.connectors.card.updatePermissions;
-          })}
-        </span>
-      </>
-    );
-  }
-  if (summary && (summary.attentionCount > 0 || !summary.defaultConnection)) {
-    return <ConnectorAccountSummaryText summary={summary} status="ready" />;
-  }
+  const status = builtinConnectorCurrentConnectionStatus(connector);
   return (
-    <>
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate text-muted-foreground">
-        {summary?.defaultConnection
-          ? accountLabelOf(summary.defaultConnection)
-          : t(($) => {
-              return $.connectors.card.connected;
-            })}
-      </span>
-      {accountCount > 1 && (
-        <span className="ml-auto shrink-0 rounded-full bg-state-selected px-2 py-0.5 text-[11px] text-muted-foreground">
-          {t(
-            ($) => {
-              return $.chat.connectors.directory.moreAccounts;
-            },
-            { count: accountCount - 1 },
-          )}
-        </span>
-      )}
-    </>
+    <span className="truncate text-muted-foreground">
+      {unavailable
+        ? t(($) => {
+            return $.chat.connectors.directory.askAdmin;
+          })
+        : status === "unavailable"
+          ? t(($) => {
+              return $.connectors.accounts.setupUnavailable;
+            })
+          : status === "scope-mismatch"
+            ? t(($) => {
+                return $.connectors.card.updatePermissions;
+              })
+            : status === "reconnect-required"
+              ? t(($) => {
+                  return $.connectors.card.connectionExpired;
+                })
+              : t(($) => {
+                  return $.connectors.card.connected;
+                })}
+    </span>
   );
 }
 
@@ -229,7 +174,6 @@ function DirectoryConnectorCard({
   busy,
   blocked,
   connected,
-  summary,
   unavailable = false,
   connect,
   onOpenDetail,
@@ -240,7 +184,11 @@ function DirectoryConnectorCard({
     if (!interactive) {
       return;
     }
-    if (connected || connector.connection !== null) {
+    if (
+      connected ||
+      connector.accountProjectionConflict === true ||
+      (connector.connection !== null && connector.connection !== undefined)
+    ) {
       onOpenDetail?.();
       return;
     }
@@ -307,7 +255,6 @@ function DirectoryConnectorCard({
         <span className="flex h-10 items-center gap-2 border-t border-border/50 px-4 text-xs">
           <DirectoryConnectorStatusLine
             connector={connector}
-            summary={summary}
             unavailable={unavailable}
           />
         </span>
@@ -322,85 +269,6 @@ function DirectoryConnectorCard({
         </span>
       )}
     </Toolbar.Button>
-  );
-}
-
-export function ConnectorAccountSummaryText({
-  summary,
-  status,
-  className,
-}: {
-  readonly summary: ConnectorAccountDisplaySummary | undefined;
-  readonly status: ConnectorAccountSummaryStatus;
-  readonly className?: string;
-}) {
-  const { t } = useTranslation();
-  const accountLabel = useConnectorAccountLabel();
-  if (status === "loading") {
-    return (
-      <span className={className}>
-        {t(($) => {
-          return $.connectors.accounts.loading;
-        })}
-      </span>
-    );
-  }
-  if (status === "unavailable") {
-    return (
-      <ConnectorEntryStatus
-        className={className}
-        tone="warning"
-        label={t(($) => {
-          return $.connectors.accounts.accountsUnavailable;
-        })}
-      />
-    );
-  }
-  const accountCount = summary?.accountCount ?? 0;
-  let summaryText = (() => {
-    if (accountCount === 0) {
-      return t(($) => {
-        return $.connectors.accounts.noAccounts;
-      });
-    }
-    if (accountCount === 1) {
-      if (summary?.defaultConnection) {
-        return accountLabel(summary.defaultConnection);
-      }
-      return t(
-        ($) => {
-          return $.connectors.accounts.summaryOne;
-        },
-        { value: accountCount },
-      );
-    }
-    return t(
-      ($) => {
-        return $.connectors.accounts.summaryMany;
-      },
-      { value: accountCount },
-    );
-  })();
-  if (summary && summary.attentionCount > 0) {
-    summaryText = t(
-      ($) => {
-        return $.connectors.accounts.summaryWithAttention;
-      },
-      { total: accountCount, value: summary.attentionCount },
-    );
-  }
-  return (
-    <ConnectorEntryStatus
-      className={className}
-      label={summaryText}
-      tone={
-        accountCount === 0
-          ? "neutral"
-          : summary?.attentionCount === 0
-            ? "success"
-            : "warning"
-      }
-    />
   );
 }
 
@@ -431,10 +299,39 @@ function AccountConnectionIndicator({ busy }: { readonly busy: boolean }) {
   );
 }
 
+export function ConnectorMembershipText({
+  connected,
+  status,
+}: {
+  readonly connected: boolean;
+  readonly status: ConnectorInventoryStatus;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+      {status === "loading"
+        ? t(($) => {
+            return $.connectors.catalog.directory.loading;
+          })
+        : status === "unavailable"
+          ? t(($) => {
+              return $.connectors.accounts.accountsUnavailable;
+            })
+          : connected
+            ? t(($) => {
+                return $.connectors.card.connected;
+              })
+            : t(($) => {
+                return $.connectors.accounts.noAccounts;
+              })}
+    </span>
+  );
+}
+
 function AccountsConnectorCard({
   connector,
-  summary,
-  summaryStatus,
+  hasAccounts,
+  inventoryStatus,
   busy,
   connect,
   manageAccess,
@@ -443,11 +340,10 @@ function AccountsConnectorCard({
   const { t } = useTranslation();
   const pending = useGet(connectorConnectionPending$);
   const blocked = busy || pending;
-  const accountCount = summary?.accountCount ?? 0;
-  const showDescription = summaryStatus === "ready" && accountCount === 0;
-  const canManage = summaryStatus === "ready" && accountCount > 0;
-  const canConnect = summaryStatus === "ready" && accountCount === 0;
-  const canActivate = !blocked && summaryStatus === "ready";
+  const showDescription = inventoryStatus === "ready" && !hasAccounts;
+  const canManage = inventoryStatus === "ready" && hasAccounts;
+  const canConnect = inventoryStatus === "ready" && !hasAccounts;
+  const canActivate = !blocked && inventoryStatus === "ready";
   const activate = () => {
     if (!canActivate) {
       return;
@@ -496,15 +392,14 @@ function AccountsConnectorCard({
         ) : null
       }
       indicator={
-        busy || (accountCount === 0 && summaryStatus === "ready") ? (
+        busy || (!hasAccounts && inventoryStatus === "ready") ? (
           <AccountConnectionIndicator busy={busy} />
         ) : null
       }
       status={
-        <ConnectorAccountSummaryText
-          summary={summary}
-          status={summaryStatus}
-          className="min-w-0 flex-1 text-xs text-muted-foreground"
+        <ConnectorMembershipText
+          connected={hasAccounts}
+          status={inventoryStatus}
         />
       }
       trailingAction={
@@ -584,7 +479,6 @@ function ActionConnectorCard({
 
 function PermissionConnectorCard({
   connector,
-  summary,
   enabled,
   loading,
   showManage,
@@ -596,17 +490,9 @@ function PermissionConnectorCard({
     <ConnectorPermissionRow
       icon={<ConnectorIcon icon={connector.icon} size={20} />}
       label={connector.label}
-      description={
-        summary && (summary.accountCount > 1 || summary.attentionCount > 0) ? (
-          <ConnectorAccountSummaryText summary={summary} status="ready" />
-        ) : undefined
-      }
       labelSuffix={
         connector.externalUsername ? (
-          <span
-            className="min-w-0 truncate text-xs text-muted-foreground"
-            title={`@${connector.externalUsername}`}
-          >
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
             @{connector.externalUsername}
           </span>
         ) : undefined

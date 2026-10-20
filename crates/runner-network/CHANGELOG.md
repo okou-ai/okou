@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.63](https://github.com/okou-ai/okou/compare/runner-network-v0.2.62...runner-network-v0.2.63) (2026-10-20)
+
+## [0.2.62](https://github.com/okou-ai/okou/compare/runner-network-v0.2.61...runner-network-v0.2.62) (2026-10-20)
+
+## [0.2.61](https://github.com/okou-ai/okou/compare/runner-network-v0.2.60...runner-network-v0.2.61) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-network:** own current proxy launch retirement ([#41667](https://github.com/okou-ai/okou/issues/41667)) ([dd32cab](https://github.com/okou-ai/okou/commit/dd32cab649f0aea4417d802f64028b6ea42b6e03))
+* **runner-network:** share successful recovery adoption ([#41607](https://github.com/okou-ai/okou/issues/41607)) ([193ac6c](https://github.com/okou-ai/okou/commit/193ac6c1214e6c5049c55dfc180caec45f95e519))
+
 ## [0.2.60](https://github.com/okou-ai/okou/compare/runner-network-v0.2.59...runner-network-v0.2.60) (2026-10-19)
 
 

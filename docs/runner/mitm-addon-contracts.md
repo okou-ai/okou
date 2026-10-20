@@ -40,6 +40,15 @@ response-scoped selective extractor, including escaped text. The existing 65,536
 budget spans all steps and decoder deliveries. Usage becomes authoritative only
 after complete-document and compression validation; an abandoned inspection
 never finalizes an already valid prefix or reports partial selected fields.
+Buffered model and ordinary X JSON use the same steps after strict complete-capture
+decoding. The normal terminal response hook starts and joins one inspection
+owner before final usage reporting and cleanup; wire callbacks only retain the
+existing capped raw capture. Connection errors also start and join buffered model
+inspection: fully validated JSON can contribute run observation, without granting
+successful-response billing. Connection errors do not start buffered connector inspection.
+Network latency is sampled before starting buffered terminal inspection, so
+parser work and its scheduling waits do not inflate the network latency field.
+The 64 KiB capture, 5 MiB decoded-body and zstd frame limits remain unchanged.
 X NDJSON steps validate at most 4 KiB of row bytes, including slow escaped
 scalars, while preserving the total-row work budget, trailing-CR policy and
 identity limits. Counts and row reports commit only after a complete accepted
@@ -92,9 +101,16 @@ protocols, partitions, event/fragment bounds and terminal/cancellation handling.
 `tests/test_model_json_cooperative_streaming.py` covers decoded-input steps,
 escaped/UTF-8 partitions, the exact document budget, terminal validation and
 abandonment without partial JSON usage.
+`tests/test_model_json_buffered_inspection.py` covers buffered model parser turns,
+strict zstd/capture admission, interrupted observation, billing separation,
+cancellation/recovery and network timing. `tests/test_model_json_buffered_native.py`
+covers request-admitted personal subscription usage and pinned terminal-hook completion.
 `tests/test_x_json_cooperative_streaming.py` covers ordinary X JSON scheduling,
 document budgets, complete-document counts and identities, request-hint fallback
 and cancellation recovery.
+`tests/test_x_json_buffered_inspection.py` covers bounded terminal JSON steps,
+strict zstd/capture admission, native terminal-hook completion and cancellation,
+and request-admitted usage tracking with explicit encoding constraints.
 `tests/test_mitmproxy_response_inspection.py` uses the real runtime read loop,
 native HTTP stream hooks and fixture-owned TCP peers for these paths to verify
 fairness, byte forwarding and read backpressure. These tests do not claim

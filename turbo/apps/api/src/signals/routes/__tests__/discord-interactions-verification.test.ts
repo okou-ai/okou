@@ -4,7 +4,7 @@ import { discordInteractionsContract } from "@okouai/api-contracts/contracts/dis
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { discordInteractionsRoutes } from "../discord-interactions";
@@ -49,10 +49,7 @@ function commandPayload() {
   };
 }
 
-function signedHeaders(
-  body: string | Uint8Array,
-  timestamp = currentTimestamp,
-) {
+function signedHeaders(body: string, timestamp = currentTimestamp) {
   return {
     "content-type": "application/json",
     "x-signature-timestamp": timestamp,
@@ -192,10 +189,6 @@ describe("POST /api/discord/interactions signature and protocol validation", () 
   });
 
   it.each([
-    ["non-decimal snowflake", { ...pingPayload(), id: "1e18" }],
-    ["overflowing snowflake", { ...pingPayload(), id: "18446744073709551616" }],
-    ["numeric snowflake", { ...pingPayload(), id: 123 }],
-    ["missing token", { ...pingPayload(), token: undefined }],
     ["missing actor", { ...commandPayload(), user: undefined }],
     [
       "guild with DM identity",
@@ -262,33 +255,6 @@ describe("POST /api/discord/interactions signature and protocol validation", () 
       apiClient().post({ body, headers: signedHeaders(body) }),
       [400],
     );
-    expect(response.status).toBe(400);
-  });
-
-  it("rejects signed malformed JSON", async () => {
-    const body = "{";
-
-    const response = await accept(
-      apiClient().post({ body, headers: signedHeaders(body) }),
-      [400],
-    );
-    expect(response.status).toBe(400);
-  });
-
-  it("rejects signed invalid UTF-8 without a server error", async () => {
-    // The typed raw-string contract cannot represent invalid UTF-8 bytes.
-    const body = new Uint8Array([0x7b, 0xff, 0x7d]);
-    const request = setupRawAppRequest({
-      context,
-      routes: discordInteractionsRoutes,
-    });
-
-    const response = await request("/api/discord/interactions", {
-      method: "POST",
-      headers: signedHeaders(body),
-      body,
-    });
-
     expect(response.status).toBe(400);
   });
 

@@ -161,6 +161,12 @@ export function resolveHostedSiteDomains(): readonly (
     : PREVIEW_HOSTED_SITE_DOMAINS;
 }
 
+export function resolveEditableHostedSiteDomain(): "okou.app" | "sites.vm7.io" {
+  return resolvePlatformEnvironment() === "production"
+    ? "okou.app"
+    : "sites.vm7.io";
+}
+
 /** Send only the app origin to our hosted previews, including private ones. */
 export function hostedArtifactReferrerPolicy(
   url: string,

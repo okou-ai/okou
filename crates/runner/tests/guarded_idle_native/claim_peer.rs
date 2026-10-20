@@ -10,26 +10,45 @@ use tokio::sync::watch;
 
 use super::{TestResult, continuation_api::TOKEN, evidence, io};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    Unavailable,
+    Decode,
+    Disconnect,
+}
+
+impl Outcome {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unavailable => "unavailable",
+            Self::Decode => "decode",
+            Self::Disconnect => "disconnect",
+        }
+    }
+}
+
 pub struct Gate {
     run: RunId,
     runner: RunnerProcessIdentity,
     entered: watch::Sender<bool>,
     released: watch::Sender<bool>,
     receipt: Mutex<Option<Value>>,
+    outcome: Outcome,
 }
 
 impl Gate {
-    pub fn new(run: RunId, runner: RunnerProcessIdentity) -> Arc<Self> {
+    pub fn with_outcome(run: RunId, runner: RunnerProcessIdentity, outcome: Outcome) -> Arc<Self> {
         Arc::new(Self {
             run,
             runner,
             entered: watch::channel(false).0,
             released: watch::channel(false).0,
             receipt: Mutex::new(None),
+            outcome,
         })
     }
 
-    pub async fn reject(&self, parts: &Parts, bytes: &[u8]) -> TestResult<()> {
+    pub async fn respond(&self, parts: &Parts, bytes: &[u8]) -> TestResult<Outcome> {
         if bytes.len() > 16 * 1024 {
             return Err(io::Error::other("native claim body exceeded its bound").into());
         }
@@ -71,8 +90,20 @@ impl Gate {
             .as_mut()
             .ok_or_else(|| io::Error::other("claim request disappeared"))?;
         receipt["response_released_ns"] = json!(evidence::clocks()?.0);
-        receipt["status"] = json!(404);
-        Ok(())
+        match self.outcome {
+            Outcome::Unavailable => receipt["status"] = json!(404),
+            Outcome::Decode => {
+                receipt["status"] = json!(200);
+                receipt["failure_boundary"] = json!("decode");
+                receipt["response_body_hex"] = json!("7b");
+            }
+            Outcome::Disconnect => {
+                receipt["status"] = Value::Null;
+                receipt["failure_boundary"] = json!("disconnect");
+                receipt["response_body_hex"] = Value::Null;
+            }
+        }
+        Ok(self.outcome)
     }
 
     pub async fn wait_entered(&self) -> TestResult<()> {
@@ -101,7 +132,7 @@ impl Gate {
 }
 
 #[tokio::test]
-async fn held_real_provider_claim_allows_heartbeat_and_returns_unavailable() -> TestResult<()> {
+async fn held_real_provider_failures_allow_heartbeat_and_return_unavailable() -> TestResult<()> {
     use runner_lifecycle::{
         idle_pool::{IdlePool, IdlePoolConfig},
         resource_budget::ResourceBudget,
@@ -109,19 +140,24 @@ async fn held_real_provider_claim_allows_heartbeat_and_returns_unavailable() -> 
     use runner_provider::JobCandidate;
     use std::time::Duration;
 
-    let directory = tempfile::tempdir()?;
-    let pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
-        max_idle: 1,
-    })));
-    let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 0));
-    let mut probe =
-        super::foreground_probe::Probe::new(&pool, &budget, directory.path(), "synthetic-rootfs")
-            .await?;
-    let run = RunId::new_v4();
-    let (provider, gate) = probe.hold_claim(run)?;
-    let mut claim = Box::pin(provider.claim(JobCandidate::new(run, "vm0/default".into())));
-    let mut completed = None;
-    let outcome: TestResult<()> = async {
+    for fault in [Outcome::Unavailable, Outcome::Decode, Outcome::Disconnect] {
+        let directory = tempfile::tempdir()?;
+        let pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 1,
+        })));
+        let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 0));
+        let mut probe = super::foreground_probe::Probe::new(
+            &pool,
+            &budget,
+            directory.path(),
+            "synthetic-rootfs",
+        )
+        .await?;
+        let run = RunId::new_v4();
+        let (provider, gate) = probe.hold_claim_failure(run, fault)?;
+        let mut claim = Box::pin(provider.claim(JobCandidate::new(run, "vm0/default".into())));
+        let mut completed = None;
+        let outcome: TestResult<()> = async {
         tokio::time::timeout(Duration::from_secs(5), async {
             tokio::select! {
                 entered = gate.wait_entered() => entered?,
@@ -139,16 +175,21 @@ async fn held_real_provider_claim_allows_heartbeat_and_returns_unavailable() -> 
         }).await??;
         Ok(())
     }.await;
-    gate.release();
-    let result = match completed {
-        Some(result) => result,
-        None => claim.as_mut().await,
-    };
-    drop(claim);
-    let reporting = probe.finish().await;
-    outcome?;
-    reporting?;
-    assert!(result.is_none());
-    assert_eq!(gate.receipt()?["status"], 404);
+        gate.release();
+        let result = match completed {
+            Some(result) => result,
+            None => claim.as_mut().await,
+        };
+        drop(claim);
+        let reporting = probe.finish().await;
+        outcome?;
+        reporting?;
+        assert!(result.is_none());
+        match fault {
+            Outcome::Unavailable => assert_eq!(gate.receipt()?["status"], 404),
+            Outcome::Decode => assert_eq!(gate.receipt()?["status"], 200),
+            Outcome::Disconnect => assert_eq!(gate.receipt()?["status"], Value::Null),
+        }
+    }
     Ok(())
 }

@@ -3,6 +3,7 @@ import {
   type PublicConnectorCatalogIcon,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -53,6 +54,14 @@ test("Complete a custom connector authorization", async () => {
 });
 
 test("Complete a GitHub connector authorization", async () => {
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(401, {
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Sign in to view saved accounts",
+      },
+    });
+  });
   const icon = githubIcon();
   const catalogStarted = context.mocks.deferred<void>();
   const releaseCatalog = context.mocks.deferred<void>();

@@ -708,7 +708,6 @@
       "multiAccent": "マルチアクセント",
       "nextSlide": "次のスライドをプレビューする",
       "noMatches": "一致しません",
-      "placeholder": "{{title}} Web サイトのプレビュー プレースホルダー",
       "previewCurrentSlide": "現在のスライドで {{title}} をプレビューする",
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
@@ -1909,7 +1908,6 @@
       "back": "戻る",
       "configurePermissions": "{{connectorName}} 権限を構成する",
       "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
-      "defaultAccountFor": "{{connector}} · デフォルトアカウントを使用中: {{account}}",
       "directory": {
         "allCategories": "すべて",
         "askAdmin": "管理者に有効化を依頼してください",
@@ -1925,7 +1923,6 @@
         "emptyCustomBody": "HTTP API や MCP サーバーから作成すると、Okou は他のコネクターと同じように使えます。",
         "emptyCustomTitle": "カスタムコネクターはまだありません",
         "matchCount_other": "{{count}} 件の一致",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "対応が必要",
         "nextCategories": "次のカテゴリ",
         "noResultsBody": "製品名で検索するか、API や MCP サーバーから自分で作成してください。",
@@ -1940,6 +1937,7 @@
       },
       "fallsBackTo": "{{account}} にフォールバック",
       "find": "コネクタを検索...",
+      "loadFailed": "コネクターを読み込めませんでした。",
       "noUsableAccount": "使用可能なアカウントがありません",
       "remove": "{{connectorName}} を削除します",
       "selectedAccountFor": "{{connector}} · 選択中のアカウント: {{account}}",
@@ -2139,16 +2137,11 @@
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
     "relations": {
-      "communications": "メッセージ",
-      "idle": "待機",
+      "chats": "チャット",
       "loadFailed": "読み込み失敗",
-      "messageUnavailable": "メッセージ取得不可",
       "origin": "開始元",
       "queued": "待機中",
-      "received": "受信",
       "running": "実行中",
-      "sent": "送信",
-      "toggleMessages": "{{title}} とのメッセージ",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
@@ -2170,11 +2163,10 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "emptyLinks": "このチャットにはまだリンクがありません",
+      "empty": "このチャットの成果物と関連チャットがここに表示されます。",
       "expand": "展開",
-      "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
-      "loadingLinks": "リンクを読み込み中",
+      "loading": "リソースを読み込み中",
       "retry": "再試行",
       "title": "チャットのリソース"
     },
@@ -3081,13 +3073,9 @@
       "noAccountsFound": "アカウントが見つかりません",
       "reconnectRequired": "再接続が必要です",
       "rename": "名前を変更",
-      "skipName": "スキップ",
-      "summaryMany": "{{value}} 件のアカウント",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} 件のアカウント",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} 件に対応が必要",
-      "summaryWithAttention_other": ""
+      "setupIncomplete": "設定が未完了",
+      "setupUnavailable": "アカウントの状態を取得できません",
+      "skipName": "スキップ"
     },
     "actions": {
       "apply": "申し込む",
@@ -3252,7 +3240,6 @@
       },
       "scope": {
         "aria": "コネクタの表示範囲",
-        "attention": "対応が必要",
         "connected": "接続済み",
         "custom": "カスタム",
         "discover": "探す",
@@ -3948,9 +3935,28 @@
       "connected": "{{connector}} が接続されました"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "承認を更新できませんでした。更新してもう一度お試しください。",
+    "allow": "1 時間許可",
+    "approved": "Shell へのアクセスを許可しました",
+    "deadline": "有効期限：{{date}}",
+    "denied": "リクエストを拒否しました",
+    "deny": "拒否",
+    "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
+    "details": "詳細を開く",
+    "expired": "承認の有効期限が切れました",
+    "loading": "承認を読み込み中…",
+    "pending": "承認待ち",
+    "refresh": "更新",
+    "revoke": "アクセスを取り消す",
+    "revoked": "Shell へのアクセスを取り消しました",
+    "scope": "このチャットとコンピュータのみ。アクセス終了後も既存のターミナルは開いたままです。",
+    "title": "Desktop Shell へのアクセス",
+    "unavailable": "承認を利用できません",
+    "waiting": "Run の実行中、または選択したコンピュータが変更された場合は承認できません。"
+  },
   "documentTemplates": {
     "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
-    "back": "テンプレートに戻る",
     "categories": {
       "all": "すべて",
       "business-record": "業務記録",
@@ -4001,7 +4007,6 @@
     "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
     "retry": "再試行",
-    "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
   },
@@ -5066,6 +5071,10 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "resources": {
+          "description": "余白があるときは、チャットの成果物と関連チャットを会話の横に表示します。",
+          "title": "リソースを自動で開く"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {
@@ -5156,7 +5165,7 @@
       },
       "morningBrief": {
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
-        "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
+        "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",

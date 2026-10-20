@@ -442,10 +442,7 @@ function CodexSystemEventGroupCard({
           {codexActivityLabel}
         </span>
         {subAgentIdentity && (
-          <code
-            className="text-xs text-muted-foreground font-mono truncate"
-            title={subAgentIdentity}
-          >
+          <code className="text-xs text-muted-foreground font-mono truncate">
             {subAgentIdentity}
           </code>
         )}
@@ -708,10 +705,7 @@ function TodoCard({
               })}
             </span>
             {inProgressTask ? (
-              <span
-                className="text-sm text-foreground truncate"
-                title={inProgressTask.content}
-              >
+              <span className="text-sm text-foreground truncate">
                 {inProgressTask.content}
               </span>
             ) : (

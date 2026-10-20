@@ -721,6 +721,9 @@ export const rustTypeBindings = [
           ],
           context_window_exceeded: ["The model context window was exceeded."],
           input_too_large: ["The Codex app-server input limit was exceeded."],
+          provider_image_too_large: [
+            "The provider rejected image input exceeding its size limit.",
+          ],
           output_token_limit: ["The provider output-token limit was reached."],
           provider_rate_limited: ["The provider rate limited the request."],
           provider_overloaded: ["The provider reported overload."],
@@ -763,11 +766,38 @@ export const rustTypeBindings = [
           cliAgentSessionHistoryDisposition: [
             "Native history is retained only in the disposable sandbox/home.",
           ],
+          storageOutputs: [
+            "Canonical writeback Storage outputs; omit while the API reader is being prepared.",
+          ],
           artifactSnapshots: [
             "Optional artifact versions captured by the Run output.",
           ],
           volumeVersionsSnapshot: [
             "Optional volume versions captured by the Run output.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "RequestCompletionStorageOutput",
+        rustDoc: ["Storage version captured by a final Run output."],
+        fields: {
+          name: ["Storage name referenced by the Run."],
+          version: ["Storage version selected for the Run output."],
+          mountPath: ["Guest filesystem path where the Storage is mounted."],
+          missingRootPolicy: [
+            "Optional policy retained when the Storage mount root is missing.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "RequestCompletionStorageOutputMissingRootPolicy",
+        rustDoc: [
+          "Policy used when a final Run output Storage root is missing.",
+        ],
+        variants: {
+          fail: ["Treat a missing Storage root as an error."],
+          preserveParentVersion: [
+            "Preserve the parent Storage version when the root is missing.",
           ],
         },
       },

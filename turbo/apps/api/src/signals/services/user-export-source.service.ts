@@ -780,7 +780,6 @@ const collectAgent$ = command(
       set(
         readUserExportAgentInstructions$,
         {
-          bucket: args.bucket,
           agentId: agent.id,
           orgId: agent.orgId,
           userId: args.userId,

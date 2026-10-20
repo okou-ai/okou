@@ -368,7 +368,6 @@ function ArtifactCatalogCard({
         )}
       >
         <span
-          title={artifact.title}
           className={cn(
             "min-w-0 truncate text-sm leading-5 text-foreground",
             gallery ? "font-medium" : "font-semibold",
@@ -429,10 +428,7 @@ function ArtifactSharedConversationList({
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground transition-colors group-hover:text-foreground">
                 <MessagesSquare size={16} aria-hidden />
               </span>
-              <span
-                title={artifact.title}
-                className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-              >
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                 {artifact.title}
               </span>
               <ChevronRight

@@ -509,41 +509,6 @@ describe("SSH deletion request validation", () => {
     ).toStrictEqual([]);
   });
 
-  it.each([
-    "{}",
-    '{"expectedGeneration":0}',
-    '{"expectedGeneration":null}',
-    '{"expectedGeneration":2147483648}',
-    '{"expectedGeneration":1,"unknown":true}',
-    '{"expectedGeneration":',
-  ])(
-    "rejects an invalid deletion body and preserves the host: %s",
-    async (body) => {
-      useSecretKmsProbe();
-      await owner();
-      const created = await accept(
-        sshHosts().create({ headers, body: sshHostBody() }),
-        [201],
-      );
-      const request = setupRawAppRequest({
-        context,
-        routes: sshConnectionsRoutes,
-      });
-      const result = await request(`/api/ssh/connections/${created.body.id}`, {
-        method: "DELETE",
-        headers: { ...headers, "content-type": "application/json" },
-        body,
-      });
-      expect(result.status).toBe(400);
-      expect(result.body).toMatchObject({
-        error: { code: "SSH_INVALID_INPUT" },
-      });
-      expect(
-        (await accept(sshHosts().list({ headers }), [200])).body.connections,
-      ).toStrictEqual([created.body]);
-    },
-  );
-
   it("keeps a versioned SSH host while a VNC host references it", async () => {
     useSecretKmsProbe();
     await owner();

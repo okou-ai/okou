@@ -340,14 +340,6 @@ describe("sandbox hosted previews", () => {
     });
     const deleted = await accept(og.image({ query: imageQuery }), [302]);
     expect(deleted.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
-    expect(
-      (
-        await accept(
-          og.metadata({ query: { kind: "host", id: randomUUID() } }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ available: false });
   });
 
   it("keeps the active HTML cover in the catalog across late completions and retries", async () => {

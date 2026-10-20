@@ -6,20 +6,32 @@ public actor ChatCommands {
   private let client: APIClient
   private let sync: ChatSync
   private var sendingThreads = Set<String>()
+  private var writingReadState = false
+  private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(client: APIClient, sync: ChatSync) {
     self.client = client
     self.sync = sync
   }
 
-  public func createThread(agentID: String? = nil) async throws -> ChatThread {
+  public func createThread(
+    agentID: String? = nil, modelSelection: ChatModelSelection? = nil,
+    reasoningEffort: String? = nil
+  ) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
-    async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
-    async let modelsRequest: AvailableRunModels = client.request("/api/run-models")
-    async let catalogRequest: ModelCatalog = client.request("/api/model-catalog")
-    let (agents, preference, availableModels, catalog) = try await (
-      agentsRequest, preferenceRequest, modelsRequest, catalogRequest
-    )
+    let selection: ThreadModelSelection
+    if let modelSelection {
+      selection = ThreadModelSelection(
+        model: modelSelection.model, serviceTier: modelSelection.serviceTier,
+        reasoningEffort: reasoningEffort)
+    } else {
+      async let preference: ModelPreference = client.request("/api/user-model-preference")
+      async let models: AvailableRunModels = client.request("/api/run-models")
+      async let catalog: ModelCatalog = client.request("/api/model-catalog")
+      selection = try await resolveThreadModelSelection(
+        preference: preference, availableModels: models, catalog: catalog)
+    }
+    let agents = try await agentsRequest
     guard
       let agent = agents.first(where: {
         $0.agentId == agentID || (agentID == nil && $0.isDefaultAgent)
@@ -28,8 +40,6 @@ public actor ChatCommands {
       if agentID != nil { throw ChatError.agentUnavailable }
       throw ChatError.noDefaultAgent
     }
-    let selection = resolveThreadModelSelection(
-      preference: preference, availableModels: availableModels, catalog: catalog)
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: selection.model,
@@ -41,7 +51,15 @@ public actor ChatCommands {
       id: created.id, agentID: agent.agentId, title: created.title ?? "",
       selectedModel: created.selectedModel, createdAt: created.createdAt,
       updatedAt: created.createdAt, sortAt: created.createdAt,
-      pinnedAt: nil, pinOrder: nil, indicator: nil)
+      pinnedAt: nil, pinOrder: nil,
+      modelSettings: selection.model.flatMap { model in
+        selection.reasoningEffort.map { [model: ThreadModelSetting(effort: $0)] }
+      } ?? [:], serviceTier: selection.serviceTier, indicator: nil)
+  }
+
+  public func validateAttachment(_ id: String) async throws {
+    _ = try await client.data(
+      "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: id)])
   }
 
   public func uploadAttachment(
@@ -52,14 +70,22 @@ public actor ChatCommands {
       file: file, filename: filename, contentType: contentType, progress: progress)
   }
 
+  public func downloadAttachment(
+    _ attachment: ChatMessageAttachment, thumbnail: Bool = false
+  ) async throws -> ChatAttachmentFile? {
+    try await ChatAttachmentDownload(client: client).download(attachment, thumbnail: thumbnail)
+  }
+
   public func send(
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
-    clientEventID: String = UUID().uuidString
+    document: ChatDraftDocument? = nil,
+    clientEventID: String = UUID().uuidString,
+    modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil
   )
     async throws -> SendReceipt
   {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prompt.isEmpty || !attachments.isEmpty else {
+    guard !prompt.isEmpty || !attachments.isEmpty || document?.parts.isEmpty == false else {
       throw ChatError.invalidContract("Enter a message before sending.")
     }
     guard UUID(uuidString: clientEventID) != nil else {
@@ -75,9 +101,18 @@ public actor ChatCommands {
       agentId: metadata.agentId, threadId: thread.id,
       prompt: prompt.isEmpty ? "(see attached files)" : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
-      userMessage: .init(
-        parts: (prompt.isEmpty ? [] : [.text(prompt)]) + attachments.map { .file($0) }),
-      hasTextContent: !prompt.isEmpty)
+      userMessage: document
+        ?? ChatDraftDocument(
+          parts: (prompt.isEmpty
+            ? [] : [.object(["type": .string("text"), "text": .string(prompt)])])
+            + attachments.map {
+              .object([
+                "type": .string("file"), "fileId": .string($0.id),
+                "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
+              ])
+            }),
+      hasTextContent: !prompt.isEmpty, modelSelection: modelSelection,
+      reasoningEffort: reasoningEffort)
     do {
       let result: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -111,8 +146,48 @@ public actor ChatCommands {
     }
   }
 
-  public func markRead(threadID: String) async throws {
-    try await client.data("/api/chat-threads/\(threadID)/mark-read", method: "POST")
+  @discardableResult
+  public func markRead(threadID: String) async throws -> Date? {
+    await acquireReadState()
+    defer { releaseReadState() }
+    try Task.checkCancellation()
+    let state: ThreadReadState = try await client.request(
+      "/api/chat-threads/\(threadID)/mark-read", method: "POST")
+    return state.lastReadAt
+  }
+
+  public func markUnread(threadID: String) async throws {
+    await acquireReadState()
+    defer { releaseReadState() }
+    try Task.checkCancellation()
+    let _: ThreadReadState = try await client.request(
+      "/api/chat-threads/\(threadID)/mark-unread", method: "POST")
+  }
+
+  public func markAgentRead(agentID: String) async throws {
+    await acquireReadState()
+    defer { releaseReadState() }
+    try Task.checkCancellation()
+    try await client.data(
+      "/api/chat-thread-unreads/mark-read", method: "POST",
+      body: JSONEncoder().encode(["agentId": agentID]))
+  }
+
+  // Actor reentrancy must not let an automatic read finish after a manual unread.
+  private func acquireReadState() async {
+    if writingReadState {
+      await withCheckedContinuation { readStateWaiters.append($0) }
+    } else {
+      writingReadState = true
+    }
+  }
+
+  private func releaseReadState() {
+    if readStateWaiters.isEmpty {
+      writingReadState = false
+    } else {
+      readStateWaiters.removeFirst().resume()
+    }
   }
 
   public func setPinned(threadID: String, pinned: Bool) async throws {
@@ -193,35 +268,13 @@ public actor ChatCommands {
     let prompt: String
     let clientEventId: String
     let chatThreadSortEventId: String
-    let userMessage: Document
+    let userMessage: ChatDraftDocument
     let hasTextContent: Bool
-    struct Document: Encodable {
-      let version = 1
-      let parts: [Part]
-      enum Part: Encodable {
-        case text(String)
-        case file(ChatAttachment)
-
-        enum Keys: String, CodingKey { case type, text, fileId, filenameSnapshot, contentType }
-
-        func encode(to encoder: Encoder) throws {
-          var container = encoder.container(keyedBy: Keys.self)
-          switch self {
-          case .text(let text):
-            try container.encode("text", forKey: .type)
-            try container.encode(text, forKey: .text)
-          case .file(let file):
-            try container.encode("file", forKey: .type)
-            try container.encode(file.id, forKey: .fileId)
-            try container.encode(file.filename, forKey: .filenameSnapshot)
-            try container.encode(file.contentType, forKey: .contentType)
-          }
-        }
-      }
-    }
+    let modelSelection: ChatModelSelection?
+    let reasoningEffort: String?
     enum Keys: String, CodingKey {
       case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
-      case hasTextContent, computerUseHostId, cloudBrowserEnabled
+      case hasTextContent, computerUseHostId, cloudBrowserEnabled, model, runOptions
     }
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: Keys.self)
@@ -232,6 +285,13 @@ public actor ChatCommands {
       try container.encode(chatThreadSortEventId, forKey: .chatThreadSortEventId)
       try container.encode(userMessage, forKey: .userMessage)
       try container.encode(hasTextContent, forKey: .hasTextContent)
+      if let modelSelection {
+        try container.encode(modelSelection.model, forKey: .model)
+        var options: [String: String] = [:]
+        if modelSelection.serviceTier == "priority" { options["codexServiceTier"] = "fast" }
+        if let reasoningEffort { options["reasoningEffort"] = reasoningEffort }
+        if !options.isEmpty { try container.encode(options, forKey: .runOptions) }
+      }
       try container.encodeNil(forKey: .computerUseHostId)
       try container.encode(false, forKey: .cloudBrowserEnabled)
     }

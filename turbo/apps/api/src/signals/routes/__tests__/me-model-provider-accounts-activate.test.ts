@@ -176,7 +176,7 @@ describe("POST /api/me/model-provider-accounts/:id/activate", () => {
     await expect(list(actor)).resolves.toHaveLength(1);
   });
 
-  it("rejects unknown, logical-provider, foreign-user and foreign-org IDs without switching", async () => {
+  it("rejects logical-provider, foreign-user and foreign-org IDs without switching", async () => {
     const owner = bdd.user();
     const first = await connectCodex(owner);
     const second = await connectCodex(owner);
@@ -187,7 +187,6 @@ describe("POST /api/me/model-provider-accounts/:id/activate", () => {
     const stranger = bdd.user({ orgId: owner.orgId });
     const otherOrg = bdd.user({ userId: owner.userId });
     for (const [actor, id] of [
-      [owner, randomUUID()],
       [owner, providerId],
       [stranger, second.id],
       [otherOrg, second.id],

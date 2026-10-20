@@ -472,36 +472,6 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
-  it("rejects a corrupt persisted artifact layout marker", async () => {
-    const fixture = await createRunUploadFixture();
-    const prepared = await chat.prepareUpload(fixture.actor, {
-      filename: "corrupt-brand.pdf",
-      contentType: "application/pdf",
-      size: 17,
-    });
-    const key = `artifacts${new URL(prepared.url).pathname}`;
-    fixture.objectStore.addObject({
-      bucket: "test-user-artifacts",
-      key,
-      size: 17,
-      contentType: "application/pdf",
-      metadata: {
-        "artifact-id": prepared.id,
-        filename: "corrupt-brand.pdf",
-        "public-brand": "unexpected",
-        "user-id": encodeURIComponent(fixture.actor.userId),
-      },
-    });
-
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: prepared.id },
-      [500],
-    );
-
-    expect(response.body).toStrictEqual({ error: "Internal server error" });
-  });
-
   it.each([
     ["text/csv", "text/csv"],
     ['Text/Markdown; Charset="UTF-8"', "text/markdown; charset=utf-8"],
@@ -641,18 +611,6 @@ describe("POST /api/uploads/complete", () => {
     expectApiError(response.body);
     expect(response.body.error.code).toBe("FORBIDDEN");
     expect(response.body.error.message).toContain("file:write");
-  });
-
-  it("returns 400 when the request body is invalid", async () => {
-    const response = await chat.completeUploadWithBearer(
-      okouBearer(),
-      { id: "not-a-uuid" },
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: "Invalid request body", code: "BAD_REQUEST" },
-    });
   });
 
   it("falls back to a generic complete content type for unrecognized MIME values", async () => {

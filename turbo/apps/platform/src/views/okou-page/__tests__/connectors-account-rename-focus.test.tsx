@@ -62,6 +62,10 @@ function mockRenameAccounts({
             })
           : accounts,
         nextCursor: null,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
       });
     },
   );
@@ -305,7 +309,6 @@ test("Restore the renamed account actions only after the refreshed list arrives"
   await waitFor(() => {
     expect(accountActions(manager, "Research")).toHaveFocus();
   });
-  expect(accountActions(manager, "Work 2")).not.toHaveFocus();
   await user.keyboard("{Enter}");
   await screen.findByRole("menu");
 });
@@ -522,9 +525,6 @@ test("An old rename response cannot clear or steal focus from a newly opened edi
     ).toContain("Work 2 new draft");
   });
   expect(accountActions(reopened, "Work 2 new draft")).toHaveFocus();
-  expect(
-    within(reopened).queryByLabelText("Account name"),
-  ).not.toBeInTheDocument();
 });
 
 test("Finish a saved rename after an intermediate account search is superseded", async () => {

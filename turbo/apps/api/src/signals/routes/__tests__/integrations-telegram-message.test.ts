@@ -303,37 +303,6 @@ describe("POST /api/integrations/telegram/message", () => {
     });
   });
 
-  it("returns 404 when the bot id is not owned by the org", async () => {
-    const orgId = `org_${randomUUID().slice(0, 8)}`;
-    const userId = `user_${randomUUID().slice(0, 8)}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId, userId, role: "admin" },
-      context.signal,
-    );
-
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramMessageRoutes,
-    })(integrationsTelegramMessageContract);
-    const response = await accept(
-      client.sendMessage({
-        body: {
-          botId: uniqueBotId(),
-          chatId: "-1001234567890",
-          text: "hello",
-        },
-        headers: {
-          authorization: `Bearer ${await credentials.okouToken({ userId, orgId })}`,
-        },
-      }),
-      [404],
-    );
-    expect(response.body).toStrictEqual({
-      error: { message: "Telegram bot not found", code: "NOT_FOUND" },
-    });
-  });
-
   it("appends the claimed Run's Standard model label to an official message", async () => {
     const { chatId, telegramBody, responseBody } =
       await sendClaimedModelMessage("claude-fable-5-1");

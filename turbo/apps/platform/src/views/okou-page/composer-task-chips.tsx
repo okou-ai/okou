@@ -28,7 +28,6 @@ import {
   type DocumentTemplateItem,
 } from "@okouai/core/document-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
@@ -37,6 +36,7 @@ import type {
   ComposerTemplateTask,
 } from "../../signals/okou-page/composer-task-chips.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   ComposerPresentationRecommendations,
@@ -44,9 +44,12 @@ import {
 } from "./chat-composer.tsx";
 import {
   ComposerRail,
+  composerRailFade,
   RAIL_TILE,
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
+import { ComposerRailPager } from "./rail-pager.tsx";
+import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
   slashTemplatePreviews,
   toDocumentGenerationTemplate,
@@ -157,6 +160,8 @@ const DOCUMENT_IDEAS = [
   "serviceAgreement",
   "invoice",
 ] as const;
+/** The document shelf's filter row, as a rail id beside its cover rails. */
+const DOCUMENT_FILTER_RAIL = "filters:document";
 const DOCUMENT_CATEGORIES = DOCUMENT_TEMPLATE_CATEGORIES.filter((category) => {
   return category !== "all";
 });
@@ -203,14 +208,19 @@ function ComposerTemplateCover({
   coverUrl,
   width,
   ratio,
-  contain = false,
+  documentPage,
   onSelect,
 }: {
   readonly title: string;
   readonly coverUrl: string | null;
   readonly width: string;
   readonly ratio: string;
-  readonly contain?: boolean;
+  /**
+   * A document cover is drawn as the picker draws it -- the first page as a
+   * sheet on the tile's ground, cropped by the tile's bottom edge -- so one
+   * template looks the same on the shelf, in the slash panel and in the picker.
+   */
+  readonly documentPage?: { readonly hasMorePages: boolean };
   readonly onSelect: () => void;
 }) {
   const { t } = useTranslation();
@@ -229,21 +239,21 @@ function ComposerTemplateCover({
     >
       <span
         className={cn(
-          "flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
+          "relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
           ratio,
         )}
       >
-        {coverUrl ? (
+        {coverUrl && documentPage ? (
+          <DocumentTemplateCover
+            coverUrl={coverUrl}
+            hasMorePages={documentPage.hasMorePages}
+          />
+        ) : coverUrl ? (
           <img
             src={coverUrl}
             alt=""
             loading="lazy"
-            className={cn(
-              "h-full w-full object-center",
-              contain
-                ? "object-contain"
-                : "object-cover transition-transform duration-200 group-hover/tile:scale-[1.04]",
-            )}
+            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
           />
         ) : (
           <Image size={24} aria-hidden />
@@ -464,7 +474,7 @@ function ComposerDocumentTemplateRail({
       signals={signals}
       key={category}
       rail={`templates:document:${category}`}
-      gap="gap-4"
+      gap="gap-3"
       items={
         category === "custom"
           ? [
@@ -473,7 +483,7 @@ function ComposerDocumentTemplateRail({
                 signals={signals}
                 kind="document"
                 compact
-                className="block w-[142px]"
+                className="block w-[200px]"
                 onImported={() => {
                   setMode(null);
                 }}
@@ -483,10 +493,12 @@ function ComposerDocumentTemplateRail({
                   <ComposerTemplateCover
                     key={template.id}
                     title={template.title}
-                    coverUrl={template.previewAssets[0]?.url ?? null}
-                    width="w-[142px]"
-                    ratio="aspect-[210/297]"
-                    contain
+                    coverUrl={template.coverUrl}
+                    width="w-[200px]"
+                    ratio="aspect-[4/3]"
+                    documentPage={{
+                      hasMorePages: template.coverHasMorePages,
+                    }}
                     onSelect={() => {
                       selectTemplate(
                         {
@@ -514,9 +526,9 @@ function ComposerDocumentTemplateRail({
                   coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
                     width: 284,
                   })}
-                  width="w-[142px]"
-                  ratio="aspect-[210/297]"
-                  contain
+                  width="w-[200px]"
+                  ratio="aspect-[4/3]"
+                  documentPage={{ hasMorePages: item.previewPages.length > 1 }}
                   onSelect={() => {
                     selectTemplate(toDocumentGenerationTemplate(item), {
                       type: "document",
@@ -554,6 +566,11 @@ function ComposerDocumentRecommendations({
   const setCategory = useSet(signals.taskChips.setDocumentCategory$);
   const setPickerCategory = useSet(signals.template.setDocumentCategory$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const filterTravel = useGet(signals.taskChips.railTravel$)[
+    DOCUMENT_FILTER_RAIL
+  ];
+  const setTravel = useSet(signals.taskChips.setRailTravel$);
+  const bindRail = useSet(signals.taskChips.bindRail$);
   const label = t(($) => {
     return $.chat.taskChips.shelf.document;
   });
@@ -565,27 +582,14 @@ function ComposerDocumentRecommendations({
       aria-busy={category === undefined}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <p className="truncate text-base font-medium">{label}</p>
-          {category !== undefined && (
-            <span className="text-xs text-muted-foreground" aria-live="polite">
-              {formatLocalizedNumber(
-                category === "custom" ? custom.length : items.length,
-              )}
-            </span>
-          )}
-        </div>
+        <p className="min-w-0 truncate text-base font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
           size="xs"
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
-            setPickerCategory(
-              category === "custom" || category === undefined
-                ? "all"
-                : category,
-            );
+            setPickerCategory(category ?? "all");
             openTemplates({ kind: "insert", category: "document" });
           }}
         >
@@ -595,47 +599,62 @@ function ComposerDocumentRecommendations({
           <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <TemplateFilterPillRow
-        active={category ?? ""}
-        layout="scroll"
-        label={t(($) => {
-          return $.documentTemplates.filter;
-        })}
-        pills={[
-          ...(customTemplatesEnabled
-            ? [
-                {
-                  id: "custom",
-                  label: t(($) => {
-                    return $.templates.custom;
-                  }),
-                },
-              ]
-            : []),
-          ...(builtinTemplatesEnabled
-            ? DOCUMENT_CATEGORIES.map((id) => {
-                return {
-                  id,
-                  label: t(($) => {
-                    return $.documentTemplates.categories[id];
-                  }),
-                };
-              })
-            : []),
-        ]}
-        onSelect={(id) => {
-          if (id === "custom" && customTemplatesEnabled) {
-            setCategory("custom");
-            return;
-          }
-          const next = DOCUMENT_CATEGORIES.find((value) => {
-            return value === id;
-          });
-          if (next) {
-            setCategory(next);
-          }
-        }}
-      />
+      {/* The filter row travels like the cover rail under it: the overrun
+          dissolves and a pager moves it, instead of a pill cut in half at the
+          column edge. */}
+      <div className="relative min-w-0" data-rail-root="">
+        <TemplateFilterPillRow
+          active={category ?? ""}
+          layout="scroll"
+          rail={DOCUMENT_FILTER_RAIL}
+          scrollerRef={bindRail}
+          className={composerRailFade(filterTravel)}
+          onScroll={(event) => {
+            setTravel(DOCUMENT_FILTER_RAIL, measureRail(event.currentTarget));
+          }}
+          label={t(($) => {
+            return $.documentTemplates.filter;
+          })}
+          pills={[
+            ...(customTemplatesEnabled
+              ? [
+                  {
+                    id: "custom",
+                    label: t(($) => {
+                      return $.templates.custom;
+                    }),
+                  },
+                ]
+              : []),
+            ...(builtinTemplatesEnabled
+              ? DOCUMENT_CATEGORIES.map((id) => {
+                  return {
+                    id,
+                    label: t(($) => {
+                      return $.documentTemplates.categories[id];
+                    }),
+                  };
+                })
+              : []),
+          ]}
+          onSelect={(id) => {
+            if (id === "custom" && customTemplatesEnabled) {
+              setCategory("custom");
+              return;
+            }
+            const next = DOCUMENT_CATEGORIES.find((value) => {
+              return value === id;
+            });
+            if (next) {
+              setCategory(next);
+            }
+          }}
+        />
+        {filterTravel?.canScrollBack ? <ComposerRailPager side="back" /> : null}
+        {filterTravel?.canScrollForward ? (
+          <ComposerRailPager side="forward" />
+        ) : null}
+      </div>
       <ComposerDocumentTemplateRail
         signals={signals}
         category={category}

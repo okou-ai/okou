@@ -201,10 +201,14 @@ export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
       tier: z.enum([
         "exactSandbox",
         "finalizingPredecessor",
+        "peerFinalizingPredecessor",
         "reusableSandbox",
         "homeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
+      // Reader preparation only; API discovery writers enable this separately.
+      // Require it for finalizing preferences after the rollout gates in #41657.
+      finalizingSourceRunId: z.uuid().optional(),
     })
     .strict(),
   z
@@ -1065,6 +1069,9 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
+  // Absent on retained contexts that captured an instruction Storage mount.
+  // API-only protocol metadata; the body is read from the Agent at claim time.
+  agentInstructionsSource: z.literal("agent").optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),
@@ -1172,7 +1179,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
-  // Release 1 prepares the reader; producers omit this until DB cutover (#41367).
+  // Claim-only current Agent body; absence retains the captured Storage protocol.
   agentInstructions: z.string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: z.boolean().optional(),
@@ -1496,6 +1503,8 @@ export const runnersBuiltinFirewallsResolveContract = c.router({
 export const heartbeatBodySchema = z
   .object({
     runnerId: z.uuid(),
+    // Advisory locality, using the same configured identity as winning claims.
+    runnerHostname: runnerHostnameSchema.optional(),
     group: runnerGroupSchema,
     snapshotGeneration: runnerHeartbeatGenerationSchema,
     snapshotSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),

@@ -10,9 +10,7 @@ import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  capturedChatThreadContinuationSnapshot,
   type ChatThreadContinuation,
-  createChatThreadContinuationRead,
   resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
@@ -57,9 +55,6 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
 export interface ThreadContext extends ThreadWorkflowContext {
-  readonly continuationRead$: ReturnType<
-    typeof createChatThreadContinuationRead
-  >;
   /** Whether this run resumes the thread's native session, and its binding. */
   readonly threadContinuation$: Computed<
     Promise<ChatThreadContinuation | null>
@@ -100,18 +95,12 @@ export function createThreadContext(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
 ): ThreadContext {
   const orgId = bootstrap.orgId;
-  const userId = bootstrap.userId;
   const sourceFeatureSwitches$ = computed((get) => {
     return get(bootstrap.featureSwitches$);
   });
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
-  const continuationRead$ = createChatThreadContinuationRead(
-    pickedEvent$,
-    orgId,
-    userId,
-  );
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
     pickedEvent$,
@@ -172,9 +161,7 @@ export function createThreadContext(
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const threadContinuation$ = createThreadContinuation(
-    bootstrap,
     pickedEvent$,
-    continuationRead$,
     model.subscriptionSelection$,
     automationTarget$,
   );
@@ -190,7 +177,6 @@ export function createThreadContext(
     model.dispatchTiming$,
   );
   return {
-    continuationRead$,
     threadContinuation$,
     computerUseHostGrant$,
     slackContext$,
@@ -333,9 +319,7 @@ function createRunIds() {
 }
 
 function createThreadContinuation(
-  bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  continuationRead$: ReturnType<typeof createChatThreadContinuationRead>,
   selection$: ThreadModels["subscriptionSelection$"],
   automationTarget$: ThreadContext["automationTarget$"],
 ) {
@@ -353,27 +337,11 @@ function createThreadContinuation(
     if ("status" in selection) {
       return null;
     }
-    const [read, agent] = await Promise.all([
-      get(continuationRead$),
-      get(bootstrap.agent$),
-    ]);
-    const snapshot = capturedChatThreadContinuationSnapshot(
-      event.thread,
-      read,
-      agent,
-    );
     const target =
       event.contextType === "automation" ? await get(automationTarget$) : null;
-    return resolveChatThreadContinuation(
-      target?.workflow.officialDefinitionName
-        ? { ...snapshot, previousRun: null, hasPriorConversationRound: false }
-        : snapshot,
-      {
-        route: {
-          selectedModel: selection.selectedModelOverride,
-          cliAgentType: selection.cliAgentType,
-        },
-      },
-    );
+    return resolveChatThreadContinuation(event.thread, {
+      cliAgentType: selection.cliAgentType,
+      officialWorkflow: Boolean(target?.workflow.officialDefinitionName),
+    });
   });
 }

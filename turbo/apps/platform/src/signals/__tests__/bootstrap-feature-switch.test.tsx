@@ -121,7 +121,6 @@ test("A signed-out page does not load workspace features", async () => {
   // Hosted Clerk owns the form, so the mounted component marks readiness.
   await screen.findByTestId("clerk-sign-in");
 
-  expect(screen.queryByText("Ahrefs")).not.toBeInTheDocument();
   expect(workspaceFeatureRequested).toBeFalsy();
 });
 

@@ -1,3 +1,8 @@
+import { getModelRunOptions } from "@okouai/api-contracts/contracts/model-run-options";
+import {
+  isPiRouteRuntimeCapable,
+  piCatalogModel,
+} from "@okouai/core/pi-execution";
 import {
   isPiRouteClass,
   modelCatalogContract,
@@ -35,6 +40,7 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
         {
           model: AUTO_SELECTED_MODEL,
           displayName: "Auto",
+          runOptions: getModelRunOptions(AUTO_SELECTED_MODEL),
           sortOrder: 0,
           replacedBy: null,
           resolvedModel: AUTO_SELECTED_MODEL,
@@ -55,6 +61,7 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
             return {
               model: row.model,
               displayName: row.displayName,
+              runOptions: getModelRunOptions(row.model),
               sortOrder: row.sortOrder,
               replacedBy: row.replacedBy,
               resolvedModel: resolution.resolvedModel,
@@ -78,11 +85,21 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
           defaultServiceTier: null,
           efforts: [],
           defaultEffort: null,
+          piRuntimeCapable: isPiRouteRuntimeCapable({
+            catalogModel: piCatalogModel(catalog, AUTO_SELECTED_MODEL),
+            modelProviderType: "built-in",
+            runtimeProviderType: AUTO_RUN_PROVIDER,
+          }),
         },
         ...routes.map(
           ({ pricingKind: _kind, pricingProvider: _pricing, ...route }) => {
             return {
               ...route,
+              piRuntimeCapable: isPiRouteRuntimeCapable({
+                catalogModel: piCatalogModel(catalog, route.model),
+                modelProviderType: route.providerType,
+                runtimeProviderType: route.concreteProviderType,
+              }),
               serviceTiers: [...route.serviceTiers],
               efforts: [...route.efforts],
             };

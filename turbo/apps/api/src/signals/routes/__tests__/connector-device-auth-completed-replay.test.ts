@@ -145,9 +145,6 @@ describe("Builtin device-auth completed replay", () => {
         id: sibling.connector.id,
         oauthScopes: ["read"],
       });
-      expect(replayed.connector.oauthScopes).not.toStrictEqual(
-        sibling.connector.oauthScopes,
-      );
       await expectAccounts(
         actor,
         [

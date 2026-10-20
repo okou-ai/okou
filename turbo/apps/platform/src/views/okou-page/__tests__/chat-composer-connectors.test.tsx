@@ -357,7 +357,7 @@ test("Show only the connector actions that are useful in chat", async () => {
   await openConnectors(user);
   const accountAction = await findFastControl(
     "button",
-    "Axiom · Using default account: Work",
+    "Axiom · Account for this chat",
   );
   const permissionAction = await findFastControl(
     "button",
@@ -370,7 +370,9 @@ test("Show only the connector actions that are useful in chat", async () => {
     buttonIndex(accountAction.getAttribute("aria-label")!, axiomRow),
   ).toBeLessThan(buttonIndex("Configure Axiom permissions", axiomRow));
   const githubRow = accessRow(await screen.findByLabelText("Remove GitHub"));
-  expect(queryAllByRoleFast("button", githubRow)).toHaveLength(0);
+  await expect(
+    findFastControl("button", "GitHub · Account for this chat", githubRow),
+  ).resolves.toBeVisible();
 
   await user.click(screen.getByLabelText("Remove Axiom"));
   await expect(screen.findByLabelText("Add Axiom")).resolves.toBeVisible();
@@ -426,15 +428,11 @@ test("Start connector setup from chat", async () => {
   });
   expect(browserOpen.calls).toHaveLength(1);
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(screen.queryByRole("dialog", { name: "Google Analytics" })).toBeNull();
   expect(connect).toHaveAttribute("aria-busy", "true");
   expect(connect).toBeDisabled();
   expect(
     within(catalog).getByPlaceholderText("Find connectors..."),
   ).toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Connecting your account" }),
-  ).toBeNull();
   authWindow.close();
   await waitFor(() => {
     expect(
@@ -489,6 +487,10 @@ test.each([null, "Close"] as const)(
     await loadComposer();
     await openConnectors(user);
     const catalog = await openAddConnectors(user);
+    await fill(
+      within(catalog).getByPlaceholderText("Find connectors..."),
+      "Google Analytics",
+    );
     await user.click(
       await findFastControl("button", "Connect Google Analytics", catalog),
     );
@@ -537,9 +539,13 @@ test.each([null, "Close"] as const)(
     authWindow.close();
     await authorizationStarted.promise;
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      queryFastControl("button", "Connect Google Analytics", catalog),
-    ).toHaveAttribute("aria-busy", "true");
+    const connectedCard = await findFastControl(
+      "button",
+      "Open Google Analytics details",
+      catalog,
+    );
+    expect(connectedCard).toHaveAttribute("aria-busy", "true");
+    expect(connectedCard).toBeDisabled();
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
@@ -599,7 +605,7 @@ test("Respect integration-managed connector availability in chat", async () => {
   await openConnectors(user);
   await expect(screen.findByLabelText("Remove Feishu")).resolves.toBeVisible();
   expect(
-    queryFastControl("button", "Feishu · Using default account: Primary"),
+    queryFastControl("button", "Feishu · Account for this chat"),
   ).toBeNull();
 });
 
@@ -660,7 +666,6 @@ test("Search beyond featured connectors from chat", async () => {
   await user.click(await findFastControl("button", "Connect Axiom", catalog));
   const dialog = await screen.findByRole("dialog", { name: "Axiom" });
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(catalog).not.toBeInTheDocument();
   expect(
     within(dialog).getByText("API Token", { selector: "label" }),
   ).toBeVisible();

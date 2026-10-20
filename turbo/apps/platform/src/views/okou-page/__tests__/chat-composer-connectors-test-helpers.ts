@@ -18,6 +18,7 @@ import {
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import type {
   ConnectorAuthMethodId,
@@ -332,11 +333,75 @@ export function installComposerConnectorFixture(
   );
   const threadSelections = copyAuthorizationRecord(options.threadSelections);
   const accounts = [...(options.accounts ?? [])];
-  const currentAccountSummaries = () => {
-    return (
+  const summaries = new Map(
+    (
       options.accountSummaries ??
       savedAccountSummaries(catalog, customConnectors, accounts)
+    ).map((summary) => {
+      return [connectorAccountTargetKey(summary.target), summary];
+    }),
+  );
+  for (const summary of summaries.values()) {
+    const account = summary.defaultConnection;
+    if (
+      account &&
+      !accounts.some((candidate) => {
+        return candidate.id === account.id;
+      })
+    ) {
+      accounts.push(account);
+    }
+  }
+  const currentAccountSummaries = () => {
+    return [...summaries.values()];
+  };
+  const completeAccount = (
+    target: ConnectorAccountTarget,
+    id: string,
+    authMethod: ConnectorAuthMethodId,
+    configuredFieldKeys: readonly string[] = [],
+  ) => {
+    const index = accounts.findIndex((account) => {
+      return account.id === id;
+    });
+    const previous = accounts[index];
+    const key = connectorAccountTargetKey(target);
+    const account = {
+      ...connectorAccount({
+        id,
+        target,
+        displayName: "",
+        isDefault: (summaries.get(key)?.accountCount ?? 0) === 0,
+      }),
+      ...previous,
+      displayName: previous?.displayName ?? null,
+      authMethod,
+      connectionStatus: "connected",
+      reconnectReason: null,
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: [
+        ...new Set([
+          ...(previous?.configuredFieldKeys ?? []),
+          ...configuredFieldKeys,
+        ]),
+      ],
+    } satisfies ConnectorAccountConnection;
+    if (index === -1) {
+      accounts.push(account);
+    } else {
+      accounts[index] = account;
+    }
+    summaries.set(
+      key,
+      accountSummary(
+        target,
+        accounts.filter((candidate) => {
+          return targetMatches(candidate.target, target);
+        }),
+      ),
     );
+    return account;
   };
   const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
   const customAuthorizationUpdates: CustomAuthorizationUpdate[] = [];
@@ -463,7 +528,7 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
     const summaries = currentAccountSummaries();
     const savedTargets = new Set(
       summaries.flatMap((summary) => {
@@ -500,27 +565,6 @@ export function installComposerConnectorFixture(
             integrationManaged: isIntegrationManagedCustomConnector(connector),
           };
         }),
-      accountSummaries: summaries.map((summary) => {
-        const account = summary.defaultConnection;
-        return {
-          target: summary.target,
-          accountCount: summary.accountCount,
-          attentionCount: summary.attentionCount,
-          defaultConnection: account
-            ? {
-                id: account.id,
-                authMethod: account.authMethod,
-                displayName: account.displayName,
-                externalId: account.externalId,
-                externalUsername: account.externalUsername,
-                externalEmail: account.externalEmail,
-                connectionStatus: account.connectionStatus,
-              }
-            : null,
-        };
-      }),
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
     });
   });
   context.mocks.api(
@@ -603,6 +647,22 @@ export function installComposerConnectorFixture(
     return respond(200, { summaries: [...currentAccountSummaries()] });
   });
   context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      const account = accounts.find((candidate) => {
+        return (
+          candidate.id === params.connectionId &&
+          targetMatches(candidate.target, query)
+        );
+      });
+      return account
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
+  context.mocks.api(
     connectorAccountsContract.connections,
     ({ query, respond }) => {
       const normalizedSearch = query.search?.toLowerCase();
@@ -622,7 +682,16 @@ export function installComposerConnectorFixture(
           return value?.toLowerCase().includes(normalizedSearch);
         });
       });
-      return respond(200, { connections, nextCursor: null });
+      return respond(200, {
+        connections,
+        defaultConnection:
+          accounts.find((connection) => {
+            return (
+              targetMatches(connection.target, query) && connection.isDefault
+            );
+          }) ?? null,
+        nextCursor: null,
+      });
     },
   );
   context.mocks.api(
@@ -685,33 +754,45 @@ export function installComposerConnectorFixture(
           error: { code: "NOT_FOUND", message: "Connector not found" },
         });
       }
+      const account = completeAccount(
+        { kind: "custom", customConnectorId: params.id },
+        body.account.intent === "reconnect"
+          ? body.account.connectionId
+          : crypto.randomUUID(),
+        current.authMode === "none" ? "none" : "manual",
+        body.values.map((value) => {
+          return value.key;
+        }),
+      );
       const connected = {
         ...current,
         connected: true,
-        connectedAccountId:
-          body.account.intent === "reconnect"
-            ? body.account.connectionId
-            : "f0000000-0000-4000-a000-000000000061",
+        connectedAccountId: account.id,
         connectedAccountUpdatedAt: CREATED_AT,
-        configuredFieldKeys: body.values.map((value) => {
-          return value.key;
-        }),
+        configuredFieldKeys: account.configuredFieldKeys,
         missingRequiredFields: [],
         updatedAt: CREATED_AT,
       };
       customConnectors = customConnectors.map((connector) => {
         return connector.id === connected.id ? connected : connector;
       });
-      return respond(200, connected);
+      return respond(200, { ...connected, connectionId: account.id });
     },
   );
 
   const installBuiltinConnection = (
     request: BuiltinConnectionRequest,
     connectionId: string,
+    configuredFieldKeys: readonly string[] = [],
   ) => {
+    const account = completeAccount(
+      { kind: "builtin", connectorSlug: request.connectorSlug },
+      connectionId,
+      request.authMethod,
+      configuredFieldKeys,
+    );
     catalog = catalog.map((connector) => {
-      return connector.slug === request.connectorSlug
+      return connector.slug === request.connectorSlug && account.isDefault
         ? connectedCatalogItem(connector, connectionId, request.authMethod)
         : connector;
     });
@@ -721,11 +802,14 @@ export function installComposerConnectorFixture(
         ...new Set([...current, request.connectorSlug]),
       ]);
     }
-    return connectorResponse(
-      request.connectorSlug,
+    return {
+      ...connectorResponse(
+        request.connectorSlug,
+        connectionId,
+        request.authMethod,
+      ),
       connectionId,
-      request.authMethod,
-    );
+    };
   };
   context.mocks.api(
     builtinConnectorManualGrantContract.connect,
@@ -741,7 +825,10 @@ export function installComposerConnectorFixture(
         200,
         installBuiltinConnection(
           request,
-          "f0000000-0000-4000-a000-000000000062",
+          body.account.intent === "reconnect"
+            ? body.account.connectionId
+            : crypto.randomUUID(),
+          Object.keys(body.values),
         ),
       );
     },
@@ -760,7 +847,9 @@ export function installComposerConnectorFixture(
         200,
         installBuiltinConnection(
           request,
-          "f0000000-0000-4000-a000-000000000063",
+          body.account.intent === "reconnect"
+            ? body.account.connectionId
+            : crypto.randomUUID(),
         ),
       );
     },
@@ -779,7 +868,9 @@ export function installComposerConnectorFixture(
       return respond(200, {
         authorizationUrl: `https://accounts.example.test/${params.connectorSlug}`,
         oauthAttemptId,
-        connectionId: "f0000000-0000-4000-a000-000000000064",
+        ...(body.account.intent === "reconnect"
+          ? { connectionId: body.account.connectionId }
+          : {}),
       });
     },
   );
@@ -792,6 +883,11 @@ export function installComposerConnectorFixture(
     noAuthConnectionRequests,
     oauthConnectionRequests,
     completeOAuth: (connectionId: string) => {
+      const request = oauthConnectionRequests.at(-1);
+      if (!request) {
+        throw new Error("No pending connector OAuth authorization");
+      }
+      installBuiltinConnection(request, connectionId);
       completedAttempts.set(oauthAttemptId, connectionId);
     },
     threadSelectionUpdates,
@@ -894,6 +990,7 @@ export function builtinConnector(args: {
         }
       : null,
     connected,
+    setupStatus: connected ? "complete" : null,
     connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: authMethod === "oauth",
@@ -1048,7 +1145,11 @@ export function connectorAccount(args: {
     externalUsername: null,
     externalEmail: null,
     oauthScopes: [],
+    ...(args.target.kind === "builtin" ? { scopeMismatch: false } : {}),
     connectionStatus: "connected",
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     reconnectReason: null,
     tokenExpiresAt: null,
     createdAt: CREATED_AT,

@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import {
   customConnectorByIdContract,
+  isIntegrationManagedCustomConnector,
   type CustomConnectorPermissionBundleResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -10,9 +11,11 @@ import { accept } from "../../../lib/accept.ts";
 import { resetSignal, withCleanup } from "../../utils.ts";
 import {
   customConnectorAgentAuthorizations$,
+  customConnectors$,
   reloadCustomConnectorAuthorizedAgents$,
 } from "./custom-connectors.ts";
 import { agentCustomConnectorGrants$ } from "../job-detail/custom-connectors.ts";
+import { requireCustomConnectorAccountReady } from "./connector-accounts.ts";
 
 type CustomConnectorPermissionSurface = "agent-detail" | "access-management";
 
@@ -132,6 +135,31 @@ export const saveCustomConnectorPermissions$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const sessionSignal = set(resetPermissionSaveSignal$, signal);
+    const draft = get(internalPermissionDraft$);
+    const addsAccess =
+      !draft ||
+      draft.agentId !== args.agentId ||
+      draft.connectorId !== args.connectorId ||
+      !draft.initiallyAuthorized ||
+      args.permissionNames.some((permission) => {
+        return !draft.initialPermissionNames.includes(permission);
+      });
+    if (addsAccess) {
+      const connector = (await get(customConnectors$)).find((candidate) => {
+        return candidate.id === args.connectorId;
+      });
+      sessionSignal.throwIfAborted();
+      if (!connector) {
+        throw new Error("This connector is no longer available.");
+      }
+      if (!isIntegrationManagedCustomConnector(connector)) {
+        await requireCustomConnectorAccountReady(
+          get(apiClient$),
+          args.connectorId,
+          sessionSignal,
+        );
+      }
+    }
     const client = get(apiClient$)(agentCustomConnectorsContract);
     await withCleanup(
       accept(

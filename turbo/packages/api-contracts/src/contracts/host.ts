@@ -3,6 +3,13 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
+import {
+  hostedSiteAccessDecisionSchema,
+  hostedSiteVisibilitySchema,
+  hostedSiteVisibilityStatusSchema,
+  hostedSiteDownloadAuthorizationSchema,
+} from "./hosted-site-access";
+
 const c = initContract();
 
 export const hostedSiteUrlSlugSchema = z
@@ -364,9 +371,70 @@ export const hostContract = c.router({
     },
     summary: "Change an owned published website's address",
   },
+  siteVisibility: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/visibility",
+    pathParams: z.object({ siteId: z.uuid() }),
+    headers: authHeadersSchema,
+    responses: {
+      200: hostedSiteVisibilityStatusSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read an owned published site's visibility",
+  },
+  updateSiteVisibility: {
+    method: "PATCH",
+    path: "/api/host/sites/:siteId/visibility",
+    pathParams: z.object({ siteId: z.uuid() }),
+    headers: authHeadersSchema,
+    body: z.object({
+      visibility: hostedSiteVisibilitySchema,
+      expectedRevision: z.uuid().nullable(),
+    }),
+    responses: {
+      200: hostedSiteVisibilityStatusSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: "Change an owned published site's visibility",
+  },
+  siteAccess: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/access",
+    headers: authHeadersSchema,
+    pathParams: z.object({ siteId: z.uuid() }),
+    query: z.object({ origin: z.string().url() }),
+    responses: {
+      200: hostedSiteAccessDecisionSchema,
+      400: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Check site access before serving a preview or share",
+  },
+  downloadAuthorization: {
+    method: "GET",
+    path: "/api/host/downloads/:token",
+    pathParams: z.object({ token: z.string().regex(/^[a-f0-9]{48}$/u) }),
+    query: z.object({
+      deploymentId: z.uuid(),
+      path: z.string().startsWith("/").max(1024),
+    }),
+    responses: {
+      200: hostedSiteDownloadAuthorizationSchema,
+      400: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Authorize one file under a revocable hosted-site download grant",
+  },
   deliveryAuthorization: {
     method: "GET",
     path: "/api/host/delivery/:siteId/:deploymentId",
+    headers: authHeadersSchema,
     pathParams: z.object({
       siteId: z.string().uuid().toLowerCase(),
       deploymentId: z.string().uuid().toLowerCase(),
@@ -379,7 +447,7 @@ export const hostContract = c.router({
       manifestKey: z.string().startsWith("sites/").max(1024),
     }),
     responses: {
-      200: z.object({ allowed: z.boolean() }),
+      200: hostedSiteAccessDecisionSchema,
       400: apiErrorSchema,
       // Database/invariant failures reach the API's generic error boundary.
       500: z.object({ error: z.string() }),

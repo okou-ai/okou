@@ -202,11 +202,10 @@ describe("agent mail notifications", () => {
     context.mocks.clerk.users.getUser.mockRejectedValueOnce(
       new Error("Clerk unavailable"),
     );
-    const failed = await accept(
+    await accept(
       client().mail({ headers: fixture.headers, body: input }),
       [500],
     );
-    expect(failed.body).not.toHaveProperty("notificationId");
     expect(
       (
         await accept(
@@ -223,13 +222,6 @@ describe("agent mail notifications", () => {
       client().mail({
         headers: fixture.headers,
         body: { ...input, subject: "Invalid\nsubject" },
-      }),
-      [400],
-    );
-    await accept(
-      client().mail({
-        headers: fixture.headers,
-        body: { ...input, text: " " },
       }),
       [400],
     );

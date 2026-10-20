@@ -26,6 +26,7 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.browserUserAction,
   ROUTES.chat,
   ROUTES.computerUseAuthorize,
+  ROUTES.desktopShellAuthorize,
   ROUTES.connectors,
   ROUTES.directedAuthorize,
   ROUTES.directedConnect,

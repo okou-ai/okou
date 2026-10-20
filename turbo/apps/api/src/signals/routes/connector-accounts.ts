@@ -137,13 +137,27 @@ const inspectInner$ = computed(async (get) => {
           externalEmail: account.externalEmail,
           connectionStatus: account.connectionStatus,
           reconnectReason: account.reconnectReason,
+          setupStatus: account.setupStatus,
+          missingRequiredFields: account.missingRequiredFields,
+          configuredFieldKeys: account.configuredFieldKeys,
         };
       }),
     },
   };
 });
 
-const accountSummaries$ = connectorAccountSummaries(organizationAuthContext$);
+const accountSummaryScope$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(queryOf(connectorAccountsContract.summaries));
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    ...(query?.includeScopeMismatch === "true"
+      ? { includeScopeMismatch: true as const }
+      : {}),
+  };
+});
+const accountSummaries$ = connectorAccountSummaries(accountSummaryScope$);
 
 const summariesInner$ = computed(async (get) => {
   const summaries = await get(accountSummaries$);
@@ -180,9 +194,7 @@ const connectionsInner$ = computed(async (get) => {
     body: {
       connections: [...result.connections],
       nextCursor: result.nextCursor,
-      ...(result.defaultConnection !== undefined
-        ? { defaultConnection: result.defaultConnection }
-        : {}),
+      defaultConnection: result.defaultConnection,
     },
   };
 });

@@ -708,7 +708,6 @@
       "multiAccent": "다중 악센트",
       "nextSlide": "다음 슬라이드 미리보기",
       "noMatches": "일치하는 항목 없음",
-      "placeholder": "{{title}} 웹사이트 미리보기 자리 표시자",
       "previewCurrentSlide": "현재 슬라이드에서 {{title}} 미리보기",
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
@@ -1909,7 +1908,6 @@
       "back": "뒤로",
       "configurePermissions": "{{connectorName}} 권한 구성",
       "customAuthorizeDescription": "이 맞춤 커넥터를 검토하고 연결한 후 에이전트에 권한을 부여하세요.",
-      "defaultAccountFor": "{{connector}} · 기본 계정 사용 중: {{account}}",
       "directory": {
         "allCategories": "전체",
         "askAdmin": "관리자에게 활성화를 요청하세요",
@@ -1925,7 +1923,6 @@
         "emptyCustomBody": "HTTP API나 MCP 서버로 만들면 Okou가 다른 커넥터와 똑같이 사용할 수 있습니다.",
         "emptyCustomTitle": "아직 커스텀 커넥터가 없습니다",
         "matchCount_other": "{{count}}개 일치",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "확인 필요",
         "nextCategories": "다음 카테고리",
         "noResultsBody": "제품 이름으로 검색하거나 API 또는 MCP 서버로 직접 만들어 보세요.",
@@ -1940,6 +1937,7 @@
       },
       "fallsBackTo": "{{account}} 계정으로 대체",
       "find": "커넥터 찾기...",
+      "loadFailed": "커넥터를 불러올 수 없습니다.",
       "noUsableAccount": "사용 가능한 계정 없음",
       "remove": "{{connectorName}} 제거",
       "selectedAccountFor": "{{connector}} · 선택한 계정: {{account}}",
@@ -2139,16 +2137,11 @@
       "skipAutomationEvent": "자동화 이벤트 건너뛰기"
     },
     "relations": {
-      "communications": "메시지",
-      "idle": "유휴",
+      "chats": "채팅",
       "loadFailed": "불러오기 실패",
-      "messageUnavailable": "메시지를 볼 수 없음",
       "origin": "시작한 곳",
       "queued": "대기 중",
-      "received": "받음",
       "running": "실행 중",
-      "sent": "보냄",
-      "toggleMessages": "{{title}}과의 메시지",
       "unavailable": "접근 불가",
       "untitled": "제목 없음"
     },
@@ -2170,11 +2163,10 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "emptyLinks": "이 채팅에는 아직 링크가 없습니다",
+      "empty": "이 채팅의 결과물과 관련 채팅이 여기에 표시됩니다.",
       "expand": "펼치기",
-      "links": "링크",
       "loadFailed": "리소스를 불러오지 못했습니다",
-      "loadingLinks": "링크 불러오는 중",
+      "loading": "리소스 불러오는 중",
       "retry": "다시 시도",
       "title": "채팅 리소스"
     },
@@ -3081,13 +3073,9 @@
       "noAccountsFound": "계정을 찾을 수 없음",
       "reconnectRequired": "다시 연결해야 함",
       "rename": "이름 변경",
-      "skipName": "건너뛰기",
-      "summaryMany": "계정 {{value}}개",
-      "summaryMany_other": "",
-      "summaryOne": "계정 {{value}}개",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}}개에 주의 필요",
-      "summaryWithAttention_other": ""
+      "setupIncomplete": "설정 미완료",
+      "setupUnavailable": "계정 상태를 확인할 수 없습니다",
+      "skipName": "건너뛰기"
     },
     "actions": {
       "apply": "적용",
@@ -3252,7 +3240,6 @@
       },
       "scope": {
         "aria": "커넥터 범위",
-        "attention": "확인이 필요함",
         "connected": "연결됨",
         "custom": "사용자 지정",
         "discover": "둘러보기",
@@ -3948,9 +3935,28 @@
       "connected": "{{connector}} 연결됨"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "권한을 업데이트하지 못했습니다. 새로고침 후 다시 시도하세요.",
+    "allow": "1시간 허용",
+    "approved": "Shell 접근 허용됨",
+    "deadline": "만료: {{date}}",
+    "denied": "요청 거부됨",
+    "deny": "거부",
+    "description": "에이전트가 컴퓨터에서 Shell을 사용하려면 권한이 필요합니다.",
+    "details": "상세 정보 열기",
+    "expired": "권한 만료됨",
+    "loading": "권한을 불러오는 중…",
+    "pending": "승인 대기 중",
+    "refresh": "새로고침",
+    "revoke": "접근 취소",
+    "revoked": "Shell 접근 취소됨",
+    "scope": "이 채팅과 컴퓨터에만 적용됩니다. 접근이 종료되어도 기존 터미널은 열린 상태로 유지됩니다.",
+    "title": "Desktop Shell 접근",
+    "unavailable": "권한을 사용할 수 없음",
+    "waiting": "Run이 실행 중이거나 선택한 컴퓨터가 변경되면 승인할 수 없습니다."
+  },
   "documentTemplates": {
     "agreementNote": "계약서 작성을 위한 출발점입니다. 서명 전에 프로젝트와 관할 법률에 맞게 조항을 검토하세요.",
-    "back": "템플릿으로 돌아가기",
     "categories": {
       "all": "전체",
       "business-record": "업무 기록",
@@ -4001,7 +4007,6 @@
     "preview": "{{title}} 미리 보기",
     "previousPage": "이전 샘플 페이지",
     "retry": "다시 시도",
-    "samplePages": "샘플 페이지 수: {{total}}",
     "title": "문서",
     "useNamed": "{{title}} 사용"
   },
@@ -5066,6 +5071,10 @@
           "title": "기본 모델"
         },
         "description": "새 채팅의 기본값과 메시지 전송 방식을 선택하세요.",
+        "resources": {
+          "description": "공간이 있으면 채팅의 결과물과 관련 채팅을 대화 옆에 표시합니다.",
+          "title": "리소스 자동으로 열기"
+        },
         "sectionTitle": "채팅"
       },
       "debug": {
@@ -5156,7 +5165,7 @@
       },
       "morningBrief": {
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다. 조정이 완료되면 다시 시도하세요.",
-        "description": "내 시간대의 오전 7:00에 일일 우선순위를 받습니다.",
+        "description": "내 시간대 기준 오전 7:00 전에 일일 우선순위를 받습니다.",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
         "preparationFailed": "설정을 자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.",

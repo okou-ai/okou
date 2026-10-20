@@ -104,15 +104,21 @@ describe("Maps generateContent usage and citations", () => {
     );
   });
 
-  it.each(["sources and citations", "citations"])(
-    "rejects executed Maps queries missing %s without charging",
-    async (missing) => {
+  it.each([
+    {
+      name: "place recommendations",
+      answer: "推荐 Café Central：https://maps.google.com/maps?cid=123",
+    },
+    { name: "a no-results claim", answer: "No matching places were found." },
+  ])(
+    "rejects $name without verified Maps sources without charging",
+    async ({ answer }) => {
       const { billing, actor } = await setupMaps();
       server.use(
         http.post(VERTEX_MAPS_URL, () => {
           return vertexMapsResponse({
-            answer: "推荐 Café Central：https://maps.google.com/maps?cid=123",
-            ...(missing === "sources and citations" ? { sources: [] } : {}),
+            answer,
+            sources: [],
             supports: [],
           });
         }),
@@ -125,9 +131,9 @@ describe("Maps generateContent usage and citations", () => {
       );
       expect(search.body).toMatchObject({
         error: {
-          code: "MAPS_CITATION_INVALID",
+          code: "MAPS_NO_VERIFIED_RESULTS",
           message:
-            "The Maps response has incomplete or inconsistent source citations and cannot be verified. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not invent map facts or sources.",
+            "Google Maps did not return verifiable sources for this search. This does not mean no matching places exist. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not use the unverified answer or invent map facts or sources.",
         },
       });
       expect(search.body).not.toHaveProperty("answer");
@@ -136,6 +142,38 @@ describe("Maps generateContent usage and citations", () => {
       );
     },
   );
+
+  it.each([
+    { name: "missing citations", response: { supports: [] } },
+    { name: "references to absent sources", response: { sources: [] } },
+  ])("rejects $name without charging", async ({ response }) => {
+    const { billing, actor } = await setupMaps();
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        return vertexMapsResponse({
+          answer: "推荐 Café Central：https://maps.google.com/maps?cid=123",
+          ...response,
+        });
+      }),
+    );
+    const before = await billing.readBillingStatus(actor);
+    const search = await billing.requestMapsSearch(
+      actor,
+      { query: "推荐附近的咖啡店", languageCode: "zh_CN" },
+      [502],
+    );
+    expect(search.body).toMatchObject({
+      error: {
+        code: "MAPS_CITATION_INVALID",
+        message:
+          "The Maps response has incomplete or inconsistent source citations and cannot be verified. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not invent map facts or sources.",
+      },
+    });
+    expect(search.body).not.toHaveProperty("answer");
+    expect((await billing.readBillingStatus(actor)).credits).toBe(
+      before.credits,
+    );
+  });
 
   it("prices cached prompt tokens separately and rounds combined token cost once", async () => {
     const { billing, actor } = await setupMaps();
@@ -160,10 +198,7 @@ describe("Maps generateContent usage and citations", () => {
 
   it.each([
     { name: "missing query list with sources", queries: undefined },
-    { name: "null query list", queries: null },
     { name: "zero queries despite sources", queries: [] },
-    { name: "non-string query", queries: [1] },
-    { name: "blank query", queries: ["  "] },
   ])("does not charge for $name", async ({ queries }) => {
     const { billing, actor } = await setupMaps();
     server.use(

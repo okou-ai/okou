@@ -9,21 +9,22 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   customConnectors$,
   retryCustomConnectors$,
 } from "../../signals/okou-page/settings/custom-connectors.ts";
-import { connectorOverviewAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
-import { invalidateConnectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
+import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
+import { reloadUserConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
 import {
   agentCustomConnectorGrants$,
   agentAddedCustomConnectors$,
+  prepareJobCustomConnectorAccess$,
   toggleAgentCustomConnector$,
 } from "../../signals/okou-page/job-detail/custom-connectors.ts";
 import {
@@ -39,49 +40,34 @@ import { CustomConnectorIcon } from "../okou-page/components/settings/custom-con
 import { ConnectorPermissionRow } from "../okou-page/components/settings/connector-permission-row.tsx";
 import { CustomConnectorPermissionsDrawer } from "../okou-page/components/settings/custom-connector-permissions-drawer.tsx";
 import { customConnectorTarget } from "../okou-page/components/settings/custom-connector-display.ts";
-import { ConnectorAccountSummaryText } from "../okou-page/components/settings/connector-card.tsx";
 import { Link } from "../router/link.tsx";
 
-function canAddAgentAccess(
-  connector: CustomConnectorResponse,
-  summary: ConnectorAccountBriefSummary | undefined,
-): boolean {
+function canAddAgentAccess(connector: CustomConnectorResponse): boolean {
   if (isIntegrationManagedCustomConnector(connector)) {
-    return connector.connected;
+    return customConnectorManagedStatusSchema.parse(connector).connected;
   }
-  const defaultConnection = summary?.defaultConnection;
-  return (
-    connector.connected &&
-    defaultConnection?.connectionStatus === "connected" &&
-    connector.connectedAccountId === defaultConnection.id
-  );
+  // Canonical definitions omit readiness; the explicit action checks the
+  // current default before granting access or opening its permissions.
+  return connector.connected !== false;
 }
 
 function CustomConnectorAccountStatus({
   connector,
-  summary,
   readyForAccess,
 }: {
   readonly connector: CustomConnectorResponse;
-  readonly summary: ConnectorAccountBriefSummary | undefined;
   readonly readyForAccess: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <>
       <span className="font-mono">{customConnectorTarget(connector)}</span>
-      {!isIntegrationManagedCustomConnector(connector) && (
+      {!isIntegrationManagedCustomConnector(connector) && !readyForAccess && (
         <>
           {" · "}
-          <ConnectorAccountSummaryText summary={summary} status="ready" />
-          {!readyForAccess && summary?.attentionCount === 0 && (
-            <>
-              {" · "}
-              {t(($) => {
-                return $.connectors.accounts.reconnectRequired;
-              })}
-            </>
-          )}
+          {t(($) => {
+            return $.connectors.accounts.reconnectRequired;
+          })}
         </>
       )}
     </>
@@ -112,28 +98,32 @@ function CustomConnectorReconnectLink({
   );
 }
 
-function JobCustomConnectorRow({
-  connector,
-  summary,
-  enabled,
-  agentId,
-  grants,
-  grantsLoading,
-  isLast,
-}: {
+interface JobCustomConnectorRowProps {
   readonly connector: CustomConnectorResponse;
-  readonly summary: ConnectorAccountBriefSummary | undefined;
   readonly enabled: boolean;
   readonly agentId: string | undefined;
   readonly grants: readonly AgentCustomConnectorGrant[] | null;
   readonly grantsLoading: boolean;
   readonly isLast: boolean;
-}) {
+}
+
+function JobCustomConnectorRow({
+  connector,
+  enabled,
+  agentId,
+  grants,
+  grantsLoading,
+  isLast,
+}: JobCustomConnectorRowProps) {
   const { t } = useTranslation("agents");
   const signal = useGet(pageSignal$);
   const [toggleLoadable, toggle] = useLoadableSet(toggleAgentCustomConnector$);
-  const saving = toggleLoadable.state === "loading";
-  const readyForAccess = canAddAgentAccess(connector, summary);
+  const [prepareLoadable, prepare] = useLoadableSet(
+    prepareJobCustomConnectorAccess$,
+  );
+  const saving =
+    toggleLoadable.state === "loading" || prepareLoadable.state === "loading";
+  const readyForAccess = canAddAgentAccess(connector);
   const openPermissions = useSet(openCustomConnectorPermissions$);
   const hasPermissionBundle =
     connector.kind === "http" && Boolean(connector.permissionBundleRef);
@@ -142,9 +132,13 @@ function JobCustomConnectorRow({
       return grant.customConnectorId === connector.id;
     })?.permissionNames ?? [];
 
-  const openPermissionDrawer = (initiallyAuthorized: boolean) => {
-    if (!agentId || !readyForAccess) {
+  const openPermissionDrawer = async (initiallyAuthorized: boolean) => {
+    if (!agentId || (!initiallyAuthorized && !readyForAccess)) {
       return;
+    }
+    if (!initiallyAuthorized) {
+      await prepare(connector, signal);
+      signal.throwIfAborted();
     }
     openPermissions(
       {
@@ -159,83 +153,97 @@ function JobCustomConnectorRow({
   };
 
   return (
-    <ConnectorPermissionRow
-      icon={
-        <CustomConnectorIcon
-          id={connector.id}
-          displayName={connector.displayName}
-          size={20}
-        />
-      }
-      label={connector.displayName}
-      labelSuffix={
-        !readyForAccess && agentId ? (
-          <CustomConnectorReconnectLink
-            connector={connector}
-            agentId={agentId}
+    <>
+      <ConnectorPermissionRow
+        icon={
+          <CustomConnectorIcon
+            id={connector.id}
+            displayName={connector.displayName}
+            size={20}
           />
-        ) : undefined
-      }
-      description={
-        <CustomConnectorAccountStatus
-          connector={connector}
-          summary={summary}
-          readyForAccess={readyForAccess}
-        />
-      }
-      enabled={enabled}
-      loading={saving || (hasPermissionBundle && grantsLoading)}
-      disabled={
-        (!enabled && !readyForAccess) ||
-        (hasPermissionBundle && grants === null)
-      }
-      showManage={
-        readyForAccess &&
-        enabled &&
-        hasPermissionBundle &&
-        grants !== null &&
-        agentId !== undefined
-      }
-      isLast={isLast}
-      onToggle={(checked) => {
-        if (checked && !readyForAccess) {
-          return;
         }
-        if (checked && hasPermissionBundle) {
-          if (grants !== null && agentId) {
-            openPermissionDrawer(false);
+        label={connector.displayName}
+        labelSuffix={
+          !readyForAccess && agentId ? (
+            <CustomConnectorReconnectLink
+              connector={connector}
+              agentId={agentId}
+            />
+          ) : undefined
+        }
+        description={
+          <CustomConnectorAccountStatus
+            connector={connector}
+            readyForAccess={readyForAccess}
+          />
+        }
+        enabled={enabled}
+        loading={saving || (hasPermissionBundle && grantsLoading)}
+        disabled={
+          (!enabled && !readyForAccess) ||
+          (hasPermissionBundle && grants === null)
+        }
+        showManage={
+          enabled &&
+          hasPermissionBundle &&
+          grants !== null &&
+          agentId !== undefined
+        }
+        isLast={isLast}
+        onToggle={(checked) => {
+          if (checked && !readyForAccess) {
+            return;
           }
-          return;
-        }
-        if (saving) {
-          return;
-        }
-        detach(
-          (async () => {
-            await toggle(connector.id, checked, signal);
-            toast.success(
-              t(($) => {
-                return $.authorization.customConnectors.saved;
-              }),
-            );
-          })(),
-          Reason.DomCallback,
-        );
-      }}
-      onManage={() => {
-        openPermissionDrawer(enabled);
-      }}
-    />
+          if (checked && hasPermissionBundle) {
+            if (grants !== null && agentId) {
+              detach(openPermissionDrawer(false), Reason.DomCallback);
+            }
+            return;
+          }
+          if (saving) {
+            return;
+          }
+          detach(
+            (async () => {
+              if (checked) {
+                await prepare(connector, signal);
+                signal.throwIfAborted();
+              }
+              await toggle(connector.id, checked, signal);
+              toast.success(
+                t(($) => {
+                  return $.authorization.customConnectors.saved;
+                }),
+              );
+            })(),
+            Reason.DomCallback,
+          );
+        }}
+        onManage={() => {
+          if (!saving) {
+            detach(openPermissionDrawer(enabled), Reason.DomCallback);
+          }
+        }}
+      />
+      {prepareLoadable.state === "hasError" && (
+        <p role="alert" className="px-5 pb-3 text-sm text-destructive">
+          {String(prepareLoadable.error)}
+        </p>
+      )}
+    </>
   );
 }
 
 export function JobCustomConnectorsSection() {
   const { t } = useTranslation();
   const connectors = useLoadable(customConnectors$);
-  const summaries = useLoadable(connectorOverviewAccountSummaryByTarget$);
+  const connectedTargets = useLoadable(connectedConnectorTargetKeys$);
   const retryConnectors = useSet(retryCustomConnectors$);
-  const retrySummaries = useSet(invalidateConnectorOverview$);
-  if (connectors.state === "hasError" || summaries.state === "hasError") {
+  const retryConnectedTargets = useSet(reloadUserConnectedConnectors$);
+  if (
+    connectors.state === "hasError" ||
+    connectedTargets.state === "hasError"
+  ) {
     return (
       <LoadErrorRow
         message={t(($) => {
@@ -246,12 +254,12 @@ export function JobCustomConnectorsSection() {
         })}
         onRetry={() => {
           retryConnectors();
-          retrySummaries();
+          retryConnectedTargets();
         }}
       />
     );
   }
-  if (connectors.state !== "hasData" || summaries.state !== "hasData") {
+  if (connectors.state !== "hasData" || connectedTargets.state !== "hasData") {
     return (
       <p role="status" className="py-4 text-sm text-muted-foreground">
         {t(($) => {
@@ -262,8 +270,8 @@ export function JobCustomConnectorsSection() {
   }
   const connectedConnectors = connectors.data.filter((connector) => {
     return isIntegrationManagedCustomConnector(connector)
-      ? connector.connected
-      : (summaries.data.get(`custom:${connector.id}`)?.accountCount ?? 0) > 0;
+      ? customConnectorManagedStatusSchema.parse(connector).connected
+      : connectedTargets.data.has(`custom:${connector.id}`);
   });
 
   if (connectedConnectors.length === 0) {
@@ -271,19 +279,14 @@ export function JobCustomConnectorsSection() {
   }
 
   return (
-    <ConnectedJobCustomConnectorsSection
-      connectors={connectedConnectors}
-      summaries={summaries.data}
-    />
+    <ConnectedJobCustomConnectorsSection connectors={connectedConnectors} />
   );
 }
 
 function ConnectedJobCustomConnectorsSection({
   connectors,
-  summaries,
 }: {
   readonly connectors: readonly CustomConnectorResponse[];
-  readonly summaries: ReadonlyMap<string, ConnectorAccountBriefSummary>;
 }) {
   const { t } = useTranslation("agents");
   const addedLoadable = useLastLoadable(agentAddedCustomConnectors$);
@@ -310,10 +313,8 @@ function ConnectedJobCustomConnectorsSection({
   const permissionTarget =
     activePermissionDraft &&
     permissionTargetConnector &&
-    canAddAgentAccess(
-      permissionTargetConnector,
-      summaries.get(`custom:${permissionTargetConnector.id}`),
-    )
+    (activePermissionDraft.initiallyAuthorized ||
+      canAddAgentAccess(permissionTargetConnector))
       ? {
           connector: permissionTargetConnector,
           draft: activePermissionDraft,
@@ -336,7 +337,6 @@ function ConnectedJobCustomConnectorsSection({
           <JobCustomConnectorRow
             key={connector.id}
             connector={connector}
-            summary={summaries.get(`custom:${connector.id}`)}
             enabled={addedSet.has(connector.id)}
             agentId={detail?.agentId}
             grants={

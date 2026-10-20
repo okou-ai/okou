@@ -644,6 +644,7 @@ function authMethodSummaryForCatalog(
     label: method.label,
     description: method.description,
     grantKind: method.grant.kind,
+    supportsRefresh: method.access.kind === "refresh-token",
   };
 }
 
@@ -899,6 +900,8 @@ function connectorCatalogConnectionFields(
     connection: connectionForCatalogStatus(connector),
     connected: connector !== null,
     connectionStatus,
+    setupStatus:
+      connector === null ? null : (args.connection?.setupStatus ?? null),
     scopeMismatch,
     authMethodSupportsRefresh:
       connector !== null && facts?.supportsRefresh === true,

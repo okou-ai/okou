@@ -1,8 +1,10 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
@@ -404,23 +406,6 @@ async function expectReadingPosition(
   });
 }
 
-async function expectLatestActivity(
-  geometry: ChatScrollGeometry,
-  latestText: string,
-): Promise<void> {
-  await waitFor(() => {
-    const latestOffset = geometry.viewportOffsetFor(latestText);
-    expect(geometry.atBottom()).toBeTruthy();
-    expect(latestOffset).toBeGreaterThanOrEqual(0);
-    expect(latestOffset).toBeLessThan(geometry.viewportHeight());
-    expect(
-      queryAllByRoleFast("button").find((candidate) => {
-        return candidate.getAttribute("aria-label") === "Scroll to bottom";
-      }),
-    ).toBeUndefined();
-  });
-}
-
 async function expectAtLatestActivity(
   geometry: ChatScrollGeometry,
 ): Promise<void> {
@@ -631,22 +616,158 @@ test("Return to the latest message in a thread opened from the sidebar", async (
   await expectAtLatestActivity(geometry);
 });
 
-test("Open a conversation at a linked message", async () => {
-  const events = conversationEvents("deep-link", "Linked");
+test.each(["event", "run"])(
+  "Open a conversation at a linked %s",
+  async (kind) => {
+    const linkedEventId = "deep-link-run-3";
+    const events = conversationEvents("deep-link", "Linked").map((event) => {
+      return event.id === "deep-link-user-3"
+        ? { ...event, id: linkedEventId }
+        : event;
+    });
+    mockChatLifecycleWithoutBrowserSession({
+      threadId: DEEP_LINK_THREAD_ID,
+      threadTitle: "Linked conversation",
+      chatEvents: events,
+    });
+    await setupPage({
+      context,
+      host: APP_HOST,
+      path: `/chats/${DEEP_LINK_THREAD_ID}#${kind}-${linkedEventId}`,
+    });
+
+    const linkedText = "Linked message 3";
+    await waitForThreadMessage(DEEP_LINK_THREAD_ID, linkedText);
+    const geometry = installChatScrollGeometry(
+      threadContainer(DEEP_LINK_THREAD_ID),
+    );
+    fireEvent.resize(window);
+
+    await expectReadingPosition(geometry, linkedText, 0);
+    expect(geometry.viewportOffsetFor("Linked message 6")).toBeGreaterThan(
+      geometry.viewportHeight(),
+    );
+    expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
+  },
+);
+
+test("Follow a run link in the current conversation", async () => {
+  const linkedRunId = "d0000000-0000-4000-a000-000000000801";
+  const href = `/chats/${DEEP_LINK_THREAD_ID}#run-${linkedRunId}`;
+  const events = conversationEvents("run-link", "Linked").map((event) => {
+    if (event.runId === "run-link-run-3") {
+      return {
+        ...event,
+        id: event.id === "run-link-user-3" ? linkedRunId : event.id,
+        runId: linkedRunId,
+      };
+    }
+    return event.id === "run-link-assistant-6"
+      ? {
+          ...event,
+          content: `[Jump to earlier run](https://${APP_HOST}${href})`,
+        }
+      : event;
+  });
   mockChatLifecycleWithoutBrowserSession({
     threadId: DEEP_LINK_THREAD_ID,
     threadTitle: "Linked conversation",
     chatEvents: events,
   });
-  const linkedEventId = "deep-link-user-3";
-
   await setupPage({
     context,
     host: APP_HOST,
-    path: `/chats/${DEEP_LINK_THREAD_ID}#event-${linkedEventId}`,
+    path: `/chats/${DEEP_LINK_THREAD_ID}`,
   });
-
   const linkedText = "Linked message 3";
+  await waitForThreadMessage(DEEP_LINK_THREAD_ID, linkedText);
+  const geometry = installChatScrollGeometry(
+    threadContainer(DEEP_LINK_THREAD_ID),
+  );
+  fireEvent.resize(window);
+  await waitFor(() => {
+    expect(geometry.atBottom()).toBeTruthy();
+  });
+  const link = await waitFor(() => {
+    const link = queryAllByRoleFast(
+      "link",
+      threadContainer(DEEP_LINK_THREAD_ID),
+    ).find((candidate) => {
+      return candidate.getAttribute("href") === href;
+    });
+    if (!link) {
+      throw new Error("Run link not found");
+    }
+    return link;
+  });
+  click(link);
+
+  await expectReadingPosition(geometry, linkedText, 0);
+  expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
+});
+
+test("Follow the Resources origin link to its parent run", async () => {
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  const linkedRunId = "d0000000-0000-4000-a000-000000000801";
+  const peerId = "d0000000-0000-4000-a000-000000000802";
+  const linkedText = "Linked message 3";
+  const events = conversationEvents("resource-link", "Linked").map((event) => {
+    return event.runId === "resource-link-run-3"
+      ? {
+          ...event,
+          id: event.id === "resource-link-user-3" ? linkedRunId : event.id,
+          runId: linkedRunId,
+        }
+      : event;
+  });
+  const childEvents = conversationEvents("child", "Child", 1).map(
+    (event): MockChatEventInput => {
+      return event.id === "child-user-1"
+        ? {
+            ...event,
+            id: "child-run-1",
+            content: null,
+            userMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Child message 1" },
+                {
+                  type: "source",
+                  kind: "agent",
+                  threadId: DEEP_LINK_THREAD_ID,
+                  runId: linkedRunId,
+                  titleSnapshot: "Parent conversation",
+                  agentId: AGENT_ID,
+                  href: `https://${APP_HOST}/chats/${DEEP_LINK_THREAD_ID}#run-${linkedRunId}`,
+                },
+              ],
+            },
+          }
+        : event;
+    },
+  );
+  mockThreadStories(peerId, [
+    { id: DEEP_LINK_THREAD_ID, title: "Parent conversation", events },
+    { id: peerId, title: "Child conversation", events: childEvents },
+  ]);
+  context.mocks.api(chatRelationsContract.children, ({ respond }) => {
+    return respond(200, { items: [] });
+  });
+  context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+    return respond(200, { items: [] });
+  });
+  await setupPage({
+    context,
+    host: APP_HOST,
+    path: `/chats/${peerId}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  await waitForThreadMessage(peerId, "Child message 1");
+  click(buttonNamed("Resources"));
+  const resources = await screen.findByRole("region", { name: "Resources" });
+  const parent = await within(resources).findByText("Parent conversation");
+  click(parent.closest("a")!);
+
   await waitForThreadMessage(DEEP_LINK_THREAD_ID, linkedText);
   const geometry = installChatScrollGeometry(
     threadContainer(DEEP_LINK_THREAD_ID),
@@ -654,9 +775,6 @@ test("Open a conversation at a linked message", async () => {
   fireEvent.resize(window);
 
   await expectReadingPosition(geometry, linkedText, 0);
-  expect(geometry.viewportOffsetFor("Linked message 6")).toBeGreaterThan(
-    geometry.viewportHeight(),
-  );
   expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
 });
 
@@ -714,10 +832,17 @@ test("Open a conversation safely when a linked message is unavailable", async ()
   );
   fireEvent.resize(window);
 
-  await expectLatestActivity(geometry, latestText);
-  expect(
-    screen.queryByText("Send a message to start the conversation"),
-  ).toBeNull();
+  await waitFor(() => {
+    const latestOffset = geometry.viewportOffsetFor(latestText);
+    expect(geometry.atBottom()).toBeTruthy();
+    expect(latestOffset).toBeGreaterThanOrEqual(0);
+    expect(latestOffset).toBeLessThan(geometry.viewportHeight());
+    expect(
+      queryAllByRoleFast("button").find((candidate) => {
+        return candidate.getAttribute("aria-label") === "Scroll to bottom";
+      }),
+    ).toBeUndefined();
+  });
 });
 
 test("Return to the latest message after sending from history", async () => {

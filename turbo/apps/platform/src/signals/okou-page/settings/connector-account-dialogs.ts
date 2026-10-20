@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { withConnectorConnectionProgress } from "../../connector-connection-progress.ts";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -15,11 +13,6 @@ import type {
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
-import {
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
-  reloadConnectorAccountSummaries$,
-} from "../connector-accounts.ts";
 import {
   onRef,
   onRejection,
@@ -41,6 +34,7 @@ export type ConnectorAccountConnectMode =
       readonly kind: "reconnect";
       readonly connectionId: string;
       readonly authMethod?: ConnectorAuthMethodId;
+      readonly account?: ConnectorAccountConnection;
     };
 
 export interface ConnectorAccountMutationOptions {
@@ -56,14 +50,9 @@ export interface DefaultConnectorAccountMutationOptions {
 export type CustomConnectorAccountMutationIntent =
   PlatformConnectorAccountMutationIntent | { readonly intent: "default" };
 
-export interface DefaultCustomConnectorAccountMutationOptions {
+export interface CustomConnectorAccountMutationOptions {
   readonly account: CustomConnectorAccountMutationIntent;
-  readonly useDefaultConnectorProjection: true;
 }
-
-export type CustomConnectorAccountMutationOptions =
-  | ConnectorAccountMutationOptions
-  | DefaultCustomConnectorAccountMutationOptions;
 
 export function defaultBuiltinConnectorAccountOptions(
   connector: PlatformConnectorCatalogConnectItem | undefined,
@@ -90,7 +79,7 @@ export function defaultBuiltinConnectorAccountOptions(
 
 export function defaultCustomConnectorAccountOptions(
   connector: CustomConnectorResponse | undefined,
-): DefaultCustomConnectorAccountMutationOptions | null {
+): CustomConnectorAccountMutationOptions | null {
   if (!connector) {
     return null;
   }
@@ -99,13 +88,11 @@ export function defaultCustomConnectorAccountOptions(
     // mutation or provider authorization. Readiness does not identify it.
     return {
       account: { intent: "default" },
-      useDefaultConnectorProjection: true,
     };
   }
   if (!connector.connected) {
     return {
       account: { intent: "add" },
-      useDefaultConnectorProjection: true,
     };
   }
   return connector.connectedAccountId
@@ -114,7 +101,6 @@ export function defaultCustomConnectorAccountOptions(
           intent: "reconnect",
           connectionId: connector.connectedAccountId,
         },
-        useDefaultConnectorProjection: true,
       }
     : null;
 }
@@ -272,7 +258,7 @@ const finishConnectorAccountConnectionCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    set(reloadConnectorAccountSummaries$);
+    set(settingsConnectorAccounts.reload$, signal);
     if (args.mode.kind !== "add" || !args.connectionId) {
       return;
     }
@@ -421,33 +407,24 @@ const saveConnectorAccountRenameCommand$ = command(
     await waitLoopUntil(
       async (loopSignal) => {
         const accountsPromise = get(settingsConnectorAccounts.accounts$);
-        const summariesPromise = get(connectorAccountSummaryByTarget$);
         const [refresh] = await waitForOperation(
-          Promise.allSettled([
-            Promise.all([accountsPromise, summariesPromise]),
-          ]),
+          Promise.allSettled([accountsPromise]),
           loopSignal,
         );
         loopSignal.throwIfAborted();
         // Search or pagination may change while the mutation refresh is pending.
         // A superseded debounced search can also reject with its own cancellation.
         // Only the currently rendered query can determine the return destination.
-        if (
-          accountsPromise !== get(settingsConnectorAccounts.accounts$) ||
-          summariesPromise !== get(connectorAccountSummaryByTarget$)
-        ) {
+        if (accountsPromise !== get(settingsConnectorAccounts.accounts$)) {
           return false;
         }
         if (refresh.status === "rejected") {
           throw refresh.reason;
         }
-        const [accounts, summaries] = refresh.value;
+        const accounts = refresh.value;
         const pinnedDefault =
           !get(settingsConnectorAccounts.search$).trim() &&
-          (accounts.defaultConnection !== undefined
-            ? accounts.defaultConnection
-            : summaries.get(connectorAccountTargetKey(target))
-                ?.defaultConnection);
+          accounts.defaultConnection;
         const restoreAccount =
           accounts.available &&
           ((pinnedDefault && pinnedDefault.id === draft.account.id) ||

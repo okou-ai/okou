@@ -28,6 +28,10 @@ import {
   CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 import { TailscaleManagement } from "./tailscale-management.tsx";
+import {
+  mountPrivateNetworkPanel$,
+  mountRemoteControlPanel$,
+} from "../../signals/remote-management-realtime.ts";
 
 function ConnectionTypeFilter({
   vncEnabled,
@@ -110,11 +114,12 @@ export function RemoteControlPanel({
   const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
   const view = useGet(remoteControlView$);
   const setView = useSet(setRemoteControlView$);
+  const mount = useSet(mountRemoteControlPanel$);
   const showSsh = selectedType === "all" || selectedType === "ssh";
   const showVnc =
     vncEnabled && (selectedType === "all" || selectedType === "vnc");
   return (
-    <div className="grid gap-6">
+    <div ref={mount} className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegmentControl
           value={view}
@@ -180,8 +185,9 @@ export function RemoteControlPanel({
 
 export function PrivateNetworkPanel() {
   const { t } = useTranslation();
+  const mount = useSet(mountPrivateNetworkPanel$);
   return (
-    <div className="grid gap-6">
+    <div ref={mount} className="grid gap-6">
       <section
         aria-label={t(($) => {
           return $.cloudflareAccess.title;

@@ -255,9 +255,7 @@ function HostChoiceSelect({
       ) : (
         <Monitor size={15} className="shrink-0 text-muted-foreground" />
       )}
-      <span className="min-w-0 flex-1 truncate" title={host.displayName}>
-        {host.displayName}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{host.displayName}</span>
       <Select
         items={items}
         value={value}
@@ -454,6 +452,8 @@ function VncHostChoiceRow({
 interface ThreadRemoteAccessSectionProps {
   threadId?: string;
   remoteAccess$: ComposerSignals["remoteAccess$"];
+  defaults$: ComposerSignals["connector"]["resources"]["remoteHostDefaults$"];
+  reloadRemotes$: ComposerSignals["connector"]["resources"]["reloadRemotes$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -478,14 +478,16 @@ export function ThreadRemoteAccessSection(
 function OwnerThreadRemoteAccessSection({
   threadId,
   remoteAccess$,
+  defaults$,
+  reloadRemotes$,
   pendingRemoteAccess,
   open,
   onOpenChange,
 }: ThreadRemoteAccessSectionProps) {
   const { t } = useTranslation();
-  const defaults = useLoadable(remoteHostDefaults$);
+  const defaults = useLoadable(defaults$);
   const access = useLoadable(remoteAccess$);
-  const lastDefaults = useLastResolved(remoteHostDefaults$);
+  const lastDefaults = useLastResolved(defaults$);
   const lastAccess = useLastResolved(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
   const defaultData = resolvedDuringRefresh(defaults, lastDefaults);
@@ -573,30 +575,64 @@ function OwnerThreadRemoteAccessSection({
           </Button>
           <span className="min-w-0 flex-1 truncate">{title}</span>
         </div>
-        <ThreadRemoteHostChoices
-          threadId={threadId}
-          remoteAccess$={remoteAccess$}
-          pendingRemoteAccess={pendingRemoteAccess}
-        />
+        {open && (
+          <ThreadRemoteHostChoices
+            threadId={threadId}
+            remoteAccess$={remoteAccess$}
+            defaults$={defaults$}
+            reloadRemotes$={reloadRemotes$}
+            pendingRemoteAccess={pendingRemoteAccess}
+          />
+        )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+function RemoteHostLoadError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-2 px-2 py-2 text-sm text-destructive"
+    >
+      <span>
+        {t(($) => {
+          return $.chat.remoteAccess.loadFailed;
+        })}
+      </span>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        {t(($) => {
+          return $.chat.remoteAccess.retry;
+        })}
+      </Button>
+    </div>
   );
 }
 
 function ThreadRemoteHostChoices({
   threadId,
   remoteAccess$,
+  defaults$,
+  reloadRemotes$,
   pendingRemoteAccess,
 }: {
   threadId?: string;
   remoteAccess$: ComposerSignals["remoteAccess$"];
+  defaults$: ComposerSignals["connector"]["resources"]["remoteHostDefaults$"];
+  reloadRemotes$: ComposerSignals["connector"]["resources"]["reloadRemotes$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
 }) {
   const { t } = useTranslation();
-  const retry = useSet(invalidateRemoteAccess$);
-  const defaults = useLoadable(remoteHostDefaults$);
+  const retryAccess = useSet(invalidateRemoteAccess$);
+  const retryRemotes = useSet(reloadRemotes$);
+  const retry = () => {
+    retryAccess();
+    retryRemotes();
+  };
+  const defaults = useLoadable(defaults$);
   const access = useLoadable(remoteAccess$);
-  const lastDefaults = useLastResolved(remoteHostDefaults$);
+  const lastDefaults = useLastResolved(defaults$);
   const lastAccess = useLastResolved(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
   const vncHosts = useLoadable(vncConnections$);
@@ -623,21 +659,7 @@ function ThreadRemoteHostChoices({
   return (
     <div className="min-h-0 overflow-y-auto p-1">
       {(defaults.state === "hasError" || accessFailed) && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-2 px-2 py-2 text-sm text-destructive"
-        >
-          <span>
-            {t(($) => {
-              return $.chat.remoteAccess.loadFailed;
-            })}
-          </span>
-          <Button type="button" variant="outline" size="sm" onClick={retry}>
-            {t(($) => {
-              return $.chat.remoteAccess.retry;
-            })}
-          </Button>
-        </div>
+        <RemoteHostLoadError onRetry={retry} />
       )}
       {threadId && access.state === "loading" && !accessData ? (
         <p role="status" className="px-2 py-2 text-sm text-muted-foreground">

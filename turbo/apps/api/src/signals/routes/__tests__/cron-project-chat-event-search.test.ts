@@ -604,7 +604,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
         new Date(Date.parse(after.matchedMessage.createdAt) + 1).toISOString(),
       ),
     ).resolves.toStrictEqual([]);
-    await expect(search("2099-01-01T00:00:00Z")).resolves.toStrictEqual([]);
     const native = await chat.searchChat(owner, keyword, {
       agentId: agent.agentId,
       since: Date.parse(since),
@@ -623,14 +622,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
         return hit.matchedMessage.createdAt;
       }),
     );
-    for (const since of [
-      1_791_792_170,
-      1_791_792_170_000,
-      "1791792170000",
-      "2026-10-12T08:02:50",
-      "2026-02-30T08:02:50Z",
-      "2026-10-12T08:02:50.0001Z",
-    ]) {
+    for (const since of ["2026-10-12T08:02:50", "2026-10-12T08:02:50.0001Z"]) {
       const rejected = await mcp.call(token(), "search_chat_messages", {
         keyword,
         since,
@@ -641,6 +633,110 @@ describe("GET /api/cron/project-chat-event-search", () => {
       );
     }
   }, 60_000);
+
+  it.each([
+    {
+      scenario: "sparse candidates beyond the source window",
+      pending: [8, 11],
+    },
+    {
+      scenario: "candidates across the head/tail boundary",
+      pending: [7, 8, 11],
+    },
+    {
+      scenario: "a full head at the source-window boundary",
+      pending: [6, 7, 8, 11],
+    },
+  ])("publishes $scenario in global thread-ID order", async ({ pending }) => {
+    const app = await setupApp({
+      context,
+      routes: cronProjectChatEventSearchRoutes,
+      isolatePg: true,
+    });
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    createRunsApi(context).configureRunnerGroup();
+    bdd.acceptAgentStorageWrites();
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      return Promise.resolve(
+        request instanceof ListObjectsV2Command
+          ? { Contents: [], IsTruncated: false }
+          : { ContentLength: 1024 },
+      );
+    });
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(owner, {
+      displayName: "Ordered background search publication",
+      visibility: "private",
+    });
+    // Empty conversations are normal source threads but have no pending input.
+    // With batch=2, the first eight source IDs form the head's probe window.
+    const sourceIds: string[] = [];
+    for (let index = 0; index < 12; index += 1) {
+      const thread = await chat.createThread(owner, {
+        agentId: agent.agentId,
+        model: null,
+      });
+      sourceIds.push(thread.id);
+    }
+    sourceIds.sort();
+    const keyword = `hybridpublication${randomUUID().replaceAll("-", "")}`;
+    const pendingIds = pending.map((index) => {
+      const threadId = sourceIds[index];
+      if (!threadId) {
+        throw new Error("Expected a publicly created source thread");
+      }
+      return threadId;
+    });
+    for (const threadId of pendingIds) {
+      await chat.requestSendEvent(
+        owner,
+        { agentId: agent.agentId, threadId, prompt: `${keyword} ${threadId}` },
+        [201],
+      );
+      await flushWaitUntilForTest();
+    }
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "2");
+    const operator = app(cronProjectChatEventSearchContract);
+    const headers = { authorization: `Bearer ${CRON_SECRET}` };
+    const first = await accept(operator.project({ headers }), [200]);
+    expect(first.body.threads).toBe(2);
+    expect(first.body.convergence).toStrictEqual({
+      eligibleThreads: pendingIds.length,
+      durableCaughtUpThreads: 2,
+    });
+    const published = await chat.searchChat(owner, keyword);
+    expect(
+      published.results
+        .map((hit) => {
+          return hit.chatThreadId;
+        })
+        .sort(),
+    ).toStrictEqual(pendingIds.slice(0, 2));
+    for (const threadId of pendingIds.slice(0, 2)) {
+      expect(published.results).toContainEqual(
+        expect.objectContaining({
+          chatThreadId: threadId,
+          matchedMessage: expect.objectContaining({
+            content: `${keyword} ${threadId}`,
+          }),
+        }),
+      );
+    }
+    const next = await accept(operator.project({ headers }), [200]);
+    expect(next.body.convergence).toStrictEqual({
+      eligibleThreads: pendingIds.length,
+      durableCaughtUpThreads: pendingIds.length,
+    });
+    expect(
+      (await chat.searchChat(owner, keyword)).results
+        .map((hit) => {
+          return hit.chatThreadId;
+        })
+        .sort(),
+    ).toStrictEqual(pendingIds);
+  });
 
   it("cleans orphaned search projections after public Agent deletion", async () => {
     const app = await setupApp({

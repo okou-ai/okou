@@ -21,7 +21,6 @@ const {
   api,
   chat,
   connectors,
-  chatCallbacks,
   entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
@@ -439,7 +438,6 @@ describe("chat agent bootstrap prefetch", () => {
     "preserves the queued input and claimable run through %s",
     async (entry) => {
       const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const clientEventId = randomUUID();
       const body = { agentId, prompt: "prepare my agent", clientEventId };
       const sent =
@@ -523,7 +521,6 @@ describe("chat agent bootstrap prefetch", () => {
 
   it("delivers a steer input to the active authenticated Runner", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "keep working",

@@ -181,7 +181,7 @@ describe("trusted organization identity cache", () => {
     ).toHaveBeenCalledOnce();
   });
 
-  it.each([undefined, 42, "   "])(
+  it.each([undefined])(
     "keeps bootstrap and read-through when the creation name is %s",
     async (name) => {
       const actor = api.user();

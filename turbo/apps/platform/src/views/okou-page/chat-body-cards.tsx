@@ -73,6 +73,7 @@ import {
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
+import { DesktopShellAuthorizationCard } from "./desktop-shell-authorization-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { WalletActionCard } from "./wallet-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
@@ -255,8 +256,8 @@ export function ChatVideoPreviewButton({
       type="button"
       data-testid={testId}
       onClick={onPreview}
-      title={filename}
       aria-label={ariaLabel}
+      aria-description={filename}
       className={cn(
         "group/video-preview relative inline-flex items-center justify-center overflow-hidden",
         buttonClassName,
@@ -339,6 +340,9 @@ export function MarkdownCardView({
     }
     case "computer-use-authorization": {
       return <ComputerUseAuthorizationCard signals={card.signals} />;
+    }
+    case "desktop-shell-authorization": {
+      return <DesktopShellAuthorizationCard signals={card.signals} />;
     }
     case "plan-upgrade": {
       return <PlanUpgradeCard signals={card.signals} />;
@@ -1311,22 +1315,10 @@ function PermissionActionCardContent({
           <ConnectorIcon icon={icon} size={22} />
         </div>
         <div className="min-w-0">
-          <div
-            className="truncate text-[0.9375rem] font-medium text-foreground"
-            title={connectorTitle}
-          >
+          <div className="truncate text-[0.9375rem] font-medium text-foreground">
             {connectorTitle}
           </div>
-          {/*
-            The scope line is the card's only copy of the requested permission
-            and it clips at narrow widths, so it carries its own text as a
-            native tooltip the way `ConnectorAccountActionNotice` does. A
-            details dialog here would only repeat this same string.
-          */}
-          <div
-            className="mt-0.5 truncate text-sm leading-5 text-muted-foreground"
-            title={actionDescription}
-          >
+          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {actionDescription}
           </div>
           {showInlineStatus ? (

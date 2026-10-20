@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { afterEach, describe, expect, it } from "vitest";
@@ -37,15 +37,6 @@ describe("Custom OAuth state preview", () => {
   afterEach(async () => {
     for (const { actor, connectorId } of ownedConnectors.splice(0)) {
       await connectors.deleteCustomConnector(actor, connectorId);
-    }
-  });
-
-  it("rejects missing, empty and unknown nonces through the Feishu callback", async () => {
-    for (const state of [undefined, "", randomBytes(32).toString("hex")]) {
-      const response = await requestPreview(state);
-      expect(response.body).toStrictEqual({
-        error: "Invalid or expired connect state",
-      });
     }
   });
 

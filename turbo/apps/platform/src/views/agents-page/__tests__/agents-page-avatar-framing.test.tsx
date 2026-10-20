@@ -194,7 +194,6 @@ test("Move the head to the chin baseline instead of resizing it", async () => {
   // and collar under it stayed fixed, which is what made one body look too big
   // for its head. Neither head carries a scale any more.
   for (const id of [FLAT_HAIR_AGENT_ID, TALL_HAIR_AGENT_ID]) {
-    expect(headPlacementTransform(id)).not.toMatch(/scale\(/u);
     expect(headPlacementTransform(id)).toMatch(/^translateY\(-?[\d.]+%\)$/u);
   }
 

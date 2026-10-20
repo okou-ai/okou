@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.13...runner-lifecycle-v0.16.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+## [0.15.13](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.12...runner-lifecycle-v0.15.13) (2026-10-20)
+
+## [0.15.12](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.11...runner-lifecycle-v0.15.12) (2026-10-20)
+
 ## [0.15.11](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.10...runner-lifecycle-v0.15.11) (2026-10-19)
 
 

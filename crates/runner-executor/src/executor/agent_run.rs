@@ -2,7 +2,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 
-use guest_contracts::diagnostics::{CliTerminationReason, FailureDiagnostic};
+use guest_contracts::diagnostics::{
+    CliTerminationReason, FailureDiagnostic, GUEST_MEMORY_OOM_KILLED_ERROR,
+};
 use guest_contracts::session_history_identity::{
     SessionHistoryIdentity, SessionHistoryIdentityError,
 };
@@ -704,10 +706,6 @@ fn sandbox_reuse_disposition_for_process_exit(
     }
 }
 
-/// User-visible reason for an agent process killed by the guest OOM killer.
-const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
-    "The agent process ran out of memory and was terminated by the sandbox out-of-memory killer";
-
 /// Whether this failed run was terminated by a guest out-of-memory kill of the
 /// agent process itself.
 ///
@@ -715,10 +713,24 @@ const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
 /// The terminal exit code only
 /// corroborates that the process the guest waited on was killed: depending on
 /// the launcher, that arrives either as an observed signal or as a shell's
-/// `137` exit translation, so a signal field is not required here.
-fn guest_memory_oom_killed_agent(agent_domain_oom_kill: bool, exit: &sandbox::ProcessExit) -> bool {
+/// `137` exit translation, so a signal field is not required for that path.
+/// A surviving Guest wrapper exits 1 when its native app-server child dies;
+/// that path additionally requires the child's typed natural SIGKILL diagnostic.
+fn guest_memory_oom_killed_agent(
+    agent_domain_oom_kill: bool,
+    exit: &sandbox::ProcessExit,
+    diagnostic: Option<&FailureDiagnostic>,
+) -> bool {
     agent_domain_oom_kill
-        && matches!(exit.termination, ExecTermination::Exited { exit_code } if exit_code == EXIT_SIGKILL)
+        && match exit.termination {
+            ExecTermination::Exited {
+                exit_code: EXIT_SIGKILL,
+            } => true,
+            ExecTermination::Exited { exit_code: 1 } => {
+                diagnostic.is_some_and(FailureDiagnostic::is_codex_app_server_sigkill)
+            }
+            _ => false,
+        }
 }
 
 /// Select the user-visible reason a failed agent run stopped.
@@ -2054,7 +2066,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         } else {
             None
         };
-        let guest_memory_oom_killed = guest_memory_oom_killed_agent(agent_domain_oom_kill, &exit);
+        let guest_memory_oom_killed = guest_memory_oom_killed_agent(
+            agent_domain_oom_kill,
+            &exit,
+            failure_diagnostic.as_ref(),
+        );
         if guest_memory_oom_killed {
             resource_diagnostics = Some(ResourceFailureDiagnostics {
                 failure_kind: Some(ResourceFailureKind::GuestMemoryOomKilled),
@@ -2306,31 +2322,40 @@ mod tests {
         assert!(guest_memory_oom_killed_agent(
             agent_domain.agent_domain_oom_kill(),
             &sigkill_process_exit(),
+            None,
         ));
         assert!(!tool_leaf.agent_domain_oom_kill());
         assert!(!guest_memory_oom_killed_agent(
             tool_leaf.agent_domain_oom_kill(),
             &sigkill_process_exit(),
+            None,
         ));
     }
 
     #[test]
     fn guest_memory_oom_attribution_requires_a_kill_shaped_exit() {
-        assert!(guest_memory_oom_killed_agent(true, &sigkill_process_exit()));
+        assert!(guest_memory_oom_killed_agent(
+            true,
+            &sigkill_process_exit(),
+            None
+        ));
         assert!(!guest_memory_oom_killed_agent(
             true,
-            &nonzero_process_exit()
+            &nonzero_process_exit(),
+            None,
         ));
         assert!(!guest_memory_oom_killed_agent(
             false,
-            &sigkill_process_exit()
+            &sigkill_process_exit(),
+            None,
         ));
         assert!(!guest_memory_oom_killed_agent(
             true,
             &sandbox::ProcessExit {
                 termination: ExecTermination::TimedOut,
                 ..sigkill_process_exit()
-            }
+            },
+            None,
         ));
     }
 

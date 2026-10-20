@@ -95,7 +95,7 @@ function ArtifactDiagramDialog({
               return (
                 <ArtifactImageZoomControls
                   controls={controls}
-                  nativeTitle
+                  showTooltip={false}
                   testIdPrefix="artifact-diagram"
                 />
               );
@@ -140,7 +140,6 @@ function ArtifactDiagramHeader({
           variant="quiet"
           size="icon-sm"
           aria-label={downloadLabel}
-          title={downloadLabel}
           disabled={downloadState.state === "loading"}
           onClick={() => {
             detach(download(pageSignal), Reason.DomCallback);
@@ -156,7 +155,6 @@ function ArtifactDiagramHeader({
           variant="quiet"
           size="icon-sm"
           aria-label={expandLabel}
-          title={expandLabel}
           onClick={toggleExpanded}
         >
           {expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
@@ -165,7 +163,6 @@ function ArtifactDiagramHeader({
           variant="quiet"
           size="icon-sm"
           aria-label={closeLabel}
-          title={closeLabel}
           onClick={close}
         >
           <X size={18} />

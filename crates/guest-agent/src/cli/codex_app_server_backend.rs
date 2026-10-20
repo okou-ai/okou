@@ -1043,10 +1043,17 @@ async fn steer_active_input(
             );
             match error {
                 CodexRunError::Execution(error) => {
-                    Err(CodexRunError::Execution(AgentError::Execution(format!(
+                    let message = format!(
                         "codex app-server active input steer failed for input {}: {error}",
                         frame.uuid
-                    ))))
+                    );
+                    let error = match error {
+                        AgentError::CliProcessExited { status, .. } => {
+                            AgentError::CliProcessExited { message, status }
+                        }
+                        _ => AgentError::Execution(message),
+                    };
+                    Err(CodexRunError::Execution(error))
                 }
                 CodexRunError::Heartbeat(failure) => Err(CodexRunError::Heartbeat(failure)),
             }
@@ -1167,7 +1174,13 @@ fn app_server_error(masker: &SecretMasker, error: CodexAppServerError) -> AgentE
             max_chars,
         };
     }
-    AgentError::Execution(masker.mask_string(&error.to_string()))
+    let message = masker.mask_string(&error.to_string());
+    match error {
+        CodexAppServerError::ChildExited { status, .. } => {
+            AgentError::CliProcessExited { message, status }
+        }
+        _ => AgentError::Execution(message),
+    }
 }
 
 fn codex_input_too_large_counts(error: &CodexAppServerError) -> Option<(u64, u64)> {
@@ -1628,13 +1641,12 @@ fn with_stderr_tail(error: AgentError, masked_stderr: &[String]) -> AgentError {
     const MAX_TAIL_BYTES: usize = 4096;
     const TRUNCATED: &str = "[truncated] ";
 
-    let AgentError::Execution(mut message) = error else {
-        return error;
+    let (mut message, status) = match error {
+        AgentError::Execution(message) => (message, None),
+        AgentError::CliProcessExited { message, status } => (message, Some(status)),
+        other => return other,
     };
     let stderr = masked_stderr.join("\n");
-    if stderr.is_empty() {
-        return AgentError::Execution(message);
-    }
 
     // Keep whole escaped characters from the end, bounding the rendered bytes
     // (not just the raw input) and preventing stderr from injecting log lines.
@@ -1649,11 +1661,16 @@ fn with_stderr_tail(error: AgentError, masked_stderr: &[String]) -> AgentError {
         bytes += escaped.len();
         tail.push_front(escaped);
     }
-    message.push_str("; stderr tail: ");
+    if !stderr.is_empty() {
+        message.push_str("; stderr tail: ");
+    }
     for fragment in tail {
         message.push_str(&fragment);
     }
-    AgentError::Execution(message)
+    match status {
+        Some(status) => AgentError::CliProcessExited { message, status },
+        None => AgentError::Execution(message),
+    }
 }
 
 #[cfg(test)]

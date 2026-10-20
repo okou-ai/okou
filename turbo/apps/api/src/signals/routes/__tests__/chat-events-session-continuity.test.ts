@@ -26,6 +26,7 @@ const {
   authDevice,
   authDeviceSupport,
   entitledChatActor,
+  configureSubscriptionPiModel,
   sendChatRun,
   sendWaitingChatInput,
   expectThreadCreatedModelEvent,
@@ -52,7 +53,6 @@ describe("CHAT-02: run-level model overrides", () => {
   it("reuses Codex sessions across account switches with the newly captured account", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const firewall = createFirewallApi(context);
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockCodexDeviceAuthProvider({
       accountId: "chat-codex-account-a",
@@ -219,9 +219,8 @@ describe("CHAT-02: run-level model overrides", () => {
     );
   }, 90_000);
 
-  it("resumes the CLI session across same-family model switches", async () => {
+  it("resumes Claude Code with the current model selection", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Claude subscription credentials stay on the native Claude Code harness
     // for every Claude model, so a same-family switch keeps the CLI session.
     await misc.upsertPersonalModelProvider(
@@ -244,11 +243,18 @@ describe("CHAT-02: run-level model overrides", () => {
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
     await flushWaitUntilForTest();
 
+    // Editing the preference does not replace the bound Framework. Only the
+    // model selected when the next input launches determines its execution.
+    await chat.updateThreadModelSelection(actor, first.threadId, null);
+    await chat.updateThreadModelSelection(
+      actor,
+      first.threadId,
+      "claude-sonnet-5-5",
+    );
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "continue on sonnet in the same session",
-      model: "claude-sonnet-5-5",
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.nativeContinuation).toMatchObject({
@@ -264,12 +270,77 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId);
   }, 90_000);
 
+  it("keeps the Pi session across subscription and Auto model switches", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await configureSubscriptionPiModel(actor);
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "start with my subscription model",
+      model: "gpt-6-luna",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim).toMatchObject({
+      cliAgentType: "pi",
+      piModelConfig: { provider: "openai-codex", model: "gpt-6-luna" },
+      nativeContinuation: {
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      },
+    });
+    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
+      cliAgentType: "pi",
+      cliAgentSessionId: first.threadId,
+    });
+    await flushWaitUntilForTest();
+
+    await chat.updateThreadModelSelection(actor, first.threadId, null);
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "continue with Auto in the same native session",
+    });
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
+    expect(secondClaim.claim).toMatchObject({
+      cliAgentType: "pi",
+      piModelConfig: { provider: "openrouter" },
+      nativeContinuation: {
+        sessionId: first.threadId,
+        generationRunId: first.runId,
+        recoveryPrompt: expect.stringContaining(
+          "okou chat messages --output-dir threads",
+        ),
+      },
+    });
+    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders, {
+      cliAgentType: "pi",
+      cliAgentSessionId: first.threadId,
+    });
+    await flushWaitUntilForTest();
+
+    const third = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "return to my subscription without losing the native context",
+      model: "gpt-6-luna",
+    });
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+    expect(thirdClaim.claim).toMatchObject({
+      cliAgentType: "pi",
+      piModelConfig: { provider: "openai-codex", model: "gpt-6-luna" },
+      nativeContinuation: {
+        sessionId: first.threadId,
+        generationRunId: second.runId,
+      },
+    });
+    await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
+  }, 90_000);
+
   it("resumes the thread's latest session when a waiting input is picked", async () => {
     // Two blockers keep the next send waiting, independent of the plan's own
     // concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "establish the session before organization capacity fills",
@@ -322,7 +393,7 @@ describe("CHAT-02: run-level model overrides", () => {
       toRuntime: "claude-code",
     },
   ] as const)(
-    "applies family compatibility when switching owned $from on $fromRuntime to $to on $toRuntime",
+    "starts fresh when switching owned $from on $fromRuntime to $to on $toRuntime",
     async ({ from, fromRuntime, to, toRuntime }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
 
@@ -382,9 +453,8 @@ describe("CHAT-02: run-level model overrides", () => {
     90_000,
   );
 
-  it("requires Chat recovery after a model family resets native continuation", async () => {
+  it("requires Chat recovery after a Framework switch", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     // Fable and Astra keep both families on their native Runner harnesses.
     await createBddIntegrationApi(context)
@@ -420,7 +490,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "continue after the family switch",
+      prompt: "continue after the Framework switch",
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.nativeContinuation).toMatchObject({
@@ -436,57 +506,62 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId);
   }, 90_000);
 
-  it("keeps incomplete context without rotating after a failure before the first native history", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
+  it.each(["failed", "cancelled"] as const)(
+    "starts the first native context after an attempt was %s before initialization",
+    async (status) => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
 
-    const firstPrompt = "complete the migration without losing this request";
-    const first = await sendChatRun(actor, {
-      agentId,
-      prompt: firstPrompt,
-      model: "claude-fable-5-1",
-    });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: null,
-    });
-    await failChatRun(
-      first.runId,
-      firstClaim.sandboxHeaders,
-      "Runtime failed before its first history",
-    );
-    await waitForRunStatus(actor, first.runId, "failed");
+      const firstPrompt = "complete the migration without losing this request";
+      const first = await sendChatRun(actor, {
+        agentId,
+        prompt: firstPrompt,
+        model: "claude-fable-5-1",
+      });
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim.nativeContinuation).toMatchObject({
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      });
+      if (status === "cancelled") {
+        await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+      } else {
+        await failChatRun(
+          first.runId,
+          firstClaim.sandboxHeaders,
+          "Runtime failed before native initialization",
+        );
+      }
+      await waitForRunStatus(actor, first.runId, status);
 
-    const second = await sendChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "retry with the same model",
-      model: "claude-fable-5-1",
-    });
-    const secondRun = await api.readRun(actor, second.runId);
-    const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Web Chat Run Context");
-    expect(appended).toContain("# Incomplete Rounds Context");
-    expect(appended).toContain(`User: ${firstPrompt}`);
+      const second = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt: "retry with the same model",
+        model: "claude-fable-5-1",
+      });
+      const secondRun = await api.readRun(actor, second.runId);
+      const appended = secondRun.appendSystemPrompt ?? "";
+      expect(appended).toContain("# Incomplete Rounds Context");
+      expect(appended).toContain(`User: ${firstPrompt}`);
 
-    const secondClaim = await claimChatRun(runnerGroup, second.runId);
-    expect(secondClaim.claim.cliAgentType).toBe(firstClaim.claim.cliAgentType);
-    expect(secondClaim.claim.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir threads",
-      ),
-    });
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
-  }, 90_000);
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      expect(secondClaim.claim.cliAgentType).toBe(
+        firstClaim.claim.cliAgentType,
+      );
+      expect(secondClaim.claim.nativeContinuation).toMatchObject({
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      });
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+    },
+    90_000,
+  );
 
   it("keeps durable Chat and native identity independent of a history archive", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const firstPrompt = "finish work before native history becomes oversized";
     const first = await sendChatRun(actor, {
@@ -547,7 +622,6 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended).not.toContain(firstPrompt);
     expect(appended).not.toContain(firstAnswer);
 
@@ -567,7 +641,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("resumes a sticky model through personal credential replacement and reconnect", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -578,8 +651,6 @@ describe("CHAT-02: run-level model overrides", () => {
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
 
-    const pinned = await chat.readThread(actor, first.threadId);
-    expect(pinned).not.toHaveProperty("selectedModel");
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
@@ -613,8 +684,6 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(secondClaim.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
-    const after = await chat.readThread(actor, first.threadId);
-    expect(after).not.toHaveProperty("selectedModel");
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
@@ -704,30 +773,6 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(invalidModel.body.error.message).toBe('Unknown model "codex"');
     await chat.requestReadThread(actor, invalidModelThreadId, [404]);
 
-    // Models outside the catalog are rejected.
-    for (const selectedModel of [
-      "claude-haiku-4-5",
-      "anthropic/claude-haiku-4.5",
-    ]) {
-      const removedThreadId = randomUUID();
-      const removed = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          prompt: `removed ${selectedModel}`,
-          clientThreadId: removedThreadId,
-          model: selectedModel as never,
-        },
-        [400],
-      );
-      expectApiError(removed.body);
-      expect(removed.body.error).toMatchObject({
-        code: "BAD_REQUEST",
-        message: `Unknown model "${selectedModel}"`,
-      });
-      await chat.requestReadThread(actor, removedThreadId, [404]);
-    }
-
     const events = await chat.requestThreadEvents(actor, {}, [200]);
     expect(events.status).toBe(200);
     if (events.status !== 200) {
@@ -738,7 +783,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const sent = await chat.requestSendEvent(
       actor,

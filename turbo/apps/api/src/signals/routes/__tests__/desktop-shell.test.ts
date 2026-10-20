@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { mockNow, now } from "../../../lib/time";
 
 const context = testContext();
 const permission = "00000000-0000-4000-8000-000000000001";
@@ -14,7 +17,379 @@ const capabilities = [
   `shell.permission:${permission}`,
 ] as const;
 
+async function approveAndResume(
+  scenario: ReturnType<typeof createPublicComputerUseScenario>,
+  actor: Parameters<typeof scenario.claim>[0],
+  initial: Awaited<ReturnType<typeof scenario.claim>>,
+) {
+  const api = scenario.computerUse;
+  const requested = await api.requestDesktopShellAccess(
+    { bearer: initial.token },
+    "Inspect the project in Terminal",
+  );
+  if (requested.status !== 200) {
+    throw new Error("Expected Shell access request");
+  }
+  const request = requested.body;
+  expect(request).toMatchObject({
+    status: "pending",
+    chatThreadId: initial.threadId,
+    requestedByRunId: initial.runId,
+    approvalBlockedReason: "run_active",
+    grantExpiresAt: null,
+  });
+  await api.actDesktopShellAccess(actor, request.id, "approve", [409]);
+  const repeated = await api.requestDesktopShellAccess(
+    { bearer: initial.token },
+    "Inspect the project in Terminal",
+  );
+  expect(repeated.body).toMatchObject({ id: request.id });
+  await scenario.cancelRun(actor, initial.runId);
+  mockNow(now() + 1000);
+  const decisions = await Promise.all([
+    api.actDesktopShellAccess(actor, request.id, "approve", [200, 409]),
+    api.actDesktopShellAccess(actor, request.id, "approve", [200, 409]),
+  ]);
+  const approved = decisions.find((result) => {
+    return result.status === 200;
+  });
+  if (!approved || approved.status !== 200) {
+    throw new Error("Expected approved Shell access");
+  }
+  expect(approved.body).toMatchObject({
+    status: "approved",
+    approvedAt: new Date(now()).toISOString(),
+    grantExpiresAt: new Date(now() + 3_600_000).toISOString(),
+  });
+  await scenario.run(flushWaitUntilForTest);
+  await api.actDesktopShellAccess(actor, request.id, "approve");
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    actor,
+    initial.threadId,
+  );
+  expect(
+    events.filter((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === request.id
+      );
+    }),
+  ).toHaveLength(1);
+  const launched = events.find((event) => {
+    return (
+      event.eventType === "input.prompt" && event.revokesEventId === request.id
+    );
+  });
+  if (!launched?.runId) {
+    throw new Error("Approval must launch the next Run");
+  }
+  const claim = await scenario.claimExisting(actor, launched.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected claimed Run token");
+  }
+  return {
+    ...initial,
+    runId: launched.runId,
+    token,
+    authorization: approved.body,
+  };
+}
+
 describe("Desktop Shell command pipeline", () => {
+  it(
+    "scopes approval to the owning chat and computer, and only accepts human decisions",
+    { timeout: 30_000 },
+    async () => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const other = scenario.user();
+        const api = scenario.computerUse;
+        const switches = createAuthDeviceSupportApi(context);
+        await switches.updateFeatureSwitches(actor, { desktopShell: true });
+        await switches.updateFeatureSwitches(other, { desktopShell: true });
+        const host = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const run = await approveAndResume(
+          scenario,
+          actor,
+          await scenario.claim(actor, host.hostId),
+        );
+        await api.readDesktopShellAccess(other, run.authorization.id, [404]);
+        await api.actDesktopShellAccess(
+          other,
+          run.authorization.id,
+          "revoke",
+          [404],
+        );
+        await api.actDesktopShellAccess(
+          { bearer: run.token },
+          run.authorization.id,
+          "approve",
+          [403],
+        );
+        await api.requestDesktopShellAccess(
+          actor,
+          "Bypass the Run context",
+          [403],
+        );
+        await api.requestCreateDesktopShellCommand(
+          actor,
+          { kind: "shell.list", waitMs: 1000 },
+          [403],
+        );
+        const token = await scenario.createCliToken(actor);
+        await api.requestCreateDesktopShellCommand(
+          { bearer: token.token },
+          { kind: "shell.list", waitMs: 1000 },
+          [403],
+        );
+        const differentChat = await scenario.claim(actor, host.hostId);
+        await api.requestCreateDesktopShellCommand(
+          { bearer: differentChat.token },
+          { kind: "shell.list", waitMs: 1000 },
+          [403],
+        );
+        const requested = await api.requestDesktopShellAccess(
+          { bearer: differentChat.token },
+          "Need Terminal for this chat",
+        );
+        if (requested.status !== 200) {
+          throw new Error("Expected request for second chat");
+        }
+        await scenario.cancelRun(actor, differentChat.runId);
+        const secondHost = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        await createChatFilesBddApi(context).updateThreadComputerUseHost(
+          actor,
+          differentChat.threadId,
+          secondHost.hostId,
+        );
+        const changed = await api.readDesktopShellAccess(
+          actor,
+          requested.body.id,
+        );
+        expect(changed.body).toMatchObject({
+          approvalBlockedReason: "computer_changed",
+        });
+        await api.actDesktopShellAccess(
+          actor,
+          requested.body.id,
+          "approve",
+          [409],
+        );
+        await api.actDesktopShellAccess(actor, requested.body.id, "deny");
+        await api.actDesktopShellAccess(
+          actor,
+          requested.body.id,
+          "approve",
+          [409],
+        );
+      });
+    },
+  );
+
+  it(
+    "revokes queued work without cancelling already claimed work or closing terminals",
+    { timeout: 30_000 },
+    async () => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const api = scenario.computerUse;
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          desktopShell: true,
+        });
+        const host = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const run = await approveAndResume(
+          scenario,
+          actor,
+          await scenario.claim(actor, host.hostId),
+        );
+        const running = await api.requestCreateDesktopShellCommand(
+          { bearer: run.token },
+          { kind: "shell.cmd", command: "sleep 300", waitMs: 1000 },
+          [200],
+        );
+        if (!("commandId" in running.body)) {
+          throw new Error("Expected Shell operation");
+        }
+        await expect(
+          api.claimNextComputerUseCommand(host.connection, capabilities),
+        ).resolves.toMatchObject({
+          status: "command",
+          command: { id: running.body.commandId, kind: "shell.cmd" },
+        });
+        const queued = await api.requestCreateDesktopShellCommand(
+          { bearer: run.token },
+          { kind: "shell.status", sessionId: permission, waitMs: 1000 },
+          [200],
+        );
+        if (!("commandId" in queued.body)) {
+          throw new Error("Expected queued operation");
+        }
+        await api.actDesktopShellAccess(actor, run.authorization.id, "revoke");
+        await api.actDesktopShellAccess(actor, run.authorization.id, "revoke");
+        await api.completeComputerUseCommandWith(
+          host.connection,
+          running.body.commandId,
+          {
+            status: "succeeded",
+            result: {
+              session: {
+                id: permission,
+                state: "open",
+                commandState: "running",
+              },
+              reason: "wait_elapsed",
+            },
+          },
+        );
+        await expect(
+          api.readComputerUseCommand(
+            { bearer: run.token },
+            running.body.commandId,
+          ),
+        ).resolves.toMatchObject({
+          status: "succeeded",
+          result: { session: { state: "open" } },
+        });
+        await expect(
+          api.readComputerUseCommand(
+            { bearer: run.token },
+            queued.body.commandId,
+          ),
+        ).resolves.toMatchObject({
+          status: "failed",
+          error: { code: "permission_denied" },
+        });
+        for (const request of [
+          { kind: "shell.list", waitMs: 1000 },
+          { kind: "shell.close", all: true, waitMs: 1000 },
+          { kind: "shell.cmd", sessionId: permission, waitMs: 1000 },
+        ] as const) {
+          await api.requestCreateDesktopShellCommand(
+            { bearer: run.token },
+            request,
+            [403],
+          );
+        }
+        const renewed = await approveAndResume(scenario, actor, run);
+        expect(renewed.authorization.id).not.toBe(run.authorization.id);
+        await expect(
+          api.claimNextComputerUseCommand(host.connection, capabilities),
+        ).resolves.toMatchObject({ status: "idle" });
+        const reuse = await api.requestCreateDesktopShellCommand(
+          { bearer: renewed.token },
+          {
+            kind: "shell.cmd",
+            sessionId: permission,
+            input: "yes\n",
+            waitMs: 1000,
+          },
+          [200],
+        );
+        if (!("commandId" in reuse.body)) {
+          throw new Error("Expected existing terminal reuse");
+        }
+        await expect(
+          api.claimNextComputerUseCommand(host.connection, capabilities),
+        ).resolves.toMatchObject({
+          status: "command",
+          command: {
+            id: reuse.body.commandId,
+            payload: {
+              sessionId: permission,
+              input: "yes\n",
+              shellPermissionId: permission,
+            },
+          },
+        });
+      });
+    },
+  );
+
+  it(
+    "expires grants at the dispatch boundary and expires unapproved requests separately",
+    { timeout: 30_000 },
+    async () => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const api = scenario.computerUse;
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          desktopShell: true,
+        });
+        const host = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const run = await approveAndResume(
+          scenario,
+          actor,
+          await scenario.claim(actor, host.hostId),
+        );
+        const expiresAt = Date.parse(run.authorization.grantExpiresAt ?? "");
+        mockNow(expiresAt - 1);
+        await api.heartbeatComputerUseHost(host.connection, {
+          supportedCapabilities: capabilities,
+        });
+        const queued = await api.requestCreateDesktopShellCommand(
+          { bearer: run.token },
+          { kind: "shell.list", waitMs: 1000 },
+          [200],
+        );
+        if (!("commandId" in queued.body)) {
+          throw new Error("Expected queued operation before expiry");
+        }
+        mockNow(expiresAt);
+        await expect(
+          api.claimNextComputerUseCommand(host.connection, capabilities),
+        ).resolves.toMatchObject({ status: "idle" });
+        await expect(
+          api.readComputerUseCommand(
+            { bearer: run.token },
+            queued.body.commandId,
+          ),
+        ).resolves.toMatchObject({
+          status: "failed",
+          error: { code: "permission_denied" },
+        });
+        expect(
+          (await api.readDesktopShellAccess(actor, run.authorization.id)).body,
+        ).toMatchObject({ status: "expired" });
+        await api.requestCreateDesktopShellCommand(
+          { bearer: run.token },
+          { kind: "shell.list", waitMs: 1000 },
+          [403],
+        );
+        const requested = await api.requestDesktopShellAccess(
+          { bearer: run.token },
+          "Renew expired access",
+        );
+        if (requested.status !== 200) {
+          throw new Error("Expected new request after grant expiry");
+        }
+        expect(requested.body.id).not.toBe(run.authorization.id);
+        await scenario.cancelRun(actor, run.runId);
+        mockNow(Date.parse(requested.body.requestExpiresAt));
+        await api.actDesktopShellAccess(
+          actor,
+          requested.body.id,
+          "approve",
+          [410],
+        );
+        expect(
+          (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+        ).toMatchObject({ status: "expired", grantExpiresAt: null });
+      });
+    },
+  );
+
   it(
     "uses the authorized computer, explicit local capabilities and the existing result channel",
     { timeout: 30_000 },
@@ -41,7 +416,19 @@ describe("Desktop Shell command pipeline", () => {
           [403],
         );
         await switches.updateFeatureSwitches(actor, { desktopShell: true });
-        const run = await scenario.claim(actor, host.hostId);
+        const initial = await scenario.claim(actor, host.hostId);
+        const denied = await api.requestCreateDesktopShellCommand(
+          { bearer: initial.token },
+          { kind: "shell.list", waitMs: 1000 },
+          [403],
+        );
+        expect(denied.body).toMatchObject({
+          error: { code: "SHELL_AUTHORIZATION_REQUIRED" },
+        });
+        await expect(
+          api.claimNextComputerUseCommand(host.connection, capabilities),
+        ).resolves.toMatchObject({ status: "idle" });
+        const run = await approveAndResume(scenario, actor, initial);
         const created = await api.requestCreateDesktopShellCommand(
           { bearer: run.token },
           { kind: "shell.cmd", command: "pwd", waitMs: 1000, realtime: true },
@@ -138,8 +525,9 @@ describe("Desktop Shell command pipeline", () => {
         const old = await api.startComputerUseHost(actor, {
           supportedCapabilities: [],
         });
+        const oldRun = await scenario.claim(actor, old.hostId);
         await api.requestCreateDesktopShellCommand(
-          actor,
+          { bearer: oldRun.token },
           { kind: "shell.list", waitMs: 1000 },
           [409],
         );

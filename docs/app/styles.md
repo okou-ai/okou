@@ -371,10 +371,14 @@ commands and retain `Button` activation, including reapplying the current policy
 selection should follow arrow-key focus.
 
 Both buttons keep `showTooltip` off by default. Enabling it requires an
-`aria-label`, which also supplies the tooltip content; the native `title` is
-removed to avoid duplicate hints. The shared tooltip supports disabled triggers
-and preserves full-width tile layout. Visible labels and essential explanations
-remain available without hovering.
+`aria-label`, which also supplies the tooltip content. Native `title` is always
+removed: browser tooltips must not be used in application controls. The shared
+tooltip supports disabled triggers and preserves full-width tile layout.
+Visible labels and essential explanations
+remain available without hovering. Use accessible names for icon controls and
+visible help or `aria-describedby` / `aria-description` for input requirements.
+Preserve document titles and iframe accessible names; component props named
+`title` that render ordinary text are unaffected.
 
 ## Component contracts
 

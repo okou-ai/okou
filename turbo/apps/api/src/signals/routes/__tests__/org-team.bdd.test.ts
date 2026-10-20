@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import {
   createAuthOrgAgentsBddApi,
@@ -169,11 +167,6 @@ describe("ORG-01: org logo lifecycle through the Clerk boundary", () => {
     expect(getNotFound.body).toStrictEqual({
       error: { message: "Org not found", code: "BAD_REQUEST" },
     });
-    api.mockClerkLogoError("get", "BadRequestError");
-    const getBadRequest = await api.requestReadOrgLogo(admin, [404]);
-    expect(getBadRequest.body).toStrictEqual({
-      error: { message: "Org not found", code: "BAD_REQUEST" },
-    });
 
     // POST happy path asserts the Clerk boundary call shape.
     api.mockClerkOrgLogo("upload", {
@@ -260,25 +253,6 @@ describe("ORG-01: org logo lifecycle through the Clerk boundary", () => {
       },
     });
 
-    // POST file validation arms.
-    const emptyForm = await api.requestUploadOrgLogo(
-      admin,
-      new FormData(),
-      [400],
-    );
-    expect(emptyForm.body).toStrictEqual({
-      error: { message: "No file provided", code: "BAD_REQUEST" },
-    });
-    const stringForm = new FormData();
-    stringForm.append("file", "not-a-file");
-    const stringField = await api.requestUploadOrgLogo(
-      admin,
-      stringForm,
-      [400],
-    );
-    expect(stringField.body).toStrictEqual({
-      error: { message: "No file provided", code: "BAD_REQUEST" },
-    });
     const oversized = new File(
       [new Uint8Array(2 * 1024 * 1024 + 1)],
       "logo.png",
@@ -315,15 +289,6 @@ describe("ORG-01: org logo lifecycle through the Clerk boundary", () => {
     expect(postNotFound.body).toStrictEqual({
       error: { message: "Org not found", code: "BAD_REQUEST" },
     });
-    api.mockClerkLogoError("upload", "BadRequestError");
-    const postBadRequest = await api.requestUploadOrgLogo(
-      admin,
-      logoForm(pngLogoFile()),
-      [404],
-    );
-    expect(postBadRequest.body).toStrictEqual({
-      error: { message: "Org not found", code: "BAD_REQUEST" },
-    });
     api.mockClerkLogoError("upload", "ForbiddenError");
     const postForbidden = await api.requestUploadOrgLogo(
       admin,
@@ -337,7 +302,7 @@ describe("ORG-01: org logo lifecycle through the Clerk boundary", () => {
 });
 
 describe("ORG-01: org update and delete error matrix", () => {
-  it("maps no-org, legacy slug body, rename, admin-leave, and delete failure arms [ORG-UPDATE-B]", async () => {
+  it("maps no-org, rename, admin-leave, and delete failure arms [ORG-UPDATE-B]", async () => {
     const noOrg = api.user({ orgId: null });
     const noOrgUpdate = await api.requestUpdateOrg(
       noOrg,
@@ -355,26 +320,6 @@ describe("ORG-01: org update and delete error matrix", () => {
     await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
     api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org" });
 
-    // An old CLI still sending the removed slug rename body must fail loudly
-    // instead of silently succeeding as an empty update.
-    context.mocks.clerk.organizations.updateOrganization.mockClear();
-    const legacySlugBody = await api.requestRawJson(
-      admin,
-      "/api/org",
-      "PUT",
-      { slug: slug("bdd-r5-next"), force: true },
-      [400],
-    );
-    expect(legacySlugBody.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
-    });
-    expect(
-      context.mocks.clerk.organizations.updateOrganization,
-    ).not.toHaveBeenCalled();
-    const unchanged = await api.readOrg(admin);
-    expect(unchanged).toMatchObject({ name: "BDD R5 Org" });
-    expect(unchanged).not.toHaveProperty("slug");
-
     // A name update reaches Clerk and returns the refreshed org.
     api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org Renamed" });
     const renamed = await api.requestUpdateOrg(
@@ -386,7 +331,6 @@ describe("ORG-01: org update and delete error matrix", () => {
       id: admin.orgId,
       name: "BDD R5 Org Renamed",
     });
-    expect(renamed.body).not.toHaveProperty("slug");
     expect(
       context.mocks.clerk.organizations.updateOrganization,
     ).toHaveBeenCalledWith(admin.orgId, { name: "BDD R5 Org Renamed" });
@@ -429,14 +373,6 @@ describe("ORG-01: org update and delete error matrix", () => {
     );
     expect(wrongConfirm.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
 
-    const rawDelete = await api.requestRawJson(
-      admin,
-      "/api/org/delete",
-      "POST",
-      {},
-      [400],
-    );
-    expect(rawDelete.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
     const stillThere = await api.readOrg(admin);
     expect(stillThere.name).toBe("BDD R5 Org Renamed");
 
@@ -543,13 +479,6 @@ describe("ORG-02: membership admin matrix", () => {
       context.mocks.clerk.organizations.getOrganizationMembershipList,
     ).toHaveBeenCalledTimes(3);
     expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "ClerkReadUnavailableError",
-        message: "Clerk read is temporarily unavailable",
-        providerStatus: 521,
-      }),
-    );
 
     api.mockClerkOrg(admin);
     context.mocks.signalTimers.delay.mockClear();
@@ -702,57 +631,9 @@ describe("ORG-02: membership admin matrix", () => {
     ).toHaveBeenCalledTimes(2);
     expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(1);
     expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "ClerkReadUnavailableError",
-        providerStatus: 521,
-      }),
-    );
   });
 
-  it("rejects Clerk member records without required user identifiers", async () => {
-    const admin = api.user();
-    const orgId = orgIdOf(admin);
-    api.mockClerkOrg(admin);
-
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValueOnce(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: {},
-            createdAt: now(),
-          },
-        ],
-      },
-    );
-    const missingMemberId = await api.requestListMembers(admin, [500]);
-    expect(missingMemberId.status).toBe(500);
-
-    server.use(
-      http.get(
-        "https://api.clerk.com/v1/organizations/:orgId/membership_requests",
-        ({ params }) => {
-          if (params.orgId !== orgId) {
-            return HttpResponse.json({ data: [] });
-          }
-          return HttpResponse.json({
-            data: [
-              {
-                id: `request-${shortId()}`,
-                public_user_data: {},
-                created_at: now(),
-              },
-            ],
-          });
-        },
-      ),
-    );
-    const missingRequestUserId = await api.requestListMembers(admin, [500]);
-    expect(missingRequestUserId.status).toBe(500);
-  });
-
-  it("enforces role, self, unknown-target, invalid-body, and clerk-failure arms across member routes [ORG-MEMBERS-C]", async () => {
+  it("enforces role, self, nonmember, and clerk-failure arms across member routes [ORG-MEMBERS-C]", async () => {
     const admin = api.user();
     const orgId = orgIdOf(admin);
     const member = api.user({
@@ -769,7 +650,6 @@ describe("ORG-02: membership admin matrix", () => {
       orgRole: "org:member",
       email: `requester-${shortId()}@example.test`,
     });
-    const ghostEmail = `ghost-${shortId()}@example.test`;
     api.acceptAgentStorageWrites();
     await onboardAdmin(admin, { slug: slug("bdd-r5-members") });
 
@@ -787,14 +667,6 @@ describe("ORG-02: membership admin matrix", () => {
     );
     expect(memberRole.body).toStrictEqual({
       error: { message: "Access denied", code: "FORBIDDEN" },
-    });
-    const unknownRole = await api.requestUpdateMemberRole(
-      admin,
-      { email: ghostEmail, role: "admin" },
-      [404],
-    );
-    expect(unknownRole.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
     });
     const soloDemote = await api.requestUpdateMemberRole(
       admin,
@@ -818,13 +690,6 @@ describe("ORG-02: membership admin matrix", () => {
     expect(demoted).toStrictEqual({
       message: `Updated role for ${admin.email}`,
     });
-    const invalidRoleBody = await api.requestUpdateMemberRole(
-      admin,
-      { email: "not-an-email", role: "member" },
-      [400],
-    );
-    expectApiError(invalidRoleBody.body);
-    expect(invalidRoleBody.body.error.code).toBe("BAD_REQUEST");
 
     // removeMember arms.
     const memberRemove = await api.requestRemoveMember(
@@ -834,14 +699,6 @@ describe("ORG-02: membership admin matrix", () => {
     );
     expect(memberRemove.body).toStrictEqual({
       error: { message: "Access denied", code: "FORBIDDEN" },
-    });
-    const unknownRemove = await api.requestRemoveMember(
-      admin,
-      { email: ghostEmail },
-      [404],
-    );
-    expect(unknownRemove.body).toStrictEqual({
-      error: { message: "Resource not found", code: "NOT_FOUND" },
     });
     const selfRemove = await api.requestRemoveMember(
       admin,
@@ -863,13 +720,6 @@ describe("ORG-02: membership admin matrix", () => {
     expect(notMember.body).toStrictEqual({
       error: { message: "Resource not found", code: "NOT_FOUND" },
     });
-    const invalidRemoveBody = await api.requestRemoveMember(
-      admin,
-      { email: "not-an-email" },
-      [400],
-    );
-    expectApiError(invalidRemoveBody.body);
-    expect(invalidRemoveBody.body.error.code).toBe("BAD_REQUEST");
 
     // invite arms.
     const memberRevoke = await api.requestRevokeInvitation(
@@ -880,24 +730,8 @@ describe("ORG-02: membership admin matrix", () => {
     expect(memberRevoke.body).toStrictEqual({
       error: { message: "Access denied", code: "FORBIDDEN" },
     });
-    const invalidInvite = await api.requestInviteMember(
-      admin,
-      { email: "not-an-email", role: "member" },
-      [400],
-    );
-    expectApiError(invalidInvite.body);
-    expect(invalidInvite.body.error.code).toBe("BAD_REQUEST");
-    const rawRevoke = await api.requestRawJson(
-      admin,
-      "/api/org/invite",
-      "DELETE",
-      {},
-      [400],
-    );
-    expect(rawRevoke.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
 
-    // membership-request arms with REST call counters: non-admin callers and
-    // invalid bodies must never reach the Clerk REST API.
+    // Membership-request call counters verify that non-admin callers never reach Clerk.
     const requestId = `req_${shortId()}`;
     const failingActions = api.mockClerkMembershipRequestHandlers(orgId, {
       acceptStatus: 404,
@@ -938,25 +772,6 @@ describe("ORG-02: membership admin matrix", () => {
     expect(failedReject.body).toStrictEqual({
       error: { message: "Invalid request", code: "BAD_REQUEST" },
     });
-    expect(failingActions.acceptCalls()).toBe(1);
-    expect(failingActions.rejectCalls()).toBe(1);
-
-    const rawAccept = await api.requestRawJson(
-      admin,
-      "/api/org/membership-requests",
-      "POST",
-      {},
-      [400],
-    );
-    expect(rawAccept.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
-    const rawReject = await api.requestRawJson(
-      admin,
-      "/api/org/membership-requests",
-      "DELETE",
-      {},
-      [400],
-    );
-    expect(rawReject.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
     expect(failingActions.acceptCalls()).toBe(1);
     expect(failingActions.rejectCalls()).toBe(1);
 

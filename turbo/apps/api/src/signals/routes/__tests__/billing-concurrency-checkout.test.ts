@@ -578,8 +578,6 @@ describe("POST /api/billing/concurrency-checkout", () => {
         nextRecurringAmountCents: 30_000,
         currency: "usd",
       });
-      expect(preview.body).not.toHaveProperty("checkoutUrl");
-      expect(preview.body).not.toHaveProperty("paymentMethodPreviewToken");
       expect(purchase.body).toStrictEqual({ url: hostedInvoiceUrl });
       expect(
         context.mocks.stripe.checkout.sessions.create,

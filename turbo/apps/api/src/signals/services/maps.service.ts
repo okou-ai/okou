@@ -96,6 +96,12 @@ function providerError(error: unknown): MapsErrorResponse {
     if (error.reason === "invalid_usage") {
       return invalidProviderUsage();
     }
+    if (error.reason === "no_verified_sources") {
+      return badGateway(
+        "Google Maps did not return verifiable sources for this search. This does not mean no matching places exist. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not use the unverified answer or invent map facts or sources.",
+        "MAPS_NO_VERIFIED_RESULTS",
+      );
+    }
     if (error.reason === "invalid_citation") {
       return badGateway(
         "The Maps response has incomplete or inconsistent source citations and cannot be verified. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not invent map facts or sources.",

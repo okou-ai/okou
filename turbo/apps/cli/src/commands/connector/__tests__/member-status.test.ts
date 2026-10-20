@@ -175,7 +175,7 @@ describe("current-member connector status", () => {
     },
   );
 
-  it("preserves future setup facts without changing current builtin or custom decisions", async () => {
+  it("uses canonical invalid setup for both builtin and custom accounts", async () => {
     const setup = {
       setupStatus: "invalid" as const,
       missingRequiredFields: [],
@@ -194,14 +194,168 @@ describe("current-member connector status", () => {
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       connectors: [
         {
-          memberStatus: "connected",
+          memberStatus: "setup-required",
           connectionId: BUILTIN_ID,
           accountSummary: { defaultConnection: { ...setup, id: BUILTIN_ID } },
         },
         {
-          memberStatus: "connected",
+          memberStatus: "setup-required",
           connectionId: CUSTOM_ID,
           accountSummary: { defaultConnection: { ...setup, id: CUSTOM_ID } },
+        },
+      ],
+    });
+  });
+
+  it.each([true, false])(
+    "canonical scope mismatch %s wins over the opposite catalog hint",
+    async (scopeMismatch) => {
+      const summaries = installMemberFixture(false).map((summary) => {
+        return summary.target.kind === "builtin" && summary.defaultConnection
+          ? {
+              ...summary,
+              defaultConnection: {
+                ...summary.defaultConnection,
+                scopeMismatch,
+              },
+            }
+          : summary;
+      });
+      server.use(
+        stubConnectorAccountSummaries(summaries),
+        stubConnectorCatalogStatus([
+          catalogStatusItem({
+            connectorSlug: "github",
+            label: "GitHub",
+            connected: true,
+            scopeMismatch: !scopeMismatch,
+            connectionStatus: scopeMismatch ? "connected" : "scope-mismatch",
+            connection: {
+              id: BUILTIN_ID,
+              authMethod: "oauth",
+              externalUsername: "member",
+              externalEmail: null,
+              reconnectReason: null,
+            },
+          }),
+        ]),
+      );
+      await statusCommand.parseAsync(["node", "okou", "github"]);
+      const output = log.mock.calls.flat().join("\n");
+      expect(output.includes("permissions update available")).toBe(
+        scopeMismatch,
+      );
+      expect(output).not.toContain("account review required");
+    },
+  );
+
+  it("does not borrow a sibling's scope hint when canonical scope is unavailable", async () => {
+    const summaries = installMemberFixture(false).map((summary) => {
+      return summary.target.kind === "builtin" && summary.defaultConnection
+        ? {
+            ...summary,
+            defaultConnection: {
+              ...summary.defaultConnection,
+              scopeMismatch: undefined,
+            },
+          }
+        : summary;
+    });
+    server.use(
+      stubConnectorAccountSummaries(summaries),
+      stubConnectorCatalogStatus([
+        catalogStatusItem({
+          connectorSlug: "github",
+          connected: true,
+          scopeMismatch: true,
+          connection: {
+            id: STALE_ID,
+            authMethod: "oauth",
+            externalUsername: "sibling",
+            externalEmail: null,
+            reconnectReason: null,
+          },
+        }),
+      ]),
+    );
+    await statusCommand.parseAsync(["node", "okou", "github", "--json"]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      connector: {
+        memberStatus: "account-review-required",
+        connectionId: BUILTIN_ID,
+      },
+    });
+  });
+
+  it.each([true, false])(
+    "uses old-API scope facts only for a matching default method: %s",
+    async (matchingMethod) => {
+      const account = connectorAccount(builtinTarget, {
+        id: BUILTIN_ID,
+        scopeMismatch: undefined,
+      });
+      server.use(
+        stubConnectorAccountSummaries([
+          connectorAccountSummary(builtinTarget, [account]),
+        ]),
+        stubConnectorCatalogStatus([
+          catalogStatusItem({
+            connectorSlug: "github",
+            connected: true,
+            scopeMismatch: true,
+            connection: {
+              id: BUILTIN_ID,
+              authMethod: matchingMethod ? account.authMethod : "manual",
+              externalUsername: "member",
+              externalEmail: null,
+              reconnectReason: null,
+            },
+          }),
+        ]),
+      );
+      await statusCommand.parseAsync(["node", "okou", "github", "--json"]);
+      const output = JSON.parse(log.mock.calls.flat().join("\n"));
+      expect(output).toMatchObject({
+        connector: {
+          memberStatus: matchingMethod
+            ? "connected"
+            : "account-review-required",
+          connectionId: BUILTIN_ID,
+        },
+      });
+      expect(output.connector.scopeMismatch).toBe(
+        matchingMethod ? true : undefined,
+      );
+    },
+  );
+
+  it("keeps an old API's missing setup facts visibly unknown despite connected legacy projections", async () => {
+    const summaries = installMemberFixture(false).map((summary) => {
+      return {
+        ...summary,
+        defaultConnection: summary.defaultConnection
+          ? {
+              ...summary.defaultConnection,
+              setupStatus: undefined,
+              missingRequiredFields: undefined,
+              configuredFieldKeys: undefined,
+            }
+          : null,
+      };
+    });
+    server.use(stubConnectorAccountSummaries(summaries));
+    await listCommand.parseAsync(["node", "okou", "--json"]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      connectors: [
+        {
+          memberStatus: "account-review-required",
+          connectionId: BUILTIN_ID,
+          accountSummary: { accountCount: 2 },
+        },
+        {
+          memberStatus: "account-review-required",
+          connectionId: CUSTOM_ID,
+          accountSummary: { accountCount: 2 },
         },
       ],
     });
@@ -255,6 +409,21 @@ describe("current-member connector status", () => {
       stubCustomConnectors([
         { ...custom, connected: false, missingRequiredFields: ["apiKey"] },
       ]),
+      stubConnectorAccountSummaries(
+        summaries.map((summary) => {
+          return {
+            ...summary,
+            defaultConnection:
+              summary.target.kind === "custom" && summary.defaultConnection
+                ? {
+                    ...summary.defaultConnection,
+                    setupStatus: "incomplete",
+                    missingRequiredFields: ["apiKey"],
+                  }
+                : summary.defaultConnection,
+          };
+        }),
+      ),
     );
     await listCommand.parseAsync(["node", "okou", "--json"]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
@@ -266,12 +435,13 @@ describe("current-member connector status", () => {
     log.mockClear();
     server.use(
       stubCustomConnectors([{ ...custom, connectedAccountId: STALE_ID }]),
+      stubConnectorAccountSummaries(summaries),
     );
     await listCommand.parseAsync(["node", "okou", "--json"]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       connectors: [
         { memberStatus: "connected" },
-        { memberStatus: "account-review-required", connectionId: CUSTOM_ID },
+        { memberStatus: "connected", connectionId: CUSTOM_ID },
       ],
     });
   });

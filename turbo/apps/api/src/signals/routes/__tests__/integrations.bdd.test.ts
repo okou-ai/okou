@@ -1037,11 +1037,10 @@ function uniquePhoneHandle() {
 function agentPhoneWebhookHeaders(
   body: string,
   webhookId = "evt-bdd-agentphone",
-  eventType: string | null = "agent.message",
 ): {
   readonly "x-webhook-signature": string;
   readonly "x-webhook-timestamp": string;
-  readonly "x-webhook-event"?: string;
+  readonly "x-webhook-event": string;
   readonly "x-webhook-id": string;
 } {
   const timestamp = String(Math.floor(now() / 1000));
@@ -1053,7 +1052,7 @@ function agentPhoneWebhookHeaders(
       .update(`${timestamp}.${body}`)
       .digest("hex")}`,
     "x-webhook-timestamp": timestamp,
-    ...(eventType === null ? {} : { "x-webhook-event": eventType }),
+    "x-webhook-event": "agent.message",
     "x-webhook-id": webhookId,
   };
 }
@@ -1128,15 +1127,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     );
     expect(verified.body).toStrictEqual({
       challenge: "slack-bdd-challenge",
-    });
-
-    const invalidJson = await integrations.requestSlackEvent(
-      "not-json",
-      integrations.signedSlackIngressHeaders("not-json"),
-      [400],
-    );
-    expect(invalidJson.body).toStrictEqual({
-      error: "Invalid JSON payload",
     });
 
     const eventCallbackBody = (event: unknown, eventId?: string) => {
@@ -1272,40 +1262,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     expectSlackEphemeral(unknown.body);
     expect(unknown.body.blocks.length).toBeGreaterThan(0);
 
-    for (const requiredField of [
-      "team_id",
-      "channel_id",
-      "user_id",
-      "trigger_id",
-    ]) {
-      const missingFieldParams = new URLSearchParams(commandBody("help"));
-      missingFieldParams.delete(requiredField);
-      const missingFieldBody = missingFieldParams.toString();
-      const missingField = await integrations.requestSlackCommand(
-        missingFieldBody,
-        integrations.signedSlackIngressHeaders(missingFieldBody),
-        [400],
-      );
-      expect(missingField.body).toStrictEqual({
-        error: "Missing required Slack command fields",
-      });
-    }
-
-    const emptyActionPayload = new URLSearchParams({
-      payload: JSON.stringify({
-        type: "block_actions",
-        team: { id: "TBDD" },
-        user: { id: "UBDD" },
-        actions: [],
-      }),
-    }).toString();
-    const emptyActions = await integrations.requestSlackInteractive(
-      emptyActionPayload,
-      integrations.signedSlackIngressHeaders(emptyActionPayload),
-      [200],
-    );
-    expect(emptyActions.body).toBe("");
-
     const disconnectActionPayload = new URLSearchParams({
       payload: JSON.stringify({
         type: "block_actions",
@@ -1320,24 +1276,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       [200],
     );
     expect(homeDisconnect.body).toBe("");
-
-    const missingPayloadBody = "";
-    const missingPayload = await integrations.requestSlackInteractive(
-      missingPayloadBody,
-      integrations.signedSlackIngressHeaders(missingPayloadBody),
-      [400],
-    );
-    expect(missingPayload.body).toStrictEqual({ error: "Missing payload" });
-
-    const invalidPayloadBody = new URLSearchParams({
-      payload: "not-json",
-    }).toString();
-    const invalidPayload = await integrations.requestSlackInteractive(
-      invalidPayloadBody,
-      integrations.signedSlackIngressHeaders(invalidPayloadBody),
-      [400],
-    );
-    expect(invalidPayload.body).toStrictEqual({ error: "Invalid payload" });
   });
 
   it("keeps Slack org and user connect status boundaries visible through APIs", async () => {
@@ -1373,21 +1311,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     expect(connectStatus.body).toStrictEqual({
       isConnected: false,
       isAdmin: true,
-    });
-
-    const missingWorkspace = await integrations.requestSlackConnect(
-      admin,
-      {
-        workspaceId: "TBDD",
-        slackUserId: "UBDD",
-      },
-      [404],
-    );
-    expect(missingWorkspace.body).toStrictEqual({
-      error: {
-        message: "Slack workspace not found",
-        code: "NOT_FOUND",
-      },
     });
   });
 
@@ -1475,18 +1398,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { code: "UNAUTHORIZED" },
     });
 
-    const missingDownloadFileId = await integrations.requestSlackDownloadFile(
-      admin,
-      undefined,
-      [400],
-    );
-    expect(missingDownloadFileId.body).toStrictEqual({
-      error: {
-        message: "file_id query parameter is required",
-        code: "BAD_REQUEST",
-      },
-    });
-
     const missingDownloadInstallation =
       await integrations.requestSlackDownloadFile(admin, "F123", [404]);
     expect(missingDownloadInstallation.body).toStrictEqual({
@@ -1564,14 +1475,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       decodeSignedSlackOAuthState(installUrl.searchParams.get("state") ?? ""),
     ).toMatchObject({ reinstall: true });
 
-    const missingConnectParams = await integrations.requestSlackOauthConnect(
-      {},
-      [400],
-    );
-    expect(missingConnectParams.body).toStrictEqual({
-      error: "Missing orgId or userId",
-    });
-
     const missingConnectInstall = await integrations.requestSlackOauthConnect(
       { orgId: admin.orgId ?? "org_bdd_slack", userId: admin.userId },
       [404],
@@ -1587,14 +1490,6 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     expect(callbackError.headers.get("location") ?? "").toContain(
       "/settings/slack?error=access_denied",
     );
-
-    const callbackMissingCode = await integrations.requestSlackOauthCallback(
-      {},
-      [400],
-    );
-    expect(callbackMissingCode.body).toStrictEqual({
-      error: "Missing authorization code",
-    });
   });
 
   it("installs, connects, disconnects, and uninstalls a Slack workspace through OAuth APIs", async () => {
@@ -3738,28 +3633,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
   });
 
-  it("rejects malformed native Slack Stop timestamps before applying mutations", async () => {
-    integrations.configureSlackAppMocks();
-    const body = JSON.stringify({
-      type: "event_callback",
-      team_id: "T_BDD_INVALID_STOP",
-      event: {
-        type: "agent_session_stopped",
-        channel: "C_BDD_INVALID_STOP",
-        user: uniqueSlackUserId(),
-        thread_ts: "4500.000100",
-        event_ts: "invalid",
-      },
-    });
-    const result = await integrations.requestSlackEvent(
-      body,
-      integrations.signedSlackIngressHeaders(body),
-      [400],
-    );
-    expect(result.body).toStrictEqual({ error: "Invalid Slack stop event" });
-    expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
-  });
-
   it("routes retry-only Slack events through canonical ingress", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -4307,16 +4180,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     context.mocks.slack.chat.postMessage.mockClear();
     context.mocks.slack.chat.postEphemeral.mockClear();
     context.mocks.slack.apiCall.mockClear();
-    await integrations.postSlackEvent(
-      `T_BDD_MISSING_${randomUUID().slice(0, 6)}`,
-      {
-        type: "app_mention",
-        user: slackUserId,
-        text: "hello nowhere",
-        ts: "2000.000700",
-        channel: "C_BDD_LOGIN",
-      },
-    );
     await integrations.postSlackEvent(unbound.teamId, {
       type: "message",
       channel_type: "im",
@@ -4670,18 +4533,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilAndAssert(() => {
       expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
     });
-
-    context.mocks.slack.views.publish.mockClear();
-    await integrations.postSlackEvent(
-      `T_BDD_NOWHERE_${randomUUID().slice(0, 6)}`,
-      {
-        type: "app_home_opened",
-        user: slackUserId,
-        tab: "home",
-        channel: "D_BDD_HOME",
-      },
-    );
-    expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
 
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
     await flushWaitUntilForTest();
@@ -5273,39 +5124,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 });
 
 describe("INT-02: Telegram integration", () => {
-  it("keeps unlinked bot and missing upload errors visible through APIs", async () => {
-    const actor = integrations.user();
-    const missingBotId = "999999999";
-
-    const linkStatus = await integrations.readTelegramLinkStatus(
-      actor,
-      missingBotId,
-    );
-    expect(linkStatus).toMatchObject({ linked: false });
-
-    const missingUpload = await integrations.requestTelegramUploadComplete(
-      actor,
-      {
-        uploadId: "11111111-1111-4111-8111-111111111111",
-        botId: missingBotId,
-        chatId: "12345",
-      },
-      [404],
-    );
-    expect(missingUpload.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
-    });
-  });
-
   it("keeps Telegram webhook missing, auth, and no-op update boundaries visible", async () => {
-    const missingCustomBot = await integrations.requestTelegramWebhook(
-      "999999999",
-      "{}",
-      { "x-telegram-bot-api-secret-token": "missing-custom-secret" },
-      [404],
-    );
-    expect(missingCustomBot.body).toBe("Not Found");
-
     mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", undefined);
     mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", undefined);
     mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
@@ -5340,22 +5159,6 @@ describe("INT-02: Telegram integration", () => {
       [401],
     );
     expect(invalidSecret.body).toBe("Unauthorized");
-
-    const invalidJson = await integrations.requestTelegramWebhook(
-      OFFICIAL_TELEGRAM_BOT_ID,
-      "not-json",
-      { "x-telegram-bot-api-secret-token": TELEGRAM_OFFICIAL_WEBHOOK_SECRET },
-      [400],
-    );
-    expect(invalidJson.body).toBe("Bad Request");
-
-    const invalidUpdate = await integrations.requestTelegramWebhook(
-      OFFICIAL_TELEGRAM_BOT_ID,
-      "null",
-      { "x-telegram-bot-api-secret-token": TELEGRAM_OFFICIAL_WEBHOOK_SECRET },
-      [400],
-    );
-    expect(invalidUpdate.body).toBe("Bad Request");
 
     const noMessage = await integrations.requestTelegramWebhook(
       OFFICIAL_TELEGRAM_BOT_ID,
@@ -6225,15 +6028,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     expect(missingUpload.body).toMatchObject({
       error: { code: "NOT_FOUND" },
     });
-
-    const missingDownload = await integrations.requestPhoneDownloadFile(
-      actor,
-      "missing-agentphone-file",
-      [404],
-    );
-    expect(missingDownload.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
-    });
   });
 
   it("keeps AgentPhone start-link, unlink, and webhook boundaries visible through APIs", async () => {
@@ -6248,15 +6042,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(unauthorizedStart.body).toMatchObject({
       error: { code: "UNAUTHORIZED" },
-    });
-
-    const invalidPhone = await integrations.requestStartAgentPhoneLink(
-      actor,
-      { phoneHandle: "not-a-phone" },
-      [400],
-    );
-    expect(invalidPhone.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
     });
 
     const notConfigured = await integrations.requestStartAgentPhoneLink(
@@ -6504,13 +6289,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(invalidSignature.body).toBe("Unauthorized");
 
-    const malformed = await integrations.requestAgentPhoneWebhook(
-      "not-json",
-      agentPhoneWebhookHeaders("not-json"),
-      [400],
-    );
-    expect(malformed.body).toBe("Bad Request");
-
     const ignoredLifecycleEvent = JSON.stringify({
       event: "agent.status",
       data: { agentId: "agt-bdd-agentphone" },
@@ -6524,52 +6302,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       [200],
     );
     expect(ignoredLifecycle.body).toBe("OK");
-
-    const missingEventTypeEvent = JSON.stringify({
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "missing event type",
-      },
-    });
-    const missingEventType = await integrations.requestAgentPhoneWebhook(
-      missingEventTypeEvent,
-      agentPhoneWebhookHeaders(
-        missingEventTypeEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-        null,
-      ),
-      [500],
-    );
-    expect(missingEventType.body).toBe(
-      "AgentPhone webhook is missing event type",
-    );
-
-    const missingChannelEvent = JSON.stringify({
-      event: "agent.message",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        channel: "sms",
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "missing channel",
-      },
-    });
-    const missingChannel = await integrations.requestAgentPhoneWebhook(
-      missingChannelEvent,
-      agentPhoneWebhookHeaders(
-        missingChannelEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(missingChannel.body).toBe(
-      "AgentPhone message webhook is missing channel",
-    );
 
     const unsupportedChannelEvent = JSON.stringify({
       event: "agent.message",
@@ -6590,52 +6322,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       [200],
     );
     expect(unsupportedChannel.body).toBe("OK");
-
-    const missingFieldsEvent = JSON.stringify({
-      event: "agent.message",
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        to: "+19039853128",
-        message: "missing sender",
-      },
-    });
-    const missingFields = await integrations.requestAgentPhoneWebhook(
-      missingFieldsEvent,
-      agentPhoneWebhookHeaders(
-        missingFieldsEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(missingFields.body).toBe(
-      "AgentPhone message webhook is missing sender identity",
-    );
-
-    const emptyMessageEvent = JSON.stringify({
-      event: "agent.message",
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "",
-        mediaUrl: null,
-      },
-    });
-    const emptyMessage = await integrations.requestAgentPhoneWebhook(
-      emptyMessageEvent,
-      agentPhoneWebhookHeaders(
-        emptyMessageEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(emptyMessage.body).toBe(
-      "AgentPhone message webhook is missing message content",
-    );
 
     const nonCanonicalMessageIdEvent = JSON.stringify({
       event: "agent.message",

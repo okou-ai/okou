@@ -285,3 +285,31 @@ test("Raw HTML cannot change the surrounding page", async () => {
   expect(emphasis.tagName).toBe("STRONG");
   expect(emphasis).toBeVisible();
 });
+
+test("Markdown preserves content and iframe names without native hover hints", async () => {
+  const chat = createMarkdownChatFixture(context);
+  const rows = completedMessageRows(
+    chat,
+    [
+      '[Read the report](https://example.com/report "A long native link hint")',
+      "",
+      '<span title="A long native text hint">Review notes</span>',
+      "",
+      '<iframe title="Report preview" src="https://example.com/embed"></iframe>',
+    ].join("\n"),
+  );
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+
+  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
+
+  const link = await screen.findByText("Read the report", { selector: "a" });
+  expect(link).toHaveAttribute("href", "https://example.com/report");
+  expect(link).not.toHaveAttribute("title");
+  const notes = screen.getByText("Review notes");
+  expect(notes).not.toHaveAttribute("title");
+  expect(screen.getByTitle("Report preview").tagName).toBe("IFRAME");
+});

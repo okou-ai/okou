@@ -162,7 +162,6 @@ function FilesPreviewButton({
       disabled={navigating}
       focusableWhenDisabled
       className="h-full min-w-0 flex-1 justify-start px-0 text-left text-foreground hover:bg-transparent active:bg-transparent"
-      title={entry.displayName}
       aria-label={t(
         ($) => {
           return $.activity.detail.files.preview;
@@ -228,9 +227,7 @@ function FilesRow({ signals, row }: FilesRowProps) {
               <ChevronRight size={14} />
             )}
             <Folder size={16} className="shrink-0 text-muted-foreground" />
-            <span className="min-w-0 truncate" title={entry.displayName}>
-              {entry.displayName}
-            </span>
+            <span className="min-w-0 truncate">{entry.displayName}</span>
           </Button>
           <Button
             type="button"
@@ -267,9 +264,7 @@ function FilesRow({ signals, row }: FilesRowProps) {
         {entry.kind === "file" ? (
           <FilesPreviewButton signals={signals} entry={entry} path={row.path} />
         ) : (
-          <span className="min-w-0 flex-1 truncate" title={entry.displayName}>
-            {entry.displayName}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{entry.displayName}</span>
         )}
         {entry.kind === "file" && (
           <FilesDownloadButton

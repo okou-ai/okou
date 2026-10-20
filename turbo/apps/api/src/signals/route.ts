@@ -44,11 +44,14 @@ import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { atomSubscriptionGrantRoutes } from "./routes/atom-subscription-grants";
 import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
+import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authorization";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
 import { connectorOverviewRoutes } from "./routes/connector-overview";
+import { connectedConnectorsRoutes } from "./routes/connected-connectors";
+import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
 import { builtinConnectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
@@ -331,11 +334,14 @@ export const ROUTES: readonly RouteEntry[] = [
   ...sharedThreadRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
+  ...desktopShellAuthorizationRoutes,
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
   ...connectorOverviewRoutes,
+  ...connectedConnectorsRoutes,
+  ...remotesRoutes,
   ...connectorCheckRoutes,
   ...builtinConnectorsExternalCodeRoutes,
   ...builtinConnectorsOauthDeviceAuthRoutes,

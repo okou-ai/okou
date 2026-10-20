@@ -120,7 +120,7 @@ interface FooterNavItem {
   readonly iconImg: string | undefined;
 }
 
-const FOOTER_NAV = [
+const FOOTER_NAV: readonly FooterNavItem[] = [
   {
     id: "works",
     activeKeys: ["works"],
@@ -128,16 +128,13 @@ const FOOTER_NAV = [
     icon: LayoutGrid as NavIcon,
     iconImg: slackIcon,
   },
-] as const satisfies readonly FooterNavItem[];
+];
 
 // Shared subscription hooks. Each sibling component pulls its own state from
 // signals via these instead of receiving anything from a parent through props.
 
-function useResolvedNavItems() {
+function useManageNavItems() {
   const { t } = useTranslation();
-  const assistantName = useGet(assistantName$);
-  const defaultDisplayName =
-    useLastResolved(defaultAgentName$) ?? assistantName;
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
       case "agents": {
@@ -162,10 +159,17 @@ function useResolvedNavItems() {
       }
     }
   };
-  const manageNav = MANAGE_NAV.map((item) => {
+  return MANAGE_NAV.map((item) => {
     return { ...item, label: manageLabel(item.id) };
   });
-  const footerNav = FOOTER_NAV.map((item) => {
+}
+
+function useFooterNavItems() {
+  const { t } = useTranslation();
+  const assistantName = useGet(assistantName$);
+  const defaultDisplayName =
+    useLastResolved(defaultAgentName$) ?? assistantName;
+  return FOOTER_NAV.map((item) => {
     return {
       ...item,
       label: t(
@@ -176,6 +180,11 @@ function useResolvedNavItems() {
       ),
     };
   });
+}
+
+function useResolvedNavItems() {
+  const manageNav = useManageNavItems();
+  const footerNav = useFooterNavItems();
   return { manageNav, footerNav };
 }
 
@@ -541,7 +550,6 @@ function LabeledRailLink({
       onClick={onClick}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
-      title={caption}
       className="group flex w-full shrink-0 scroll-my-1 flex-col items-center gap-0.5 rounded-lg no-underline outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span
@@ -612,9 +620,77 @@ function ThreeColumnChatListToggle({
   );
 }
 
+function LabeledChatRailLink() {
+  const activeId = useGet(activeRoute$);
+  const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
+  const onLinkClick = useSidebarLinkClick();
+  const { t } = useTranslation();
+  return (
+    <LabeledRailLink
+      id="chat"
+      navPath={defaultAgentId ? ROUTES.agentChat : ROUTES.home}
+      navOptions={
+        defaultAgentId ? { pathParams: { agentId: defaultAgentId } } : undefined
+      }
+      label={t(($) => {
+        return $.appShell.sidebar.chat;
+      })}
+      icon={MessageCircle as NavIcon}
+      isActive={
+        activeId !== null &&
+        ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
+      }
+      showBadge={false}
+      onClick={onLinkClick}
+    />
+  );
+}
+
+function LabeledManageRailLinks() {
+  const activeId = useGet(activeRoute$);
+  const manageNav = useManageNavItems();
+  const onLinkClick = useSidebarLinkClick();
+  return manageNav.map((item) => {
+    return (
+      <LabeledRailLink
+        key={item.id}
+        id={item.id}
+        navPath={item.pathname}
+        label={item.label}
+        icon={item.icon}
+        isActive={activeId !== null && item.activeKeys.includes(activeId)}
+        showBadge={false}
+        onClick={onLinkClick}
+      />
+    );
+  });
+}
+
+function LabeledFooterRailLinks() {
+  const activeId = useGet(activeRoute$);
+  const footerNav = useFooterNavItems();
+  const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
+  const onLinkClick = useSidebarLinkClick();
+  return footerNav.map((item) => {
+    return (
+      <LabeledRailLink
+        key={item.id}
+        id={item.id}
+        navPath={item.pathname}
+        label={item.label}
+        icon={item.icon}
+        iconImg={item.iconImg}
+        isActive={activeId !== null && item.activeKeys.includes(activeId)}
+        showBadge={slackScopeMismatch}
+        onClick={onLinkClick}
+      />
+    );
+  });
+}
+
 function LabeledNavRail() {
-  // Navigation subscriptions belong to the frame. These independently reactive
-  // menus keep their element identity when only the navigation changes.
+  // Each link group owns its navigation inputs. Workspace/account menus keep
+  // their element identity when only a destination, label or badge changes.
   return (
     <LabeledNavRailFrame
       workspaceSwitcher={<OrgSwitcherCompact />}
@@ -631,36 +707,7 @@ function LabeledNavRailFrame({
   readonly accountMenu: ReactNode;
 }) {
   const chatListHidden = useGet(sidebarOff$);
-  const activeId = useGet(activeRoute$);
-  const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
-  const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
-  const onLinkClick = useSidebarLinkClick();
-  const { manageNav, footerNav } = useResolvedNavItems();
   const { t } = useTranslation();
-  const navItems: {
-    id: SidebarNavId;
-    activeKeys: readonly RouteKey[];
-    pathname: string;
-    options?: Parameters<typeof Link>[0]["options"];
-    label: string;
-    icon: NavIcon;
-    iconImg?: string | undefined;
-  }[] = [
-    {
-      id: "chat",
-      activeKeys: ["home", "agentChat", "agentIdeas", "chat"],
-      pathname: defaultAgentId ? ROUTES.agentChat : ROUTES.home,
-      options: defaultAgentId
-        ? { pathParams: { agentId: defaultAgentId } }
-        : undefined,
-      label: t(($) => {
-        return $.appShell.sidebar.chat;
-      }),
-      icon: MessageCircle as NavIcon,
-    },
-    ...manageNav,
-    ...footerNav,
-  ];
   return (
     <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
       <div className="mb-3 shrink-0">{workspaceSwitcher}</div>
@@ -692,24 +739,9 @@ function LabeledNavRailFrame({
         })}
         className="-mt-1 flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto px-1.5 pb-2 pt-1"
       >
-        {navItems.map((item) => {
-          const isActive =
-            activeId !== null && item.activeKeys.includes(activeId);
-          return (
-            <LabeledRailLink
-              key={item.id}
-              id={item.id}
-              navPath={item.pathname}
-              navOptions={item.options}
-              label={item.label}
-              icon={item.icon}
-              iconImg={item.iconImg}
-              isActive={isActive}
-              showBadge={item.id === "works" && slackScopeMismatch}
-              onClick={onLinkClick}
-            />
-          );
-        })}
+        <LabeledChatRailLink />
+        <LabeledManageRailLinks />
+        <LabeledFooterRailLinks />
       </nav>
       <div className="flex w-full shrink-0 flex-col items-center gap-2 px-1.5 pt-1">
         {accountMenu}
@@ -761,7 +793,7 @@ export function ThreeColumnSearchDialogContainer() {
 
 const CHAT_LIST_INSET = "px-3";
 
-function ChatListColumn() {
+function ChatListHeader() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
@@ -781,76 +813,82 @@ function ChatListColumn() {
     });
   };
   return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-1 pb-2 pt-3",
+        CHAT_LIST_INSET,
+      )}
+    >
+      <span className="flex-1 pl-2 text-[15px] font-semibold text-nav-copy">
+        {t(($) => {
+          return $.appShell.sidebar.chat;
+        })}
+      </span>
+      <ShortcutTooltipGroup
+        items={[
+          {
+            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding,
+            trigger: (
+              <Button
+                type="button"
+                onClick={() => {
+                  openThreeColumnSearch();
+                }}
+                aria-label={searchLabel}
+                aria-keyshortcuts={
+                  GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.ariaKeyShortcuts
+                }
+                variant="quiet"
+                size="icon-sm"
+                iconSize="md"
+              >
+                <Search size={18} />
+              </Button>
+            ),
+          },
+          {
+            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
+            trigger: (
+              <Button
+                type="button"
+                onClick={onNewChat}
+                disabled={!currentChatAgentId}
+                aria-label={newChatLabel}
+                aria-keyshortcuts={
+                  GLOBAL_KEYBOARD_SHORTCUTS.newChat.ariaKeyShortcuts
+                }
+                variant="quiet"
+                size="icon-sm"
+                iconSize="md"
+              >
+                <Edit size={18} />
+              </Button>
+            ),
+          },
+          {
+            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
+            trigger: (
+              <ThreeColumnChatListToggle
+                hidden={false}
+                aria-label={t(($) => {
+                  return $.appShell.sidebar.hideChatList;
+                })}
+              />
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+function ChatListColumn() {
+  return (
     <aside
       data-testid="chat-list-column"
       className="hidden md:flex h-full w-[300px] shrink-0 flex-col bg-sidebar"
     >
-      <div
-        className={cn(
-          "flex shrink-0 items-center gap-1 pb-2 pt-3",
-          CHAT_LIST_INSET,
-        )}
-      >
-        <span className="flex-1 pl-2 text-[15px] font-semibold text-nav-copy">
-          {t(($) => {
-            return $.appShell.sidebar.chat;
-          })}
-        </span>
-        <ShortcutTooltipGroup
-          items={[
-            {
-              shortcut: GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding,
-              trigger: (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    openThreeColumnSearch();
-                  }}
-                  aria-label={searchLabel}
-                  aria-keyshortcuts={
-                    GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.ariaKeyShortcuts
-                  }
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                >
-                  <Search size={18} />
-                </Button>
-              ),
-            },
-            {
-              shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
-              trigger: (
-                <Button
-                  type="button"
-                  onClick={onNewChat}
-                  disabled={!currentChatAgentId}
-                  aria-label={newChatLabel}
-                  aria-keyshortcuts={
-                    GLOBAL_KEYBOARD_SHORTCUTS.newChat.ariaKeyShortcuts
-                  }
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                >
-                  <Edit size={18} />
-                </Button>
-              ),
-            },
-            {
-              shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
-              trigger: (
-                <ThreeColumnChatListToggle
-                  hidden={false}
-                  aria-label={t(($) => {
-                    return $.appShell.sidebar.hideChatList;
-                  })}
-                />
-              ),
-            },
-          ]}
-        />
-      </div>
+      <ChatListHeader />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
         <div className={CHAT_LIST_INSET}>
           <PinnedAgentListSection layout="horizontal" />

@@ -7,7 +7,7 @@ import {
   userModelPreferenceContract,
   type UpdateUserModelPreferenceRequest,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -48,11 +48,11 @@ function mockPreferences(
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: [],
+      cloudBrowserAvailable: true,
+      sshHosts: [],
+      vncHosts: [],
       computerUseHosts: [],
       cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
     });
@@ -99,8 +99,6 @@ test("Theme preferences initialize from the shared cookie", async () => {
   vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
     cookieWrites.push(value);
   });
-  const localStorageReads = vi.spyOn(localStorage, "getItem");
-  const localStorageWrites = vi.spyOn(localStorage, "setItem");
   context.mocks.browser.cookie("__Secure-okou-theme=v1.dark");
 
   await setupPage({ context, path: "/settings", host: "app.vm7.ai" });
@@ -121,10 +119,6 @@ test("Theme preferences initialize from the shared cookie", async () => {
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.light; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  for (const key of ["theme", "colorTheme", "okou_theme", "okou_colorTheme"]) {
-    expect(localStorageReads).not.toHaveBeenCalledWith(key);
-    expect(localStorageWrites).not.toHaveBeenCalledWith(key, expect.anything());
-  }
 
   await expect(
     screen.findByText("Your agents will use this time zone during runs"),

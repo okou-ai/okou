@@ -41,8 +41,7 @@ export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
     },
     ref,
   ) => {
-    const { title: _title, ...propsWithoutTitle } = props;
-    const buttonProps = showTooltip ? propsWithoutTitle : props;
+    const { title: _title, ...buttonProps } = props;
     const button = (
       <ButtonPrimitive
         className={className}

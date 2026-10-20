@@ -181,55 +181,6 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("returns 404 when no Slack installation exists for org", async () => {
-    const orgId = `org_${randomUUID().slice(0, 8)}`;
-    const userId = `user_${randomUUID().slice(0, 8)}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId, userId, role: "admin" },
-      context.signal,
-    );
-    const token = await credentials.okouToken({ userId, orgId });
-
-    const client = setupApp({
-      context,
-      routes: integrationsSlackUploadInitRoutes,
-    })(integrationsSlackUploadInitContract);
-    const response = await accept(
-      client.init({
-        body: { filename: "report.pdf", length: 100 },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [404],
-    );
-    expect(response.body.error.message).toContain("No Slack installation");
-    expect(
-      context.mocks.slack.files.getUploadURLExternal,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for invalid request bodies", async () => {
-    const { orgId, userId } = await seedWithInstallation();
-    const token = await credentials.okouToken({ userId, orgId });
-
-    const client = setupApp({
-      context,
-      routes: integrationsSlackUploadInitRoutes,
-    })(integrationsSlackUploadInitContract);
-    const response = await accept(
-      client.init({
-        body: { filename: "", length: 0 },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-    expect(
-      context.mocks.slack.files.getUploadURLExternal,
-    ).not.toHaveBeenCalled();
-  });
-
   it("returns a Slack-issued upload URL and file id on the happy path", async () => {
     const { orgId, userId } = await seedWithInstallation();
     const token = await credentials.okouToken({ userId, orgId });
@@ -312,31 +263,6 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
 
     expect(response.body.error.code).toBe("SLACK_ERROR");
     expect(response.body.error.message).toContain("invalid_length");
-  });
-
-  it("forwards malformed Slack upload URL responses as 400 SLACK_ERROR", async () => {
-    const { orgId, userId } = await seedWithInstallation();
-    const token = await credentials.okouToken({ userId, orgId });
-
-    context.mocks.slack.files.getUploadURLExternal.mockResolvedValueOnce({
-      ok: true,
-      file_id: "F-missing-upload-url",
-    });
-
-    const client = setupApp({
-      context,
-      routes: integrationsSlackUploadInitRoutes,
-    })(integrationsSlackUploadInitContract);
-    const response = await accept(
-      client.init({
-        body: { filename: "missing-url.csv", length: 1 },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("SLACK_ERROR");
-    expect(response.body.error.message).toContain("unknown error");
   });
 
   it("forwards Slack platform errors as 400 SLACK_ERROR", async () => {

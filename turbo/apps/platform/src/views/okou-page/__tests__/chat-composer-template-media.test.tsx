@@ -96,7 +96,6 @@ test("Preview a website template and return to its picker", async () => {
   expect(
     within(picker).getByLabelText(`Preview website template ${template.title}`),
   ).toBeInTheDocument();
-  expect(picker).not.toHaveAttribute("data-nested-dialog-open");
 });
 
 test("Select and send a website template", async () => {

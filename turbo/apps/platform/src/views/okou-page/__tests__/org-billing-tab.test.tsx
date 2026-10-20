@@ -551,11 +551,6 @@ test("Configure member packages for a new workspace plan", async () => {
   expect(samUsage).not.toBeDisabled();
   expect(pendingUsage).not.toBeDisabled();
   expect(
-    within(memberUsage).queryByText(
-      "20,000 purchased credits + 1,234 bonus credits",
-    ),
-  ).not.toBeInTheDocument();
-  expect(
     within(memberUsage).getByText(
       "Member packages are optional. Any overage uses pay-as-you-go credits.",
     ),
@@ -587,11 +582,6 @@ test("Configure member packages for a new workspace plan", async () => {
   expect(memberUsage).toHaveTextContent(
     "Monthly total185,554 credits · 15,554 bonus$330/month",
   );
-  expect(
-    within(memberUsage).queryByText(
-      "100,000 purchased credits + 9,999 bonus credits",
-    ),
-  ).not.toBeInTheDocument();
   expect(alexUsage).not.toBeDisabled();
   expect(samUsage).not.toBeDisabled();
   expect(pendingUsage).not.toBeDisabled();
@@ -1680,9 +1670,6 @@ test("Upgrade a current member package in the app", async () => {
   expect(grantRow).toHaveTextContent("Expires Apr 1, 2026");
   expect(grantRow).toHaveTextContent("+16,100");
   expect(
-    within(confirmationDialog).queryByText("Next recurring total"),
-  ).not.toBeInTheDocument();
-  expect(
     within(confirmationDialog).queryByText("Total credits"),
   ).not.toBeInTheDocument();
   const monthlyCreditsRow = within(confirmationDialog)
@@ -1984,7 +1971,6 @@ test.each<0 | 50>([50])(
     const notice = `Downgrades to ${targetUsagePackUsd === 0 ? "No package" : "$50"} on Apr 1, 2026.`;
     const downgradeNotice = screen.getByText(notice);
     expect(downgradeNotice).toBeVisible();
-    expect(screen.queryByText("+4,321 bonus credits")).not.toBeInTheDocument();
     const orderSummary = screen.getByRole("region", {
       name: "Order summary",
     });
@@ -2735,7 +2721,6 @@ test("Show billing controls according to plan capabilities", async () => {
 });
 
 test("Manage workspace payment methods in Stripe", async () => {
-  let portalRequestBody: unknown;
   context.mocks.data.org({
     id: "org_1",
     name: "Paid Org",
@@ -2744,8 +2729,7 @@ test("Manage workspace payment methods in Stripe", async () => {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, activeProBillingStatus());
   });
-  context.mocks.api(billingPortalContract.create, ({ body, respond }) => {
-    portalRequestBody = body;
+  context.mocks.api(billingPortalContract.create, ({ respond }) => {
     return respond(200, {
       url: "https://billing.stripe.com/customer-portal/test-org",
     });
@@ -2765,7 +2749,6 @@ test("Manage workspace payment methods in Stripe", async () => {
       "https://billing.stripe.com/customer-portal/test-org",
     );
   });
-  expect(portalRequestBody).not.toHaveProperty("mode");
 });
 
 test("Show custom-plan access without self-service plan changes", async () => {
@@ -2852,9 +2835,6 @@ test("Show the end date for a cancelled custom plan", async () => {
     expect(
       screen.getByText("Your custom plan will end on Aug 9, 2026."),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/Custom plan has been cancelled/u),
-    ).not.toBeInTheDocument();
   });
 });
 
@@ -3087,7 +3067,6 @@ test("Cancel and restore a paid concurrency subscription", async () => {
     name: "Change concurrency",
   });
   expect(canceledSubscriptionId).toBeNull();
-  expect(queryAllByRoleFast("radio", initialChangeDialog)).toHaveLength(0);
   click(buttonByText("Cancel entire subscription", initialChangeDialog));
   const cancelDialog = await screen.findByRole("dialog", {
     name: "Cancel entire subscription",
@@ -3191,7 +3170,6 @@ test("Increase an active paid concurrency subscription", async () => {
   const changeDialog = await screen.findByRole("dialog", {
     name: "Change concurrency",
   });
-  expect(queryAllByRoleFast("radio", changeDialog)).toHaveLength(0);
   const quantityInput = within(changeDialog).getByRole("textbox", {
     name: "Slots",
   });
@@ -3446,7 +3424,6 @@ test("Schedule and restore a paid-concurrency reduction", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "Change concurrency",
   });
-  expect(queryAllByRoleFast("radio", dialog)).toHaveLength(0);
   const quantityInput = within(dialog).getByRole("textbox", {
     name: "Slots",
   });

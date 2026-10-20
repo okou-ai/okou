@@ -2,10 +2,9 @@ import {
   connectorAccountTargetKey,
   type ConnectorAccountSummary,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import { readBuiltinConnectorAccountFacts } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { type CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   listConnectorAccountSummaries,
   type ConnectorCatalogStatus,
@@ -23,6 +22,7 @@ type MemberConnectionStatus =
   | "connected";
 
 export interface MemberConnectorFacts {
+  readonly scopeMismatch?: boolean;
   readonly integrationManaged: boolean;
   readonly accountSummary: ConnectorAccountSummary | null;
   readonly connectionId: string | null;
@@ -40,16 +40,7 @@ export async function customMemberAccountSummaries(
     : new Map();
 }
 
-function declaredMissingFields(connector: CustomConnectorResponse) {
-  return connector.fields.filter((field) => {
-    return (
-      field.required && connector.missingRequiredFields.includes(field.key)
-    );
-  });
-}
-
-function ordinaryMemberStatus(
-  connector: MemberConnector,
+export function memberAccountStatus(
   summary: ConnectorAccountSummary | null,
 ): MemberConnectionStatus {
   if (!summary || summary.accountCount === 0) {
@@ -62,22 +53,10 @@ function ordinaryMemberStatus(
   if (account.connectionStatus === "reconnect-required") {
     return "reconnect-required";
   }
-  if ("kind" in connector) {
-    if (declaredMissingFields(connector).length > 0) {
-      return "setup-required";
-    }
-    if (!connector.connected || connector.connectedAccountId !== account.id) {
-      return "account-review-required";
-    }
-  } else if (
-    !connector.connected ||
-    connector.connectionStatus === "reconnect-required" ||
-    (connector.connection?.id !== undefined &&
-      connector.connection.id !== null &&
-      connector.connection.id !== account.id)
-  ) {
+  if (account.setupStatus === undefined) {
     return "account-review-required";
   }
+  if (account.setupStatus !== "complete") return "setup-required";
   return "connected";
 }
 
@@ -102,18 +81,27 @@ export function memberConnectorFacts(
   // reach this projection, so a missing target establishes no saved account.
   const accountSummary =
     summaries.get(connectorAccountTargetKey(target)) ?? null;
+  const account = accountSummary?.defaultConnection;
+  const scopeMismatch =
+    !("kind" in connector) && account
+      ? readBuiltinConnectorAccountFacts(connector, account).scopeMismatch
+      : undefined;
+  const memberStatus = memberAccountStatus(accountSummary);
   return {
     integrationManaged: false,
     accountSummary,
     connectionId: accountSummary?.defaultConnection?.id ?? null,
-    memberStatus: ordinaryMemberStatus(connector, accountSummary),
+    scopeMismatch,
+    memberStatus:
+      !("kind" in connector) &&
+      memberStatus === "connected" &&
+      scopeMismatch === undefined
+        ? "account-review-required"
+        : memberStatus,
   };
 }
 
-export function memberConnectorStatusText(
-  connector: MemberConnector,
-  facts: MemberConnectorFacts,
-): string {
+export function memberConnectorStatusText(facts: MemberConnectorFacts): string {
   switch (facts.memberStatus) {
     case "not-connected":
       return "not connected";
@@ -122,13 +110,9 @@ export function memberConnectorStatusText(
     case "reconnect-required":
       return "reconnect needed";
     case "setup-required":
-      return "kind" in connector
-        ? `missing ${declaredMissingFields(connector)
-            .map((field) => {
-              return field.key;
-            })
-            .join(", ")}`
-        : "setup incomplete";
+      return facts.accountSummary?.defaultConnection?.setupStatus === "invalid"
+        ? "setup invalid"
+        : `missing ${facts.accountSummary?.defaultConnection?.missingRequiredFields?.join(", ") ?? "configuration"}`;
     case "account-review-required":
       return "account review required";
     case "connected":
@@ -141,18 +125,11 @@ export function memberConnectorAccountText(
   facts: MemberConnectorFacts,
 ): string {
   if (facts.integrationManaged) {
-    return memberConnectorStatusText(connector, facts);
+    return memberConnectorStatusText(facts);
   }
   const summary = facts.accountSummary;
   if (!summary || summary.accountCount === 0) {
-    const missing = "kind" in connector ? declaredMissingFields(connector) : [];
-    return missing.length > 0
-      ? `(not connected; missing ${missing
-          .map((field) => {
-            return field.key;
-          })
-          .join(", ")})`
-      : "(not connected)";
+    return "(not connected)";
   }
   const account = summary.defaultConnection;
   const parts = [
@@ -166,7 +143,7 @@ export function memberConnectorAccountText(
       : "(no default account)",
   ];
   if (facts.memberStatus !== "connected") {
-    parts.push(`(${memberConnectorStatusText(connector, facts)})`);
+    parts.push(`(${memberConnectorStatusText(facts)})`);
   }
   if (summary.accountCount > 1) {
     parts.push(`(${summary.accountCount} accounts)`);
@@ -176,7 +153,7 @@ export function memberConnectorAccountText(
       `(${summary.attentionCount}/${summary.accountCount} need attention)`,
     );
   }
-  if (!("kind" in connector) && connector.scopeMismatch) {
+  if (!("kind" in connector) && facts.scopeMismatch) {
     parts.push("(permissions update available)");
   }
   return parts.join(" ");

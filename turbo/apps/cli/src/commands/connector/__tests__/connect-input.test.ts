@@ -15,6 +15,10 @@ import {
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
 import { connectCommand } from "../connect";
+import {
+  stubConnectorAccountSummaries,
+  stubConnectorAccountDetails,
+} from "../../__tests__/helpers/connector-accounts";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const SECRET = "input-credential-must-not-appear";
@@ -26,6 +30,10 @@ describe("connector connect safe input and custom member accounts", () => {
     directory = mkdtempSync(join(tmpdir(), "connector-input-"));
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
+    server.use(
+      stubConnectorAccountSummaries([]),
+      stubConnectorAccountDetails(),
+    );
     for (const key of [
       "add",
       "reconnect",

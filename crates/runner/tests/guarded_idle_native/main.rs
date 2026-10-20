@@ -7,6 +7,9 @@ mod batch_repark;
 mod batch_replacement;
 mod claim_loss;
 mod claim_peer;
+mod claim_producer;
+mod claim_restore;
+mod claim_sample;
 mod cleanup_progress;
 mod continuation;
 mod continuation_api;
@@ -35,6 +38,7 @@ mod pressure_condition;
 mod read_cancellation;
 mod read_revocation;
 mod read_stop;
+mod real_api_claims;
 mod recovery;
 mod recovery_source;
 mod refusal;
@@ -101,12 +105,17 @@ enum Corpus {
     ClaimLoss,
     SpeculativeFault(bool),
     DualHistory(bool),
+    ClaimUnavailable(claim_peer::Outcome),
+    ClaimProducerLost { cancelled: bool, restored: bool },
+    RealApiClaims,
+    RealApiClaimant(bool),
 }
 
 enum PreparationProbe<'a> {
     None,
     Create(&'a Arc<create_cancellation::Probe>),
     Returned(&'a Arc<returned_guest_probe::Probe>),
+    Claim(&'a Arc<claim_restore::Probe>),
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -735,6 +744,32 @@ async fn native_provider_claim_rejection_preserves_guarded_rollback_and_required
 }
 
 #[test]
+fn native_real_api_claim_report_requires_both_native_owners_and_public_authority() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/real_api_claim_report_test.py"
+        ))
+        .output()
+        .expect("native real API claim report requires Python3");
+    assert!(
+        output.status.success(),
+        "real API claim report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires an invocation-owned real API/PostgreSQL and two native Guest owners"]
+async fn native_real_api_competing_claims_preserve_both_owners() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::RealApiClaims,
+    )
+    .await
+}
+
+#[test]
 fn native_speculative_fault_report_requires_uncertainty_and_complete_saving() {
     let output = std::process::Command::new("python3")
         .arg(concat!(
@@ -760,6 +795,94 @@ async fn native_speculative_callback_loss_preserves_uncertain_owner_and_required
             Corpus::SpeculativeFault(false),
             Corpus::SpeculativeFault(true),
         ],
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source provider failure P1 proof"]
+async fn native_provider_failures_preserve_guarded_rollback_and_required_saving() -> TestResult<()>
+{
+    measured_selected_corpora(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        &[
+            Corpus::ClaimUnavailable(claim_peer::Outcome::Decode),
+            Corpus::ClaimUnavailable(claim_peer::Outcome::Disconnect),
+        ],
+    )
+    .await
+}
+
+#[test]
+fn native_claim_failure_readers_keep_unavailable_and_uncertainty_separate() {
+    for file in [
+        "claim_failure_report_test.py",
+        "claim_producer_report_test.py",
+    ] {
+        let output = std::process::Command::new("python3")
+            .arg(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/guarded_idle_native")
+                    .join(file),
+            )
+            .output()
+            .expect("claim failure readers require Python3");
+        assert!(
+            output.status.success(),
+            "{file}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "preserves a failed native producer outcome and original data; requires owned KVM/NBD"]
+async fn native_claim_producer_loss_retains_original_fresh() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::ClaimProducerLost {
+            cancelled: false,
+            restored: false,
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "preserves a failed native producer outcome and original data; requires owned KVM/NBD"]
+async fn native_claim_producer_loss_retains_original_snapshot() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::ClaimProducerLost {
+            cancelled: false,
+            restored: true,
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "preserves cancelled observation and failed producer outcome; requires owned KVM/NBD"]
+async fn native_cancelled_claim_observer_retains_original_fresh() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::ClaimProducerLost {
+            cancelled: true,
+            restored: false,
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "preserves cancelled observation and failed producer outcome; requires owned KVM/NBD"]
+async fn native_cancelled_claim_observer_retains_original_snapshot() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::ClaimProducerLost {
+            cancelled: true,
+            restored: true,
+        },
     )
     .await
 }
@@ -974,6 +1097,30 @@ async fn measured_selected_corpora(scopes: &[NativeScope], corpora: &[Corpus]) -
     .await?;
     let result = async {
         for corpus in corpora {
+            if *corpus == Corpus::RealApiClaims {
+                let claimant = |second| {
+                    let (runtime, base, inputs, artifacts) = (&runtime, &base, &inputs, &artifacts);
+                    async move {
+                        let result = exercise_selected_factories(
+                            runtime,
+                            base,
+                            inputs,
+                            scopes,
+                            Some(artifacts),
+                            Corpus::RealApiClaimant(second),
+                        )
+                        .await;
+                        if result.is_err() {
+                            real_api_claims::release_failed_gates()?;
+                        }
+                        result
+                    }
+                };
+                let (a, b) = tokio::join!(claimant(false), claimant(true));
+                a?;
+                b?;
+                continue;
+            }
             exercise_selected_factories(
                 &runtime,
                 &base,
@@ -1063,6 +1210,13 @@ async fn exercise_selected_factories(
 ) -> TestResult<()> {
     for &scope in scopes {
         for restored in [false, true] {
+            if let Corpus::ClaimProducerLost {
+                restored: selected, ..
+            } = corpus
+                && selected != restored
+            {
+                continue;
+            }
             // Never share a production Runner directory or another invocation's cache.
             let owned = tempfile::tempdir_in(base)?.keep();
             let paths = RunnerPaths::new(owned.clone());
@@ -1108,6 +1262,19 @@ async fn exercise_selected_factories(
                                 "ClaimLoss".into()
                             } else if let Corpus::SpeculativeFault(panic) = corpus {
                                 format!("Speculative{}", if panic { "Panic" } else { "Drop" })
+                            } else if let Corpus::ClaimUnavailable(outcome) = corpus {
+                                format!("ClaimUnavailable-{}", outcome.label())
+                            } else if let Corpus::ClaimProducerLost { cancelled, .. } = corpus {
+                                format!(
+                                    "ClaimProducerLost-{}",
+                                    if cancelled { "cancelled" } else { "observed" }
+                                )
+                            } else if let Corpus::RealApiClaimant(second) = corpus {
+                                format!(
+                                    "RealClaim-{}-{}",
+                                    real_api_claims::order()?,
+                                    if second { "b" } else { "a" }
+                                )
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1154,6 +1321,8 @@ async fn exercise_selected_factories(
             } else {
                 None
             };
+            let claim_probe =
+                matches!(corpus, Corpus::ClaimProducerLost { .. }).then(claim_restore::Probe::new);
             let factory = if let Some(probe) = &create_probe {
                 let inner = runtime
                     .create_factory_with_home_checkpoint_for_test(config, probe.checkpoint())
@@ -1171,6 +1340,10 @@ async fn exercise_selected_factories(
                     inner,
                     probe: probe.clone(),
                 }) as Box<dyn SandboxFactory>
+            } else if let Some(probe) = &claim_probe {
+                runtime
+                    .create_factory_with_guest_checkpoint_for_test(config, probe.checkpoint())
+                    .await?
             } else {
                 runtime.create_factory(config).await?
             };
@@ -1191,11 +1364,13 @@ async fn exercise_selected_factories(
                 inputs,
                 scope,
                 proof.as_ref(),
-                corpus,
+                CaseMode { corpus, restored },
                 if let Some(probe) = &create_probe {
                     PreparationProbe::Create(probe)
                 } else if let Some(probe) = &returned_probe {
                     PreparationProbe::Returned(probe)
+                } else if let Some(probe) = &claim_probe {
+                    PreparationProbe::Claim(probe)
                 } else {
                     PreparationProbe::None
                 },
@@ -1203,11 +1378,10 @@ async fn exercise_selected_factories(
             .await;
             // A failed measured case is not permission to tear down dependencies
             // or delete its files. Accepted cleanup retains its own factory owner.
-            if proof.is_some() {
-                result
-                    .as_ref()
-                    .map_err(|error| io::Error::other(error.to_string()))?;
-            }
+            let result = match result {
+                Err(error) if proof.is_some() => return Err(error),
+                result => result,
+            };
             if let Some(proof) = &proof {
                 proof.release_completed_owners();
             }
@@ -1226,15 +1400,21 @@ async fn exercise_selected_factories(
     Ok(())
 }
 
+struct CaseMode {
+    corpus: Corpus,
+    restored: bool,
+}
+
 async fn exercise_retirement(
     factory: Arc<Box<dyn SandboxFactory>>,
     paths: RunnerPaths,
     inputs: &fixture::Inputs,
     scope: NativeScope,
     proof: Option<&Arc<evidence::Case>>,
-    corpus: Corpus,
+    mode: CaseMode,
     preparation_probe: PreparationProbe<'_>,
 ) -> TestResult<()> {
+    let CaseMode { corpus, restored } = mode;
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
         1,
@@ -1243,9 +1423,20 @@ async fn exercise_retirement(
     ));
     status.write_initial().await?;
     let cache = HomeImageCache::new(paths.clone()).with_actual_fs_stats_for_test();
-    let run_id = RunId::new_v4();
+    let real_claim = if let Corpus::RealApiClaimant(second) = corpus {
+        Some(real_api_claims::Input::load(second, restored)?)
+    } else {
+        None
+    };
+    let run_id = real_claim
+        .as_ref()
+        .map(|input| input.original_run_id)
+        .unwrap_or_else(RunId::new_v4);
     let sandbox_id = SandboxId::new_v4();
-    let reuse_key = format!("thread:native-guarded-{run_id}");
+    let reuse_key = real_claim
+        .as_ref()
+        .map(|input| input.reuse_key.clone())
+        .unwrap_or_else(|| format!("thread:native-guarded-{run_id}"));
     let rootfs_hash = std::env::var("OKOU_TEST_IDLE_ROOTFS_HASH")?;
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
@@ -1408,6 +1599,16 @@ async fn exercise_retirement(
         .await;
     }
     let parked: TestResult<_> = async {
+        if matches!(corpus, Corpus::ClaimProducerLost { .. }) {
+            let digest = fixture::verify_speculative_guest(&*sandbox, run_id).await?;
+            fixture::exec(&*sandbox, "sync").await?;
+            proof.ok_or_else(|| io::Error::other("claim loss proof absent"))?
+                .claim_producer_witness("original_data_durable", serde_json::json!({
+                    "history_run_id": run_id, "payload_sha256": digest,
+                    "payload_bytes": fixture::PAYLOAD_BYTES, "original_private_and_home_verified": true,
+                    "guest_sync_completed": true,
+                }))?;
+        }
         let backing = sandbox
             .backing_process()
             .ok_or_else(|| io::Error::other("Firecracker supplied no exact backing capability"))?;
@@ -1478,6 +1679,9 @@ async fn exercise_retirement(
             | Corpus::BatchReplacement
             | Corpus::ClaimLoss
             | Corpus::SpeculativeFault(_)
+            | Corpus::ClaimUnavailable(_)
+            | Corpus::ClaimProducerLost { .. }
+            | Corpus::RealApiClaimant(_)
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1505,7 +1709,18 @@ async fn exercise_retirement(
     } else {
         candidate
     };
-    let candidate = if corpus == Corpus::ClaimLoss {
+    let candidate = if let Some(input) = &real_claim {
+        candidate
+            .with_last_completed_at(input.original_completed_at.clone())
+            .with_guest_timezone_intent(
+                runner_lifecycle::guest_timezone::GuestTimezoneIntent::from_context(
+                    &input.predecessor_context,
+                ),
+            )
+    } else if matches!(
+        corpus,
+        Corpus::ClaimLoss | Corpus::ClaimUnavailable(_) | Corpus::ClaimProducerLost { .. }
+    ) {
         candidate.with_last_completed_at(chrono::Utc::now().to_rfc3339())
     } else {
         candidate
@@ -1826,6 +2041,38 @@ async fn exercise_retirement(
                     paths.base_dir(),backing.clone(),run_id,panic).await?;
                     return Ok(None);
                 }
+                if let Corpus::ClaimProducerLost { cancelled, .. } = corpus {
+                    let PreparationProbe::Claim(restore) = preparation_probe else {
+                        return Err(io::Error::other("native claim restore observation missing").into());
+                    };
+                    return claim_producer::exercise(claim_producer::Request {
+                        context: transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs, proof: proof.ok_or_else(|| io::Error::other("claim producer proof absent"))?,
+                        directory: paths.base_dir(), backing: backing.clone(), history: run_id,
+                        restore, cancelled, cache: &cache,
+                    }).await.map(|()| None);
+                }
+                if let Corpus::ClaimUnavailable(outcome) = corpus {
+                    claim_loss::exercise_failure(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, proof.ok_or_else(|| io::Error::other("claim failure proof absent"))?,
+                    paths.base_dir(), backing.clone(), run_id, outcome).await?;
+                    return Ok(None);
+                }
+                if let Some(input) = &real_claim {
+                    real_api_claims::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, proof.ok_or_else(|| io::Error::other("real claim proof missing"))?,
+                        paths.base_dir(), backing.clone(), input).await?;
+                    return Ok(None);
+                }
                 if corpus == Corpus::ClaimLoss {
                     claim_loss::exercise(transitions::Context {
                         factory: factory.clone(), pool: pool.clone(), status: status.clone(),
@@ -2134,7 +2381,17 @@ async fn exercise_retirement(
         ensure_home_drive_mounted(&*sandbox, next_run)
             .await
             .map_err(|failure| failure.error)?;
-        fixture::verify_saved_guest(&*sandbox, run_id).await
+        fixture::verify_saved_guest(&*sandbox, run_id).await?;
+        if let Some(input) = &real_claim {
+            real_api_claims::verify_saved(
+                &*sandbox,
+                paths.base_dir(),
+                input,
+                proof.ok_or_else(|| io::Error::other("saved real claim proof missing"))?,
+            )
+            .await?;
+        }
+        Ok::<(), Box<dyn Error + Send + Sync>>(())
     }
     .await;
     factory.destroy(sandbox).await;

@@ -310,9 +310,6 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
     expect(
       within(sidebar).getByText("A persisted email message."),
     ).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "Connecting your account" }),
-    ).not.toBeInTheDocument();
   });
 });
 

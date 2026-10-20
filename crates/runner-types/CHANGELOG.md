@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-types-v0.7.14...runner-types-v0.8.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+## [0.7.14](https://github.com/okou-ai/okou/compare/runner-types-v0.7.13...runner-types-v0.7.14) (2026-10-20)
+
+
+### Bug Fixes
+
+* align variable-completed hostname escape validation ([#41695](https://github.com/okou-ai/okou/issues/41695)) ([dbddea1](https://github.com/okou-ai/okou/commit/dbddea157414522c6d102bd829176f56516f382a))
+
+## [0.7.13](https://github.com/okou-ai/okou/compare/runner-types-v0.7.12...runner-types-v0.7.13) (2026-10-20)
+
 ## [0.7.12](https://github.com/okou-ai/okou/compare/runner-types-v0.7.11...runner-types-v0.7.12) (2026-10-19)
 
 

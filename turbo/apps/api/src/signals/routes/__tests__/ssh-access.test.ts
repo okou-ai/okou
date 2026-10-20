@@ -142,6 +142,7 @@ describe("live chat SSH Run inventory", () => {
         runnersJobClaimContract,
       ).claim({
         headers: runnerHeaders,
+        extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: runId },
         body: {
           runnerIdentity,
@@ -190,9 +191,6 @@ describe("live chat SSH Run inventory", () => {
       });
     };
     await expect(listIds()).resolves.toStrictEqual([]);
-    await expect(
-      accept(inventory().list({ headers: f.token() }), [200]),
-    ).resolves.toMatchObject({ body: { hosts: [] } });
     await accept(
       remote.updateHostDefault({
         headers,

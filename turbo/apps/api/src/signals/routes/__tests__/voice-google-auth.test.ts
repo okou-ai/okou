@@ -385,7 +385,6 @@ describe("Google voice workload identity through the public API", () => {
       expect(attempts).toBe(1);
       await accept(polish(), [200]);
       expect(attempts).toBe(2);
-      expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
     },
   );
 

@@ -45,7 +45,9 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertTrue(
       messages.allSatisfy { $0.userMessage.parts.first?.fileId == AttachmentFlowFixture.fileID })
     XCTAssertTrue(conversation.pending.isEmpty)
-    XCTAssertTrue(conversation.messages.first?.text.contains("notes.txt") == true)
+    XCTAssertEqual(conversation.messages.first?.text, "")
+    XCTAssertEqual(conversation.messages.first?.attachments.first?.filename, "notes.txt")
+    XCTAssertEqual(conversation.messages.first?.attachments.first?.id, AttachmentFlowFixture.fileID)
     XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
   }
 
@@ -105,6 +107,128 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
   }
 
+  func testFirstSendBeforeAgentNavigationCannotRestoreTheOldAgentDraftAfterward() async throws {
+    let fixture = AttachmentFlowFixture()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL,
+        userID: "user", workspaceID: "org"), directory: directory)
+    var old = ChatDraftDocument()
+    old.replaceText("Previously saved Agent draft")
+    fixture.state.value.withLock {
+      $0.agentDrafts["/api/agents/\(AttachmentFlowFixture.agentID)/draft"] = ComposerDraft(
+        document: old)
+    }
+    let store = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
+    defer { store.close() }
+    XCTAssertNil(store.selectedAgentID)
+    store.newChatDraft = "First message before navigation finishes"
+    await store.sendNewChat()
+    await store.newComposer.synchronize()
+    XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
+    XCTAssertEqual(store.newChatDraft, "")
+    XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 1)
+    store.startNewChat()
+    XCTAssertEqual(store.newChatDraft, "")
+  }
+
+  func testUncertainSendSurvivesRestartWithOriginalIdentityAndNoAutomaticResend() async throws {
+    for acceptedBeforeFailure in [false, true] {
+      let fixture = AttachmentFlowFixture(
+        failSend: true, acceptBeforeFailure: acceptedBeforeFailure)
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let storage = ChatDraftStorage(
+        scope: ChatCacheScope(
+          apiBaseURL: fixture.http.baseURL,
+          userID: "user", workspaceID: "org"), directory: directory)
+      let first = fixture.conversation(storage: storage)
+      await first.composer.synchronize()
+      first.draft = "Keep this delivery identity"
+      let source = try makeFile()
+      defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+      first.attachmentDraft.importFiles([source])
+      try await eventually { first.attachmentDraft.hasAttachments && first.attachmentDraft.isReady }
+      await first.send()
+      let original = try XCTUnwrap(first.pending.first)
+      XCTAssertTrue(original.needsRetry)
+      first.close()
+      let reopened = fixture.conversation(storage: storage)
+      XCTAssertEqual(reopened.draft, "")
+      XCTAssertEqual(reopened.pending.first?.id, original.id)
+      await reopened.refresh()
+      XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 1)
+      if acceptedBeforeFailure {
+        XCTAssertTrue(reopened.pending.isEmpty)
+      } else {
+        let retry = try XCTUnwrap(reopened.pending.first)
+        await reopened.retry(retry)
+        XCTAssertTrue(reopened.pending.isEmpty)
+        let sent = try fixture.state.value.withLock {
+          try $0.messages.map {
+            try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0)
+          }
+        }
+        XCTAssertEqual(sent.map(\.clientEventId), [original.id, original.id])
+        XCTAssertEqual(sent.last?.userMessage.parts.last?.fileId, AttachmentFlowFixture.fileID)
+      }
+      XCTAssertEqual(fixture.state.value.withLock { $0.draft }, ComposerDraft())
+      reopened.close()
+    }
+  }
+
+  func testWorkspaceRestoresSeparateAgentAndExistingThreadDraftsAcrossSwitchesAndRestart()
+    async throws
+  {
+    let fixture = AttachmentFlowFixture()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL,
+        userID: "user", workspaceID: "org"), directory: directory)
+    let store = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
+    store.selectedAgentID = AttachmentFlowFixture.agentID
+    store.newChatDraft = "Agent draft"
+    let source = try makeFile()
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    store.newAttachmentDraft.importFiles([source])
+    try await eventually {
+      store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
+    }
+    store.startNewChat()
+    XCTAssertEqual(store.newChatDraft, "Agent draft")
+    XCTAssertTrue(store.newAttachmentDraft.hasAttachments)
+    let result = await store.createChat(agentID: AttachmentFlowFixture.agentID)
+    let created = try XCTUnwrap(result)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    conversation.draft = "Thread draft"
+    store.startNewChat()
+    XCTAssertEqual(store.newChatDraft, "Agent draft")
+    store.selectChat(created.id)
+    XCTAssertEqual(store.selectedConversation?.draft, "Thread draft")
+    store.close()
+    let reopened = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.selectedAgentID, AttachmentFlowFixture.agentID)
+    XCTAssertEqual(reopened.newChatDraft, "Agent draft")
+    XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
+    _ = await reopened.createChat(agentID: AttachmentFlowFixture.agentID)
+    XCTAssertEqual(reopened.selectedConversation?.draft, "Thread draft")
+    reopened.selectedAgentID = "other-agent"
+    XCTAssertEqual(reopened.newChatDraft, "")
+    XCTAssertFalse(reopened.newAttachmentDraft.hasAttachments)
+    reopened.selectedAgentID = AttachmentFlowFixture.agentID
+    XCTAssertEqual(reopened.newChatDraft, "Agent draft")
+    reopened.newComposer.clear()
+  }
+
   private func makeFile() throws -> URL {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -150,30 +274,51 @@ final class AttachmentDraftTests: XCTestCase {
   }
 }
 
-private final class AttachmentFlowFixture: Sendable {
+final class AttachmentFlowFixture: Sendable {
   static let fileID = "42000000-0000-4000-8000-000000000001"
   static let agentID = "42000000-0000-4000-8000-000000000002"
   static let threadID = "42000000-0000-4000-8000-000000000003"
   struct State: Sendable {
     var uploads = 0
+    var preparations: [Data] = []
     var messages: [Data] = []
     var accepted: Data?
+    var draft = ComposerDraft()
+    var agentDrafts: [String: ComposerDraft] = [:]
   }
   let state = AttachmentFlowState()
   let http: ChatHTTPFixture
 
   init(
-    failUpload: Bool = false, failSend: Bool = false,
+    failUpload: Bool = false, failSend: Bool = false, acceptBeforeFailure: Bool = false,
     storage: @escaping @Sendable () async -> Void = {},
-    creation: @escaping @Sendable () async -> Bool = { true }
+    creation: @escaping @Sendable () async -> Bool = { true },
+    draftRead: @escaping @Sendable () async -> Void = {}
   ) {
     let state = self.state
     http = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
       let metadata =
         "{\"id\":\"\(Self.fileID)\",\"filename\":\"notes.txt\",\"contentType\":\"text/plain\",\"size\":5,\"url\":\"artifact://\(Self.fileID)\"}"
+      if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
+        if request.httpMethod == "PATCH" {
+          let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
+          state.value.withLock { $0.agentDrafts[path] = draft }
+          return ChatHTTPResponse(status: 204, body: "")
+        }
+        let draft = state.value.withLock { $0.agentDrafts[path] ?? ComposerDraft() }
+        return ChatHTTPResponse(
+          body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
+      }
       switch path {
+      case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
+      case "/api/chat-threads/\(Self.threadID)/draft":
+        await draftRead()
+        return ChatHTTPResponse(
+          body: String(
+            decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
       case "/api/uploads/prepare":
+        state.value.withLock { $0.preparations.append(chatRequestBody(request)) }
         let url = "https://\(request.url!.host!)/storage/object"
         return ChatHTTPResponse(
           body: String(metadata.dropLast()) + ",\"uploadUrl\":\"\(url)\",\"uploadHeaders\":{}}")
@@ -190,7 +335,8 @@ private final class AttachmentFlowFixture: Sendable {
           body:
             "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
       case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
-      case "/api/run-models", "/api/model-catalog": return ChatHTTPResponse(body: "{\"models\":[]}")
+      case "/api/run-models", "/api/model-catalog":
+        return ChatHTTPResponse(body: "{\"models\":[],\"routes\":[]}")
       case "/api/chat-threads":
         guard await creation() else {
           return ChatHTTPResponse(
@@ -232,11 +378,19 @@ private final class AttachmentFlowFixture: Sendable {
         return ChatHTTPResponse(
           body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
       case "/api/chat-threads/\(Self.threadID)":
+        if request.httpMethod == "PATCH" {
+          let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
+          state.value.withLock { $0.draft = draft }
+          return ChatHTTPResponse(status: 204, body: "")
+        }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case "/api/chat/events":
         let failed = state.value.withLock {
           $0.messages.append(chatRequestBody(request))
-          if failSend && $0.messages.count == 1 { return true }
+          if failSend && $0.messages.count == 1 {
+            if acceptBeforeFailure { $0.accepted = chatRequestBody(request) }
+            return true
+          }
           $0.accepted = chatRequestBody(request)
           return false
         }
@@ -250,7 +404,7 @@ private final class AttachmentFlowFixture: Sendable {
     }
   }
 
-  @MainActor func conversation() -> ConversationStore {
+  @MainActor func conversation(storage: ChatDraftStorage? = nil) -> ConversationStore {
     let sync = ChatSync(client: http.client)
     return ConversationStore(
       thread: ChatThread(
@@ -258,7 +412,9 @@ private final class AttachmentFlowFixture: Sendable {
         createdAt: .now, updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync), webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { false }, didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {})
+      isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
+      draftRepository: storage.map { _ in ChatDraftRepository(client: http.client) },
+      draftStorage: storage)
   }
 
   struct Message: Codable {
@@ -270,6 +426,7 @@ private final class AttachmentFlowFixture: Sendable {
       let parts: [Part]
       struct Part: Codable {
         let type: String
+        let text: String?
         let fileId: String?
         let filenameSnapshot: String?
         let contentType: String?
@@ -278,6 +435,6 @@ private final class AttachmentFlowFixture: Sendable {
   }
 }
 
-private final class AttachmentFlowState: Sendable {
+final class AttachmentFlowState: Sendable {
   let value = Mutex(AttachmentFlowFixture.State())
 }

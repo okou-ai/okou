@@ -55,7 +55,6 @@ export function ChatThreadLinkChip({
           ? `${STRUCTURED_INLINE_LINK_REFERENCE_CLASS} ${MARKDOWN_CHIP_RESET_CLASS}`
           : STRUCTURED_INLINE_LINK_REFERENCE_CLASS
       }
-      title={title}
     >
       <MessageCircle size={13} className="shrink-0 text-selected-foreground" />
       <span className="min-w-0 truncate">{title}</span>

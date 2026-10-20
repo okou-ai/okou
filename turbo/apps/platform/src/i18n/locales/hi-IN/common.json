@@ -709,7 +709,6 @@
       "multiAccent": "बहु-उच्चारण",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
       "noMatches": "कोई मेल नहीं",
-      "placeholder": "{{title}} वेबसाइट पूर्वावलोकन प्लेसहोल्डर",
       "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
@@ -1912,7 +1911,6 @@
       "back": "पीछे",
       "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
       "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
-      "defaultAccountFor": "{{connector}} · डिफ़ॉल्ट खाता उपयोग हो रहा है: {{account}}",
       "directory": {
         "allCategories": "सभी",
         "askAdmin": "इसे चालू करने के लिए एडमिन से कहें",
@@ -1929,8 +1927,6 @@
         "emptyCustomTitle": "अभी कोई कस्टम कनेक्टर नहीं है",
         "matchCount_one": "{{count}} परिणाम",
         "matchCount_other": "{{count}} परिणाम",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "ध्यान देने की ज़रूरत",
         "nextCategories": "अगली श्रेणियाँ",
         "noResultsBody": "किसी प्रोडक्ट का नाम आज़माएँ, या API या MCP सर्वर से अपना बनाएँ।",
@@ -1947,6 +1943,7 @@
       },
       "fallsBackTo": "{{account}} पर वापस जाता है",
       "find": "कनेक्टर ढूंढें...",
+      "loadFailed": "कनेक्टर्स लोड नहीं हो सके।",
       "noUsableAccount": "कोई उपयोग योग्य खाता नहीं",
       "remove": "{{connectorName}} हटाएँ",
       "selectedAccountFor": "{{connector}} · चुना गया खाता: {{account}}",
@@ -2146,16 +2143,11 @@
       "skipAutomationEvent": "ऑटोमेशन ईवेंट छोड़ें"
     },
     "relations": {
-      "communications": "संदेश",
-      "idle": "निष्क्रिय",
+      "chats": "चैट",
       "loadFailed": "लोड नहीं हुआ",
-      "messageUnavailable": "संदेश उपलब्ध नहीं",
       "origin": "शुरुआत",
       "queued": "कतार में",
-      "received": "प्राप्त हुआ",
       "running": "चल रहा है",
-      "sent": "भेजा गया",
-      "toggleMessages": "{{title}} के साथ संदेश",
       "unavailable": "उपलब्ध नहीं",
       "untitled": "बिना शीर्षक"
     },
@@ -2178,11 +2170,10 @@
     "resources": {
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
-      "emptyLinks": "इस चैट में अभी कोई लिंक नहीं है",
+      "empty": "इस चैट के आर्टिफ़ैक्ट्स और संबंधित चैट यहाँ दिखाई देते हैं।",
       "expand": "विस्तार करें",
-      "links": "लिंक",
       "loadFailed": "संसाधन लोड नहीं हो सके",
-      "loadingLinks": "लिंक लोड हो रहे हैं",
+      "loading": "संसाधन लोड हो रहे हैं",
       "retry": "फिर कोशिश करें",
       "title": "चैट संसाधन"
     },
@@ -3096,16 +3087,9 @@
       "noAccountsFound": "कोई खाता नहीं मिला",
       "reconnectRequired": "दोबारा कनेक्ट करना आवश्यक है",
       "rename": "नाम बदलें",
-      "skipName": "छोड़ें",
-      "summaryMany": "{{value}} खाते",
-      "summaryMany_one": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} खाता",
-      "summaryOne_one": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} पर ध्यान देना आवश्यक है",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_other": ""
+      "setupIncomplete": "सेटअप अधूरा है",
+      "setupUnavailable": "खाते की स्थिति उपलब्ध नहीं है",
+      "skipName": "छोड़ें"
     },
     "actions": {
       "apply": "आवेदन करना",
@@ -3270,7 +3254,6 @@
       },
       "scope": {
         "aria": "कनेक्टर दायरा",
-        "attention": "ध्यान देने की आवश्यकता",
         "connected": "जुड़े हुए",
         "custom": "कस्टम",
         "discover": "खोजें",
@@ -3966,9 +3949,28 @@
       "connected": "{{connector}} कनेक्ट हुआ"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "अनुमति अपडेट नहीं हो सकी। रीफ़्रेश करके फिर कोशिश करें।",
+    "allow": "1 घंटे की अनुमति दें",
+    "approved": "Shell का ऐक्सेस दिया गया",
+    "deadline": "{{date}} को समाप्त होगा",
+    "denied": "अनुरोध अस्वीकार किया गया",
+    "deny": "अस्वीकार करें",
+    "description": "एजेंट को आपके कंप्यूटर पर Shell इस्तेमाल करने की अनुमति चाहिए।",
+    "details": "विवरण खोलें",
+    "expired": "अनुमति की समय सीमा समाप्त",
+    "loading": "अनुमति लोड हो रही है…",
+    "pending": "मंज़ूरी के लिए तैयार",
+    "refresh": "रीफ़्रेश करें",
+    "revoke": "ऐक्सेस रद्द करें",
+    "revoked": "Shell का ऐक्सेस रद्द किया गया",
+    "scope": "केवल इस चैट और कंप्यूटर के लिए। ऐक्सेस खत्म होने पर मौजूदा टर्मिनल खुले रहते हैं।",
+    "title": "Desktop Shell का ऐक्सेस",
+    "unavailable": "अनुमति उपलब्ध नहीं है",
+    "waiting": "Run सक्रिय होने या चुना गया कंप्यूटर बदलने पर मंज़ूरी उपलब्ध नहीं होती।"
+  },
   "documentTemplates": {
     "agreementNote": "आपके समझौते के लिए एक शुरुआती मसौदा। हस्ताक्षर करने से पहले अपने प्रोजेक्ट और लागू क्षेत्राधिकार के अनुसार शर्तों की समीक्षा करें।",
-    "back": "टेम्पलेट पर वापस जाएँ",
     "categories": {
       "all": "सभी",
       "business-record": "व्यावसायिक रिकॉर्ड",
@@ -4019,7 +4021,6 @@
     "preview": "{{title}} का पूर्वावलोकन",
     "previousPage": "पिछला नमूना पृष्ठ",
     "retry": "फिर से कोशिश करें",
-    "samplePages": "नमूना पृष्ठ: {{total}}",
     "title": "दस्तावेज़",
     "useNamed": "{{title}} इस्तेमाल करें"
   },
@@ -5086,6 +5087,10 @@
           "title": "डिफ़ॉल्ट मॉडल"
         },
         "description": "नए चैट के लिए डिफ़ॉल्ट सेटिंग और संदेश भेजने का तरीका चुनें।",
+        "resources": {
+          "description": "जगह होने पर बातचीत के बगल में चैट के आर्टिफ़ैक्ट्स और संबंधित चैट दिखाएँ।",
+          "title": "संसाधन अपने-आप खोलें"
+        },
         "sectionTitle": "चैट"
       },
       "debug": {
@@ -5176,7 +5181,7 @@
       },
       "morningBrief": {
         "conflict": "इंस्टॉलेशन स्थिति असंगत होने के कारण Morning Brief अस्थायी रूप से उपलब्ध नहीं है। मिलान पूरा होने पर फिर से कोशिश करें।",
-        "description": "अपने समय क्षेत्र में सुबह 7:00 बजे दैनिक प्राथमिकताएँ प्राप्त करें।",
+        "description": "अपने समय क्षेत्र में सुबह 7:00 बजे से पहले दैनिक प्राथमिकताएँ प्राप्त करें।",
         "missingDefaultAgent": "Morning Brief चालू करने से पहले उपयोग योग्य डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
         "preparationFailed": "सेटअप अपने आप फिर से आज़माया जाएगा। आप अभी भी दोबारा कोशिश कर सकते हैं।",

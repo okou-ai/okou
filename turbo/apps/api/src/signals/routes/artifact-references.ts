@@ -115,7 +115,7 @@ const resolveReference$ = command(
         }
         const shared = await set(
           resolveSharedThreadArtifactReference$,
-          record,
+          { ...record, viewerId: auth.userId },
           signal,
         );
         return shared

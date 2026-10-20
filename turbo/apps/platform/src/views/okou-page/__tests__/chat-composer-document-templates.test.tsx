@@ -83,8 +83,7 @@ test("Document category and scroll survive preview", async () => {
     "Workflow",
   ]);
   click(control(dialog, "tab", "Document"));
-  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(45);
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
   click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const grid = dialog.querySelector<HTMLElement>(
@@ -122,19 +121,19 @@ test("Document category and scroll survive preview", async () => {
 
 test("Using a document template preserves the draft until the user sends it", async () => {
   const { user, capture } = await setup();
-  await fill(await findComposerEditor(), "Prepare the invoice for my client.");
+  await fill(await findComposerEditor(), "Explain this proposal to my client.");
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
-  click(control(dialog, "button", "Use Simple invoice"));
+  click(control(dialog, "button", "Use Sidebar report"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   const preservedEditor = await findComposerEditor();
   expect(preservedEditor).toHaveTextContent(
-    "Prepare the invoice for my client.",
+    "Explain this proposal to my client.",
   );
   expect(composerInlineTemplates()).toHaveLength(1);
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Simple invoice");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Sidebar report");
   expect(
     control(document.body, "button", "Remove Document"),
   ).toBeInTheDocument();
@@ -146,10 +145,10 @@ test("Using a document template preserves the draft until the user sends it", as
   });
   expect(capture.sentMessages[0]?.parts).toContainEqual({
     type: "template",
-    titleSnapshot: "Simple invoice",
+    titleSnapshot: "Sidebar report",
     template: {
       type: "document",
-      selection: { documentTemplateId: "document-template:simple-invoice" },
+      selection: { documentTemplateId: "document-template:sidebar-report" },
     },
   });
 });
@@ -179,9 +178,6 @@ test("Document purposes are directly selectable without losing the draft or sele
   expect(
     within(shelf).queryByLabelText("Import your own document"),
   ).not.toBeInTheDocument();
-  expect(within(categories).queryByText("All")).not.toBeInTheDocument();
-  expect(within(categories).queryByText("More")).not.toBeInTheDocument();
-  expect(within(categories).queryByRole("combobox")).not.toBeInTheDocument();
   click(control(categories, "button", "Invoice"));
   expect(control(categories, "button", "Invoice")).toHaveAttribute(
     "aria-pressed",
@@ -191,7 +187,7 @@ test("Document purposes are directly selectable without losing the draft or sele
   click(control(shelf, "button", "Use template Itemized invoice"));
   expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
   click(control(categories, "button", "Reports"));
-  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(5);
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(6);
   expect(
     control(shelf, "button", "Use template Two-column report"),
   ).toBeInTheDocument();
@@ -204,7 +200,7 @@ test("Document purposes are directly selectable without losing the draft or sele
     "aria-pressed",
     "true",
   );
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(5);
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(6);
   await user.keyboard("{Escape}");
   click(control(document.body, "button", "Remove Document"));
   await screen.findByRole("group", { name: "Choose a task" });
@@ -295,7 +291,7 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
   click(control(dialog, "button", "Preview Mutual NDA"));
-  expect(control(dialog, "button", "Back to templates")).toHaveFocus();
+  expect(control(dialog, "button", "Document")).toHaveFocus();
   expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
   const firstPage = within(dialog).getByAltText("Page 1");
   const firstUrl = firstPage.getAttribute("src");
@@ -304,7 +300,6 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  expect(firstPage).not.toBeInTheDocument();
   const secondUrl = within(dialog).getByAltText("Page 2").getAttribute("src");
   expect(secondUrl).not.toBe(firstUrl);
   expect(control(dialog, "button", "Next sample page")).toBeDisabled();
@@ -318,17 +313,19 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Document"));
   click(control(dialog, "button", "Preview Mutual NDA"));
   expect(within(dialog).getByAltText("Page 1")).toHaveAttribute(
     "src",
     firstUrl,
   );
-  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Document"));
   click(control(dialog, "button", "Preview Simple invoice"));
-  expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
-  expect(control(dialog, "button", "Next sample page")).toBeDisabled();
-  click(control(dialog, "button", "Use"));
+  // A single sample page has nowhere to page to, so it shows no arrows.
+  expect(
+    within(dialog).queryByLabelText("Next sample page"),
+  ).not.toBeInTheDocument();
+  click(control(dialog, "button", "Use this template"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

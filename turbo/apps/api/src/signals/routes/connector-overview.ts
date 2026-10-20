@@ -130,6 +130,9 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
                   externalUsername: account.externalUsername,
                   externalEmail: account.externalEmail,
                   connectionStatus: account.connectionStatus,
+                  setupStatus: account.setupStatus,
+                  missingRequiredFields: account.missingRequiredFields,
+                  configuredFieldKeys: account.configuredFieldKeys,
                 }
               : null,
           };

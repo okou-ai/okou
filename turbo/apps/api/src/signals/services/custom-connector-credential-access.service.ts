@@ -230,6 +230,36 @@ export function customConnectorAccountAuthMethodIsCompatible(
   return storedAuthMethod === definitionAuthMethod;
 }
 
+export function customConnectorDefinitionFieldCompatibility(args: {
+  readonly authMode: OrgCustomConnectorAuthMode;
+  readonly kind: "http" | "mcp";
+  readonly fields: readonly { readonly kind: "secret" | "variable" }[];
+}):
+  | "automatic-requires-mcp"
+  | "secret-fields-not-supported"
+  | "mcp-fields-not-supported"
+  | null {
+  if (args.authMode === "automatic" && args.kind !== "mcp") {
+    return "automatic-requires-mcp";
+  }
+  if (
+    args.authMode !== "manual" &&
+    args.fields.some((field) => {
+      return field.kind === "secret";
+    })
+  ) {
+    return "secret-fields-not-supported";
+  }
+  if (
+    (args.authMode === "none" || args.authMode === "automatic") &&
+    args.kind === "mcp" &&
+    args.fields.length > 0
+  ) {
+    return "mcp-fields-not-supported";
+  }
+  return null;
+}
+
 function resolveCustomConnectorAccountAuthMethod(
   definitionAuthMethod: OrgCustomConnectorAuthMode,
   storedAuthMethod: string,

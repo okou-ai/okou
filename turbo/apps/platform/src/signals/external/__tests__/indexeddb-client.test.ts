@@ -228,10 +228,7 @@ test("Reports separate creation and execution events for an IndexedDB transactio
     "status.code": "OK",
   });
   expect(event.duration).toStrictEqual(expect.any(Number));
-  expect(event).not.toHaveProperty("duration_ms");
-  expect(event).not.toHaveProperty("event_name");
   expect(event).not.toHaveProperty("resource.custom");
-  expect(event).not.toHaveProperty("template");
   expect(JSON.stringify(event)).not.toContain(sensitiveKey);
   expect(JSON.stringify(event)).not.toContain(sensitiveValue);
 });

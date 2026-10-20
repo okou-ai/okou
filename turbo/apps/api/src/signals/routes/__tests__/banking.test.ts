@@ -930,10 +930,6 @@ describe("banking access request lifecycle", () => {
         origin: "https://app.okou.ai",
         redirectUri: "https://app.okou.ai/banking/connect/return",
       },
-      {
-        origin: "https://app.okou.ai",
-        redirectUri: "https://app.okou.ai/banking/connect/return",
-      },
     ] as const;
 
     for (const [index, brandCase] of brandCases.entries()) {

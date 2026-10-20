@@ -6,8 +6,16 @@ import {
   type DocumentTemplateCategory,
 } from "@okouai/core/document-template-items";
 
+/**
+ * The picker's filter: every document, the member's own, or one built-in
+ * purpose. Custom is a filter like the others rather than a section above
+ * them, the same model the composer's document shelf uses.
+ */
+export type DocumentTemplatePickerCategory =
+  DocumentTemplateCategory | "all" | "custom";
+
 export function createDocumentTemplateSignals() {
-  const category$ = state<DocumentTemplateCategory | "all">("all");
+  const category$ = state<DocumentTemplatePickerCategory>("all");
   const previewId$ = state<string | null>(null);
   const previewPage$ = state(0);
   const scrollTop$ = state(0);
@@ -47,12 +55,15 @@ export function createDocumentTemplateSignals() {
   });
   const documentItems$ = computed((get) => {
     const category = get(category$);
-    return DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
-      return category === "all" || item.category === category;
-    });
+    // Custom lists the member's own documents only; the pane renders those.
+    return category === "custom"
+      ? []
+      : DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
+          return category === "all" || item.category === category;
+        });
   });
   const setDocumentCategory$ = command(
-    ({ set }, value: DocumentTemplateCategory | "all") => {
+    ({ set }, value: DocumentTemplatePickerCategory) => {
       set(category$, value);
       set(scrollTop$, 0);
     },

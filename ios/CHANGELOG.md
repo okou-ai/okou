@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.12.1](https://github.com/okou-ai/okou/compare/ios-v0.12.0...ios-v0.12.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ios:** prevent work history toggle scroll flicker ([#41781](https://github.com/okou-ai/okou/issues/41781)) ([9b1180b](https://github.com/okou-ai/okou/commit/9b1180bc0e510b1553a2711c7c310f9b6d5182c9))
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/ios-v0.11.0...ios-v0.12.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add workspace chat search and unread controls ([#41660](https://github.com/okou-ai/okou/issues/41660)) ([d709362](https://github.com/okou-ai/okou/commit/d7093621fb92b80f5598635a1f0953157fc2d1f5))
+
+## [0.11.0](https://github.com/okou-ai/okou/compare/ios-v0.10.0...ios-v0.11.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** paste images into chat attachments ([#41652](https://github.com/okou-ai/okou/issues/41652)) ([1a74785](https://github.com/okou-ai/okou/commit/1a74785397fb00f47ba73f39674f00a93b78a363))
+
+
+### Refactoring
+
+* **ios:** remove dedicated feature switches ([#41675](https://github.com/okou-ai/okou/issues/41675)) ([261b88c](https://github.com/okou-ai/okou/commit/261b88cfcbd8edc9073b6ae64863b5d56e7baaa9))
+
+## [0.10.0](https://github.com/okou-ai/okou/compare/ios-v0.9.1...ios-v0.10.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** align chat model selection and personal subscriptions ([#41668](https://github.com/okou-ai/okou/issues/41668)) ([3c7a3cb](https://github.com/okou-ai/okou/commit/3c7a3cbda46f217ebedf178a6ea2083a24f08291))
+* **ios:** show live chat activity summaries ([#41639](https://github.com/okou-ai/okou/issues/41639)) ([3c2ee1b](https://github.com/okou-ai/okou/commit/3c2ee1b3137f64db78c4498270eae0b6c92fa1b3))
+* **ios:** support native chat attachments ([#41516](https://github.com/okou-ai/okou/issues/41516)) ([ae89baa](https://github.com/okou-ai/okou/commit/ae89baa9f4034b924e552cc86dce39509ddaec40))
+
+
+### Bug Fixes
+
+* **ios:** align chat pinning and native scrolling controls ([#41547](https://github.com/okou-ai/okou/issues/41547)) ([2ba436e](https://github.com/okou-ai/okou/commit/2ba436e9d322eda2c0b19cb2d863c95f403e4bfb))
+* **ios:** persist and synchronize composer drafts ([#41661](https://github.com/okou-ai/okou/issues/41661)) ([74e18af](https://github.com/okou-ai/okou/commit/74e18aff4c26262dbdef56314c2e98f483ae5d45))
+* **ios:** preview chat attachments natively ([#41640](https://github.com/okou-ai/okou/issues/41640)) ([83ac1df](https://github.com/okou-ai/okou/commit/83ac1df4790b3f69373dad9b0adadacf36c47850))
+
 ## [0.9.1](https://github.com/okou-ai/okou/compare/ios-v0.9.0...ios-v0.9.1) (2026-10-19)
 
 

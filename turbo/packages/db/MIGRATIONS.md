@@ -41,6 +41,13 @@ three event-based conditions are satisfied:
 3. Every invariant it asserts that still applies to the current schema has been
    promoted to the permanent tier of the migration consistency suite.
 
+- `scripts/test-runner-hostname-preparation.ts` freezes the outgoing Runner-state
+  ORM shape through the nullable hostname expansion. It demonstrates that an old
+  writer can retain hostname while advancing row order. Retain it until the
+  migration ships and partial API serving/rollback writers are excluded with
+  refreshed complete-writer observations. Permanent nullable/default/order
+  storage checks stay in `test-runner-state-storage-permanent.ts`.
+
 There is no time-based retention window. Elapsed time does not determine whether
 a transition validator still protects a live rollout. The squash line advances
 to the last migration in the most recent production release. When that removes a

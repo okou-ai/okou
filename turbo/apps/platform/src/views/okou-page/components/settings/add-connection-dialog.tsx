@@ -22,6 +22,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { FormEvent, ReactElement } from "react";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
@@ -61,6 +62,7 @@ import {
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+
 import { ConnectorIcon } from "./connector-icons.tsx";
 import { detach, onDomEventFn, Reason } from "../../../../signals/utils.ts";
 import { ConnectorHelpText } from "./connector-help-text.tsx";
@@ -80,9 +82,20 @@ import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 // Connected status text helper
 // ---------------------------------------------------------------------------
 
-function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
+function connectedStatusText(
+  item: PlatformConnectorCatalogStatusItem,
+  account: ConnectorAccountConnection | null | undefined,
+): string {
   const connectionStatus = builtinConnectorCurrentConnectionStatus(item);
-  if (connectionStatus === "reconnect-required") {
+  if (connectionStatus === "unavailable") {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupUnavailable;
+    });
+  }
+  if (
+    item.connection?.reconnectReason ||
+    connectionStatus === "reconnect-required"
+  ) {
     return i18n.t(($) => {
       return $.connectors.card.connectionExpired;
     });
@@ -90,6 +103,17 @@ function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
   if (connectionStatus === "scope-mismatch") {
     return i18n.t(($) => {
       return $.connectors.card.updatePermissions;
+    });
+  }
+  const setupStatus = account ? account.setupStatus : item.setupStatus;
+  if (setupStatus === undefined || setupStatus === null) {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupUnavailable;
+    });
+  }
+  if (setupStatus !== "complete") {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupIncomplete;
     });
   }
   const expiryText = builtinConnectorExpiryCountdownText(item);
@@ -1556,6 +1580,8 @@ export function ConnectModal({
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const connectionAttempt = useGet(connectorConnectionAttempt$);
+  const account =
+    accountMode?.kind === "reconnect" ? accountMode.account : undefined;
 
   const selectedConnectorSlug = item.slug;
 
@@ -1611,9 +1637,9 @@ export function ConnectModal({
           </div>
         </DialogHeader>
 
-        {item.connected && !accountMode && (
+        {item.connection && !accountMode && (
           <p className="wrap-anywhere text-sm text-muted-foreground">
-            {connectedStatusText(item)}
+            {connectedStatusText(item, account)}
           </p>
         )}
 

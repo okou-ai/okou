@@ -60,6 +60,7 @@ fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
         "terms_acceptance_required",
         "context_window_exceeded",
         "input_too_large",
+        "provider_image_too_large",
         "output_token_limit",
         "provider_rate_limited",
         "provider_overloaded",
@@ -274,6 +275,7 @@ fn generated_completion_metadata_omits_absent_snapshots() {
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
+        storage_outputs: None,
         artifact_snapshots: None,
         volume_versions_snapshot: None,
     };
@@ -298,6 +300,7 @@ fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
+        storage_outputs: None,
         artifact_snapshots: Some(vec![complete::RequestCompletionArtifactSnapshot {
             name: "memory".to_string(),
             version: "version-1".to_string(),

@@ -1,5 +1,71 @@
 # Changelog
 
+## [9.405.0](https://github.com/okou-ai/okou/compare/cli-v9.404.3...cli-v9.405.0) (2026-10-20)
+
+
+### Features
+
+* **computer-use:** require one-hour chat approval for desktop shell ([#41768](https://github.com/okou-ai/okou/issues/41768)) ([d8f366b](https://github.com/okou-ai/okou/commit/d8f366bc5167781907f2a1b1bc8dc250bd380e0a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+    * @okouai/pi-agent-runtime bumped to 1.50.31
+
+## [9.404.3](https://github.com/okou-ai/okou/compare/cli-v9.404.2...cli-v9.404.3) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+    * @okouai/pi-agent-runtime bumped to 1.50.30
+
+## [9.404.2](https://github.com/okou-ai/okou/compare/cli-v9.404.1...cli-v9.404.2) (2026-10-20)
+
+
+### Refactoring
+
+* prepare connector projection and runtime readers ([#41715](https://github.com/okou-ai/okou/issues/41715)) ([7500d09](https://github.com/okou-ai/okou/commit/7500d0902eb219e3a2c190a8b0057308e3db8aa9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/connectors bumped to 3.16.12
+    * @okouai/core bumped to 8.773.0
+    * @okouai/pi-agent-runtime bumped to 1.50.29
+
+## [9.404.1](https://github.com/okou-ai/okou/compare/cli-v9.404.0...cli-v9.404.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **cli:** preserve editable svg geometry in presentation exports ([#41480](https://github.com/okou-ai/okou/issues/41480)) ([cbc7606](https://github.com/okou-ai/okou/commit/cbc7606984691e00ad8ba92e673d3b69c533162b))
+
+
+### Refactoring
+
+* activate account-scoped connector setup status ([#41531](https://github.com/okou-ai/okou/issues/41531)) ([ae50917](https://github.com/okou-ai/okou/commit/ae50917fdaa73697ac66badac03ca8b2abd6c2e8))
+* remove expired teams install redirect and wallet spend compatibility ([#41583](https://github.com/okou-ai/okou/issues/41583)) ([bad6179](https://github.com/okou-ai/okou/commit/bad61790761ccd91d8dc1224f4ca43ad87ab1ba5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.578.0
+    * @okouai/core bumped to 8.772.0
+    * @okouai/pi-agent-runtime bumped to 1.50.28
+
 ## [9.404.0](https://github.com/okou-ai/okou/compare/cli-v9.403.0...cli-v9.404.0) (2026-10-19)
 
 

@@ -163,40 +163,25 @@ async function claimIngress(
   return claimed !== undefined;
 }
 
-async function loadClaimedIngress(db: Db, ingressId: string) {
-  const [row] = await db
-    .select({
-      ingressId: feishuChatIngress.id,
-      installationId: feishuChatIngress.installationId,
-      payload: feishuChatIngress.payload,
-      reactionId: feishuChatIngress.reactionId,
-      createdAt: feishuChatIngress.createdAt,
-      orgId: feishuOrgInstallations.orgId,
-      ownerUserId: feishuOrgInstallations.ownerUserId,
-      appId: feishuOrgInstallations.appId,
-      platform: feishuOrgInstallations.platform,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      botName: feishuOrgInstallations.botName,
-      messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-    })
-    .from(feishuChatIngress)
-    .innerJoin(
-      feishuOrgInstallations,
-      eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
-    )
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        eq(feishuChatIngress.status, "processing"),
-      ),
-    )
-    .limit(1);
-  return row;
-}
+type ClaimedFeishuIngress = Pick<
+  typeof feishuChatIngress.$inferSelect,
+  "installationId" | "payload" | "reactionId" | "createdAt"
+> &
+  Pick<
+    typeof feishuOrgInstallations.$inferSelect,
+    | "orgId"
+    | "ownerUserId"
+    | "appId"
+    | "platform"
+    | "botName"
+    | "messageReceivedAt"
+  > & {
+    ingressId: typeof feishuChatIngress.$inferSelect.id;
+    defaultAgentId: typeof orgMetadata.$inferSelect.defaultAgentId;
+  };
 
 function parseMatchingMessage(
-  ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
+  ingress: ClaimedFeishuIngress,
 ): CanonicalFeishuInboundMessage {
   const message = feishuInboundMessageSchema.parse(
     JSON.parse(ingress.payload) as unknown,
@@ -302,18 +287,6 @@ async function loadConnection(
     return matchedConnection?.id ?? null;
   })();
   return connectorId ? { ...connection, connectorId } : undefined;
-}
-
-async function markIngressProcessed(db: Db, ingressId: string): Promise<void> {
-  await db
-    .update(feishuChatIngress)
-    .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        eq(feishuChatIngress.status, "processing"),
-      ),
-    );
 }
 
 async function markIngressFailed(
@@ -454,9 +427,7 @@ const persistCanonicalFeishuIngress$ = command(
   async (
     { set },
     args: {
-      readonly ingress: NonNullable<
-        Awaited<ReturnType<typeof loadClaimedIngress>>
-      >;
+      readonly ingress: ClaimedFeishuIngress;
       readonly installation: FeishuDispatchInstallation;
       readonly connection: FeishuDispatchConnection;
       readonly message: CanonicalFeishuInboundMessage;
@@ -615,7 +586,19 @@ async function finishUnconnectedFeishuIngress(
     signal,
   );
   signal.throwIfAborted();
-  await markIngressProcessed(args.db, args.ingressId);
+  const processedIngressDb = args.db;
+  const processedIngressId = args.ingressId;
+  await (async (): Promise<void> => {
+    await processedIngressDb
+      .update(feishuChatIngress)
+      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(feishuChatIngress.id, processedIngressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      );
+  })();
 }
 
 async function finishUnavailableAgentFeishuIngress(
@@ -632,7 +615,19 @@ async function finishUnavailableAgentFeishuIngress(
     signal,
   );
   signal.throwIfAborted();
-  await markIngressProcessed(args.db, args.ingressId);
+  const processedIngressDb = args.db;
+  const processedIngressId = args.ingressId;
+  await (async (): Promise<void> => {
+    await processedIngressDb
+      .update(feishuChatIngress)
+      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(feishuChatIngress.id, processedIngressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      );
+  })();
 }
 
 async function loadFeishuIngressDispatchContext(
@@ -640,7 +635,42 @@ async function loadFeishuIngressDispatchContext(
   ingressId: string,
   signal: AbortSignal,
 ) {
-  const ingress = await loadClaimedIngress(db, ingressId);
+  const claimedIngressDb = db;
+  const claimedIngressId = ingressId;
+  const ingress = await (async () => {
+    const [row] = await claimedIngressDb
+      .select({
+        ingressId: feishuChatIngress.id,
+        installationId: feishuChatIngress.installationId,
+        payload: feishuChatIngress.payload,
+        reactionId: feishuChatIngress.reactionId,
+        createdAt: feishuChatIngress.createdAt,
+        orgId: feishuOrgInstallations.orgId,
+        ownerUserId: feishuOrgInstallations.ownerUserId,
+        appId: feishuOrgInstallations.appId,
+        platform: feishuOrgInstallations.platform,
+        defaultAgentId: orgMetadata.defaultAgentId,
+        botName: feishuOrgInstallations.botName,
+        messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
+      })
+      .from(feishuChatIngress)
+      .innerJoin(
+        feishuOrgInstallations,
+        eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
+      )
+      .leftJoin(
+        orgMetadata,
+        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+      )
+      .where(
+        and(
+          eq(feishuChatIngress.id, claimedIngressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      )
+      .limit(1);
+    return row;
+  })();
   signal.throwIfAborted();
   if (!ingress) {
     throw new Error("Canonical Feishu ingress is unavailable");
@@ -967,7 +997,19 @@ const processClaimedIngress$ = command(
     );
     signal.throwIfAborted();
     if (commandHandled) {
-      await markIngressProcessed(args.db, ingress.ingressId);
+      const processedIngressDb = args.db;
+      const processedIngressId = ingress.ingressId;
+      await (async (): Promise<void> => {
+        await processedIngressDb
+          .update(feishuChatIngress)
+          .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(feishuChatIngress.id, processedIngressId),
+              eq(feishuChatIngress.status, "processing"),
+            ),
+          );
+      })();
       signal.throwIfAborted();
       return null;
     }

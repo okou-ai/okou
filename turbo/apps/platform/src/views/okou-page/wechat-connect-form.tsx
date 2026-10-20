@@ -40,7 +40,7 @@ export function WechatConnectForm({
               value={flow.attempt.qrContent}
               size={180}
               marginSize={2}
-              title={t(($) => {
+              aria-label={t(($) => {
                 return $.works.wechat.title;
               })}
               data-testid="wechat-connect-qr"

@@ -294,54 +294,118 @@ async fn codex_app_server_preserves_partial_notification_after_cancelled_read() 
 }
 
 #[tokio::test]
-async fn codex_app_server_rejects_notification_queue_overflow() -> Result<(), String> {
+async fn codex_app_server_preserves_notification_burst_before_response() -> Result<(), String> {
     let mut client = spawn_client(Some("notification-overflow"))?;
     wait_result(client.initialize(), "initialize").await?;
 
-    let result = wait_result_allow_error(
+    let started = wait_result(
         client.request_value("thread/start", json!({})),
         "thread/start",
     )
-    .await;
+    .await?;
+    assert!(started["thread"]["id"].as_str().is_some());
 
-    match result {
-        Err(CodexAppServerError::Protocol(message)) => {
-            assert!(message.contains("server notification queue exceeded"));
-        }
-        other => {
-            return Err(format!(
-                "expected notification overflow error, got {other:?}"
-            ));
-        }
+    // The mock cannot send the response until every notification is written.
+    // An unread FIFO must not block response progress or lose its oldest entries.
+    for index in 0..129 {
+        let notification = client
+            .pop_notification()
+            .ok_or_else(|| format!("missing buffered notification {index}"))?;
+        assert_eq!(notification.method, "experimental/server-notification");
+        assert_eq!(
+            notification.params.as_ref().map(|params| &params["index"]),
+            Some(&json!(index))
+        );
     }
+    assert!(client.pop_notification().is_none());
 
+    let state = wait_result(client.request_value("mock/state", json!({})), "mock/state").await?;
+    assert_eq!(state["initializedNotificationReceived"], true);
+
+    complete_buffered_notification_turn(&mut client, &started).await?;
     wait_result(client.shutdown(), "shutdown").await
 }
 
 #[tokio::test]
-async fn codex_app_server_rejects_large_buffered_notifications() -> Result<(), String> {
+async fn codex_app_server_preserves_large_notification_before_response() -> Result<(), String> {
     let mut client = spawn_client(Some("large-notification-before-response"))?;
     wait_result(client.initialize(), "initialize").await?;
 
-    let result = wait_result_allow_error(
+    let started = wait_result(
         client.request_value("thread/start", json!({})),
         "thread/start",
     )
-    .await;
+    .await?;
+    assert!(started["thread"]["id"].as_str().is_some());
 
-    match result {
-        Err(CodexAppServerError::Protocol(message)) => {
-            assert!(message.contains("server notification queue exceeded"));
-            assert!(!message.contains("xxx"));
-        }
-        other => {
-            return Err(format!(
-                "expected large notification queue error, got {other:?}"
-            ));
+    let notification = client
+        .pop_notification()
+        .ok_or("missing large buffered notification")?;
+    assert_eq!(notification.method, "experimental/server-notification");
+    let message = notification
+        .params
+        .as_ref()
+        .and_then(|params| params["message"].as_str())
+        .ok_or("large notification omitted its message")?;
+    assert_eq!(message.len(), 17 * 1024 * 1024);
+    assert!(message.bytes().all(|byte| byte == b'x'));
+    assert!(client.pop_notification().is_none());
+
+    let state = wait_result(client.request_value("mock/state", json!({})), "mock/state").await?;
+    assert_eq!(state["initializedNotificationReceived"], true);
+
+    complete_buffered_notification_turn(&mut client, &started).await?;
+    wait_result(client.shutdown(), "shutdown").await
+}
+
+async fn complete_buffered_notification_turn(
+    client: &mut CodexAppServerClient,
+    thread: &Value,
+) -> Result<(), String> {
+    let thread_id = thread
+        .pointer("/thread/id")
+        .and_then(Value::as_str)
+        .ok_or("missing thread id")?;
+    let started = wait_result(
+        client.request_value(
+            "turn/start",
+            json!({
+                "threadId": thread_id,
+                "input": [text_input("complete after buffered notifications")]
+            }),
+        ),
+        "turn/start after buffered notifications",
+    )
+    .await?;
+    let turn_id = started
+        .pointer("/turn/id")
+        .and_then(Value::as_str)
+        .ok_or("missing turn id")?;
+    loop {
+        let notification = wait_result(
+            client.next_notification("turn completion"),
+            "turn completion after buffered notifications",
+        )
+        .await?;
+        if notification.method == "turn/completed" {
+            let params = notification
+                .params
+                .ok_or("turn completion omitted params")?;
+            assert_eq!(
+                params.get("threadId").and_then(Value::as_str),
+                Some(thread_id)
+            );
+            assert_eq!(
+                params.pointer("/turn/id").and_then(Value::as_str),
+                Some(turn_id)
+            );
+            assert_eq!(
+                params.pointer("/turn/status").and_then(Value::as_str),
+                Some("completed")
+            );
+            return Ok(());
         }
     }
-
-    wait_result(client.shutdown(), "shutdown").await
 }
 
 #[tokio::test]

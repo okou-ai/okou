@@ -61,6 +61,14 @@ async function setupResourceNavigation() {
       });
     }),
   });
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifactSummary(query.chatThreadId ?? current.id, "file", "report.pdf"),
+      ],
+      nextCursor: null,
+    });
+  });
   await setupPage({
     context,
     path: `/chats/${current.id}`,
@@ -187,8 +195,7 @@ test.each(["messages", "artifacts"])(
     const previousPanel = await screen.findByRole("region", {
       name: "Resources",
     });
-    await within(previousPanel).findByText("First resources guide");
-    expect(within(previousPanel).getByText("first.pdf")).toBeInTheDocument();
+    await within(previousPanel).findByText("first.pdf");
     const next = queryAllByRoleFast("link").find((link) => {
       return link.getAttribute("href") === `/chats/${second.id}`;
     });
@@ -202,26 +209,29 @@ test.each(["messages", "artifacts"])(
         "Second resources",
       );
     });
+    expect(resourceButton()).toBeEnabled();
+    const loadingPanel = await screen.findByRole("region", {
+      name: "Resources",
+    });
+    await expect(
+      within(loadingPanel).findByRole("status"),
+    ).resolves.toHaveTextContent("Loading");
     expect(
-      screen.queryByRole("region", { name: "Resources" }),
+      within(loadingPanel).queryByText("first.pdf"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
     resourcesResponse.resolve();
     await waitFor(() => {
       expect(
-        within(resourcePanel()!).getByText("Second resources guide"),
+        within(resourcePanel()!).getByText("second.pdf"),
       ).toBeInTheDocument();
     });
     const nextPanel = resourcePanel()!;
     expect(within(nextPanel).getByText("second.pdf")).toBeInTheDocument();
-    expect(
-      within(nextPanel).queryByText("First resources guide"),
-    ).not.toBeInTheDocument();
     expect(within(nextPanel).queryByText("first.pdf")).not.toBeInTheDocument();
   },
 );
 
-test("Share the saved preference with another chat and discard temporary state on navigation", async () => {
+test("Keep a manual close local to its chat and start each visit from the saved default", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   const first = continuityThread(91, 1, "First resources");
@@ -245,6 +255,14 @@ test("Share the saved preference with another chat and discard temporary state o
       });
     }),
   });
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifactSummary(query.chatThreadId ?? first.id, "file", "report.pdf"),
+      ],
+      nextCursor: null,
+    });
+  });
   await setupPage({
     context,
     ...workspace.pageOptions,
@@ -257,9 +275,6 @@ test("Share the saved preference with another chat and discard temporary state o
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   const next = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === `/chats/${second.id}`;
@@ -274,14 +289,11 @@ test("Share the saved preference with another chat and discard temporary state o
     );
   });
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   await userEvent.click(resourceButton());
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
   const previous = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === `/chats/${first.id}`;

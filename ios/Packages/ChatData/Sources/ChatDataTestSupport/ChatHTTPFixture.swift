@@ -1,4 +1,3 @@
-import ChatData
 import Foundation
 import Synchronization
 
@@ -21,11 +20,12 @@ public struct ChatHTTPResponse: Sendable {
 public final class ChatHTTPFixture: Sendable {
   public typealias Handler = @Sendable (URLRequest) async throws -> ChatHTTPResponse
   public let baseURL: URL
-  public let client: APIClient
+  public let clientVersion: String
   private let host: String
-  private let session: URLSession
+  public let session: URLSession
 
   public init(clientVersion: String = "1.2.3", handler: @escaping Handler) {
+    self.clientVersion = clientVersion
     let fixtureHost = UUID().uuidString.lowercased() + ".example.invalid"
     host = fixtureHost
     baseURL = URL(string: "https://" + fixtureHost)!
@@ -33,9 +33,6 @@ public final class ChatHTTPFixture: Sendable {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ChatFixtureURLProtocol.self]
     session = URLSession(configuration: configuration)
-    client = APIClient(baseURL: baseURL, clientVersion: clientVersion, session: session) {
-      "local-test-session"
-    }
   }
 
   deinit {

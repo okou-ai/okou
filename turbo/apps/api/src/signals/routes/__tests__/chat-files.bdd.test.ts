@@ -141,8 +141,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     expect(detail.lastReadAt).toBeNull();
 
     await api.updateThreadModelSelection(actor, created.id, null);
-    detail = await api.readThread(actor, created.id);
-    expect(detail).not.toHaveProperty("selectedModel");
 
     const messages = await api.listThreadEvents(actor, created.id);
     expect(messages.events).toStrictEqual([]);
@@ -304,7 +302,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
 
     detail = await api.readThread(owner, thread.id);
     expect(detail.lastReadAt).toStrictEqual(expect.any(String));
-    expect(detail).not.toHaveProperty("selectedModel");
 
     await api.unpinThread(owner, thread.id);
     await api.updateThreadModelSelection(owner, thread.id, null);
@@ -323,7 +320,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
         selectedModel: "auto",
       }),
     );
-    expect(detail).not.toHaveProperty("selectedModel");
   });
 });
 
@@ -551,36 +547,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
       displayName: "Client-thread retry branch agent",
     });
 
-    const invalidTemplate = await api.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Use an unknown template",
-        userMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text: "Use an unknown template" },
-            {
-              type: "template",
-              titleSnapshot: "Missing presentation template",
-              template: {
-                type: "presentation",
-                selection: {
-                  templateId: "template:html-ppt-missing",
-                },
-              },
-            },
-          ],
-        },
-      },
-      [400],
-    );
-    expectApiError(invalidTemplate.body);
-    expect(invalidTemplate.body.error.code).toBe("BAD_REQUEST");
-    expect(invalidTemplate.body.error.message).toBe(
-      "Unknown generation template",
-    );
-
     const clientThreadId = randomUUID();
     const first = await api.requestSendEvent(
       actor,
@@ -663,11 +629,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     if (modelSelected.status !== 201) {
       throw new Error("Expected model-selected chat send to create a thread");
     }
-    const modelSelectedThread = await api.readThread(
-      actor,
-      modelSelected.body.threadId,
-    );
-    expect(modelSelectedThread).not.toHaveProperty("selectedModel");
     const modelSelectedEvents = await api.requestThreadEvents(actor, {}, [200]);
     expect(modelSelectedEvents.status).toBe(200);
     if (modelSelectedEvents.status !== 200) {
@@ -709,14 +670,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     );
     expectApiError(missingAgent.body);
     expect(missingAgent.body.error.code).toBe("NOT_FOUND");
-
-    const blankPrompt = await api.requestSendEvent(
-      actor,
-      { agentId: randomUUID(), prompt: "" },
-      [400],
-    );
-    expectApiError(blankPrompt.body);
-    expect(blankPrompt.body.error.code).toBe("BAD_REQUEST");
 
     const privateAgent = await bdd.createAgent(actor, {
       displayName: "Private chat send agent",

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "9.404.0",
+  "version": "9.405.0",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
@@ -57,6 +57,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "saxes": "6.0.0",
+    "svgpath": "2.6.0",
     "tar": "^7.5.7",
     "tsup": "^8.5.1",
     "@typescript/native": "npm:typescript@7.0.2",

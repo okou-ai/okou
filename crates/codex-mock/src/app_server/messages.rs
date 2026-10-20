@@ -666,6 +666,13 @@ fn turn_failure_error(failure: TurnFailure) -> Value {
 
 fn turn_failure_message(failure: TurnFailure) -> &'static str {
     match failure {
+        TurnFailure::RequestSend | TurnFailure::RequestSendUnauthorized => {
+            "stream disconnected before completion: error sending request"
+        }
+        TurnFailure::HttpConnectionStderr => "turn failed",
+        TurnFailure::RemoteCompactionRequestSend => {
+            "Error running remote compact task: stream disconnected before completion: error sending request"
+        }
         TurnFailure::ProviderStreamServerError => {
             "stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_response in your message."
         }
@@ -696,7 +703,16 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         TurnFailure::BiologicalRiskRejection
         | TurnFailure::OutputTokenLimit
         | TurnFailure::ProviderStreamServerError
-        | TurnFailure::RemoteCompactionServerError => Some(json!("other")),
+        | TurnFailure::RemoteCompactionServerError
+        | TurnFailure::RequestSend
+        | TurnFailure::RemoteCompactionRequestSend => Some(json!("other")),
+        TurnFailure::HttpConnection | TurnFailure::HttpConnectionStderr => Some(json!({
+            "httpConnectionFailed": { "httpStatusCode": 503 }
+        })),
+        TurnFailure::MalformedHttpStatus => Some(json!({
+            "httpConnectionFailed": { "httpStatusCode": "private-status" }
+        })),
+        TurnFailure::RequestSendUnauthorized => Some(json!("unauthorized")),
         TurnFailure::ContextWindowExceeded => Some(json!("contextWindowExceeded")),
         TurnFailure::InternalServerError | TurnFailure::BiologicalRiskInternalServerError => {
             Some(json!("internalServerError"))

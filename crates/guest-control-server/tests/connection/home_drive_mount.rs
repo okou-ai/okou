@@ -1,6 +1,10 @@
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use guest_control_proto::{
     ExecCapturedOutput, ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, MSG_HOME_DRIVE_MOUNT,
@@ -58,6 +62,32 @@ fn captured(output: ExecCapturedOutput<'_>) -> (Vec<u8>, bool) {
 
 fn slow_program(pid_path: &Path) -> String {
     format!("printf '%s' \"$$\" > '{}'; sleep 60", pid_path.display())
+}
+
+fn start_with_timeout_gate(
+    program: PathBuf,
+    timeout_ms: u32,
+) -> (
+    thread::JoinHandle<std::io::Result<()>>,
+    UnixStream,
+    mpsc::Receiver<u32>,
+) {
+    let (timeout_tx, timeout_rx) = mpsc::sync_channel(0);
+    let (guest, mut host) = UnixStream::pair().unwrap();
+    let handle = thread::spawn(move || {
+        guest_control_server::handle_connection_with_test_home_drive_mount_timeout_gate(
+            guest, program, timeout_ms, timeout_tx,
+        )
+    });
+    read_guest_ready(&mut host);
+    (handle, host, timeout_rx)
+}
+
+fn assert_helper_reaped(pid: u32) {
+    assert!(
+        !Path::new(&format!("/proc/{pid}")).exists(),
+        "home mount helper {pid} must be reaped before completion"
+    );
 }
 
 #[test]
@@ -175,18 +205,74 @@ fn home_drive_mount_bounds_both_output_streams() {
 fn home_drive_mount_timeout_kills_and_reaps_process_group() {
     let pid_path = unique_pid_path("home-mount-timeout");
     let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
-    let (_directory, program) = create_program(&slow_program(Path::new(pid_path.as_str())));
-    let (handle, mut host_stream) =
-        start_guest_connection_with_home_drive_mount_program(program, 20);
+    let (_directory, program) = create_program(&format!(
+        "sleep 60 & printf '%s' \"$$\" > '{}'; wait",
+        pid_path.as_str()
+    ));
+    let (handle, mut host_stream, timeout_gate) = start_with_timeout_gate(program, 20);
 
     send_request(&mut host_stream, 504);
     let pid = process_guard.read_pid();
+    assert_eq!(
+        timeout_gate.recv_timeout(Duration::from_secs(3)).unwrap(),
+        pid
+    );
     let result = read_result(&mut host_stream, 504);
 
     assert_eq!(result.termination, ExecTermination::TimedOut);
     wait_for_pid_exit(pid, "home mount timeout");
+    assert_helper_reaped(pid);
     process_guard.disarm();
     finish_guest_connection(handle, host_stream);
+}
+
+#[test]
+fn home_drive_mount_timeout_before_helper_readiness_kills_and_reaps_process_group() {
+    let pid_path = unique_pid_path("home-mount-not-ready");
+    let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
+    let fifo = unique_tmp_path("home-mount-not-ready", ".fifo");
+    let (_directory, program) = create_program(&format!(
+        "mkfifo '{}'; read -r ready < '{}'; {}",
+        fifo.as_str(),
+        fifo.as_str(),
+        slow_program(Path::new(pid_path.as_str()))
+    ));
+    let (handle, mut host_stream, timeout_gate) = start_with_timeout_gate(program, 20);
+
+    send_request(&mut host_stream, 515);
+    // No FIFO writer exists, so the helper cannot publish readiness even if
+    // scheduled immediately. Observe the owned PID independently of its body.
+    let pid = timeout_gate.recv_timeout(Duration::from_secs(3)).unwrap();
+    process_guard.observe_pid(pid);
+    let result = read_result(&mut host_stream, 515);
+
+    assert_eq!(result.termination, ExecTermination::TimedOut);
+    assert!(!Path::new(pid_path.as_str()).exists());
+    wait_for_pid_exit(pid, "home mount timeout before helper readiness");
+    assert_helper_reaped(pid);
+    process_guard.disarm();
+    finish_guest_connection(handle, host_stream);
+}
+
+#[test]
+fn home_drive_mount_abandoned_timeout_gate_allows_connection_cleanup() {
+    let pid_path = unique_pid_path("home-mount-abandoned-gate");
+    let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
+    let (_directory, program) = create_program(&format!(
+        "sleep 60 & printf '%s' \"$$\" > '{}'; wait",
+        pid_path.as_str()
+    ));
+    let (handle, mut host_stream, timeout_gate) = start_with_timeout_gate(program, 60_000);
+
+    send_request(&mut host_stream, 516);
+    let pid = process_guard.read_pid();
+    drop(timeout_gate);
+    drop(host_stream);
+    join_guest_connection(handle);
+
+    wait_for_pid_exit(pid, "abandoned home mount timeout gate");
+    assert_helper_reaped(pid);
+    process_guard.disarm();
 }
 
 #[test]

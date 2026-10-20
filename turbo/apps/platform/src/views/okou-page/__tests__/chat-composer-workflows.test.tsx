@@ -358,7 +358,10 @@ test("Send a template while the current run is active", async () => {
 
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(0);
-    expect(screen.getByTitle(`Presentation · ${template.title}`)).toBeVisible();
+    const reference = screen.getByText(template.title, {
+      selector: "[data-structured-template-reference] span",
+    });
+    expect(reference).toBeVisible();
   });
   expect((await findComposerEditor()).textContent).toBe("");
 });

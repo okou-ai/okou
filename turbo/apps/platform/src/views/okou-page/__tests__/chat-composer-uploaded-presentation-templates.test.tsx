@@ -155,7 +155,6 @@ test.each(["user", "org"] as const)(
     expect(
       within(picker).queryByLabelText(`Select template ${uploaded.title}`),
     ).not.toBeInTheDocument();
-    expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
     expect(
       within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
     ).toBeEnabled();
@@ -195,7 +194,6 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   expect(
     within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
   ).toBeEnabled();
-  expect(within(picker).queryByText("Retry")).not.toBeInTheDocument();
   // Worker-side listener release has no separate page-visible surface, and the
   // channels themselves no longer answer for this catalog: the custom template
   // catalog listens to the same topic and keeps its own subscriptions through
@@ -205,7 +203,7 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   await observed.waitForReleased("user");
 });
 
-test("An empty catalog keeps the import card available without status text", async () => {
+test("An empty catalog keeps the import card available", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   mockPresentationTemplateLibrary([]);
@@ -229,16 +227,10 @@ test("An empty catalog keeps the import card available without status text", asy
   });
   await Promise.all([gates.user.started, gates.org.started]);
   const picker = await openTemplatePicker(user, "Presentation");
-  expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
   gates.user.attach();
   gates.org.attach();
   await observed.waitForSubscribed("user");
   await observed.waitForSubscribed("org");
-  // An empty library is the default state, not a condition worth reporting: the
-  // import card already carries both the affordance and the absence.
-  expect(
-    within(presentationGrid()).queryByRole("status"),
-  ).not.toBeInTheDocument();
   expect(
     within(picker).getByLabelText("Import your own deck"),
   ).toBeInTheDocument();
@@ -281,16 +273,6 @@ function buttonNamed(
     throw new Error(`Button named "${name}" not found`);
   }
   return button;
-}
-
-function presentationGrid(): HTMLElement {
-  const grid = document.querySelector<HTMLElement>(
-    "[data-presentation-template-grid-scroll]",
-  );
-  if (!grid) {
-    throw new Error("Presentation template grid not found");
-  }
-  return grid;
 }
 
 function firstBuiltInTitle(): string {

@@ -33,6 +33,7 @@ import {
   settle,
   waitForOperation,
   waitLoopUntil,
+  withAbortAfter,
 } from "../utils.ts";
 import {
   runChatActionCallback$,
@@ -497,47 +498,50 @@ function createRecoverySignals(
         // Duplicate cards share one loop, cancelled when their last owner leaves.
         const signal = set(resetRecovery$, get(pageSignal$));
         set(internalState$, "checking");
-        const recoverySignal = AbortSignal.any([
-          signal,
-          AbortSignal.timeout(RECOVERY_DEADLINE_MS),
-        ]);
         let reads = 0;
         let reconciled = false;
-        await onRejection(
-          waitLoopUntil(
-            async () => {
-              set(refresh$, recoverySignal);
-              const result = await settle(
-                waitForOperation(get(request$), recoverySignal),
+        await withAbortAfter(
+          RECOVERY_DEADLINE_MS,
+          signal,
+          async (recoverySignal) => {
+            await onRejection(
+              waitLoopUntil(
+                async () => {
+                  set(refresh$, recoverySignal);
+                  const result = await settle(
+                    waitForOperation(get(request$), recoverySignal),
+                    recoverySignal,
+                  );
+                  if (
+                    result.ok &&
+                    (result.value.kind !== "action" ||
+                      result.value.action.state !== "applying")
+                  ) {
+                    if (
+                      result.value.kind === "action" &&
+                      result.value.action.state === "pending"
+                    ) {
+                      await set(beginEntry$, recoverySignal);
+                      recoverySignal.throwIfAborted();
+                    }
+                    reconciled = true;
+                    return true;
+                  }
+                  reads += 1;
+                  return reads >= RECOVERY_MAX_READS;
+                },
+                RECOVERY_INTERVAL_MS,
                 recoverySignal,
-              );
-              if (
-                result.ok &&
-                (result.value.kind !== "action" ||
-                  result.value.action.state !== "applying")
-              ) {
-                if (
-                  result.value.kind === "action" &&
-                  result.value.action.state === "pending"
-                ) {
-                  await set(beginEntry$, recoverySignal);
-                  recoverySignal.throwIfAborted();
-                }
-                reconciled = true;
-                return true;
-              }
-              reads += 1;
-              return reads >= RECOVERY_MAX_READS;
-            },
-            RECOVERY_INTERVAL_MS,
-            recoverySignal,
-            { retryTransientErrors: false },
-          ),
-          () => {
-            // The deadline can reject with TimeoutError or a wrapped AbortError.
-            signal.throwIfAborted();
-            set(internalState$, "exhausted");
+                { retryTransientErrors: false },
+              ),
+              () => {
+                // The deadline can reject with TimeoutError or a wrapped AbortError.
+                signal.throwIfAborted();
+                set(internalState$, "exhausted");
+              },
+            );
           },
+          new DOMException("The operation timed out", "TimeoutError"),
         );
         signal.throwIfAborted();
         set(internalState$, reconciled ? "idle" : "exhausted");

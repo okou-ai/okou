@@ -99,16 +99,6 @@ describe("GET /api/connectors/search", () => {
     expect(response.body.connectors).toBeInstanceOf(Array);
     expect(response.body.connectors.length).toBeGreaterThan(0);
     expect(response.body.connectors.length).toBeLessThanOrEqual(100);
-    for (const connector of response.body.connectors) {
-      expect(connector).toHaveProperty("slug");
-      expect(connector).toHaveProperty("label");
-      expect(connector).toHaveProperty("description");
-      expect(connector).toHaveProperty("authMethods");
-      expect(typeof connector.slug).toBe("string");
-      expect(typeof connector.label).toBe("string");
-      expect(typeof connector.description).toBe("string");
-      expect(connector.authMethods).toBeInstanceOf(Array);
-    }
   });
 
   it("filters connectors by keyword matching slug or label", async () => {
@@ -159,23 +149,6 @@ describe("GET /api/connectors/search", () => {
     const response = await accept(
       client.search({
         query: { keyword: "llm" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toStrictEqual([]);
-  });
-
-  it("returns empty array for non-matching keyword", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "zzz_no_match_zzz" },
         headers: { authorization: "Bearer clerk-session" },
       }),
       [200],

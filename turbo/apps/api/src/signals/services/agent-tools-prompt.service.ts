@@ -28,25 +28,16 @@ const instructionsAndMemoryGuidance = Object.freeze([
  * messaging and file rules live in `# Integration Note`, next to the
  * `# Current Integration` block they describe.
  */
-function buildIntegrationToolsPrompt(
-  deliveryFormatGuidanceEnabled: boolean,
-): readonly string[] {
+function buildIntegrationToolsPrompt(): readonly string[] {
   const localFileContext = [
+    "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
     "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
-    ...(deliveryFormatGuidanceEnabled
-      ? [
-          "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
-          "Choose the delivery format for every artifact based on the user's request, relevant remembered preferences, and intended use. Honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
-          "Producing docx, xlsx, or PDF requires the `office-files` skill, which carries the toolchain install and the exact command for each format.",
-        ]
-      : [
-          "For static HTML or site artifacts, a hosted URL is the user-accessible artifact view; the local `index.html` is an implementation file inside the authored bundle.",
-          "`upload-file` commands provide file delivery, which is different from publishing a user-accessible artifact view. File delivery is useful when the user asks for the file itself, an artifact cannot be hosted, or no hosted, email, cloud document, or other destination already gives the user access.",
-        ]),
+    "For file delivery, use the current integration's `upload-file` command.",
+    "For Word documents, PDFs, or spreadsheets, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",
     "Duplicate delivery channels give the user multiple copies of the same artifact; they are useful when they serve different user needs, such as sharing both a live view and a source file.",
   ];
   const localFileContextLines = localFileContext.map((line) => {
@@ -64,7 +55,6 @@ export interface AgentToolsPromptInputs {
   readonly larkEnabled: boolean;
   readonly discordEnabled: boolean;
   readonly wechatEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
@@ -92,10 +82,6 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
-    deliveryFormatGuidanceEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DeliveryFormatGuidance,
-      context,
-    ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
       context,
@@ -195,7 +181,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(args.deliveryFormatGuidanceEnabled),
+    ...buildIntegrationToolsPrompt(),
     '- Maps, places, and routing: use `okou maps search "<query>"`. Treat its answer as display-ready: reproduce it without rewriting, with its Google Maps sources immediately following it. Use `--lat` and `--lng` only for a location the user explicitly supplied; never infer location from server IP or untrusted headers.',
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",

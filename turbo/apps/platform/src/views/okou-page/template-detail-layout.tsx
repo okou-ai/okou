@@ -62,7 +62,7 @@ export const TEMPLATE_DETAIL_STAGE = cn(
 // the counter is literal white on a literal black like `TEMPLATE_TILE_SCRIM`
 // (the `white` token flips in Dark). Arrows appear on hover where the pointer
 // can hover, without an opacity transition, and stay visible on touch.
-const TEMPLATE_DETAIL_STAGE_ARROW =
+export const TEMPLATE_DETAIL_STAGE_ARROW =
   "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
 
 export function TemplateDetailStageControls({

@@ -62,10 +62,15 @@ pub fn cli_execution_error_for_config(
     error: &AgentError,
 ) -> FailureDiagnostic {
     let diagnostic = base_failure_diagnostic_for_config(config, FailureClass::CliExecutionError);
-    if matches!(error, AgentError::CodexInputTooLarge { .. }) {
-        diagnostic.with_failure_reason(FailureReason::InputTooLarge)
-    } else {
-        diagnostic
+    match error {
+        AgentError::CodexInputTooLarge { .. } => {
+            diagnostic.with_failure_reason(FailureReason::InputTooLarge)
+        }
+        AgentError::CliProcessExited { status, .. } => {
+            let (exit_code, observed_exit) = cli::cli_exit_summary_from_status(status);
+            with_cli_observed_exit(diagnostic.with_cli_exit_code(exit_code), observed_exit)
+        }
+        _ => diagnostic,
     }
 }
 
@@ -134,7 +139,14 @@ pub fn cli_nonzero_failure_for_config(
     let diagnostic =
         with_cli_observed_exit(diagnostic, cli_result.cli_observed_exit.as_ref().cloned());
     let diagnostic = with_cli_termination(diagnostic, cli_result.cli_termination);
-    let diagnostic = with_cli_failure_reason(diagnostic, &failure_message);
+    let mut diagnostic = with_cli_failure_reason(diagnostic, &failure_message);
+    if config.framework == env::Framework::Codex {
+        diagnostic.codex_failure = cli_result
+            .failure_diagnostic
+            .as_ref()
+            .filter(|diagnostic| diagnostic.source == FailureDetailSource::CodexJsonl)
+            .and_then(|diagnostic| diagnostic.codex_failure);
+    }
 
     CliNonzeroFailure {
         message: failure_message.message,

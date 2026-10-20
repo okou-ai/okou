@@ -17,6 +17,8 @@ import type {
 export function runnerStateColumns() {
   return {
     runnerId: uuid("runner_id").primaryKey(),
+    /** Official configured host locality; null for omitted or PAT observations. */
+    runnerHostname: varchar("runner_hostname", { length: 255 }),
     runnerGroup: varchar("runner_group", { length: 255 }).notNull(),
     heartbeatGeneration: bigint("heartbeat_generation", {
       mode: "number",

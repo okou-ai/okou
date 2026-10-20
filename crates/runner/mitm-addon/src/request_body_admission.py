@@ -115,6 +115,21 @@ class RequestBodyAdmissionBudget:
         flow.metadata.pop(self._metadata_key)
         return admission
 
+    def require_from_flow(self, flow: http.HTTPFlow, body_bytes: int) -> None:
+        """Require a live reservation covering retained bytes without taking it."""
+        self._validate_body_size(body_bytes)
+        admission = flow.metadata.get(self._metadata_key)
+        if admission is None:
+            raise RuntimeError("request-body admission is missing")
+        if not isinstance(admission, RequestBodyAdmissionLease):
+            raise TypeError("request-body admission has an invalid type")
+        self._require_owner(admission)
+        with self._lock:
+            if admission._released:
+                raise RuntimeError("request-body admission is already released")
+            if body_bytes > admission._body_bytes:
+                raise RuntimeError("request body exceeds its admission reservation")
+
     def release_from_flow(self, flow: http.HTTPFlow) -> None:
         """Release this budget's reservation attached to a flow."""
         admission = self.take_from_flow(flow)

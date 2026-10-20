@@ -185,7 +185,6 @@ test.each([false, true])(
       "data-active",
       "true",
     );
-    expect(within(menu).queryByText("New chat")).toBeNull();
     await user.keyboard("{ArrowUp}");
     expect(menuButton("Project Beta follow-up")).toHaveAttribute(
       "data-active",
@@ -238,7 +237,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
-async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
+async function openAgentMentionWorkspace(newChat = false) {
   const current = withAgent(
     continuityThread(62, 1, "Scout planning"),
     AGENT_ID,
@@ -281,7 +280,6 @@ async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
     context,
     path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.ComposerMentionHint]: mentionHint },
   });
   return { current, savedMentionThread, workspace };
 }
@@ -289,7 +287,7 @@ async function openAgentMentionWorkspace(newChat = false, mentionHint = false) {
 test.each([false, true])(
   "Show the @ search hint until typing, selection or dismissal (new chat: %s)",
   async (newChat) => {
-    await openAgentMentionWorkspace(newChat, true);
+    await openAgentMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     const hint = () => {
@@ -344,18 +342,46 @@ test.each([false, true])(
   },
 );
 
-test("Keep @ search available without its hint when the switch is off", async () => {
-  await openAgentMentionWorkspace();
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const user = userEvent.setup({ delay: null });
-  await user.click(composer);
-  await user.keyboard("@");
-  await screen.findByTestId("chat-thread-suggestion-menu");
-  expect(
-    composer.querySelector('[data-placeholder=" Search agents or chats…"]'),
-  ).toBeNull();
-  expect(menuButton("Zeta Agent")).toBeInTheDocument();
-});
+test.each([false, true])(
+  "Show the @ hint before adjacent text and preserve it when inserting a mention (new chat: %s)",
+  async (newChat) => {
+    await openAgentMentionWorkspace(newChat);
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    const user = userEvent.setup({ delay: null });
+    const hint = () => {
+      return composer.querySelector(
+        '[data-placeholder=" Search agents or chats…"]',
+      );
+    };
+
+    await fill(composer, "1231");
+    const text = composer.querySelector("p")?.firstChild;
+    if (!(text instanceof Text)) {
+      throw new Error("Composer text is unavailable");
+    }
+    window.getSelection()?.collapse(text, 0);
+    fireEvent(document, new Event("selectionchange"));
+    await user.keyboard("@");
+    await waitFor(() => {
+      expect(hint()).toBeInTheDocument();
+    });
+    expect(hint()?.nextSibling?.textContent).toBe("1231");
+    expect(composer.textContent).toBe("@1231");
+    expect(composer).toHaveFocus();
+
+    await user.keyboard("zeta");
+    expect(hint()).toBeNull();
+    await waitFor(() => {
+      expect(menuButton("Zeta Agent")).toHaveAttribute("data-active", "true");
+    });
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(agentMention(composer, ZETA_ID)).toBeInTheDocument();
+    });
+    expect(composer.textContent).toBe("Zeta Agent 1231");
+    expect(hint()).toBeNull();
+  },
+);
 
 test.each([false, true])(
   "Composer-anchored mentions keep priority order and select the top candidate by default (new chat: %s)",

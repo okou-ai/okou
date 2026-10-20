@@ -1,11 +1,8 @@
 import chalk from "chalk";
 import { Command } from "commander";
 
-import { getConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { resolveAgentContext } from "../connector/agent-context";
 import {
-  isRunBoundConnectorContext,
   resolveRunConnectorAccountView,
   runConnectorAccountUnavailableMessage,
   type RunConnectorAccountEntry,
@@ -92,55 +89,13 @@ async function printRunMailList(): Promise<void> {
   );
 }
 
-async function printCurrentMailList(): Promise<void> {
-  const agentId = currentAgentId();
-  const mailConnectors = Object.entries(MAIL_CONNECTOR_SLUG_BY_PROVIDER);
-  const [connectors, agent] = await Promise.all([
-    Promise.all(
-      mailConnectors.map(([, connectorSlug]) => {
-        return getConnectorCatalogStatus(connectorSlug);
-      }),
-    ),
-    resolveAgentContext(agentId),
-  ]);
-  if (!agent) {
-    throw new Error("Agent context could not be loaded");
-  }
-
-  printMailRows(
-    mailConnectors.map(([provider, connectorSlug], index) => {
-      const connector = connectors[index];
-      const authorized = agent.authorizedConnectorSlugs.has(connectorSlug);
-      const ready =
-        authorized &&
-        connector?.connected === true &&
-        connector.connectionStatus === "connected";
-      const sender = authorized
-        ? (connector?.connection?.externalEmail ?? "-")
-        : "-";
-      const status = ready
-        ? chalk.green("ready")
-        : connector?.connectionStatus === "reconnect-required" ||
-            connector?.connectionStatus === "scope-mismatch"
-          ? chalk.yellow("reconnect")
-          : connector?.connected
-            ? chalk.yellow("authorize")
-            : chalk.dim("connect");
-      return { provider, sender, status };
-    }),
-  );
-}
-
 export const listCommand = new Command()
   .name("list")
   .alias("ls")
   .description("List Gmail and Outlook Mail availability for the current agent")
   .action(
     withErrorHandler(async () => {
-      if (isRunBoundConnectorContext()) {
-        await printRunMailList();
-        return;
-      }
-      await printCurrentMailList();
+      currentAgentId();
+      await printRunMailList();
     }),
   );

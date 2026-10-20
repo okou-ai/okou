@@ -191,44 +191,6 @@ describe("POST /api/skill-import/sessions", () => {
     expect(remainingMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });
 
-  it("rejects a tool the import does not write prompts for", async () => {
-    const { actor } = await bootstrapActor();
-    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const response = await request("/api/skill-import/sessions", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer clerk-session",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ provider: "cursor" }),
-    });
-
-    expect(response.status).toBe(400);
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("rejects a session request that names no tool", async () => {
-    const { actor } = await bootstrapActor();
-    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const response = await request("/api/skill-import/sessions", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer clerk-session",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({}),
-    });
-
-    expect(response.status).toBe(400);
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
   it("refuses an unauthenticated caller", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,

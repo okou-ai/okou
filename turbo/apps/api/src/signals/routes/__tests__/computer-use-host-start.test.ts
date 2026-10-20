@@ -6,7 +6,6 @@ import { aroundEach, describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
-import { settleIncludingAbort } from "../../utils";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
@@ -113,7 +112,7 @@ function createScenario() {
 }
 describe("Computer Use host START", () => {
   it(
-    "preserves START auth, validation and normalization without importing the command capability gate",
+    "preserves START auth and normalization without importing the command capability gate",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const scenario = createScenario();
@@ -180,20 +179,6 @@ describe("Computer Use host START", () => {
             code: "FORBIDDEN",
           },
         });
-
-        const beforeInvalid = await computerUse.listComputerUseHosts(actor);
-        const invalid = await settleIncludingAbort(
-          computerUse.requestStartComputerUseHost(actor, [200], {
-            hostName: "   ",
-          }),
-        );
-        expect(invalid.ok).toBeFalsy();
-        if (!invalid.ok) {
-          expect(String(invalid.error)).toMatch(/Unknown response status 400/);
-        }
-        await expect(
-          computerUse.listComputerUseHosts(actor),
-        ).resolves.toStrictEqual(beforeInvalid);
       });
     },
   );

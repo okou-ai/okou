@@ -5,6 +5,60 @@ The command unit tests separately cover permission enforcement, parsing,
 artifact transfer, fixed-frame geometry, table metadata, script fonts,
 selector waiting, file URLs, and page/occurrence-scoped native-text checks.
 
+## Editable SVG contract
+
+`svg-native.html` covers native inline SVG export and its explicit boundaries:
+
+- S01: rectangles (including rounded corners), circles, ellipses, lines,
+  polylines, polygons, relative paths, shorthand cubic/quadratic curves, arcs,
+  transforms, solid fills, stroke caps/joins, alpha and simple SVG text.
+  Each SVG becomes one native group of paths and text boxes. SVG arcs and
+  ellipses use cubic Bezier approximations. Ungroup to edit the components.
+- S02: gradients, `use` references and masks retain the **entire original SVG**
+  as one vector picture and report `svg-vector-image`. Do not convert only the
+  supported children. The renderer may include a PNG compatibility preview
+  alongside that SVG; this is not a claim that every viewer renders the SVG.
+- S03: element opacity with overlapping fill/stroke and group opacity retain
+  complete SVG pictures. Independent fill/stroke alpha and fill-only opacity
+  stay native. Only the independent-alpha control has a dark inner stroke;
+  applying element opacity separately to both paints would incorrectly copy it.
+- S04: a narrow/tall rectangle with only `rx` and a wide/short rectangle with
+  only `ry`, each beside its explicit-radius equivalent. Resolve automatic
+  radii from the original other axis before clamping each to half its own
+  dimension. Each pair must have identical native geometry; all four stay native.
+
+Native conversion is deliberately bounded. Paint servers, filters, masks,
+clipping, composited group or fill/stroke opacity, markers, dashes, even-odd fills, nested
+viewports, nonuniform stroke transforms and complex text use the same explicit
+source-SVG retention path. External SVG `img` assets remain source pictures.
+Retained SVGs freeze computed paint and keep internal definition references;
+referenced definitions retain their authored paint inheritance. External styles,
+resources and fonts are not newly embedded and still need viewer
+acceptance. This path preserves vector source, not component editability.
+Plain SVG labels participate in the source-text verification denominator, so
+labels inside a retained SVG picture cannot pass as editable text. Unpainted
+definition text is excluded from that denominator.
+
+With `presentation-convert:write`, run the CLI against this fixture:
+
+```bash
+okou presentation convert --input svg-native.html --selector .slide \
+  --out svg-native.pptx --verify --json
+```
+
+Inspect S01 for native `p:grpSp`/`p:sp`/`a:custGeom` and text, with no SVG
+picture objects. Inspect S02 for three complete SVG pictures and three explicit
+diagnostics, and S03 for two SVG pictures, two native shapes and two diagnostics.
+Inspect S04 for four native shapes with identical paths within each pair.
+Compare the HTML and PPTX renders, then upload this PPTX to Okou
+and use its **Upload to Google Slides** action. Verify ungrouping, recoloring
+and label editing on S01 in Google Slides; compare positions, curves and stroke
+widths against the HTML/PPTX. This external import needs separate acceptance:
+native DrawingML alone does not prove Google's import behavior. SVG charts
+become editable geometry, not data-backed PowerPoint or Google Sheets charts.
+
+The focused command/parser tests do not substitute for this browser/viewer check.
+
 ## Purpose
 
 The first commit established a pinned `dom-to-pptx@2.1.2` native baseline;

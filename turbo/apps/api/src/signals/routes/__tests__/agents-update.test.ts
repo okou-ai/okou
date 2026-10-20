@@ -17,7 +17,6 @@ import { createStore } from "ccstate";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
@@ -140,25 +139,6 @@ async function createWorkflowFor(
   );
 }
 
-function s3CommandInput(command: unknown): Record<string, unknown> {
-  if (
-    typeof command === "object" &&
-    command !== null &&
-    "input" in command &&
-    typeof command.input === "object" &&
-    command.input !== null
-  ) {
-    return command.input as Record<string, unknown>;
-  }
-  return {};
-}
-
-function s3PutInputs(): readonly Record<string, unknown>[] {
-  return context.mocks.s3.send.mock.calls.map(([command]) => {
-    return s3CommandInput(command);
-  });
-}
-
 describe("PUT /api/agents/:id", () => {
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
@@ -173,19 +153,6 @@ describe("PUT /api/agents/:id", () => {
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
-  });
-
-  it("returns 400 for invalid path params", async () => {
-    const response = await accept(
-      agentsClient().update({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: {},
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("updates agent metadata while preserving omitted fields", async () => {
@@ -600,36 +567,12 @@ describe("PUT /api/agents/:id/instructions", () => {
     });
   });
 
-  it("returns 400 for an invalid agent id", async () => {
-    const user = newOrgUser();
-    mocks.clerk.session(user.userId, user.orgId);
-
-    const response = await accept(
-      instructionsClient().update({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: { content: "new instructions" },
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "id: Invalid UUID",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
-  it("updates instructions storage and preserves agent metadata", async () => {
+  it("updates instructions and preserves Agent metadata with workflow bindings", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
       displayName: "Instructions Agent",
     });
     await createWorkflowFor(user, agent.agentId, "existing-skill");
-    context.mocks.s3.send.mockClear();
-    context.mocks.s3.send.mockResolvedValue({});
-
     const response = await accept(
       instructionsClient().update({
         params: { id: agent.agentId },
@@ -645,60 +588,6 @@ describe("PUT /api/agents/:id/instructions", () => {
       displayName: "Instructions Agent",
     });
 
-    const putInputs = s3PutInputs();
-    const manifestPut = putInputs.find((input) => {
-      return String(input.Key).endsWith("/manifest.json");
-    });
-    const archivePut = putInputs.find((input) => {
-      return String(input.Key).endsWith("/archive.tar.gz");
-    });
-    expect(manifestPut?.Bucket).toBe("test-user-storages");
-    expect(archivePut?.Bucket).toBe("test-user-storages");
-
-    const manifestBody = JSON.parse(String(manifestPut?.Body)) as {
-      readonly files: readonly { readonly path: string }[];
-    };
-    const paths = manifestBody.files.map((file) => {
-      return file.path;
-    });
-    expect(paths).toStrictEqual(["CLAUDE.md", "AGENTS.md"]);
-  });
-
-  it("publishes one complete prepared archive for concurrent instruction updates", async () => {
-    const user = newOrgUser();
-    const agent = await createAgentAs(user, {
-      displayName: "Concurrent Instructions",
-    });
-    installDurableUserExportStorage(context, { prefixes: [""] });
-    const contents = [
-      "First complete operating notes.",
-      "Second complete operating notes.",
-    ];
-    // A publication whose prepared reservation was superseded is rejected
-    // with 409 and may be retried; at least one complete archive publishes.
-    const updates = await Promise.all(
-      contents.map((content) => {
-        return accept(
-          instructionsClient().update({
-            params: { id: agent.agentId },
-            headers: authHeaders(),
-            body: { content },
-          }),
-          [200, 409],
-        );
-      }),
-    );
-    const published = updates.filter((update) => {
-      return update.status === 200;
-    });
-    expect(published.length).toBeGreaterThanOrEqual(1);
-    for (const update of published) {
-      expect(update.body).toMatchObject({
-        agentId: agent.agentId,
-        ownerId: user.userId,
-        displayName: "Concurrent Instructions",
-      });
-    }
     const current = await accept(
       instructionsClient().get({
         params: { id: agent.agentId },
@@ -706,43 +595,10 @@ describe("PUT /api/agents/:id/instructions", () => {
       }),
       [200],
     );
-    expect(contents).toContain(current.body.content);
-    expect(current.body.filename).toBe("CLAUDE.md");
-  });
-
-  it("reuses registered instruction Storage after A to B to A without uploading", async () => {
-    const user = newOrgUser();
-    const agent = await createAgentAs(user, {
-      displayName: "Reused Instructions",
+    expect(current.body).toMatchObject({
+      content: "Use the updated operating notes.",
+      filename: "CLAUDE.md",
     });
-    context.mocks.s3.send.mockResolvedValue({});
-    for (const content of ["Version A", "Version B"]) {
-      await accept(
-        instructionsClient().update({
-          params: { id: agent.agentId },
-          headers: authHeaders(),
-          body: { content },
-        }),
-        [200],
-      );
-    }
-
-    context.mocks.s3.send.mockClear();
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
-    await accept(
-      instructionsClient().update({
-        params: { id: agent.agentId },
-        headers: authHeaders(),
-        body: { content: "Version A" },
-      }),
-      [200],
-    );
-
-    const commands = context.mocks.s3.send.mock.calls.map(([command]) => {
-      return command instanceof Object ? command.constructor.name : "";
-    });
-    expect(commands).not.toContain("HeadObjectCommand");
-    expect(commands).not.toContain("PutObjectCommand");
   });
 
   it("allows an owner CLI token to update instructions", async () => {

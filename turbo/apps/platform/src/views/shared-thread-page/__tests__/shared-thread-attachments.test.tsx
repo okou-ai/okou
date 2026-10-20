@@ -61,9 +61,6 @@ test.each(["png"])(
       "src",
       `https://a.okou.io/cdn-cgi/image/width=480,height=320,fit=scale-down,format=auto,quality=85,metadata=none/shared-threads/public/image/screenshot.${extension}`,
     );
-    expect(
-      screen.queryByText("[File: screenshot.png]"),
-    ).not.toBeInTheDocument();
   },
 );
 

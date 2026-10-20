@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   customConnectorSlugSchema,
+  isIntegrationManagedCustomConnector,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { z } from "zod";
@@ -31,6 +32,53 @@ import type { ConnectorAccountMutationOptions } from "../okou-page/settings/conn
 import { completeDirectedConnectorAction$ } from "./directed-connector-callback.ts";
 import { routeChatActionCallback$ } from "../chat-page/action-callback.ts";
 import { connectorCatalogItemForSlug } from "../external/connectors.ts";
+import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
+import { customConnectorManagedStatusSchema } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
+
+const directedConnectAccounts = createConnectorAccountListSignals({
+  includeBuiltinScopeMismatch: true,
+});
+export const directedConnectAccounts$ = directedConnectAccounts.accounts$;
+export const reloadDirectedConnectAccounts$ = directedConnectAccounts.reload$;
+
+/** The standalone connect route owns only the account target it displays. */
+export const initializeDirectedConnectAccounts$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(directedConnectAccounts.clearTarget$);
+    signal.addEventListener("abort", () => {
+      set(directedConnectAccounts.clearTarget$);
+    });
+    if (get(directedConnectAccountTarget$).kind !== "default") {
+      return;
+    }
+    const builtinSlug = get(directedConnectSlug$);
+    if (builtinSlug) {
+      set(
+        directedConnectAccounts.setTarget$,
+        { kind: "builtin", connectorSlug: builtinSlug },
+        signal,
+      );
+      return;
+    }
+    const customSlug = get(directedConnectCustomSlug$);
+    if (!customSlug) {
+      return;
+    }
+    const connectors = await get(customConnectors$);
+    signal.throwIfAborted();
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === customSlug;
+    });
+    if (connector && !isIntegrationManagedCustomConnector(connector)) {
+      set(
+        directedConnectAccounts.setTarget$,
+        { kind: "custom", customConnectorId: connector.id },
+        signal,
+      );
+    }
+  },
+);
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/connect` route params.
@@ -58,6 +106,27 @@ export const directedConnectCustomSlug$ = computed(
     return parsed.success ? parsed.data : null;
   },
 );
+
+export const directedConnectCustomConnected$ = computed(async (get) => {
+  const slug = get(directedConnectCustomSlug$);
+  if (!slug) {
+    return false;
+  }
+  const connector = (await get(customConnectors$)).find((candidate) => {
+    return candidate.slug === slug;
+  });
+  if (!connector) {
+    return false;
+  }
+  if (isIntegrationManagedCustomConnector(connector)) {
+    return customConnectorManagedStatusSchema.parse(connector).connected;
+  }
+  const account = (await get(directedConnectAccounts$)).defaultConnection;
+  return (
+    account?.connectionStatus === "connected" &&
+    account.setupStatus === "complete"
+  );
+});
 
 type DirectedConnectAccountTarget =
   | { readonly kind: "default" }
@@ -213,6 +282,7 @@ export const connectDirectedConnector$ = command(
       _connectionId: string | null,
       attemptSignal: AbortSignal,
     ) => {
+      set(reloadDirectedConnectAccounts$, attemptSignal);
       return set(
         completeDirectedConnectorAction$,
         agentId,

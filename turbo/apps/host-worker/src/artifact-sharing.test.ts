@@ -35,6 +35,67 @@ afterAll(() => {
   return server.close();
 });
 
+test("rechecks Site visibility before a public HTML share's warm content cache", async () => {
+  const f = fixture(true);
+  const env = {
+    ...f.env,
+    HOSTED_SITE_API_ORIGIN: "https://authority.test",
+    HOSTED_SITE_ACCESS_ENABLED: "true",
+  };
+  let allowed = true;
+  server.use(
+    http.get(
+      "https://authority.test/api/host/sites/:siteId/access",
+      ({ params, request }) => {
+        expect(params.siteId).toBe(siteId);
+        expect(new URL(request.url).searchParams.get("origin")).toBe(
+          siteOrigin,
+        );
+        return HttpResponse.json(
+          allowed
+            ? { allowed: true, decision: "allow" }
+            : { allowed: false, decision: "deny" },
+        );
+      },
+    ),
+  );
+  expect((await fetchWorker(new Request(`${siteOrigin}/`), env)).status).toBe(
+    200,
+  );
+  allowed = false;
+  for (const path of ["/", "/style.css", "/missing-route"]) {
+    expect(
+      (await fetchWorker(new Request(`${siteOrigin}${path}`), env)).status,
+    ).toBe(404);
+  }
+  expect(
+    (await fetchWorker(new Request(`${siteOrigin}/`, { method: "HEAD" }), env))
+      .status,
+  ).toBe(404);
+});
+
+test("preparation preserves public HTML shares without depending on the new authority", async () => {
+  const f = fixture(true);
+  const env = { ...f.env, HOSTED_SITE_API_ORIGIN: "https://authority.test" };
+  server.use(
+    http.get("https://authority.test/*", () => {
+      return new HttpResponse(null, { status: 503 });
+    }),
+  );
+  for (const path of ["/", "/style.css"]) {
+    const response = await fetchWorker(
+      new Request(`${siteOrigin}${path}`),
+      env,
+    );
+    expect(response.status).toBe(200);
+  }
+  f.policy.status = "revoked";
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  expect((await fetchWorker(new Request(`${siteOrigin}/`), env)).status).toBe(
+    404,
+  );
+});
+
 function fixture(
   html = false,
   extension = "pdf",

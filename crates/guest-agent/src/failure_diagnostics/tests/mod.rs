@@ -44,6 +44,8 @@ fn new_provider_classification_does_not_match_unowned_output() {
     ] {
         for message in [
             "Provider finish_reason: content_filter",
+            "Downloaded image content cannot exceed 30MB",
+            r#"413: {"message":"Downloaded image content cannot exceed 30MB","code":413,"metadata":{"provider_name":null}}"#,
             "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_synthetic in your message.",
             "Codex error: Unable to verify model access right now. Please retry.",
             "Our servers are currently overloaded. Please try again later.",
@@ -117,6 +119,7 @@ fn cli_diagnostic(message: &str, source: FailureDetailSource) -> cli::CliFailure
         message: message.to_string(),
         source,
         failure_reason: None,
+        codex_failure: None,
     }
 }
 
@@ -332,6 +335,7 @@ fn cli_failure_message_preserves_structured_reason_with_stderr_message() {
         message: "turn failed".to_string(),
         source: FailureDetailSource::CodexJsonl,
         failure_reason: Some(FailureReason::InvalidApiKey),
+        codex_failure: None,
     };
     let msg = cli_failure_message(1, &stderr_lines, Some(&diagnostic));
 

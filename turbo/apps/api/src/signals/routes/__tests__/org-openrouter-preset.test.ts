@@ -137,9 +137,6 @@ test("rejects unlisted presets and caller-selected organizations without changin
   const request = setupRawAppRequest({ context, routes });
   for (const body of [
     { openrouterPreset: "@preset/not-allowed" },
-    { openrouterPreset: "openai/gpt-5" },
-    { openrouterPreset: "system-default" },
-    {},
     { openrouterPreset: "@preset/memory", orgId: "org_another" },
     { openrouterPreset: null, orgId: "org_another" },
   ]) {

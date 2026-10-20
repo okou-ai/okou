@@ -1,5 +1,5 @@
 import { EVENT } from "@axiomhq/logging";
-import { describe, it, expect, vi, beforeEach, onTestFinished } from "vitest";
+import { describe, it, expect, beforeEach, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../env";
 import { flushLogs, logger, __resetForTest } from "../log";
@@ -881,53 +881,10 @@ describe("extractFields via logging", () => {
   });
 });
 
-// ── getAxiomLogger returns null when token is unset ────────────────────────
-
-describe("getAxiomLogger with no token", () => {
-  it("returns null when AXIOM_TOKEN_TELEMETRY is unset", async () => {
-    vi.resetModules();
-
-    // Mock env to return empty string for AXIOM_TOKEN_TELEMETRY so
-    // getAxiomLogger returns null. We mock the entire env module
-    // because the real module calls createEnv which requires
-    // AXIOM_TOKEN_TELEMETRY to be a non-empty string.
-    // eslint-disable-next-line api/no-test-vi-mocks
-    vi.doMock("../env", () => {
-      return {
-        env: (name: string) => {
-          if (name === "AXIOM_TOKEN_TELEMETRY") {
-            return "";
-          }
-          if (name === "AXIOM_DATASET_SUFFIX") {
-            return "dev";
-          }
-          return "";
-        },
-        mockEnv: () => {},
-        clearMockedEnv: () => {},
-      };
-    });
-
-    const mod = await import("../log");
-    const log = mod.logger("no-token-test");
-    log.info("should not reach axiom");
-
-    // Axiom mock methods should not have been called
-    // oxlint-disable-next-line vitest/prefer-called-with
-    expect(axiomLogging.info).not.toHaveBeenCalled();
-
-    vi.resetModules();
-  });
-});
-
 // ── Logger caching and basic behavior ───────────────────────────────────────
 
 describe("logger", () => {
   it("caches logger instances by name", () => {
     expect(logger("Cache")).toBe(logger("Cache"));
-  });
-
-  it("creates distinct loggers for different names", () => {
-    expect(logger("A")).not.toBe(logger("B"));
   });
 });

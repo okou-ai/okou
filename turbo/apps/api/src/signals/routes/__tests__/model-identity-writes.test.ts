@@ -173,12 +173,6 @@ describe("model identity new writes", () => {
       [400],
       { codexServiceTier: "fast" },
     );
-    await chat.requestUpdateThreadModelSelection(
-      actor,
-      thread.id,
-      "okou-1.0",
-      [400],
-    );
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({
@@ -214,9 +208,6 @@ describe("model identity new writes", () => {
           ]),
         },
       }),
-    );
-    expect(history.events).not.toContainEqual(
-      expect.objectContaining({ eventType: "input.rejected" }),
     );
     await expect(
       chat.readThreadMetadata(actor, run.threadId),

@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use tokio::sync::watch;
 
 use tracing::info;
 
@@ -14,9 +15,19 @@ use runner_types::types::{HeldHomeState, MAX_HELD_HOME_STATES};
 use super::inventory::{cap_inventory_entries, project_inventory_entries};
 use super::{HomeCacheChange, HomeCacheInventory, HomeCacheKeyUpdates, cap_held_home_states};
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HomeCacheStateSnapshot {
     inner: Arc<Mutex<HomeCacheStateSnapshotInner>>,
+    committed: watch::Sender<()>,
+}
+
+impl Default for HomeCacheStateSnapshot {
+    fn default() -> Self {
+        Self {
+            inner: Arc::default(),
+            committed: watch::channel(()).0,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -87,6 +98,23 @@ impl HomeCacheStateSnapshotInner {
 impl HomeCacheStateSnapshot {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Subscribe before inspecting readiness so a concurrent commit cannot be lost.
+    pub fn subscribe_committed(&self) -> watch::Receiver<()> {
+        self.committed.subscribe()
+    }
+
+    /// Validated local readiness, independent of advertised caps/active-key filtering.
+    /// Checkout still owns scope, image-shape and exclusive-lock validation.
+    pub fn contains_compatible_home(&self, reuse_key: &str, profile: &str) -> bool {
+        self.lock_inner().entries.values().any(|state| {
+            state.reuse_key == reuse_key
+                && state.home_caches.iter().any(|home| {
+                    home.profile == profile
+                        && home.home_affinity_version == runner_types::types::HOME_AFFINITY_VERSION
+                })
+        })
     }
 
     pub fn home_cache_loaded(&self) -> bool {
@@ -161,7 +189,10 @@ impl HomeCacheStateSnapshot {
             inner.touch(&key);
         }
         inner.reproject();
-        inner.outcome(&before, false)
+        let outcome = inner.outcome(&before, false);
+        drop(inner);
+        self.committed.send_replace(());
+        outcome
     }
 
     pub fn finish_home_cache_key_updates(
@@ -204,7 +235,10 @@ impl HomeCacheStateSnapshot {
         let truncated = inner.cap_entries();
         inner.truncated |= truncated;
         inner.reproject();
-        inner.outcome(&before, needs_reconcile)
+        let outcome = inner.outcome(&before, needs_reconcile);
+        drop(inner);
+        self.committed.send_replace(());
+        outcome
     }
 
     /// Called only after generation-owned publication has succeeded.
@@ -216,6 +250,8 @@ impl HomeCacheStateSnapshot {
         let truncated = inner.cap_entries();
         inner.truncated |= truncated;
         inner.reproject();
+        drop(inner);
+        self.committed.send_replace(());
     }
 
     /// Keep admission's capped advertised view: retained refill candidates must

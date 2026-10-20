@@ -26,6 +26,12 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
+import {
+  connectorAccountSetup,
+  connectorAccountFieldMarkerKeys,
+  connectorAccountSetupMarkerKey,
+} from "./connector-account-setup";
 import { alias } from "drizzle-orm/pg-core";
 import {
   and,
@@ -52,8 +58,8 @@ import type { Tx } from "../../lib/db-types";
 import {
   pgBooleanDecoder,
   pgTextDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
@@ -64,7 +70,6 @@ import {
   notionPendingEventsReconnectScope,
   notionPendingEventsSkipWrite,
 } from "./notion-automation-account.service";
-import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import {
   builtinConnectorCredentialStorageIsCompatible,
   resolveStoredBuiltinConnectorRuntimeMethod,
@@ -96,8 +101,6 @@ import {
   connectorCatalogCompatibilityColumns,
   materializeConnectorCatalogCompatibilityRow,
 } from "./connector-catalog-columns";
-
-const log = logger("connector-account-lifecycle");
 
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
@@ -146,6 +149,7 @@ function accountSelection() {
     definitionAuthMode: orgCustomConnectors.authMode,
     definitionMcpTransport: orgCustomConnectors.mcpTransport,
     definitionStorageVersion: orgCustomConnectors.storageVersion,
+    definitionFields: orgCustomConnectors.fields,
     providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
     accessTokenId: accessTokenSecret.id,
     refreshTokenId: refreshTokenSecret.id,
@@ -198,6 +202,81 @@ interface ConnectorAccountBatchScope {
   readonly orgId: string;
   readonly userId: string;
   readonly connectionIds: readonly string[];
+}
+
+function fieldMarkerContractSelection() {
+  return {
+    id: connectors.id,
+    authMethod: connectors.authMethod,
+    automaticAuthType: connectors.automaticAuthType,
+    storageVersion: connectors.storageVersion,
+    definitionStorageVersion: orgCustomConnectors.storageVersion,
+  };
+}
+
+function connectorAccountFieldMarkers(
+  scope$: Computed<
+    | ConnectorAccountBatchScope
+    | null
+    | Promise<ConnectorAccountBatchScope | null>
+  >,
+) {
+  return computed(async (get) => {
+    const args = await get(scope$);
+    if (!args || args.connectionIds.length === 0) {
+      return new Map<string, ReadonlySet<string>>();
+    }
+    const db = get(db$);
+    const ids = [...new Set(args.connectionIds)];
+    const [secretRows, variableRows] = await Promise.all([
+      db
+        .select({ ...fieldMarkerContractSelection(), name: secrets.name })
+        .from(secrets)
+        .innerJoin(connectors, eq(connectors.id, secrets.connectorId))
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(secrets.orgId, args.orgId),
+            eq(secrets.userId, args.userId),
+            eq(secrets.type, "connector"),
+            inArray(secrets.connectorId, ids),
+          ),
+        ),
+      db
+        .select({ ...fieldMarkerContractSelection(), name: variables.name })
+        .from(variables)
+        .innerJoin(connectors, eq(connectors.id, variables.connectorId))
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(variables.orgId, args.orgId),
+            eq(variables.userId, args.userId),
+            eq(variables.type, "connector"),
+            inArray(variables.connectorId, ids),
+          ),
+        ),
+    ]);
+    return connectorAccountFieldMarkerKeys([
+      ...secretRows.map((row) => {
+        return { ...row, kind: "secret" as const };
+      }),
+      ...variableRows.map((row) => {
+        return { ...row, kind: "variable" as const };
+      }),
+    ]);
+  });
 }
 
 function connectorAccountBatchRows(
@@ -306,12 +385,16 @@ function connectorAccountSummaryGroups(
         definitionAuthMode: orgCustomConnectors.authMode,
         definitionMcpTransport: orgCustomConnectors.mcpTransport,
         definitionStorageVersion: orgCustomConnectors.storageVersion,
+        definitionFields: orgCustomConnectors.fields,
         providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
         tokenExpired,
         hasAccessToken,
         hasRefreshToken,
         hasAutomaticOAuthBinding,
         accountCount: count(),
+        accountIds: sql`array_agg(${connectors.id})`.mapWith(
+          zodDriverValueDecoder(z.array(z.uuid())),
+        ),
       })
       .from(connectors)
       .leftJoin(
@@ -374,6 +457,7 @@ function connectorAccountSummaryGroups(
         orgCustomConnectors.authMode,
         orgCustomConnectors.mcpTransport,
         orgCustomConnectors.storageVersion,
+        orgCustomConnectors.fields,
         orgCustomConnectorOauthConfigs.providerAdapter,
         tokenExpired,
         hasAccessToken,
@@ -385,13 +469,16 @@ function connectorAccountSummaryGroups(
 
 function builtinConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeAuthLookup,
+  snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
   includeScopeMismatch = false,
 ): ConnectorAccountConnection | null {
   const parsedSlug = connectorSlugSchema.safeParse(row.connectorSlug);
-  if (!parsedSlug.success || !snapshot.connectors.has(parsedSlug.data)) {
-    return null;
+  if (!parsedSlug.success) {
+    throw new Error("Stored connector account has an invalid builtin identity");
+  }
+  if (!snapshot) {
+    throw new Error("Builtin connector account metadata is unavailable");
   }
   const target = {
     kind: "builtin" as const,
@@ -543,13 +630,20 @@ function projectConnection(
   snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
   includeBuiltinScopeMismatch = false,
+  markers: ReadonlySet<string> = new Set(),
 ): ConnectorAccountConnection | null {
+  const setup = connectorAccountSetup(row, snapshot, markers);
   if (row.connectorSlug !== null) {
-    return snapshot
-      ? builtinConnection(row, snapshot, now, includeBuiltinScopeMismatch)
-      : null;
+    const connection = builtinConnection(
+      row,
+      snapshot,
+      now,
+      includeBuiltinScopeMismatch,
+    );
+    return connection ? { ...connection, ...setup } : null;
   }
-  return customConnection(row, now);
+  const connection = customConnection(row, now);
+  return connection ? { ...connection, ...setup } : null;
 }
 
 type ConnectorAccountSummaryGroup = Awaited<
@@ -566,8 +660,13 @@ function projectSummaryGroup(
 } | null {
   if (row.connectorSlug !== null) {
     const parsedSlug = connectorSlugSchema.safeParse(row.connectorSlug);
-    if (!parsedSlug.success || !snapshot?.connectors.has(parsedSlug.data)) {
-      return null;
+    if (!parsedSlug.success) {
+      throw new Error(
+        "Stored connector account has an invalid builtin identity",
+      );
+    }
+    if (!snapshot) {
+      throw new Error("Builtin connector account metadata is unavailable");
     }
     const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
       snapshot,
@@ -652,7 +751,7 @@ function accountAuthLookupFromCatalogRows(
   }[],
   connectorSlugs: readonly ConnectorSlug[],
 ): ConnectorRuntimeAuthLookup {
-  // Account projections omit a stored builtin account with no catalog entry.
+  // Missing runtime metadata must not erase the saved account's identity.
   const source = connectorCatalogSlugSourceFromRows(
     rows.map((row) => {
       return {
@@ -684,46 +783,61 @@ function connectorAccountAuthLookup(
     if (connectorSlugs.length === 0) {
       return null;
     }
-    const result = await settle(
-      (async () => {
-        const catalogRows = await db
-          .select({
-            current: {
-              schemaVersion: connectorCatalog.schemaVersion,
-              hash: connectorCatalog.hash,
-            },
-            entry: connectorCatalogCompatibilityColumns,
-          })
-          .from(connectorCatalog)
-          .leftJoin(
-            connectorCatalogEntries,
-            connectorCatalogSlugJoin(connectorSlugs),
-          )
-          .where(connectorCatalogCurrentWhere());
-        return accountAuthLookupFromCatalogRows(catalogRows, connectorSlugs);
-      })(),
-    );
-    if (result.ok) {
-      return result.value;
-    }
-    if (!isConnectorCatalogUnavailableError(result.error)) {
-      throw result.error;
-    }
-    log.warn(
-      "Connector catalog unavailable while resolving account lifecycle",
-      {
-        error: result.error,
-      },
-    );
-    return null;
+    const catalogRows = await db
+      .select({
+        current: {
+          schemaVersion: connectorCatalog.schemaVersion,
+          hash: connectorCatalog.hash,
+        },
+        entry: connectorCatalogCompatibilityColumns,
+      })
+      .from(connectorCatalog)
+      .leftJoin(
+        connectorCatalogEntries,
+        connectorCatalogSlugJoin(connectorSlugs),
+      )
+      .where(connectorCatalogCurrentWhere());
+    return accountAuthLookupFromCatalogRows(catalogRows, connectorSlugs);
   });
 }
 
+function setupAttentionCount(
+  group: ConnectorAccountSummaryGroup,
+  snapshot: ConnectorRuntimeAuthLookup | null,
+  markers: ReadonlyMap<string, ReadonlySet<string>>,
+) {
+  return group.accountIds.filter((id) => {
+    const account = { ...group, id };
+    return (
+      connectorAccountSetup(
+        account,
+        snapshot,
+        markers.get(connectorAccountSetupMarkerKey(account)) ?? new Set(),
+      ).setupStatus !== "complete"
+    );
+  }).length;
+}
+
+interface ConnectorAccountSummaryScope {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly includeScopeMismatch?: true;
+}
+
 export function connectorAccountSummaries(
-  owner$: Computed<{ readonly orgId: string; readonly userId: string }>,
+  owner$: Computed<ConnectorAccountSummaryScope>,
 ): Computed<Promise<readonly ConnectorAccountSummary[]>> {
   const groups$ = connectorAccountSummaryGroups(owner$);
   const authLookup$ = connectorAccountAuthLookup(groups$);
+  const markerScope$ = computed(async (get) => {
+    return {
+      ...get(owner$),
+      connectionIds: (await get(groups$)).flatMap((group) => {
+        return group.accountIds;
+      }),
+    };
+  });
+  const markers$ = connectorAccountFieldMarkers(markerScope$);
 
   return computed(async (get) => {
     const args = get(owner$);
@@ -791,9 +905,16 @@ export function connectorAccountSummaries(
     // Every default account belongs to a group, so the groups name every
     // builtin connector this projection reads.
     const snapshot = await get(authLookup$);
+    const markers = await get(markers$);
     const defaultConnections = new Map<string, ConnectorAccountConnection>();
     for (const row of defaultRows) {
-      const connection = projectConnection(row, snapshot, now);
+      const connection = projectConnection(
+        row,
+        snapshot,
+        now,
+        args.includeScopeMismatch === true,
+        markers.get(connectorAccountSetupMarkerKey(row)),
+      );
       if (connection) {
         defaultConnections.set(
           connectorAccountTargetKey(connection.target),
@@ -819,7 +940,9 @@ export function connectorAccountSummaries(
         accountCount: current.accountCount + group.accountCount,
         attentionCount:
           current.attentionCount +
-          (projected.needsAttention ? group.accountCount : 0),
+          (projected.needsAttention
+            ? group.accountCount
+            : setupAttentionCount(group, snapshot, markers)),
       });
     }
     return [...summaries.values()].sort((left, right) => {
@@ -845,7 +968,7 @@ type ConnectorAccountListResult =
       readonly kind: "ok";
       readonly connections: readonly ConnectorAccountConnection[];
       readonly nextCursor: string | null;
-      readonly defaultConnection?: ConnectorAccountConnection | null;
+      readonly defaultConnection: ConnectorAccountConnection | null;
     }
   | { readonly kind: "invalid-cursor" }
   | { readonly kind: "missing" };
@@ -1025,6 +1148,22 @@ export function connectorAccountsForTarget(
     };
   });
   const defaultRows$ = connectorAccountTargetRows(defaultScope$);
+  const markerScope$ = computed(async (get) => {
+    const args = get(scope$);
+    const rows = await get(rows$);
+    const defaults = !rows.some((row) => {
+      return row.isDefault;
+    })
+      ? await get(defaultRows$)
+      : [];
+    return {
+      ...args,
+      connectionIds: [...rows, ...defaults].map((row) => {
+        return row.id;
+      }),
+    };
+  });
+  const markers$ = connectorAccountFieldMarkers(markerScope$);
 
   return computed(async (get): Promise<ConnectorAccountListResult> => {
     const args = get(scope$);
@@ -1043,6 +1182,7 @@ export function connectorAccountsForTarget(
       return { kind: "missing" };
     }
     const rows = await get(rows$);
+    const markers = await get(markers$);
     const now = nowDate();
     const projected = rows.flatMap((row) => {
       const connection = projectConnection(
@@ -1050,20 +1190,22 @@ export function connectorAccountsForTarget(
         snapshot,
         now,
         args.includeScopeMismatch === true,
+        markers.get(connectorAccountSetupMarkerKey(row)),
       );
       return connection ? [connection] : [];
     });
-    const includeDefaultConnection =
-      args.includeScopeMismatch === true &&
-      args.cursor === undefined &&
-      args.search === undefined;
-    const defaultRow = includeDefaultConnection
-      ? (rows.find((row) => {
-          return row.isDefault;
-        }) ?? (await get(defaultRows$))[0])
-      : undefined;
+    const defaultRow =
+      rows.find((row) => {
+        return row.isDefault;
+      }) ?? (await get(defaultRows$))[0];
     const defaultConnection = defaultRow
-      ? projectConnection(defaultRow, snapshot, now, true)
+      ? projectConnection(
+          defaultRow,
+          snapshot,
+          now,
+          args.includeScopeMismatch === true,
+          markers.get(connectorAccountSetupMarkerKey(defaultRow)),
+        )
       : null;
     if (
       args.target.kind === "custom" &&
@@ -1077,7 +1219,7 @@ export function connectorAccountsForTarget(
       kind: "ok",
       connections: projected.slice(0, args.limit),
       nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
-      ...(includeDefaultConnection ? { defaultConnection } : {}),
+      defaultConnection,
     };
   });
 }
@@ -1171,13 +1313,24 @@ export function connectorAccount(
     return row ? [row] : [];
   });
   const authLookup$ = connectorAccountAuthLookup(authRows$);
+  const markerScope$ = computed(async (get) => {
+    const args = await get(scope$);
+    return args ? { ...args, connectionIds: [args.connectionId] } : null;
+  });
+  const markers$ = connectorAccountFieldMarkers(markerScope$);
   return computed(async (get) => {
     const [row] = await get(rows$);
     if (!row) {
       return null;
     }
     const snapshot = await get(authLookup$);
-    return projectConnection(row, snapshot, nowDate());
+    return projectConnection(
+      row,
+      snapshot,
+      nowDate(),
+      false,
+      (await get(markers$)).get(connectorAccountSetupMarkerKey(row)),
+    );
   });
 }
 
@@ -1190,6 +1343,7 @@ export function connectorAccountsByIds(
 ): Computed<Promise<readonly ConnectorAccountConnection[]>> {
   const rows$ = connectorAccountBatchRows(scope$);
   const authLookup$ = connectorAccountAuthLookup(rows$);
+  const markers$ = connectorAccountFieldMarkers(scope$);
   return computed(async (get) => {
     const args = await get(scope$);
     if (!args || args.connectionIds.length === 0) {
@@ -1198,16 +1352,78 @@ export function connectorAccountsByIds(
     const rows = await get(rows$);
     const snapshot = await get(authLookup$);
     const now = nowDate();
+    const markers = await get(markers$);
     return rows.flatMap((row) => {
-      const connection = projectConnection(row, snapshot, now);
+      const connection = projectConnection(
+        row,
+        snapshot,
+        now,
+        false,
+        markers.get(connectorAccountSetupMarkerKey(row)),
+      );
       return connection ? [connection] : [];
     });
   });
 }
 
+const readConnectorAccountSetupMarkers$ = command(
+  async ({ get }, args: ConnectorAccountBatchScope) => {
+    const db = get(db$);
+    const connectionIds = [...new Set(args.connectionIds)];
+    const [secretRows, variableRows] = await Promise.all([
+      db
+        .select({ ...fieldMarkerContractSelection(), name: secrets.name })
+        .from(secrets)
+        .innerJoin(connectors, eq(connectors.id, secrets.connectorId))
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(secrets.orgId, args.orgId),
+            eq(secrets.userId, args.userId),
+            eq(secrets.type, "connector"),
+            inArray(secrets.connectorId, connectionIds),
+          ),
+        ),
+      db
+        .select({ ...fieldMarkerContractSelection(), name: variables.name })
+        .from(variables)
+        .innerJoin(connectors, eq(connectors.id, variables.connectorId))
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(variables.orgId, args.orgId),
+            eq(variables.userId, args.userId),
+            eq(variables.type, "connector"),
+            inArray(variables.connectorId, connectionIds),
+          ),
+        ),
+    ]);
+    return connectorAccountFieldMarkerKeys([
+      ...secretRows.map((row) => {
+        return { ...row, kind: "secret" as const };
+      }),
+      ...variableRows.map((row) => {
+        return { ...row, kind: "variable" as const };
+      }),
+    ]);
+  },
+);
+
 export const readConnectorAccountsByIds$ = command(
   async (
-    { get },
+    { get, set },
     args: ConnectorAccountBatchScope,
     signal: AbortSignal,
   ): Promise<readonly ConnectorAccountConnection[]> => {
@@ -1284,45 +1500,32 @@ export const readConnectorAccountsByIds$ = command(
           if (connectorSlugs.length === 0) {
             return null;
           }
-          const result = await settle(
-            (async () => {
-              const catalogRows = await db
-                .select({
-                  current: {
-                    schemaVersion: connectorCatalog.schemaVersion,
-                    hash: connectorCatalog.hash,
-                  },
-                  entry: connectorCatalogCompatibilityColumns,
-                })
-                .from(connectorCatalog)
-                .leftJoin(
-                  connectorCatalogEntries,
-                  connectorCatalogSlugJoin(connectorSlugs),
-                )
-                .where(connectorCatalogCurrentWhere());
-              return accountAuthLookupFromCatalogRows(
-                catalogRows,
-                connectorSlugs,
-              );
-            })(),
-          );
-          if (result.ok) {
-            return result.value;
-          }
-          if (!isConnectorCatalogUnavailableError(result.error)) {
-            throw result.error;
-          }
-          log.warn(
-            "Connector catalog unavailable while resolving account lifecycle",
-            {
-              error: result.error,
-            },
-          );
-          return null;
+          const catalogRows = await db
+            .select({
+              current: {
+                schemaVersion: connectorCatalog.schemaVersion,
+                hash: connectorCatalog.hash,
+              },
+              entry: connectorCatalogCompatibilityColumns,
+            })
+            .from(connectorCatalog)
+            .leftJoin(
+              connectorCatalogEntries,
+              connectorCatalogSlugJoin(connectorSlugs),
+            )
+            .where(connectorCatalogCurrentWhere());
+          return accountAuthLookupFromCatalogRows(catalogRows, connectorSlugs);
         })();
+      const markers = await set(readConnectorAccountSetupMarkers$, args);
       const now = nowDate();
       return rows.flatMap((row) => {
-        const connection = projectConnection(row, snapshot, now);
+        const connection = projectConnection(
+          row,
+          snapshot,
+          now,
+          false,
+          markers.get(connectorAccountSetupMarkerKey(row)),
+        );
         return connection ? [connection] : [];
       });
     })();

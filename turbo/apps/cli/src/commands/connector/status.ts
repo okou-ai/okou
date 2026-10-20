@@ -43,8 +43,8 @@ function printConnectorDetails(
   console.log(
     `${"Status:".padEnd(LABEL_WIDTH)}${
       facts.memberStatus === "connected"
-        ? chalk.green(memberConnectorStatusText(connector, facts))
-        : chalk.yellow(memberConnectorStatusText(connector, facts))
+        ? chalk.green(memberConnectorStatusText(facts))
+        : chalk.yellow(memberConnectorStatusText(facts))
     }`,
   );
   console.log(
@@ -55,7 +55,7 @@ function printConnectorDetails(
     console.log(`${"Connection ID:".padEnd(LABEL_WIDTH)}${account.id}`);
     console.log(`${"Auth Method:".padEnd(LABEL_WIDTH)}${account.authMethod}`);
   }
-  if (connector.scopeMismatch) {
+  if (facts.scopeMismatch) {
     console.log(
       `${"Permissions:".padEnd(LABEL_WIDTH)}${chalk.yellow("update available")}`,
     );
@@ -95,7 +95,8 @@ async function printAgentAction(
     console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
   } else if (
     !isConnected &&
-    (facts.memberStatus !== "not-connected" || connector.connection !== null)
+    (facts.memberStatus !== "not-connected" ||
+      (connector.connection !== undefined && connector.connection !== null))
   ) {
     const origin = await getPlatformOrigin();
     const url = connectorActionUrl({
@@ -173,7 +174,7 @@ async function printStandaloneAction(
     console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
   } else if (
     facts.memberStatus !== "not-connected" ||
-    connector.connection !== null
+    (connector.connection !== undefined && connector.connection !== null)
   ) {
     console.log(
       `Review the ${connectorSlug} accounts: [Manage ${connectorSlug} accounts](${origin}/connectors)`,

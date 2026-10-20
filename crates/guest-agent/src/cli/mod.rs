@@ -212,6 +212,8 @@ pub struct CliFailureDiagnostic {
     /// when a generic stdout message is replaced by a more specific message or
     /// stderr fallback.
     pub failure_reason: Option<FailureReason>,
+    /// Content-free native evidence belonging to the selected Codex error.
+    pub codex_failure: Option<guest_contracts::codex_failure::CodexFailureEvidence>,
 }
 
 /// Result returned after the configured CLI process exits.
@@ -810,6 +812,7 @@ impl<'a> CliEventIngestor<'a> {
                 message: diagnostic.message,
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: diagnostic.failure_reason,
+                codex_failure: diagnostic.evidence,
             };
             log_warn!(
                 LOG_TAG,
@@ -1737,6 +1740,7 @@ async fn execute_cli_inner(
                                             .then(|| event.get("failureReason"))
                                             .flatten()
                                             .and_then(|reason| serde_json::from_value(reason.clone()).ok()),
+                                        codex_failure: None,
                                     };
                                     log_warn!(
                                         LOG_TAG,
@@ -2256,7 +2260,9 @@ async fn execute_cli_inner(
     })
 }
 
-fn cli_exit_summary_from_status(status: &ExitStatus) -> (i32, Option<CliObservedExitDiagnostic>) {
+pub(crate) fn cli_exit_summary_from_status(
+    status: &ExitStatus,
+) -> (i32, Option<CliObservedExitDiagnostic>) {
     if let Some(code) = status.code() {
         return (code, Some(CliObservedExitDiagnostic::from_exit_code(code)));
     }
@@ -2375,6 +2381,7 @@ fn select_failure_diagnostic(
             if candidate.failure_reason.is_some() {
                 let mut selected = existing.clone();
                 selected.failure_reason = candidate.failure_reason;
+                selected.codex_failure = candidate.codex_failure;
                 return Some(selected);
             }
             if existing.source == FailureDetailSource::CodexJsonl
@@ -2388,7 +2395,15 @@ fn select_failure_diagnostic(
 }
 
 fn has_specific_failure_diagnostic(diagnostic: &CliFailureDiagnostic) -> bool {
-    diagnostic.failure_reason.is_some() || has_specific_failure_message(diagnostic)
+    diagnostic.failure_reason.is_some()
+        || diagnostic.codex_failure.is_some_and(|evidence| {
+            evidence.reported_stage.is_some()
+                || evidence.http_status.is_some()
+                || evidence.native_kind.is_some_and(|kind| {
+                    kind != guest_contracts::codex_failure::CodexNativeFailureKind::Other
+                })
+        })
+        || has_specific_failure_message(diagnostic)
 }
 
 fn has_specific_failure_message(diagnostic: &CliFailureDiagnostic) -> bool {
@@ -3101,11 +3116,13 @@ mod tests {
                         message: "You've hit your usage limit.".to_string(),
                         source: FailureDetailSource::CodexJsonl,
                         failure_reason: None,
+                        codex_failure: None,
                     }),
                     CliFailureDiagnostic {
                         message: generic_message.to_string(),
                         source: FailureDetailSource::CodexJsonl,
                         failure_reason: None,
+                        codex_failure: None,
                     },
                 ),
                 None,
@@ -3115,17 +3132,103 @@ mod tests {
     }
 
     #[test]
+    fn codex_native_evidence_follows_the_selected_error_without_cross_event_status() {
+        use guest_contracts::codex_failure::{
+            CodexFailureEvidence, CodexFailureStage, CodexNativeFailureKind,
+        };
+        let original = CliFailureDiagnostic {
+            message: "stream disconnected before completion: error sending request".to_string(),
+            source: FailureDetailSource::CodexJsonl,
+            failure_reason: None,
+            codex_failure: Some(CodexFailureEvidence {
+                reported_stage: Some(CodexFailureStage::RequestSend),
+                native_kind: Some(CodexNativeFailureKind::Other),
+                http_status: None,
+            }),
+        };
+        let response = CliFailureDiagnostic {
+            message: "response disconnected".to_string(),
+            source: FailureDetailSource::CodexJsonl,
+            failure_reason: Some(FailureReason::ResponseConnectionLost),
+            codex_failure: Some(CodexFailureEvidence {
+                reported_stage: Some(CodexFailureStage::ResponseStream),
+                native_kind: Some(CodexNativeFailureKind::ResponseStreamDisconnected),
+                http_status: Some(200),
+            }),
+        };
+        let generic = CliFailureDiagnostic {
+            message: "turn failed".to_string(),
+            source: FailureDetailSource::CodexJsonl,
+            failure_reason: None,
+            codex_failure: None,
+        };
+        assert_eq!(
+            select_failure_diagnostic(Some(&original), generic.clone()),
+            None
+        );
+        let native_generic = CliFailureDiagnostic {
+            message: "turn failed".to_string(),
+            failure_reason: None,
+            ..response.clone()
+        };
+        let exhausted_generic = CliFailureDiagnostic {
+            codex_failure: Some(CodexFailureEvidence {
+                reported_stage: None,
+                native_kind: Some(CodexNativeFailureKind::ResponseTooManyFailedAttempts),
+                http_status: None,
+            }),
+            ..native_generic.clone()
+        };
+        assert_eq!(
+            select_failure_diagnostic(Some(&exhausted_generic), generic.clone()),
+            None,
+            "native retry exhaustion must survive even when its status/count are unavailable"
+        );
+        assert_eq!(
+            select_failure_diagnostic(Some(&native_generic), generic.clone()),
+            None,
+            "a generic follow-up must not erase retained native status"
+        );
+        assert_eq!(
+            select_failure_diagnostic(Some(&original), response.clone()),
+            Some(response.clone())
+        );
+        assert_eq!(
+            select_failure_diagnostic(Some(&response), original.clone())
+                .unwrap()
+                .codex_failure,
+            original.codex_failure
+        );
+
+        let authoritative = CliFailureDiagnostic {
+            failure_reason: Some(FailureReason::InvalidCredentials),
+            ..generic
+        };
+        let selected = select_failure_diagnostic(Some(&response), authoritative).unwrap();
+        assert_eq!(
+            selected.failure_reason,
+            Some(FailureReason::InvalidCredentials)
+        );
+        assert_eq!(
+            selected.codex_failure, None,
+            "do not retain an earlier response status for a new native cause"
+        );
+    }
+
+    #[test]
     fn generic_codex_failure_diagnostic_replaces_prior_generic_event() {
         let selected = select_failure_diagnostic(
             Some(&CliFailureDiagnostic {
                 message: "error".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             }),
             CliFailureDiagnostic {
                 message: "Unknown error".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             },
         );
 
@@ -3135,6 +3238,7 @@ mod tests {
                 message: "Unknown error".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             })
         );
     }
@@ -3147,11 +3251,13 @@ mod tests {
                     message: "Claude result failure".to_string(),
                     source: FailureDetailSource::ClaudeResult,
                     failure_reason: None,
+                    codex_failure: None,
                 }),
                 CliFailureDiagnostic {
                     message: "Unknown error".to_string(),
                     source: FailureDetailSource::CodexJsonl,
                     failure_reason: None,
+                    codex_failure: None,
                 },
             ),
             None,
@@ -3165,11 +3271,13 @@ mod tests {
                 message: "error".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             }),
             CliFailureDiagnostic {
                 message: "You've hit your usage limit.".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             },
         );
 
@@ -3186,11 +3294,13 @@ mod tests {
                 message: "error".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             }),
             CliFailureDiagnostic {
                 message: "turn failed".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: Some(FailureReason::InvalidApiKey),
+                codex_failure: None,
             },
         );
 
@@ -3207,11 +3317,13 @@ mod tests {
                 message: "request failed before shutdown".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             }),
             CliFailureDiagnostic {
                 message: "turn failed".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: Some(FailureReason::InvalidApiKey),
+                codex_failure: None,
             },
         )
         .expect("reason-bearing generic diagnostic should update existing diagnostic");
@@ -3227,11 +3339,13 @@ mod tests {
                 message: "turn failed".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: Some(FailureReason::InvalidApiKey),
+                codex_failure: None,
             }),
             CliFailureDiagnostic {
                 message: "request failed".to_string(),
                 source: FailureDetailSource::CodexJsonl,
                 failure_reason: None,
+                codex_failure: None,
             },
         );
 

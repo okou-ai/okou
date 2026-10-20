@@ -38,6 +38,72 @@ consumer regressions are separate from opt-in native execution. Complete C/D/P4,
 bootstrap provenance, residency, calibrated RAM relief and OOM/production
 protection remain separate gates.
 
+## Provider failures and retained producer uncertainty
+
+`native_provider_failures_preserve_guarded_rollback_and_required_saving` runs
+decode/disconnect × fresh/snapshot. The actual authenticated ApiProvider POST
+waits at an owned response gate; malformed HTTP200 JSON and a deliberate
+per-connection disconnect return None through the real provider. This means
+unavailable at the JobProvider boundary, not proof that a remote claim never
+happened. Actual Guest preparation, original repark/guarded restore and complete
+required saving use the C7 ownership/progress/data contract below. Add exact raw
+`native_claim_failure_policy_json` to the original collector metadata and replay
+`claim_failure_report.py <p1-directory>`.
+
+The separate ignored entry points are:
+
+```text
+native_claim_producer_loss_retains_original_fresh
+native_claim_producer_loss_retains_original_snapshot
+native_cancelled_claim_observer_retains_original_fresh
+native_cancelled_claim_observer_retains_original_snapshot
+```
+
+Each owns exactly one Guest and deliberately preserves its actual ProducerLost
+failure (Rust exit101, failed original P1 report). An accepted JobProvider task
+waits at an owned gate, then unwinds. This is an explicit trait-boundary fault;
+it does not claim ApiProvider itself panicked or returned an unreachable
+mismatched claim. The non-default Firecracker Restore checkpoint observes the
+actual successful fixed RPC before cancellation of only the borrowed response
+observers. Pool contention, independent real observer/acknowledged heartbeat,
+producer/native joins, receipt take, later wait, commit and rollback refusals,
+original promotion lock contention, empty inventory and exact full lease are
+required. Conversion to required cleanup still cannot clear claim uncertainty.
+Before releasing the producer, an inotify-backed wait observes a complete new
+sample in the owning P1 collector's `samples.jsonl` in its working directory.
+The strict reader binds that acknowledgement to the original sample and clocks;
+a fast transition cannot silently omit its native measurement window. This wait
+is bounded by the existing claim deadline and adds no fixed delay or new policy.
+
+The original private/home bytes and complete payload are verified and synced
+before the fault. Failed cases retain their original directory and capsule;
+they never enter successful terminal saving, lease release or factory teardown.
+Run each entry separately under unchanged P1 guards, with exact raw
+`native_claim_producer_policy_json`, artifact manifest and matching new snapshot.
+Preserve the original logs, nonzero driver/collector outcomes and any collector
+owned-child intervention. Such intervention is fixture containment, never
+required saving, cleanup completion, memory credit or physical relief proof.
+Keep all original case files; copy the positively identified original home image
+to `retained-home.ext4` beside that case's original P1 files after the collector
+has joined its owned children. Hash both originals and copy in the evidence
+archive. The strict reader reopens this regular ext4 file and verifies its
+original superblock and all seeded required bytes through read-only debugfs.
+The image filesystem root corresponds to `/home/user` inside the Guest:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/claim_producer_report.py <p1-directory>
+```
+
+The reader's success confirms retained-custody evidence while retaining
+`original_driver_exit_code=101`, `original_collector_success=false`,
+`required_saving_complete=false` and `cleanup_complete=false`. Never rewrite
+the original P1 failure or pass it to a successful terminal-saving validator.
+Native images/data and raw failure records remain preserved for reconciliation.
+Ordinary reader tests use synthetic logs and disposable real ext4 images with
+`/usr/sbin/mke2fs` and `/usr/sbin/debugfs`; they do not establish native execution.
+All C10/C11/full shutdown, complete session/history, numerical policy,
+residency/provenance and P4 gates remain separate. No production activation.
+
 ## Actual provider claim rejection and guarded rollback
 
 `native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving`
@@ -1369,3 +1435,64 @@ opt-in. This phased sequence does not claim simultaneous promotion leases,
 permanent retention of two cache generations, an actual API claim-loss race,
 calibrated physical relief, full residency, bootstrap provenance or production
 activation. Parent aggregate acceptance remains separate.
+
+## Real API competing claims (#41467)
+
+`native_real_api_competing_claims_preserve_both_owners` composes two independent
+native guarded preparations with the production authenticated claim route and
+invocation-owned PostgreSQL. The explicit API entry constructs synthetic actors,
+predecessors and candidates through public onboarding/chat/Runner/callback
+interfaces. Its loopback listener mounts existing production routes only. The
+canonical external-provider registry supplies synthetic external services.
+No development server or production account/database is used.
+
+The transport waits for both actual requests and both positively observed native
+owners, then forwards A first, B first, or both concurrently. It never selects a
+status. Each order covers fresh and newly matching-snapshot Guests. Concurrent
+release observes overlapping HTTP lifetimes; it does not establish an internal
+database schedule. Before releasing a successful response, the bridge records
+the actor's public running state. Each pending native owner also records an
+independent host observation while its pool blocks heartbeat publication, then
+joins the acknowledged heartbeat after releasing that pool. The winner keeps its original returned context and token,
+executes one exclusive synthetic GuestRPC task, and completes through the public
+protocol. The loser reparks through production guarded rollback. Both complete
+the existing full home/data, 64 MiB required saving, private-runtime removal,
+physical-exit and full-lease/accounting checks. The independent heartbeat peer
+checks acknowledged HTTP progress; it is distinct from the real claim API.
+This seam does not run the complete Executor/framework CLI or certify CLI session
+history, calibrated host envelopes, bootstrap provenance or production protection.
+
+Freeze the source, actual Host and all eleven canonical Guest binaries. Verify
+the installed Guest bytes in an owned rootfs and create a new matching snapshot
+with this Host. Keep the original snapshot preparation record. Start an owned
+loopback PostgreSQL cluster in UTC and apply normal migrations; the ordinary API
+global setup supplies canonical baseline catalog seeds. Retain the producer's
+cluster system identifier, binary/version, data directory, migration receipt,
+source manifest and native input hashes in an owner-only `producer.json` with
+format `native-real-api-producer-v1`.
+
+From the API workspace, under an owned private mount namespace with native
+privileges, run `pnpm test:native-competing-claims`. Supply
+`OKOU_TEST_REAL_API_INPUTS` pointing to a bounded owned JSON containing `root`
+(a new results directory with `producer.json`), `driver` (the frozen
+`real_api_driver.py` here), `sourceSha`, `databaseUrl` (the owned cluster), and
+`producerFile` (the same producer receipt). The driver documents its frozen input
+paths in code and refuses source/input changes. It uses unchanged P1 duration,
+sampling, headroom, log and cleanup guards. Failed cases retain original evidence
+and uncertain ownership; diagnose them before starting a new invocation.
+Disk preflight reserves four complete profile-sized Home images for the two
+original owners and their saved-home verification; existing rootfs and snapshot
+inputs are already allocated. This is a fixture capacity check, not a measured
+production storage envelope.
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/real_api_claim_report.py <results-root>
+python3 crates/runner/tests/guarded_idle_native/real_api_claim_report_test.py
+```
+
+The original-file reader requires all six scenarios/twelve owner paths, genuine
+200/404 results, original authority, public winner/completion, exact source and
+producer/snapshot/policy bindings, complete data/full leases and joined owners.
+Its ordinary synthetic CLI mutation tests do not supply native acceptance. Keep
+evidence private because original synthetic authorization is deliberately
+retained. Missing native evidence blocks readiness; #39998 stays open.

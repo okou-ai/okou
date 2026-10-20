@@ -245,6 +245,287 @@ describe("connector account lifecycle routes", () => {
     expect(scopeDiff.body.error.message).toBe("Connector account not found");
   });
 
+  it("reports missing declared configuration independently of a custom OAuth credential", async () => {
+    const fixture = await seedFixture();
+    const actor: ApiTestUser = {
+      ...fixture,
+      orgRole: "org:admin",
+      email: "connector-setup@example.test",
+    };
+    mockClerkMembership(context, actor, "org:admin");
+    const api = createConnectorBddApi(context);
+    const provider = mockCustomConnectorOAuth2Provider(context, {
+      initialScope: "read",
+    });
+    const definition = await api.createCustomConnector(actor, {
+      displayName: "OAuth with declared configuration",
+      prefixTemplates: ["https://configured-oauth.example.test/"],
+      authMode: "oauth",
+      fields: [
+        { key: "region", label: "Region", kind: "variable", required: true },
+        {
+          key: "access_token",
+          label: "Declared access token variable",
+          kind: "variable",
+          required: true,
+        },
+        {
+          key: "refresh_token",
+          label: "Declared refresh token variable",
+          kind: "variable",
+          required: true,
+        },
+      ],
+      headerInjections: [
+        {
+          name: "Authorization",
+          valueTemplate: "Bearer {{oauth.access_token}}",
+        },
+        { name: "X-Region", valueTemplate: "{{variables.region}}" },
+      ],
+      queryInjections: [],
+      oauthConfig: {
+        providerAdapter: "standard",
+        clientId: "setup-client",
+        clientSecret: "setup-client-secret",
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        tokenEndpointAuthMethod: "client_secret_post",
+        pkceMethod: "none",
+        scopes: ["read"],
+        authorizationParams: {},
+      },
+    });
+    const authorization = new URL(
+      await api.startCustomConnectorOAuth2AtBaseUrl(
+        actor,
+        definition.id,
+        "https://api.okou.ai",
+        { intent: "add" },
+      ),
+    );
+    const state = authorization.searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected public OAuth authorization state");
+    }
+    await api.completeCustomConnectorOAuth2Callback(
+      { code: "setup-authorization-code", state },
+      { baseUrl: "https://api.okou.ai" },
+    );
+    const response = await accept(
+      accountClient().summaries({ headers: authHeaders() }),
+      [200],
+    );
+    expect(response.body.summaries).toStrictEqual([
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: definition.id },
+        accountCount: 1,
+        attentionCount: 1,
+        defaultConnection: expect.objectContaining({
+          connectionStatus: "connected",
+          setupStatus: "incomplete",
+          missingRequiredFields: ["access_token", "refresh_token", "region"],
+          configuredFieldKeys: [],
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(response.body)).not.toContain("setup-client-secret");
+    const accountId = response.body.summaries[0]?.defaultConnection?.id;
+    if (!accountId) {
+      throw new Error("Expected the exact OAuth account");
+    }
+    const unsupportedWrite = await accept(
+      customConnectorValuesClient().set({
+        headers: authHeaders(),
+        params: { id: definition.id },
+        body: {
+          account: { intent: "reconnect", connectionId: accountId },
+          values: [{ key: "region", kind: "variable", value: "us-test" }],
+        },
+      }),
+      [400],
+    );
+    expect(unsupportedWrite.body.error.message).toBe(
+      "OAuth and Automatic custom connectors must be connected through authentication discovery",
+    );
+  });
+
+  it("keeps a stale saved default beside a reconnected healthy custom sibling", async () => {
+    await seedFixture();
+    const body = {
+      displayName: "Account setup facts",
+      prefixTemplates: ["https://api.example.com/"],
+      fields: [
+        {
+          key: "api_key",
+          label: "API key",
+          kind: "secret" as const,
+          required: true,
+        },
+        {
+          key: "region",
+          label: "Region",
+          kind: "variable" as const,
+          required: true,
+        },
+      ],
+      headerInjections: [
+        { name: "Authorization", valueTemplate: "Bearer {{secrets.api_key}}" },
+      ],
+      queryInjections: [],
+    } satisfies CreateCustomConnectorBody;
+    const definition = await accept(
+      customConnectorClient().create({ headers: authHeaders(), body }),
+      [201],
+    );
+    const target = {
+      kind: "custom",
+      customConnectorId: definition.body.id,
+    } as const;
+    const defaultAccount = await accept(
+      customConnectorValuesClient().set({
+        headers: authHeaders(),
+        params: { id: definition.body.id },
+        body: {
+          account: { intent: "add" },
+          values: [
+            {
+              key: "api_key",
+              kind: "secret",
+              value: "first-secret-must-not-leak",
+            },
+            { key: "region", kind: "variable", value: "first-region-value" },
+          ],
+        },
+      }),
+      [200],
+    );
+    const healthy = await accept(
+      customConnectorValuesClient().set({
+        headers: authHeaders(),
+        params: { id: definition.body.id },
+        body: {
+          account: { intent: "add", displayName: "Healthy sibling" },
+          values: [
+            {
+              key: "api_key",
+              kind: "secret",
+              value: "second-secret-must-not-leak",
+            },
+            { key: "region", kind: "variable", value: "private-region-value" },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(defaultAccount.body.connectionId).toBe(
+      defaultAccount.body.connectedAccountId,
+    );
+    expect(healthy.body.connectionId).toBe(healthy.body.connectedAccountId);
+    if (!defaultAccount.body.connectionId || !healthy.body.connectionId) {
+      throw new Error("Expected exact operated account IDs");
+    }
+    const before = await accept(
+      accountClient().summaries({ headers: authHeaders() }),
+      [200],
+    );
+    expect(before.body.summaries).toStrictEqual([
+      expect.objectContaining({
+        target,
+        accountCount: 2,
+        attentionCount: 0,
+        defaultConnection: expect.objectContaining({
+          id: defaultAccount.body.connectionId,
+          connectionStatus: "connected",
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: ["api_key", "region"],
+        }),
+      }),
+    ]);
+    const sibling = await accept(
+      accountClient().connection({
+        headers: authHeaders(),
+        params: { connectionId: healthy.body.connectionId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(sibling.body).toMatchObject({
+      id: healthy.body.connectionId,
+      isDefault: false,
+      connectionStatus: "connected",
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: ["api_key", "region"],
+    });
+    await accept(
+      customConnectorByIdClient().update({
+        headers: authHeaders(),
+        params: { id: definition.body.id },
+        body: { ...body, storageVersion: 2 },
+      }),
+      [200],
+    );
+    const stale = await accept(
+      accountClient().connection({
+        headers: authHeaders(),
+        params: { connectionId: defaultAccount.body.connectionId },
+        query: target,
+      }),
+      [200],
+    );
+    expect(stale.body).toMatchObject({
+      id: defaultAccount.body.connectionId,
+      isDefault: true,
+      setupStatus: "invalid",
+      configuredFieldKeys: [],
+      missingRequiredFields: ["api_key", "region"],
+    });
+    const repaired = await accept(
+      customConnectorValuesClient().set({
+        headers: authHeaders(),
+        params: { id: definition.body.id },
+        body: {
+          account: {
+            intent: "reconnect",
+            connectionId: healthy.body.connectionId,
+          },
+          values: [
+            { key: "api_key", kind: "secret", value: "repaired-secret" },
+            { key: "region", kind: "variable", value: "repaired-region" },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(repaired.body.connectionId).toBe(healthy.body.connectionId);
+    const after = await accept(
+      accountClient().summaries({ headers: authHeaders() }),
+      [200],
+    );
+    expect(after.body.summaries).toStrictEqual([
+      expect.objectContaining({
+        target,
+        accountCount: 2,
+        attentionCount: 1,
+        defaultConnection: expect.objectContaining({
+          id: defaultAccount.body.connectionId,
+          setupStatus: "invalid",
+        }),
+      }),
+    ]);
+    const visible = JSON.stringify([
+      before.body,
+      sibling.body,
+      stale.body,
+      after.body,
+    ]);
+    expect(visible).not.toMatch(
+      /first-secret-must-not-leak|second-secret-must-not-leak|private-region-value|repaired-secret|repaired-region/u,
+    );
+  });
+
   it("inspects exact account duplicates in request order after rename and deletion without leaking credentials", async () => {
     const app = await setupApp({ context, routes, isolatePg: true });
     const accounts = app(connectorAccountsContract);
@@ -280,6 +561,9 @@ describe("connector account lifecycle routes", () => {
       externalEmail: null,
       connectionStatus: "connected",
       reconnectReason: null,
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: ["apiKey"],
     };
     const inspected = await accept(
       accounts.inspect({ headers: authHeaders(), body: { selections } }),
@@ -539,6 +823,21 @@ describe("connector account lifecycle routes", () => {
           return account.id;
         }),
     ).toStrictEqual([workId]);
+    const filteredCustomPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...primary.target, limit: 1, search: "Personal" },
+      }),
+      [200],
+    );
+    expect(filteredCustomPage.body.connections).toMatchObject([
+      { id: personalId, isDefault: false },
+    ]);
+    expect(filteredCustomPage.body.defaultConnection).toMatchObject({
+      id: workId,
+      target: primary.target,
+      isDefault: true,
+    });
     for (let selection = 0; selection < 2; selection += 1) {
       const selected = await accept(
         accountClient().setDefault({
@@ -582,6 +881,11 @@ describe("connector account lifecycle routes", () => {
             return account.id;
           }),
       ).toStrictEqual([defaultId]);
+      expect(listed.body.defaultConnection).toMatchObject({
+        id: defaultId,
+        target: group.target,
+        isDefault: true,
+      });
       for (const account of listed.body.connections) {
         expect(account.target).toStrictEqual(group.target);
       }
@@ -726,7 +1030,10 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(next.body.connections).toHaveLength(1);
-    expect(next.body).not.toHaveProperty("defaultConnection");
+    expect(next.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
     expect(
       new Set([listed.body.connections[0]!.id, next.body.connections[0]!.id]),
     ).toStrictEqual(new Set([first.body.id, second.body.id]));
@@ -745,7 +1052,10 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(beforeRename.body.connections).toStrictEqual([]);
-    expect(beforeRename.body).not.toHaveProperty("defaultConnection");
+    expect(beforeRename.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
 
     const renamed = await accept(
       accountClient().rename({
@@ -804,7 +1114,11 @@ describe("connector account lifecycle routes", () => {
       { id: second.body.id, displayName: "Personal renamed", isDefault: true },
     ]);
     expect(afterRename.body.nextCursor).toBeNull();
-    expect(afterRename.body).not.toHaveProperty("defaultConnection");
+    expect(afterRename.body.defaultConnection).toMatchObject({
+      id: second.body.id,
+      displayName: "Personal renamed",
+      isDefault: true,
+    });
 
     const [currentFirst, currentSecond, currentFirstImpact] = await Promise.all(
       [
@@ -933,6 +1247,11 @@ describe("connector account lifecycle routes", () => {
     );
     expect(remaining.body.connections).toHaveLength(1);
     expect(remaining.body.connections[0]).toMatchObject({
+      id: first.body.id,
+      displayName: "Work",
+      isDefault: true,
+    });
+    expect(remaining.body.defaultConnection).toMatchObject({
       id: first.body.id,
       displayName: "Work",
       isDefault: true,
@@ -1492,41 +1811,6 @@ describe("connector account lifecycle routes", () => {
         }),
       );
     });
-
-    it("returns no matches for absent searches with more than one hundred accounts", async () => {
-      const noMatch = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "builtin",
-            connectorSlug: "public-mcp",
-            limit: 100,
-            search: "no-matching-connector-account",
-          },
-        }),
-        [200],
-      );
-      expect(noMatch.body).toStrictEqual({
-        connections: [],
-        nextCursor: null,
-      });
-    });
-
-    it("rejects blank searches with more than one hundred accounts", async () => {
-      const response = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "builtin",
-            connectorSlug: "public-mcp",
-            limit: 100,
-            search: " ",
-          },
-        }),
-        [400],
-      );
-      expect(response.status).toBe(400);
-    });
   });
 
   it("does not enumerate or mutate another member account", async () => {
@@ -1694,6 +1978,9 @@ describe("connector account lifecycle routes", () => {
           isDefault: true,
           connectionStatus: "connected",
           reconnectReason: null,
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
         },
       ]);
 
@@ -1930,6 +2217,9 @@ describe("connector account lifecycle routes", () => {
           externalEmail: null,
           connectionStatus: "connected",
           reconnectReason: null,
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: ["secret"],
         },
       ]);
 

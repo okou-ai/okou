@@ -378,9 +378,7 @@ export function SharedArtifactPage({
             <ProductBrandMark size="small" />
           </a>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-medium" title={title}>
-              {title}
-            </h1>
+            <h1 className="truncate text-sm font-medium">{title}</h1>
             {artifact !== null && (
               <p className="truncate text-xs text-muted-foreground">
                 {artifactFallbackSubtitle(

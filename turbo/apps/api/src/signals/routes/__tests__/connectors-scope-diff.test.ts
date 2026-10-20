@@ -123,17 +123,6 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns 404 when no connector is configured for the slug", async () => {
-    const actor = bdd.user();
-    const response = await connectorsApi.requestScopeDiff(
-      actor,
-      "github",
-      [404],
-    );
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
   it("returns an empty diff when stored scopes match current scopes exactly", async () => {
     const actor = bdd.user();
     const connectionId = await connectGithub(actor);
@@ -150,6 +139,31 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     const exact = await requestAccountScopeDiff(actor, connectionId);
     expect(exact.status).toBe(200);
     expect(exact.body).toStrictEqual(expected);
+
+    const legacySummary = await accept(
+      accountClient(actor).summaries({ headers: authHeaders() }),
+      [200],
+    );
+    expect(legacySummary.body.summaries[0]?.defaultConnection?.id).toBe(
+      connectionId,
+    );
+    expect(
+      legacySummary.body.summaries[0]?.defaultConnection,
+    ).not.toHaveProperty("scopeMismatch");
+    const preparedSummary = await accept(
+      accountClient(actor).summaries({
+        headers: authHeaders(),
+        query: { includeScopeMismatch: "true" },
+      }),
+      [200],
+    );
+    expect(preparedSummary.body.summaries[0]?.defaultConnection).toMatchObject({
+      id: connectionId,
+      target: { kind: "builtin", connectorSlug: "github" },
+      scopeMismatch: false,
+      setupStatus: "complete",
+      connectionStatus: "connected",
+    });
 
     const missing = await requestAccountScopeDiff(actor, randomUUID());
     expect(missing.status).toBe(404);

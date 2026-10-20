@@ -304,7 +304,7 @@ test("Connect a manual-token connector while authorizing an agent", async () => 
       expect(body.authorizeAgent).toBeTruthy();
       submittedValues = body.values;
       authorized = true;
-      return respond(200, {
+      const connected = {
         id: crypto.randomUUID(),
         slug: "axiom",
         authMethod: body.authMethod,
@@ -312,12 +312,14 @@ test("Connect a manual-token connector while authorizing an agent", async () => 
         externalUsername: null,
         externalEmail: null,
         oauthScopes: null,
-        connectionStatus: "connected",
+        connectionStatus: "connected" as const,
         reconnectReason: null,
         tokenExpiresAt: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-      });
+      };
+      context.mocks.data.connectors([connected]);
+      return respond(200, connected);
     },
   );
 
@@ -440,7 +442,7 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
         authorizeAgent: true,
       });
       authorized = true;
-      return respond(200, {
+      const connected = {
         id: crypto.randomUUID(),
         slug: "stripe",
         authMethod: body.authMethod,
@@ -448,12 +450,14 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
         externalUsername: null,
         externalEmail: null,
         oauthScopes: null,
-        connectionStatus: "connected",
+        connectionStatus: "connected" as const,
         reconnectReason: null,
         tokenExpiresAt: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-      });
+      };
+      context.mocks.data.connectors([connected]);
+      return respond(200, connected);
     },
   );
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {

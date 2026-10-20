@@ -65,6 +65,18 @@ pub struct Probe {
 }
 
 impl Probe {
+    pub fn hold_claim_failure(
+        &self,
+        run: super::RunId,
+        outcome: super::claim_peer::Outcome,
+    ) -> TestResult<(Arc<dyn JobProvider>, Arc<super::claim_peer::Gate>)> {
+        Ok((
+            self.provider.clone(),
+            self.api
+                .hold_claim_with_outcome(run, self.runner, outcome)?,
+        ))
+    }
+
     pub fn hold_claim(
         &self,
         run: super::RunId,
@@ -119,6 +131,7 @@ impl Probe {
         let controller = HeartbeatController::new(HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: pool,
             runner_identity: runner,
+            runner_hostname: None,
             group: "native-foreground",
             profiles: &profiles,
             budget,

@@ -1,4 +1,12 @@
 import {
+  authorizeSiteRequest,
+  hostedSiteAccessEnabled,
+  withSiteAuthHeaders,
+  withHostedSiteAccess,
+  type SiteAuthEnv,
+} from "./site-access";
+import { hostedSiteDownloadAuthorizationSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
+import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
   artifactDeliveryRegistrationKey,
@@ -42,7 +50,7 @@ interface R2Bucket {
   head(key: string): Promise<Pick<R2ObjectBody, "size" | "httpEtag"> | null>;
 }
 
-interface Env {
+interface Env extends SiteAuthEnv {
   readonly IMAGES?: ImagesBinding;
   readonly HOSTED_SITES_BUCKET: R2Bucket;
   readonly PRIVATE_ARTIFACTS_BUCKET?: R2Bucket;
@@ -438,6 +446,13 @@ function cacheControl(file: ManifestFile): string {
   return "public, max-age=3600";
 }
 
+function hostedDownloadToken(pathname: string, env: Env): string | null {
+  if (!hostedSiteAccessEnabled(env)) return null;
+  if (!env.HOSTED_SITE_API_ORIGIN)
+    throw new Error("Hosted site authority is unavailable");
+  return /^\/\.okou\/download\/([a-f0-9]{48})$/u.exec(pathname)?.[1] ?? null;
+}
+
 async function serveHostedSite(
   request: Request,
   env: Env,
@@ -453,6 +468,8 @@ async function serveHostedSite(
 
   const pathname = normalizeRequestPath(url.pathname);
   if (!pathname) return new Response("Bad path", { status: 400 });
+  const download = hostedDownloadToken(pathname, env);
+  if (download) return serveHostedDownload(request, env, download);
   const fileHost = url.hostname === env.PUBLIC_ARTIFACT_HOST;
   const target = hostedSiteRequestTarget(url.hostname, env);
   if (!fileHost && !target) return notFoundResponse();
@@ -609,6 +626,7 @@ async function serveGrantedArtifactDelivery(
   );
   if (
     record.kind === "thread-resource" &&
+    (artifact.target.kind === "file" || !hostedSiteAccessEnabled(env)) &&
     response.ok &&
     !response.headers.get("Content-Type")?.toLowerCase().startsWith("text/html")
   )
@@ -805,46 +823,36 @@ async function serveLegacyHostedSite(
       ? privateResponse(notFoundResponse())
       : notFoundResponse();
   }
+  let authHeaders = new Headers();
   if (env.HOSTED_SITE_API_ORIGIN) {
-    const allowed = await authorizeHostedSiteDelivery(
+    let authorization = await authorizeHostedSiteDelivery(
       request,
-      env.HOSTED_SITE_API_ORIGIN,
+      env,
       target.publicSlug,
       resolved.pointer,
       resolved.layout,
     );
-    if (!allowed) {
-      // A reclaimed name can still have an older R2 pointer. SQL identifies
-      // its current deployment; immutable deployment addresses never rebind.
+    if (authorization.response?.status === 404) {
+      // An old pointer can survive a rename or alias reassignment.
       resolved = await resolveCurrentSiteAlias(request, env, target);
-      if (
-        !resolved ||
-        !(await authorizeHostedSiteDelivery(
-          request,
-          env.HOSTED_SITE_API_ORIGIN,
-          target.publicSlug,
-          resolved.pointer,
-          resolved.layout,
-        ))
-      )
-        return privateResponse(notFoundResponse());
+      if (!resolved) return privateResponse(notFoundResponse());
+      authorization = await authorizeHostedSiteDelivery(
+        request,
+        env,
+        target.publicSlug,
+        resolved.pointer,
+        resolved.layout,
+      );
     }
+    if (authorization.response) return authorization.response;
+    authHeaders = authorization.headers;
   }
   const { pointer, layout } = resolved;
   const manifest = await readJson<HostedSiteManifest>(
     env.HOSTED_SITES_BUCKET,
     pointer.manifestKey,
   );
-  if (
-    !manifest ||
-    manifest.access !== undefined ||
-    manifest.version !== 1 ||
-    pointer.version !== 1 ||
-    !pointer.prefix.startsWith("sites/") ||
-    manifest.deploymentId !== pointer.deploymentId ||
-    manifest.siteId !== pointer.siteId ||
-    !storedInLayout(manifest, layout)
-  ) {
+  if (!manifest || !matchesHostedManifest(manifest, pointer, layout)) {
     return notFoundResponse();
   }
 
@@ -858,10 +866,29 @@ async function serveLegacyHostedSite(
   if (env.HOSTED_SITE_API_ORIGIN) {
     response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
   }
-  return withArtifactOg(request, response, env.ARTIFACT_OG_API_ORIGIN, {
-    kind: "host",
-    id: manifest.deploymentId,
-  });
+  return withSiteAuthHeaders(
+    await withArtifactOg(request, response, env.ARTIFACT_OG_API_ORIGIN, {
+      kind: "host",
+      id: manifest.deploymentId,
+    }),
+    authHeaders,
+  );
+}
+
+function matchesHostedManifest(
+  manifest: HostedSiteManifest,
+  pointer: ActiveSitePointer,
+  layout: StorageLayout,
+): boolean {
+  return (
+    manifest.access === undefined &&
+    manifest.version === 1 &&
+    pointer.version === 1 &&
+    pointer.prefix.startsWith("sites/") &&
+    manifest.deploymentId === pointer.deploymentId &&
+    manifest.siteId === pointer.siteId &&
+    storedInLayout(manifest, layout)
+  );
 }
 
 /** Renames change SQL routing without rewriting immutable publication bytes. */
@@ -905,14 +932,14 @@ async function resolveCurrentSiteAlias(
 
 async function authorizeHostedSiteDelivery(
   request: Request,
-  origin: string,
+  env: Env,
   alias: string,
   pointer: ActiveSitePointer,
   layout: StorageLayout,
-): Promise<boolean> {
+) {
   const url = new URL(
     `/api/host/delivery/${encodeURIComponent(pointer.siteId)}/${encodeURIComponent(pointer.deploymentId)}`,
-    origin,
+    env.HOSTED_SITE_API_ORIGIN,
   );
   url.search = new URLSearchParams({
     alias,
@@ -921,18 +948,56 @@ async function authorizeHostedSiteDelivery(
     prefix: pointer.prefix,
     manifestKey: pointer.manifestKey,
   }).toString();
-  const response = await fetch(url, {
+  return authorizeSiteRequest(request, env, url);
+}
+
+async function serveHostedDownload(
+  request: Request,
+  env: Env,
+  token: string,
+): Promise<Response> {
+  if (!env.HOSTED_SITE_API_ORIGIN)
+    throw new Error("Hosted site authority is unavailable");
+  const url = new URL(request.url);
+  const target = hostedSiteRequestTarget(url.hostname, env);
+  const deploymentId =
+    target && IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(target.publicSlug)?.[1];
+  const path = url.searchParams.get("path");
+  if (!deploymentId || !path) return privateResponse(notFoundResponse());
+  const endpoint = new URL(
+    `/api/host/downloads/${token}`,
+    env.HOSTED_SITE_API_ORIGIN,
+  );
+  endpoint.search = new URLSearchParams({ deploymentId, path }).toString();
+  const authority = await fetch(endpoint, {
     cache: "no-store",
-    // Workers supports manual redirects; only a direct 200 can authorize delivery.
     redirect: "manual",
-    signal: AbortSignal.any([request.signal, AbortSignal.timeout(3_000)]),
+    signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]),
   });
-  if (response.status !== 200) {
-    throw new Error("Hosted deployment authority is unavailable");
-  }
-  return hostContract.deliveryAuthorization.responses[200].parse(
-    await response.json(),
-  ).allowed;
+  if (authority.status !== 200)
+    throw new Error("Hosted site download authority is unavailable");
+  const { file } = hostedSiteDownloadAuthorizationSchema.parse(
+    await authority.json(),
+  );
+  if (!file) return privateResponse(notFoundResponse());
+  const object = await env.HOSTED_SITES_BUCKET.get(file.key);
+  if (!object || object.size !== file.size)
+    return privateResponse(notFoundResponse());
+  const filename = encodeURIComponent(
+    path.slice(path.lastIndexOf("/") + 1),
+  ).replace(/[!'()*]/gu, (character) => {
+    return `%${character.charCodeAt(0).toString(16).toUpperCase()}`;
+  });
+  return new Response(request.method === "HEAD" ? null : object.body, {
+    headers: {
+      "Content-Type": file.contentType,
+      "Content-Length": String(file.size),
+      "Content-Disposition": `attachment; filename*=UTF-8''${filename}`,
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 async function serveManifestFile(
@@ -1202,19 +1267,21 @@ async function servePrivatePreview(
   ) {
     return privateResponse(notFoundResponse());
   }
-  // Authorize every network request before reading content. Browser caching
-  // matches files only when the bytes cannot change under this credential.
-  const response = await serveManifestFile(
-    request,
-    env,
-    pathname,
-    { prefix, spaFallback: manifest.spaFallback },
-    manifest,
-  );
-  if (expiresAt <= Date.now()) {
-    return privateResponse(notFoundResponse());
-  }
-  return privateResponse(response, shared || grant.immutableContent === true);
+  return withHostedSiteAccess(request, env, manifest.siteId, async () => {
+    // Authorize every network request before reading content. Browser caching
+    // matches files only when the bytes cannot change under this credential.
+    const response = await serveManifestFile(
+      request,
+      env,
+      pathname,
+      { prefix, spaFallback: manifest.spaFallback },
+      manifest,
+    );
+    if (expiresAt <= Date.now()) {
+      return privateResponse(notFoundResponse());
+    }
+    return privateResponse(response, shared || grant.immutableContent === true);
+  });
 }
 
 /** An authorized artifact target and the storage layout of its content. */
@@ -1314,6 +1381,33 @@ async function readSharedThreadResource(
 
 /** Authorization is evaluated before reading these immutable cached bytes. */
 async function serveAuthorizedArtifact(
+  request: Request,
+  env: Env,
+  pathname: string,
+  artifact: AuthorizedArtifact,
+  execution: ExecutionContext,
+): Promise<Response> {
+  if (artifact.target.kind === "html") {
+    return withHostedSiteAccess(request, env, artifact.target.siteId, () => {
+      return serveAuthorizedArtifactContent(
+        request,
+        env,
+        pathname,
+        artifact,
+        execution,
+      );
+    });
+  }
+  return serveAuthorizedArtifactContent(
+    request,
+    env,
+    pathname,
+    artifact,
+    execution,
+  );
+}
+
+async function serveAuthorizedArtifactContent(
   request: Request,
   env: Env,
   pathname: string,

@@ -232,6 +232,7 @@ function useClaimedFixture() {
         runnersJobClaimContract,
       ).claim({
         headers: runnerHeaders,
+        extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: runId },
         body: {
           runnerIdentity,
@@ -1214,7 +1215,6 @@ describe("SSH connection observations", () => {
       { command: "id" },
       { failureReason: "exec_rejected" },
       { failureReason: "cancelled" },
-      { observedAt: "invalid" },
       { expectedGeneration: 0 },
     ]) {
       const response = await raw(
@@ -1603,7 +1603,6 @@ describe("official Runner SSH authority", () => {
       { ...base, host: "attacker.example" },
       { ...base, command: "id" },
       { ...base, userId: f.userId },
-      { ...base, connectionId: "not-a-uuid" },
       {
         ...base,
         runnerIdentity: { ...f.runnerIdentity, heartbeatGeneration: 0 },

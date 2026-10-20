@@ -751,14 +751,14 @@ const resolveOfficialUserLink$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly telegramUserId: string;
       readonly telegramUsername?: string | null;
       readonly telegramDisplayName?: string | null;
     },
     signal: AbortSignal,
   ): Promise<OfficialTelegramUserLink | null> => {
-    const [direct] = await args.db
+    const db = set(writeDb$);
+    const [direct] = await db
       .select()
       .from(telegramOfficialUserLinks)
       .where(eq(telegramOfficialUserLinks.telegramUserId, args.telegramUserId))
@@ -903,40 +903,36 @@ function normalizeTelegramContextFileType(
   }
 }
 
-async function fetchTelegramContext(args: {
-  readonly db: Db;
+interface TelegramContextData {
   readonly scope: TelegramMessageScope;
   readonly chatId: string;
   readonly currentMessageId: string;
   readonly botId: string;
-}): Promise<string> {
-  const rows = await args.db
-    .select({
-      fromUsername: telegramMessages.fromUsername,
-      fromDisplayName: telegramMessages.fromDisplayName,
-      fromUserId: telegramMessages.fromUserId,
-      text: telegramMessages.text,
-      fileId: telegramMessages.fileId,
-      fileType: telegramMessages.fileType,
-      fileName: telegramMessages.fileName,
-      fileMimeType: telegramMessages.fileMimeType,
-      fileSize: telegramMessages.fileSize,
-      fileWidth: telegramMessages.fileWidth,
-      fileHeight: telegramMessages.fileHeight,
-      fileDuration: telegramMessages.fileDuration,
-      isBot: telegramMessages.isBot,
-      messageId: telegramMessages.messageId,
-    })
-    .from(telegramMessages)
-    .where(
-      and(
-        eq(telegramMessages.officialOrgId, args.scope.orgId),
-        eq(telegramMessages.chatId, args.chatId),
-      ),
-    )
-    .orderBy(desc(telegramMessages.createdAt))
-    .limit(MAX_CONTEXT_MESSAGES);
+}
 
+function telegramContextSelection() {
+  return {
+    fromUsername: telegramMessages.fromUsername,
+    fromDisplayName: telegramMessages.fromDisplayName,
+    fromUserId: telegramMessages.fromUserId,
+    text: telegramMessages.text,
+    fileId: telegramMessages.fileId,
+    fileType: telegramMessages.fileType,
+    fileName: telegramMessages.fileName,
+    fileMimeType: telegramMessages.fileMimeType,
+    fileSize: telegramMessages.fileSize,
+    fileWidth: telegramMessages.fileWidth,
+    fileHeight: telegramMessages.fileHeight,
+    fileDuration: telegramMessages.fileDuration,
+    isBot: telegramMessages.isBot,
+    messageId: telegramMessages.messageId,
+  };
+}
+
+function formatTelegramContext(
+  rows: Parameters<typeof formatContextMessage>[0]["row"][],
+  args: Pick<TelegramContextData, "currentMessageId" | "botId">,
+): string {
   const chronological = rows.reverse().filter((row) => {
     return row.messageId !== args.currentMessageId;
   });
@@ -1422,31 +1418,13 @@ const handleTelegramAgentMessage$ = command(
       userLinkId: args.userLink.id,
     });
     const messageDb = args.db;
-    async function storeTelegramMessage(args: {
-      readonly scope: TelegramMessageScope;
-      readonly chatId: string;
-      readonly message: TelegramMessage;
-    }): Promise<void> {
+    async function storeTelegramMessage(
+      args: TelegramMessageData,
+    ): Promise<void> {
       const file = extractTelegramFileForContext(args.message);
       await messageDb
         .insert(telegramMessages)
-        .values({
-          officialOrgId: args.scope.orgId,
-          officialUserLinkId: args.scope.userLinkId,
-          chatId: args.chatId,
-          messageId: String(args.message.message_id),
-          fromUserId: String(args.message.from?.id ?? 0),
-          fromUsername: args.message.from?.username ?? null,
-          fromDisplayName: formatTelegramUserDisplayName(
-            args.message.from ?? {},
-          ),
-          text: args.message.text ?? args.message.caption ?? null,
-          ...telegramFileDbValues(file),
-          entities: extractEntities(args.message)
-            ? [...extractEntities(args.message)!]
-            : null,
-          isBot: args.message.from?.is_bot ?? false,
-        })
+        .values(telegramStoredMessageValues(args, file))
         .onConflictDoNothing();
     }
     await storeTelegramMessage({
@@ -1460,8 +1438,24 @@ const handleTelegramAgentMessage$ = command(
     const context = await loadOptionalChatEnrichment(
       "telegram",
       () => {
+        const contextDb = args.db;
+        const fetchTelegramContext = async (
+          args: TelegramContextData,
+        ): Promise<string> => {
+          const rows = await contextDb
+            .select(telegramContextSelection())
+            .from(telegramMessages)
+            .where(
+              and(
+                eq(telegramMessages.officialOrgId, args.scope.orgId),
+                eq(telegramMessages.chatId, args.chatId),
+              ),
+            )
+            .orderBy(desc(telegramMessages.createdAt))
+            .limit(MAX_CONTEXT_MESSAGES);
+          return formatTelegramContext(rows, args);
+        };
         return fetchTelegramContext({
-          db: args.db,
           scope,
           chatId,
           currentMessageId: String(args.message.message_id),
@@ -1514,7 +1508,6 @@ const handleOfficialCommand$ = command(
     const userLink = await set(
       resolveOfficialUserLink$,
       {
-        db: args.db,
         telegramUserId: fromUserId,
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,
@@ -1677,7 +1670,6 @@ const processOfficialWebhookMessage$ = command(
     const userLink = await set(
       resolveOfficialUserLink$,
       {
-        db,
         telegramUserId: String(args.message.from?.id ?? 0),
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,

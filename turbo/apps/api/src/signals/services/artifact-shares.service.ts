@@ -37,7 +37,6 @@ import {
 } from "../external/clerk";
 import {
   copyArtifactShareObject,
-  generateHostedSitesPresignedGetUrl,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
 } from "../external/s3";
@@ -49,6 +48,7 @@ import {
 } from "./private-artifact-storage.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
+import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
 import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
@@ -769,6 +769,17 @@ export const resolveArtifactShareDownload$ = command(
       };
     }
     const target = policy.target;
+    if (
+      !(
+        await set(
+          checkHostedSiteAccess$,
+          { siteId: target.siteId, userId: args.userId },
+          signal,
+        )
+      ).allowed
+    ) {
+      return null;
+    }
     const site = await set(
       signHostedSiteFiles$,
       {
@@ -784,6 +795,7 @@ export const resolveArtifactShareDownload$ = command(
             : {}),
         },
         manifest: target.manifest,
+        viewerId: args.userId,
         prefix: `shared-artifacts/${policy.publicBrand}/${target.snapshotId}/${target.id}`,
       },
       signal,
@@ -832,7 +844,7 @@ export const resolveHostedSitePublicationDownload$ = command(
     if (record.kind === "thread-resource") {
       const site = await set(
         resolveSharedThreadHostedDownload$,
-        { publicSlug: args.publicSlug, record },
+        { publicSlug: args.publicSlug, record, viewerId: args.userId },
         signal,
       );
       return site
@@ -959,6 +971,18 @@ export const resolvePublicArtifactSource$ = command(
       return null;
     }
     // A removed artifact must not become discoverable through an old reference.
+    if (
+      policy.target.kind === "html" &&
+      !(
+        await set(
+          checkHostedSiteAccess$,
+          { siteId: policy.target.siteId },
+          signal,
+        )
+      ).allowed
+    ) {
+      return null;
+    }
     const target = await set(
       ownedShareTarget$,
       { target: policy.target, userId: row.userId, orgId: row.orgId },
@@ -972,7 +996,7 @@ export const resolvePublicArtifactSource$ = command(
 );
 
 export const resolvePublicArtifactUrl$ = command(
-  async ({ get, set }, args: PublicArtifactLookup, signal: AbortSignal) => {
+  async ({ set }, args: PublicArtifactLookup, signal: AbortSignal) => {
     const row = await set(publicArtifactShareIdentity$, args, signal);
     if (!row) {
       return null;
@@ -983,19 +1007,31 @@ export const resolvePublicArtifactUrl$ = command(
     }
     const { policy, candidate } = source;
     if (policy.target.kind === "html") {
-      const downloadUrl = await get(
-        generateHostedSitesPresignedGetUrl(
-          policyBucket(),
-          `shared-artifacts/${policy.publicBrand}/${policy.target.snapshotId}/${policy.target.id}/index.html`,
-          true,
-          {
-            filename: "index.html",
-            responseCacheControl: "private, no-store",
-            signingDate: nowDate(),
+      const target = policy.target;
+      const site = await set(
+        signHostedSiteFiles$,
+        {
+          metadata: {
+            siteId: target.siteId,
+            deploymentId: target.id,
+            deploymentVersion: target.deploymentVersion,
+            publicSlug: target.manifest.publicSlug,
+            url: candidate.ownerUrl,
+            artifactUrl: candidate.ownerUrl,
+            aliasUrl: publicShareUrl(policy),
           },
-        ),
+          manifest: target.manifest,
+          prefix: `shared-artifacts/${policy.publicBrand}/${target.snapshotId}/${target.id}`,
+          attachment: true,
+        },
+        signal,
       );
-      signal.throwIfAborted();
+      const downloadUrl = site.files.find((file) => {
+        return file.path === "/index.html";
+      })?.downloadUrl;
+      if (!downloadUrl) {
+        return null;
+      }
       return { url: source.url, preview: source.preview, downloadUrl };
     }
     if (candidate.target.kind !== "file") {

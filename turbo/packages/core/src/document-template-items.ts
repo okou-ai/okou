@@ -1,4 +1,4 @@
-// Curated public GitHub sources pinned to immutable commits. Previews show native document adaptations.
+// Curated public GitHub sources pinned to immutable commits.
 export const DOCUMENT_TEMPLATE_CATEGORIES = [
   "all",
   "creative-brief",
@@ -24,6 +24,7 @@ export interface DocumentTemplateItem {
     readonly repo: string;
     readonly ref: string;
     readonly path: string;
+    readonly supportingPaths?: readonly string[];
     readonly licensePath: string;
   };
   readonly previewImageUrl: string;
@@ -492,12 +493,12 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
     },
     title: "Detailed invoice",
     description:
-      "A commercial invoice with editable line items, totals, and payment details.",
+      "A purple payment card with a QR code, billing details, line items, and payment terms.",
     category: "invoice",
     previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-detailed-invoice/cover.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-detailed-invoice/cover.webp",
     previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-detailed-invoice/page-01.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-detailed-invoice/page-01.webp",
     ],
   },
   {
@@ -549,12 +550,12 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
     },
     title: "Monospace invoice",
     description:
-      "A commercial invoice with editable line items, totals, and payment details.",
+      "A USGC invoice with typewriter typography, ruled item rows, and a payment ledger.",
     category: "invoice",
     previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-monospace-invoice/cover.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-monospace-invoice/cover.webp",
     previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-monospace-invoice/page-01.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-monospace-invoice/page-01.webp",
     ],
   },
   {
@@ -606,13 +607,36 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
     },
     title: "Charts report",
     description:
-      "A structured report with evidence, findings, and recommendations.",
+      "A monthly usage report built around a stacked bar chart and colorful breakdown cards.",
     category: "report",
     previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-charts-report/cover.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-charts-report/cover.webp",
     previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-charts-report/page-01.webp",
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-charts-report/page-02.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-charts-report/page-01.webp",
+    ],
+  },
+  {
+    id: "document-template:sidebar-report",
+    slug: "document-sidebar-report",
+    source: {
+      repo: "RelaxedJS/ReLaXed-examples",
+      ref: "378a2d4f34ffe8ffd61e956e02a50b15564fc9f6",
+      path: "examples/report/report.pug",
+      supportingPaths: [
+        "examples/report/report.scss",
+        "examples/report/report.pdf",
+      ],
+      licensePath: "LICENCE.txt",
+    },
+    title: "Sidebar report",
+    description:
+      "A ReLaXed explainer with a colored side band, summary, comparison table, and diagrams.",
+    category: "report",
+    previewImageUrl:
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-sidebar-report/cover.webp",
+    previewPages: [
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-sidebar-report/page-01.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-sidebar-report/page-02.webp",
     ],
   },
   {
@@ -660,16 +684,21 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
       repo: "typst/templates",
       ref: "71b01c6b0a828649c7a0a38e8167cd82aab76efc",
       path: "dashing-dept-news/template/main.typ",
+      supportingPaths: [
+        "dashing-dept-news/lib.typ",
+        "dashing-dept-news/typst.toml",
+      ],
       licensePath: "dashing-dept-news/LICENSE",
     },
     title: "Department newsletter",
     description:
-      "A structured report with evidence, findings, and recommendations.",
+      "A magazine-style newsletter with a hero photo, bold headlines, pull quotes, and a red news sidebar.",
     category: "report",
     previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-department-newsletter/cover.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-department-newsletter/cover.webp",
     previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-department-newsletter/page-01.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-department-newsletter/page-01.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-department-newsletter/page-02.webp",
     ],
   },
   {
@@ -718,17 +747,23 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
       repo: "fmarotta/kaobook",
       ref: "22225a174f1b667a50c0a80afb48c498e8126dc1",
       path: "examples/documentation/main.tex",
-      licensePath: "README.md",
+      supportingPaths: [
+        "kaobook.cls",
+        "kao.sty",
+        "examples/documentation/main.pdf",
+      ],
+      licensePath: "LICENSE",
     },
     title: "Knowledge handbook",
     description:
-      "A practical guide with chapters, instructions, and checklists.",
+      "A kaobook handbook combining chapters, wide-margin notes, figures, references, and an index.",
     category: "guide",
     previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-knowledge-handbook/cover.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-knowledge-handbook/cover.webp",
     previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-knowledge-handbook/page-01.webp",
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-knowledge-handbook/page-02.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-knowledge-handbook/page-01.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-knowledge-handbook/page-02.webp",
+      "https://static.vm0.io/vm0/artifact-templates/document/document-originals-v1-20261019-0441a6cec2b2/document-knowledge-handbook/page-03.webp",
     ],
   },
   {

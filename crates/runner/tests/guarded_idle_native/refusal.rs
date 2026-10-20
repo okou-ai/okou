@@ -55,6 +55,7 @@ async fn unexpected_finalizing_provider_states_keep_original_data_and_full_lease
         let sandbox_id = SandboxId::new_v4();
         let key = format!("thread:ordinary-refusal-{run_id}");
         let home = fixture::checkout(&cache, run_id, sandbox_id, &key, "test-rootfs").await;
+        assert_eq!(home.result(), HomeCacheCheckoutResult::Miss);
         tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id)).await?;
         let image = paths.active_home_image(&sandbox_id);
         let original = test_home_image();

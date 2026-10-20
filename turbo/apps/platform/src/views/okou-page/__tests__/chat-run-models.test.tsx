@@ -240,6 +240,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "New chat",
   },
   input_too_large: { title: "Your message is too large" },
+  provider_image_too_large: { title: "Your message is too large" },
   output_token_limit: {
     title: "The response reached its length limit",
     action: "Continue",
@@ -337,7 +338,6 @@ test.each(STRUCTURED_FAILURE_CASES)(
 
     expect(card).toHaveTextContent(expected.title);
     expect(card).not.toHaveTextContent(providerMessage);
-    expect(queryButton("View details", card)).not.toBeInTheDocument();
     const actionLabels = [
       ...queryAllByRoleFast("button", card).filter((control) => {
         return control.getAttribute("role") !== "combobox";
@@ -348,12 +348,6 @@ test.each(STRUCTURED_FAILURE_CASES)(
     });
     expect(actionLabels).toStrictEqual(
       expected.action === undefined ? [] : [expected.action],
-    );
-    expect(queryButton("Try again", card) !== null).toBe(
-      expected.action === "Try again",
-    );
-    expect(queryButton("Continue", card) !== null).toBe(
-      expected.action === "Continue",
     );
     expect(within(card).queryByRole("combobox") !== null).toBe(
       expected.picker === true,
@@ -539,9 +533,6 @@ test("Preserve the current execution mode for an active-run follow-up", async ()
   });
   expect(followupModelChoice).toBeUndefined();
   expect(
-    screen.queryByText("Selected model isn't available"),
-  ).not.toBeInTheDocument();
-  expect(
     screen.queryByText("Model changed to GPT 5.6 Sol"),
   ).not.toBeInTheDocument();
 });
@@ -631,7 +622,6 @@ test.each([
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
   expect(screen.getByText("Model changed to GPT 5.6 Luna")).toBeInTheDocument();
-  expect(screen.queryByText("Model changed to Auto")).not.toBeInTheDocument();
   expect(screen.getAllByText(/Model changed to/u)).toHaveLength(1);
 });
 

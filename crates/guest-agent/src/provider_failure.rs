@@ -57,6 +57,9 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
         .strip_prefix("unknown: ")
         .or_else(|| semantic_message.strip_prefix("invalid_request_error: "))
         .unwrap_or(normalized);
+    if semantic_message == "downloaded image content cannot exceed 30mb" {
+        return Some(FailureReason::ProviderImageTooLarge);
+    }
     // Verification is unavailable, not an entitlement denial. Require the full
     // provider retry instruction at this terminal failed-result boundary.
     if semantic_message == "unable to verify model access right now. please retry." {
@@ -184,6 +187,9 @@ fn envelope_failure_reason(message: &str) -> Option<FailureReason> {
     let prefix = message[..start].trim().to_ascii_lowercase();
     if !(prefix.is_empty()
         || prefix == "codex error:"
+        || prefix.strip_suffix(':').is_some_and(|status| {
+            status.len() == 3 && status.bytes().all(|byte| byte.is_ascii_digit())
+        })
         || is_sdk_error_prefix(&prefix)
         || prefix.starts_with("api error: ")
         || prefix.starts_with("unexpected status ")

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, asc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -26,20 +25,13 @@ import {
 } from "./official-workflow-catalog-read.service";
 import { resolveBlueprint } from "./official-workflow-installation.service";
 import { calculateNextRun } from "./time-automation";
+import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
 
 const log = logger("ProactiveSuggestions");
 const installedSchema = z.object({ id: z.uuid() });
 
 function ownerMinute(owner: ProactiveSuggestionsOwner): number {
-  return (
-    Number.parseInt(
-      createHash("sha256")
-        .update(`${owner.orgId}/${owner.userId}`)
-        .digest("hex")
-        .slice(0, 8),
-      16,
-    ) % 60
-  );
+  return officialScheduleOwnerHash(owner) % 60;
 }
 
 /** The source preference is business intent, never a worker claim or lease. */

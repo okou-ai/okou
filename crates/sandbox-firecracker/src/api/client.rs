@@ -489,10 +489,18 @@ impl ApiClient {
         body: Option<&serde_json::Value>,
         timeout: Duration,
     ) -> Result<(), ApiError> {
+        #[cfg(feature = "test-support")]
+        let routed_http = crate::api_request_gate::request_socket(&self.socket_path, &method, path)
+            .map(|socket| http::build_client(&socket))
+            .transpose()?;
+        #[cfg(feature = "test-support")]
+        let http_client = routed_http.as_ref().unwrap_or(&self.http);
+        #[cfg(not(feature = "test-support"))]
+        let http_client = &self.http;
         tokio::time::timeout(
             timeout,
             http::send_request(
-                &self.http,
+                http_client,
                 method,
                 path,
                 body,

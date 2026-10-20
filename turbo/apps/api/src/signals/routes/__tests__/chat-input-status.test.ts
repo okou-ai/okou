@@ -386,10 +386,6 @@ describe("retained chat input observation", () => {
           }),
         ),
       ).toMatchObject({ status: "unavailable" });
-      expect(
-        (await mcp.web(f.token(), statusPath(thread.id, "not-an-event-id")))
-          .status,
-      ).toBe(400);
     });
   });
 

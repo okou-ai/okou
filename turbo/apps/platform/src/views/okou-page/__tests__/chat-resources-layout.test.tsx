@@ -98,7 +98,7 @@ test("Recompute the gutter when an artifact pane opens and its divider moves", a
   fireEvent.pointerUp(handle, { ...pointer, buttons: 0 });
 });
 
-test("Temporarily dismiss a manually opened narrow panel on composer click without changing preference", async () => {
+test("Dismiss a manually opened narrow panel on composer click and keep it closed when the gutter widens", async () => {
   const resize = await setupResources({ gutter: 200 });
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
@@ -106,9 +106,6 @@ test("Temporarily dismiss a manually opened narrow panel on composer click witho
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   await userEvent.click(composer());
   await waitFor(() => {
@@ -120,11 +117,11 @@ test("Temporarily dismiss a manually opened narrow panel on composer click witho
   });
   resize(409);
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
 });
 
-test("Keep a wide panel open during composer focus and dismiss Escape only temporarily", async () => {
+test("Keep a wide panel open during composer focus and keep an Escape dismissal through layout changes", async () => {
   const resize = await setupResources();
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -147,7 +144,7 @@ test("Keep a wide panel open during composer focus and dismiss Escape only tempo
   resize(300);
   resize(500);
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
 });
 
@@ -168,7 +165,7 @@ test("Dismiss a narrow panel when keyboard focus moves to the composer", async (
   });
   resize(500);
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
 });
 
@@ -177,7 +174,6 @@ test("Use the artifact icon on mobile without a separate switch or duplicate men
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -203,15 +199,9 @@ test("Toggle the artifact panel with the keyboard", async () => {
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  });
   await userEvent.keyboard(" ");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   resize(500);
   await waitFor(() => {
@@ -227,13 +217,13 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
     resourceButton().focus();
   });
   expect(resourceButton()).toHaveFocus();
-  const link = queryAllByRoleFast("link", panel).find((candidate) => {
-    return candidate.textContent === "Current guide";
-  })!;
+  const artifact = (await within(panel).findByText("report.pdf")).closest(
+    "button",
+  )!;
   act(() => {
-    link.focus();
+    artifact.focus();
   });
-  expect(link).toHaveFocus();
+  expect(artifact).toHaveFocus();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });

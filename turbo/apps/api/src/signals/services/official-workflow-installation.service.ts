@@ -46,6 +46,7 @@ import {
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 import { calculateNextRun } from "./time-automation";
+import { withMorningBriefCronBinding } from "./official-workflow-owner-schedule";
 
 const STALE_INSTALLATION_AGE_MS = 5 * 60 * 1000;
 
@@ -668,9 +669,26 @@ const resolveInstallation$ = command(
       .limit(1);
     signal.throwIfAborted();
     const userTimezone = metadata?.timezone ?? null;
+    const owner = { orgId: args.orgId, userId: args.member.userId };
+    const supplied = args.blueprints.map((entry) => {
+      const blueprint = revision.definition.blueprints.find((candidate) => {
+        return candidate.key === entry.blueprintKey;
+      });
+      return blueprint
+        ? {
+            ...entry,
+            bindings: withMorningBriefCronBinding({
+              definitionName: args.definitionName,
+              blueprint,
+              owner,
+              bindings: entry.bindings,
+            }),
+          }
+        : entry;
+    });
     const resolved = resolveAllBlueprints(
       revision.definition.blueprints,
-      args.blueprints,
+      supplied,
       userTimezone,
     );
     return resolved.ok

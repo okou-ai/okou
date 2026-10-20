@@ -117,6 +117,9 @@ const commandCreateInner$ = command(
       return conflict("No online computer-use host supports this command");
     }
 
+    if (result.status === "shell_authorization_required") {
+      return shellAuthorizationRequired;
+    }
     const realtime = bodyResult.data.realtime
       ? await createComputerUseResultSubscription(
           {
@@ -187,6 +190,9 @@ const writeCommandCreateInner$ = command(
       return conflict("No online computer-use host supports this command");
     }
 
+    if (result.status === "shell_authorization_required") {
+      return shellAuthorizationRequired;
+    }
     const realtime = bodyResult.data.realtime
       ? await createComputerUseResultSubscription(
           {
@@ -209,6 +215,17 @@ const writeCommandCreateInner$ = command(
     };
   },
 );
+
+const shellAuthorizationRequired = Object.freeze({
+  status: 403 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      code: "SHELL_AUTHORIZATION_REQUIRED",
+      message:
+        "Shell access requires one-hour approval in this chat. Run okou computer-use shell request-access --reason '<purpose>', share the authorization link, and end this Run.",
+    }),
+  }),
+});
 
 const shellCreateBody$ = bodyResultOf(desktopShellContract.create);
 const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -236,6 +253,18 @@ const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
   if (auth.tokenType === "agent" && !targetHostId) {
     return computerUseHostNotAuthorized;
+  }
+  if (auth.tokenType !== "agent") {
+    return {
+      status: 403 as const,
+      body: {
+        error: {
+          code: "SHELL_CONTEXT_UNSUPPORTED",
+          message:
+            "Shell dispatch requires an authorized chat Run; direct session and personal tokens cannot bypass chat consent.",
+        },
+      },
+    };
   }
   const body = parsed.data;
   // The command queue owns only this bounded observation, never the PTY lifetime.
@@ -270,6 +299,9 @@ const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return conflict(
       "Enable Shell Access in Developer Tools on an updated Desktop",
     );
+  }
+  if (result.status === "shell_authorization_required") {
+    return shellAuthorizationRequired;
   }
   const realtime = body.realtime
     ? await createComputerUseResultSubscription(

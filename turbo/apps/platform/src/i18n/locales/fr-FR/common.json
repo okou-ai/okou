@@ -728,7 +728,6 @@
       "multiAccent": "Multi-accents",
       "nextSlide": "Aperçu de la diapositive suivante",
       "noMatches": "Aucun résultat",
-      "placeholder": "Espace réservé pour l'aperçu du site {{title}}",
       "previewCurrentSlide": "Aperçu de {{title}} à la diapositive actuelle",
       "previewSlide": "Aperçu de la diapositive {{slideNumber}}",
       "previewWebsite": "Aperçu du modèle de site Web {{title}}",
@@ -1941,7 +1940,6 @@
       "back": "Retour",
       "configurePermissions": "Configurer les autorisations de {{connectorName}}",
       "customAuthorizeDescription": "Examiner, connecter et autoriser ce connecteur personnalisé pour l'agent.",
-      "defaultAccountFor": "{{connector}} · Compte par défaut utilisé : {{account}}",
       "directory": {
         "allCategories": "Tous",
         "askAdmin": "Demandez à un administrateur de l'activer",
@@ -1959,9 +1957,6 @@
         "matchCount_one": "{{count}} résultat",
         "matchCount_many": "{{count}} résultats",
         "matchCount_other": "{{count}} résultats",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_many": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "À vérifier",
         "nextCategories": "Catégories suivantes",
         "noResultsBody": "Essayez un nom de produit, ou créez le vôtre à partir d'une API ou d'un serveur MCP.",
@@ -1980,6 +1975,7 @@
       },
       "fallsBackTo": "Utilise {{account}} en repli",
       "find": "Rechercher des connecteurs...",
+      "loadFailed": "Impossible de charger les connecteurs.",
       "noUsableAccount": "Aucun compte utilisable",
       "remove": "Supprimer {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Compte sélectionné : {{account}}",
@@ -2186,16 +2182,11 @@
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
     "relations": {
-      "communications": "Messages",
-      "idle": "Inactive",
+      "chats": "Discussions",
       "loadFailed": "Échec du chargement",
-      "messageUnavailable": "Message indisponible",
       "origin": "Depuis",
       "queued": "En attente",
-      "received": "Reçu",
       "running": "En cours",
-      "sent": "Envoyé",
-      "toggleMessages": "Messages avec {{title}}",
       "unavailable": "Indisponible",
       "untitled": "Sans titre"
     },
@@ -2219,11 +2210,10 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyLinks": "Aucun lien dans ce chat pour le moment",
+      "empty": "Les artefacts et chats associés de ce chat apparaissent ici.",
       "expand": "Développer",
-      "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
-      "loadingLinks": "Chargement des liens",
+      "loading": "Chargement des ressources",
       "retry": "Réessayer",
       "title": "Ressources du chat"
     },
@@ -3148,19 +3138,9 @@
       "noAccountsFound": "Aucun compte trouvé",
       "reconnectRequired": "Reconnexion requise",
       "rename": "Renommer",
-      "skipName": "Ignorer",
-      "summaryMany": "{{value}} comptes",
-      "summaryMany_one": "",
-      "summaryMany_many": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} compte",
-      "summaryOne_one": "",
-      "summaryOne_many": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} nécessitent votre attention",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_many": "",
-      "summaryWithAttention_other": ""
+      "setupIncomplete": "Configuration incomplète",
+      "setupUnavailable": "Statut du compte indisponible",
+      "skipName": "Ignorer"
     },
     "actions": {
       "apply": "Appliquer",
@@ -3325,7 +3305,6 @@
       },
       "scope": {
         "aria": "Portée des connecteurs",
-        "attention": "Nécessite votre attention",
         "connected": "Connecté",
         "custom": "Personnalisés",
         "discover": "Découvrir",
@@ -4025,9 +4004,28 @@
       "connected": "{{connector}} connecté"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Impossible de mettre à jour l’autorisation. Actualisez et réessayez.",
+    "allow": "Autoriser pendant 1 heure",
+    "approved": "Accès à Shell autorisé",
+    "deadline": "Expire le {{date}}",
+    "denied": "Demande refusée",
+    "deny": "Refuser",
+    "description": "L’agent a besoin d’une autorisation pour utiliser Shell sur votre ordinateur.",
+    "details": "Ouvrir les détails",
+    "expired": "Autorisation expirée",
+    "loading": "Chargement de l’autorisation…",
+    "pending": "Prête à être approuvée",
+    "refresh": "Actualiser",
+    "revoke": "Révoquer l’accès",
+    "revoked": "Accès à Shell révoqué",
+    "scope": "Uniquement ce chat et cet ordinateur. Les terminaux existants restent ouverts à la fin de l’accès.",
+    "title": "Accès à Desktop Shell",
+    "unavailable": "Autorisation indisponible",
+    "waiting": "L’approbation est indisponible pendant un Run actif ou si l’ordinateur sélectionné a changé."
+  },
   "documentTemplates": {
     "agreementNote": "Un point de départ pour votre accord. Vérifiez les conditions de votre projet et le droit applicable avant de signer.",
-    "back": "Retour aux modèles",
     "categories": {
       "all": "Tous",
       "business-record": "Documents commerciaux",
@@ -4078,7 +4076,6 @@
     "preview": "Aperçu de {{title}}",
     "previousPage": "Page d’exemple précédente",
     "retry": "Réessayer",
-    "samplePages": "Pages d’exemple : {{total}}",
     "title": "Document",
     "useNamed": "Utiliser {{title}}"
   },
@@ -5152,6 +5149,10 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
+        "resources": {
+          "description": "Affiche les artefacts et chats associés à côté de la conversation lorsqu’il y a de la place.",
+          "title": "Ouvrir les ressources automatiquement"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5243,7 +5244,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
-        "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
+        "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",

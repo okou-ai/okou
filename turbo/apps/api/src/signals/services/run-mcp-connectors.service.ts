@@ -1,5 +1,9 @@
 import { computed, type Computed } from "ccstate";
 import type { McpConnector } from "@okouai/api-contracts/contracts/mcp-connectors";
+import {
+  connectorAccountTargetKey,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
@@ -13,6 +17,7 @@ import { builtinConnectorCredentialStatusWithMethod } from "./connector-credenti
 import { builtinConnectorCredentialStorageIsCompatible } from "./builtin-connector-credential-access.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import { currentCustomConnectorStoredValues } from "./custom-connector-credential-access.service";
+import { connectorAccountsByIds } from "./connector-account-lifecycle.service";
 import {
   normaliseCustomConnectorRow,
   serialiseCustomConnector,
@@ -106,6 +111,14 @@ function builtinMcpConnectors(
       ) {
         return [];
       }
+      const runtimeAvailable =
+        builtinConnectorCredentialStatusWithMethod({
+          method: runtimeMethod.method,
+          automaticAuthType: row.automaticAuthType,
+          storedNeedsReconnect: row.needsReconnect,
+          tokenExpiresAt: row.tokenExpiresAt,
+          now: nowDate(),
+        }) === "available";
       return [
         {
           target: { kind: "builtin", connectorSlug: row.slug },
@@ -114,25 +127,72 @@ function builtinMcpConnectors(
           displayName: connector.catalogConnector.label,
           transport: mcp.transport,
           endpoint: mcp.endpoint,
-          connected:
-            builtinConnectorCredentialStatusWithMethod({
-              method: runtimeMethod.method,
-              automaticAuthType: row.automaticAuthType,
-              storedNeedsReconnect: row.needsReconnect,
-              tokenExpiresAt: row.tokenExpiresAt,
-              now: nowDate(),
-            }) === "available",
+          runtimeAvailable,
+          connected: runtimeAvailable,
         },
       ];
     });
   });
 }
 
-export function runMcpConnectorList(
+function runMcpAccountMetadata(
   scope$: Computed<Promise<RunMcpConnectorScope>>,
-): Computed<Promise<readonly McpConnector[]>> {
-  const builtin$ = builtinMcpConnectors(scope$);
-  const customScope$ = computed(async (get) => {
+) {
+  const accountScope$ = computed(async (get) => {
+    const args = await get(scope$);
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectionIds: [
+        ...Object.values(args.builtinConnectorSourceIds ?? {}),
+        ...Object.values(args.customConnectorSourceIds ?? {}),
+      ],
+    };
+  });
+  const accounts$ = connectorAccountsByIds(accountScope$);
+  return computed(async (get) => {
+    return new Map(
+      (await get(accounts$)).map((account) => {
+        return [account.id, account];
+      }),
+    );
+  });
+}
+
+function withAccountMetadata(
+  connector: McpConnector,
+  account: ConnectorAccountConnection | undefined,
+): McpConnector {
+  // A successful exact-ID read can establish deletion. Keep the Run's
+  // admitted identity and existing runtime result, including no-auth MCP.
+  if (!account) {
+    return {
+      ...connector,
+      connectionStatus: "reconnect-required",
+      setupStatus: "invalid",
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
+    };
+  }
+  if (
+    connectorAccountTargetKey(account.target) !==
+    connectorAccountTargetKey(connector.target)
+  ) {
+    throw new Error(
+      "Run MCP account target does not match its admitted connector",
+    );
+  }
+  return {
+    ...connector,
+    connectionStatus: account.connectionStatus,
+    setupStatus: account.setupStatus,
+    missingRequiredFields: account.missingRequiredFields,
+    configuredFieldKeys: account.configuredFieldKeys,
+  };
+}
+
+function runCustomMcpScope(scope$: Computed<Promise<RunMcpConnectorScope>>) {
+  return computed(async (get) => {
     const args = await get(scope$);
     const memberConnectorIdsByCustomConnectorId = new Map(
       Object.entries(args.customConnectorSourceIds ?? {}),
@@ -145,6 +205,13 @@ export function runMcpConnectorList(
       connectorIds: [...memberConnectorIdsByCustomConnectorId.keys()],
     };
   });
+}
+
+export function runMcpConnectorList(
+  scope$: Computed<Promise<RunMcpConnectorScope>>,
+): Computed<Promise<readonly McpConnector[]>> {
+  const builtin$ = builtinMcpConnectors(scope$);
+  const customScope$ = runCustomMcpScope(scope$);
   const customDefinitions$ = computed(async (get) => {
     const args = await get(customScope$);
     const { connectorIds } = args;
@@ -196,13 +263,21 @@ export function runMcpConnectorList(
     };
   });
   const storage$ = currentCustomConnectorStoredValues(storageScope$);
+  const enrich$ = runMcpAccountMetadata(scope$);
 
   return computed(async (get): Promise<readonly McpConnector[]> => {
     const builtin = await get(builtin$);
+    const accounts = await get(enrich$);
+    const enrich = (connector: McpConnector): McpConnector => {
+      return withAccountMetadata(
+        connector,
+        accounts.get(connector.connectionId),
+      );
+    };
     const { connectorIds, memberConnectorIdsByCustomConnectorId } =
       await get(customScope$);
     if (connectorIds.length === 0) {
-      return builtin;
+      return builtin.map(enrich);
     }
     const rows = await get(customDefinitions$);
     const storage = await get(storage$);
@@ -250,9 +325,10 @@ export function runMcpConnectorList(
         displayName: response.displayName,
         transport: response.transport,
         endpoint: response.endpoint,
+        runtimeAvailable: response.connected,
         connected: response.connected,
       };
     });
-    return [...builtin, ...custom];
+    return [...builtin, ...custom].map(enrich);
   });
 }

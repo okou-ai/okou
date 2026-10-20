@@ -6,6 +6,7 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { pathParams$ } from "../route.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
+import { initializeDirectedConnectAccounts$ } from "./directed-connect-slug.ts";
 
 export const setupDirectedConnectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -13,6 +14,8 @@ export const setupDirectedConnectPage$ = command(
     const connectorSlug =
       typeof params?.connectorSlug === "string" ? params.connectorSlug : "";
 
+    await set(initializeDirectedConnectAccounts$, signal);
+    signal.throwIfAborted();
     set(updatePage$, createElement(DirectedConnectPage), "standalone");
     set(
       updateDocumentTitle$,

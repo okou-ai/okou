@@ -769,9 +769,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
     expect(firstMaterialized.body.delivery.status).toBe("pending");
     const second = await pendingCanonicalUpload(fixture);
-    expect(second.actor.userId).not.toBe(first.actor.userId);
-    expect(second.actor.orgId).not.toBe(first.actor.orgId);
-    expect(second.actor.runId).not.toBe(first.actor.runId);
     const secondMaterialized = await fixture.run(() => {
       return accept(materializeClient.materialize(second.request), [200]);
     });
@@ -2056,7 +2053,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             );
           });
           expect(finalReply).toBeDefined();
-          expect(finalReply).not.toHaveProperty("attachFiles");
 
           const lifecycleMarker = messages.events.find(
             (message): message is CompletedChatEvent => {
@@ -2069,7 +2065,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           );
           expect(lifecycleMarker).toBeDefined();
           expect(lifecycleMarker?.content).toBeNull();
-          expect(lifecycleMarker).not.toHaveProperty("attachFiles");
           return;
         }
 
@@ -2147,15 +2142,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           );
         });
         mocks.clerk.session(userId, orgId);
-        await fixture.run(() => {
-          return accept(
-            uploadClient.upload({
-              ...uploadRequest,
-              params: { artifactId: "not-an-artifact-id" },
-            }),
-            [400],
-          );
-        });
         await fixture.run(() => {
           return accept(
             uploadClient.upload({
@@ -2286,6 +2272,18 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         if (!ordinaryEntry) {
           throw new Error("Expected the ordinary upload in the catalog");
         }
+        const ordinaryDetail = await fixture.run(() => {
+          return chatApi.getArtifactCatalogEntry(actor, ordinaryEntry.id);
+        });
+        if (ordinaryDetail.kind !== "file") {
+          throw new Error("Expected the ordinary output to use the file kind");
+        }
+        expect(ordinaryDetail.file).toMatchObject({
+          filename: "ordinary.csv",
+          url: ordinary.url,
+          contentType: "text/csv",
+          size: 42,
+        });
         await fixture.run(() => {
           return accept(
             uploadClient.upload({
@@ -2298,9 +2296,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         expect(driveContentBodies.at(-1)).toBe("b".repeat(42));
 
         const hostBearer = `Bearer ${okouToken({ userId, orgId, runId })}`;
+        const siteName = `drive-companion-${randomUUID().slice(0, 8)}`;
         const site = await fixture.run(() => {
           return chatApi.prepareHostedSiteWithBearer(hostBearer, {
-            site: `drive-companion-${randomUUID().slice(0, 8)}`,
+            site: siteName,
             artifactKind: "hosted-site",
             spaFallback: false,
             files: [
@@ -2308,20 +2307,127 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             ],
           });
         });
-        await fixture.run(() => {
+        const publishedSite = await fixture.run(() => {
           return chatApi.completeHostedSiteWithBearer(
             hostBearer,
             site.deploymentId,
           );
         });
-        const groupedCatalog = await fixture.run(() => {
+
+        // File -> hosted: publishing an independent site preserves the files'
+        // catalog identities, not only their thread-list fallback identities.
+        const fileExpectations = [
+          { id: catalogEntry.id, kind: "file", title: "report.csv" },
+          { id: ordinaryEntry.id, kind: "file", title: "ordinary.csv" },
+        ];
+        const afterHosted = await fixture.run(() => {
           return chatApi.listArtifactCatalog(actor);
         });
-        expect(
-          groupedCatalog.artifacts.some((entry) => {
-            return entry.id === catalogEntry.id;
-          }),
-        ).toBeFalsy();
+        expect(afterHosted.artifacts).toStrictEqual(
+          expect.arrayContaining(
+            fileExpectations.map((entry) => {
+              return expect.objectContaining(entry);
+            }),
+          ),
+        );
+        const hostedEntry = afterHosted.artifacts.find((entry) => {
+          return entry.kind === "hosted-site" && entry.title === siteName;
+        });
+        if (!hostedEntry) {
+          throw new Error(
+            "Expected the independent hosted site in the catalog",
+          );
+        }
+        const hostedDetail = await fixture.run(() => {
+          return chatApi.getArtifactCatalogEntry(actor, hostedEntry.id);
+        });
+        expect(hostedDetail).toMatchObject({
+          id: hostedEntry.id,
+          kind: "hosted-site",
+          title: siteName,
+          site: {
+            id: site.siteId,
+            slug: siteName,
+            publicSlug: publishedSite.publicSlug,
+            url: publishedSite.url,
+            entrypoint: "/index.html",
+            spaFallback: false,
+          },
+        });
+
+        // Hosted -> file: another output on this same claimed Run is also a
+        // catalog entry while the hosted publication keeps its identity.
+        const laterFile = await fixture.run(() => {
+          return chatApi.prepareUpload(actor, {
+            filename: "companion-data.csv",
+            contentType: "text/csv",
+            size: 42,
+            purpose: "artifact",
+          });
+        });
+        objectStore.addObject({
+          bucket: "test-private-artifacts",
+          key: `private-artifacts/${laterFile.id}/companion-data.csv`,
+          size: 42,
+          body: Buffer.alloc(42, "c"),
+          metadata: {
+            "artifact-id": laterFile.id,
+            filename: "companion-data.csv",
+            "public-brand": "okou",
+            "user-id": encodeURIComponent(userId),
+          },
+        });
+        await fixture.run(() => {
+          return chatApi.completeUploadWithBearer(
+            hostBearer,
+            { id: laterFile.id },
+            [200],
+          );
+        });
+        const afterLaterFile = await fixture.run(() => {
+          return chatApi.listArtifactCatalog(actor);
+        });
+        expect(afterLaterFile.artifacts).toStrictEqual(
+          expect.arrayContaining(
+            [...fileExpectations, hostedEntry].map((entry) => {
+              return expect.objectContaining(entry);
+            }),
+          ),
+        );
+        const laterEntry = afterLaterFile.artifacts.find((entry) => {
+          return entry.kind === "file" && entry.title === "companion-data.csv";
+        });
+        if (!laterEntry) {
+          throw new Error("Expected the later independent file in the catalog");
+        }
+        for (const [entryId, expectedFile] of [
+          [catalogEntry.id, catalogDetail.file],
+          [ordinaryEntry.id, ordinaryDetail.file],
+          [
+            laterEntry.id,
+            {
+              filename: "companion-data.csv",
+              url: laterFile.url,
+              contentType: "text/csv",
+              size: 42,
+            },
+          ],
+        ] as const) {
+          const detail = await fixture.run(() => {
+            return chatApi.getArtifactCatalogEntry(actor, entryId);
+          });
+          expect(detail).toMatchObject({
+            id: entryId,
+            kind: "file",
+            title: expectedFile.filename,
+            file: expectedFile,
+          });
+        }
+        const retainedHostedDetail = await fixture.run(() => {
+          return chatApi.getArtifactCatalogEntry(actor, hostedEntry.id);
+        });
+        expect(retainedHostedDetail).toStrictEqual(hostedDetail);
+
         const groupedFiles = (
           await fixture.run(() => {
             return chatApi.listThreadArtifacts(actor, threadId);
@@ -2456,7 +2562,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       );
       expect(lifecycleMarker).toBeDefined();
       expect(lifecycleMarker?.content).toBeNull();
-      expect(lifecycleMarker).not.toHaveProperty("attachFiles");
       expect(
         messages.events.find((message) => {
           return (

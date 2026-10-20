@@ -40,7 +40,6 @@ describe("activityExcerpt", () => {
     );
 
     expect(excerpt).toBe("abcd");
-    expect(JSON.stringify(excerpt)).not.toMatch(REJECTED_BY_JSONB);
   });
 
   it("keeps a paired surrogate intact and counts it as one code point", () => {

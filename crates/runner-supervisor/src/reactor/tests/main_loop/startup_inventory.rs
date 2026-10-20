@@ -30,7 +30,9 @@ async fn initial_inventory_overlaps_provider_startup_and_acknowledgment_precedes
             )
             .await;
         }
-        Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
+        let executor = Arc::get_mut(&mut config.exec_config).unwrap();
+        executor.home_cache = Some(cache);
+        executor.runner_hostname = Some("prod-inventory.example.test".into());
         let gate = StartLoopTestGate::default();
         config.test_hooks.before_initial_home_cache_scan = Some(gate.clone());
         env.handle.block_startup_readiness();
@@ -65,6 +67,10 @@ async fn initial_inventory_overlaps_provider_startup_and_acknowledgment_precedes
             assert_eq!(heartbeats.len(), 1);
             assert_eq!(heartbeats[0].snapshot_generation, 7);
             assert_eq!(heartbeats[0].snapshot_sequence, 1);
+            assert_eq!(
+                heartbeats[0].runner_hostname.as_deref(),
+                Some("prod-inventory.example.test")
+            );
             assert_eq!(heartbeats[0].mode, "running");
             assert_eq!(heartbeats[0].held_home_states.len(), usize::from(nonempty));
             if nonempty {

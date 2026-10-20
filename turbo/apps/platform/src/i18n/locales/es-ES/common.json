@@ -728,7 +728,6 @@
       "multiAccent": "Multiacentos",
       "nextSlide": "Vista previa de la diapositiva siguiente",
       "noMatches": "Sin coincidencias",
-      "placeholder": "Vista previa del sitio web {{title}}",
       "previewCurrentSlide": "Vista previa de {{title}} en la diapositiva actual",
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
@@ -1941,7 +1940,6 @@
       "back": "Volver",
       "configurePermissions": "Configurar permisos de {{connectorName}}",
       "customAuthorizeDescription": "Revisa, conecta y autoriza este conector personalizado para el agente.",
-      "defaultAccountFor": "{{connector}} · Usando la cuenta predeterminada: {{account}}",
       "directory": {
         "allCategories": "Todos",
         "askAdmin": "Pide a un administrador que lo habilite",
@@ -1959,9 +1957,6 @@
         "matchCount_one": "{{count}} resultado",
         "matchCount_many": "{{count}} resultados",
         "matchCount_other": "{{count}} resultados",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_many": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Necesita atención",
         "nextCategories": "Categorías siguientes",
         "noResultsBody": "Prueba con el nombre de un producto o crea el tuyo a partir de una API o un servidor MCP.",
@@ -1980,6 +1975,7 @@
       },
       "fallsBackTo": "Usa {{account}} como alternativa",
       "find": "Buscar conectores...",
+      "loadFailed": "No se pudieron cargar los conectores.",
       "noUsableAccount": "No hay ninguna cuenta disponible",
       "remove": "Eliminar {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Cuenta seleccionada: {{account}}",
@@ -2186,16 +2182,11 @@
       "skipAutomationEvent": "Omitir evento de automatización"
     },
     "relations": {
-      "communications": "Mensajes",
-      "idle": "Inactivo",
+      "chats": "Chats",
       "loadFailed": "Error al cargar",
-      "messageUnavailable": "Mensaje no disponible",
       "origin": "Desde",
       "queued": "En cola",
-      "received": "Recibido",
       "running": "En curso",
-      "sent": "Enviado",
-      "toggleMessages": "Mensajes con {{title}}",
       "unavailable": "No disponible",
       "untitled": "Sin título"
     },
@@ -2219,11 +2210,10 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
-      "emptyLinks": "Aún no hay enlaces en este chat",
+      "empty": "Los artefactos y chats relacionados de este chat aparecen aquí.",
       "expand": "Expandir",
-      "links": "Enlaces",
       "loadFailed": "No se pudieron cargar los recursos",
-      "loadingLinks": "Cargando enlaces",
+      "loading": "Cargando recursos",
       "retry": "Reintentar",
       "title": "Recursos del chat"
     },
@@ -3148,19 +3138,9 @@
       "noAccountsFound": "No se encontraron cuentas",
       "reconnectRequired": "Se requiere volver a conectar",
       "rename": "Cambiar nombre",
-      "skipName": "Omitir",
-      "summaryMany": "{{value}} cuentas",
-      "summaryMany_one": "",
-      "summaryMany_many": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} cuenta",
-      "summaryOne_one": "",
-      "summaryOne_many": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} requieren atención",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_many": "",
-      "summaryWithAttention_other": ""
+      "setupIncomplete": "Configuración incompleta",
+      "setupUnavailable": "Estado de la cuenta no disponible",
+      "skipName": "Omitir"
     },
     "actions": {
       "apply": "Aplicar",
@@ -3325,7 +3305,6 @@
       },
       "scope": {
         "aria": "Ámbito de conectores",
-        "attention": "Requiere atención",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descubrir",
@@ -4025,9 +4004,28 @@
       "connected": "{{connector}} conectado"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "No se pudo actualizar la autorización. Actualiza y vuelve a intentarlo.",
+    "allow": "Permitir durante 1 hora",
+    "approved": "Acceso a Shell permitido",
+    "deadline": "Caduca el {{date}}",
+    "denied": "Solicitud rechazada",
+    "deny": "Rechazar",
+    "description": "El agente necesita permiso para usar Shell en tu ordenador.",
+    "details": "Abrir detalles",
+    "expired": "Autorización caducada",
+    "loading": "Cargando autorización…",
+    "pending": "Lista para aprobar",
+    "refresh": "Actualizar",
+    "revoke": "Revocar acceso",
+    "revoked": "Acceso a Shell revocado",
+    "scope": "Solo este chat y ordenador. Los terminales existentes permanecen abiertos al finalizar el acceso.",
+    "title": "Acceso a Desktop Shell",
+    "unavailable": "Autorización no disponible",
+    "waiting": "No se puede aprobar mientras haya un Run activo o si ha cambiado el ordenador seleccionado."
+  },
   "documentTemplates": {
     "agreementNote": "Un punto de partida para tu acuerdo. Revisa las condiciones de tu proyecto y jurisdicción antes de firmar.",
-    "back": "Volver a las plantillas",
     "categories": {
       "all": "Todas",
       "business-record": "Registros comerciales",
@@ -4078,7 +4076,6 @@
     "preview": "Vista previa de {{title}}",
     "previousPage": "Página de ejemplo anterior",
     "retry": "Reintentar",
-    "samplePages": "Páginas de ejemplo: {{total}}",
     "title": "Documento",
     "useNamed": "Usar {{title}}"
   },
@@ -5152,6 +5149,10 @@
           "title": "Modelo predeterminado"
         },
         "description": "Elige los valores predeterminados para los chats nuevos y cómo se envían los mensajes.",
+        "resources": {
+          "description": "Muestra los artefactos y chats relacionados junto a la conversación cuando hay espacio.",
+          "title": "Abrir recursos automáticamente"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5243,7 +5244,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
-        "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
+        "description": "Prioridades diarias antes de las 7:00 en tu zona horaria.",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
         "preparationFailed": "La configuración se reintentará automáticamente. También puedes reintentar ahora.",

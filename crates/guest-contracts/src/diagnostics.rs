@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 /// Process exit code used for the runner-owned agent execution timeout.
 pub const AGENT_EXECUTION_TIMEOUT_EXIT_CODE: i32 = 124;
 
+/// User-visible reason for an agent process killed by the guest OOM killer.
+pub const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
+    "The agent process ran out of memory and was terminated by the sandbox out-of-memory killer";
+
 // These are stable Unix signal numbers in the serialized diagnostic contract.
 const UNIX_SIGHUP_SIGNAL_NUMBER: i32 = 1;
 const UNIX_SIGINT_SIGNAL_NUMBER: i32 = 2;
@@ -37,6 +41,9 @@ pub struct FailureDiagnostic {
     /// Observed model-request, causal transport and completed retry evidence, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_request: Option<ModelRequestDiagnostic>,
+    /// Available native evidence from the selected direct Codex terminal error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_failure: Option<crate::codex_failure::CodexFailureEvidence>,
     /// Conservative session-history target status recorded during failure handling.
     pub session_history_status: SessionHistoryStatus,
     /// Content-safe shape classification for the submitted prompt.
@@ -77,6 +84,26 @@ pub struct ModelRequestDiagnostic {
 }
 
 impl FailureDiagnostic {
+    /// Whether a Codex execution error retains a naturally observed child SIGKILL.
+    /// This corroborates a child kill, not its cause; OOM attribution also
+    /// requires independent, trusted main-runtime OOM evidence.
+    #[must_use]
+    pub fn is_codex_app_server_sigkill(&self) -> bool {
+        self.failure_class == FailureClass::CliExecutionError
+            && self.framework == AgentFramework::Codex
+            && self.cli_exit_code
+                == Some(SHELL_SIGNAL_EXIT_CODE_OFFSET + UNIX_SIGKILL_SIGNAL_NUMBER)
+            && self.cli_termination.is_none()
+            && self.heartbeat.is_none()
+            && self.failure_reason.is_none()
+            && self.cli_observed_exit.as_ref().is_some_and(|exit| {
+                exit.is_sigkill()
+                    && exit.exit_code.is_none()
+                    && exit.mapped_exit_code
+                        == SHELL_SIGNAL_EXIT_CODE_OFFSET + UNIX_SIGKILL_SIGNAL_NUMBER
+            })
+    }
+
     /// Create a diagnostic with required fields and empty optional details.
     #[must_use]
     pub fn new(
@@ -94,6 +121,7 @@ impl FailureDiagnostic {
             failure_detail_source: None,
             failure_reason: None,
             model_request: None,
+            codex_failure: None,
             session_history_status: SessionHistoryStatus::Unknown,
             prompt_shape: prompt.prompt_shape,
             prompt_bytes: prompt.prompt_bytes,
@@ -719,6 +747,8 @@ pub enum FailureReason {
     ContextWindowExceeded,
     /// The Codex app-server input limit was exceeded.
     InputTooLarge,
+    /// The provider rejected image input exceeding its size limit.
+    ProviderImageTooLarge,
     /// The provider stopped because an output-token limit was reached.
     OutputTokenLimit,
     /// The provider rejected the request because of a rate limit.
@@ -759,6 +789,7 @@ impl FailureReason {
             Self::TermsAcceptanceRequired => "terms_acceptance_required",
             Self::ContextWindowExceeded => "context_window_exceeded",
             Self::InputTooLarge => "input_too_large",
+            Self::ProviderImageTooLarge => "provider_image_too_large",
             Self::OutputTokenLimit => "output_token_limit",
             Self::ProviderRateLimited => "provider_rate_limited",
             Self::ProviderOverloaded => "provider_overloaded",
@@ -789,6 +820,7 @@ impl From<FailureReason>
             FailureReason::TermsAcceptanceRequired => Self::TermsAcceptanceRequired,
             FailureReason::ContextWindowExceeded => Self::ContextWindowExceeded,
             FailureReason::InputTooLarge => Self::InputTooLarge,
+            FailureReason::ProviderImageTooLarge => Self::ProviderImageTooLarge,
             FailureReason::OutputTokenLimit => Self::OutputTokenLimit,
             FailureReason::ProviderRateLimited => Self::ProviderRateLimited,
             FailureReason::ProviderOverloaded => Self::ProviderOverloaded,
@@ -1524,6 +1556,10 @@ mod tests {
                 "context_window_exceeded",
             ),
             (FailureReason::InputTooLarge, "input_too_large"),
+            (
+                FailureReason::ProviderImageTooLarge,
+                "provider_image_too_large",
+            ),
             (FailureReason::OutputTokenLimit, "output_token_limit"),
             (FailureReason::ProviderRateLimited, "provider_rate_limited"),
             (FailureReason::ProviderOverloaded, "provider_overloaded"),

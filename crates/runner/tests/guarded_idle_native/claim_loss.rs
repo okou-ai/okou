@@ -166,15 +166,28 @@ async fn observe_claim(
     Ok(())
 }
 
-async fn save(
-    context: &transitions::Context,
-    inputs: &fixture::Inputs,
-    proof: &Arc<evidence::Case>,
-    gate: &foreground_io::Gate,
-    probe: &mut foreground_probe::Probe,
-    path: &Path,
-    backing: &Arc<dyn SandboxBackingProcess>,
-) -> TestResult<()> {
+pub(super) struct Saving<'a> {
+    pub context: &'a transitions::Context,
+    pub inputs: &'a fixture::Inputs,
+    pub proof: &'a Arc<evidence::Case>,
+    pub gate: &'a foreground_io::Gate,
+    pub probe: &'a mut foreground_probe::Probe,
+    pub path: &'a Path,
+    pub backing: &'a Arc<dyn SandboxBackingProcess>,
+    pub witness: fn(&evidence::Case, &str, Value) -> io::Result<()>,
+}
+
+pub(super) async fn save(request: Saving<'_>) -> TestResult<()> {
+    let Saving {
+        context,
+        inputs,
+        proof,
+        gate,
+        probe,
+        path,
+        backing,
+        witness,
+    } = request;
     let mut batch = context
         .tracker
         .start_pool_retirement_batch(
@@ -184,7 +197,7 @@ async fn save(
             IdlePoolBatchRetirementRequest {
                 scope: IdleRetirementBatchScope::All,
                 envelope: inputs.envelope(),
-                context: "native_claim_rejection_saving",
+                context: "native_claim_required_saving",
             },
         )
         .await?;
@@ -195,13 +208,13 @@ async fn save(
         gate.wait_entered().await?;
         pending(completion.as_mut(),&mut completed).await?;
         if !backing.exit_confirmed().await { return Err(io::Error::other("claim original exit unconfirmed").into()); }
-        proof.claim_loss_witness("tail_blocked",json!({"original_exit_confirmed":true,
+        witness(proof,"tail_blocked",json!({"original_exit_confirmed":true,
             "receiver_polled_pending":true,"coverage":coverage(context,inputs,proof,false)?}))?;
         let observer = foreground_probe::observe().await?;
         probe.request()?;
         let heartbeat = probe.complete().await?;
         pending(completion.as_mut(),&mut completed).await?;
-        proof.claim_loss_witness("tail_wait_progress",json!({"observer":observer,"heartbeat":heartbeat,
+        witness(proof,"tail_wait_progress",json!({"observer":observer,"heartbeat":heartbeat,
             "receiver_polled_pending":true,"coverage":coverage(context,inputs,proof,false)?}))?;
         status_hold = Some(context.status.hold_state_for_test().await);
         let status_held_ns = evidence::clocks()?.0;
@@ -220,7 +233,7 @@ async fn save(
         pending(completion.as_mut(),&mut completed).await?;
         probe.request()?;
         let heartbeat = probe.complete().await?;
-        proof.claim_loss_witness("status_wait_progress",json!({
+        witness(proof,"status_wait_progress",json!({
             "status_held_ns":status_held_ns,"io_released_ns":io_released_ns,"status_wait_polled_ns":status_wait_polled_ns,
             "status_waits_before":before,"status_waits_after":after,"heartbeat":heartbeat,
             "original_lease_released":true,"receiver_polled_pending":true,
@@ -234,7 +247,7 @@ async fn save(
             || !context.pool.lock().await.is_empty() || context.budget.allocated() != (0,0,0) {
             return Err(io::Error::other("claim original required saving did not complete").into());
         }
-        proof.claim_loss_witness("original_completed",json!({
+        witness(proof,"original_completed",json!({
             "status_released_ns":status_released_ns,"batch_joined_ns":evidence::clocks()?.0,
             "selected":report.selected,"completed":report.completed,"uncertain":report.uncertain,
             "not_started":report.not_started.len(),"status_error":report.status_error.is_some(),"is_complete":report.is_complete(),
@@ -262,6 +275,27 @@ pub async fn exercise(
     backing: Arc<dyn SandboxBackingProcess>,
     history: RunId,
 ) -> TestResult<()> {
+    exercise_failure(
+        context,
+        inputs,
+        proof,
+        directory,
+        backing,
+        history,
+        claim_peer::Outcome::Unavailable,
+    )
+    .await
+}
+
+pub async fn exercise_failure(
+    context: transitions::Context,
+    inputs: &fixture::Inputs,
+    proof: &Arc<evidence::Case>,
+    directory: &Path,
+    backing: Arc<dyn SandboxBackingProcess>,
+    history: RunId,
+    outcome: claim_peer::Outcome,
+) -> TestResult<()> {
     let initial = context.pool.lock().await.status_snapshot();
     let held_states = serde_json::to_value(context.pool.lock().await.held_sandbox_states())?;
     let [entry] = initial.idle_sandboxes.as_slice() else {
@@ -288,7 +322,12 @@ pub async fn exercise(
     )
     .await?;
     let run = RunId::new_v4();
-    let (provider, claim_gate) = match probe.hold_claim(run) {
+    let held_claim = if outcome == claim_peer::Outcome::Unavailable {
+        probe.hold_claim(run)
+    } else {
+        probe.hold_claim_failure(run, outcome)
+    };
+    let (provider, claim_gate) = match held_claim {
         Ok(value) => value,
         Err(error) => {
             probe.finish().await?;
@@ -334,7 +373,7 @@ pub async fn exercise(
             "original_full_lease_active":true,"original_exit_polled_pending":true,"allocated":context.budget.allocated(),
         }))?;
         drop(admission.take());
-        save(&context,inputs,proof,&io_gate,&mut probe,&path,&backing).await
+        save(Saving {context:&context,inputs,proof,gate:&io_gate,probe:&mut probe,path:&path,backing:&backing,witness:evidence::Case::claim_loss_witness}).await
     }.await;
     claim_gate.release();
     let released = io_gate.release();

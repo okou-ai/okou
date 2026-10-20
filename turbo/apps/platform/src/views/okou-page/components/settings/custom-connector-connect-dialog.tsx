@@ -1,9 +1,13 @@
 import type { FormEvent } from "react";
 
-import type {
-  CustomConnectorResponse,
-  CustomConnectorValueInput,
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorValueInput,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   Button,
   Dialog,
@@ -13,7 +17,11 @@ import {
   DialogTitle,
 } from "@okouai/ui";
 import { Input } from "@okouai/ui/components/ui/input";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
+import {
+  connectorAccountSetup,
+  connectorAccountSetupRef$,
+} from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 
@@ -72,6 +80,7 @@ function customConnectorValuesReady(
   connector: CustomConnectorResponse,
   values: readonly CustomConnectorValueInput[],
   mode: ConnectorAccountConnectMode | undefined,
+  missingRequiredFields: readonly string[],
 ): boolean {
   const submittedKeys = new Set(
     values.map((value) => {
@@ -83,7 +92,7 @@ function customConnectorValuesReady(
       ? connector.fields.flatMap((field) => {
           return field.required ? [field.key] : [];
         })
-      : connector.missingRequiredFields;
+      : missingRequiredFields;
   return requiredKeys.every((key) => {
     return submittedKeys.has(key);
   });
@@ -232,7 +241,7 @@ interface CustomConnectorConnectDialogProps {
 
 function CustomConnectorConnectForm({
   connector,
-  accountMode,
+  configuredFieldKeys,
   values,
   setField,
   submitting,
@@ -241,7 +250,7 @@ function CustomConnectorConnectForm({
   onSubmit,
 }: {
   readonly connector: CustomConnectorResponse;
-  readonly accountMode: ConnectorAccountConnectMode | undefined;
+  readonly configuredFieldKeys: readonly string[];
   readonly values: Readonly<Record<string, string>>;
   readonly setField: (args: {
     readonly key: string;
@@ -269,7 +278,7 @@ function CustomConnectorConnectForm({
       ) : (
         <CredentialFields
           connector={connector}
-          configuredFieldKeys={accountMode ? [] : connector.configuredFieldKeys}
+          configuredFieldKeys={configuredFieldKeys}
           values={values}
           setField={setField}
         />
@@ -298,14 +307,106 @@ function useCloseCustomConnectorDialog(onClose: (() => void) | undefined) {
   };
 }
 
-export function CustomConnectorConnectDialog({
+function useCustomConnectorAccountSetup(
+  connector: CustomConnectorResponse,
+  accountMode: CustomConnectorConnectDialogProps["accountMode"],
+) {
+  const accounts = useLastLoadable(connectorAccountSetup.accounts$);
+  const account =
+    accountMode?.kind === "reconnect"
+      ? accountMode.account
+      : accountMode?.kind === "add"
+        ? undefined
+        : accounts.state === "hasData"
+          ? accounts.data.defaultConnection
+          : undefined;
+  const setupAvailable =
+    accountMode?.kind === "add" ||
+    (accountMode?.kind === "reconnect"
+      ? account?.setupStatus !== undefined
+      : accounts.state === "hasData" &&
+        accounts.data.available &&
+        (account === null ||
+          account === undefined ||
+          account.setupStatus !== undefined));
+  const missingRequiredFields =
+    account?.missingRequiredFields ??
+    connector.fields
+      .filter((field) => {
+        return field.required;
+      })
+      .map((field) => {
+        return field.key;
+      });
+  const configuredFieldKeys = account?.configuredFieldKeys ?? [];
+  return { setupAvailable, missingRequiredFields, configuredFieldKeys };
+}
+
+function CustomConnectorValuesConnectDialog(
+  props: CustomConnectorConnectDialogProps,
+) {
+  const setup = useCustomConnectorAccountSetup(
+    props.connector,
+    props.accountMode,
+  );
+  const setupRef = useSet(connectorAccountSetupRef$);
+  return (
+    <div
+      ref={setupRef}
+      data-account-setup-custom-id={
+        props.accountMode ? undefined : props.connector.id
+      }
+    >
+      <CustomConnectorConnectDialogContent {...props} {...setup} />
+    </div>
+  );
+}
+
+export function CustomConnectorConnectDialog(
+  props: CustomConnectorConnectDialogProps,
+) {
+  const { connector } = props;
+  if (isIntegrationManagedCustomConnector(connector)) {
+    const status = customConnectorManagedStatusSchema.parse(connector);
+    return (
+      <CustomConnectorConnectDialogContent
+        {...props}
+        setupAvailable
+        missingRequiredFields={status.missingRequiredFields}
+        configuredFieldKeys={status.configuredFieldKeys}
+      />
+    );
+  }
+  if (connector.authMode === "oauth" || connector.authMode === "automatic") {
+    // Authorization starts resolve the account in their command; no saved
+    // field configuration is needed before opening the provider window.
+    return (
+      <CustomConnectorConnectDialogContent
+        {...props}
+        setupAvailable
+        missingRequiredFields={[]}
+        configuredFieldKeys={[]}
+      />
+    );
+  }
+  return <CustomConnectorValuesConnectDialog {...props} />;
+}
+
+function CustomConnectorConnectDialogContent({
   connector,
   agentId,
   onClose,
   onSuccess,
   accountOptions,
   accountMode,
-}: CustomConnectorConnectDialogProps) {
+  setupAvailable,
+  missingRequiredFields,
+  configuredFieldKeys,
+}: CustomConnectorConnectDialogProps & {
+  readonly setupAvailable: boolean;
+  readonly missingRequiredFields: readonly string[];
+  readonly configuredFieldKeys: readonly string[];
+}) {
   const { t } = useTranslation();
   const form = useGet(customConnectorConnectForm$);
   const setField = useSet(setCustomConnectorConnectField$);
@@ -325,9 +426,11 @@ export function CustomConnectorConnectDialog({
     connector,
     values,
     accountMode,
+    missingRequiredFields,
   );
   const canSubmit =
     !submitting &&
+    setupAvailable &&
     (authorization || (hasRequiredValues && (noAuth || values.length > 0)));
   const showSecretDescription =
     !authorization &&
@@ -400,7 +503,7 @@ export function CustomConnectorConnectDialog({
           )}
           <CustomConnectorConnectForm
             connector={connector}
-            accountMode={accountMode}
+            configuredFieldKeys={configuredFieldKeys}
             values={form.values}
             setField={setField}
             submitting={submitting}
@@ -408,6 +511,13 @@ export function CustomConnectorConnectDialog({
             close={cancel}
             onSubmit={onSubmit}
           />
+          {!setupAvailable && (
+            <p role="alert" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.connectors.accounts.setupUnavailable;
+              })}
+            </p>
+          )}
         </ConnectorConnectionDialogBody>
       </DialogContent>
     </Dialog>

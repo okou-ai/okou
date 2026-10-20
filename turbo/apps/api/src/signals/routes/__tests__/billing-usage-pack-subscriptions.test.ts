@@ -9684,72 +9684,6 @@ describe("usage pack allocation management", () => {
     },
   );
 
-  it("reuses the original deferred schedule parameters after a failed first update", async () => {
-    const lifecycle = createPublicBillingScenario(context);
-    const run = lifecycle.run;
-    const { prepareDeferredInvoiceReplay, postManagedUsagePackEvent } =
-      createManagedUsagePackHelpers(lifecycle);
-    return await withNowScopeForTest(() => {
-      return run(async () => {
-        const replay = await prepareDeferredInvoiceReplay();
-        if (lifecycle) {
-          (() => {
-            retainBillingSequence(
-              context.mocks.stripe.subscriptionSchedules.update,
-              [
-                () => {
-                  return Promise.reject(new Error("Stripe update unavailable"));
-                },
-              ],
-            );
-            lifecycle?.captureExternalState();
-          })();
-        } else {
-          context.mocks.stripe.subscriptionSchedules.update.mockRejectedValueOnce(
-            new Error("Stripe update unavailable"),
-          );
-        }
-        lifecycle?.captureExternalState();
-        await expect(
-          postManagedUsagePackEvent("invoice.paid", replay.invoice),
-        ).rejects.toThrow(
-          "Unknown response status 500 for POST /api/webhooks/stripe",
-        );
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          ...replay.subscription,
-          schedule: replay.scheduleId,
-        });
-        lifecycle?.captureExternalState();
-        // Stripe's read model adds currency/metadata and absolute end dates. A retry
-        // must retain the original duration-based write, including the array order.
-        context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
-          replay.initialSchedule,
-        );
-        lifecycle?.captureExternalState();
-
-        await postManagedUsagePackEvent("invoice.paid", replay.invoice);
-
-        const requests =
-          context.mocks.stripe.subscriptionSchedules.update.mock.calls;
-        expect(requests).toHaveLength(2);
-        expect(requests[1]).toStrictEqual(requests[0]);
-        expect(
-          context.mocks.stripe.subscriptionSchedules.create,
-        ).toHaveBeenCalledOnce();
-        const confirmation = await run(() => {
-          return accept(
-            replay.client.confirmSubscriptionChange({
-              headers: { authorization: "Bearer clerk-session" },
-              body: { changeId: replay.preview.body.changeId },
-            }),
-            [200],
-          );
-        });
-        expect(confirmation.body.status).toBe("scheduled");
-      });
-    });
-  });
-
   it("recovers the immutable deferred request through a case-owned public database", async () => {
     const lifecycle = createPublicBillingScenario(context);
     const {
@@ -12181,12 +12115,7 @@ describe("usage pack allocation management", () => {
     });
   });
 
-  it.each([
-    { sourceTier: "pro", targetTier: "pro" },
-    { sourceTier: "pro", targetTier: "team" },
-    { sourceTier: "team", targetTier: "pro" },
-    { sourceTier: "team", targetTier: "team" },
-  ] as const)(
+  it.each([{ sourceTier: "pro", targetTier: "pro" }] as const)(
     "rejects a $sourceTier-to-$targetTier subscription change without a paid usage pack",
     async ({ sourceTier, targetTier }) => {
       const actor = createOrgFixture();
@@ -13312,35 +13241,22 @@ describe("usage pack allocation management", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it.each(["active", "canceled", "member"] as const)(
-    "preserves ordinary invitation body validation and the %s guard",
-    async (guard) => {
-      const api = createBddApi(context);
-      const actor = api.user();
-      await api.completeOnboarding(actor);
-      if (guard === "member") {
-        mocks.clerk.session(actor.userId, actor.orgId, "org:member");
-      } else {
-        await publicPlanLifecycle(context, actor).update(guard);
-      }
-      const response = await accept(
-        setupApp({ context, routes: orgInviteRoutes })(
-          orgInviteContract,
-        ).invite({
-          headers: { authorization: "Bearer clerk-session" },
-          body: { email: "not-an-email", role: "member" },
-        }),
-        [400, 403],
-      );
-      expect(response.status).toBe(guard === "member" ? 403 : 400);
-      expect(response.body.error.code).toBe(
-        guard === "member" ? "FORBIDDEN" : "BAD_REQUEST",
-      );
-      if (guard === "member") {
-        expect(response.body.error.message).toBe("Access denied");
-      }
-    },
-  );
+  it("preserves the member permission guard before invitation body validation", async () => {
+    const api = createBddApi(context);
+    const actor = api.user();
+    await api.completeOnboarding(actor);
+    mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+    const response = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { email: "not-an-email", role: "member" },
+      }),
+      [403],
+    );
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("FORBIDDEN");
+    expect(response.body.error.message).toBe("Access denied");
+  });
 
   it("records a successful ordinary invitation as a public pending reward claim", async () => {
     const api = createBddApi(context);

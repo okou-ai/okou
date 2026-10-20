@@ -271,6 +271,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   terms_acceptance_required: "terms-acceptance-required",
   context_window_exceeded: "new-chat-required",
   input_too_large: "input-too-large",
+  provider_image_too_large: "input-too-large",
   output_token_limit: "output-token-limit",
   provider_rate_limited: "provider-retryable",
   provider_overloaded: "model-capacity",

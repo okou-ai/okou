@@ -161,7 +161,6 @@ test("Paste copied chat text and attachments safely", async () => {
     ),
   ).resolves.toBeVisible();
   expect(composer).toHaveTextContent("Text kept from an inaccessible copy");
-  expect(document.body).not.toHaveTextContent("Remove missing-copy.txt");
   expect(fastButton("Remove available-copy.txt")).toBeVisible();
 });
 
@@ -298,7 +297,6 @@ test("Pasted text is saved when attachment restoration returns 404", async () =>
       "unreadable-copy.txt is no longer available. Upload it again to send.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(document.body).not.toHaveTextContent("Remove unreadable-copy.txt");
 });
 
 test("Pasted text is saved when attachment restoration returns 403", async () => {

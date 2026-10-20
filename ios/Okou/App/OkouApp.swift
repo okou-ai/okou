@@ -29,7 +29,6 @@ struct OkouApp: App {
         }
       }
       .tint(Color.primary)
-      .environment(\.locale, Locale(identifier: "en"))
       .task { await authentication?.start() }
       .onOpenURL { url in Task { await authentication?.handleURL(url) } }
     }
@@ -107,7 +106,10 @@ private struct WorkspaceRootView: View {
         cache: ChatCache(
           scope: ChatCacheScope(
             apiBaseURL: configuration.apiURL,
-            userID: userID, workspaceID: workspaceID))))
+            userID: userID, workspaceID: workspaceID)),
+        draftStorage: ChatDraftStorage(
+          scope: ChatCacheScope(
+            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID))))
   }
 
   var body: some View {
@@ -135,21 +137,22 @@ private struct WorkspaceRootView: View {
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, supportsAttachments: store.list.canAttachFiles,
-              topContentInset: headerHeight
+              conversation: conversation, topContentInset: headerHeight
             )
             .id(conversation.thread.id)
           } else {
             newChatHome
               .safeAreaBar(edge: .bottom, spacing: 0) {
+                @Bindable var composer = store.newComposer
                 ChatComposerView(
-                  draft: $store.newChatDraft, isBusy: store.isCreating,
+                  draft: $composer.text, isBusy: store.isCreating,
                   showsProgress: store.isCreating, canStop: false,
                   needsUpgrade: store.needsUpgrade,
                   error: store.error ?? store.list.error, attachmentURL: store.webURL,
-                  attachments: store.newAttachmentDraft,
-                  supportsAttachments: store.list.canAttachFiles,
-                  submit: { await store.sendNewChat() }, refresh: nil)
+                  attachments: composer.attachments,
+                  draftState: composer,
+                  submit: { await store.sendNewChat() }, refresh: nil,
+                  modelSelection: store.newModelSelection)
               }
           }
         }

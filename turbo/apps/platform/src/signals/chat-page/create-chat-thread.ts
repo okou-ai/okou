@@ -114,8 +114,6 @@ import {
   type ComposerSignals,
   type ComposerSubmission,
 } from "../okou-page/composer-signals.ts";
-import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
@@ -201,6 +199,7 @@ import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
+import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
 import { createWalletCardSignalsRegistry } from "./wallet-action-block.ts";
@@ -939,11 +938,41 @@ function withPendingAssistantGroup(
   ];
 }
 
+interface ChatEventRenderResources {
+  readonly trees: ReadonlyMap<string, Root>;
+  readonly errors: ReadonlySet<string>;
+  readonly userMessageDocuments: ReadonlyMap<string, UserMessageRenderDocument>;
+}
+
+function renderChatGroups(
+  groups: readonly ChatEventGroup[],
+  resources: ChatEventRenderResources,
+): ChatEventGroup[] {
+  return groups.map((group) => {
+    return {
+      ...group,
+      events: group.events.map((event) => {
+        const document = resources.userMessageDocuments.get(event.id);
+        return {
+          ...event,
+          tree: resources.trees.get(event.id),
+          richContentError: resources.errors.has(event.id),
+          userMessageRenderDocument:
+            document?.document === chatEventUserMessage(event)
+              ? document
+              : undefined,
+        };
+      }),
+    };
+  });
+}
+
 function createRenderedChatGroups(
-  semanticEvents$: Computed<SemanticChatEvent[]>,
+  semanticEvents$: Computed<SemanticChatEventState[]>,
   runActive$: Computed<boolean>,
+  eventRenderResources$: Computed<ChatEventRenderResources>,
 ) {
-  const allChatGroups$ = computed((get): ChatEventGroup[] => {
+  const allSemanticChatGroups$ = computed((get): ChatEventGroup[] => {
     return withPendingAssistantGroup(
       groupEventsForDisplay(
         enrichedChatEventsFromSemantic(get(semanticEvents$)),
@@ -952,38 +981,40 @@ function createRenderedChatGroups(
     );
   });
 
-  const allRenderedChatGroups$ = computed((get): Promise<ChatEventGroup[]> => {
-    return Promise.resolve(get(allChatGroups$));
+  // Full-transcript consumers keep access to resources already prepared by
+  // the window without creating resources for the rest of the transcript.
+  const allChatGroups$ = computed((get): ChatEventGroup[] => {
+    return renderChatGroups(
+      get(allSemanticChatGroups$),
+      get(eventRenderResources$),
+    );
   });
   const eventImageGroups$ = computed(
-    async (get): Promise<EventImageGroupProjection[]> => {
-      return (await get(allRenderedChatGroups$)).map((group) => {
-        return {
-          role: group.role,
-          events: group.events.map((event) => {
-            return {
-              userMessage: isInputChatEvent(event)
-                ? event.userMessage
-                : undefined,
-              userMessageRenderDocument: event.userMessageRenderDocument,
-              tree: event.tree,
-            };
-          }),
-        };
-      });
+    (get): Promise<EventImageGroupProjection[]> => {
+      return Promise.resolve(
+        get(allChatGroups$).map((group) => {
+          return {
+            role: group.role,
+            events: group.events.map((event) => {
+              return {
+                userMessage: isInputChatEvent(event)
+                  ? event.userMessage
+                  : undefined,
+                userMessageRenderDocument: event.userMessageRenderDocument,
+                tree: event.tree,
+              };
+            }),
+          };
+        }),
+      );
     },
   );
 
   return {
     allChatGroups$,
-    allRenderedChatGroups$,
+    allSemanticChatGroups$,
     eventImageGroups$,
   };
-}
-
-interface RegisteredChatEvent {
-  readonly event: ChatEvent;
-  readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
 const registerFeedbackNoteRenderPart$ = command(
@@ -1107,13 +1138,9 @@ function chatEventUserMessage(
 const registerUserMessageRenderDocument$ = command(
   (
     { set },
-    event: ChatEvent,
+    document: UserMessageDocument,
     registries: UserMessagePartRegistries,
-  ): UserMessageRenderDocument | undefined => {
-    const document = chatEventUserMessage(event);
-    if (!document) {
-      return undefined;
-    }
+  ): UserMessageRenderDocument => {
     return {
       document,
       parts: document.parts.flatMap((part) => {
@@ -1128,14 +1155,12 @@ const registerUserMessageRenderDocument$ = command(
 interface ServerChatEventProjectionEntry {
   event: PersistedChatEvent;
   source: "server";
-  userMessageRenderDocument: UserMessageRenderDocument | undefined;
   optimisticUserMessageAssociation?: never;
 }
 
 interface OptimisticChatEventProjectionEntry {
   event: OptimisticChatEvent;
   source: "optimistic";
-  userMessageRenderDocument: UserMessageRenderDocument | undefined;
   optimisticUserMessageAssociation?: OptimisticUserMessageAssociation;
 }
 
@@ -1147,16 +1172,14 @@ function isPersistedChatEvent(event: ChatEvent): event is PersistedChatEvent {
 }
 
 function createRawEventsComputed(
-  registeredEvents$: State<RegisteredChatEvent[]>,
+  chatEvents$: Computed<ChatEvent[]>,
 ): Computed<ChatEventProjectionEntry[]> {
   return computed((get): ChatEventProjectionEntry[] => {
-    return get(registeredEvents$).map((entry) => {
-      const { event } = entry;
+    return get(chatEvents$).map((event) => {
       if (isPersistedChatEvent(event)) {
-        return { ...entry, event, source: "server" };
+        return { event, source: "server" };
       }
       return {
-        ...entry,
         event,
         source: "optimistic",
         optimisticUserMessageAssociation:
@@ -1167,56 +1190,23 @@ function createRawEventsComputed(
 }
 
 function enrichedChatEventsFromSemantic(
-  entries: readonly SemanticChatEvent[],
+  entries: readonly SemanticChatEventState[],
 ): EnrichedChatEvent[] {
   return entries.map((entry) => {
-    const {
-      event,
-      isQueued,
-      inputCreatedAt,
-      inputOriginId,
-      userMessageRenderDocument,
-    } = entry;
+    const { event, isQueued, inputCreatedAt, inputOriginId } = entry;
     return {
       ...event,
-      tree: entry.tree,
-      richContentError: entry.richContentError,
+      tree: undefined,
+      richContentError: false,
       isQueued,
       inputCreatedAt,
       inputOriginId,
-      userMessageRenderDocument,
+      userMessageRenderDocument: undefined,
     };
   });
 }
 
-interface SemanticChatEvent extends SemanticChatEventState {
-  readonly tree: Root | undefined;
-  readonly richContentError: boolean;
-  readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
-}
-
-type SemanticChatGroups = GenericSemanticChatGroups<SemanticChatEvent>;
-
-function semanticTranscriptEventsFromRaw(
-  raw: readonly ChatEventProjectionEntry[],
-  chatEvents: readonly ChatEvent[],
-  trees: ReadonlyMap<string, Root>,
-  richContentErrors: ReadonlySet<string>,
-): SemanticChatEvent[] {
-  const renderDocumentByEventId = new Map(
-    raw.map((entry) => {
-      return [entry.event.id, entry.userMessageRenderDocument] as const;
-    }),
-  );
-  return semanticChatEventsFromChatEvents(chatEvents).map((entry) => {
-    return {
-      ...entry,
-      tree: trees.get(entry.event.id),
-      richContentError: richContentErrors.has(entry.event.id),
-      userMessageRenderDocument: renderDocumentByEventId.get(entry.event.id),
-    };
-  });
-}
+type SemanticChatGroups = GenericSemanticChatGroups<SemanticChatEventState>;
 
 // After the thread goes idle, the last assistant turn of a run shows the
 // finished row with its completion time and recommended followups.
@@ -1291,7 +1281,7 @@ function latestRecommendedFollowupsFromGroups(
 }
 
 function createEventSemanticSignals(
-  semanticEvents$: Computed<SemanticChatEvent[]>,
+  semanticEvents$: Computed<SemanticChatEventState[]>,
   {
     serverRunState$,
     hasOptimisticUserMessage$,
@@ -1490,6 +1480,9 @@ interface EventTreeRegistries {
   readonly computerUseAuthorizationCardSignals: ReturnType<
     typeof createComputerUseAuthorizationCardSignalsRegistry
   >;
+  readonly desktopShellAuthorizationCardSignals: ReturnType<
+    typeof createDesktopShellAuthorizationCardSignalsRegistry
+  >;
   readonly planUpgradeCardSignals: ReturnType<
     typeof createPlanUpgradeCardSignalsRegistry
   >;
@@ -1510,6 +1503,7 @@ function createCardRefRegistrar({
   walletCardSignals,
   browserUserActionCardSignals,
   computerUseAuthorizationCardSignals,
+  desktopShellAuthorizationCardSignals,
   planUpgradeCardSignals,
   mailDraftCardSignals,
   browserSessionSignals,
@@ -1579,6 +1573,15 @@ function createCardRefRegistrar({
             kind: descriptor.type,
             signals: set(
               computerUseAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "desktop-shell-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              desktopShellAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1935,11 +1938,9 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 
 function createPagedEventResources({
   chatActionContext,
-  chatEvents$,
   connector,
 }: {
   readonly chatActionContext: ChatActionContext;
-  readonly chatEvents$: Computed<ChatEvent[]>;
   readonly connector: ComposerConnectorSignals;
 }) {
   const { threadId } = chatActionContext;
@@ -1959,25 +1960,11 @@ function createPagedEventResources({
     createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
+  const desktopShellAuthorizationCardSignals =
+    createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
   const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
   const imageLoads = createImageLoadRegistry();
-
-  const registerChatEvent$ = command(
-    ({ set }, event: ChatEvent): RegisteredChatEvent => {
-      return {
-        event,
-        userMessageRenderDocument: set(
-          registerUserMessageRenderDocument$,
-          event,
-          {
-            artifactCardSignals,
-            agentReferenceSignals,
-          },
-        ),
-      };
-    },
-  );
 
   const {
     eventTrees$,
@@ -1996,6 +1983,7 @@ function createPagedEventResources({
     walletCardSignals,
     browserUserActionCardSignals,
     computerUseAuthorizationCardSignals,
+    desktopShellAuthorizationCardSignals,
     planUpgradeCardSignals,
     mailDraftCardSignals,
     browserSessionSignals,
@@ -2003,32 +1991,45 @@ function createPagedEventResources({
     imageLoads,
   });
 
-  const registeredEvents$ = state<RegisteredChatEvent[]>([]);
-  // Tree parsing is not part of the sync: the render window decides which
-  // events need trees, so the ensure step runs at the window's write points.
-  const syncRegisteredEvents$ = command(
-    ({ get, set }, signal: AbortSignal): void => {
-      signal.throwIfAborted();
-      const events = get(chatEvents$);
-      const previousById = new Map(
-        get(registeredEvents$).map((entry) => {
-          return [entry.event.id, entry] as const;
-        }),
-      );
-      const next = events.map((event) => {
-        const existing = previousById.get(event.id);
-        if (existing?.event === event) {
-          return existing;
+  const internalUserMessageDocuments$ = state<
+    ReadonlyMap<string, UserMessageRenderDocument>
+  >(new Map());
+  // The window owns first registration. Keep prepared documents and their
+  // shared card identities when an event leaves the window.
+  const ensureUserMessageDocuments$ = command(
+    ({ get, set }, events: readonly ChatEvent[]): void => {
+      const current = get(internalUserMessageDocuments$);
+      let next: Map<string, UserMessageRenderDocument> | undefined;
+      for (const event of events) {
+        const document = chatEventUserMessage(event);
+        if (!document || current.get(event.id)?.document === document) {
+          continue;
         }
-        return set(registerChatEvent$, event);
-      });
-      set(registeredEvents$, next);
+        next ??= new Map(current);
+        next.set(
+          event.id,
+          set(registerUserMessageRenderDocument$, document, {
+            artifactCardSignals,
+            agentReferenceSignals,
+          }),
+        );
+      }
+      if (next) {
+        set(internalUserMessageDocuments$, next);
+      }
     },
   );
+  const eventRenderResources$ = computed((get): ChatEventRenderResources => {
+    return {
+      trees: get(eventTrees$),
+      errors: get(eventTreeErrors$),
+      userMessageDocuments: get(internalUserMessageDocuments$),
+    };
+  });
   return {
     artifactCardSignals,
-    eventTrees$,
-    eventTreeErrors$,
+    eventRenderResources$,
+    ensureUserMessageDocuments$,
     ensureEventTrees$,
     diagramCodesForEvents$,
     mermaidDiagrams,
@@ -2037,8 +2038,6 @@ function createPagedEventResources({
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
       retryRichEventTree$,
     },
-    registeredEvents$,
-    syncRegisteredEvents$,
   };
 }
 
@@ -2051,24 +2050,15 @@ interface ThinkingIndicatorSources {
 function createPagedEventProjections({
   chatEvents$,
   thinkingSources,
-  registeredEvents$,
-  eventTrees$,
-  eventTreeErrors$,
+  eventRenderResources$,
 }: {
   chatEvents$: Computed<ChatEvent[]>;
   thinkingSources: ThinkingIndicatorSources;
-  registeredEvents$: State<RegisteredChatEvent[]>;
-  eventTrees$: Computed<ReadonlyMap<string, Root>>;
-  eventTreeErrors$: Computed<ReadonlySet<string>>;
+  eventRenderResources$: Computed<ChatEventRenderResources>;
 }) {
-  const rawEvents$ = createRawEventsComputed(registeredEvents$);
-  const semanticEvents$ = computed((get): SemanticChatEvent[] => {
-    return semanticTranscriptEventsFromRaw(
-      get(rawEvents$),
-      get(chatEvents$),
-      get(eventTrees$),
-      get(eventTreeErrors$),
-    );
+  const rawEvents$ = createRawEventsComputed(chatEvents$);
+  const semanticEvents$ = computed((get): SemanticChatEventState[] => {
+    return semanticChatEventsFromChatEvents(get(chatEvents$));
   });
   const { serverRunState$, hasOptimisticUserMessage$ } = thinkingSources;
   const runActive$ = computed((get): boolean => {
@@ -2082,7 +2072,11 @@ function createPagedEventProjections({
       ...thinkingSources,
       runActive$,
     }),
-    ...createRenderedChatGroups(semanticEvents$, runActive$),
+    ...createRenderedChatGroups(
+      semanticEvents$,
+      runActive$,
+      eventRenderResources$,
+    ),
   };
 }
 
@@ -2347,7 +2341,6 @@ function createChatThreadMessagePipeline({
   const position = createThreadScrollPositionSignals(threadId);
   const resources = createPagedEventResources({
     chatActionContext,
-    chatEvents$: chatEvents.chatEvents$,
     connector,
   });
   const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
@@ -2358,9 +2351,7 @@ function createChatThreadMessagePipeline({
       hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
       thinkingSummaries$,
     },
-    registeredEvents$: resources.registeredEvents$,
-    eventTrees$: resources.eventTrees$,
-    eventTreeErrors$: resources.eventTreeErrors$,
+    eventRenderResources$: resources.eventRenderResources$,
   });
   const initialEventsReady$ = state(false);
   const initialEventsReadyView$ = computed((get): boolean => {
@@ -2368,29 +2359,17 @@ function createChatThreadMessagePipeline({
   });
   const renderWindow = createChatRenderWindow({
     threadId,
-    allRenderedChatGroups$: projections.allRenderedChatGroups$,
+    allSemanticChatGroups$: projections.allSemanticChatGroups$,
     threadScrollPosition$: position.threadScrollPosition$,
     awayFromBottom$: position.awayFromBottom$,
+    eventRenderResources$: resources.eventRenderResources$,
+    ensureUserMessageDocuments$: resources.ensureUserMessageDocuments$,
     ensureEventTrees$: resources.ensureEventTrees$,
     diagramCodesForEvents$: resources.diagramCodesForEvents$,
     mermaidDiagrams: resources.mermaidDiagrams,
     syncVisibleRunUsage$: usage.syncVisibleRuns$,
     initialEventsReady$,
   });
-  const syncVisibleEventTrees$ = command(
-    async (
-      { set },
-      revealPreparedEvents: boolean,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      set(resources.syncRegisteredEvents$, signal);
-      await set(
-        renderWindow.ensureVisibleEventTrees$,
-        revealPreparedEvents,
-        signal,
-      );
-    },
-  );
   const afterPositionChanged$ = createEnsureVisibleEventTreesAfterScroll(
     renderWindow.ensureVisibleEventTrees$,
   );
@@ -2410,12 +2389,12 @@ function createChatThreadMessagePipeline({
     chatEvents,
     projections,
     scroll,
-    syncVisibleEventTrees$,
+    syncVisibleEventTrees$: renderWindow.ensureVisibleEventTrees$,
   });
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
     eventChangeHandler: effects.eventChangeHandler,
-    syncVisibleEventTrees$,
+    syncVisibleEventTrees$: renderWindow.ensureVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
   });
@@ -2485,7 +2464,6 @@ interface RunTrackingDeps {
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
-  reloadConnectorAccounts$: Command<void, []>;
   reloadConnectorAccountPreference$: Command<void, []>;
 }
 
@@ -2621,9 +2599,11 @@ function scrollTargetStartIndex(
 
 interface ChatRenderWindowOptions {
   readonly threadId: string;
-  readonly allRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
+  readonly allSemanticChatGroups$: Computed<ChatEventGroup[]>;
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
   readonly awayFromBottom$: Computed<boolean>;
+  readonly eventRenderResources$: Computed<ChatEventRenderResources>;
+  readonly ensureUserMessageDocuments$: Command<void, [readonly ChatEvent[]]>;
   readonly ensureEventTrees$: Command<
     Promise<void>,
     [readonly ChatEvent[], AbortSignal]
@@ -2641,7 +2621,7 @@ interface ChatRenderWindowOptions {
 
 interface PreloadPreviousRenderWindowOptions {
   readonly threadId: string;
-  readonly allRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
+  readonly allSemanticChatGroups$: Computed<ChatEventGroup[]>;
   readonly ensureVisibleEventTrees$: Command<
     Promise<void>,
     [boolean, AbortSignal]
@@ -2650,7 +2630,7 @@ interface PreloadPreviousRenderWindowOptions {
 
 function createPreloadPreviousRenderWindowForEvent({
   threadId,
-  allRenderedChatGroups$,
+  allSemanticChatGroups$,
   ensureVisibleEventTrees$,
 }: PreloadPreviousRenderWindowOptions): Command<
   Promise<void>,
@@ -2662,7 +2642,7 @@ function createPreloadPreviousRenderWindowForEvent({
       eventId: string,
       signal: AbortSignal,
     ): Promise<void> => {
-      const groups = await get(allRenderedChatGroups$);
+      const groups = get(allSemanticChatGroups$);
       signal.throwIfAborted();
       const targetStartIndex = eventRunStartIndex(groups, eventId);
       if (targetStartIndex === null) {
@@ -2702,19 +2682,21 @@ function createPreloadPreviousRenderWindowForEvent({
 }
 
 /**
- * Parse visible rich content and prewarm its diagram layout before callers
- * restore scroll positions. The view reads the same layout computeds; only
- * mounted image refs allocate and own object URLs.
+ * Prepare visible user-message references and rich content, then prewarm its
+ * diagram layout before callers restore scroll positions. The view reads the
+ * same layout computeds; only mounted image refs own object URLs.
  */
 function createEnsureVisibleEventTrees({
-  visibleRenderedChatGroups$,
+  visibleChatGroups$,
+  ensureUserMessageDocuments$,
   ensureEventTrees$,
   diagramCodesForEvents$,
   mermaidDiagrams,
   syncVisibleRunUsage$,
   initialEventsReady$,
 }: {
-  readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
+  readonly visibleChatGroups$: Computed<ChatEventGroup[]>;
+  readonly ensureUserMessageDocuments$: ChatRenderWindowOptions["ensureUserMessageDocuments$"];
   readonly ensureEventTrees$: ChatRenderWindowOptions["ensureEventTrees$"];
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
   readonly mermaidDiagrams: MermaidDiagramRegistry;
@@ -2727,12 +2709,13 @@ function createEnsureVisibleEventTrees({
       revealPreparedEvents: boolean,
       signal: AbortSignal,
     ): Promise<void> => {
-      const groups = await get(visibleRenderedChatGroups$);
+      const groups = get(visibleChatGroups$);
       signal.throwIfAborted();
       set(syncVisibleRunUsage$, groups);
       const visibleEvents = groups.flatMap((group) => {
         return group.events;
       });
+      set(ensureUserMessageDocuments$, visibleEvents);
       const richContentReady = set(ensureEventTrees$, visibleEvents, signal);
       if (revealPreparedEvents) {
         set(initialEventsReady$, true);
@@ -2751,31 +2734,38 @@ function createEnsureVisibleEventTrees({
 
 function createChatRenderWindow({
   threadId,
-  allRenderedChatGroups$,
+  allSemanticChatGroups$,
   threadScrollPosition$,
   awayFromBottom$,
+  eventRenderResources$,
+  ensureUserMessageDocuments$,
   ensureEventTrees$,
   diagramCodesForEvents$,
   mermaidDiagrams,
   syncVisibleRunUsage$,
   initialEventsReady$,
 }: ChatRenderWindowOptions) {
+  const visibleChatGroups$ = computed((get): ChatEventGroup[] => {
+    const groups = get(allSemanticChatGroups$);
+    const { cursorGroupId } = renderWindowStateForThread(
+      get(renderWindowStateByThreadId$),
+      threadId,
+    );
+    const requestedStartIndex = renderWindowStartIndex(groups, cursorGroupId);
+    const targetStartIndex = scrollTargetStartIndex(
+      groups,
+      get(threadScrollPosition$),
+    );
+    return groups.slice(
+      targetStartIndex === null
+        ? requestedStartIndex
+        : Math.min(requestedStartIndex, targetStartIndex),
+    );
+  });
   const visibleRenderedChatGroups$ = computed(
-    async (get): Promise<ChatEventGroup[]> => {
-      const groups = await get(allRenderedChatGroups$);
-      const { cursorGroupId } = renderWindowStateForThread(
-        get(renderWindowStateByThreadId$),
-        threadId,
-      );
-      const requestedStartIndex = renderWindowStartIndex(groups, cursorGroupId);
-      const targetStartIndex = scrollTargetStartIndex(
-        groups,
-        get(threadScrollPosition$),
-      );
-      return groups.slice(
-        targetStartIndex === null
-          ? requestedStartIndex
-          : Math.min(requestedStartIndex, targetStartIndex),
+    (get): Promise<ChatEventGroup[]> => {
+      return Promise.resolve(
+        renderChatGroups(get(visibleChatGroups$), get(eventRenderResources$)),
       );
     },
   );
@@ -2787,13 +2777,14 @@ function createChatRenderWindow({
   );
 
   /**
-   * Parses the trees of every event currently in the render window. Every
+   * Prepares resources for every event currently in the render window. Every
    * write that can grow the window or change what it holds runs this
    * afterwards: the event sync, the load-more cursor, and the scroll position
    * commands. Parsing stays command-driven — reading the window never parses.
    */
   const ensureVisibleEventTrees$ = createEnsureVisibleEventTrees({
-    visibleRenderedChatGroups$,
+    visibleChatGroups$,
+    ensureUserMessageDocuments$,
     ensureEventTrees$,
     diagramCodesForEvents$,
     mermaidDiagrams,
@@ -2804,7 +2795,7 @@ function createChatRenderWindow({
   const preloadPreviousRenderWindowForEvent$ =
     createPreloadPreviousRenderWindowForEvent({
       threadId,
-      allRenderedChatGroups$,
+      allSemanticChatGroups$,
       ensureVisibleEventTrees$,
     });
 
@@ -2814,7 +2805,7 @@ function createChatRenderWindow({
         get(renderWindowStateByThreadId$),
         threadId,
       );
-      const groups = await get(allRenderedChatGroups$);
+      const groups = get(allSemanticChatGroups$);
       signal.throwIfAborted();
       const requestedStartIndex = renderWindowStartIndex(
         groups,
@@ -2894,18 +2885,13 @@ function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
   cancellationRecovery,
-  reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
-  | "threadId"
-  | "catchUpChatEvents$"
-  | "cancellationRecovery"
-  | "reloadConnectorAccounts$"
+  "threadId" | "catchUpChatEvents$" | "cancellationRecovery"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
     set(cancellationRecovery.reload$);
-    set(reloadConnectorAccounts$);
     await Promise.all([
       get(cancellationRecovery.pending$),
       set(reloadMountedComposerWorkflows$, signal),
@@ -2932,14 +2918,12 @@ function createRunTracking({
   subscribeThinkingSummaries$,
   automationSignals,
   cancellationRecovery,
-  reloadConnectorAccounts$,
   reloadConnectorAccountPreference$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$,
     cancellationRecovery,
-    reloadConnectorAccounts$,
   });
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
@@ -3543,10 +3527,9 @@ function createThreadSubmitMessageSignal(
       signal: AbortSignal,
     ): Promise<boolean> => {
       const explicit = get(computerUseHostSelection.computerUseHostIdExplicit$);
-      const storedHostId = get(computerUseHostSelection.computerUseHostId$);
-      const hosts = (await get(connectorOverview$)).computerUseHosts;
-      signal.throwIfAborted();
-      const computerUseHostId = selectedComputerUseHostId(hosts, storedHostId);
+      const computerUseHostId = get(
+        computerUseHostSelection.computerUseHostId$,
+      );
       const cloudBrowserEnabled = get(
         computerUseHostSelection.cloudBrowserEnabled$,
       );
@@ -3818,7 +3801,6 @@ export function createChatPanelSignals(
     subscribeSessionOutput$: sessionOutput.subscribe$,
     automationSignals: threadOwned,
     cancellationRecovery,
-    reloadConnectorAccounts$: composer.connector.accounts.reload$,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
   });
@@ -3852,10 +3834,8 @@ export function createChatPanelSignals(
     pin: createChatThreadPinSignals(threadId, threadMeta$),
     locator,
     resources: createChatResourceSignals(
-      messagePipeline.allChatGroups$,
       artifact.resourceCatalog,
       messagePipeline.initialEventsReady$,
-      relations.closeMessages$,
     ),
     relations,
     ...threadOwned,

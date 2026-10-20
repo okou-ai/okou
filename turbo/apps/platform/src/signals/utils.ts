@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { delay } from "signal-timers";
+import { delay, timeout } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
@@ -223,6 +223,44 @@ export async function withCleanup<T>(
   } finally {
     await cleanup();
   }
+}
+
+/** Add an owner-bound deadline, preserving the owner's reason on cancellation. */
+export function abortAfter(
+  ms: number,
+  parentSignal: AbortSignal,
+  timeoutReason: unknown = new DOMException(
+    "Operation timed out",
+    "AbortError",
+  ),
+): AbortSignal {
+  const controller = new AbortController();
+  timeout(
+    () => {
+      controller.abort(timeoutReason);
+    },
+    ms,
+    { signal: parentSignal },
+  );
+  return AbortSignal.any([parentSignal, controller.signal]);
+}
+
+/** Run finite work under an owner-bound deadline and cancel it when work settles. */
+export function withAbortAfter<T>(
+  ms: number,
+  parentSignal: AbortSignal,
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutReason?: unknown,
+): Promise<T> {
+  const controller = new AbortController();
+  const signal = abortAfter(
+    ms,
+    AbortSignal.any([parentSignal, controller.signal]),
+    timeoutReason,
+  );
+  return withCleanup(operation(signal), () => {
+    controller.abort();
+  });
 }
 
 /** Stop waiting for a shared operation without cancelling its other owners. */

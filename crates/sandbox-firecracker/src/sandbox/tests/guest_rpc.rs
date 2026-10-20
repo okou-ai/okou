@@ -1,6 +1,9 @@
 use super::*;
 use std::path::PathBuf;
 
+#[cfg(feature = "test-support")]
+mod request_route;
+
 pub(super) fn prepare_socket_paths(sandbox: &mut FirecrackerSandbox, dir: &Path) {
     sandbox.sock_paths = SockPaths::new(dir.to_path_buf());
     std::fs::create_dir_all(sandbox.sock_paths.vsock_dir()).unwrap();

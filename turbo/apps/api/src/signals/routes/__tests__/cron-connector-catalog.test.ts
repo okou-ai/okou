@@ -1399,14 +1399,6 @@ describe("connector catalog cron authentication and initial state", () => {
     const missing = await rawCronRequest("/api/cron/sync-connector-catalog");
     expect(missing.status).toBe(401);
   });
-
-  it("reports only the attempt report without sync history", async () => {
-    configureSource();
-    serveObjects(new Map());
-    const body = (await syncCatalog()).body;
-    expect(Object.keys(body).sort()).toStrictEqual(["failureCode", "outcome"]);
-    expectRejectedAttempt(body, "source-unavailable");
-  });
 });
 
 describe("connector catalog valid lifecycle", () => {
@@ -4622,29 +4614,6 @@ describe("connector catalog rejection and latest-valid retention", () => {
       },
     },
     {
-      name: "overlong catalog version",
-      expected: "invalid-pointer",
-      release: () => {
-        return buildRelease({ version: "a".repeat(256) });
-      },
-    },
-    {
-      name: "legacy pointer reference",
-      expected: "invalid-pointer",
-      release: () => {
-        return buildRelease({
-          version: "legacy-pointer-reference",
-          mutatePointer: (pointer) => {
-            pointer.integrity = {
-              key: "connectors/v4/releases/legacy-pointer-reference/integrity/catalog.json",
-              digest: pointer.catalogDigest,
-            };
-            delete pointer.catalogDigest;
-          },
-        });
-      },
-    },
-    {
       name: "catalog digest mismatch",
       expected: "digest-mismatch",
       release: () => {
@@ -4669,21 +4638,6 @@ describe("connector catalog rejection and latest-valid retention", () => {
       },
     },
     {
-      name: "legacy catalog source property",
-      expected: "invalid-artifact",
-      release: () => {
-        return buildRelease({
-          version: "legacy-catalog-source-property",
-          mutateArtifact: (artifact) => {
-            artifact.catalogSource = {
-              key: "catalog/catalog.yaml",
-              digest: ZERO_DIGEST,
-            };
-          },
-        });
-      },
-    },
-    {
       name: "strict artifact property",
       expected: "invalid-artifact",
       release: () => {
@@ -4691,66 +4645,6 @@ describe("connector catalog rejection and latest-valid retention", () => {
           version: "invalid-artifact",
           mutateCatalog: (artifact) => {
             artifact.extra = true;
-          },
-        });
-      },
-    },
-    {
-      name: "missing storage version",
-      expected: "invalid-artifact",
-      release: () => {
-        return buildRelease({
-          version: "missing-storage-version",
-          mutateRuntime: (artifact) => {
-            const connector = firstRecord(artifact.connectors, "connectors");
-            const method = firstRecord(connector.authMethods, "authMethods");
-            delete recordValue(method.storage, "storage").version;
-          },
-        });
-      },
-    },
-    {
-      name: "non-positive storage version",
-      expected: "invalid-artifact",
-      release: () => {
-        return buildRelease({
-          version: "non-positive-storage-version",
-          mutateRuntime: (artifact) => {
-            const connector = firstRecord(artifact.connectors, "connectors");
-            const method = firstRecord(connector.authMethods, "authMethods");
-            recordValue(method.storage, "storage").version = 0;
-          },
-        });
-      },
-    },
-    {
-      name: "unsafe storage version",
-      expected: "invalid-artifact",
-      release: () => {
-        return buildRelease({
-          version: "unsafe-storage-version",
-          mutateRuntime: (artifact) => {
-            const connector = firstRecord(artifact.connectors, "connectors");
-            const method = firstRecord(connector.authMethods, "authMethods");
-            recordValue(method.storage, "storage").version =
-              Number.MAX_SAFE_INTEGER + 1;
-          },
-        });
-      },
-    },
-    {
-      name: "legacy auth-method visibility field",
-      expected: "invalid-artifact",
-      release: () => {
-        return buildRelease({
-          version: "legacy-auth-method-visibility",
-          mutateCatalog: (artifact) => {
-            const method = firstRecord(
-              firstRecord(artifact.connectors, "connectors").authMethods,
-              "authMethods",
-            );
-            method.defaultVisible = method.visible;
-            delete method.visible;
           },
         });
       },

@@ -463,12 +463,7 @@ impl MitmProxy {
     /// finishes old-child cleanup before starting the replacement; the caller
     /// then adopts the result with `complete_restart`.
     pub fn begin_restart(&mut self) -> MitmRestartParams {
-        self.control.set_target(None);
-        self.delivery_flush = None;
-        // Each monitor keeps its own flag: an old child's delayed EOF must
-        // never be interpreted as a crash of the replacement.
-        self.stopping.store(true, Ordering::Release);
-        let old_child = self.child.take();
+        let old_child = self.take_stopping_child();
         let new_stopping = Arc::new(AtomicBool::new(false));
         self.stopping = Arc::clone(&new_stopping);
         let usage_state_id = uuid::Uuid::new_v4().to_string();
@@ -494,12 +489,19 @@ impl MitmProxy {
         self.child = Some(child);
     }
 
-    /// Gracefully stop mitmdump (SIGTERM → timeout → SIGKILL).
-    pub async fn stop(&mut self) -> RunnerResult<()> {
+    /// Withdraw the current launch before transferring its child to an explicit stop owner.
+    fn take_stopping_child(&mut self) -> Option<ManagedMitmdump> {
         self.control.set_target(None);
         self.delivery_flush = None;
+        // Each monitor keeps its own flag: an old child's delayed EOF must
+        // never be interpreted as a crash of the replacement.
         self.stopping.store(true, Ordering::Release);
-        let Some(child) = self.child.take() else {
+        self.child.take()
+    }
+
+    /// Gracefully stop mitmdump (SIGTERM → timeout → SIGKILL).
+    pub async fn stop(&mut self) -> RunnerResult<()> {
+        let Some(child) = self.take_stopping_child() else {
             return Ok(());
         };
         child.stop_gracefully().await
@@ -507,10 +509,7 @@ impl MitmProxy {
 
     /// Immediately kill and reap mitmdump without the graceful SIGTERM window.
     pub async fn kill_now(&mut self) -> RunnerResult<()> {
-        self.control.set_target(None);
-        self.delivery_flush = None;
-        self.stopping.store(true, Ordering::Release);
-        let Some(child) = self.child.take() else {
+        let Some(child) = self.take_stopping_child() else {
             return Ok(());
         };
         child.force_stop().await
@@ -910,8 +909,10 @@ fn find_available_port() -> RunnerResult<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::MitmUsageHandle;
     use runner_host::paths::HomePaths;
     use runner_host::process::{ProcessStatRead, read_process_stat_checked};
+    use runner_types::ids::RunId;
     use std::os::unix::fs::PermissionsExt;
     use tokio::io::AsyncWriteExt;
     use tracing::Level;
@@ -2241,10 +2242,16 @@ exit 42
         let old_descendant_pid = wait_for_pid_file(&descendant_path).await;
         let environment = std::fs::read_to_string(fake_mitmdump.with_extension("env")).unwrap();
         let old_launch = PathBuf::from(environment.lines().next().unwrap());
+        let usage = MitmUsageHandle::from(&proxy);
+        let run_id = RunId::new_v4();
+        let frozen_usage = usage.for_run(run_id);
+        let initial_generation = frozen_usage.generation().unwrap().to_owned();
 
         let gate = crate::test_fixtures::ReapGate::new();
         proxy.set_reap_gate_for_test(gate.clone());
         let restart = proxy.begin_restart();
+        assert!(usage.for_run(run_id).generation().is_none());
+        assert_eq!(frozen_usage.generation(), Some(initial_generation.as_str()));
         let restart_task = tokio::spawn(restart.spawn());
         tokio::time::timeout(Duration::from_secs(2), gate.entered.notified())
             .await
@@ -2268,7 +2275,15 @@ exit 42
         );
         assert!(!old_launch.exists(), "restart left old launch directory");
         proxy.complete_restart(child);
+        let replacement_usage = usage.for_run(run_id);
+        assert!(replacement_usage.generation().is_some());
+        assert_ne!(
+            replacement_usage.generation(),
+            Some(initial_generation.as_str())
+        );
+        assert_eq!(frozen_usage.generation(), Some(initial_generation.as_str()));
         proxy.kill_now().await.unwrap();
+        assert!(usage.for_run(run_id).generation().is_none());
         assert_no_launch_dirs(&runtime_dir).await;
     }
 
@@ -2343,7 +2358,14 @@ exit 42
                 .set_test_cleanup_stat_read(descendant_pid, proc_root);
         }
 
+        let usage = MitmUsageHandle::from(&proxy);
+        let run_id = RunId::new_v4();
+        let frozen_usage = usage.for_run(run_id);
+        let initial_generation = frozen_usage.generation().unwrap().to_owned();
+
         let stopped = proxy.stop().await;
+        assert!(usage.for_run(run_id).generation().is_none());
+        assert_eq!(frozen_usage.generation(), Some(initial_generation.as_str()));
         if expect_success {
             stopped.unwrap();
             assert!(!launch_path.exists(), "graceful stop left launch directory");

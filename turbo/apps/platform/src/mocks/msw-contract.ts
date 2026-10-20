@@ -158,6 +158,10 @@ class ContractHttpHandler extends HttpHandler {
 }
 
 function routePattern(route: AppRoute): string | RegExp {
+  if (route.path === "/api/connector-accounts/:connectionId") {
+    // Account detail cannot swallow static list endpoints.
+    return /\/api\/connector-accounts\/(?!connections$|summaries$)([^/]+)$/;
+  }
   if (route.path === "/api/chat-threads/:id") {
     // Keep thread detail mocks from swallowing static sibling routes while
     // still accepting the descriptive non-UUID thread ids used by UI tests.
@@ -171,6 +175,12 @@ function routeParamsForRequest<R extends AppRoute>(
   params: PathParams,
   url: URL,
 ): InferParams<R> {
+  if (route.path === "/api/connector-accounts/:connectionId") {
+    return {
+      ...params,
+      connectionId: url.pathname.split("/").pop() ?? "",
+    } as InferParams<R>;
+  }
   if (route.path === "/api/chat-threads/:id") {
     return {
       ...params,

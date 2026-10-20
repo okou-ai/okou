@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import type { PublicConnectorCatalogStatusReaderItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogAuthMethodSummary,
@@ -158,8 +159,22 @@ export function stubConnectorCatalog(
   });
 }
 
+export function catalogStatusMetadata(
+  overrides: Parameters<typeof catalogStatusItem>[0],
+): PublicConnectorCatalogStatusReaderItem {
+  const item: PublicConnectorCatalogStatusReaderItem =
+    catalogStatusItem(overrides);
+  delete item.connected;
+  delete item.connectionStatus;
+  delete item.connection;
+  delete item.scopeMismatch;
+  delete item.authMethodSupportsRefresh;
+  delete item.tokenExpiresAt;
+  return item;
+}
+
 export function stubConnectorCatalogStatus(
-  connectors: readonly PublicConnectorCatalogStatusItem[],
+  connectors: readonly PublicConnectorCatalogStatusReaderItem[],
   origin = "http://localhost:3000",
 ) {
   return http.get(`${origin}/api/connector-catalog/status`, () => {

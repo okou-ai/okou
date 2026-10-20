@@ -21,7 +21,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorAutomaticContract,
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOpenIdStartContract,
@@ -29,6 +28,10 @@ import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
+  builtinConnectorAutomaticReaderResponseSchema,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type {
   InitClientArgs,
@@ -41,9 +44,9 @@ import type {
   PublicConnectorCatalogIcon,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  builtinConnectors$,
   connectorCatalogItemForSlug,
   relatedConnectorCatalog,
+  withConnectorCompletion,
   reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
 import { replaceSearchParams$, searchParams$ } from "../../route.ts";
@@ -60,11 +63,12 @@ import {
   tapError,
   withCleanup,
   onRejection,
+  settle,
 } from "../../utils.ts";
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
 import { agents$ } from "../../agent.ts";
 import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
-import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
+import { connectedConnectorTargetKeys$ } from "../connector-accounts.ts";
 import { sanitizeTokenInputRecord } from "./token-input.ts";
 import { IN_VITEST } from "../../../env.ts";
 import { connectorRedirectingPath } from "../../connectors-page/connector-redirecting.ts";
@@ -76,14 +80,15 @@ import {
   openConnectorDirectoryScope$,
 } from "./connector-directory-route.ts";
 import type {
-  PlatformBuiltinConnector,
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorAccountMutationIntent,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
 import {
   readConnectorAccountCount,
+  readConnectorAccountPage,
   readConnectorOAuthCompletion,
+  readConnectorAccountCompletion,
 } from "./connector-accounts.ts";
 
 type PostConnectOptions = {
@@ -118,23 +123,46 @@ const resolveConnectorPostConnectOptions$ = command(
     options: PostConnectOptions,
     signal: AbortSignal,
   ): Promise<PostConnectOptions> => {
+    let account = options.account;
+    const page = options.useDefaultConnectorProjection
+      ? await readConnectorAccountPage(
+          get(apiClient$),
+          { kind: "builtin", connectorSlug },
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
+    if (page) {
+      if (page.defaultConnection) {
+        account = {
+          intent: "reconnect",
+          connectionId: page.defaultConnection.id,
+        };
+      } else if (page.connections.length > 0) {
+        throw new Error(
+          "This connector has saved accounts but no default. Choose an account in Connectors settings.",
+        );
+      } else {
+        account = { intent: "add" };
+      }
+    }
     if (!options.authorizeVisibleAgents) {
-      return options;
+      return { ...options, account };
     }
     const authorizeVisibleAgents =
-      options.account.intent === "add" &&
-      (await readConnectorAccountCount(
-        get(apiClient$),
-        { kind: "builtin", connectorSlug },
-        signal,
-      )) === 0;
-    return { ...options, authorizeVisibleAgents };
+      account.intent === "add" &&
+      (page?.connections.length ??
+        (await readConnectorAccountCount(
+          get(apiClient$),
+          { kind: "builtin", connectorSlug },
+          signal,
+        ))) === 0;
+    return { ...options, account, authorizeVisibleAgents };
   },
 );
 
 const reloadConnectorConnectionState$ = command(({ set }) => {
   set(reloadBuiltinConnectors$);
-  set(reloadConnectorAccountSummaries$);
 });
 // ---------------------------------------------------------------------------
 // Derived state
@@ -368,12 +396,22 @@ function connectorTokenExpiresAtMs(
 export function builtinConnectorCurrentConnectionStatus(
   connector: PlatformConnectorCatalogConnectItem,
   nowMs = now(),
-): PublicConnectorCatalogConnectionStatus {
+): PublicConnectorCatalogConnectionStatus | "unavailable" {
+  if (connector.connectionStatus === undefined) {
+    return "unavailable";
+  }
   if (connector.connectionStatus === "not-connected") {
     return "not-connected";
   }
-  if (!connector.authMethodSupportsRefresh) {
-    const tokenExpiresAtMs = connectorTokenExpiresAtMs(connector);
+  const tokenExpiresAtMs = connectorTokenExpiresAtMs(connector);
+  if (
+    connector.connectionStatus !== "reconnect-required" &&
+    tokenExpiresAtMs !== null &&
+    connector.authMethodSupportsRefresh === undefined
+  ) {
+    return "unavailable";
+  }
+  if (connector.authMethodSupportsRefresh === false) {
     if (tokenExpiresAtMs !== null && tokenExpiresAtMs <= nowMs) {
       return "reconnect-required";
     }
@@ -387,7 +425,7 @@ export function builtinConnectorExpiryCountdownText(
 ): string | null {
   if (
     builtinConnectorCurrentConnectionStatus(connector, nowMs) !== "connected" ||
-    connector.authMethodSupportsRefresh
+    connector.authMethodSupportsRefresh !== false
   ) {
     return null;
   }
@@ -533,14 +571,23 @@ export const connectorCatalogDiscovery$ = relatedConnectorCatalog(
 
 export const relatedCatalogItems$ = computed(async (get) => {
   const { connectors } = await get(connectorCatalogDiscovery$);
-  const items = [...connectors];
+  const items = connectors.map(withConnectorCompletion);
+  const read = await settle(get(connectedConnectorTargetKeys$));
+  // An unavailable status read leaves metadata browsable in provider order.
+  if (!read.ok) {
+    return items;
+  }
+  const connectedTargets = read.value;
+  const hasAccounts = (slug: ConnectorSlug) => {
+    return connectedTargets.has(`builtin:${slug}`);
+  };
 
   // Sort connected connectors to the top of the list
   items.sort((a, b) => {
-    if (a.connected === b.connected) {
+    if (hasAccounts(a.slug) === hasAccounts(b.slug)) {
       return 0;
     }
-    return a.connected ? -1 : 1;
+    return hasAccounts(a.slug) ? -1 : 1;
   });
 
   return items;
@@ -570,6 +617,8 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
       : null;
 
   const relatedCatalogItems = await get(relatedCatalogItems$);
+  const connectedTargets =
+    scope === "connected" ? await get(connectedConnectorTargetKeys$) : null;
   return relatedCatalogItems.filter((connector) => {
     if (!matchesConnectorSearch(keyword, connector)) {
       return false;
@@ -579,7 +628,10 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
     }
     // The connected scope is membership, not a filter: whatever else is
     // chosen, it only ever shows what this workspace has already connected.
-    if (scope === "connected" && !connector.connected) {
+    if (
+      scope === "connected" &&
+      !connectedTargets?.has(`builtin:${connector.slug}`)
+    ) {
       return false;
     }
     if (effectiveFilter.kind === "unshared") {
@@ -650,6 +702,7 @@ type ActiveConnectorExternalCodeState = {
   readonly code: string;
   readonly errorMessage: string | null;
   readonly authorizeVisibleAgents: boolean;
+  readonly account: PlatformConnectorAccountMutationIntent;
 };
 
 export type BuiltinConnectorOAuthDeviceAuthState =
@@ -934,6 +987,24 @@ type FinishConnectorConnectionOptions = PostConnectOptions & {
   readonly toastMessage?: string | null;
 };
 
+async function readCompletedBuiltinConnectorAccount(
+  createClient: ApiClientFactory,
+  connectorSlug: ConnectorSlug,
+  connectionId: string,
+  account: PlatformConnectorAccountMutationIntent,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (account.intent === "reconnect" && account.connectionId !== connectionId) {
+    throw new Error("Connector account response identity mismatch.");
+  }
+  return await readConnectorAccountCompletion(
+    createClient,
+    { kind: "builtin", connectorSlug },
+    connectionId,
+    signal,
+  );
+}
+
 const authorizeConnectorForVisibleAgents$ = command(
   async (
     { get, set },
@@ -1074,6 +1145,18 @@ export const submitBuiltinManualGrant$ = command(
         );
         connectorStateChanged = true;
         signal.throwIfAborted();
+        const connectionId = result.body.connectionId ?? result.body.id;
+        if (
+          !(await readCompletedBuiltinConnectorAccount(
+            createClient,
+            connectorSlug,
+            connectionId,
+            options.account,
+            signal,
+          ))
+        ) {
+          return false;
+        }
         await set(
           finishConnectorConnection$,
           connectorSlug,
@@ -1084,7 +1167,7 @@ export const submitBuiltinManualGrant$ = command(
           },
           signal,
         );
-        return { connectionId: result.body.id };
+        return { connectionId };
       })(),
       () => {
         set(internalConnectFlowState$, (current) => {
@@ -1183,6 +1266,18 @@ export const connectBuiltinConnectorNoAuth$ = command(
         );
         connectorStateChanged = true;
         signal.throwIfAborted();
+        const connectionId = result.body.connectionId ?? result.body.id;
+        if (
+          !(await readCompletedBuiltinConnectorAccount(
+            createClient,
+            connectorSlug,
+            connectionId,
+            options.account,
+            signal,
+          ))
+        ) {
+          return false;
+        }
         await set(
           finishConnectorConnection$,
           connectorSlug,
@@ -1193,7 +1288,7 @@ export const connectBuiltinConnectorNoAuth$ = command(
           },
           signal,
         );
-        return { connectionId: result.body.id };
+        return { connectionId };
       })(),
       () => {
         set(internalConnectFlowState$, (current) => {
@@ -1515,6 +1610,19 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
 
         if (pollResult.status === "complete") {
           signal.throwIfAborted();
+          const connectionId =
+            pollResult.connectionId ?? pollResult.connector.id;
+          if (
+            !(await readCompletedBuiltinConnectorAccount(
+              get(apiClient$),
+              connectorSlug,
+              connectionId,
+              options.account,
+              signal,
+            ))
+          ) {
+            return { stop: true };
+          }
           await set(
             finishConnectorConnection$,
             connectorSlug,
@@ -1531,7 +1639,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           );
           return {
             stop: true,
-            connectionId: pollResult.connector.id,
+            connectionId,
           };
         }
 
@@ -1968,7 +2076,7 @@ const connectConnectorExternalCodeCommand$ = command(
             client.create({
               params: { connectorSlug },
               body: {
-                account: args.account,
+                account: options.account,
                 authMethod,
                 ...(shouldAuthorizeAgent(options)
                   ? { authorizeAgent: true as const }
@@ -2012,6 +2120,7 @@ const connectConnectorExternalCodeCommand$ = command(
           code: "",
           errorMessage: null,
           authorizeVisibleAgents: options.authorizeVisibleAgents ?? false,
+          account: options.account,
         });
         return true;
       })(),
@@ -2139,11 +2248,25 @@ const completeConnectorExternalCode$ = command(
           return false;
         }
 
+        const connectionId =
+          completeResult.body.connectionId ?? completeResult.body.connector.id;
+        if (
+          !(await readCompletedBuiltinConnectorAccount(
+            createClient,
+            connectorSlug,
+            connectionId,
+            current.account,
+            flowSignal,
+          ))
+        ) {
+          return false;
+        }
         await set(
           finishConnectorConnection$,
           connectorSlug,
           {
             ...options,
+            account: current.account,
             authorizeVisibleAgents: current.authorizeVisibleAgents,
             clearSelectedConnector: true,
             reloadConnectors: false,
@@ -2154,7 +2277,7 @@ const completeConnectorExternalCode$ = command(
           internalConnectorExternalCodeState$,
           createIdleConnectorExternalCodeState(),
         );
-        return { connectionId: completeResult.body.connector.id };
+        return { connectionId };
       })(),
       () => {
         if (connectorStateChanged) {
@@ -2349,16 +2472,6 @@ const onActiveConnectorChanged$ = command(
 // Connect command
 // ---------------------------------------------------------------------------
 
-function connectorMatchesAuthMethod(
-  connector: PlatformBuiltinConnector,
-  connectorSlug: ConnectorSlug,
-  authMethod: ConnectorAuthMethodId,
-): boolean {
-  return (
-    connector.slug === connectorSlug && connector.authMethod === authMethod
-  );
-}
-
 const defaultConnectorProjectionMatchesAuthMethod$ = command(
   async (
     { get },
@@ -2367,17 +2480,19 @@ const defaultConnectorProjectionMatchesAuthMethod$ = command(
     connectionId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const { connectors } = await waitForOperation(
-      get(builtinConnectors$),
+    const page = await readConnectorAccountPage(
+      get(apiClient$),
+      { kind: "builtin", connectorSlug },
       signal,
     );
     signal.throwIfAborted();
-    return connectors.some((connector) => {
-      return (
-        connectorMatchesAuthMethod(connector, connectorSlug, authMethod) &&
-        connector.id === connectionId
-      );
-    });
+    const account = page.defaultConnection;
+    return (
+      account?.id === connectionId &&
+      account.authMethod === authMethod &&
+      account.connectionStatus === "connected" &&
+      account.setupStatus === "complete"
+    );
   },
 );
 
@@ -2388,13 +2503,12 @@ const startConnectorBrowserAuthorization$ = command(
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
       readonly agentId: string | undefined;
-      readonly account: PlatformConnectorAccountMutationIntent;
       readonly options: PostConnectOptions;
     },
     signal: AbortSignal,
   ) => {
     const body = {
-      account: args.account,
+      account: args.options.account,
       authMethod: args.method.id,
       ...(shouldAuthorizeAgent(args.options)
         ? { authorizeAgent: true as const }
@@ -2406,7 +2520,7 @@ const startConnectorBrowserAuthorization$ = command(
       body,
     };
     if (args.method.grantKind === "automatic") {
-      return await accept(
+      const result = await accept(
         get(apiClient$)(builtinConnectorAutomaticContract, {
           apiBase: "api",
         }).start({
@@ -2415,6 +2529,11 @@ const startConnectorBrowserAuthorization$ = command(
         }),
         [200],
       );
+      signal.throwIfAborted();
+      return {
+        ...result,
+        body: builtinConnectorAutomaticReaderResponseSchema.parse(result.body),
+      };
     }
     if (args.method.grantKind === "openid-auth") {
       return await accept(
@@ -2454,7 +2573,6 @@ const openConnectorOAuthAuthCodeWindow$ = command(
       readonly connectorLabel: string;
       readonly connectorIcon: PublicConnectorCatalogIcon;
       readonly agentId: string | undefined;
-      readonly account: PlatformConnectorAccountMutationIntent;
       readonly beforeStart: (
         signal: AbortSignal,
       ) => Promise<PostConnectOptions>;
@@ -2529,7 +2647,7 @@ const openConnectorOAuthAuthCodeWindow$ = command(
           return {
             kind: "connected" as const,
             options,
-            connectionId: startResult.body.connectedAccountId,
+            connectionId: startResult.body.connectionId,
           };
         }
 
@@ -2569,7 +2687,7 @@ const openConnectorOAuthAuthCodeWindow$ = command(
 
 const finishAcceptedConnectorConnection$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
@@ -2578,6 +2696,17 @@ const finishAcceptedConnectorConnection$ = command(
     },
     signal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
+    if (
+      !(await readCompletedBuiltinConnectorAccount(
+        get(apiClient$),
+        args.connectorSlug,
+        args.connectionId,
+        args.options.account,
+        signal,
+      ))
+    ) {
+      return false;
+    }
     set(markConnectorConnectionCompleted$, signal);
     set(reloadConnectorConnectionState$);
     const isConnected =
@@ -2759,7 +2888,6 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
     }
 
     const flow = createConnectorConnectFlowState(connectorSlug);
-    const account = options.account;
     set(internalConnectFlowState$, flow);
     set(internalPollingOAuthAuthCodeConnectorSlug$, connectorSlug);
     const release = () => {
@@ -2783,7 +2911,6 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
             connectorLabel: options.connectorLabel ?? connectorSlug,
             connectorIcon: options.connectorIcon,
             agentId: options.agentId,
-            account,
             beforeStart: async (sig) => {
               const resolvedOptions = await set(
                 resolveConnectorPostConnectOptions$,
@@ -2816,7 +2943,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
                   connectorSlug,
                   method,
                   options: oauthStart.options,
-                  account,
+                  account: oauthStart.options.account,
                   oauthStart,
                 },
                 signal,

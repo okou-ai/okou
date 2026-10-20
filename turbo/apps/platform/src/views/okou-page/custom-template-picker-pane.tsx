@@ -48,7 +48,12 @@ import {
 import { TemplateSourceSection } from "./template-source-section.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { normalizeTemplateTitle } from "./template-detail-layout.tsx";
-import { TEMPLATE_CARD_SHADOW, TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
+import {
+  TEMPLATE_CARD_GRID,
+  TEMPLATE_CARD_SHADOW,
+  TEMPLATE_TILE_SCRIM,
+  TEMPLATE_TILE_USE,
+} from "./template-tile.ts";
 import {
   cancelDeleteCustomTemplate$,
   cancelRenameCustomTemplate$,
@@ -395,10 +400,7 @@ function CustomTemplateIllustrationCard({
         ) : null}
         <div className="flex items-center justify-between gap-3 px-3.5 py-3">
           <div className="flex min-w-0 flex-col gap-0.5">
-            <p
-              className="min-w-0 truncate text-sm font-semibold text-foreground"
-              title={template.title}
-            >
+            <p className="min-w-0 truncate text-sm font-semibold text-foreground">
               {template.title}
             </p>
             <CustomTemplateMeta template={template} />
@@ -486,21 +488,20 @@ function CustomTemplateCard({
         </button>
         {/* Beside the preview rather than inside it: the tile opens the
             template, and using it is a different decision from looking at
-            it. Revealed on hover like the actions menu above, and kept
-            reachable where hover does not exist. */}
-        <div className="absolute bottom-2 right-2 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              onSelect(template);
-            }}
-          >
-            {t(($) => {
-              return $.artifacts.templates.use;
-            })}
-          </Button>
-        </div>
+            it. The built-in tiles' own Use, so one tab never shows two
+            button sizes; it reveals on hover and stays reachable where hover
+            does not exist. */}
+        <button
+          type="button"
+          className={TEMPLATE_TILE_USE}
+          onClick={() => {
+            onSelect(template);
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.templates.use;
+          })}
+        </button>
         {template.canManage ? (
           <CustomTemplateActions
             template={template}
@@ -523,10 +524,7 @@ function CustomTemplateCard({
         ) : null}
       </div>
       <div className="flex min-w-0 flex-col gap-1 px-0.5 pb-1 pt-2">
-        <p
-          className="min-w-0 truncate text-sm font-medium leading-5 text-foreground"
-          title={template.title}
-        >
+        <p className="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
           {template.title}
         </p>
         <CustomTemplateMeta template={template} />
@@ -799,13 +797,13 @@ export function CustomTemplatePickerSection({
       : null;
   return (
     <>
-      <TemplateSourceSection source="custom" count={templates?.length}>
+      <TemplateSourceSection source="custom">
         {catalog.state === "hasError" ? <CustomTemplatesLoadError /> : null}
         <div
           className={
             kind === "illustration"
               ? "columns-[244px] gap-4"
-              : "grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3"
+              : TEMPLATE_CARD_GRID
           }
         >
           <div

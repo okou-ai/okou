@@ -146,7 +146,6 @@ import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
 import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
-import { runChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
@@ -182,6 +181,8 @@ import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
   completeExactReconnectChatAction$,
+  completeCustomConnectorChatAction$,
+  completeCatalogConnectorChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -1203,7 +1204,6 @@ function ChatThreadEmojiCategoryRail({
             aria-current={selected ? "location" : undefined}
             aria-controls={chatThreadEmojiSectionId(category.key)}
             aria-label={category.label}
-            title={category.label}
             className={cn(
               "relative flex h-8 flex-1 items-center justify-center rounded-lg transition-colors hover:bg-state-hover hover:text-foreground focus-visible:bg-state-hover focus-visible:text-foreground",
               selected ? "text-foreground" : "text-muted-foreground",
@@ -1565,7 +1565,7 @@ function ChatThreadEmojiGrid({
               item.name,
               shortcodeNames,
             )}
-            title={shortcutLabel}
+            aria-description={shortcutLabel}
             // The focus ring is inset because the feed scrolls: an offset ring
             // on the outer columns and on the first and last rows would be
             // clipped by the feed's own overflow box.
@@ -4155,7 +4155,6 @@ function RecommendedFollowupList({
           <button
             key={followup.prompt}
             type="button"
-            title={followup.prompt}
             className={cn(
               "group flex text-left transition-colors",
               // A quick reply sizes to its own text, so a short suggestion
@@ -4611,9 +4610,9 @@ function ChatConnectorActionConnectModal() {
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
-  const runCallback = useSet(runChatActionCallback$);
   const completeExactReconnect = useSet(completeExactReconnectChatAction$);
-  const pageSignal = useGet(pageSignal$);
+  const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
+  const completeCatalogConnector = useSet(completeCatalogConnectorChatAction$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
 
@@ -4629,16 +4628,11 @@ function ActiveChatConnectorActionConnectModal() {
       await completeExactReconnect(active, connectionId, attemptSignal);
       return;
     }
-    if (active.callbackPrompt && active.threadId) {
-      await runCallback(
-        {
-          threadId: active.threadId,
-          agentId: active.agentId,
-          callbackPrompt: active.callbackPrompt,
-        },
-        pageSignal,
-      );
+    if (active.kind === "custom") {
+      await completeCustomConnector(active, attemptSignal);
+      return;
     }
+    await completeCatalogConnector(active, attemptSignal);
   };
 
   if (active.kind === "custom") {
@@ -5397,7 +5391,7 @@ function AssistantErrorCard({
                 descriptionClassName,
                 pending && "invisible",
               )}
-              title={pending ? undefined : accessibleDescription}
+              aria-description={pending ? undefined : accessibleDescription}
               aria-hidden={pending ? true : undefined}
             >
               {description}
@@ -5423,6 +5417,12 @@ function AssistantErrorCard({
 }
 
 type StructuredFailureTitle = () => string;
+
+function inputTooLargeTitle(): string {
+  return i18n.t(($) => {
+    return $.chat.errors.recovery.inputTooLargeTitle;
+  });
+}
 
 function filesystemFullTitle(): string {
   return i18n.t(($) => {
@@ -5473,11 +5473,8 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.contextWindowTitle;
     });
   },
-  input_too_large: () => {
-    return i18n.t(($) => {
-      return $.chat.errors.recovery.inputTooLargeTitle;
-    });
-  },
+  input_too_large: inputTooLargeTitle,
+  provider_image_too_large: inputTooLargeTitle,
   output_token_limit: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.outputLimitTitle;
@@ -5628,6 +5625,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
   context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
   input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
+  provider_image_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
   output_token_limit: FAILURE_DESCRIPTIONS.outputLimit,
   provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
   provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
@@ -5670,6 +5668,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "terms_acceptance_required" ||
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
+    reason === "provider_image_too_large" ||
     reason === "session_history_limit"
   ) {
     return AlertCircle;
@@ -5678,7 +5677,11 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 }
 
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
-  return reason !== "insufficient_credits" && reason !== "input_too_large";
+  return (
+    reason !== "insufficient_credits" &&
+    reason !== "input_too_large" &&
+    reason !== "provider_image_too_large"
+  );
 }
 
 function assistantRecoveryTitle(
@@ -6805,7 +6808,6 @@ function MessageAnnotation({
             { title: workflowTitle },
           )}
           className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
-          title={part.workflowName}
         >
           {content}
         </Link>
@@ -6822,7 +6824,6 @@ function MessageAnnotation({
           },
         )}
         className={className}
-        title={part.workflowName}
       >
         {content}
       </div>
@@ -6833,9 +6834,7 @@ function MessageAnnotation({
     return (
       <div className={className}>
         <McpMark size={15} />
-        <span className="min-w-0 truncate" title={label}>
-          {label}
-        </span>
+        <span className="min-w-0 truncate">{label}</span>
       </div>
     );
   }
@@ -6899,7 +6898,6 @@ function AgentRunSourceMessageAnnotation({
         { title: part.titleSnapshot },
       )}
       className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
-      title={part.titleSnapshot}
     >
       <AvatarFromUrl
         avatarUrl={agent?.avatarUrl}
@@ -6926,8 +6924,8 @@ function UserMessageTemplateReference({
   return (
     <span
       data-structured-template-reference=""
+      aria-description={label}
       className={STRUCTURED_INLINE_REFERENCE_CLASS}
-      title={label}
     >
       <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
       <span className="min-w-0 truncate">{part.titleSnapshot}</span>
@@ -7048,7 +7046,6 @@ function UserMessageAgentReference({
         { name },
       )}
       className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      title={name}
     >
       <AvatarFromUrl
         avatarUrl={agent?.avatarUrl}
@@ -8242,7 +8239,6 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
         },
         { filename: name },
       )}
-      title={card.signals.url}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
         openArtifact(card, "lightbox");

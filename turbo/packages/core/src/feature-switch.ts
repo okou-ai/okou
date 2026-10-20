@@ -53,20 +53,19 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.IosChatAttachments]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS chat attachments",
-    description:
-      "Choose photos, videos and files in the native iOS chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.JsonTreePreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "JSON tree previews",
     description: "Explore JSON nodes in file and artifact previews.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  // Keep disabled until the live session and rollout gates in #41704 pass.
+  [FeatureSwitchKey.HostedSiteVisibility]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Website visibility",
+    description: "Control who can visit a published website.",
+    enabled: false,
   },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
@@ -82,14 +81,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Desktop Shell",
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.RemoteControlCliManagement]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Remote control CLI management",
-    description:
-      "Manage owned SSH, VNC and private-network configuration through the CLI.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -129,13 +120,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ComposerMentionHint]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Mention search hint",
-    description: "Show a search hint after typing @ in the chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
@@ -392,7 +376,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     displayName: "Codex execution (test only)",
     description:
-      "Test-only override to use Codex instead of Pi for Auto and supported ChatGPT subscription runs.",
+      "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
   [FeatureSwitchKey.PiMemory]: {
@@ -464,13 +448,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.DeliveryFormatGuidance]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Replace the hosted-HTML-first delivery guidance with a rule that picks docx, xlsx, PDF, CSV, a hosted view or a chat reply from what the user will do with the result.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

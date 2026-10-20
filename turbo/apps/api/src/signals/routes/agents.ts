@@ -41,14 +41,9 @@ import {
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 
 import {
-  deleteAgentInstructionsStorage$,
-  writeAgentInstructionsStorage$,
-} from "../services/agent-instructions-storage.service";
-import {
   updateUserBuiltinConnectors$,
   updateUserCustomConnectors,
 } from "../services/user-connectors.service";
-import { onRejection } from "../utils";
 import type { RouteEntry } from "../route-entry";
 
 // This is a soft limit: concurrent requests may both observe an available slot.
@@ -314,14 +309,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const agentId = randomUUID();
-  const cleanupInstructions = async (): Promise<void> => {
-    await set(
-      deleteAgentInstructionsStorage$,
-      { orgId: auth.orgId, agentName: agentId },
-      new AbortController().signal,
-    );
-  };
-
   const avatarUrl =
     body.data.avatarUrl === undefined ? randomAvatarUrl() : body.data.avatarUrl;
 
@@ -333,63 +320,42 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     visibility,
   };
 
-  const createAgent = (async () => {
-    await set(
-      writeAgentInstructionsStorage$,
-      {
-        orgId: auth.orgId,
-        agentName: agentId,
-        instructions: "",
-      },
-      signal,
-    );
+  // Public creation captures time before its combined count/write statement.
+  const createdAt = nowDate();
+  const values = {
+    id: agentId,
+    orgId: auth.orgId,
+    owner: auth.userId,
+    name: agentId,
+    instructions: "",
+    ...metadata,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  let blocked = false;
+  if (visibility === "public") {
+    const publicAgentCount = writeDb
+      .select({ value: count().as("value") })
+      .from(agents)
+      .where(and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")))
+      .as("public_agent_count");
+    const inserted = await writeDb
+      .insert(agents)
+      .select(
+        writeDb
+          .select(agentCreateSelection(values))
+          .from(publicAgentCount)
+          .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
+      )
+      .returning({ id: agents.id });
     signal.throwIfAborted();
-
-    // Public creation captures time before its combined count/write statement.
-    const createdAt = nowDate();
-    const values = {
-      id: agentId,
-      orgId: auth.orgId,
-      owner: auth.userId,
-      name: agentId,
-      instructions: "",
-      ...metadata,
-      createdAt,
-      updatedAt: createdAt,
-    };
-    let blocked = false;
-    if (visibility === "public") {
-      const publicAgentCount = writeDb
-        .select({ value: count().as("value") })
-        .from(agents)
-        .where(
-          and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")),
-        )
-        .as("public_agent_count");
-      const inserted = await writeDb
-        .insert(agents)
-        .select(
-          writeDb
-            .select(agentCreateSelection(values))
-            .from(publicAgentCount)
-            .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
-        )
-        .returning({ id: agents.id });
-      blocked = inserted.length === 0;
-    } else {
-      await writeDb.insert(agents).values(values);
-    }
-    // Check cancellation outside rejection cleanup after a successful commit.
-    if (blocked) {
-      await cleanupInstructions();
-    }
-    return { blocked };
-  })();
-
-  const result = await onRejection(createAgent, cleanupInstructions);
+    blocked = inserted.length === 0;
+  } else {
+    await writeDb.insert(agents).values(values);
+  }
   signal.throwIfAborted();
 
-  if (result.blocked) {
+  if (blocked) {
     return publicAgentCreateLimitError();
   }
 

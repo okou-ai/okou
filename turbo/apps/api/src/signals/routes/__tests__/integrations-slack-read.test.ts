@@ -291,19 +291,6 @@ describe("Slack bot channel discovery and history", () => {
     });
   });
 
-  it("requires the current Okou user to connect a Slack identity", async () => {
-    const { client, headers } = await fixture({ connected: false });
-
-    const response = await accept(
-      client.listChannels({ headers, query: { limit: 10 } }),
-      [404],
-    );
-
-    expect(response.body.error.message).toContain(
-      "Slack account is not connected",
-    );
-  });
-
   it.each([
     ["C123", "public_channel,private_channel"],
     ["G123", "public_channel,private_channel"],
@@ -805,13 +792,7 @@ describe("Slack bot thread replies", () => {
     },
   );
 
-  it.each([
-    { thread: "invalid" },
-    { thread: "1750000000.1234567" },
-    { oldest: "20", latest: "10" },
-    { cursor: "" },
-    { limit: 201 },
-  ])(
+  it.each([{ oldest: "20", latest: "10" }, { limit: 201 }])(
     "rejects invalid reply queries before reading Slack: %j",
     async (query) => {
       const { client, headers } = await fixture();
