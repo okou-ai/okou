@@ -401,69 +401,6 @@ function decryptSlackBotToken(args: {
   });
 }
 
-async function resolveEffectiveCompose(
-  db: Db,
-  userId: string,
-  orgId: string,
-): Promise<EffectiveComposeResolution> {
-  const defaultAgentId = await (async () => {
-    const [row] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-    return row?.defaultAgentId ?? null;
-  })();
-  if (!defaultAgentId) {
-    return { status: "not_configured" };
-  }
-  const configuredDefaultAgent = await (async () => {
-    const [agent] = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        displayName: agents.displayName,
-      })
-      .from(agents)
-      .where(
-        orgId
-          ? and(eq(agents.id, defaultAgentId), eq(agents.orgId, orgId))
-          : eq(agents.id, defaultAgentId),
-      )
-      .limit(1);
-    return agent;
-  })();
-  if (!configuredDefaultAgent) {
-    return { status: "not_found" };
-  }
-  const visibleDefaultAgent = await (async () => {
-    const [agent] = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        displayName: agents.displayName,
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, defaultAgentId),
-          eq(agents.orgId, orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
-        ),
-      )
-      .limit(1);
-    return agent;
-  })();
-  if (!visibleDefaultAgent) {
-    return { status: "not_accessible" };
-  }
-  return {
-    status: "resolved",
-    composeId: defaultAgentId,
-    agent: visibleDefaultAgent,
-  };
-}
-
 const postSlackAgentAdmissionNotice$ = command(
   async ({ get }, args: SlackAgentAdmissionNotice): Promise<void> => {
     const connection =
@@ -814,6 +751,14 @@ const cleanupWorkspaceInstallation$ = command(
   },
 );
 
+function appHomeAgentSelection() {
+  return {
+    id: agents.id,
+    name: agents.name,
+    displayName: agents.displayName,
+  };
+}
+
 const refreshOrgAppHome$ = command(
   async (
     { get },
@@ -864,11 +809,60 @@ const refreshOrgAppHome$ = command(
 
     let agentName: string | undefined;
     if (installation.orgId) {
-      const effectiveCompose = await resolveEffectiveCompose(
-        db,
-        connection.userId,
-        installation.orgId,
-      );
+      const homeDb = db;
+      const userId = connection.userId;
+      const orgId = installation.orgId;
+      const effectiveCompose =
+        await (async (): Promise<EffectiveComposeResolution> => {
+          const defaultAgentId = await (async () => {
+            const [row] = await homeDb
+              .select({ defaultAgentId: orgMetadata.defaultAgentId })
+              .from(orgMetadata)
+              .where(eq(orgMetadata.orgId, orgId))
+              .limit(1);
+            return row?.defaultAgentId ?? null;
+          })();
+          if (!defaultAgentId) {
+            return { status: "not_configured" };
+          }
+          const configuredDefaultAgent = await (async () => {
+            const [agent] = await homeDb
+              .select(appHomeAgentSelection())
+              .from(agents)
+              .where(
+                orgId
+                  ? and(eq(agents.id, defaultAgentId), eq(agents.orgId, orgId))
+                  : eq(agents.id, defaultAgentId),
+              )
+              .limit(1);
+            return agent;
+          })();
+          if (!configuredDefaultAgent) {
+            return { status: "not_found" };
+          }
+          const visibleDefaultAgent = await (async () => {
+            const [agent] = await homeDb
+              .select(appHomeAgentSelection())
+              .from(agents)
+              .where(
+                and(
+                  eq(agents.id, defaultAgentId),
+                  eq(agents.orgId, orgId),
+                  or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
+                ),
+              )
+              .limit(1);
+            return agent;
+          })();
+          if (!visibleDefaultAgent) {
+            return { status: "not_accessible" };
+          }
+          return {
+            status: "resolved",
+            composeId: defaultAgentId,
+            agent: visibleDefaultAgent,
+          };
+        })();
       if (effectiveCompose.status === "resolved") {
         agentName =
           effectiveCompose.agent.displayName ?? effectiveCompose.agent.name;
