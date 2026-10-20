@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.759.0](https://github.com/okou-ai/okou/compare/api-v1.758.0...api-v1.759.0) (2026-10-20)
+
+
+### Features
+
+* **computer-use:** require one-hour chat approval for desktop shell ([#41768](https://github.com/okou-ai/okou/issues/41768)) ([d8f366b](https://github.com/okou-ai/okou/commit/d8f366bc5167781907f2a1b1bc8dc250bd380e0a))
+
+
+### Bug Fixes
+
+* **api:** make delivery format guidance neutral ([#41765](https://github.com/okou-ai/okou/issues/41765)) ([56afa30](https://github.com/okou-ai/okou/commit/56afa30e971e9ce6c84cee03689f0cca74b1f20d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+    * @okouai/db bumped to 1.352.0
+    * @okouai/pi-agent-runtime bumped to 1.50.31
+
 ## [1.758.0](https://github.com/okou-ai/okou/compare/api-v1.757.0...api-v1.758.0) (2026-10-20)
 
 

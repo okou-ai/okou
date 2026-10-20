@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.235.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.0...runner-rs-v0.235.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** bound content-length parsing for aws body detection ([#41779](https://github.com/okou-ai/okou/issues/41779)) ([e153871](https://github.com/okou-ai/okou/commit/e153871ce905e645ae1fc4e6916ce7d13ca58df4))
+
+
+### Performance Improvements
+
+* **python:** yield during buffered model json inspection ([#41784](https://github.com/okou-ai/okou/issues/41784)) ([ab24d10](https://github.com/okou-ai/okou/commit/ab24d108b0311e80434f58b3cd486262c7033e08))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.235.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.20...runner-rs-v0.235.0) (2026-10-20)
 
 

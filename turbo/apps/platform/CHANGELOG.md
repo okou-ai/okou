@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1047.0](https://github.com/okou-ai/okou/compare/app-v0.1046.1...app-v0.1047.0) (2026-10-20)
+
+
+### Features
+
+* **computer-use:** require one-hour chat approval for desktop shell ([#41768](https://github.com/okou-ai/okou/issues/41768)) ([d8f366b](https://github.com/okou-ai/okou/commit/d8f366bc5167781907f2a1b1bc8dc250bd380e0a))
+
+
+### Bug Fixes
+
+* **app:** keep artifact upload actions independent ([#41775](https://github.com/okou-ai/okou/issues/41775)) ([84330ba](https://github.com/okou-ai/okou/commit/84330ba4ca058397de0d76d0e9fb3ed63408c746))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+
 ## [0.1046.1](https://github.com/okou-ai/okou/compare/app-v0.1046.0...app-v0.1046.1) (2026-10-20)
 
 
