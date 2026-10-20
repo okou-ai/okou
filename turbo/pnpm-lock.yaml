@@ -227,8 +227,8 @@ importers:
         specifier: ^6.2.3
         version: 6.2.3
       markdown-it:
-        specifier: 14.3.1
-        version: 14.3.1
+        specifier: 14.3.2
+        version: 14.3.2
       music-metadata:
         specifier: ^11.16.0
         version: 11.16.1
@@ -7482,8 +7482,8 @@ packages:
   magicast@0.5.5:
     resolution: {integrity: sha512-UicdXN8zQ3JHlxVq+28afMXPr1z7WNY6+7EJnzTdQWkTAlMLF5fNCCKxJHBQwGaNGR11581EiQmQzx73+MvszA==}
 
-  markdown-it@14.3.1:
-    resolution: {integrity: sha512-4Ej49aYTDFIQ+uBkfX8GBvJGccoARxxPep+7aWTs55ozbjQJpW9M26Fe53vnGgvLeVzva/amzjQQaQu9w0vMhA==}
+  markdown-it@14.3.2:
+    resolution: {integrity: sha512-sHHjZ5fJKlgrG4qns2YwVcdNep35h5fERrfkD2YNsb9UFk0UIHarbiTaHKVMlPuWAoiilyK8Fv/jAm11slsY7Q==}
     hasBin: true
 
   marked@17.0.5:
@@ -15742,7 +15742,7 @@ snapshots:
       '@babel/types': 7.29.8
       source-map-js: 1.2.2
 
-  markdown-it@14.3.1:
+  markdown-it@14.3.2:
     dependencies:
       argparse: 2.0.1
       entities: 4.5.0
