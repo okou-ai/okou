@@ -470,31 +470,31 @@ test.each(["pointer", "Space", "ArrowDown"] as const)(
   },
 );
 
-test("Keep arrow navigation on the focused account after default-first reordering", async () => {
-  const { manager, save } = await openDefaultAccountManager();
-  const user = userEvent.setup();
-  save.resolve();
-  act(() => {
-    accountRadio(manager, "Work").focus();
-  });
-
-  for (const [key, selected] of [
-    ["{ArrowDown}", "Personal"],
-    ["{ArrowDown}", "Work"],
-    ["{ArrowRight}", "Personal"],
-    ["{ArrowUp}", "Work"],
-    ["{ArrowLeft}", "Personal"],
-  ] as const) {
-    await user.keyboard(key);
-    await waitFor(() => {
-      expect(accountRadio(manager, selected)).toBeChecked();
-      expect(accountRadio(manager, selected)).toHaveAttribute("tabindex", "0");
+test.each(["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"] as const)(
+  "Keep %s navigation on the focused account after default-first reordering",
+  async (key) => {
+    const { manager, save } = await openDefaultAccountManager();
+    const user = userEvent.setup();
+    save.resolve();
+    act(() => {
+      accountRadio(manager, "Work").focus();
     });
-    expect(accountRadio(manager, selected)).toHaveFocus();
-    const rows = within(manager).getAllByRole("group");
-    expect(rows[0]).toHaveAttribute("aria-label", selected);
-  }
-});
+
+    for (const selected of ["Personal", "Work"] as const) {
+      await user.keyboard(`{${key}}`);
+      await waitFor(() => {
+        expect(accountRadio(manager, selected)).toBeChecked();
+        expect(accountRadio(manager, selected)).toHaveAttribute(
+          "tabindex",
+          "0",
+        );
+      });
+      expect(accountRadio(manager, selected)).toHaveFocus();
+      const rows = within(manager).getAllByRole("group");
+      expect(rows[0]).toHaveAttribute("aria-label", selected);
+    }
+  },
+);
 
 test("Keep the saved default account after a rejected change and allow retry", async () => {
   const { manager, save } = await openDefaultAccountManager(true);
