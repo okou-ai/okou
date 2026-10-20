@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { delay } from "signal-timers";
+import { delay, timeout } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
@@ -225,15 +225,22 @@ export async function withCleanup<T>(
   }
 }
 
-/** Add a deadline that cancels with AbortError, preserving the owner's reason. */
-export function abortAfter(ms: number, parentSignal: AbortSignal): AbortSignal {
+/** Add an owner-bound deadline, preserving the owner's reason on cancellation. */
+export function abortAfter(
+  ms: number,
+  parentSignal: AbortSignal,
+  timeoutReason: unknown = new DOMException(
+    "Operation timed out",
+    "AbortError",
+  ),
+): AbortSignal {
   const controller = new AbortController();
-  AbortSignal.timeout(ms).addEventListener(
-    "abort",
+  timeout(
     () => {
-      controller.abort(new DOMException("Operation timed out", "AbortError"));
+      controller.abort(timeoutReason);
     },
-    { once: true, signal: parentSignal },
+    ms,
+    { signal: parentSignal },
   );
   return AbortSignal.any([parentSignal, controller.signal]);
 }

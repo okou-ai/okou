@@ -7,6 +7,7 @@ import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/r
 import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 import {
+  abortAfter,
   createDeferredPromise,
   resetSignal,
   settle,
@@ -47,6 +48,7 @@ vi.mock("@axiomhq/js", () => {
   };
 });
 const context = testContext();
+const resetDeadline$ = resetSignal();
 
 function lifecycle() {
   return telemetry.ingest.mock.calls.flatMap(([, entries]) => {
@@ -69,6 +71,32 @@ function prepare() {
   vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "test-auth-telemetry");
   telemetry.ingest.mockReset();
 }
+
+test("Owner cancellation clears the auth deadline timer", () => {
+  prepare();
+  let timerId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const originalSetTimeout = globalThis.setTimeout;
+  const setTimeoutSpy = vi
+    .spyOn(globalThis, "setTimeout")
+    .mockImplementation((callback, ms, ...args) => {
+      if (ms === 5000) {
+        timerId = 1 as unknown as ReturnType<typeof globalThis.setTimeout>;
+        return timerId;
+      }
+      return originalSetTimeout(callback, ms, ...args);
+    });
+  const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+  try {
+    const owner = context.store.set(resetDeadline$, context.signal);
+    const signal = abortAfter(5000, owner);
+    context.store.set(resetDeadline$, context.signal);
+    expect(signal.aborted).toBeTruthy();
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timerId);
+  } finally {
+    setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
+  }
+});
 
 function tokenRequest(clientId = "secret-client-id") {
   return {
@@ -123,24 +151,30 @@ function client(instance: string, getToken?: AuthTokenProvider) {
   return ably;
 }
 
-const resetDeadline$ = resetSignal();
-
 function controlledDeadline() {
-  const signal = context.store.set(resetDeadline$, context.signal);
-  vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(signal);
+  let expire: (() => void) | undefined;
+  const originalSetTimeout = globalThis.setTimeout;
+  const setTimeoutSpy = vi
+    .spyOn(globalThis, "setTimeout")
+    .mockImplementation((callback, ms, ...args) => {
+      if (ms === 5000) {
+        expire = () => {
+          if (typeof callback !== "function") {
+            throw new Error("Auth deadline callback must be callable");
+          }
+          callback(...args);
+        };
+        return 1 as unknown as ReturnType<typeof globalThis.setTimeout>;
+      }
+      return originalSetTimeout(callback, ms, ...args);
+    });
   return () => {
-    // Deliver the native timeout reason at the observed boundary without
-    // sleeping or cancelling the connection's root lifetime.
-    const abort = AbortController.prototype.abort;
-    vi.spyOn(AbortController.prototype, "abort").mockImplementationOnce(
-      function (this: AbortController) {
-        abort.call(
-          this,
-          new DOMException("The operation timed out", "TimeoutError"),
-        );
-      },
-    );
-    context.store.set(resetDeadline$, context.signal);
+    const callback = expire;
+    if (!callback) {
+      throw new Error("Auth deadline was not scheduled");
+    }
+    setTimeoutSpy.mockRestore();
+    callback();
   };
 }
 
@@ -182,7 +216,7 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
   });
   const result = settle(ably.auth.requestToken());
   const signal = await tokenStarted.promise;
-  expire();
+  await expire();
   await expect(result).resolves.toMatchObject({
     ok: false,
     error: { code: 40_170 },
@@ -241,7 +275,7 @@ test("Auth deadline aborts an in-flight platform token HTTP request without exch
   const ably = client("deadline-http");
   const result = settle(ably.auth.requestToken());
   const signal = await started.promise;
-  expire();
+  await expire();
   await expect(result).resolves.toMatchObject({
     ok: false,
     error: { code: 40_170 },
