@@ -745,8 +745,8 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   expect(getAction("button", "Save and continue")).toBeInTheDocument();
   click(getAction("button", "How do I get connection credentials?"));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
-  for (let index = 0; index < 3; index++) {
-    click(getAction("button", "Next"));
+  for (let index = 0; index < 2; index++) {
+    click(getAction("button", "Continue"));
   }
   expect(screen.getByText(/click “Save and continue”/u)).toBeInTheDocument();
   click(getAction("button", "Return to form"));
@@ -794,18 +794,17 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
     "test-only-client-secret",
   );
   click(getAction("button", "How do I get connection credentials?"));
-  click(getAction("button", "Next"));
-  click(getAction("button", "Next"));
+  click(getAction("button", "Continue"));
   expect(
-    screen.getByText(
-      /tag:office-review, tag:remote-review to match the tags in the Okou form/u,
+    within(screen.getByRole("dialog")).getByText(
+      "tag:office-review, tag:remote-review",
     ),
   ).toBeVisible();
   click(screen.getByText("Can’t find the tag?"));
   expect(
     screen.getByText(/Definitions → Tags and click Create tag/u),
   ).toBeVisible();
-  click(getAction("button", "Return to form"));
+  await userEvent.keyboard("{Escape}");
   click(getAction("button", "Save and continue"));
   await screen.findByRole("heading", {
     name: "Enable SSH on the computer you want to connect",
@@ -1494,7 +1493,7 @@ async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
   click(getAction("button", "Enter existing credentials"));
   return await screen.findByRole("textbox", { name: "Network name" });
 }
-test("Cloudflare four-step guide preserves the draft and resumes after returning", async () => {
+test("Cloudflare three-step guide preserves the draft and resumes after returning", async () => {
   const name = await openNetworkForm("Cloudflare Access");
   await fill(name, "Cloudflare draft");
   const secret = screen.getByLabelText("Client Secret");
@@ -1511,24 +1510,23 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
     "target",
     "_blank",
   );
-  click(getAction("button", "Next"));
-  expect(screen.getByText("2 / 4")).toBeInTheDocument();
-  click(getAction("button", "Return to form"));
+  click(getAction("button", "Continue"));
+  expect(screen.getByText("2 / 3")).toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
   expect(name).toHaveValue("Cloudflare draft");
   expect(secret).toHaveValue("test-only-draft-secret");
   click(getAction("button", "Hide entered value"));
   expect(secret).toHaveAttribute("type", "password");
   click(getAction("button", "How do I get connection credentials?"));
-  expect(screen.getByText("2 / 4")).toBeInTheDocument();
+  expect(screen.getByText("2 / 3")).toBeInTheDocument();
   click(getAction("button", "Previous"));
-  expect(screen.getByText("1 / 4")).toBeInTheDocument();
-  click(getAction("button", "Next"));
-  click(getAction("button", "Next"));
-  expect(screen.getByText(/Action to Service Auth/u)).toBeInTheDocument();
+  expect(screen.getByText("1 / 3")).toBeInTheDocument();
+  click(getAction("button", "Continue"));
+  expect(screen.getByText("Service Auth")).toBeInTheDocument();
   expect(
     screen.getByText(/keep existing rules unchanged/u),
   ).toBeInTheDocument();
-  click(getAction("button", "Next"));
+  click(getAction("button", "Continue"));
   expect(
     screen.getByText("Return to the form and click Save network."),
   ).toBeInTheDocument();
@@ -1542,6 +1540,7 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
   ).toBeUndefined();
 });
 test("Tailscale guide uses current form tags and keeps secret inputs mounted through close", async () => {
+  const user = userEvent.setup();
   const name = await openNetworkForm("Tailscale");
   await fill(name, "Tailnet draft");
   click(screen.getByText("Allowed tags", { selector: "summary" }));
@@ -1550,13 +1549,12 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   await fill(secret, "test-only-draft-secret");
   click(getAction("button", "How do I get connection credentials?"));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
-  click(getAction("button", "Next"));
-  click(getAction("button", "Next"));
-  expect(
-    screen.getByText(
-      /tag:office, tag:review to match the tags in the Okou form/u,
-    ),
-  ).toBeInTheDocument();
+  click(getAction("button", "Continue"));
+  expect(screen.getByText("tag:office, tag:review")).toBeInTheDocument();
+  await user.click(getAction("button", "Copy Tags"));
+  expect(await navigator.clipboard.readText()).toBe("tag:office, tag:review");
+  await user.click(getAction("button", "Copy Keys → Auth keys"));
+  expect(await navigator.clipboard.readText()).toBe("Write");
   click(screen.getByText("Can’t find the tag?"));
   expect(
     screen.getByText(/Definitions → Tags and click Create tag/u),
@@ -1568,8 +1566,8 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   expect(name).toHaveValue("Tailnet draft");
   expect(secret).toHaveValue("test-only-draft-secret");
   click(getAction("button", "How do I get connection credentials?"));
-  expect(screen.getByText("3 / 4")).toBeInTheDocument();
-  click(getAction("button", "Next"));
+  expect(screen.getByText("2 / 3")).toBeInTheDocument();
+  click(getAction("button", "Continue"));
   expect(screen.getByText(/click “Save network”/u)).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   expect(getAction("button", "Save network")).toBeInTheDocument();
@@ -1578,14 +1576,9 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   await screen.findByRole("heading", { name: "Add a private network" });
   click(screen.getByText("Tailscale", { exact: true }));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
-  click(getAction("button", "Next"));
-  click(getAction("button", "Next"));
-  expect(
-    screen.getByText(
-      /tag:office, tag:review to match the tags in the Okou form/u,
-    ),
-  ).toBeInTheDocument();
-  click(getAction("button", "Return to form"));
+  click(getAction("button", "Continue"));
+  expect(screen.getByText("tag:office, tag:review")).toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
   expect(name).toHaveValue("Tailnet draft");
   expect(secret).toHaveValue("test-only-draft-secret");
 });
@@ -1613,7 +1606,7 @@ test("Private network starts with one neutral provider selector and both guides 
           ? "Tailscale connection setup"
           : "Cloudflare connection setup",
     });
-    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
     expect(
       getAction("button", "Enter existing credentials"),
     ).toBeInTheDocument();
