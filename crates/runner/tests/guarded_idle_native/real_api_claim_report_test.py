@@ -22,7 +22,15 @@ class RealApiClaimReportTests(unittest.TestCase):
         baseline.StatusFailureReportTests.setUp(self)
         self.orders = {}
         self.producer = {"format": "native-real-api-producer-v1", "source_sha": self.artifacts["source_sha"],
-            "source_manifest_sha256": "f"*64, "postgres": {"host": "127.0.0.1", "system_identifier": "12345",
+            "source_manifest_sha256": "f"*64, "source_archive_sha256": "e"*64,
+            "guest_build_receipt_sha256": "d"*64, "rootfs_build_receipt_sha256": "c"*64,
+            "node_sha256": "b"*64, "artifacts": copy.deepcopy(self.artifacts),
+            "binaries": {name: {"path": "/synthetic/"+name, "sha256": self.artifacts[key]}
+                         for name, key in (("host", "test_binary_sha256"), ("firecracker", "firecracker_sha256"),
+                                           ("kernel", "kernel_sha256"), ("rootfs", "rootfs_sha256"))},
+            "postgres": {"host": "127.0.0.1", "port": 55467, "version": "PostgreSQL synthetic",
+                "system_identifier": "12345", "data_directory": "/synthetic/pgdata",
+                "binary_sha256": "a"*64, "control_sha256": "9"*64, "migration_receipt_sha256": "8"*64,
                 "migration_completed": True, "invocation_owned": True}}
         producer_raw = json.dumps(self.producer).encode()
         (self.root/"producer.json").write_bytes(producer_raw)
@@ -179,6 +187,34 @@ class RealApiClaimReportTests(unittest.TestCase):
                 with self.assertRaises((ValueError, KeyError)):
                     self.validate()
         self.orders = original
+        self.validate()
+
+    def test_consistently_bound_but_wrong_producer_inputs_are_refused(self):
+        original = copy.deepcopy(self.producer)
+        changes = [
+            lambda p: p["artifacts"].update(rootfs_sha256="0"*64),
+            lambda p: p["binaries"]["host"].update(sha256="0"*64),
+            lambda p: p["binaries"]["kernel"].update(path="relative/kernel"),
+            lambda p: p["postgres"].update(migration_receipt_sha256="missing"),
+            lambda p: p.update(guest_build_receipt_sha256="g"*64),
+        ]
+        for change in changes:
+            producer = copy.deepcopy(original)
+            change(producer)
+            raw = json.dumps(producer).encode()
+            (self.root/"producer.json").write_bytes(raw)
+            sha = hashlib.sha256(raw).hexdigest()
+            self.collector["metadata"]["native_real_api_producer_sha256"] = sha
+            for inputs, api, events, witnesses, samples in self.orders.values():
+                api["producerSha256"] = sha
+            with self.assertRaises(ValueError):
+                self.validate()
+        raw = json.dumps(original).encode()
+        (self.root/"producer.json").write_bytes(raw)
+        sha = hashlib.sha256(raw).hexdigest()
+        self.collector["metadata"]["native_real_api_producer_sha256"] = sha
+        for inputs, api, events, witnesses, samples in self.orders.values():
+            api["producerSha256"] = sha
         self.validate()
 
 

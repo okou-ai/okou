@@ -22,7 +22,7 @@ ORDERS = ("a", "b", "both")
 MODES = ("fresh", "snapshot")
 
 
-def read_json(path):
+def read_regular(path):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor, "rb") as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
@@ -30,7 +30,15 @@ def read_json(path):
         raw = stream.read(16 * 1024 * 1024 + 1)
     if len(raw) > 16 * 1024 * 1024:
         raise ValueError("API evidence exceeds its bound")
-    return json.loads(raw, object_pairs_hook=pressure.unique_object)
+    return raw
+
+
+def read_json(path):
+    return json.loads(read_regular(path), object_pairs_hook=pressure.unique_object)
+
+
+def digest(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
 def identifier(value):
@@ -145,15 +153,23 @@ def validate_owner(events, terminal, policy, native_input, claim, role, order, s
 def validate(directory):
     directory = pathlib.Path(directory)
     producer_path = directory / "producer.json"
-    producer = read_json(producer_path)
-    producer_sha = hashlib.sha256(producer_path.read_bytes()).hexdigest()
+    producer_raw = read_regular(producer_path)
+    producer = json.loads(producer_raw, object_pairs_hook=pressure.unique_object)
+    producer_sha = hashlib.sha256(producer_raw).hexdigest()
     if (producer.get("format") != "native-real-api-producer-v1"
             or producer.get("postgres", {}).get("host") != "127.0.0.1"
             or not str(producer.get("postgres", {}).get("system_identifier", "")).isdigit()
             or producer.get("postgres", {}).get("migration_completed") is not True
             or producer.get("postgres", {}).get("invocation_owned") is not True
-            or not isinstance(producer.get("source_manifest_sha256"), str)
-            or len(producer["source_manifest_sha256"]) != 64):
+            or not pressure.integer(producer.get("postgres", {}).get("port"), 1)
+            or producer["postgres"]["port"] > 65535
+            or not producer.get("postgres", {}).get("version", "").startswith("PostgreSQL ")
+            or not pathlib.Path(producer.get("postgres", {}).get("data_directory", "")).is_absolute()
+            or any(not digest(producer.get("postgres", {}).get(key)) for key in
+                   ("binary_sha256", "control_sha256", "migration_receipt_sha256"))
+            or any(not digest(producer.get(key)) for key in
+                   ("source_manifest_sha256", "source_archive_sha256", "guest_build_receipt_sha256",
+                    "rootfs_build_receipt_sha256", "node_sha256"))):
         raise ValueError("actual API/PostgreSQL producer lineage is missing")
     summaries, source, identities, artifacts = {}, None, set(), None
     for order in ORDERS:
@@ -172,6 +188,14 @@ def validate(directory):
         if (producer.get("source_sha") != source or api.get("producerSha256") != producer_sha
                 or collector.get("metadata", {}).get("native_real_api_producer_sha256") != producer_sha):
             raise ValueError("API/PostgreSQL/native producer binding changed")
+        if producer.get("artifacts") != result["artifacts"]:
+            raise ValueError("producer inputs differ from observed native artifacts")
+        for name, key in (("host", "test_binary_sha256"), ("firecracker", "firecracker_sha256"),
+                          ("kernel", "kernel_sha256"), ("rootfs", "rootfs_sha256")):
+            binary = producer.get("binaries", {}).get(name, {})
+            if (binary.get("sha256") != result["artifacts"][key]
+                    or not pathlib.Path(binary.get("path", "")).is_absolute()):
+                raise ValueError("producer binary differs from observed native artifact")
         if inputs.get("order") != order or api.get("apiJoined") is not True:
             raise ValueError("API fixture was not joined under its original ordering")
         if set(inputs.get("cases", {})) != set(MODES) or len(api.get("claims", [])) != 4:
