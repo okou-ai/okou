@@ -54,13 +54,12 @@ async function regularFile(path: string): Promise<boolean> {
       throw new Error("Native claim readiness must be an owned regular file");
     }
     return true;
-  } else {
-    const error = result.error;
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
   }
+  const error = result.error;
+  if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    return false;
+  }
+  throw error;
 }
 
 /** Transport controls delay requests, never choose an application response. */
@@ -78,7 +77,7 @@ function claimGate(
     }
   };
   // Deferred rejections remain joined even if construction or an earlier gate fails.
-  void Promise.allSettled([
+  const deferred = Promise.allSettled([
     entered.promise,
     ready.promise,
     firstFinished.promise,
@@ -128,6 +127,7 @@ function claimGate(
   return {
     receipts,
     monitor,
+    deferred,
     entered: entered.promise,
     async forward(request: Request, dispatch: () => Promise<Response>) {
       const body: unknown = await request.clone().json();
@@ -137,7 +137,7 @@ function claimGate(
       }
       const runnerId = parsed.data.runnerIdentity.runnerId;
       const index = input.runnerIds.indexOf(runnerId);
-      if (index < 0) {
+      if (index === -1) {
         return dispatch();
       }
       if (arrivals.has(runnerId)) {
@@ -212,8 +212,8 @@ export async function startNativeClaimApi(
   if (!constructed.ok) {
     stop.abort();
     await Promise.allSettled(
-      [...gates.values()].map((gate) => {
-        return gate.monitor;
+      [...gates.values()].flatMap((gate) => {
+        return [gate.monitor, gate.deferred];
       }),
     );
     throw constructed.error;
@@ -240,7 +240,7 @@ export async function startNativeClaimApi(
             return path === `/api/runners/jobs/${entry.runId}/claim`;
           });
           const dispatch = async () => {
-            return app.request(request);
+            return await app.request(request);
           };
           const work =
             request.method === "POST" && gate
@@ -283,8 +283,8 @@ export async function startNativeClaimApi(
         ? [promisify(listener.close.bind(listener))()]
         : []),
       ...accepted,
-      ...[...gates.values()].map((gate) => {
-        return gate.monitor;
+      ...[...gates.values()].flatMap((gate) => {
+        return [gate.monitor, gate.deferred];
       }),
     ]);
     throw new AggregateError(
@@ -317,8 +317,8 @@ export async function startNativeClaimApi(
       const joined = await Promise.allSettled([
         promisify(live.listener.close.bind(live.listener))(),
         ...accepted,
-        ...[...gates.values()].map((gate) => {
-          return gate.monitor;
+        ...[...gates.values()].flatMap((gate) => {
+          return [gate.monitor, gate.deferred];
         }),
       ]);
       for (const result of joined) {

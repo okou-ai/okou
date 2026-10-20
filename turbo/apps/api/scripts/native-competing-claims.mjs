@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 import { startVitest } from "vitest/node";
 
 // Native execution has an explicit selection and budget; ordinary API CI keeps

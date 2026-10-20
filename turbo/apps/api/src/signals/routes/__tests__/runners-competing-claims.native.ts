@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { expect, it } from "vitest";
+import { expect, test } from "vitest";
 import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -31,7 +31,7 @@ const selectedInputs = z.object({
 });
 const claimSchema = z.object({ runId: z.uuid(), sandboxToken: z.string() });
 
-it("composes actual PostgreSQL claim arbitration with both native Guest owners", async () => {
+test("composes actual PostgreSQL claim arbitration with both native Guest owners", async () => {
   const raw: unknown = JSON.parse(
     await readFile(optionalEnv("OKOU_TEST_REAL_API_INPUTS") ?? "", "utf8"),
   );
@@ -209,7 +209,7 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
                 return receipt.status;
               })
               .sort(),
-          ).toEqual([200, 404]);
+          ).toStrictEqual([200, 404]);
           const winning = receipts.find((receipt) => {
             return receipt.status === 200;
           });

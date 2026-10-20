@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, test } from "vitest";
 import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -18,7 +18,7 @@ const context = testContext();
 const api = createRunsApi(context);
 const successfulClaim = z.object({ runId: z.uuid(), sandboxToken: z.string() });
 
-it.each([
+test.each([
   { first: "a", readyAtStart: false },
   { first: "b", readyAtStart: false },
   { first: "both", readyAtStart: false },
@@ -42,7 +42,7 @@ it.each([
       const fixture = await startNativeClaimApi(
         context,
         [{ runId: run.runId, runnerIds, controlDirectory: root, first }],
-        async (runId) => {
+        (runId) => {
           return api.readRun(owned.actor, runId);
         },
       );
@@ -81,7 +81,7 @@ it.each([
               return response.status;
             })
             .sort(),
-        ).toEqual([200, 404]);
+        ).toStrictEqual([200, 404]);
         const winningIndex = responses.findIndex((response) => {
           return response.status === 200;
         });
