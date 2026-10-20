@@ -373,51 +373,53 @@ export const declareSteeredInput$ = command(
  * effort: a failed expiry leaves an unconsumed budget that neither a later
  * run's steering nor the ordinary queue picker can consume.
  */
-export async function expireRunTimeBudgetInput(
-  db: Db,
-  args: ActiveInputRunThread,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const expired = await settle(revokePendingRunTimeBudgetInput(db, args));
-  signal.throwIfAborted();
-  if (!expired.ok) {
-    L.error("Failed to expire run time budget input", {
-      runId: args.runId,
-      error: expired.error,
-    });
-    return false;
-  }
-  return expired.value;
-}
+export const expireRunTimeBudgetInput$ = command(
+  async (
+    { set },
+    args: ActiveInputRunThread,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const expired = await settle(set(revokePendingRunTimeBudgetInput$, args));
+    signal.throwIfAborted();
+    if (!expired.ok) {
+      L.error("Failed to expire run time budget input", {
+        runId: args.runId,
+        error: expired.error,
+      });
+      return false;
+    }
+    return expired.value;
+  },
+);
 
-async function revokePendingRunTimeBudgetInput(
-  db: Db,
-  args: ActiveInputRunThread,
-): Promise<boolean> {
-  const sourceChatThreadId = args.chatThreadId;
-  const sourceEventIds = [runTimeBudgetEventIdForRun(args.runId)];
-  const [source] = await db
-    .select(activeInputSourceFields())
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, sourceChatThreadId),
-        inArray(chatEvents.id, sourceEventIds),
-      ),
-    );
-  if (!source) {
-    return false;
-  }
-  const revoked =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await db.execute(
-        chatEventReplacementInsertSql(replacementTarget(source), {
-          chatThreadId: args.chatThreadId,
-          eventType: "control.revoke",
-          runId: args.runId,
-        }),
-      ),
-    )[0] ?? null;
-  return revoked !== null;
-}
+const revokePendingRunTimeBudgetInput$ = command(
+  async ({ set }, args: ActiveInputRunThread): Promise<boolean> => {
+    const db = set(writeDb$);
+    const sourceChatThreadId = args.chatThreadId;
+    const sourceEventIds = [runTimeBudgetEventIdForRun(args.runId)];
+    const [source] = await db
+      .select(activeInputSourceFields())
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, sourceChatThreadId),
+          inArray(chatEvents.id, sourceEventIds),
+        ),
+      );
+    if (!source) {
+      return false;
+    }
+    const revoked =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await db.execute(
+          chatEventReplacementInsertSql(replacementTarget(source), {
+            chatThreadId: args.chatThreadId,
+            eventType: "control.revoke",
+            runId: args.runId,
+          }),
+        ),
+      )[0] ?? null;
+    return revoked !== null;
+  },
+);
