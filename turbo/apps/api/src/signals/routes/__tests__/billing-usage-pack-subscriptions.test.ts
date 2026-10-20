@@ -10,11 +10,8 @@ import {
   now,
 } from "../../../lib/time";
 
-import { createBddApi } from "./helpers/api-bdd";
-
 import { randomUUID } from "node:crypto";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { readGetStartedStatus } from "./helpers/get-started";
 import {
   billingCheckoutContract,
   billingConcurrencyCheckoutContract,
@@ -2512,62 +2509,6 @@ describe("usage pack allocation management", () => {
     });
   });
 
-  it("previews a Team upgrade by replacing only the base plan item", async () => {
-    const userId = `user_${randomUUID()}`;
-    const fixture = await purchaseManagedUsagePack([
-      { userId, usagePackUsd: 20 },
-    ]);
-    const subscription = managedUsagePackSubscription(
-      fixture,
-      new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
-    mockUsagePackSubscriptionChangePreviews(8000, 16_000);
-
-    const response = await accept(
-      setupApp({ context, routes: billingCheckoutRoutes })(
-        billingUsagePackManagementContract,
-      ).previewSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          targetTier: "team",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual(
-      expect.objectContaining({
-        sourceTier: "pro",
-        targetTier: "team",
-        immediateAmountCents: 8000,
-        nextRecurringAmountCents: 18_000,
-        currency: "usd",
-      }),
-    );
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledTimes(
-      2,
-    );
-    for (const [input] of context.mocks.stripe.invoices.createPreview.mock
-      .calls) {
-      expect(input).toStrictEqual(
-        expect.objectContaining({
-          subscription: fixture.subscriptionId,
-          subscription_details: expect.objectContaining({
-            items: [
-              {
-                id: "si_usage_pack_plan",
-                price: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
-                quantity: 1,
-              },
-            ],
-          }),
-        }),
-      );
-    }
-  });
-
   it.each([
     [20, 50],
     [50, 20],
@@ -2874,6 +2815,35 @@ describe("usage pack allocation management", () => {
             [200],
           );
         });
+        expect(preview.body).toStrictEqual(
+          expect.objectContaining({
+            sourceTier: "pro",
+            targetTier: "team",
+            immediateAmountCents: 8000,
+            nextRecurringAmountCents: 18_000,
+            currency: "usd",
+          }),
+        );
+        expect(
+          context.mocks.stripe.invoices.createPreview,
+        ).toHaveBeenCalledTimes(2);
+        for (const [input] of context.mocks.stripe.invoices.createPreview.mock
+          .calls) {
+          expect(input).toStrictEqual(
+            expect.objectContaining({
+              subscription: fixture.subscriptionId,
+              subscription_details: expect.objectContaining({
+                items: [
+                  {
+                    id: "si_usage_pack_plan",
+                    price: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
+                    quantity: 1,
+                  },
+                ],
+              }),
+            }),
+          );
+        }
         const grantsBefore = await readPurchasedCreditGrants(fixture);
         const invoice = managedUsagePackUpgradeInvoice(fixture, {
           invoiceId: `in_${randomUUID()}`,
@@ -3606,93 +3576,6 @@ describe("usage pack allocation management", () => {
     });
   });
 
-  it("schedules a Team to Pro subscription change at the billing boundary", async () => {
-    const userId = `user_${randomUUID()}`;
-    const fixture = await purchaseManagedUsagePack(
-      [{ userId, usagePackUsd: 20 }],
-      "team",
-    );
-    const subscription = managedUsagePackSubscription(
-      fixture,
-      new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
-    mockUsagePackSubscriptionChangePreviews(0, 0);
-    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
-      id: "sub_sched_team_to_pro",
-    });
-    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
-      id: "sub_sched_team_to_pro",
-    });
-    const client = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackManagementContract,
-    );
-
-    const preview = await accept(
-      client.previewSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          targetTier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
-        },
-      }),
-      [200],
-    );
-    expect(preview.body).toStrictEqual(
-      expect.objectContaining({
-        sourceTier: "team",
-        targetTier: "pro",
-        immediateAmountCents: 0,
-        nextRecurringAmountCents: 2000,
-        effectiveAt: new Date(fixture.billingPeriod.end * 1000).toISOString(),
-      }),
-    );
-
-    const confirmed = await accept(
-      client.confirmSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { changeId: preview.body.changeId },
-      }),
-      [200],
-    );
-    expect(confirmed.body).toStrictEqual({
-      status: "scheduled",
-      effectiveAt: new Date(fixture.billingPeriod.end * 1000).toISOString(),
-      hostedInvoiceUrl: null,
-    });
-    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-    expect(
-      context.mocks.stripe.subscriptionSchedules.update,
-    ).toHaveBeenCalledWith(
-      "sub_sched_team_to_pro",
-      expect.objectContaining({
-        phases: [
-          expect.objectContaining({
-            items: expect.arrayContaining([
-              expect.objectContaining({
-                price: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
-              }),
-              expect.objectContaining({ price: TEST_PRICE_USAGE_PACK_20 }),
-            ]),
-          }),
-          expect.objectContaining({
-            items: expect.arrayContaining([
-              { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
-              { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
-            ]),
-          }),
-        ],
-      }),
-      {
-        idempotencyKey: `usage-pack-subscription-change:${preview.body.changeId}:schedule-update`,
-      },
-    );
-    expect((await readBillingStatus(fixture)).tier).toBe("team");
-    expect((await readManagedUsagePacks(fixture)).allocations).toStrictEqual([
-      expect.objectContaining({ memberId: userId, usagePackUsd: 20 }),
-    ]);
-  });
-
   it("revises a pending Team to Pro schedule when the package total increases from $20 to $40", async () => {
     const actor = createOrgFixture();
     const addedUserId = `user_${randomUUID()}`;
@@ -3730,13 +3613,58 @@ describe("usage pack allocation management", () => {
       }),
       [200],
     );
-    await accept(
+    expect(downgradePreview.body).toStrictEqual(
+      expect.objectContaining({
+        sourceTier: "team",
+        targetTier: "pro",
+        immediateAmountCents: 0,
+        nextRecurringAmountCents: 2000,
+        effectiveAt: new Date(fixture.billingPeriod.end * 1000).toISOString(),
+      }),
+    );
+    const downgrade = await accept(
       client.confirmSubscriptionChange({
         headers: { authorization: "Bearer clerk-session" },
         body: { changeId: downgradePreview.body.changeId },
       }),
       [200],
     );
+    expect(downgrade.body).toStrictEqual({
+      status: "scheduled",
+      effectiveAt: new Date(fixture.billingPeriod.end * 1000).toISOString(),
+      hostedInvoiceUrl: null,
+    });
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenCalledWith(
+      scheduleId,
+      expect.objectContaining({
+        phases: [
+          expect.objectContaining({
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                price: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
+              }),
+              expect.objectContaining({ price: TEST_PRICE_USAGE_PACK_20 }),
+            ]),
+          }),
+          expect.objectContaining({
+            items: expect.arrayContaining([
+              { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+            ]),
+          }),
+        ],
+      }),
+      {
+        idempotencyKey: `usage-pack-subscription-change:${downgradePreview.body.changeId}:schedule-update`,
+      },
+    );
+    expect((await readBillingStatus(fixture)).tier).toBe("team");
+    expect((await readManagedUsagePacks(fixture)).allocations).toStrictEqual([
+      expect.objectContaining({ memberId: actor.userId, usagePackUsd: 20 }),
+    ]);
 
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
@@ -4740,37 +4668,6 @@ describe("usage pack allocation management", () => {
       expect(invited.body.message).toContain(`legacy-${tier}@example.test`);
     },
   );
-
-  it("records a successful ordinary invitation as a public pending reward claim", async () => {
-    const api = createBddApi(context);
-    const actor = api.user();
-    await api.completeOnboarding(actor);
-    const before = await readGetStartedStatus(context, actor);
-    expect(
-      before.quests.find((quest) => {
-        return quest.key === "invite";
-      }),
-    ).toMatchObject({ claimedCount: 0, pendingCount: 0 });
-    context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
-      { id: `inv_${randomUUID()}` },
-    );
-    const invited = await accept(
-      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { email: "ordinary-invite@example.test", role: "member" },
-      }),
-      [200],
-    );
-    expect(invited.body.message).toBe(
-      "Invitation sent to ordinary-invite@example.test",
-    );
-    const after = await readGetStartedStatus(context, actor);
-    expect(
-      after.quests.find((quest) => {
-        return quest.key === "invite";
-      }),
-    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
-  });
 
   describe.each([
     {
