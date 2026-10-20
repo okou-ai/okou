@@ -553,7 +553,6 @@
       },
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중",
-      "loadMore": "더 불러오기",
       "retry": "다시 시도"
     },
     "fileBadges": {
@@ -2167,10 +2166,10 @@
       "collapse": "접기",
       "copyLink": "링크 복사",
       "empty": "이 채팅의 결과물과 관련 채팅이 여기에 표시됩니다.",
-      "expand": "펼치기",
       "loadFailed": "리소스를 불러오지 못했습니다",
       "loading": "리소스 불러오는 중",
       "retry": "다시 시도",
+      "showMore": "더 보기",
       "title": "채팅 리소스"
     },
     "run": {

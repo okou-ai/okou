@@ -569,7 +569,6 @@
       },
       "kindIcon": "Artefato do tipo {{kind}}",
       "loading": "Carregando artefatos",
-      "loadMore": "Carregar mais",
       "retry": "Tentar novamente"
     },
     "fileBadges": {
@@ -2214,10 +2213,10 @@
       "collapse": "Recolher",
       "copyLink": "Copiar link",
       "empty": "Os artefatos e chats relacionados deste chat aparecem aqui.",
-      "expand": "Expandir",
       "loadFailed": "Não foi possível carregar os recursos",
       "loading": "Carregando recursos",
       "retry": "Tentar novamente",
+      "showMore": "Mostrar mais",
       "title": "Recursos da conversa"
     },
     "run": {

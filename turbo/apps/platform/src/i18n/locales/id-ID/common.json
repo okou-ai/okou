@@ -553,7 +553,6 @@
       },
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak",
-      "loadMore": "Muat lebih banyak",
       "retry": "Coba lagi"
     },
     "fileBadges": {
@@ -2167,10 +2166,10 @@
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
-      "expand": "Perluas",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loading": "Memuat sumber daya",
       "retry": "Coba lagi",
+      "showMore": "Tampilkan lebih banyak",
       "title": "Sumber daya chat"
     },
     "run": {
