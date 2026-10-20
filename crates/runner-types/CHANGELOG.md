@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/okou-ai/okou/compare/runner-types-v0.8.1...runner-types-v0.8.2) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
 ## [0.8.1](https://github.com/okou-ai/okou/compare/runner-types-v0.8.0...runner-types-v0.8.1) (2026-10-20)
 
 

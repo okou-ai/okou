@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.21...runner-executor-v0.14.22) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
 ## [0.14.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.20...runner-executor-v0.14.21) (2026-10-20)
 
 

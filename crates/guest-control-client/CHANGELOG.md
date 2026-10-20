@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.23.33](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.32...guest-control-client-v0.23.33) (2026-10-20)
+
 ## [0.23.32](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.31...guest-control-client-v0.23.32) (2026-10-20)
 
 ## [0.23.31](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.30...guest-control-client-v0.23.31) (2026-10-20)

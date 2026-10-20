@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.405.4](https://github.com/okou-ai/okou/compare/cli-v9.405.3...cli-v9.405.4) (2026-10-20)
+
+
+### Refactoring
+
+* require connector account default selection ([#41863](https://github.com/okou-ai/okou/issues/41863)) ([8324bc6](https://github.com/okou-ai/okou/commit/8324bc6bba77fe6626a44297f261d3beef0a29f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.582.2
+    * @okouai/core bumped to 8.774.5
+    * @okouai/pi-agent-runtime bumped to 1.50.35
+
 ## [9.405.3](https://github.com/okou-ai/okou/compare/cli-v9.405.2...cli-v9.405.3) (2026-10-20)
 
 

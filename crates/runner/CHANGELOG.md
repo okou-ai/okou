@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.235.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.4...runner-rs-v0.235.5) (2026-10-20)
+
+
+### Bug Fixes
+
+* **sandbox-firecracker:** retain cancelled physical pause custody ([#41856](https://github.com/okou-ai/okou/issues/41856)) ([f648f6d](https://github.com/okou-ai/okou/commit/f648f6ddb863ba069c99ba18274b1e0cfdd88f3c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.235.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.3...runner-rs-v0.235.4) (2026-10-20)
 
 

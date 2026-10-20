@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/okou-ai/okou/compare/ios-v0.14.0...ios-v0.15.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** quote assistant passages in chat drafts ([#41853](https://github.com/okou-ai/okou/issues/41853)) ([06785aa](https://github.com/okou-ai/okou/commit/06785aadea213019f4e9ecdc26c5bc1483249507))
+* **ios:** show settled credit usage for chat runs ([#41840](https://github.com/okou-ai/okou/issues/41840)) ([6931d82](https://github.com/okou-ai/okou/commit/6931d82185f10dc94b25acb56fa0d1d13c4086be))
+
+
+### Bug Fixes
+
+* **ios:** keep chat titles readable over scrolling history ([#41844](https://github.com/okou-ai/okou/issues/41844)) ([c41783d](https://github.com/okou-ai/okou/commit/c41783d5602554fca036f534ac84f09cdfcdce37))
+* **ios:** open message source chats in the app ([#41871](https://github.com/okou-ai/okou/issues/41871)) ([4c67ec9](https://github.com/okou-ai/okou/commit/4c67ec998e787dcd4b9e9ca17ace8aed6e089134))
+* **ios:** remove the redundant web conversation link ([#41877](https://github.com/okou-ai/okou/issues/41877)) ([8a4b623](https://github.com/okou-ai/okou/commit/8a4b623400075ad6820632f0dc3d1ab50b740228))
+
 ## [0.14.0](https://github.com/okou-ai/okou/compare/ios-v0.13.0...ios-v0.14.0) (2026-10-20)
 
 

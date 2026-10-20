@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.13...sandbox-firecracker-v0.53.14) (2026-10-20)
+
+
+### Bug Fixes
+
+* **sandbox-firecracker:** retain cancelled physical pause custody ([#41856](https://github.com/okou-ai/okou/issues/41856)) ([f648f6d](https://github.com/okou-ai/okou/commit/f648f6ddb863ba069c99ba18274b1e0cfdd88f3c))
+
 ## [0.53.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.12...sandbox-firecracker-v0.53.13) (2026-10-20)
 
 
