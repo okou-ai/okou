@@ -1,7 +1,0 @@
-Preparation marker for #41718 / #41444.
-
-This artifact contains complete nullable runner hostname heartbeat writers and
-resource-backed peerFinalizingPredecessor readers with owned post-claim waiting.
-API preference generation remains inactive. #41719 resolves this marker's first
-canonical introduction on main and separately checks actual API and Runner
-rollback artifacts before activating peer preferences.
