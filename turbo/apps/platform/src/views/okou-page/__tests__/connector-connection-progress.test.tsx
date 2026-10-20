@@ -540,20 +540,6 @@ test.each(["http", "mcp", "automatic"] as const)(
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
-    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-      return respond(200, {
-        summaries: authorized
-          ? [
-              {
-                target: account.target,
-                accountCount: 1,
-                attentionCount: 0,
-                defaultConnection: account,
-              },
-            ]
-          : [],
-      });
-    });
     mockConnectorOverviewAccountSummaries(context, () => {
       return authorized
         ? [

@@ -1,7 +1,6 @@
 import { createDocumentTemplateSignals } from "./document-template-picker.ts";
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
@@ -46,14 +45,6 @@ type NewThreadComputerAccess =
   | { readonly kind: "cloudBrowser" }
   | { readonly kind: "computerUse"; readonly hostId: string };
 
-async function computerAccessFromSavedCloudBrowserDefault(
-  cloudBrowserEnabled: Promise<boolean>,
-): Promise<NewThreadComputerAccess> {
-  return (await cloudBrowserEnabled)
-    ? { kind: "cloudBrowser" }
-    : { kind: "none" };
-}
-
 // Like the composer's model selection: `null` means the user has not picked
 // anything for the current draft and the default applies, while a value is the
 // user's own choice — including an explicit "no computer at all".
@@ -62,12 +53,9 @@ const internalNewThreadComputerAccess$ = state<NewThreadComputerAccess | null>(
 );
 
 export const newThreadCloudBrowserEnabled$ = computed(
-  (get): boolean | Promise<boolean> => {
+  (get): boolean | undefined => {
     const selection = get(internalNewThreadComputerAccess$);
-    if (selection !== null) {
-      return selection.kind === "cloudBrowser";
-    }
-    return get(cloudBrowserEnabledByDefault$);
+    return selection === null ? undefined : selection.kind === "cloudBrowser";
   },
 );
 
@@ -77,14 +65,8 @@ export const newThreadComputerUseHostId$ = computed((get): string | null => {
 });
 
 export const newThreadComputerAccess$ = computed(
-  (get): NewThreadComputerAccess | Promise<NewThreadComputerAccess> => {
-    const selection = get(internalNewThreadComputerAccess$);
-    if (selection !== null) {
-      return selection;
-    }
-    return computerAccessFromSavedCloudBrowserDefault(
-      get(cloudBrowserEnabledByDefault$),
-    );
+  (get): NewThreadComputerAccess | null => {
+    return get(internalNewThreadComputerAccess$);
   },
 );
 

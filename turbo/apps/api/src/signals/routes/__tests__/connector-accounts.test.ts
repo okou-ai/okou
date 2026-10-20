@@ -823,6 +823,21 @@ describe("connector account lifecycle routes", () => {
           return account.id;
         }),
     ).toStrictEqual([workId]);
+    const filteredCustomPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...primary.target, limit: 1, search: "Personal" },
+      }),
+      [200],
+    );
+    expect(filteredCustomPage.body.connections).toMatchObject([
+      { id: personalId, isDefault: false },
+    ]);
+    expect(filteredCustomPage.body.defaultConnection).toMatchObject({
+      id: workId,
+      target: primary.target,
+      isDefault: true,
+    });
     for (let selection = 0; selection < 2; selection += 1) {
       const selected = await accept(
         accountClient().setDefault({
@@ -866,6 +881,11 @@ describe("connector account lifecycle routes", () => {
             return account.id;
           }),
       ).toStrictEqual([defaultId]);
+      expect(listed.body.defaultConnection).toMatchObject({
+        id: defaultId,
+        target: group.target,
+        isDefault: true,
+      });
       for (const account of listed.body.connections) {
         expect(account.target).toStrictEqual(group.target);
       }
@@ -1010,7 +1030,10 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(next.body.connections).toHaveLength(1);
-    expect(next.body).not.toHaveProperty("defaultConnection");
+    expect(next.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
     expect(
       new Set([listed.body.connections[0]!.id, next.body.connections[0]!.id]),
     ).toStrictEqual(new Set([first.body.id, second.body.id]));
@@ -1029,7 +1052,10 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(beforeRename.body.connections).toStrictEqual([]);
-    expect(beforeRename.body).not.toHaveProperty("defaultConnection");
+    expect(beforeRename.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
 
     const renamed = await accept(
       accountClient().rename({
@@ -1088,7 +1114,11 @@ describe("connector account lifecycle routes", () => {
       { id: second.body.id, displayName: "Personal renamed", isDefault: true },
     ]);
     expect(afterRename.body.nextCursor).toBeNull();
-    expect(afterRename.body).not.toHaveProperty("defaultConnection");
+    expect(afterRename.body.defaultConnection).toMatchObject({
+      id: second.body.id,
+      displayName: "Personal renamed",
+      isDefault: true,
+    });
 
     const [currentFirst, currentSecond, currentFirstImpact] = await Promise.all(
       [
@@ -1217,6 +1247,11 @@ describe("connector account lifecycle routes", () => {
     );
     expect(remaining.body.connections).toHaveLength(1);
     expect(remaining.body.connections[0]).toMatchObject({
+      id: first.body.id,
+      displayName: "Work",
+      isDefault: true,
+    });
+    expect(remaining.body.defaultConnection).toMatchObject({
       id: first.body.id,
       displayName: "Work",
       isDefault: true,

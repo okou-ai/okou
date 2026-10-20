@@ -196,7 +196,9 @@ interface ComposerModelSignals extends ComposerModelUiSignals {
 
 interface ComposerComputerSignals {
   readonly computerUseHostId$: Computed<string | null>;
-  readonly cloudBrowserEnabled$: Computed<boolean | Promise<boolean>>;
+  readonly cloudBrowserEnabled$: Computed<
+    boolean | undefined | Promise<boolean | undefined>
+  >;
   readonly setComputerUseHostId$: Command<
     Promise<void>,
     [string | null, AbortSignal]
@@ -505,9 +507,15 @@ function createPaidToolHints(
   });
 }
 
-function composerRemoteAccessSignals(options: CreateComposerSignalsOptions) {
+function composerRemoteAccessSignals(
+  options: CreateComposerSignalsOptions,
+  connector: ComposerConnectorSignals,
+) {
   return {
-    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
+    remoteAccess$: threadRemoteAccess$(
+      options.threadId ?? "",
+      connector.resources.openedVersion$,
+    ),
     pendingRemoteAccess:
       options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
   };
@@ -584,7 +592,7 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     threadId: options.threadId,
-    ...composerRemoteAccessSignals(options),
+    ...composerRemoteAccessSignals(options, connector),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,

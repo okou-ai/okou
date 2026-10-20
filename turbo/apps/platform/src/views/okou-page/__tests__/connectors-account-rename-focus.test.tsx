@@ -62,6 +62,10 @@ function mockRenameAccounts({
             })
           : accounts,
         nextCursor: null,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
       });
     },
   );

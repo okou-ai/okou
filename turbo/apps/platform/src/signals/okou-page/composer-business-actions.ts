@@ -15,7 +15,6 @@ import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
 import type { ComposerConnectorSignals } from "./connectors.ts";
 import { loadCustomTemplateCatalog$ } from "./custom-template-library.ts";
-import { invalidateConnectorOverview$ } from "./connector-overview.ts";
 import { invalidateAgentConnectorAccess$ } from "./composer-agent-connectors.ts";
 import { withCleanup } from "../utils.ts";
 
@@ -176,12 +175,12 @@ export function createComposerConnectorCompletion(
         );
       }
       signal.throwIfAborted();
-      set(invalidateConnectorOverview$);
+      set(connector.resources.reloadConnected$);
       return !alreadyAuthorized;
     },
   );
   const completeCustomConnectorAddition$ = command(({ set }) => {
-    set(invalidateConnectorOverview$);
+    set(connector.resources.reloadConnected$);
     set(invalidateAgentConnectorAccess$, agentId);
   });
   return { completeConnectorAddition$, completeCustomConnectorAddition$ };

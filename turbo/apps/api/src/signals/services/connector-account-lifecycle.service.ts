@@ -968,7 +968,7 @@ type ConnectorAccountListResult =
       readonly kind: "ok";
       readonly connections: readonly ConnectorAccountConnection[];
       readonly nextCursor: string | null;
-      readonly defaultConnection?: ConnectorAccountConnection | null;
+      readonly defaultConnection: ConnectorAccountConnection | null;
     }
   | { readonly kind: "invalid-cursor" }
   | { readonly kind: "missing" };
@@ -1151,17 +1151,11 @@ export function connectorAccountsForTarget(
   const markerScope$ = computed(async (get) => {
     const args = get(scope$);
     const rows = await get(rows$);
-    const includeDefault =
-      args.includeScopeMismatch === true &&
-      args.cursor === undefined &&
-      args.search === undefined;
-    const defaults =
-      includeDefault &&
-      !rows.some((row) => {
-        return row.isDefault;
-      })
-        ? await get(defaultRows$)
-        : [];
+    const defaults = !rows.some((row) => {
+      return row.isDefault;
+    })
+      ? await get(defaultRows$)
+      : [];
     return {
       ...args,
       connectionIds: [...rows, ...defaults].map((row) => {
@@ -1200,21 +1194,16 @@ export function connectorAccountsForTarget(
       );
       return connection ? [connection] : [];
     });
-    const includeDefaultConnection =
-      args.includeScopeMismatch === true &&
-      args.cursor === undefined &&
-      args.search === undefined;
-    const defaultRow = includeDefaultConnection
-      ? (rows.find((row) => {
-          return row.isDefault;
-        }) ?? (await get(defaultRows$))[0])
-      : undefined;
+    const defaultRow =
+      rows.find((row) => {
+        return row.isDefault;
+      }) ?? (await get(defaultRows$))[0];
     const defaultConnection = defaultRow
       ? projectConnection(
           defaultRow,
           snapshot,
           now,
-          true,
+          args.includeScopeMismatch === true,
           markers.get(connectorAccountSetupMarkerKey(defaultRow)),
         )
       : null;
@@ -1230,7 +1219,7 @@ export function connectorAccountsForTarget(
       kind: "ok",
       connections: projected.slice(0, args.limit),
       nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
-      ...(includeDefaultConnection ? { defaultConnection } : {}),
+      defaultConnection,
     };
   });
 }

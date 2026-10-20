@@ -900,6 +900,8 @@ function connectorCatalogConnectionFields(
     connection: connectionForCatalogStatus(connector),
     connected: connector !== null,
     connectionStatus,
+    setupStatus:
+      connector === null ? null : (args.connection?.setupStatus ?? null),
     scopeMismatch,
     authMethodSupportsRefresh:
       connector !== null && facts?.supportsRefresh === true,

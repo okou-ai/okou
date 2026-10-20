@@ -1908,7 +1908,6 @@
       "back": "返回",
       "configurePermissions": "配置 {{connectorName}} 权限",
       "customAuthorizeDescription": "查看并连接这个自定义连接器，然后授权给智能体。",
-      "defaultAccountFor": "{{connector}} · 使用默认账户：{{account}}",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "请管理员开启",
@@ -1924,7 +1923,6 @@
         "emptyCustomBody": "用任意 HTTP API 或 MCP 服务器搭一个，Okou 就能像用其他连接器一样使用它。",
         "emptyCustomTitle": "还没有自定义连接器",
         "matchCount_other": "{{count}} 个匹配",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "需要处理",
         "nextCategories": "下一组分类",
         "noResultsBody": "换个产品名称试试，或者用 API、MCP 服务器自己搭一个。",
@@ -1939,6 +1937,7 @@
       },
       "fallsBackTo": "回退到 {{account}}",
       "find": "查找连接器…",
+      "loadFailed": "无法加载连接器。",
       "noUsableAccount": "没有可用账户",
       "remove": "移除 {{connectorName}}",
       "selectedAccountFor": "{{connector}} · 已选账户：{{account}}",
@@ -3076,13 +3075,7 @@
       "rename": "重命名",
       "setupIncomplete": "配置未完成",
       "setupUnavailable": "账号状态暂不可用",
-      "skipName": "跳过",
-      "summaryMany": "{{value}} 个账号",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} 个账号",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} 需要处理",
-      "summaryWithAttention_other": ""
+      "skipName": "跳过"
     },
     "actions": {
       "apply": "应用",
@@ -3247,7 +3240,6 @@
       },
       "scope": {
         "aria": "连接器范围",
-        "attention": "需要处理",
         "connected": "已连接",
         "custom": "自定义",
         "discover": "发现",

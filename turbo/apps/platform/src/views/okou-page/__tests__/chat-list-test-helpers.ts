@@ -12,7 +12,7 @@ import {
   computerUseHostsContract,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 
 import {
@@ -243,11 +243,11 @@ export function installActiveChatBoundaries(
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [...(options.hosts ?? [])] });
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: [],
+      cloudBrowserAvailable: true,
+      sshHosts: [],
+      vncHosts: [],
       computerUseHosts: (options.hosts ?? []).map((host) => {
         return {
           id: host.id,

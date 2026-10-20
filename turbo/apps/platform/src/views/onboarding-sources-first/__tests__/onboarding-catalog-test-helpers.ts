@@ -47,6 +47,7 @@ export function onboardingSourceItem(item: {
     },
     connection: null,
     connected: item.connected,
+    setupStatus: item.connected ? "complete" : null,
     connectionStatus: item.connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: false,

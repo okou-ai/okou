@@ -357,7 +357,7 @@ test("Show only the connector actions that are useful in chat", async () => {
   await openConnectors(user);
   const accountAction = await findFastControl(
     "button",
-    "Axiom · Using default account: Work",
+    "Axiom · Account for this chat",
   );
   const permissionAction = await findFastControl(
     "button",
@@ -370,7 +370,9 @@ test("Show only the connector actions that are useful in chat", async () => {
     buttonIndex(accountAction.getAttribute("aria-label")!, axiomRow),
   ).toBeLessThan(buttonIndex("Configure Axiom permissions", axiomRow));
   const githubRow = accessRow(await screen.findByLabelText("Remove GitHub"));
-  expect(queryAllByRoleFast("button", githubRow)).toHaveLength(0);
+  await expect(
+    findFastControl("button", "GitHub · Account for this chat", githubRow),
+  ).resolves.toBeVisible();
 
   await user.click(screen.getByLabelText("Remove Axiom"));
   await expect(screen.findByLabelText("Add Axiom")).resolves.toBeVisible();
@@ -603,7 +605,7 @@ test("Respect integration-managed connector availability in chat", async () => {
   await openConnectors(user);
   await expect(screen.findByLabelText("Remove Feishu")).resolves.toBeVisible();
   expect(
-    queryFastControl("button", "Feishu · Using default account: Primary"),
+    queryFastControl("button", "Feishu · Account for this chat"),
   ).toBeNull();
 });
 

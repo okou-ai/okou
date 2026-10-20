@@ -6,7 +6,7 @@ import {
   type ConnectorAccountSummary,
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   type PublicConnectorCatalogStatusItem,
   connectorCatalogContract,
@@ -225,37 +225,59 @@ export function mockConnectorOverviewAccountSummaries(
     | readonly ConnectorAccountSummary[]
     | Promise<readonly ConnectorAccountSummary[]>,
 ): void {
-  context.mocks.api(connectorOverviewContract.overview, async ({ respond }) => {
-    const accountSummaries = await summaries();
+  context.mocks.api(connectedConnectorsContract.list, async ({ respond }) => {
+    const saved = (await summaries()).filter((summary) => {
+      return summary.accountCount > 0;
+    });
     return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: accountSummaries.map((summary) => {
-        const account = summary.defaultConnection;
-        return {
-          target: summary.target,
-          accountCount: summary.accountCount,
-          attentionCount: summary.attentionCount,
-          defaultConnection: account
-            ? {
-                id: account.id,
-                authMethod: account.authMethod,
-                displayName: account.displayName,
-                externalId: account.externalId,
-                externalUsername: account.externalUsername,
-                externalEmail: account.externalEmail,
-                connectionStatus: account.connectionStatus,
-                setupStatus: account.setupStatus,
-                missingRequiredFields: account.missingRequiredFields,
-                configuredFieldKeys: account.configuredFieldKeys,
-              }
-            : null,
-        };
+      builtinConnectors: saved.flatMap(({ target }) => {
+        return target.kind === "builtin"
+          ? [
+              {
+                slug: target.connectorSlug,
+                label: target.connectorSlug,
+                icon: {
+                  url: "https://example.com/connector.svg",
+                  invertInDarkMode: false,
+                },
+                hasPermissions: true,
+              },
+            ]
+          : [];
       }),
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
+      customConnectors: saved.flatMap(({ target }) => {
+        return target.kind === "custom"
+          ? [
+              {
+                id: target.customConnectorId,
+                slug: "custom",
+                displayName: "Custom connector",
+                permissionBundleRef: null,
+                integrationManaged: false,
+              },
+            ]
+          : [];
+      }),
     });
   });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ query, respond }) => {
+      const summary = (await summaries()).find(({ target }) => {
+        return target.kind === "builtin" && query.kind === "builtin"
+          ? target.connectorSlug === query.connectorSlug
+          : target.kind === "custom" &&
+              query.kind === "custom" &&
+              target.customConnectorId === query.customConnectorId;
+      });
+      const account = summary?.defaultConnection ?? null;
+      return respond(200, {
+        connections: account ? [account] : [],
+        nextCursor: null,
+        defaultConnection: account,
+      });
+    },
+  );
 }
 
 export function publicStatusItem(args: {
@@ -299,6 +321,7 @@ export function publicStatusItem(args: {
     },
     connection: args.connection ?? null,
     connected: args.connected ?? false,
+    setupStatus: args.connected ? "complete" : null,
     connectionStatus: args.connectionStatus ?? "not-connected",
     scopeMismatch: args.scopeMismatch ?? false,
     authMethodSupportsRefresh: args.authMethodSupportsRefresh ?? false,

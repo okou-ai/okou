@@ -25,7 +25,7 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   customConnectorByIdContract,
   customConnectorOAuth2Contract,
@@ -91,7 +91,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorOverviewRoutes } from "../connector-overview";
+import { connectedConnectorsRoutes } from "../connected-connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsGetRoutes } from "../custom-connectors-get";
@@ -3384,26 +3384,27 @@ export function registerFeishuIntegrationTests(
             connected: true,
           },
         ]);
-        const overviewClient = setupApp({
+        const briefClient = setupApp({
           context,
-          routes: connectorOverviewRoutes,
-        })(connectorOverviewContract);
-        const connectedOverview = await own(() => {
+          routes: connectedConnectorsRoutes,
+        })(connectedConnectorsContract);
+        const briefs = await own(() => {
           return accept(
-            overviewClient.overview({
+            briefClient.list({
               headers: { authorization: "Bearer clerk-session" },
             }),
             [200],
           );
         });
-        expect(connectedOverview.body.customConnectors).toContainEqual({
-          id: managedConnector.id,
-          slug: managedConnector.slug,
-          displayName: managedConnector.displayName,
-          permissionBundleRef: "builtin:feishu@1",
-          integrationManaged: true,
-        });
-        expect(connectedOverview.body.accountSummaries).toStrictEqual([]);
+        expect(briefs.body.customConnectors).toStrictEqual([
+          {
+            id: managedConnector.id,
+            slug: managedConnector.slug,
+            displayName: managedConnector.displayName,
+            permissionBundleRef: "builtin:feishu@1",
+            integrationManaged: true,
+          },
+        ]);
         const welcome = fixtureState.outboundMessages.find((message) => {
           return (
             message.kind === "send" &&
@@ -3438,15 +3439,15 @@ export function registerFeishuIntegrationTests(
             connected: false,
           },
         ]);
-        const disconnectedOverview = await own(() => {
+        const disconnectedBriefs = await own(() => {
           return accept(
-            overviewClient.overview({
+            briefClient.list({
               headers: { authorization: "Bearer clerk-session" },
             }),
             [200],
           );
         });
-        expect(disconnectedOverview.body.customConnectors).toStrictEqual([]);
+        expect(disconnectedBriefs.body.customConnectors).toStrictEqual([]);
         const disconnectedMemberStatus = await own(() => {
           return accept(
             client.getStatus({

@@ -79,9 +79,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import {
   ConnectorCard,
-  connectorAccountSummaryStatus,
-  type ConnectorAccountDisplaySummary,
-  type ConnectorAccountSummaryStatus,
+  connectorInventoryStatus,
+  type ConnectorInventoryStatus,
 } from "./components/settings/connector-card.tsx";
 import {
   ConnectorShelfChips,
@@ -121,7 +120,7 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import {
   connectedConnectorsBadge$,
-  connectorOverviewAccountSummaryByTarget$,
+  connectedConnectorTargetKeys$,
 } from "../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./components/settings/connector-account-manager-dialog.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
@@ -178,7 +177,6 @@ interface ConnectorsScopeBadge {
   readonly custom: number;
   readonly remoteControl: number;
   readonly privateNetwork: number;
-  readonly needsAttention: boolean;
 }
 
 /** Configured resources determine whether a remote-access service is connected. */
@@ -191,9 +189,7 @@ function configuredRemoteAccessResources(
 /** The custom connectors the page needs: all of them, and the connected ones. */
 function directoryCustomConnectors(
   loadable: Loadable<readonly CustomConnectorResponse[]>,
-  accountSummaries: Loadable<
-    ReadonlyMap<string, ConnectorAccountDisplaySummary>
-  >,
+  connectedTargets: Loadable<ReadonlySet<string>>,
 ): {
   readonly all: readonly CustomConnectorResponse[];
   readonly connected: readonly CustomConnectorResponse[];
@@ -202,38 +198,32 @@ function directoryCustomConnectors(
   return {
     all,
     connected: all.filter((connector) => {
-      const summary =
-        accountSummaries.state === "hasData"
-          ? accountSummaries.data.get(`custom:${connector.id}`)
-          : undefined;
-      return summary !== undefined && summary.accountCount > 0;
+      return (
+        connectedTargets.state === "hasData" &&
+        connectedTargets.data.has(`custom:${connector.id}`)
+      );
     }),
   };
 }
 
 /**
- * Before the summaries land the segment says nothing rather than a zero it
+ * Before connector membership loads the segment says nothing rather than a zero it
  * would have to take back.
  */
 function connectorsScopeBadge(
   loadable: Loadable<{
     readonly count: number;
-    readonly needsAttention: boolean;
   }>,
   custom: number,
   remoteControl: number,
   privateNetwork: number,
 ): ConnectorsScopeBadge {
-  const connected =
-    loadable.state === "hasData"
-      ? loadable.data
-      : { count: 0, needsAttention: false };
+  const connected = loadable.state === "hasData" ? loadable.data : { count: 0 };
   return {
     connected: connected.count,
     custom,
     remoteControl,
     privateNetwork,
-    needsAttention: connected.needsAttention,
   };
 }
 
@@ -290,15 +280,6 @@ function ConnectorsScopeSegment({
         value="connected"
         data-testid="connectors-scope-connected"
       >
-        {badge.needsAttention && (
-          <span
-            data-testid="connectors-scope-attention"
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-            aria-label={t(($) => {
-              return $.connectors.catalog.scope.attention;
-            })}
-          />
-        )}
         {t(($) => {
           return $.connectors.catalog.scope.connected;
         })}
@@ -933,7 +914,7 @@ interface ConnectorsBrowseModel {
  */
 function buildConnectorsBrowseModel({
   catalogItems,
-  accountSummaries,
+  connectedTargets,
   categoryMetadata,
   categoryCounts,
   otherCategoryLabel,
@@ -943,8 +924,7 @@ function buildConnectorsBrowseModel({
   ready,
 }: {
   readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
-  readonly accountSummaries:
-    ReadonlyMap<string, ConnectorAccountDisplaySummary> | undefined;
+  readonly connectedTargets: ReadonlySet<string> | undefined;
   readonly categoryMetadata: ConnectorCategoryLabels;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly otherCategoryLabel: string;
@@ -996,10 +976,7 @@ function buildConnectorsBrowseModel({
         : null,
     layout,
     connected: catalogItems.filter((connector) => {
-      return (
-        (accountSummaries?.get(`builtin:${connector.slug}`)?.accountCount ??
-          0) > 0
-      );
+      return connectedTargets?.has(`builtin:${connector.slug}`) === true;
     }),
     // Chips come from the whole catalog, not the filtered view: a chip row
     // that empties itself when you pick a chip cannot be used to pick another.
@@ -1201,6 +1178,15 @@ function ConnectorsConnectedPanel({
   readonly accountsUnavailable?: boolean;
 }) {
   const { t } = useTranslation();
+  if (accountsUnavailable) {
+    return (
+      <ConnectorEmptyState
+        message={t(($) => {
+          return $.connectors.accounts.accountsUnavailable;
+        })}
+      />
+    );
+  }
   if (!ready) {
     return <ConnectorCardSkeletons />;
   }
@@ -1208,9 +1194,6 @@ function ConnectorsConnectedPanel({
     return (
       <ConnectorEmptyState
         message={t(($) => {
-          if (accountsUnavailable) {
-            return $.connectors.accounts.accountsUnavailable;
-          }
           // An empty list means something different under each filter: nothing
           // connected at all, nothing this agent can reach, or nothing left
           // that no agent uses.
@@ -1250,8 +1233,8 @@ function connectorLabelForSlug(
 
 interface SettingsConnectorCardProps {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly accountSummary: ConnectorAccountDisplaySummary | undefined;
-  readonly accountSummaryStatus: ConnectorAccountSummaryStatus;
+  readonly hasAccounts: boolean;
+  readonly inventoryStatus: ConnectorInventoryStatus;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly onManageAccounts: () => void;
@@ -1297,8 +1280,7 @@ function SettingsConnectorCard(props: SettingsConnectorCardProps) {
       connectorSlug={props.connector.slug}
       connectorLabel={props.connector.label}
       allowAccessIncrease={
-        props.accountSummaryStatus === "ready" &&
-        (props.accountSummary?.accountCount ?? 0) > 0
+        props.inventoryStatus === "ready" && props.hasAccounts
       }
       onClick={props.onManageAccess}
     />
@@ -1307,8 +1289,8 @@ function SettingsConnectorCard(props: SettingsConnectorCardProps) {
     <ConnectorCard
       variant="accounts"
       connector={props.connector}
-      summary={props.accountSummary}
-      summaryStatus={props.accountSummaryStatus}
+      hasAccounts={props.hasAccounts}
+      inventoryStatus={props.inventoryStatus}
       busy={props.busy}
       connect={props.connect}
       onManage={props.onManageAccounts}
@@ -1321,8 +1303,8 @@ function ManagedConnectorAccessDialog() {
   const connectorSlug = useGet(managedConnectorAccessSlug$);
   const close = useSet(closeConnectorAccessManagement$);
   const catalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
-  const accountSummariesLoadable = useLastLoadable(
-    connectorOverviewAccountSummaryByTarget$,
+  const connectedTargetsLoadable = useLastLoadable(
+    connectedConnectorTargetKeys$,
   );
   if (!connectorSlug || catalogItemsLoadable.state !== "hasData") {
     return null;
@@ -1334,15 +1316,15 @@ function ManagedConnectorAccessDialog() {
   if (!connectorLabel) {
     return null;
   }
-  const accountSummary =
-    accountSummariesLoadable.state === "hasData"
-      ? accountSummariesLoadable.data.get(`builtin:${connectorSlug}`)
+  const hasAccount =
+    connectedTargetsLoadable.state === "hasData"
+      ? connectedTargetsLoadable.data.has(`builtin:${connectorSlug}`)
       : undefined;
   return (
     <ConnectorAccessManagementDialog
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
-      allowAccessIncrease={(accountSummary?.accountCount ?? 0) > 0}
+      allowAccessIncrease={hasAccount === true}
       onClose={close}
     />
   );
@@ -1360,11 +1342,11 @@ export function ConnectorsPage() {
   const vncSummary = useLoadable(vncSummary$);
   const cloudflareAccessSummary = useLoadable(cloudflareAccessSummary$);
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
-  const accountSummariesLoadable = useLastLoadable(
-    connectorOverviewAccountSummaryByTarget$,
+  const connectedTargetsLoadable = useLastLoadable(
+    connectedConnectorTargetKeys$,
   );
-  const accountSummaryStatus = connectorAccountSummaryStatus(
-    accountSummariesLoadable.state,
+  const inventoryStatus = connectorInventoryStatus(
+    connectedTargetsLoadable.state,
   );
   const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
@@ -1399,7 +1381,7 @@ export function ConnectorsPage() {
   const connectedBadge = useLastLoadable(connectedConnectorsBadge$);
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
-    accountSummariesLoadable,
+    connectedTargetsLoadable,
   );
   const scopeBadge = connectorsScopeBadge(
     connectedBadge,
@@ -1512,16 +1494,16 @@ export function ConnectorsPage() {
       pollingAuthCodeSlug === c.slug ||
       pollingDeviceAuthSlug === c.slug ||
       connectFlowSlug === c.slug;
-    const summary =
-      accountSummariesLoadable.state === "hasData"
-        ? accountSummariesLoadable.data.get(`builtin:${c.slug}`)
+    const hasAccount =
+      connectedTargetsLoadable.state === "hasData"
+        ? connectedTargetsLoadable.data.has(`builtin:${c.slug}`)
         : undefined;
     return (
       <SettingsConnectorCard
         key={c.slug}
         connector={c}
-        accountSummary={summary}
-        accountSummaryStatus={accountSummaryStatus}
+        hasAccounts={hasAccount === true}
+        inventoryStatus={inventoryStatus}
         busy={isPolling}
         connect={accountConnectHandlers(c)}
         onManageAccounts={() => {
@@ -1539,9 +1521,9 @@ export function ConnectorsPage() {
   });
   const browse = buildConnectorsBrowseModel({
     catalogItems: filteredConnectors,
-    accountSummaries:
-      accountSummariesLoadable.state === "hasData"
-        ? accountSummariesLoadable.data
+    connectedTargets:
+      connectedTargetsLoadable.state === "hasData"
+        ? connectedTargetsLoadable.data
         : undefined,
     categoryMetadata,
     categoryCounts: discoveryCategoryCounts(catalogStatusLoadable),
@@ -1604,8 +1586,8 @@ export function ConnectorsPage() {
               connectedPanel={
                 <ConnectorsConnectedPanel
                   connected={browse.connected}
-                  ready={browse.ready && accountSummaryStatus !== "loading"}
-                  accountsUnavailable={accountSummaryStatus === "unavailable"}
+                  ready={browse.ready && inventoryStatus !== "loading"}
+                  accountsUnavailable={inventoryStatus === "unavailable"}
                   connectionFilter={connectionFilter}
                   renderCard={renderCard}
                   extraCount={custom.connected.length}

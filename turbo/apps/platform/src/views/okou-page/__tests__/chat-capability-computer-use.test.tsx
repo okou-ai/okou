@@ -2,7 +2,10 @@ import {
   computerUseHostsContract,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -18,6 +21,7 @@ import {
   findButton,
   installRunChat,
   NEW_CHAT_PATH,
+  promptEvent,
   queryButton,
   readyChat,
   RUN_PATH,
@@ -65,12 +69,12 @@ function installComputerHosts(
     const hosts = readHosts();
     return respond(200, { hosts: [...hosts] });
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
     const hosts = readHosts();
     return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: [],
+      cloudBrowserAvailable: true,
+      sshHosts: [],
+      vncHosts: [],
       computerUseHosts: hosts.map((host) => {
         return {
           id: host.id,
@@ -164,14 +168,105 @@ async function prepareCloudBrowserDefaults() {
   return { sends };
 }
 
-test("Send a new chat with the default cloud browser", async () => {
+function observeResourceLists(): string[] {
+  const requested: string[] = [];
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+    requested.push("connected connectors");
+    return respond(200, { builtinConnectors: [], customConnectors: [] });
+  });
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    requested.push("remotes");
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
+    });
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    requested.push("account summaries");
+    return respond(200, { summaries: [] });
+  });
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    requested.push("target accounts");
+    return respond(200, {
+      connections: [],
+      nextCursor: null,
+      defaultConnection: null,
+    });
+  });
+  context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
+    requested.push("computer hosts");
+    return respond(200, { hosts: [] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      requested.push("remote defaults");
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      requested.push("thread remote hosts");
+      return respond(200, { ssh: [], vnc: [] });
+    },
+  );
+  return requested;
+}
+
+test.each(["new chat", "existing chat", "queued message"] as const)(
+  "Submit a %s without opening or fetching resource and account lists",
+  async (mode) => {
+    let submitted: "send" | "queue" | undefined;
+    const runId = "a0000000-0000-4000-a000-000000000502";
+    installRunChat({
+      ...(mode === "queued message"
+        ? {
+            activeRunIds: [runId],
+            chatEvents: [
+              promptEvent({
+                id: "existing-request",
+                runId,
+                seqId: 1,
+                text: "Prepare the launch",
+              }),
+            ],
+          }
+        : {}),
+      onSendRequest() {
+        submitted = "send";
+      },
+      onQueuedEventAppend() {
+        submitted = "queue";
+      },
+    });
+    const resourceRequests = observeResourceLists();
+    await setupPage({
+      context,
+      path: mode === "new chat" ? NEW_CHAT_PATH : RUN_PATH,
+    });
+    await readyChat();
+    expect(resourceRequests).toStrictEqual([]);
+
+    await sendText("Review this launch without opening the resource menu");
+    await waitFor(() => {
+      expect(submitted).toBe(mode === "queued message" ? "queue" : "send");
+    });
+    expect(resourceRequests).toStrictEqual([]);
+  },
+);
+
+test("Let the server apply the cloud browser default for an untouched new chat", async () => {
   const { sends } = await prepareCloudBrowserDefaults();
   await sendText("Research the launch market");
   const sent = await waitForComputerSend(sends, 1);
   expect(sent).toMatchObject({
     prompt: "Research the launch market",
-    cloudBrowserEnabled: true,
   });
+  expect(sent.cloudBrowserEnabled).toBeUndefined();
   expect(sent.computerUseHostId).toBeUndefined();
   await expect(
     screen.findByText("Research the launch market"),
@@ -205,8 +300,10 @@ test("Start a new chat with Cloud browser disabled", async () => {
 
   const sent = await waitForComputerSend(sends, 1);
   expect(sent.prompt).toBe("Summarize the product launch");
-  expect(sent.cloudBrowserEnabled).toBeUndefined();
-  expect(sent.computerUseHostId).toBeUndefined();
+  expect(sent).toMatchObject({
+    cloudBrowserEnabled: false,
+    computerUseHostId: null,
+  });
 });
 
 test("Use the saved Cloud browser default for an untouched new chat", async () => {
@@ -264,14 +361,31 @@ test("Start a new chat with a selected local computer", async () => {
     screen.getByRole("switch", { name: "Cloud browser", checked: false }),
   ).not.toBeChecked();
 
+  await user.keyboard("{Escape}");
+  await openComputerMenu();
+  await expect(
+    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
+  ).resolves.toBeChecked();
+  await user.keyboard("{Escape}");
+  // A fresh directory can stop offering a selected resource. Keep the draft's
+  // exact choice for authoritative send validation instead of replacing it.
+  installComputerHosts(() => {
+    return [];
+  });
+  await openComputerMenu();
+  await waitFor(() => {
+    expect(screen.getByRole("switch", { name: "Cloud browser" })).toBeEnabled();
+  });
+  expect(screen.queryByRole("switch", { name: "Studio Mac" })).toBeNull();
+  await user.keyboard("{Escape}");
   await sendText("Open the desktop dashboard");
 
   const sent = await waitForComputerSend(sends, 1);
   expect(sent).toMatchObject({
     prompt: "Open the desktop dashboard",
     computerUseHostId: PRIMARY_HOST_ID,
+    cloudBrowserEnabled: false,
   });
-  expect(sent.cloudBrowserEnabled).toBeUndefined();
 });
 
 test("Discover computers that are available for Computer Use", async () => {
@@ -326,7 +440,8 @@ test("Discover computers that are available for Computer Use", async () => {
       status: "online",
     }),
   ];
-  context.mocks.ably.trigger("computerUseHostsChanged");
+  await user.keyboard("{Escape}");
+  await openComputerMenu();
 
   await expect(screen.findByText("Travel Mac")).resolves.toBeVisible();
   expect(

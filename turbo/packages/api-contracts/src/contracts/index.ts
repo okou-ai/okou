@@ -840,6 +840,16 @@ export {
   type UserBuiltinConnectorsContract,
 } from "./user-connectors";
 export {
+  remotesContract,
+  remotesOverviewSchema,
+  type RemotesOverview,
+} from "./remotes";
+export {
+  connectedConnectorsContract,
+  connectedConnectorsSchema,
+  type ConnectedConnectors,
+} from "./connected-connectors";
+export {
   connectorOverviewContract,
   connectorOverviewSchema,
   agentConnectorAccessSchema,

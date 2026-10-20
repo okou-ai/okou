@@ -1,6 +1,6 @@
 import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Button } from "@okouai/ui";
+import { Button, LoadErrorRow } from "@okouai/ui";
 import {
   connectorSlugSchema,
   type ConnectorAuthMethodId,
@@ -11,6 +11,7 @@ import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts
 import type { CustomConnectorSlug } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import { withMemberAccount } from "../../signals/external/connectors.ts";
 import { Input } from "@okouai/ui/components/ui/input";
 import {
   Dialog,
@@ -41,6 +42,8 @@ import {
   directedConnectAccountTarget$,
   directedConnectCatalogItem$,
   directedConnectExactAccount$,
+  directedConnectAccounts$,
+  reloadDirectedConnectAccounts$,
   directedConnectAgentId$,
   directedConnectAgentName$,
   manualGrantDialogKey$,
@@ -427,7 +430,10 @@ function useDirectedConnectCatalogState(
 }
 
 type DirectedConnectAccountState =
-  | { readonly kind: "default" }
+  | {
+      readonly kind: "default";
+      readonly account: ConnectorAccountConnection | null;
+    }
   | { readonly kind: "loading" }
   | { readonly kind: "unavailable" }
   | {
@@ -438,8 +444,18 @@ type DirectedConnectAccountState =
 function useDirectedConnectAccountState(): DirectedConnectAccountState {
   const target = useGet(directedConnectAccountTarget$);
   const accountLoadable = useLastLoadable(directedConnectExactAccount$);
+  const accountsLoadable = useLastLoadable(directedConnectAccounts$);
   if (target.kind === "default") {
-    return target;
+    if (accountsLoadable.state === "loading") {
+      return { kind: "loading" };
+    }
+    return accountsLoadable.state === "hasData" &&
+      accountsLoadable.data.available
+      ? {
+          kind: "default",
+          account: accountsLoadable.data.defaultConnection,
+        }
+      : { kind: "unavailable" };
   }
   if (target.kind === "invalid") {
     return { kind: "unavailable" };
@@ -519,9 +535,22 @@ function useDirectedConnectPresentation(connectorSlug: ConnectorSlug | null): {
 } {
   const accountState = useDirectedConnectAccountState();
   const catalogState = useDirectedConnectCatalogState(connectorSlug);
+  const account =
+    accountState.kind === "default" ? accountState.account : undefined;
+  const item =
+    catalogState.item && account !== undefined
+      ? withMemberAccount(catalogState.item, account)
+      : catalogState.item;
+  const isConnected =
+    account !== undefined
+      ? (item?.connected ?? false)
+      : catalogState.isConnected;
   return {
-    item: catalogState.item,
-    presentation: directedConnectPresentation({ accountState, catalogState }),
+    item,
+    presentation: directedConnectPresentation({
+      accountState,
+      catalogState: { ...catalogState, item, isConnected },
+    }),
   };
 }
 
@@ -616,6 +645,7 @@ function DirectedConnectCard() {
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
   const setDirectedConnectModalKey = useSet(setDirectedConnectModalKey$);
   const completeAction = useSet(completeDirectedConnectorAction$);
+  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
   const actionCallback = useGet(routeChatActionCallback$);
   const { manualGrantDialogOpen, connectModalOpen } =
     useDirectedConnectDialogOpenState(connectorSlug, agentId, signal);
@@ -636,7 +666,9 @@ function DirectedConnectCard() {
     connectFlowSlug === connectorSlug ||
     connectLoadable.state === "loading";
   if (presentation.unavailable) {
-    return null;
+    return (
+      <DirectedConnectAccountsError item={item} connectorSlug={connectorSlug} />
+    );
   }
   const authMethods = item?.authMethods ?? [];
   const { accountOptions, reconnectAuthMethod, isConnected, isLoading } =
@@ -651,6 +683,7 @@ function DirectedConnectCard() {
     _connectionId,
     attemptSignal,
   ) => {
+    reloadAccounts(attemptSignal);
     return completeAction(agentId, actionCallback, attemptSignal);
   };
 
@@ -701,6 +734,42 @@ function DirectedConnectCard() {
         onSuccess={handleConnectSuccess}
       />
     </>
+  );
+}
+
+function DirectedConnectAccountsError({
+  item,
+  connectorSlug,
+}: {
+  readonly item: PlatformConnectorCatalogStatusItem | undefined;
+  readonly connectorSlug: ConnectorSlug;
+}) {
+  const { t } = useTranslation();
+  const accounts = useLastLoadable(directedConnectAccounts$);
+  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
+  const signal = useGet(pageSignal$);
+  if (accounts.state !== "hasError") {
+    return null;
+  }
+  return (
+    <DirectedCardShell
+      icon={<ConnectorIcon icon={item?.icon} size={20} />}
+      title={item?.label ?? connectorSlug}
+      description={item?.description ?? ""}
+      isLoading={false}
+    >
+      <LoadErrorRow
+        message={t(($) => {
+          return $.connectors.accounts.accountsUnavailable;
+        })}
+        retryLabel={t(($) => {
+          return $.global.actions.tryAgain;
+        })}
+        onRetry={() => {
+          reloadAccounts(signal);
+        }}
+      />
+    </DirectedCardShell>
   );
 }
 
@@ -766,6 +835,7 @@ function CustomDirectedConnectCard({
   const setDialogKey = useSet(setDirectedConnectCustomDialogKey$);
   const resetConnectInput = useSet(resetCustomConnectorConnectInput$);
   const completeAction = useSet(completeDirectedConnectorAction$);
+  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
   const actionCallback = useGet(routeChatActionCallback$);
   const signal = useGet(pageSignal$);
   const connectors =
@@ -791,6 +861,7 @@ function CustomDirectedConnectCard({
     _connectionId,
     attemptSignal,
   ) => {
+    reloadAccounts(attemptSignal);
     return completeAction(agentId, actionCallback, attemptSignal);
   };
   const setDialogOpen = (open: boolean) => {
