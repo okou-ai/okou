@@ -115,15 +115,20 @@ function createWalletConnectSignals(
       if (get(continued$)) {
         return;
       }
-      await set(
-        waitAblyPayloadLoopUntil$,
-        {
-          topic: "wallet:changed",
-          loopCommand$: onWalletChanged$,
-          initializeCommand$: refreshCompletion$,
-        },
-        signal,
-      );
+      // Refresh for this user action so stale consent and failed reads can
+      // recover before waiting for future notifications.
+      if (!(await set(refreshCompletion$, signal))) {
+        await set(
+          waitAblyPayloadLoopUntil$,
+          {
+            topic: "wallet:changed",
+            loopCommand$: onWalletChanged$,
+            initializeCommand$: refreshCompletion$,
+            options: { runOnSubscribe: false },
+          },
+          signal,
+        );
+      }
       const status = await get(status$);
       signal.throwIfAborted();
       if (status.status !== "authorized") {
@@ -235,6 +240,7 @@ function createWalletApprovalSignals(
             topic: "wallet:changed",
             loopCommand$: changed$,
             initializeCommand$: refresh$,
+            options: { runOnSubscribe: false },
           },
           signal,
         );

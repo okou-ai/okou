@@ -10,11 +10,14 @@ import { command, state, type Command } from "ccstate";
 export interface CardSignalsRegistry<Descriptor, Signals> {
   /** Get-or-create by the descriptor's key; idempotent per key. */
   readonly register$: Command<Signals, [Descriptor]>;
+  /** Start each prepared card's subscription once per owning lifetime. */
+  readonly subscribe$: Command<void, [AbortSignal]>;
 }
 
 export function createCardSignalsRegistry<Descriptor, Signals>(
   keyOf: (descriptor: Descriptor) => string,
   create: (descriptor: Descriptor) => Signals,
+  subscription?: (signals: Signals) => Command<void, [AbortSignal]>,
 ): CardSignalsRegistry<Descriptor, Signals> {
   const internalSignalsByKey$ = state<ReadonlyMap<string, Signals>>(new Map());
 
@@ -32,5 +35,33 @@ export function createCardSignalsRegistry<Descriptor, Signals>(
     return signals;
   });
 
-  return { register$ };
+  const internalSubscribedKeys$ = state<ReadonlySet<string>>(new Set());
+  const subscribe$ = command(({ get, set }, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    if (!subscription) {
+      return;
+    }
+    for (const [key, signals] of get(internalSignalsByKey$)) {
+      if (get(internalSubscribedKeys$).has(key)) {
+        continue;
+      }
+      set(internalSubscribedKeys$, (current) => {
+        return new Set([...current, key]);
+      });
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(internalSubscribedKeys$, (current) => {
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
+        },
+        { once: true },
+      );
+      set(subscription(signals), signal);
+    }
+  });
+
+  return { register$, subscribe$ };
 }

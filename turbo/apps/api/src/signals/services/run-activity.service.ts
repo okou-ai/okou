@@ -18,7 +18,10 @@ import { safeSqlStateCode } from "../../lib/pg-errors";
 import { activityRevision, mergeActivity } from "../../lib/run-activity";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadDetailChangedSafely } from "../external/realtime";
+import {
+  publishChatThreadDetailChangedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
+} from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import { releaseRunSlots } from "./agent-run-terminal-transition.service";
@@ -170,6 +173,8 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
             row.userId,
             row.chatThreadId,
           );
+          signal.throwIfAborted();
+          await publishDesktopShellAuthorizationChangedSafely(row.userId);
           signal.throwIfAborted();
         }
       }

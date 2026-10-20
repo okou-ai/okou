@@ -6,6 +6,7 @@ import { writeDb$ } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadDetailChangedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
   publishRunQueueChangedForOrgSafely,
 } from "../external/realtime";
 import { tapError } from "../utils";
@@ -96,6 +97,10 @@ export const dispatchCancelSideEffects$ = command(
       return;
     }
     const recoveryRedrive = result.alreadyCancelled;
+    if (result.chatThreadId !== null) {
+      await publishDesktopShellAuthorizationChangedSafely(result.userId);
+      signal.throwIfAborted();
+    }
     const db = set(writeDb$);
     await publishCancellationRecoveryEntered(result, signal);
     await publishRunnerCancellation(result, signal);
