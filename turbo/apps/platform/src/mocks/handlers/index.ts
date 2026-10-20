@@ -27,6 +27,7 @@ import {
   apiIntegrationsAgentPhoneHandlers,
   resetMockAgentPhoneIntegration,
 } from "./api-integrations-agentphone.ts";
+import { apiIntegrationsDiscordHandlers } from "./api-integrations-discord.ts";
 import {
   apiIntegrationsGithubHandlers,
   resetMockGithubIntegration,
@@ -132,6 +133,7 @@ export const handlers = [
   ...apiIntegrationsSlackOrgHandlers,
   ...apiIntegrationsTelegramHandlers,
   ...apiIntegrationsTeamsHandlers,
+  ...apiIntegrationsDiscordHandlers,
   ...apiIntegrationsAgentPhoneHandlers,
   ...apiIntegrationsGithubHandlers,
   ...apiAgentsHandlers,

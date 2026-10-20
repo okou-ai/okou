@@ -68,6 +68,9 @@ test("Integrations show current status and refresh after GitHub connects", async
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
   expect(screen.getByText(/update permissions/iu)).toBeInTheDocument();
   expect(getIntegrationCard("Phone")).toHaveTextContent("+15555551212");
+  expect(
+    getAction("button", "Connect", getIntegrationCard("Discord")),
+  ).toBeEnabled();
   const githubCard = getIntegrationCard("GitHub");
   expect(getAction("button", "Connect", githubCard)).toBeInTheDocument();
   expect(screen.queryByText("Feishu")).not.toBeInTheDocument();
