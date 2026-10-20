@@ -5244,7 +5244,7 @@
       },
       "morningBrief": {
         "conflict": "O Morning Brief está temporariamente indisponível porque o estado da instalação está inconsistente. Tente novamente quando a reconciliação terminar.",
-        "description": "Prioridades diárias às 7h no seu fuso horário.",
+        "description": "Prioridades diárias até as 7h no seu fuso horário.",
         "missingDefaultAgent": "Escolha um Agent padrão utilizável antes de ativar o Morning Brief.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
         "preparationFailed": "A configuração será tentada novamente automaticamente. Você também pode tentar agora.",

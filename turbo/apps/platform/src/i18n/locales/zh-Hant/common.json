@@ -5157,7 +5157,7 @@
       },
       "morningBrief": {
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
-        "description": "每天早上 7:00（按你的時區）接收當日重點。",
+        "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
