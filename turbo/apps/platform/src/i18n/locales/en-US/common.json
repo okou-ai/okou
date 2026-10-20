@@ -2147,9 +2147,12 @@
     "relations": {
       "chats": "Chats",
       "loadFailed": "Could not load",
+      "messageUnavailable": "Message unavailable",
       "origin": "From",
       "queued": "Queued",
+      "received": "Received",
       "running": "Running",
+      "sent": "Sent",
       "unavailable": "Unavailable",
       "untitled": "Untitled"
     },

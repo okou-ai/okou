@@ -2147,9 +2147,12 @@
     "relations": {
       "chats": "चैट",
       "loadFailed": "लोड नहीं हुआ",
+      "messageUnavailable": "संदेश उपलब्ध नहीं",
       "origin": "शुरुआत",
       "queued": "कतार में",
+      "received": "प्राप्त हुआ",
       "running": "चल रहा है",
+      "sent": "भेजा गया",
       "unavailable": "उपलब्ध नहीं",
       "untitled": "बिना शीर्षक"
     },

@@ -5,12 +5,14 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatRelationsContract,
   type ChatCommunication,
+  type ChatRelationMessage,
   type CreatedChatRelation,
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { hash, pathname } from "../../../signals/location.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   artifactSummary,
@@ -83,6 +85,51 @@ function mockCommunications(
     });
   });
 }
+function message(
+  overrides: Partial<ChatRelationMessage> = {},
+): ChatRelationMessage {
+  return {
+    id: RELATION,
+    direction: "sent",
+    sourceChatThreadId: THREAD,
+    targetChatThreadId: PEER,
+    sourceRunId: RUN,
+    targetRunId: OTHER_RUN,
+    messageEventId: EVENT,
+    createdAt: WHEN,
+    userMessage: {
+      version: 1,
+      parts: [{ type: "text", text: "Please check the launch plan" }],
+    },
+    ...overrides,
+  };
+}
+function receivedMessage(text: string): ChatRelationMessage {
+  return message({
+    id: EVENT,
+    direction: "received",
+    sourceChatThreadId: PEER,
+    targetChatThreadId: THREAD,
+    sourceRunId: OTHER_RUN,
+    targetRunId: RUN,
+    userMessage: { version: 1, parts: [{ type: "text", text }] },
+  });
+}
+function mockMessages(items: readonly ChatRelationMessage[]) {
+  context.mocks.api(chatRelationsContract.messages, ({ respond }) => {
+    return respond(200, { items: [...items] });
+  });
+}
+async function openMessages(title: string) {
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  const row = (await within(panel).findByText(title)).closest("button");
+  if (!row) {
+    throw new Error(`Expected a disclosure row for ${title}`);
+  }
+  click(row);
+  return { panel, row };
+}
+
 function installRelationsGeometry(narrow = false) {
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
@@ -343,8 +390,11 @@ test("Show the first source and created chats with their status", async () => {
   await expect(
     within(panel).findByText("Older child"),
   ).resolves.toBeInTheDocument();
-  const peer = within(panel).getByText("Existing planning chat").closest("a");
-  expect(peer).toHaveAttribute("href", `/chats/${PEER}`);
+  // Exchanged messages turn the peer row into a disclosure for its history.
+  const peer = within(panel)
+    .getByText("Existing planning chat")
+    .closest("button");
+  expect(peer).toHaveAttribute("aria-expanded", "false");
   expect(peer).toHaveTextContent("Running");
   expect(child.closest("a")).not.toHaveTextContent("Running");
   expect(panel.querySelector("[title]")).toBeNull();
@@ -425,8 +475,10 @@ test("List an agent origin once when it is also a related chat", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
   await within(chats).findByText("Research child");
-  const parent = within(chats).getByText("Existing planning chat").closest("a");
-  expect(parent).toHaveAttribute("href", `/chats/${PEER}`);
+  const parent = within(chats)
+    .getByText("Existing planning chat")
+    .closest("button");
+  expect(parent).toHaveAttribute("aria-expanded", "false");
   expect(parent).toHaveTextContent("From");
   expect(within(chats).getAllByText("From", { exact: true })).toHaveLength(1);
   expect(within(chats).getAllByRole("listitem")).toHaveLength(2);
@@ -475,6 +527,89 @@ test("Keep the agent origin first in the collapsed preview when it is the oldest
   click(buttonNamed("Expand", chats));
   expect(within(chats).getByText("Third child")).toBeInTheDocument();
   expect(within(chats).getAllByRole("listitem")).toHaveLength(4);
+});
+
+test("Open a related chat's messages and link each to the run it started", async () => {
+  await setupRelations({
+    mock: () => {
+      mockCommunications();
+      mockMessages([
+        message(),
+        receivedMessage("The plan looks ready"),
+        message({
+          id: CHILD,
+          targetRunId: null,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "Queue the next review" }],
+          },
+        }),
+      ]);
+    },
+  });
+  const { panel, row } = await openMessages("Existing planning chat");
+  const sent = (
+    await within(panel).findByText("Please check the launch plan")
+  ).closest("a");
+  expect(row).toHaveAttribute("aria-expanded", "true");
+  // A sent message opens the other chat where it started a run.
+  expect(sent).toHaveAttribute("href", `/chats/${PEER}#run-${OTHER_RUN}`);
+  expect(sent).toHaveTextContent("Sent");
+  // A received message locates the run it started in this chat.
+  const received = within(panel).getByText("The plan looks ready").closest("a");
+  expect(received).toHaveAttribute("href", `/chats/${THREAD}#run-${RUN}`);
+  expect(received).toHaveTextContent("Received");
+  // A message that has not started a run yet opens its chat.
+  expect(
+    within(panel).getByText("Queue the next review").closest("a"),
+  ).toHaveAttribute("href", `/chats/${PEER}`);
+  click(row);
+  await waitFor(() => {
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+  expect(
+    within(panel).queryByText("Please check the launch plan"),
+  ).not.toBeInTheDocument();
+});
+
+test("Follow a sent message card to the run it started in the other chat", async () => {
+  await setupRelations({
+    mock: () => {
+      mockCommunications();
+      mockMessages([message()]);
+    },
+  });
+  const { panel } = await openMessages("Existing planning chat");
+  const card = (
+    await within(panel).findByText("Please check the launch plan")
+  ).closest("a");
+  if (!card) {
+    throw new Error("Expected the sent message card to be a link");
+  }
+  click(card);
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${PEER}`);
+  });
+  expect(hash()).toBe(`#run-${OTHER_RUN}`);
+});
+
+test("Keep received messages usable when the other chat is unavailable", async () => {
+  await setupRelations({
+    mock: () => {
+      mockCommunications(1, { title: null, status: "unavailable" });
+      mockMessages([message(), receivedMessage("The reply is still here")]);
+    },
+  });
+  const { panel, row } = await openMessages("Unavailable");
+  const reply = await within(panel).findByText("The reply is still here");
+  expect(row).toHaveAttribute("aria-expanded", "true");
+  expect(reply.closest("a")).toHaveAttribute(
+    "href",
+    `/chats/${THREAD}#run-${RUN}`,
+  );
+  expect(
+    within(panel).getByText("Please check the launch plan").closest("a"),
+  ).toBeNull();
 });
 
 test("Show empty chats and unavailable relationship targets without inventing an origin", async () => {
@@ -574,7 +709,7 @@ test("Show a queued related chat's status as text", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   const row = (
     await within(panel).findByText("Existing planning chat")
-  ).closest("a");
+  ).closest("button");
   expect(row).toHaveTextContent("Queued");
   expect(row).not.toHaveTextContent("Running");
 });
@@ -630,9 +765,9 @@ test("Preview three unique chats and expand the complete list", async () => {
   const chats = await within(panel).findByRole("region", { name: "Chats" });
   expect(within(chats).getAllByRole("listitem")).toHaveLength(3);
   expect(within(chats).getAllByText("Child 1")).toHaveLength(1);
-  expect(within(chats).getByText("Child 1").closest("a")).toHaveTextContent(
-    "Running",
-  );
+  expect(
+    within(chats).getByText("Child 1").closest("button"),
+  ).toHaveTextContent("Running");
   expect(within(chats).queryByText("Created")).not.toBeInTheDocument();
   click(buttonNamed("Expand", chats));
   expect(within(chats).getByText("Child 51")).toBeInTheDocument();

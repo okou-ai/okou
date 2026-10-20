@@ -2140,9 +2140,12 @@
     "relations": {
       "chats": "채팅",
       "loadFailed": "불러오기 실패",
+      "messageUnavailable": "메시지를 볼 수 없음",
       "origin": "시작한 곳",
       "queued": "대기 중",
+      "received": "받음",
       "running": "실행 중",
+      "sent": "보냄",
       "unavailable": "접근 불가",
       "untitled": "제목 없음"
     },

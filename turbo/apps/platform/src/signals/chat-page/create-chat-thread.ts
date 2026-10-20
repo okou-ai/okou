@@ -3848,6 +3848,7 @@ export function createChatPanelSignals(
     resources: createChatResourceSignals(
       artifact.resourceCatalog,
       messagePipeline.initialEventsReady$,
+      relations.closeMessages$,
     ),
     relations,
     ...threadOwned,

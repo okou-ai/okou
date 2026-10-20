@@ -18,7 +18,8 @@ export interface ThreadScrollPosition {
 
 export interface ScrollToEventOptions {
   readonly behavior: ScrollBehavior;
-  readonly viewportOffsetTop: number;
+  /** Where the event lands, as a fraction of the viewport height from its top. */
+  readonly viewportRatio: number;
   readonly preloadPreviousRenderWindow: boolean;
 }
 
@@ -861,9 +862,12 @@ export function createChatThreadScrollSignals(
         );
         signal.throwIfAborted();
       }
+      // Measure once the events are ready: a pane opened by a link has no
+      // viewport when the scroll is requested.
+      const viewportHeight = get(scroll.scrollContainer$)?.clientHeight ?? 0;
       const position: ThreadScrollPosition = {
         targetEventId: eventId,
-        viewportOffsetTop: options.viewportOffsetTop,
+        viewportOffsetTop: viewportHeight * options.viewportRatio,
       };
       await set(scroll.setThreadScrollPosition$, position, signal);
       signal.throwIfAborted();

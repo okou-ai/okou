@@ -2140,9 +2140,12 @@
     "relations": {
       "chats": "聊天",
       "loadFailed": "加载失败",
+      "messageUnavailable": "消息不可用",
       "origin": "发起自",
       "queued": "排队中",
+      "received": "收到",
       "running": "运行中",
+      "sent": "发出",
       "unavailable": "不可访问",
       "untitled": "未命名"
     },

@@ -1,12 +1,29 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { CircleSlash, MessageCircle, Plug } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChevronRight,
+  CircleSlash,
+  MessageCircle,
+  Plug,
+} from "lucide-react";
 import { Button, cn, RunningIndicator } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { RelatedChat } from "@okouai/api-contracts/contracts/chat-relations";
+import type {
+  ChatRelationMessage,
+  RelatedChat,
+} from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import type { ResourceChat } from "../../signals/chat-page/chat-relations.ts";
+import type {
+  ChatRelationList,
+  ResourceChat,
+} from "../../signals/chat-page/chat-relations.ts";
+import {
+  formatChatTimestamp,
+  formatCompactChatTimestamp,
+} from "../../i18n/format.ts";
+import { messageDocumentToDisplayText } from "../../signals/okou-page/user-message-document-codec.ts";
 import { chatThreadMetaMap$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -125,15 +142,216 @@ function ChatTitle({
   return <HoverScrollTitle title={title} />;
 }
 
+function MessageTime({ value }: { readonly value: string }) {
+  return (
+    <time
+      dateTime={value}
+      aria-label={formatChatTimestamp(value)}
+      className="shrink-0 tabular-nums"
+    >
+      {formatCompactChatTimestamp(value)}
+    </time>
+  );
+}
+
+// A card opens the run its message started: the other chat for a sent
+// message, this chat for a received one. Its full text is there.
+function MessageCard({
+  message,
+  unavailable,
+}: {
+  readonly message: ChatRelationMessage;
+  readonly unavailable: boolean;
+}) {
+  const { t } = useTranslation();
+  const text = message.userMessage
+    ? messageDocumentToDisplayText(message.userMessage)
+    : null;
+  const linked = !(unavailable && message.direction === "sent");
+  const content = (
+    <>
+      <span className="flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+        <span className="font-medium">
+          {t(($) => {
+            return message.direction === "sent"
+              ? $.chat.relations.sent
+              : $.chat.relations.received;
+          })}
+        </span>
+        <span className="flex-1" />
+        <MessageTime value={message.createdAt} />
+        {/* Reserved even at rest, so revealing it never moves the time. */}
+        <span className="flex size-3.5 shrink-0 items-center justify-center">
+          {linked && (
+            <ArrowUpRight
+              aria-hidden="true"
+              size={13}
+              className="text-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-visible/message:opacity-100"
+            />
+          )}
+        </span>
+      </span>
+      <span
+        className={cn(
+          "mt-1 line-clamp-3 whitespace-pre-wrap break-words text-[13px] leading-5",
+          linked ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {text ||
+          t(($) => {
+            return $.chat.relations.messageUnavailable;
+          })}
+      </span>
+    </>
+  );
+  return (
+    <li>
+      {linked ? (
+        <Link
+          pathname={ROUTES.chat}
+          options={{
+            pathParams: { threadId: message.targetChatThreadId },
+            hash: message.targetRunId
+              ? `run-${message.targetRunId}`
+              : undefined,
+          }}
+          className="group/message block rounded-lg bg-nested-fill px-2 pb-2.5 pt-2 transition-colors hover:bg-state-selected focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          {content}
+        </Link>
+      ) : (
+        <div className="block rounded-lg border border-dashed border-border px-2 pb-2.5 pt-2">
+          {content}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function MessageCards({
+  id,
+  list,
+  unavailable,
+  retry,
+}: {
+  readonly id: string;
+  readonly list: ChatRelationList<ChatRelationMessage>;
+  readonly unavailable: boolean;
+  readonly retry: () => void;
+}) {
+  const { t } = useTranslation();
+  const data = useLastLoadable(list.data$);
+  if (data.state === "loading") {
+    return null;
+  }
+  if (data.state === "hasError") {
+    return (
+      <div
+        role="alert"
+        className="mb-1 ml-7 flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
+      >
+        <p>
+          {t(($) => {
+            return $.chat.relations.loadFailed;
+          })}
+        </p>
+        <Button variant="quiet" size="xs" onClick={retry}>
+          {t(($) => {
+            return $.chat.resources.retry;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  // Indented so the text starts on the chat titles' edge.
+  return (
+    <ul id={id} className="m-0 mb-1 ml-7 mt-0.5 grid list-none gap-1 p-0">
+      {data.data.items.map((message) => {
+        return (
+          <MessageCard
+            key={message.id}
+            message={message}
+            unavailable={unavailable}
+          />
+        );
+      })}
+    </ul>
+  );
+}
+
 function ResourceChatRow({
   chat,
   origin,
+  thread,
 }: {
   readonly chat: ResourceChat;
   readonly origin: boolean;
+  readonly thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  if (chat.status === "unavailable") {
+  const signals = thread.relations;
+  const selectedPeer = useGet(signals.selectedPeer$);
+  const messages = useGet(signals.messages$);
+  const toggle = useSet(signals.togglePeer$);
+  const retry = useSet(signals.retry$);
+  const unavailable = chat.status === "unavailable";
+  const glyph = (
+    <span className={RESOURCE_GLYPH_CLASS}>
+      {unavailable ? <CircleSlash size={16} /> : <MessageCircle size={16} />}
+    </span>
+  );
+  const title = unavailable ? (
+    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+      {t(($) => {
+        return $.chat.relations.unavailable;
+      })}
+    </span>
+  ) : (
+    <ChatTitle threadId={chat.threadId} fallback={chat.title} />
+  );
+  // A chat with a message history expands to it; the cards are the way in.
+  if (chat.exchanged) {
+    const expanded = selectedPeer === chat.threadId;
+    const messagesId = `${thread.threadId}-messages-${chat.threadId}`;
+    return (
+      <li>
+        <Button
+          variant="quiet"
+          className={cn(
+            RESOURCE_ROW_CLASS,
+            "w-full justify-start font-normal text-foreground",
+          )}
+          aria-expanded={expanded}
+          aria-controls={expanded ? messagesId : undefined}
+          onClick={() => {
+            toggle(chat.threadId);
+          }}
+        >
+          {glyph}
+          {title}
+          {origin && <OriginTag />}
+          <ChatStatus status={chat.status} />
+          <ChevronRight
+            aria-hidden="true"
+            size={14}
+            className={cn(
+              "shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-90",
+            )}
+          />
+        </Button>
+        {expanded && messages && (
+          <MessageCards
+            id={messagesId}
+            list={messages}
+            unavailable={unavailable}
+            retry={retry}
+          />
+        )}
+      </li>
+    );
+  }
+  if (unavailable) {
     return (
       <li>
         <span
@@ -142,14 +360,8 @@ function ResourceChatRow({
             "text-muted-foreground hover:bg-transparent",
           )}
         >
-          <span className={RESOURCE_GLYPH_CLASS}>
-            <CircleSlash size={16} />
-          </span>
-          <span className="min-w-0 flex-1 truncate">
-            {t(($) => {
-              return $.chat.relations.unavailable;
-            })}
-          </span>
+          {glyph}
+          {title}
           {origin && <OriginTag />}
         </span>
       </li>
@@ -162,10 +374,8 @@ function ResourceChatRow({
         options={{ pathParams: { threadId: chat.threadId } }}
         className={RESOURCE_ROW_CLASS}
       >
-        <span className={RESOURCE_GLYPH_CLASS}>
-          <MessageCircle size={16} />
-        </span>
-        <ChatTitle threadId={chat.threadId} fallback={chat.title} />
+        {glyph}
+        {title}
         {origin && <OriginTag />}
         <ChatStatus status={chat.status} />
       </Link>
@@ -251,7 +461,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
       )}
       <ul id={chatsId} className="m-0 list-none p-0">
         {listedOrigin ? (
-          <ResourceChatRow chat={listedOrigin} origin />
+          <ResourceChatRow chat={listedOrigin} origin thread={thread} />
         ) : (
           origin && <UnlistedOriginRow part={origin} />
         )}
@@ -259,7 +469,12 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
           .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT - originRows)
           .map((chat) => {
             return (
-              <ResourceChatRow key={chat.threadId} chat={chat} origin={false} />
+              <ResourceChatRow
+                key={chat.threadId}
+                chat={chat}
+                origin={false}
+                thread={thread}
+              />
             );
           })}
       </ul>

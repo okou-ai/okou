@@ -48,6 +48,25 @@ export function formatChatTimestamp(value: string): string {
   });
 }
 
+/** Compact timestamp for narrow chat lists; the full timestamp belongs in a tooltip. */
+export function formatCompactChatTimestamp(value: string): string {
+  const date = new Date(value);
+  const today = new Date(now());
+  const sameDay = date.toDateString() === today.toDateString();
+  return date.toLocaleString(
+    resolvedAppLocale(),
+    sameDay
+      ? { hour: "numeric", minute: "2-digit" }
+      : {
+          month: "short",
+          day: "numeric",
+          ...(date.getFullYear() !== today.getFullYear()
+            ? { year: "numeric" as const }
+            : {}),
+        },
+  );
+}
+
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;

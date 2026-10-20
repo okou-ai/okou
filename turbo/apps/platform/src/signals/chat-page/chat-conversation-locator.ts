@@ -35,6 +35,7 @@ const MAX_TICKS = 24;
 /** Fewer ticks read as stray dashes, not as a scale. */
 const SHOW_MIN_TURNS = 8;
 /** Where a jump parks its target inside the viewport. */
+/** Where a jump lands: a little context stays visible above the target. */
 const JUMP_VIEWPORT_RATIO = 0.28;
 /** Falloff radius, as a multiple of the tick interval, so density feels equal. */
 const MAGNIFY_SIGMA_RATIO = 2.6;
@@ -95,6 +96,8 @@ export interface ChatConversationLocatorSignals {
   readonly leaveRail$: Command<void, []>;
   readonly jumpToPointer$: Command<Promise<void>, [AbortSignal]>;
   readonly jumpToTurn$: Command<Promise<void>, [number, AbortSignal]>;
+  /** Open a linked event where a rail jump would land, and mark it the same way. */
+  readonly landOnLinkedEvent$: Command<Promise<void>, [string, AbortSignal]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +289,59 @@ function createTurnOnRef(landing$: State<LocatorLanding>) {
   );
 }
 
+// Rail jumps and linked events land at the same height and leave the same
+// mark on the turn they reach.
+function createLanding(
+  scrollToEvent$: Command<
+    Promise<void>,
+    [string, ScrollToEventOptions, AbortSignal]
+  >,
+) {
+  const internalLanding$ = state<LocatorLanding>({
+    eventId: null,
+    revision: 0,
+  });
+  const resetLandedSignal$ = resetSignal();
+  const landOn$ = command(
+    async (
+      { set },
+      eventId: string,
+      options: Omit<ScrollToEventOptions, "viewportRatio">,
+      parentSignal: AbortSignal,
+    ): Promise<void> => {
+      const signal = set(resetLandedSignal$, parentSignal);
+      await set(
+        scrollToEvent$,
+        eventId,
+        { ...options, viewportRatio: JUMP_VIEWPORT_RATIO },
+        signal,
+      );
+      signal.throwIfAborted();
+      // The target may join the DOM in the pending React commit. Publishing
+      // its identity lets that committed turn own the CSS highlight as well.
+      set(internalLanding$, (previous) => {
+        return { eventId, revision: previous.revision + 1 };
+      });
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(internalLanding$, (previous) => {
+            return { ...previous, eventId: null };
+          });
+        },
+        { once: true },
+      );
+    },
+  );
+  return {
+    landing$: computed((get) => {
+      return get(internalLanding$);
+    }),
+    turnOnRef$: createTurnOnRef(internalLanding$),
+    landOn$,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -306,11 +362,7 @@ export function createChatConversationLocatorSignals({
 }): ChatConversationLocatorSignals {
   const pointerFraction$ = state<number | null>(null);
   const engaged$ = state(false);
-  const internalLanding$ = state<LocatorLanding>({
-    eventId: null,
-    revision: 0,
-  });
-  const resetLandedSignal$ = resetSignal();
+  const landing = createLanding(scrollToEvent$);
 
   const sampledTurns$ = createSampledTurns(allChatGroups$);
   const layout$ = createLayout(sampledTurns$, pointerFraction$);
@@ -348,47 +400,35 @@ export function createChatConversationLocatorSignals({
     set(pointerFraction$, null);
   });
 
-  const turnOnRef$ = createTurnOnRef(internalLanding$);
-
   const jumpToTurn$ = command(
     async (
       { get, set },
       turnIndex: number,
-      parentSignal: AbortSignal,
+      signal: AbortSignal,
     ): Promise<void> => {
       const turn = get(sampledTurns$).find((candidate) => {
         return candidate.turnIndex === turnIndex;
       });
-      const container = get(scrollContainer$);
-      if (!turn || !container) {
+      if (!turn || !get(scrollContainer$)) {
         return;
       }
-      const signal = set(resetLandedSignal$, parentSignal);
       L.debug("jump to turn", { threadId, turnIndex, eventId: turn.eventId });
       await set(
-        scrollToEvent$,
+        landing.landOn$,
         turn.eventId,
-        {
-          behavior: "smooth",
-          viewportOffsetTop: container.clientHeight * JUMP_VIEWPORT_RATIO,
-          preloadPreviousRenderWindow: true,
-        },
+        { behavior: "smooth", preloadPreviousRenderWindow: true },
         signal,
       );
-      signal.throwIfAborted();
-      // The target may join the DOM in the pending React commit. Publishing
-      // its identity lets that committed turn own the CSS highlight as well.
-      set(internalLanding$, (previous) => {
-        return { eventId: turn.eventId, revision: previous.revision + 1 };
-      });
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(internalLanding$, (previous) => {
-            return { ...previous, eventId: null };
-          });
-        },
-        { once: true },
+    },
+  );
+
+  const landOnLinkedEvent$ = command(
+    async ({ set }, eventId: string, signal: AbortSignal): Promise<void> => {
+      await set(
+        landing.landOn$,
+        eventId,
+        { behavior: "instant", preloadPreviousRenderWindow: false },
+        signal,
       );
     },
   );
@@ -406,10 +446,8 @@ export function createChatConversationLocatorSignals({
   return {
     layout$,
     preview$,
-    landing$: computed((get) => {
-      return get(internalLanding$);
-    }),
-    turnOnRef$,
+    landing$: landing.landing$,
+    turnOnRef$: landing.turnOnRef$,
     engaged$: computed((get) => {
       return get(engaged$);
     }),
@@ -418,5 +456,6 @@ export function createChatConversationLocatorSignals({
     leaveRail$,
     jumpToPointer$,
     jumpToTurn$,
+    landOnLinkedEvent$,
   };
 }
