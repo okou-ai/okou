@@ -365,24 +365,6 @@ function buildOfficialSlackHelpMessage(args: {
   });
 }
 
-async function connectionForSlackUser(
-  db: Db,
-  workspaceId: string,
-  slackUserId: string,
-): Promise<SlackConnection | undefined> {
-  const [connection] = await db
-    .select()
-    .from(slackOrgConnections)
-    .where(
-      and(
-        eq(slackOrgConnections.slackUserId, slackUserId),
-        eq(slackOrgConnections.slackWorkspaceId, workspaceId),
-      ),
-    )
-    .limit(1);
-  return connection;
-}
-
 function slackPersistentSecretContext(args: {
   readonly orgId: string | null;
   readonly userId: string | undefined;
@@ -852,6 +834,19 @@ const refreshOrgAppHome$ = command(
   },
 );
 
+function slackCommandLoginResponse(payload: SlackCommandPayload): Response {
+  return ephemeral(
+    buildLoginMessage(
+      buildOrgConnectUrl(
+        payload.team_id,
+        payload.user_id,
+        payload.channel_id,
+        undefined,
+      ),
+    ),
+  );
+}
+
 export const handleSlackCommands$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
@@ -891,9 +886,25 @@ export const handleSlackCommands$ = command(
         return installation;
       })();
       signal.throwIfAborted();
-      const connection = installation
-        ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
-        : undefined;
+      let connection: SlackConnection | undefined;
+      if (installation) {
+        const lookupDb = db;
+        const workspaceId = payload.team_id;
+        const slackUserId = payload.user_id;
+        connection = await (async (): Promise<SlackConnection | undefined> => {
+          const [connection] = await lookupDb
+            .select()
+            .from(slackOrgConnections)
+            .where(
+              and(
+                eq(slackOrgConnections.slackUserId, slackUserId),
+                eq(slackOrgConnections.slackWorkspaceId, workspaceId),
+              ),
+            )
+            .limit(1);
+          return connection;
+        })();
+      }
       signal.throwIfAborted();
       return { installation, connection };
     })(signal);
@@ -921,16 +932,7 @@ export const handleSlackCommands$ = command(
           ),
         );
       }
-      return ephemeral(
-        buildLoginMessage(
-          buildOrgConnectUrl(
-            payload.team_id,
-            payload.user_id,
-            payload.channel_id,
-            undefined,
-          ),
-        ),
-      );
+      return slackCommandLoginResponse(payload);
     }
 
     if (!installation) {
@@ -964,16 +966,7 @@ export const handleSlackCommands$ = command(
     }
 
     if (!connection) {
-      return ephemeral(
-        buildLoginMessage(
-          buildOrgConnectUrl(
-            payload.team_id,
-            payload.user_id,
-            payload.channel_id,
-            undefined,
-          ),
-        ),
-      );
+      return slackCommandLoginResponse(payload);
     }
 
     return ephemeral(
