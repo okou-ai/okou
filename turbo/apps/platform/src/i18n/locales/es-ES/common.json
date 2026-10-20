@@ -2185,16 +2185,11 @@
       "skipAutomationEvent": "Omitir evento de automatización"
     },
     "relations": {
-      "communications": "Chats",
-      "idle": "Inactivo",
+      "chats": "Chats",
       "loadFailed": "Error al cargar",
-      "messageUnavailable": "Mensaje no disponible",
       "origin": "Desde",
       "queued": "En cola",
-      "received": "Recibido",
       "running": "En curso",
-      "sent": "Enviado",
-      "toggleMessages": "Mensajes con {{title}}",
       "unavailable": "No disponible",
       "untitled": "Sin título"
     },
@@ -2218,8 +2213,10 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
+      "empty": "Los artefactos y chats relacionados de este chat aparecen aquí.",
       "expand": "Expandir",
       "loadFailed": "No se pudieron cargar los recursos",
+      "loading": "Cargando recursos",
       "retry": "Reintentar",
       "title": "Recursos del chat"
     },
@@ -5150,6 +5147,10 @@
           "title": "Modelo predeterminado"
         },
         "description": "Elige los valores predeterminados para los chats nuevos y cómo se envían los mensajes.",
+        "resources": {
+          "description": "Muestra los artefactos y chats relacionados junto a la conversación cuando hay espacio.",
+          "title": "Abrir recursos automáticamente"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

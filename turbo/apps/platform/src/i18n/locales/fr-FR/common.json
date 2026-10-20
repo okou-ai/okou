@@ -2185,16 +2185,11 @@
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
     "relations": {
-      "communications": "Discussions",
-      "idle": "Inactive",
+      "chats": "Discussions",
       "loadFailed": "Échec du chargement",
-      "messageUnavailable": "Message indisponible",
       "origin": "Depuis",
       "queued": "En attente",
-      "received": "Reçu",
       "running": "En cours",
-      "sent": "Envoyé",
-      "toggleMessages": "Messages avec {{title}}",
       "unavailable": "Indisponible",
       "untitled": "Sans titre"
     },
@@ -2218,8 +2213,10 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
+      "empty": "Les artefacts et chats associés de ce chat apparaissent ici.",
       "expand": "Développer",
       "loadFailed": "Impossible de charger les ressources",
+      "loading": "Chargement des ressources",
       "retry": "Réessayer",
       "title": "Ressources du chat"
     },
@@ -5150,6 +5147,10 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
+        "resources": {
+          "description": "Affiche les artefacts et chats associés à côté de la conversation lorsqu’il y a de la place.",
+          "title": "Ouvrir les ressources automatiquement"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

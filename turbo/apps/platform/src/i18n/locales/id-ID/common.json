@@ -2138,16 +2138,11 @@
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },
     "relations": {
-      "communications": "Obrolan",
-      "idle": "Tidak aktif",
+      "chats": "Obrolan",
       "loadFailed": "Gagal memuat",
-      "messageUnavailable": "Pesan tidak tersedia",
       "origin": "Dari",
       "queued": "Dalam antrean",
-      "received": "Diterima",
       "running": "Berjalan",
-      "sent": "Dikirim",
-      "toggleMessages": "Pesan dengan {{title}}",
       "unavailable": "Tidak tersedia",
       "untitled": "Tanpa judul"
     },
@@ -2169,8 +2164,10 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
+      "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
       "expand": "Perluas",
       "loadFailed": "Tidak dapat memuat sumber daya",
+      "loading": "Memuat sumber daya",
       "retry": "Coba lagi",
       "title": "Sumber daya chat"
     },
@@ -5064,6 +5061,10 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
+        "resources": {
+          "description": "Tampilkan artefak dan chat terkait di samping percakapan saat ada ruang.",
+          "title": "Buka sumber daya secara otomatis"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

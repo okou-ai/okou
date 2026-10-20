@@ -2145,16 +2145,11 @@
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
     "relations": {
-      "communications": "Chats",
-      "idle": "Inaktiv",
+      "chats": "Chats",
       "loadFailed": "Laden fehlgeschlagen",
-      "messageUnavailable": "Nachricht nicht verfügbar",
       "origin": "Von",
       "queued": "In Warteschlange",
-      "received": "Empfangen",
       "running": "Läuft",
-      "sent": "Gesendet",
-      "toggleMessages": "Nachrichten mit {{title}}",
       "unavailable": "Nicht verfügbar",
       "untitled": "Unbenannt"
     },
@@ -2177,8 +2172,10 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
+      "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
       "expand": "Ausklappen",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
+      "loading": "Ressourcen werden geladen",
       "retry": "Erneut versuchen",
       "title": "Chat-Ressourcen"
     },
@@ -5084,6 +5081,10 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
+        "resources": {
+          "description": "Zeigt Artefakte und verwandte Chats neben dem Gespräch an, wenn Platz ist.",
+          "title": "Ressourcen automatisch öffnen"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

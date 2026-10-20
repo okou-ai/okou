@@ -15,6 +15,10 @@ import {
   PopoverContent,
   PopoverTrigger,
   surfaceVariants,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -24,7 +28,6 @@ import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
 import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
@@ -38,7 +41,10 @@ import {
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
+  RESOURCE_GLYPH_CLASS,
   RESOURCE_PREVIEW_LIMIT,
+  RESOURCE_ROW_CLASS,
+  RESOURCE_SECTION_CLASS,
 } from "./chat-resource-section.tsx";
 
 export function ChatResourcesButton({
@@ -73,19 +79,17 @@ function ChatResourcesButtonInner({
 }) {
   const { t } = useTranslation();
   const popupRef = useSet(thread.resources.popupOnRef$);
-  const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
-  const open = useLastResolved(resources.open$) ?? false;
+  const chosen = useGet(resources.chosen$);
+  const automatic = useLastResolved(resources.automatic$) ?? false;
+  // Resources load only while the panel shows, so the default cannot wait for them.
+  const open = chosen ?? automatic;
   const wide = useGet(resources.wide$);
-  const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
-  const anchorRef = useSet(resources.anchorOnRef$);
   const setOpen = useSet(resources.setOpen$);
-  const changePreference = useSet(resources.changePreference$);
-  const rootSignal = useGet(rootSignal$);
   const visible = open && boundary !== null;
 
   return (
@@ -93,11 +97,6 @@ function ChatResourcesButtonInner({
       open={visible}
       modal={false}
       onOpenChange={(nextOpen, details) => {
-        if (details.reason === "trigger-press") {
-          // Only the artifact button changes the preference across chats.
-          detach(changePreference(nextOpen, rootSignal), Reason.DomCallback);
-          return;
-        }
         const outside =
           details.reason === "outside-press" || details.reason === "focus-out";
         if (
@@ -113,37 +112,11 @@ function ChatResourcesButtonInner({
         setOpen(nextOpen);
       }}
     >
-      <PopoverTrigger
-        ref={anchorRef}
-        aria-haspopup={undefined}
-        disabled={saving}
-        onBlur={(event) => {
-          // The artifact button and popup form one keyboard interaction zone.
-          blurControl(event.relatedTarget);
-        }}
-        render={
-          <Button
-            focusableWhenDisabled
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn(
-              "shrink-0 duration-150",
-              largeTarget && "size-11",
-              open &&
-                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-            )}
-            aria-label={t(($) => {
-              return $.chat.thread.openArtifacts;
-            })}
-            aria-pressed={open}
-            aria-busy={saving}
-          />
-        }
-      >
-        <Package size={18} />
-      </PopoverTrigger>
+      <ChatResourcesTrigger
+        thread={thread}
+        open={open}
+        largeTarget={largeTarget}
+      />
       <PopoverContent
         ref={popupRef}
         // Persistent resources share the chat's keyboard context.
@@ -175,6 +148,60 @@ function ChatResourcesButtonInner({
   );
 }
 
+function ChatResourcesTrigger({
+  thread,
+  open,
+  largeTarget,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly open: boolean;
+  readonly largeTarget: boolean;
+}) {
+  const { t } = useTranslation();
+  const anchorRef = useSet(thread.resources.anchorOnRef$);
+  const blurControl = useSet(thread.resources.blurControl$);
+  const label = t(($) => {
+    return $.chat.resources.title;
+  });
+  return (
+    <TooltipProvider delay={300}>
+      {/* The open panel sits below the button, where the tooltip would cover it. */}
+      <Tooltip disabled={open}>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              ref={anchorRef}
+              aria-haspopup={undefined}
+              onBlur={(event) => {
+                // The resource button and popup form one keyboard interaction zone.
+                blurControl(event.relatedTarget);
+              }}
+              render={
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="icon-sm"
+                  iconSize="md"
+                  className={cn(
+                    "shrink-0 duration-150",
+                    largeTarget && "size-11",
+                    open &&
+                      "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
+                  )}
+                  aria-label={label}
+                />
+              }
+            />
+          }
+        >
+          <Package size={18} />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function ResourceOutputRow({
   artifact,
   thread,
@@ -199,7 +226,10 @@ function ResourceOutputRow({
     <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
         variant="quiet"
-        className="h-8.5 min-w-0 flex-1 justify-start gap-2.5 px-1 text-[13px] leading-5 font-normal text-foreground hover:bg-gray-50 focus-visible:bg-gray-50"
+        className={cn(
+          RESOURCE_ROW_CLASS,
+          "justify-start font-normal text-foreground",
+        )}
         onClick={() => {
           detach(
             openArtifact(thread, artifact.id, pageSignal),
@@ -207,11 +237,9 @@ function ResourceOutputRow({
           );
         }}
       >
-        <FilePreviewIcon
-          filename={artifact.title}
-          size="sm"
-          className="shrink-0"
-        />
+        <span className={RESOURCE_GLYPH_CLASS}>
+          <FilePreviewIcon filename={artifact.title} size="sm" />
+        </span>
         <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
       </Button>
       <Button
@@ -221,7 +249,7 @@ function ResourceOutputRow({
         aria-label={t(($) => {
           return $.chat.resources.copyLink;
         })}
-        className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+        className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
         onClick={() => {
           return detach(
             copyArtifact(thread.resources.catalog, artifact.id, pageSignal),
@@ -250,7 +278,7 @@ function ChatResourcesStatus({
     return (
       <div
         role="alert"
-        className="flex items-center justify-between gap-2 py-3 text-xs text-muted-foreground"
+        className="flex items-center justify-between gap-2 px-2 pt-3 text-xs text-muted-foreground"
       >
         <p>
           {t(($) => {
@@ -278,9 +306,12 @@ function ChatResourcesStatus({
     chats.state === "loading"
   ) {
     return (
-      <p role="status" className="py-4 text-sm text-muted-foreground">
+      <p
+        role="status"
+        className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground"
+      >
         {t(($) => {
-          return $.settings.shared.loading;
+          return $.chat.resources.loading;
         })}
       </p>
     );
@@ -289,9 +320,9 @@ function ChatResourcesStatus({
     return null;
   }
   return (
-    <p className="py-4 text-sm text-muted-foreground">
+    <p className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground">
       {t(($) => {
-        return $.artifacts.catalog.emptyTitle;
+        return $.chat.resources.empty;
       })}
     </p>
   );
@@ -306,71 +337,66 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
   return (
-    <>
+    <div
+      data-resource-scroll
+      className="isolate min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-1 [overflow-anchor:none]"
+    >
       <ChatOrigin thread={thread} />
-      <div
-        data-resource-scroll
-        className="isolate min-h-0 flex-1 divide-y divide-divider overflow-y-auto overscroll-contain px-4 [overflow-anchor:none] empty:hidden"
-      >
-        <ChatRelationships thread={thread} />
-        {data && data.artifacts.length > 0 && (
-          <section
-            className="py-3"
-            aria-label={t(($) => {
+      <ChatRelationships thread={thread} />
+      {data && data.artifacts.length > 0 && (
+        <section
+          className={RESOURCE_SECTION_CLASS}
+          aria-label={t(($) => {
+            return $.artifacts.sidebar.panelTitle;
+          })}
+        >
+          <ChatResourceSectionHeading
+            title={t(($) => {
               return $.artifacts.sidebar.panelTitle;
             })}
-          >
-            <ChatResourceSectionHeading
-              title={t(($) => {
-                return $.artifacts.sidebar.panelTitle;
+          />
+          <ul id={artifactsId} className="m-0 list-none p-0">
+            {data.artifacts
+              .slice(0, expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT)
+              .map((artifact) => {
+                return (
+                  <ResourceOutputRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    thread={thread}
+                  />
+                );
               })}
+          </ul>
+          {(data.artifacts.length > RESOURCE_PREVIEW_LIMIT ||
+            data.nextCursor) && (
+            <ChatResourceSectionToggle
+              expanded={expanded.artifacts}
+              controls={artifactsId}
+              onToggle={(trigger) => {
+                toggleSection("artifacts", trigger);
+              }}
             />
-            <ul id={artifactsId} className="m-0 list-none p-0">
-              {data.artifacts
-                .slice(
-                  0,
-                  expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT,
-                )
-                .map((artifact) => {
-                  return (
-                    <ResourceOutputRow
-                      key={artifact.id}
-                      artifact={artifact}
-                      thread={thread}
-                    />
-                  );
-                })}
-            </ul>
-            {(data.artifacts.length > RESOURCE_PREVIEW_LIMIT ||
-              data.nextCursor) && (
-              <ChatResourceSectionToggle
-                expanded={expanded.artifacts}
-                controls={artifactsId}
-                onToggle={(trigger) => {
-                  toggleSection("artifacts", trigger);
-                }}
-              />
-            )}
-            {expanded.artifacts && data.nextCursor && (
-              <Button
-                variant="quiet"
-                size="xs"
-                disabled={paging.state === "loading"}
-                onClick={() => {
-                  detach(loadMore(pageSignal), Reason.DomCallback);
-                }}
-              >
-                {t(($) => {
-                  return paging.state === "hasError"
-                    ? $.chat.resources.retry
-                    : $.artifacts.catalog.loadMore;
-                })}
-              </Button>
-            )}
-          </section>
-        )}
-        <ChatResourcesStatus thread={thread} />
-      </div>
-    </>
+          )}
+          {expanded.artifacts && data.nextCursor && (
+            <Button
+              variant="quiet"
+              size="xs"
+              disabled={paging.state === "loading"}
+              onClick={() => {
+                detach(loadMore(pageSignal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return paging.state === "hasError"
+                  ? $.chat.resources.retry
+                  : $.artifacts.catalog.loadMore;
+              })}
+            </Button>
+          )}
+        </section>
+      )}
+      <ChatResourcesStatus thread={thread} />
+    </div>
   );
 }
