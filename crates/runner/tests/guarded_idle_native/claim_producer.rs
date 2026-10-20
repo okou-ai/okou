@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use runner_lifecycle::home_image_cache::{
     HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePrepareLockPolicy,
 };
-use runner_provider::{ClaimedJob, CompletionAuth, JobCandidate, JobProvider};
+use runner_provider::{ClaimedJob, CompletionAuth, JobCandidate, JobProvider, ProviderResult};
 use runner_supervisor::pre_claim_admission::GuardedSpeculativeAdmission;
 use sandbox::SandboxBackingProcess;
 use serde_json::{Value, json};
@@ -124,11 +124,12 @@ impl JobProvider for Producer {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert("unexpected_completion".into(), json!(true));
     }
-    async fn heartbeat(&self, _: &runner_types::types::HeartbeatState) {
+    async fn heartbeat(&self, _: &runner_types::types::HeartbeatState) -> ProviderResult<()> {
         self.receipt
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert("unexpected_heartbeat".into(), json!(true));
+        Ok(())
     }
     async fn shutdown(&self) {}
 }
