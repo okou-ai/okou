@@ -832,7 +832,9 @@ export const handleSlackCommands$ = command(
     const db = set(writeDb$);
     const args = payload.text.trim().split(/\s+/);
     const subCommand = args[0]?.toLowerCase() ?? "";
-    const { installation, connection } = await (async (): Promise<{
+    const { installation, connection } = await (async (
+      signal: AbortSignal,
+    ): Promise<{
       readonly installation: SlackInstallation | undefined;
       readonly connection: SlackConnection | undefined;
     }> => {
@@ -843,7 +845,7 @@ export const handleSlackCommands$ = command(
         : undefined;
       signal.throwIfAborted();
       return { installation, connection };
-    })();
+    })(signal);
     if (subCommand === "help" || subCommand === "") {
       return ephemeral(
         buildOfficialSlackHelpMessage({

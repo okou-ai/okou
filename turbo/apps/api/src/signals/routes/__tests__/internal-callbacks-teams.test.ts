@@ -420,7 +420,9 @@ async function setupConnectedTeamsActor(
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   // The paid entitlement helper already bootstraps and completes onboarding.
-  const subscription = await runsApi.grantProEntitlement(actor);
+  const subscription = await runsApi.grantProEntitlement(actor, {
+    isolatePg: true,
+  });
   const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
   if (!defaultAgentId) {
     throw new Error(

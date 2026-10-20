@@ -134,29 +134,6 @@ async function loadTeamsChatDeliveryContext(
   return { payload, run, messageContent: event.content, binding };
 }
 
-async function countTeamsMentioners(args: {
-  readonly db: Db;
-  readonly tenantId: string;
-  readonly conversationId: string;
-  readonly threadId: string;
-}): Promise<number> {
-  const [row] = await args.db
-    .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
-    .from(teamsChatThreadRoutes)
-    .innerJoin(
-      teamsOrgConnections,
-      eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
-    )
-    .where(
-      and(
-        eq(teamsOrgConnections.teamsTenantId, args.tenantId),
-        eq(teamsChatThreadRoutes.conversationId, args.conversationId),
-        eq(teamsChatThreadRoutes.threadId, args.threadId),
-      ),
-    );
-  return row?.count ?? 0;
-}
-
 function buildTeamsResponseText(args: {
   readonly mainText: string;
   readonly footerText: string | undefined;
@@ -225,12 +202,27 @@ async function deliverClaimedTeamsChatCallback(
     return "skipped_revoked";
   }
 
-  const mentionerCount = await countTeamsMentioners({
-    db: args.db,
-    tenantId: payload.tenantId,
-    conversationId: payload.conversationId,
-    threadId: payload.threadId,
-  });
+  const mentionerCount = await (async () => {
+    const db = args.db;
+    const tenantId = payload.tenantId;
+    const conversationId = payload.conversationId;
+    const threadId = payload.threadId;
+    const [row] = await db
+      .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
+      .from(teamsChatThreadRoutes)
+      .innerJoin(
+        teamsOrgConnections,
+        eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
+      )
+      .where(
+        and(
+          eq(teamsOrgConnections.teamsTenantId, tenantId),
+          eq(teamsChatThreadRoutes.conversationId, conversationId),
+          eq(teamsChatThreadRoutes.threadId, threadId),
+        ),
+      );
+    return row?.count ?? 0;
+  })();
   signal.throwIfAborted();
   const replyTo =
     payload.teamsUserDisplayName ??
@@ -440,12 +432,27 @@ async function resolveTeamsAdmissionFailurePresentation(
   signal: AbortSignal,
 ): Promise<TeamsAdmissionFailurePresentation> {
   const [mentionerCount, orgRows, agentRows] = await Promise.all([
-    countTeamsMentioners({
-      db: args.db,
-      tenantId: args.target.tenantId,
-      conversationId: args.target.conversationId,
-      threadId: args.target.threadId,
-    }),
+    (async () => {
+      const db = args.db;
+      const tenantId = args.target.tenantId;
+      const conversationId = args.target.conversationId;
+      const threadId = args.target.threadId;
+      const [row] = await db
+        .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
+        .from(teamsChatThreadRoutes)
+        .innerJoin(
+          teamsOrgConnections,
+          eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
+        )
+        .where(
+          and(
+            eq(teamsOrgConnections.teamsTenantId, tenantId),
+            eq(teamsChatThreadRoutes.conversationId, conversationId),
+            eq(teamsChatThreadRoutes.threadId, threadId),
+          ),
+        );
+      return row?.count ?? 0;
+    })(),
     args.db
       .select({ defaultAgentId: orgMetadata.defaultAgentId })
       .from(orgMetadata)

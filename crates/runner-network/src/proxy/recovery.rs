@@ -77,9 +77,7 @@ impl MitmRecovery {
                 } else {
                     info!("mitmproxy restarted");
                 }
-                mitm.complete_restart(child);
-                self.backoff = BACKOFF_INITIAL;
-                self.consecutive_failures = 0;
+                self.adopt_replacement(mitm, child);
             }
             Err(error) => self.on_startup_failure(error),
         }
@@ -104,13 +102,17 @@ impl MitmRecovery {
         match self.join().await? {
             Ok(child) => {
                 info!("mitmproxy restart completed during shutdown");
-                mitm.complete_restart(child);
-                self.backoff = BACKOFF_INITIAL;
-                self.consecutive_failures = 0;
+                self.adopt_replacement(mitm, child);
             }
             Err(error) => warn!(error = %error, "mitmproxy restart failed during shutdown"),
         }
         Ok(())
+    }
+
+    fn adopt_replacement(&mut self, mitm: &mut MitmProxy, child: ManagedMitmdump) {
+        mitm.complete_restart(child);
+        self.backoff = BACKOFF_INITIAL;
+        self.consecutive_failures = 0;
     }
 
     async fn join(&mut self) -> RunnerResult<Result<ManagedMitmdump, String>> {
@@ -234,9 +236,18 @@ mod tests {
         recovery.task = Some(tokio::spawn(async {
             Ok(unmanaged_child("sleep", Some("60")))
         }));
+        let before_crash = Instant::now();
+        recovery.on_crash();
+        let after_crash = Instant::now();
+        assert!(recovery.retry_deadline().is_none());
         recovery.wait(&mut mitm).await.unwrap();
         assert_eq!(recovery.backoff, BACKOFF_INITIAL);
         assert_eq!(recovery.consecutive_failures, 0);
+        let retry_at = recovery
+            .retry_deadline()
+            .expect("a crash during replacement must retain its retry deadline");
+        assert!(retry_at >= before_crash + Duration::from_secs(16));
+        assert!(retry_at <= after_crash + Duration::from_secs(16));
         mitm.set_control_directory_for_test(dir.path().to_path_buf());
         assert!(
             mitm.usage_flush_target().is_some(),
