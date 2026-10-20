@@ -27,7 +27,9 @@ class ClaimProducerReportTests(unittest.TestCase):
         self.ident, self.backing, self.history, self.run, self.runner, attempt, attempt_sandbox = [str(uuid.uuid4()) for _ in range(7)]
         self.payload = (self.history.encode()*2000)[:65536]
         at = lambda value: 10_000_000_000+value*1_000_000
-        seed = self.root/"seed"/"home"/"user"
+        # home.ext4 is mounted at /home/user in the Guest. Its filesystem root
+        # contains the home contents, without that mount-point prefix.
+        seed = self.root/"seed"
         private = seed/".vm0"/"guest-agent"/"runs"/self.history
         private.mkdir(parents=True)
         (private/"fixture-private").write_bytes(b"fixture private bytes")
@@ -49,7 +51,7 @@ class ClaimProducerReportTests(unittest.TestCase):
                     "accepted_ns": at(3), "boundary": "JobProvider::claim", "accepted_calls": 1}
         heartbeat["receipt"].update(received_ns=at(13))
         heartbeat["receipt"]["state"].update(runnerId=self.runner, heldSandboxStates=[])
-        heartbeat["completed_ns"] = at(14)
+        heartbeat["completed_ns"] = at(13)+1
         status = {"mode": "starting", "max_concurrent": 1, "active_runs": [],
                   "started_at": "2026-10-19T01:00:00Z", "updated_at": "2026-10-19T01:00:01Z"}
         self.values = [
@@ -65,7 +67,8 @@ class ClaimProducerReportTests(unittest.TestCase):
              "observer": {"started_ns": at(8), "completed_ns": at(9), "available_bytes": 32*1024**3,
                           "age_ns": 2, "read_duration_ns": 1, "joined": True},
              "pool_released_ns": at(12), "heartbeat": heartbeat, "producer_still_held": True,
-             "original_full_lease_active": True, "allocated": [2,4096,1]},
+             "original_full_lease_active": True, "allocated": [2,4096,1],
+             "sample_after_ns": at(13)+2, "p1_sample_ns": at(14)},
             {"cancelled": False, "response_observer_cancelled_ns": None, "release_requested_ns": at(18),
              "joined_ns": at(24), "producer": accepted | {"unwind_ns": at(20)}, "tracker_joined": True,
              "actual_native_restore_completed": True, "original_full_lease_active": True, "allocated": [2,4096,1]},
@@ -93,7 +96,7 @@ class ClaimProducerReportTests(unittest.TestCase):
         self.witnesses = [event(phase, when, value) for phase, when, value in
                           zip(producer.PHASES, (1,5,15,25,30,35), self.values)]
         self.samples = []
-        for when in (3,6,16,26,34):
+        for when in (3,6,14,16,26,34):
             reading = copy.deepcopy(sample)
             reading["monotonic_ns"] = at(when)
             reading["processes"][0]["observed_monotonic_ns"] = at(when)
@@ -175,6 +178,23 @@ class ClaimProducerReportTests(unittest.TestCase):
             image.seek(1024+104)
             image.write(b"changed-identity!")
         with self.assertRaises(ValueError): self.validate()
+
+    def test_missing_required_payload_in_real_home_layout_is_rejected(self):
+        subprocess.run(["/usr/sbin/debugfs", "-w", "-R", "rm /guarded-idle-payload",
+                        str(self.root/"retained-home.ext4")], check=True, capture_output=True)
+        with (self.root/"retained-home.ext4").open("rb") as image:
+            image.seek(1024)
+            digest = hashlib.sha256(image.read(1024)).hexdigest()
+        for witness in self.witnesses[4:]:
+            witness["evidence"]["original_home"]["superblock_sha256"] = digest
+        with self.assertRaisesRegex(ValueError, "original retained native required bytes were lost"):
+            self.validate()
+
+    def test_acknowledged_sample_must_be_present_in_original_p1_files(self):
+        self.samples = [sample for sample in self.samples
+                        if sample["monotonic_ns"] != self.values[2]["p1_sample_ns"]]
+        with self.assertRaisesRegex(ValueError, "acknowledged original P1 sample"):
+            self.validate()
 
 
 if __name__ == "__main__":

@@ -110,9 +110,14 @@ def validate(directory):
     runner, generation = foreground.heartbeat(progress.get("heartbeat"), 1, released, events[2]["monotonic_ns"], (2,4096))
     if runner in {*identity, history, run} or generation != 1:
         raise ValueError("producer uncertainty heartbeat identity changed")
+    sample_after = batch.clock(progress.get("sample_after_ns"), progress["heartbeat"]["completed_ns"], events[2]["monotonic_ns"])
+    sampled = batch.clock(progress.get("p1_sample_ns"), sample_after, events[2]["monotonic_ns"])
+    if not any(sample["monotonic_ns"] == sampled for sample in samples):
+        raise ValueError("held native claim lacks its acknowledged original P1 sample")
     exact(progress, {"pool_held_ns": held, "heartbeat_pending_ns": pending, "observer": progress["observer"],
           "pool_released_ns": released, "heartbeat": progress["heartbeat"], "producer_still_held": True,
-          "original_full_lease_active": True, "allocated": [2,4096,1]}, "held claim progress or custody missing")
+          "original_full_lease_active": True, "allocated": [2,4096,1], "sample_after_ns": sample_after,
+          "p1_sample_ns": sampled}, "held claim progress or custody missing")
     release = batch.clock(joined.get("release_requested_ns"), events[2]["monotonic_ns"], events[3]["monotonic_ns"])
     cancelled = "-cancelled-" in case
     cancelled_at = joined.get("response_observer_cancelled_ns")
@@ -168,10 +173,12 @@ def validate(directory):
     if (block[56:58] != b"\x53\xef" or block[104:120].hex() != home["filesystem_uuid"]
             or hashlib.sha256(block).hexdigest() != home["superblock_sha256"]):
         raise ValueError("original retained home superblock binding changed")
-    for guest_path, expected in (("/home/user/guarded-idle-payload", payload),
-            ("/home/user/guarded-idle-ordinary", b"native ordinary home bytes"),
-            (f"/home/user/.vm0/guest-agent/runs/{history}/fixture-private", b"fixture private bytes")):
-        extracted = subprocess.run(["/usr/sbin/debugfs", "-R", "cat "+guest_path, str(image)], capture_output=True, timeout=30)
+    # This is the home filesystem, mounted at /home/user by the Guest; debugfs
+    # addresses its contents relative to the image root, not the Guest root.
+    for image_path, expected in (("/guarded-idle-payload", payload),
+            ("/guarded-idle-ordinary", b"native ordinary home bytes"),
+            (f"/.vm0/guest-agent/runs/{history}/fixture-private", b"fixture private bytes")):
+        extracted = subprocess.run(["/usr/sbin/debugfs", "-R", "cat "+image_path, str(image)], capture_output=True, timeout=30)
         if extracted.returncode != 0 or extracted.stdout != expected:
             raise ValueError("original retained native required bytes were lost")
     return {"format": "native-claim-producer-custody-v1", "artifacts": artifacts, "case": case,

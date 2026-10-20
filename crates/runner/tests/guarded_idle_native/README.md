@@ -69,6 +69,11 @@ observers. Pool contention, independent real observer/acknowledged heartbeat,
 producer/native joins, receipt take, later wait, commit and rollback refusals,
 original promotion lock contention, empty inventory and exact full lease are
 required. Conversion to required cleanup still cannot clear claim uncertainty.
+Before releasing the producer, an inotify-backed wait observes a complete new
+sample in the owning P1 collector's `samples.jsonl` in its working directory.
+The strict reader binds that acknowledgement to the original sample and clocks;
+a fast transition cannot silently omit its native measurement window. This wait
+is bounded by the existing claim deadline and adds no fixed delay or new policy.
 
 The original private/home bytes and complete payload are verified and synced
 before the fault. Failed cases retain their original directory and capsule;
@@ -82,7 +87,8 @@ Keep all original case files; copy the positively identified original home image
 to `retained-home.ext4` beside that case's original P1 files after the collector
 has joined its owned children. Hash both originals and copy in the evidence
 archive. The strict reader reopens this regular ext4 file and verifies its
-original superblock and all seeded required bytes through read-only debugfs:
+original superblock and all seeded required bytes through read-only debugfs.
+The image filesystem root corresponds to `/home/user` inside the Guest:
 
 ```sh
 python3 crates/runner/tests/guarded_idle_native/claim_producer_report.py <p1-directory>

@@ -9,6 +9,7 @@ mod claim_loss;
 mod claim_peer;
 mod claim_producer;
 mod claim_restore;
+mod claim_sample;
 mod cleanup_progress;
 mod continuation;
 mod continuation_api;

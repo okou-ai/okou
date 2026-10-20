@@ -229,11 +229,15 @@ async fn observe(
         let heartbeat = probe.complete().await?;
         cleanup_progress::pending(preparation.as_mut(),&mut completed).await?;
         live(request).await?;
+        let sample_after_ns = evidence::clocks()?.0;
+        let p1_sample_ns = claim_sample::wait(&std::env::current_dir()?.join("samples.jsonl"), sample_after_ns).await?;
+        live(request).await?;
         request.proof.claim_producer_witness("claim_wait_progress",json!({
             "pool_held_ns":pool_held_ns,"heartbeat_pending_ns":pending_ns,"observer":observer,
             "pool_released_ns":released_ns,"heartbeat":heartbeat,
             "producer_still_held":!*provider.release.borrow(),"original_full_lease_active":true,
             "allocated":context.budget.allocated(),
+            "sample_after_ns":sample_after_ns,"p1_sample_ns":p1_sample_ns,
         }))?;
         Ok::<(),Box<dyn Error+Send+Sync>>(())
     }).await;
