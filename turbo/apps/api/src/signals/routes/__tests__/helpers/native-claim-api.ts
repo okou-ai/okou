@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
-import { once } from "node:events";
-import { lstat, watch } from "node:fs/promises";
+import { on, once } from "node:events";
+import { watch } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { http, passthrough } from "msw";
@@ -84,7 +85,9 @@ function claimGate(
   ]);
   const arrivals = new Set<string>();
   const receipts: ClaimReceipt[] = [];
-  const events = watch(input.controlDirectory, { signal });
+  // Subscribe before reading readiness so a change during that read is queued.
+  const watcher = watch(input.controlDirectory, { signal });
+  const events = on(watcher, "change", { signal });
   const observe = async () => {
     if (await regularFile(join(input.controlDirectory, "failed.ready"))) {
       resolve(entered);
@@ -110,6 +113,7 @@ function claimGate(
       }
     });
     await events.return?.();
+    watcher.close();
     if (!observed.ok && !isAbortError(observed.error)) {
       throw observed.error;
     }
@@ -214,73 +218,88 @@ export async function startNativeClaimApi(
     );
     throw constructed.error;
   }
-  const app = createAppWithRoutes({
-    signal,
-    routes: [
-      ...runnersRoutes,
-      ...webhooksAgentCompleteRoutes,
-      ...webhooksAgentEventsRoutes,
-      ...webhooksAgentHealthUsageTelemetryRoutes,
-    ],
-  });
   const accepted = new Set<Promise<Response>>();
-  const listener = serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch(request) {
-      const path = new URL(request.url).pathname;
-      const gate = cases.find((entry) => {
-        return path === `/api/runners/jobs/${entry.runId}/claim`;
+  let listener: ReturnType<typeof serve> | undefined;
+  const listening = await settleIncludingAbort(
+    (async () => {
+      const app = createAppWithRoutes({
+        signal,
+        routes: [
+          ...runnersRoutes,
+          ...webhooksAgentCompleteRoutes,
+          ...webhooksAgentEventsRoutes,
+          ...webhooksAgentHealthUsageTelemetryRoutes,
+        ],
       });
-      const dispatch = async () => {
-        return app.request(request);
-      };
-      const work =
-        request.method === "POST" && gate
-          ? (gates.get(gate.runId)?.forward(request, dispatch) ?? dispatch())
-          : dispatch();
-      accepted.add(work);
-      void work.then(
-        () => {
-          accepted.delete(work);
+      listener = serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const path = new URL(request.url).pathname;
+          const gate = cases.find((entry) => {
+            return path === `/api/runners/jobs/${entry.runId}/claim`;
+          });
+          const dispatch = async () => {
+            return app.request(request);
+          };
+          const work =
+            request.method === "POST" && gate
+              ? (gates.get(gate.runId)?.forward(request, dispatch) ??
+                dispatch())
+              : dispatch();
+          accepted.add(work);
+          void work.then(
+            () => {
+              accepted.delete(work);
+            },
+            (error: unknown) => {
+              accepted.delete(work);
+              failures.push(error);
+            },
+          );
+          return work;
         },
-        (error: unknown) => {
-          accepted.delete(work);
-          failures.push(error);
-        },
+      });
+      if (!listener.listening) {
+        await once(listener, "listening", { signal });
+      }
+      const address = listener.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Native API fixture did not bind a TCP listener");
+      }
+      const url = `http://127.0.0.1:${address.port}`;
+      server.use(
+        http.all(`${url}/*`, () => {
+          return passthrough();
+        }),
       );
-      return work;
-    },
-  });
-  const listening = await settleIncludingAbort(async () => {
-    if (!listener.listening) {
-      await once(listener, "listening", { signal });
-    }
-  });
+      return { listener, url };
+    })(),
+  );
   if (!listening.ok) {
     stop.abort();
-    if (listener.listening) {
-      await promisify(listener.close.bind(listener))();
-    }
-    await Promise.allSettled(
-      [...gates.values()].map((gate) => {
+    const joined = await Promise.allSettled([
+      ...(listener?.listening
+        ? [promisify(listener.close.bind(listener))()]
+        : []),
+      ...accepted,
+      ...[...gates.values()].map((gate) => {
         return gate.monitor;
       }),
+    ]);
+    throw new AggregateError(
+      [
+        listening.error,
+        ...joined.flatMap((result) => {
+          return result.status === "rejected" ? [result.reason] : [];
+        }),
+      ],
+      "Native API fixture setup failed",
     );
-    throw listening.error;
   }
-  const address = listener.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Native API fixture did not bind a TCP listener");
-  }
-  const url = `http://127.0.0.1:${address.port}`;
-  server.use(
-    http.all(`${url}/*`, () => {
-      return passthrough();
-    }),
-  );
+  const live = listening.value;
   return {
-    url,
+    url: live.url,
     async waitForClaims(runId: string) {
       const gate = gates.get(runId);
       if (!gate) {
@@ -295,14 +314,13 @@ export async function startNativeClaimApi(
     },
     async finish() {
       stop.abort();
-      const closed = promisify(listener.close.bind(listener))();
       const joined = await Promise.allSettled([
+        promisify(live.listener.close.bind(live.listener))(),
         ...accepted,
         ...[...gates.values()].map((gate) => {
           return gate.monitor;
         }),
       ]);
-      await closed;
       for (const result of joined) {
         if (result.status === "rejected") {
           failures.push(result.reason);

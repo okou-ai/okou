@@ -18,9 +18,14 @@ const context = testContext();
 const api = createRunsApi(context);
 const successfulClaim = z.object({ runId: z.uuid(), sandboxToken: z.string() });
 
-it.each(["a", "b", "both"] as const)(
-  "forwards %s-first distinct Runner claims to the actual API arbitration",
-  async (first) => {
+it.each([
+  { first: "a", readyAtStart: false },
+  { first: "b", readyAtStart: false },
+  { first: "both", readyAtStart: false },
+  { first: "both", readyAtStart: true },
+] as const)(
+  "forwards $first-first Runner claims with initial readiness $readyAtStart",
+  async ({ first, readyAtStart }) => {
     const owned = await publicChatActor(context);
     const root = await mkdtemp(join(tmpdir(), "okou-native-claim-http-"));
     await owned.run(async () => {
@@ -30,6 +35,10 @@ it.each(["a", "b", "both"] as const)(
         model: "claude-fable-5-1",
       });
       const runnerIds = [randomUUID(), randomUUID()] as const;
+      if (readyAtStart) {
+        await writeFile(join(root, "a.ready"), "", { flag: "wx" });
+        await writeFile(join(root, "b.ready"), "", { flag: "wx" });
+      }
       const fixture = await startNativeClaimApi(
         context,
         [{ runId: run.runId, runnerIds, controlDirectory: root, first }],
@@ -56,13 +65,15 @@ it.each(["a", "b", "both"] as const)(
       });
       const outcome = await settleIncludingAbort(async () => {
         await fixture.waitForClaims(run.runId);
-        await expect(
-          api.readRun(owned.actor, run.runId),
-        ).resolves.toMatchObject({
-          status: "pending",
-        });
-        await writeFile(join(root, "a.ready"), "", { flag: "wx" });
-        await writeFile(join(root, "b.ready"), "", { flag: "wx" });
+        if (!readyAtStart) {
+          await expect(
+            api.readRun(owned.actor, run.runId),
+          ).resolves.toMatchObject({
+            status: "pending",
+          });
+          await writeFile(join(root, "a.ready"), "", { flag: "wx" });
+          await writeFile(join(root, "b.ready"), "", { flag: "wx" });
+        }
         const responses = await Promise.all(pending);
         expect(
           responses
