@@ -349,51 +349,24 @@ mod tests {
     }
 
     #[test]
-    fn control_task_accepts_duplicate_user_cancellation_and_rejects_extra_fields() {
+    fn control_task_validates_user_cancellation_before_closing_run() {
         let nonce = *b"cancel-repeat-01";
         let endpoint = process_control_ipc::endpoint_name(48, &nonce);
         let listener = process_control_ipc::bind_abstract_listener(&endpoint).unwrap();
         let shutdown = CancellationToken::new();
-        let worker_shutdown = shutdown.clone();
-        let stream_slot = Arc::new(Mutex::new(None));
         let active_runtime =
             crate::active_input::ActiveInputRuntime::new_for_test("control-test", "initial");
         let active_input = active_runtime.controller();
         let cli_cancellation = CancellationToken::new();
-        let worker_cli_cancellation = cli_cancellation.clone();
-        let worker = thread::spawn({
-            let endpoint = endpoint.clone();
-            move || {
-                run_inner(
-                    &endpoint,
-                    worker_shutdown,
-                    stream_slot,
-                    active_input,
-                    worker_cli_cancellation,
-                )
-            }
-        });
+        let handle = ControlHandle::spawn_endpoint(
+            endpoint,
+            shutdown,
+            active_input,
+            cli_cancellation.clone(),
+        )
+        .unwrap();
 
         let mut stream = accept_control_stream_and_read_hello(&listener);
-        for message_id in ["cancel-1", "cancel-2"] {
-            process_control_ipc::write_request(
-                &mut stream,
-                &process_control_ipc::ControlRequest {
-                    message_id: message_id.to_string(),
-                    payload: br#"{"type":"user-cancellation"}"#.to_vec(),
-                },
-            )
-            .unwrap();
-            let response = process_control_ipc::read_response(&mut stream)
-                .expect("control task should send response");
-            assert_eq!(response.message_id, message_id);
-            assert_eq!(
-                response.status,
-                process_control_ipc::ControlResponseStatus::Accepted
-            );
-        }
-        assert!(cli_cancellation.is_cancelled());
-
         process_control_ipc::write_request(
             &mut stream,
             &process_control_ipc::ControlRequest {
@@ -414,10 +387,72 @@ mod tests {
                 .diagnostic
                 .starts_with("user cancellation payload is invalid:")
         );
+        assert!(
+            !cli_cancellation.is_cancelled(),
+            "rejected malformed cancellation cancelled the CLI"
+        );
 
-        shutdown.cancel();
+        process_control_ipc::write_request(
+            &mut stream,
+            &process_control_ipc::ControlRequest {
+                message_id: "input-after-invalid-cancel".to_string(),
+                payload: active_input_payload(0),
+            },
+        )
+        .unwrap();
+        let response = process_control_ipc::read_response(&mut stream)
+            .expect("control task should send response");
+        assert_eq!(response.message_id, "input-after-invalid-cancel");
+        assert_eq!(
+            response.status,
+            process_control_ipc::ControlResponseStatus::Accepted,
+            "rejected malformed cancellation closed active input"
+        );
+        assert!(response.diagnostic.is_empty());
+        assert!(!cli_cancellation.is_cancelled());
+
+        for message_id in ["cancel-1", "cancel-2"] {
+            process_control_ipc::write_request(
+                &mut stream,
+                &process_control_ipc::ControlRequest {
+                    message_id: message_id.to_string(),
+                    payload: br#"{"type":"user-cancellation"}"#.to_vec(),
+                },
+            )
+            .unwrap();
+            let response = process_control_ipc::read_response(&mut stream)
+                .expect("control task should send response");
+            assert_eq!(response.message_id, message_id);
+            assert_eq!(
+                response.status,
+                process_control_ipc::ControlResponseStatus::Accepted
+            );
+            assert!(response.diagnostic.is_empty());
+            assert!(cli_cancellation.is_cancelled());
+        }
+
+        process_control_ipc::write_request(
+            &mut stream,
+            &process_control_ipc::ControlRequest {
+                message_id: "input-after-valid-cancel".to_string(),
+                payload: active_input_payload(1),
+            },
+        )
+        .unwrap();
+        let response = process_control_ipc::read_response(&mut stream)
+            .expect("control task should send response");
+        assert_eq!(response.message_id, "input-after-valid-cancel");
+        assert_eq!(
+            response.status,
+            process_control_ipc::ControlResponseStatus::Rejected
+        );
+        assert_eq!(
+            response.diagnostic,
+            guest_contracts::active_input::ACTIVE_INPUT_CLOSED_DIAGNOSTIC
+        );
+
         drop(stream);
-        worker.join().unwrap().unwrap();
+        handle.join();
     }
 
     #[test]
