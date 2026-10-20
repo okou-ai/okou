@@ -227,13 +227,13 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
     resourceButton().focus();
   });
   expect(resourceButton()).toHaveFocus();
-  const link = queryAllByRoleFast("link", panel).find((candidate) => {
-    return candidate.textContent === "Current guide";
-  })!;
+  const artifact = (await within(panel).findByText("report.pdf")).closest(
+    "button",
+  )!;
   act(() => {
-    link.focus();
+    artifact.focus();
   });
-  expect(link).toHaveFocus();
+  expect(artifact).toHaveFocus();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
