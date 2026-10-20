@@ -170,12 +170,13 @@ export const saveRemoteTailscale$ = command(
 );
 export const saveRemoteCloudflare$ = command(
   async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
-    await set(saveCloudflareAccess$, form, signal);
+    const savedId = await set(saveCloudflareAccess$, form, signal);
     signal.throwIfAborted();
     const remaining = await get(cloudflareAccessDialog$);
     signal.throwIfAborted();
     if (!remaining) {
       set(closeRemoteNetworkPage$);
     }
+    return savedId;
   },
 );

@@ -28,7 +28,7 @@ import {
 export function useRemoteNetworkSaveLabel() {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
-  return setup?.step === "oauth" || setup?.step === "cf-access"
+  return setup?.step === "oauth" || setup?.step === "cf-credentials"
     ? t(($) => {
         return $.remoteNetworkGuide.saveContinue;
       })

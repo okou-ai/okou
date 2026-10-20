@@ -65,7 +65,6 @@ import {
 } from "../../signals/tailscale.ts";
 import {
   cloudflareAccessConfigs$,
-  cloudflareAccessDialog$,
   retryCloudflareAccess$,
 } from "../../signals/cloudflare-access.ts";
 import { SshDialog } from "./ssh-management.tsx";
@@ -174,7 +173,9 @@ function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
         : 3
     : setup.step === "login" || setup.step === "prepare"
       ? 3
-      : ["tag", "rule", "oauth", "cf-access"].includes(setup.step)
+      : ["tag", "rule", "oauth", "cf-access", "cf-credentials"].includes(
+            setup.step,
+          )
         ? 2
         : 1;
   const labels = [
@@ -1180,10 +1181,6 @@ function CloudflareStep({ setup }: { readonly setup: RemoteSetup }) {
   const [opening, open] = useLoadableSet(openRemoteNetwork$);
   const [loggingIn, login] = useLoadableSet(openRemoteLogin$);
   const signal = useGet(pageSignal$);
-  const dialog = useLoadable(cloudflareAccessDialog$);
-  if (dialog.state === "hasData" && dialog.data) {
-    return null;
-  }
   return (
     <div className="grid gap-5">
       <StepCard
@@ -1219,14 +1216,12 @@ function CloudflareStep({ setup }: { readonly setup: RemoteSetup }) {
             opening.state === "hasError" || loggingIn.state === "hasError"
           }
         />
-        {!(dialog.state === "hasData" && dialog.data) && (
-          <ContinueButton
-            disabled={!setup.networkId || loggingIn.state === "loading"}
-            onClick={() => {
-              detach(login(signal), Reason.DomCallback);
-            }}
-          />
-        )}
+        <ContinueButton
+          disabled={!setup.networkId || loggingIn.state === "loading"}
+          onClick={() => {
+            detach(login(signal), Reason.DomCallback);
+          }}
+        />
       </StepCard>
     </div>
   );
@@ -1245,6 +1240,7 @@ const PREVIOUS_STEP: Readonly<
   service: "os",
   "cf-address": "existing",
   "cf-access": "cf-address",
+  "cf-credentials": "cf-access",
 };
 function RemoteSetupForms({ setup }: { readonly setup: RemoteSetup }) {
   const leave = useSet(leaveRemoteSetup$);
@@ -1260,7 +1256,7 @@ function RemoteSetupForms({ setup }: { readonly setup: RemoteSetup }) {
         <TailscaleDialog />
       )}
       {setup.protocol === "ssh" ? (
-        <div hidden={setup.step !== "cf-access"}>
+        <div hidden={setup.step !== "cf-credentials"}>
           <CloudflareAccessDialog inline saveAction={saveRemoteCloudflare$} />
         </div>
       ) : (

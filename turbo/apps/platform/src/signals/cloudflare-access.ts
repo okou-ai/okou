@@ -428,6 +428,7 @@ export const saveCloudflareAccess$ = command(
     }
     const retrying = get(cloudflareAccessSaveUncertain$);
     let conflict: string | null = null;
+    let savedId: string | undefined;
     if (dialog.kind === "create") {
       const scope = get(createScope$);
       const retry = get(unresolvedSave$);
@@ -457,6 +458,7 @@ export const saveCloudflareAccess$ = command(
       if (!set(finishCloudflareAccessCreate$, dialog, result, retrying)) {
         return;
       }
+      savedId = id;
     } else {
       if (dialog.scope === "organization" && !(await get(isOrgAdmin$))) {
         set(conflict$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
@@ -488,6 +490,7 @@ export const saveCloudflareAccess$ = command(
       return;
     }
     set(closeCloudflareAccessDialog$);
+    return savedId;
   },
 );
 

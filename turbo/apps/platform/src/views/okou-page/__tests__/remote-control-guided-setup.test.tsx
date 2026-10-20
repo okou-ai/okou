@@ -311,6 +311,123 @@ test("Existing Tailscale settings open the saved network and device login form, 
     "Existing network draft",
   );
 });
+
+async function openCloudflareSetup() {
+  await page("/connectors?scope=remote-control&setup=ssh");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(
+    getAction("button", "Already have connection details? Enter them directly"),
+  );
+  await screen.findByRole("heading", {
+    name: "Use existing connection settings",
+  });
+  click(screen.getByText("Cloudflare Access", { exact: true }));
+  await fill(
+    await screen.findByLabelText("Connection address"),
+    "device.example.com",
+  );
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", {
+    name: "Allow access through Cloudflare",
+  });
+}
+
+test("Adding a Service Token preserves the draft on Back and continues to computer login with the new network", async () => {
+  const configs = [{ ...cloudflareNetwork }];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
+  context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
+    const created = { ...cloudflareNetwork, id: body.id, name: body.name };
+    configs.push(created);
+    return respond(201, created);
+  });
+  await openCloudflareSetup();
+  await screen.findByRole("combobox", { name: "Saved network" });
+  click(getAction("button", "Add Service Token"));
+  const name = await screen.findByLabelText("Network name");
+  await fill(name, "New office network");
+  await fill(screen.getByLabelText("Client ID"), "test-client-id");
+  await fill(screen.getByLabelText("Client Secret"), "test-client-secret");
+  click(getAction("button", "Back"));
+  await screen.findByRole("combobox", { name: "Saved network" });
+  expect(configs).toHaveLength(1);
+  click(getAction("button", "Add Service Token"));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Network name")).toBeVisible();
+  });
+  expect(name).toHaveValue("New office network");
+  expect(screen.getByLabelText("Client Secret")).toHaveValue(
+    "test-client-secret",
+  );
+  click(getAction("button", "Save and continue"));
+  const username = await screen.findByLabelText("SSH username");
+  expect(configs).toHaveLength(2);
+  expect(screen.getByLabelText("Computer address")).toHaveValue(
+    "device.example.com",
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Cloudflare Access" }),
+  ).toHaveTextContent("New office network");
+  await fill(username, "draft-user");
+  await fill(screen.getByLabelText(/Connection name/u), "My computer");
+  click(getAction("button", "Back"));
+  await screen.findByRole("combobox", { name: "Saved network" });
+  click(getAction("button", "Add Service Token"));
+  await fill(
+    await screen.findByLabelText("Network name"),
+    "Replacement network",
+  );
+  await fill(screen.getByLabelText("Client ID"), "test-replacement-id");
+  await fill(screen.getByLabelText("Client Secret"), "test-replacement-secret");
+  click(getAction("button", "Save and continue"));
+  await waitFor(() => {
+    expect(screen.getByLabelText("SSH username")).toBeVisible();
+  });
+  expect(username).toHaveValue("draft-user");
+  expect(screen.getByLabelText(/Connection name/u)).toHaveValue("My computer");
+  expect(
+    screen.getByRole("combobox", { name: "Cloudflare Access" }),
+  ).toHaveTextContent("Replacement network");
+  expect(configs).toHaveLength(3);
+});
+
+test("An uncertain Service Token save retries the same network and only then continues to login", async () => {
+  const configs: (typeof cloudflareNetwork)[] = [];
+  const submittedIds: string[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
+  context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
+    submittedIds.push(body.id);
+    if (submittedIds.length === 1) {
+      configs.push({ ...cloudflareNetwork, id: body.id, name: body.name });
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
+      });
+    }
+    return respond(204);
+  });
+  await openCloudflareSetup();
+  click(getAction("button", "Add Service Token"));
+  await fill(await screen.findByLabelText("Network name"), "Recovered network");
+  await fill(screen.getByLabelText("Client ID"), "test-client-id");
+  await fill(screen.getByLabelText("Client Secret"), "test-client-secret");
+  click(getAction("button", "Save and continue"));
+  await screen.findByRole("alert");
+  expect(screen.queryByLabelText("SSH username")).toBeNull();
+  expect(screen.getByLabelText("Network name")).toHaveValue(
+    "Recovered network",
+  );
+  click(getAction("button", "Retry"));
+  await screen.findByLabelText("SSH username");
+  expect(submittedIds).toHaveLength(2);
+  expect(submittedIds[0]).toBe(submittedIds[1]);
+  expect(configs).toHaveLength(1);
+  expect(
+    screen.getByRole("combobox", { name: "Cloudflare Access" }),
+  ).toHaveTextContent("Recovered network");
+});
 test.each(["tailscale", "cloudflare"] as const)(
   "%s credential update opens blank replacement fields without fetching saved secrets",
   async (provider) => {

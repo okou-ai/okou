@@ -41,7 +41,6 @@ import {
   closeCloudflareAccessDialog$,
   openCloudflareAccessDialog$,
   saveCloudflareAccess$,
-  cloudflareAccessConfigs$,
   cloudflareAccessDialog$,
 } from "./cloudflare-access.ts";
 
@@ -58,6 +57,7 @@ export type RemoteSetupStep =
   | "service"
   | "cf-address"
   | "cf-access"
+  | "cf-credentials"
   | "login"
   | "saved";
 export type RemoteSetupRoute = "direct" | "tailscale" | "cloudflare_access";
@@ -241,6 +241,9 @@ export const openRemoteLogin$ = command(
       return;
     }
     if (current.formStarted) {
+      if (current.protocol === "ssh" && current.route === "cloudflare_access") {
+        set(chooseSshAccessConfig$, current.networkId);
+      }
       set(updateRemoteSetup$, { step: "login" });
       return;
     }
@@ -317,7 +320,18 @@ export const openRemoteNetwork$ = command(
         set(updateRemoteSetup$, { step: "oauth" });
       }
     } else {
-      await set(openCloudflareAccessDialog$, "create", null, signal);
+      const dialog = await get(cloudflareAccessDialog$);
+      signal.throwIfAborted();
+      if (!dialog) {
+        await set(openCloudflareAccessDialog$, "create", null, signal);
+      }
+      signal.throwIfAborted();
+      if (
+        get(remoteSetup$)?.sessionKey === current.sessionKey &&
+        get(remoteSetup$)?.flowId === current.flowId
+      ) {
+        set(updateRemoteSetup$, { step: "cf-credentials" });
+      }
     }
     signal.throwIfAborted();
   },
@@ -367,28 +381,21 @@ export const saveRemoteCloudflare$ = command(
     if (!current) {
       return;
     }
-    const before = await get(cloudflareAccessConfigs$);
+    const savedId = await set(saveCloudflareAccess$, form, signal);
     signal.throwIfAborted();
-    await set(saveCloudflareAccess$, form, signal);
-    signal.throwIfAborted();
-    if (await get(cloudflareAccessDialog$)) {
-      return;
-    }
-    const after = await get(cloudflareAccessConfigs$);
-    signal.throwIfAborted();
-    const added = after?.filter((network) => {
-      return !before?.some((previous) => {
-        return previous.id === network.id;
-      });
-    });
     if (
+      savedId &&
       get(remoteSetup$)?.sessionKey === current.sessionKey &&
       get(remoteSetup$)?.flowId === current.flowId
     ) {
       set(updateRemoteSetup$, {
-        networkId: added?.length === 1 ? added[0]!.id : "",
+        step: "cf-access",
+        networkId: savedId,
       });
+      await set(openRemoteLogin$, signal);
+      signal.throwIfAborted();
     }
+    return savedId;
   },
 );
 function connectionName(form: HTMLFormElement) {

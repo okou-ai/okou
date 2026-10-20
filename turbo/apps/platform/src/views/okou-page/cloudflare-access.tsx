@@ -692,7 +692,7 @@ export function CloudflareAccessDialog({
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
   const { title, description } = useCloudflareAccessDialogCopy(dialog?.kind);
   const setup = useGet(remoteSetup$);
-  const wizard = inline && setup?.step === "cf-access";
+  const wizard = inline && setup?.step === "cf-credentials";
   const isSaving = saving.state === "loading";
   const visible = useRemoteNetworkEditorVisible(inline, dialog);
   if (!dialog || !visible) {
