@@ -12591,10 +12591,41 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(unconfiguredTelemetry.status).toBe(200);
           mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", telemetryToken);
 
-          const artifactSnapshots = [
+          const memoryFile = storageTextFile(
+            "MEMORY.md",
+            "Published completion memory",
+          );
+          context.mocks.s3.send.mockResolvedValue({ ContentLength: 4096 });
+          const memoryPreparation = await webhooks.requestAgentStoragePrepare(
+            {
+              runId: created.runId,
+              storageId: memoryArtifact.storageId,
+              baseVersion: memoryArtifact.versionId,
+              changes: { added: [memoryFile.path], modified: [], deleted: [] },
+              files: [memoryFile],
+            },
+            sandboxHeaders,
+            [200],
+          );
+          if (memoryPreparation.status !== 200) {
+            throw new Error("Expected writeback preparation to succeed");
+          }
+          const outputVersion = memoryPreparation.body.versionId;
+          expect(outputVersion).not.toBe(memoryArtifact.versionId);
+          await webhooks.requestAgentStorageCommit(
+            {
+              runId: created.runId,
+              storageId: memoryArtifact.storageId,
+              versionId: outputVersion,
+              files: [memoryFile],
+            },
+            sandboxHeaders,
+            [200],
+          );
+          const storageOutputs = [
             {
               name: memoryArtifact.name,
-              version: memoryArtifact.versionId,
+              version: outputVersion,
               mountPath: memoryArtifact.mountPath,
               ...(memoryArtifact.missingRootPolicy === undefined
                 ? {}
@@ -12602,16 +12633,36 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             },
           ];
 
+          const nativeMetadata = {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
+            cliAgentSessionHistoryDisposition: "native_only" as const,
+          };
+          await webhooks.requestAgentCompleteUnchecked(
+            {
+              runId: created.runId,
+              exitCode: 0,
+              completion: {
+                ...nativeMetadata,
+                storageOutputs,
+                artifactSnapshots: storageOutputs,
+              },
+            },
+            sandboxHeaders,
+            [400],
+          );
+          expect((await api.readRun(actor, created.runId)).status).toBe(
+            "running",
+          );
+
           const completion = await webhooks.requestAgentComplete(
             {
               runId: created.runId,
               exitCode: 0,
               lastEventSequence: 3,
               completion: {
-                cliAgentType: "claude-code",
-                cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
-                cliAgentSessionHistoryDisposition: "native_only",
-                artifactSnapshots,
+                ...nativeMetadata,
+                storageOutputs,
                 volumeVersionsSnapshot: {
                   versions: { [cacheVolume]: cachePrepared.versionId },
                 },
@@ -12628,7 +12679,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const completed = await api.readRun(actor, created.runId);
           expect(completed.status).toBe("completed");
           expect(completed.result?.storageOutputs).toStrictEqual(
-            artifactSnapshots,
+            storageOutputs,
           );
           const log = await createRunReadsApi(context).requestReadLogById(
             actor,
@@ -12637,8 +12688,25 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           expect(log.body.artifact).toStrictEqual({
             name: memoryArtifact.name,
-            version: memoryArtifact.versionId,
+            version: outputVersion,
           });
+
+          const legacyReplay = await webhooks.requestAgentComplete(
+            {
+              runId: created.runId,
+              exitCode: 0,
+              completion: {
+                ...nativeMetadata,
+                artifactSnapshots: storageOutputs,
+              },
+            },
+            sandboxHeaders,
+            [200],
+          );
+          expect(legacyReplay.body).toStrictEqual(completion.body);
+          expect(await api.readRun(actor, created.runId)).toStrictEqual(
+            completed,
+          );
 
           // A late duplicate report cannot flip the settled run.
           const duplicate = await webhooks.requestAgentComplete(
