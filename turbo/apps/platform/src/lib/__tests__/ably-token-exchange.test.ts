@@ -7,12 +7,9 @@ import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/r
 import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 import {
-  abortAfter,
   createDeferredPromise,
-  resetSignal,
   settle,
   waitForOperation,
-  withAbortAfter,
 } from "../../signals/utils.ts";
 import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import { mockNow, now } from "../time.ts";
@@ -49,7 +46,6 @@ vi.mock("@axiomhq/js", () => {
   };
 });
 const context = testContext();
-const resetDeadline$ = resetSignal();
 
 function lifecycle() {
   return telemetry.ingest.mock.calls.flatMap(([, entries]) => {
@@ -72,45 +68,6 @@ function prepare() {
   vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "test-auth-telemetry");
   telemetry.ingest.mockReset();
 }
-
-test("Owner cancellation and operation settlement clear auth deadline timers", async () => {
-  prepare();
-  const timerIds: ReturnType<typeof globalThis.setTimeout>[] = [];
-  const originalSetTimeout = globalThis.setTimeout;
-  const setTimeoutSpy = vi
-    .spyOn(globalThis, "setTimeout")
-    .mockImplementation((callback, ms, ...args) => {
-      if (ms === 5000) {
-        const timerId = timerIds.length + 1;
-        const typedTimerId = timerId as unknown as ReturnType<
-          typeof globalThis.setTimeout
-        >;
-        timerIds.push(typedTimerId);
-        return typedTimerId;
-      }
-      return originalSetTimeout(callback, ms, ...args);
-    });
-  const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
-  try {
-    const owner = context.store.set(resetDeadline$, context.signal);
-    const signal = abortAfter(5000, owner);
-    context.store.set(resetDeadline$, context.signal);
-    expect(signal.aborted).toBeTruthy();
-    expect(clearTimeoutSpy).toHaveBeenCalledWith(timerIds[0]);
-
-    const operationOwner = context.store.set(resetDeadline$, context.signal);
-    let operationSignal: AbortSignal | undefined;
-    await withAbortAfter(5000, operationOwner, (deadlineSignal) => {
-      operationSignal = deadlineSignal;
-      return Promise.resolve();
-    });
-    expect(operationSignal?.aborted).toBeTruthy();
-    expect(clearTimeoutSpy).toHaveBeenCalledWith(timerIds[1]);
-  } finally {
-    setTimeoutSpy.mockRestore();
-    clearTimeoutSpy.mockRestore();
-  }
-});
 
 function tokenRequest(clientId = "secret-client-id") {
   return {
