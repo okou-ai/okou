@@ -2925,7 +2925,6 @@ test("requests payment, profile and transaction consent from both CLI and settin
 const APPROVAL_WORKER_SECRET = randomBytes(32).toString("hex");
 
 async function trackedPurchase(startFails = false, expiresIn = 3600) {
-  await setupApp({ context, routes: walletRoutes, isolatePg: true });
   const fixture = await carrier();
   mockEnv("LINK_APPROVAL_WORKER_URL", "https://approval.example.test");
   mockEnv("LINK_APPROVAL_WORKER_SECRET", APPROVAL_WORKER_SECRET);
@@ -3267,6 +3266,7 @@ test("approval callbacks authenticate exact bodies and stop after the feature is
 });
 
 test("cron repairs a failed durable approval Workflow start without querying Link", async () => {
+  await setupApp({ context, routes: walletRoutes, isolatePg: true });
   const fixture = await trackedPurchase(true);
   let reads = 0;
   server.use(

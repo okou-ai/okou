@@ -22,7 +22,6 @@ describe("signed subscription deletion", () => {
       bdd.acceptAgentStorageWrites();
       const granted = await runs.grantProEntitlement(actor, {
         tier,
-        isolatePg: true,
         stripeTransport: "http",
       });
       const before = await runs.readBillingStatus(actor);

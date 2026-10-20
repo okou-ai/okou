@@ -102,7 +102,7 @@ export function createPiMemoryMaintenanceFixture(
   ) {
     mockNow(now());
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
-    // These production operators are this case's explicitly scoped system boundary.
+    // These production operators select work across owners, not just this actor.
     const isolated = await setupApp({
       context,
       routes: cronExtractPiMemoryStage1Routes,

@@ -841,11 +841,7 @@ describe("GET /api/artifacts/catalog", () => {
       files: [hostedTextFile("/index.html", "<main>first</main>")],
     };
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const app = await setupApp({
-      context,
-      routes: hostRoutes,
-      isolatePg: true,
-    });
+    const app = setupApp({ context, routes: hostRoutes });
     const firstResponse = await accept(
       app(hostContract).prepare({
         headers: { authorization: "Bearer clerk-session" },

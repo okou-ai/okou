@@ -25,7 +25,7 @@ import type StripeSDK from "stripe";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
@@ -305,24 +305,8 @@ function stripeEvent(type: string, object: object) {
 async function postStripeEvent(
   event: object,
   expectedStatus: 200 | 500,
-  options: { readonly isolatePg?: true } = {},
 ): Promise<void> {
   context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
-  if (options.isolatePg) {
-    const request = await setupRawAppRequest({
-      context,
-      signal: context.signal,
-      routes: webhooksStripeRoutes,
-      isolatePg: true,
-    });
-    const response = await request("/api/webhooks/stripe", {
-      method: "POST",
-      body: JSON.stringify(event),
-      headers: { "stripe-signature": "t=1,v1=usage-pack-lifecycle" },
-    });
-    expect(response.status).toBe(expectedStatus);
-    return;
-  }
   const response = await createApp({
     signal: context.signal,
     routes: webhooksStripeRoutes,
@@ -452,13 +436,7 @@ async function checkoutUsagePackLifecycle(
   });
   mockOptionalEnv("STRIPE_SECRET_KEY", "sk_usage_pack_lifecycle");
   const appOrigin = new URL(env("APP_URL")).origin;
-  const app = existing
-    ? setupApp({ context, routes: billingCheckoutRoutes })
-    : await setupApp({
-        context,
-        routes: billingCheckoutRoutes,
-        isolatePg: true,
-      });
+  const app = setupApp({ context, routes: billingCheckoutRoutes });
   const response = await accept(
     app(billingUsagePackCheckoutContract).create({
       headers: { authorization: "Bearer clerk-session" },
@@ -1106,7 +1084,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
           },
         );
         await owner.run(async () => {
-          await owner.initialize({ isolatePg: true });
+          await owner.initialize();
           const grantPeriod = period(0);
           await postStripeEvent(
             stripeEvent("invoice.paid", {
@@ -1254,9 +1232,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
           ],
         },
       };
-      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 500, {
-        isolatePg: true,
-      });
+      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 500);
       await expect(grantRows(fixture)).resolves.toStrictEqual([]);
 
       await postStripeEvent(stripeEvent("invoice.paid", planInvoice), 200);

@@ -87,10 +87,7 @@ test("selects the onboarded default agent for a public Teams personal message", 
   await owner.run(async () => {
     const runs = createRunsApi(context);
     runs.configureRunnerGroup();
-    const fixture = await owner.create({
-      withDefaultAgent: true,
-      isolatePg: true,
-    });
+    const fixture = await owner.create({ withDefaultAgent: true });
     server.use(
       http.post(
         `https://login.microsoftonline.com/${fixture.installation.teamsTenantId}/oauth2/v2.0/token`,
@@ -154,10 +151,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
   await owner.run(async () => {
     const runs = createRunsApi(context);
     runs.configureRunnerGroup();
-    const fixture = await owner.create({
-      withDefaultAgent: true,
-      isolatePg: true,
-    });
+    const fixture = await owner.create({ withDefaultAgent: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const originalAccount = {
       tenantId: fixture.installation.teamsTenantId,
@@ -224,10 +218,7 @@ test("falls back to the connected Teams sender when the Aad identity is unknown"
   await owner.run(async () => {
     const runs = createRunsApi(context);
     runs.configureRunnerGroup();
-    const fixture = await owner.create({
-      withDefaultAgent: true,
-      isolatePg: true,
-    });
+    const fixture = await owner.create({ withDefaultAgent: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const originalAccount = {
       tenantId: fixture.installation.teamsTenantId,
@@ -294,10 +285,7 @@ test("returns a connection notice without starting a Run when Teams sender ident
   await owner.run(async () => {
     const runs = createRunsApi(context);
     runs.configureRunnerGroup();
-    const fixture = await owner.create({
-      withDefaultAgent: true,
-      isolatePg: true,
-    });
+    const fixture = await owner.create({ withDefaultAgent: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const before = await owner.status(fixture);
     expect(before.linkedAccounts).toStrictEqual([

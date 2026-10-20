@@ -44,8 +44,8 @@ async function enable(actor: ApiTestUser, enabled = true) {
     { [FeatureSwitchKey.ChatResourcePanel]: enabled },
   );
 }
-async function sourceFixture(options: { isolatePg?: true } = {}) {
-  const fixture = await publicChatActor(context, options);
+async function sourceFixture() {
+  const fixture = await publicChatActor(context);
   await fixture.run(() => {
     return api.ensurePersonalSubscriptionModel(fixture.actor, {
       model: "claude-fable-5-1",
@@ -318,7 +318,7 @@ describe("chat relationships", () => {
       claimed,
       token,
       requestSendEventWithBearer,
-    } = await sourceFixture({ isolatePg: true });
+    } = await sourceFixture();
     const peerIds: string[] = [];
     const messageIds: string[] = [];
     for (let index = 0; index < peerCount; index++) {

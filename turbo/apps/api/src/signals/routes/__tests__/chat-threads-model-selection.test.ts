@@ -43,11 +43,7 @@ interface ChatThreadFixture {
 
 /** Creates an agent and chat thread through the product routes. */
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
-  const app = await setupApp({
-    context,
-    routes: agentsRoutes,
-    isolatePg: true,
-  });
+  const app = setupApp({ context, routes: agentsRoutes });
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Expected the seeded actor to belong to an org");

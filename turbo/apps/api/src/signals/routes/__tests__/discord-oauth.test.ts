@@ -529,7 +529,6 @@ describe("Discord product OAuth", () => {
     const featureApp = await setupApp({
       context,
       routes: featureSwitchesRoutes,
-      isolatePg: true,
     });
     await accept(
       featureApp(featureSwitchesContract).update({

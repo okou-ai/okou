@@ -538,7 +538,6 @@ function installCatalogStorageFixture() {
 async function deliverClerkOrganizationCreated(
   actor: ApiTestUser,
   createdAt: Date,
-  options: { readonly isolatePg?: true } = {},
 ): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
@@ -552,7 +551,7 @@ async function deliverClerkOrganizationCreated(
       created_at: createdAt.getTime(),
     },
   });
-  await webhooks.requestClerkWebhook("{}", {}, [200], options);
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
 }
 
@@ -1229,12 +1228,7 @@ async function prepareBriefMember({
   }
   mockBriefMemberships([{ actor, createdAt }]);
   if (bootstrap) {
-    // Without a catalog sync, this webhook is the case's first API operation.
-    await deliverClerkOrganizationCreated(
-      actor,
-      createdAt,
-      catalogAvailable ? {} : { isolatePg: true },
-    );
+    await deliverClerkOrganizationCreated(actor, createdAt);
   }
   return { actor, createdAt };
 }
@@ -1483,8 +1477,16 @@ describe("Official Workflow failure recovery", () => {
 
   it("keeps user-created schedules stopped after three failures", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    // This case executes the cross-tenant automation cron with a future clock.
+    // Bind before owner setup and use this client to create its schedule.
+    const isolatedAutomationClient = (
+      await setupApp({
+        context,
+        routes: workflowAutomationsRoutes,
+        isolatePg: true,
+      })
+    )(workflowAutomationsContract);
     const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
-      isolatePg: true,
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
@@ -1493,7 +1495,7 @@ describe("Official Workflow failure recovery", () => {
     });
     let automation = (
       await accept(
-        automationClient().create({
+        isolatedAutomationClient.create({
           headers: authHeaders(actor),
           params: { workflowId },
           body: { schedule: { type: "loop", intervalSeconds: 600 } },
