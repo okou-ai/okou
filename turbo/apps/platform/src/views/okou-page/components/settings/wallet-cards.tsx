@@ -41,7 +41,7 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
               `views/okou-page/components/settings/card-brands/${icon}`,
             )}
             alt=""
-            className="absolute inset-0 h-full w-full bg-white object-contain"
+            className="absolute inset-0 h-full w-full bg-[#ffffff] object-contain"
             onError={(event) => {
               event.currentTarget.hidden = true;
             }}
