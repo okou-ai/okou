@@ -261,9 +261,13 @@ function handleComposerKeyDownCapture(
   if (eventTargetsNonEditableNodeView(event)) {
     return false;
   }
-  if (event.isComposing || event.keyCode === 229) {
-    context.onKeyDown(event);
-    return event.defaultPrevented;
+  if (event.isComposing || context.composer.editor.editor.view.composing) {
+    return false;
+  }
+  if (event.keyCode === 229) {
+    // A confirming key can arrive after compositionend. Keep it out of editor
+    // keymaps without preventing the input method's native confirmation.
+    return true;
   }
   if (shouldRemoveSelectedTask(event, context)) {
     event.preventDefault();
