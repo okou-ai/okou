@@ -772,6 +772,10 @@ compatibility layer contains narrowly scoped adaptations:
   preserving the provider response. The upstream reader must receive response
   and window frames without waiting on its own blocked upload writer; during
   managed uploads it drains downstream writers independently of that writer.
+  Validated EOF and empty H2 queues do not establish TCP write completion.
+  Lightweight upload ownership remains until the owning reader's native socket
+  drain completes or terminal cleanup runs, so a response arriving in several
+  reads still progresses while the upload writer is blocked.
   Ordinary readers retain native draining.
 
 The existing reader/checkpoint bridge also gates reads during managed header

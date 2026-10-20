@@ -11,12 +11,13 @@ from h2.events import RequestReceived
 from h2.settings import SettingCodes
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.proxy.layers.http import HTTPMode
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
+from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpResponseHeadersHook
 from mitmproxy.proxy.mode_servers import ProxyConnectionHandler
 from mitmproxy.proxy.server import ConnectionHandler, ConnectionIO
 from mitmproxy.test import taddons
 
 import managed_openrouter as managed
+import managed_request_body
 import mitm_addon
 from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
 from tests.mitmproxy_http_framing_helpers import start_http_layer
@@ -39,8 +40,9 @@ async def task_factory(request):
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("http2", [False, True])
 @pytest.mark.parametrize("status", [200, 429])
+@pytest.mark.parametrize("eof_before_response", [False, True])
 async def test_early_response_completes_while_upstream_writer_is_backpressured(
-    tmp_path, fake_firewall_headers, task_factory, dialect, http2, status
+    tmp_path, fake_firewall_headers, task_factory, dialect, http2, status, eof_before_response
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
     key = b"messages" if dialect == "openai-completions" else b"input"
@@ -50,7 +52,7 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
         + b'","'
         + key
         + b'":[{"content":"'
-        + b"x" * (2 * 1024 * 1024)
+        + b"x" * (60000 if eof_before_response else 2 * 1024 * 1024)
         + b'"}]}'
     )
     wire = (
@@ -63,6 +65,8 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
     )
     loop = asyncio.get_running_loop()
     backpressured, close_peers = asyncio.Event(), asyncio.Event()
+    response_headers_seen, finish_response = asyncio.Event(), asyncio.Event()
+    provider_ready = asyncio.Event()
     guest_done, provider_done = loop.create_future(), loop.create_future()
     peer_writers, peer_tasks, flows, hooks = [], [], [], []
 
@@ -70,7 +74,13 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
         peer_tasks.append(asyncio.current_task())
         peer_writers.append(writer)
         try:
-            writer.write(wire)
+            if eof_before_response:
+                writer.write(wire[: -len(body)])
+                await writer.drain()
+                await provider_ready.wait()
+                writer.write(body)
+            else:
+                writer.write(wire)
             await writer.drain()
             head = await reader.readuntil(b"\r\n\r\n")
             content = await reader.readexactly(3)
@@ -102,17 +112,37 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
             else:
                 head = await reader.readuntil(b"\r\n\r\n")
             writer.transport.pause_reading()
+            provider_ready.set()
             await backpressured.wait()
+            if eof_before_response:
+                stored = managed_request_body.get(flows[0])
+                assert stored is not None
+                assert stored.validated
+                assert stored.validator is None
+                assert stored.tail == b""
             if http2:
                 peer.send_headers(
                     1, [(b":status", str(status).encode()), (b"content-length", b"3")]
                 )
-                peer.send_data(1, b"err", end_stream=True)
+                peer.send_data(
+                    1, b"e" if eof_before_response else b"err", end_stream=not eof_before_response
+                )
                 writer.write(peer.data_to_send())
             else:
-                writer.write(f"HTTP/1.1 {status} Final\r\nContent-Length: 3\r\n\r\nerr".encode())
+                writer.write(
+                    f"HTTP/1.1 {status} Final\r\nContent-Length: 3\r\n\r\n".encode()
+                    + (b"e" if eof_before_response else b"err")
+                )
             await writer.drain()
             provider_done.set_result(head)
+            if eof_before_response:
+                await finish_response.wait()
+                if http2:
+                    peer.send_data(1, b"rr", end_stream=True)
+                    writer.write(peer.data_to_send())
+                else:
+                    writer.write(b"rr")
+                await writer.drain()
             await close_peers.wait()
         except Exception as error:
             provider_done.set_exception(error)
@@ -148,6 +178,8 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
                     )
                     hook.flow.server_conn.alpn = b"h2" if http2 else b"http/1.1"
                 await super().handle_hook(hook)
+                if isinstance(hook, HttpResponseHeadersHook):
+                    response_headers_seen.set()
 
             async def hook_task(self, hook):
                 hooks.append(asyncio.current_task())
@@ -160,9 +192,26 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
             await asyncio.start_server(provider, "127.0.0.1", 0, limit=1024) as provider_server,
         ):
             provider_server.sockets[0].setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
-            guest_reader, guest_writer = await asyncio.open_connection(
-                "127.0.0.1", guest_server.sockets[0].getsockname()[1]
+
+            class GuestReader(asyncio.StreamReader):
+                reads = 0
+
+                async def read(self, n=-1):
+                    self.reads += 1
+                    if eof_before_response and self.reads <= 2:
+                        # Deliver EOF in one bounded final read without relying
+                        # on the kernel to coalesce the request body packets.
+                        size = len(wire) - len(body) if self.reads == 1 else len(body)
+                        assert size <= n
+                        return await super().readexactly(size)
+                    return await super().read(n)
+
+            guest_reader = GuestReader()
+            guest_protocol = asyncio.StreamReaderProtocol(guest_reader)
+            guest_transport, _ = await loop.create_connection(
+                lambda: guest_protocol, "127.0.0.1", guest_server.sockets[0].getsockname()[1]
             )
+            guest_writer = asyncio.StreamWriter(guest_transport, guest_protocol, guest_reader, loop)
             provider_reader, provider_writer = await asyncio.open_connection(
                 "127.0.0.1", provider_server.sockets[0].getsockname()[1]
             )
@@ -192,6 +241,9 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
                 try:
                     head = await asyncio.wait_for(asyncio.shield(provider_done), 5)
                     assert b"authorization: bearer early-response" in head.lower()
+                    if eof_before_response:
+                        await asyncio.wait_for(response_headers_seen.wait(), 5)
+                        finish_response.set()
                     head, content = await asyncio.wait_for(asyncio.shield(guest_done), 5)
                     assert head.startswith(f"HTTP/1.1 {status}".encode())
                     assert content == b"err"
@@ -202,6 +254,8 @@ async def test_early_response_completes_while_upstream_writer_is_backpressured(
                     assert flows[0].error is None
                     assert managed.admission_state_for_tests() == (0, 0)
                 finally:
+                    finish_response.set()
+                    provider_ready.set()
                     close_peers.set()
                     for writer in peer_writers:
                         writer.transport.resume_reading()

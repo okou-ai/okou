@@ -118,8 +118,8 @@ def _install_early_response_completion() -> None:
 
     def send_response(self: HttpStream, already_streamed: bool = False):
         body = managed_request_body.get(self.flow)
-        # Validation may finish before H2's buffered tail reaches the provider.
-        unfinished = body is not None and (not body.validated or not body.writable.is_set())
+        # Parsed EOF may still leave bytes queued by H2 or the TCP writer.
+        unfinished = body is not None and body.upload_pending
         native = current(self, already_streamed=already_streamed)
         try:
             for command in native:

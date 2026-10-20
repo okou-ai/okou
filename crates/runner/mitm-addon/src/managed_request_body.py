@@ -28,6 +28,7 @@ class StreamBody:
         self.header_ready = asyncio.Event()
         self.writable = asyncio.Event()
         self.protocol_bound = False
+        self.reader_bound = False
         self.observe: Callable[[bytes], object] | None = None
         self.revalidate: Callable[[], bool] | None = None
         self.reject: Callable[[str], None] | None = None
@@ -91,8 +92,15 @@ class StreamBody:
         await self.header_ready.wait()
         await self.writable.wait()
 
-    def upload_complete(self) -> None:
-        _active.discard(self)
+    @property
+    def upload_pending(self) -> bool:
+        """Include native protocol queues and an undrained socket writer."""
+        return self in _active
+
+    def upload_complete(self, *, socket_drained: bool = False) -> None:
+        """Protocol completion can precede the owning reader's socket drain."""
+        if self.closed or not self.reader_bound or socket_drained:
+            _active.discard(self)
         self.writable.set()
 
     def close(self) -> None:

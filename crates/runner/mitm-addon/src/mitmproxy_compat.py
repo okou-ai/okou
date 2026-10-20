@@ -111,6 +111,7 @@ def register_managed_request(body: managed_request_body.StreamBody) -> None:
         if reader.closed:
             body.close()
         else:
+            body.reader_bound = True
             reader.uploads.add(body)
 
 
@@ -328,7 +329,7 @@ def _install_response_inspection_bridge() -> None:
                     checkpoints.append(active)
                 await join_checkpoints(checkpoints)
                 for body in tuple(reader.uploads):
-                    if body.closed or (body.validated and body.writable.is_set()):
+                    if body.closed:
                         reader.uploads.discard(body)
                         continue
                     await body.wait_ready()
@@ -348,6 +349,14 @@ def _install_response_inspection_bridge() -> None:
                         transport.handler.cancel(f"Error sending data: {error}")
             return
         await current_drain(self)
+        if reader is not None and reader.owner is asyncio.current_task():
+            for body in tuple(reader.uploads):
+                if body.closed or (body.validated and body.writable.is_set()):
+                    # Parsed EOF and empty H2 queues do not mean bytes have
+                    # left the TCP writer. Keep the opposite reader independent
+                    # until this drain or terminal cleanup releases ownership.
+                    body.upload_complete(socket_drained=True)
+                    reader.uploads.discard(body)
 
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
         checkpoint = (
