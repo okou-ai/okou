@@ -218,7 +218,6 @@ interface ForwardedInternalCallback {
 }
 
 interface SlackAppInstallOptions {
-  readonly isolatePg?: true;
   readonly run?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly teamId?: string;
   readonly installerSlackUserId?: string;
@@ -1027,15 +1026,9 @@ export function createBddIntegrationApi(context: TestContext) {
       } else {
         context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(exchange);
       }
-      const client = options.isolatePg
-        ? (
-            await setupApp({
-              context,
-              routes: slackOauthRoutes,
-              isolatePg: true,
-            })
-          )(slackOauthContract)
-        : setupApp({ context, routes: slackOauthRoutes })(slackOauthContract);
+      const client = setupApp({ context, routes: slackOauthRoutes })(
+        slackOauthContract,
+      );
       const started = await run(() => {
         return accept(
           client.install({

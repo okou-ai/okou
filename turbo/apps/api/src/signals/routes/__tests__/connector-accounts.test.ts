@@ -527,7 +527,7 @@ describe("connector account lifecycle routes", () => {
   });
 
   it("inspects exact account duplicates in request order after rename and deletion without leaking credentials", async () => {
-    const app = await setupApp({ context, routes, isolatePg: true });
+    const app = setupApp({ context, routes });
     const accounts = app(connectorAccountsContract);
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const connected = await accept(
@@ -1601,22 +1601,18 @@ describe("connector account lifecycle routes", () => {
   });
 
   async function createAccounts(accountCount: number): Promise<string[]> {
-    // The case owns this database, so central teardown closes it without
-    // listing and deleting each temporary account through the API.
+    // A unique user and organization own every account created by this case.
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
     const createdAccountIds: string[] = [];
     // Account pagination does not depend on credential storage. Connect real
     // public accounts instead of provisioning an API key for every row.
-    const connectorsApi = (
-      await setupApp({
-        context,
-        routes: builtinConnectorsRoutes.filter(({ route }) => {
-          return route === builtinConnectorNoAuthGrantContract.connect;
-        }),
-        isolatePg: true,
-      })
-    )(builtinConnectorNoAuthGrantContract);
+    const connectorsApi = setupApp({
+      context,
+      routes: builtinConnectorsRoutes.filter(({ route }) => {
+        return route === builtinConnectorNoAuthGrantContract.connect;
+      }),
+    })(builtinConnectorNoAuthGrantContract);
     // Up to sixteen owned streams keep requests moving without unbounded
     // fan-out. Wait for every stream before fixture cleanup after a failure.
     const created = await Promise.allSettled(

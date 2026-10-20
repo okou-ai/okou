@@ -148,10 +148,9 @@ describe("email subscription preferences", () => {
           };
         }),
       );
-      const app = await setupApp({
+      const app = setupApp({
         context,
         routes: emailSubscriptionRoutes,
-        isolatePg: true,
       });
       const preferences = app(emailSubscriptionContract);
       mocks.clerk.session(owner.userId, owner.orgId);

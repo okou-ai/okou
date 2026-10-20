@@ -95,10 +95,6 @@ const {
   createPublicBillingOrg,
 } = createBillingCheckoutFixture();
 
-beforeEach(async () => {
-  await setupApp({ context, routes: billingCheckoutRoutes, isolatePg: true });
-});
-
 describe("legacy subscription usage pack migration", () => {
   interface LegacyMigrationFixture extends SubscriptionFixture {
     readonly tier: "pro" | "team";
@@ -2656,10 +2652,7 @@ describe("legacy subscription usage pack migration", () => {
 });
 
 describe("usage pack allocation management", () => {
-  function createManagedUsagePackHelpers(
-    lifecycle?: PublicBillingScenario,
-    isolatePg = false,
-  ) {
+  function createManagedUsagePackHelpers(lifecycle?: PublicBillingScenario) {
     const run =
       lifecycle?.run ??
       (<T>(operation: () => Promise<T>) => {
@@ -4105,10 +4098,9 @@ describe("usage pack allocation management", () => {
           },
         );
         lifecycle?.captureExternalState();
-        const checkoutApp = await setupApp({
+        const checkoutApp = setupApp({
           context,
           routes: billingCheckoutRoutes,
-          isolatePg,
         });
         await run(() => {
           return accept(
@@ -7836,7 +7828,7 @@ describe("usage pack allocation management", () => {
         );
         lifecycle?.captureExternalState();
         mockUsagePackChangePreviews(0, 2000);
-        const scheduleId = "sub_sched_usage_pack_restore";
+        const scheduleId = `sub_sched_usage_pack_restore_${randomUUID()}`;
         context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
           id: scheduleId,
         });
@@ -9292,7 +9284,7 @@ describe("usage pack allocation management", () => {
           sourcePriceId: TEST_PRICE_USAGE_PACK_200,
           targetPriceId: TEST_PRICE_USAGE_PACK_50,
         });
-        const scheduleId = "sub_sched_usage_pack_replace";
+        const scheduleId = `sub_sched_usage_pack_replace_${randomUUID()}`;
         context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
           id: scheduleId,
         });
@@ -9690,7 +9682,7 @@ describe("usage pack allocation management", () => {
       prepareDeferredInvoiceReplay,
       postManagedUsagePackEvent,
       readDeferredReplayCredits,
-    } = createManagedUsagePackHelpers(lifecycle, true);
+    } = createManagedUsagePackHelpers(lifecycle);
     return await withNowScopeForTest(() => {
       return lifecycle.run(async () => {
         const replay = await prepareDeferredInvoiceReplay();
@@ -10174,11 +10166,12 @@ describe("usage pack allocation management", () => {
     );
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
     mockUsagePackSubscriptionChangePreviews(0, 0);
+    const scheduleId = `sub_sched_team_to_pro_${randomUUID()}`;
     context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
-      id: "sub_sched_team_to_pro",
+      id: scheduleId,
     });
     context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
-      id: "sub_sched_team_to_pro",
+      id: scheduleId,
     });
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
       billingUsagePackManagementContract,
@@ -10220,7 +10213,7 @@ describe("usage pack allocation management", () => {
     expect(
       context.mocks.stripe.subscriptionSchedules.update,
     ).toHaveBeenCalledWith(
-      "sub_sched_team_to_pro",
+      scheduleId,
       expect.objectContaining({
         phases: [
           expect.objectContaining({
@@ -12170,11 +12163,12 @@ describe("usage pack allocation management", () => {
       context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(current);
       mockUsagePackChangePreviews(0, 2000);
       mockUsagePackSubscriptionChangePreviews(0, 1000);
+      const scheduleId = `sub_sched_cancel_deferred_${randomUUID()}`;
       context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue(
-        scheduleForManagedSubscription(current, "sub_sched_cancel_deferred"),
+        scheduleForManagedSubscription(current, scheduleId),
       );
       context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
-        id: "sub_sched_cancel_deferred",
+        id: scheduleId,
       });
       const client = setupApp({ context, routes: billingCheckoutRoutes })(
         billingUsagePackManagementContract,
@@ -12744,15 +12738,13 @@ describe("usage pack allocation management", () => {
       currentSubscription,
     );
     mockUsagePackChangePreviews(0, 2000);
+    const scheduleId = `sub_sched_usage_pack_retry_${randomUUID()}`;
     context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue(
-      scheduleForManagedSubscription(
-        currentSubscription,
-        "sub_sched_usage_pack_retry",
-      ),
+      scheduleForManagedSubscription(currentSubscription, scheduleId),
     );
     context.mocks.stripe.subscriptionSchedules.update
       .mockRejectedValueOnce(new Error("temporary Stripe failure"))
-      .mockResolvedValue({ id: "sub_sched_usage_pack_retry" });
+      .mockResolvedValue({ id: scheduleId });
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
       billingUsagePackManagementContract,
     );
@@ -12982,9 +12974,9 @@ describe("usage pack allocation management", () => {
       post_payment_amount: 2000,
       refunds: [],
     });
-    const invoicePaymentIntentId = "pi_last_usage_pack_removal";
+    const invoicePaymentIntentId = `pi_last_usage_pack_removal_${randomUUID()}`;
     context.mocks.stripe.invoices.retrieve.mockResolvedValue({
-      id: "in_last_usage_pack_removal",
+      id: `in_last_usage_pack_removal_${randomUUID()}`,
       payments: {
         data: [
           {
@@ -13916,6 +13908,7 @@ describe("usage pack allocation management", () => {
       createOrgFixture(),
       purchaseManagedUsagePack,
     );
+    const previewInvoiceId = `in_paginated_invitation_preview_${randomUUID()}`;
     let prorationTimestamp: number | null = null;
     context.mocks.stripe.invoices.createPreview.mockImplementation((input) => {
       const details = previewSubscriptionDetails(input);
@@ -13924,7 +13917,7 @@ describe("usage pack allocation management", () => {
       }
       prorationTimestamp = details.proration_date;
       return Promise.resolve({
-        id: "in_paginated_invitation_preview",
+        id: previewInvoiceId,
         amount_due: 1000,
         currency: "usd",
         lines: { has_more: true, data: [] },
@@ -14000,12 +13993,12 @@ describe("usage pack allocation management", () => {
     );
     expect(context.mocks.stripe.invoices.listLineItems).toHaveBeenNthCalledWith(
       1,
-      "in_paginated_invitation_preview",
+      previewInvoiceId,
       { limit: 100 },
     );
     expect(context.mocks.stripe.invoices.listLineItems).toHaveBeenNthCalledWith(
       2,
-      "in_paginated_invitation_preview",
+      previewInvoiceId,
       { limit: 100, starting_after: "il_unrelated" },
     );
   });

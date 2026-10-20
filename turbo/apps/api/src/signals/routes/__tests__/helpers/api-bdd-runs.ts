@@ -54,7 +54,6 @@ import type { z } from "zod";
 
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
@@ -167,25 +166,6 @@ function runApp(context: TestContext) {
     context,
     routes: runRoutes,
   });
-}
-
-async function postIsolatedEntitlementWebhook(
-  context: TestContext,
-  payload: string,
-  signature: string,
-) {
-  const app = await setupApp({
-    context,
-    routes: runRoutes,
-    isolatePg: true,
-  });
-  return await accept(
-    app(webhookStripeContract).post({
-      body: payload,
-      extraHeaders: { "stripe-signature": signature },
-    }),
-    [200],
-  );
 }
 
 function clerkUserProfile(actor: ApiTestUser): ClerkUserProfile {
@@ -603,7 +583,6 @@ export function createRunsApi(context: TestContext) {
     async grantProEntitlement(
       actor: ApiTestUser,
       options: {
-        readonly isolatePg?: true;
         readonly customerId?: string;
         readonly subscriptionId?: string;
         readonly tier?: "pro" | "team";
@@ -751,9 +730,6 @@ export function createRunsApi(context: TestContext) {
       // Retain the exact provider boundary if accepted setup outlives mock reset.
       options.onExternalStateReady?.(restoreWebhook);
       await run(() => {
-        if (options.isolatePg) {
-          return postIsolatedEntitlementWebhook(context, payload, signature);
-        }
         return accept(
           runApp(context)(webhookStripeContract).post({
             body: payload,

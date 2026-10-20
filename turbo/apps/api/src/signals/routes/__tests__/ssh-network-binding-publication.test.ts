@@ -52,7 +52,7 @@ beforeEach(() => {
   useSecretKmsProbe();
 });
 async function createConfig(provider: Provider) {
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = await setupApp({ context, routes });
   const body = {
     id: randomUUID(),
     name: "Private network",

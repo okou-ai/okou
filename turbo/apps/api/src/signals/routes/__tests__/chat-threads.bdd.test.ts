@@ -3200,7 +3200,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       format === "docx"
         ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         : picturePptxMime;
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     owned.ownsFeatureSwitches();
     await owned.run(() => {

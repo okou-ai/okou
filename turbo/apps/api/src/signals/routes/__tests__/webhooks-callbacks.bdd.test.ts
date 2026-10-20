@@ -5284,7 +5284,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         });
       };
       const granted = await runs.grantProEntitlement(actor, {
-        isolatePg: true,
         run: scenario.run,
         onExternalStateReady(restoreWebhook) {
           restoreWebhook();

@@ -1,7 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, onTestFinished } from "vitest";
@@ -14,9 +13,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createRouteMocks } from "./helpers/route-test";
 import { bankingRoutes } from "../banking";
-import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const secret = randomBytes(32).toString("hex");
@@ -35,7 +32,7 @@ function account(institutionLoginId: string, repairRequired = false) {
   };
 }
 
-async function pendingConnect(isolatePg = false) {
+async function pendingConnect() {
   const bdd = createBddApi(context);
   const actor = bdd.user();
   if (!actor.orgId) {
@@ -46,19 +43,7 @@ async function pendingConnect(isolatePg = false) {
     displayName: "Webhook Banking Agent",
     visibility: "private",
   } as const;
-  if (isolatePg) {
-    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-  }
-  const agent = isolatePg
-    ? (
-        await accept(
-          (await setupApp({ context, routes: agentsRoutes, isolatePg: true }))(
-            agentsMainContract,
-          ).create({ headers, body: agentBody }),
-          [201],
-        )
-      ).body
-    : await bdd.createAgent(actor, agentBody);
+  const agent = await bdd.createAgent(actor, agentBody);
   await updateFeatureSwitchesForUser(
     context,
     { userId: actor.userId, orgId: actor.orgId },
@@ -151,7 +136,7 @@ describe("Finicity webhook outcomes", () => {
   it.each(["success", "failure"] as const)(
     "preserves a replacement while an older connect provider response ends in %s",
     async (outcome) => {
-      const fixture = await pendingConnect(true);
+      const fixture = await pendingConnect();
       const requested = createDeferredPromise<string>(context.signal);
       const response = createDeferredPromise<void>(context.signal);
       let firstRequest = true;
@@ -285,7 +270,7 @@ describe("Finicity webhook outcomes", () => {
   });
 
   it("updates account metadata, removes absent accounts and restores their identities", async () => {
-    const fixture = await pendingConnect(true);
+    const fixture = await pendingConnect();
     server.use(
       http.get(fixture.accountsUrl, () => {
         return HttpResponse.json({

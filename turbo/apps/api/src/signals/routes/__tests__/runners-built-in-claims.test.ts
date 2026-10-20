@@ -18,7 +18,7 @@ const { configureSubscriptionPiModel } = createChatEventsFixture(context);
 describe("Runner built-in claim authorization", () => {
   it("denies PATs before decryption and leaves Auto claimable by an official Runner", async () => {
     const kms = useSecretKmsProbe();
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     const { actor, agentId, runnerGroup } = owned;
 
     await owned.run(async () => {
@@ -110,7 +110,7 @@ describe("Runner built-in claim authorization", () => {
   });
 
   it("keeps Auto on the managed Pi preset when Codex execution is enabled", async () => {
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     const { actor, agentId, runnerGroup } = owned;
     if (!actor.orgId) {
@@ -146,7 +146,7 @@ describe("Runner built-in claim authorization", () => {
   });
 
   it("preserves PAT claims for a captured personal Pi subscription", async () => {
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     await owned.run(async () => {
       await configureSubscriptionPiModel(actor);

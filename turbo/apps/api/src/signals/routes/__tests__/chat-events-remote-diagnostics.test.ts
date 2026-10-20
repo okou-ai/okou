@@ -15,7 +15,7 @@ test.each([
 ])(
   "claims exact-attempt guidance with diagnostics=$diagnostics and vnc=$vnc",
   async ({ diagnostics, vnc }) => {
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const { actor, agentId, runnerGroup } = owned;

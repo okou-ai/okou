@@ -52,9 +52,8 @@ test.each(["builtin", "custom"] as const)(
       { userId, orgId, orgRole: "org:admin", email: "connected@example.test" },
       "org:admin",
     );
-    const app = await setupApp({
+    const app = setupApp({
       context,
-      isolatePg: true,
       routes: [
         ...connectedConnectorsRoutes,
         ...connectorAccountRoutes,

@@ -19,13 +19,13 @@ import {
 const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 
+// Actor IDs isolate business state; this helper uses shared PostgreSQL.
 async function onboardIsolatedActor(actor: ApiTestUser) {
   api.mockClerkUsers([actor]);
   api.acceptAgentStorageWrites();
   const app = await setupApp({
     context,
     routes: onboardingCompleteRoutes,
-    isolatePg: true,
   });
   context.signal.throwIfAborted();
   await accept(

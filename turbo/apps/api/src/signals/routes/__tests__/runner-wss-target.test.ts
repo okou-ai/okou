@@ -19,7 +19,6 @@ const publicOrigin = `wss://${inventoryHostname}:443`;
 async function setup() {
   const owned = await publicChatActor(context, {
     restoreEnvironment: clearMockNow,
-    isolatePg: true,
   });
   return { ...owned, api: createRunsApi(context) };
 }

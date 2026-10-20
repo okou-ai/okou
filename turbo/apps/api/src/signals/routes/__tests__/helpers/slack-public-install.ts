@@ -99,7 +99,6 @@ export function createPublicSlackOrgApi(context: TestContext) {
    */
   async function installForOrg(args: {
     readonly orgId: string;
-    readonly isolatePg?: true;
     readonly botToken?: string;
     readonly botScopes?: string | null;
     readonly teamName?: string;
@@ -120,7 +119,6 @@ export function createPublicSlackOrgApi(context: TestContext) {
       botScopes: args.botScopes === undefined ? null : args.botScopes,
       teamName,
       run: args.run,
-      isolatePg: args.isolatePg,
     });
     await settleSlackNotifications();
     return { slackWorkspaceId: teamId, slackWorkspaceName: teamName };
