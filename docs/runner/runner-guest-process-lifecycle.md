@@ -162,6 +162,16 @@ Incomplete kernel records alone never prove tool containment: current counters
 must exclude main-domain kills and account for workload kills inside tools.
 Placement does not move memory already charged to the starting tool.
 
+When the native Codex app-server dies before a pending operation completes,
+Guest preserves its naturally observed OS exit status before process-group
+cleanup. The surviving Guest wrapper may still exit 1. Guest completion and
+Runner resource attribution require both a consistent raw child SIGKILL
+diagnostic and independent main-domain OOM proof for this nested-child case;
+neither formatted error text nor aggregate workload counters suffice. The
+wrapper's actual exit code remains unchanged. Explicit cancellation, deadline
+and control failures remain authoritative, and normal numeric exit 137 is
+distinct from an observed child signal 9.
+
 The task protocol is a separate bounded version-one endpoint derived from the
 existing canonical tool endpoint. Each task request/reply frame uses one overall
 read deadline; partial input cannot renew the budget or hold the task broker

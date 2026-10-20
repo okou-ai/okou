@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 /// Process exit code used for the runner-owned agent execution timeout.
 pub const AGENT_EXECUTION_TIMEOUT_EXIT_CODE: i32 = 124;
 
+/// User-visible reason for an agent process killed by the guest OOM killer.
+pub const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
+    "The agent process ran out of memory and was terminated by the sandbox out-of-memory killer";
+
 // These are stable Unix signal numbers in the serialized diagnostic contract.
 const UNIX_SIGHUP_SIGNAL_NUMBER: i32 = 1;
 const UNIX_SIGINT_SIGNAL_NUMBER: i32 = 2;
@@ -80,6 +84,26 @@ pub struct ModelRequestDiagnostic {
 }
 
 impl FailureDiagnostic {
+    /// Whether a Codex execution error retains a naturally observed child SIGKILL.
+    /// This corroborates a child kill, not its cause; OOM attribution also
+    /// requires independent, trusted main-runtime OOM evidence.
+    #[must_use]
+    pub fn is_codex_app_server_sigkill(&self) -> bool {
+        self.failure_class == FailureClass::CliExecutionError
+            && self.framework == AgentFramework::Codex
+            && self.cli_exit_code
+                == Some(SHELL_SIGNAL_EXIT_CODE_OFFSET + UNIX_SIGKILL_SIGNAL_NUMBER)
+            && self.cli_termination.is_none()
+            && self.heartbeat.is_none()
+            && self.failure_reason.is_none()
+            && self.cli_observed_exit.as_ref().is_some_and(|exit| {
+                exit.is_sigkill()
+                    && exit.exit_code.is_none()
+                    && exit.mapped_exit_code
+                        == SHELL_SIGNAL_EXIT_CODE_OFFSET + UNIX_SIGKILL_SIGNAL_NUMBER
+            })
+    }
+
     /// Create a diagnostic with required fields and empty optional details.
     #[must_use]
     pub fn new(

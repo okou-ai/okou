@@ -587,6 +587,12 @@ async fn execute(
             guest_contracts::oom_evidence::CaptureReason::CliError
         };
         let evidence = workload_containment.oom_evidence(reason).await;
+        attribute_codex_child_oom(
+            exit_code,
+            &mut error_message,
+            failure_diagnostic.as_ref(),
+            evidence.as_ref(),
+        );
         if let Some(evidence) = evidence.as_ref() {
             telemetry
                 .incident_reporter()
@@ -669,6 +675,20 @@ async fn execute(
         runtime,
     )
     .await
+}
+
+fn attribute_codex_child_oom(
+    exit_code: i32,
+    error_message: &mut String,
+    diagnostic: Option<&FailureDiagnostic>,
+    evidence: Option<&guest_contracts::oom_evidence::OomEvidence>,
+) {
+    if exit_code == 1
+        && diagnostic.is_some_and(FailureDiagnostic::is_codex_app_server_sigkill)
+        && evidence.is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill)
+    {
+        *error_message = guest_contracts::diagnostics::GUEST_MEMORY_OOM_KILLED_ERROR.to_string();
+    }
 }
 
 fn apply_workload_resource_limit(
@@ -1667,6 +1687,8 @@ mod tests {
             provider_message,
             Some(provider_diagnostic),
             hard_limit,
+            None,
+            None,
         )
         .await;
 
@@ -1695,6 +1717,8 @@ mod tests {
             generic_message,
             Some(generic_diagnostic),
             hard_limit,
+            None,
+            None,
         )
         .await;
 
@@ -1721,6 +1745,8 @@ mod tests {
             timeout_message,
             Some(timeout_diagnostic),
             hard_limit,
+            None,
+            None,
         )
         .await;
 
@@ -1731,7 +1757,8 @@ mod tests {
         assert_eq!(diagnostic.workload_resource_limit, Some(hard_limit));
 
         let (exit_code, error, diagnostic) =
-            complete_after_workload_resource_limit(server, 0, "", None, hard_limit).await;
+            complete_after_workload_resource_limit(server, 0, "", None, hard_limit, None, None)
+                .await;
 
         assert_eq!(exit_code, 0);
         assert_eq!(error, None);
@@ -1744,6 +1771,8 @@ mod tests {
         initial_error_message: &str,
         mut failure_diagnostic: Option<FailureDiagnostic>,
         hard_limit: WorkloadResourceLimitDiagnostic,
+        evidence: Option<&guest_contracts::oom_evidence::OomEvidence>,
+        session_metadata: Option<&session_metadata::CapturedSessionMetadata>,
     ) -> (i32, Option<String>, Option<FailureDiagnostic>) {
         let guest_paths = test_guest_paths();
         let cleanup_paths = run_scoped_cleanup_paths(&guest_paths, false);
@@ -1755,12 +1784,22 @@ mod tests {
         config.framework = env::Framework::Codex;
         config.cli_agent_type = "codex".to_string();
         let masker = Arc::new(masker::SecretMasker::from_config(&config));
-        let http = HttpClient::new().unwrap();
+        let http = if session_metadata.is_some() {
+            test_http_client(server)
+        } else {
+            HttpClient::new().unwrap()
+        };
         let telemetry =
             Telemetry::spawn_for_paths(config.run_id.clone(), &guest_paths, masker, http.clone());
         let runtime = test_guest_runtime(config, http);
-        let error_message = initial_error_message.to_string();
+        let mut error_message = initial_error_message.to_string();
         apply_workload_resource_limit(&mut failure_diagnostic, hard_limit);
+        attribute_codex_child_oom(
+            cli_exit_code,
+            &mut error_message,
+            failure_diagnostic.as_ref(),
+            evidence,
+        );
         let exit_code = complete_execution(
             cli_exit_code,
             cli_exit_code,
@@ -1769,7 +1808,7 @@ mod tests {
                 last_event_sequence: None,
                 failure_message: (cli_exit_code != 0).then_some(error_message.as_str()),
                 failure_diagnostic,
-                session_metadata: None,
+                session_metadata,
             },
             &telemetry,
             &runtime,
@@ -1790,6 +1829,89 @@ mod tests {
             let _ = std::fs::remove_file(path);
         }
         (exit_code, written_error, written_diagnostic)
+    }
+
+    #[test]
+    fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper_exit() {
+        let _test_state_guard = lock_test_state();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                use guest_contracts::diagnostics::GUEST_MEMORY_OOM_KILLED_ERROR;
+                use guest_contracts::oom_evidence::OomEvidence;
+                let server = &*COMPLETE_EXECUTION_MOCK_SERVER;
+                let _runtime_root_guard = TestRuntimeRootGuard::new();
+                let runtime_oom: OomEvidence = serde_json::from_str(include_str!(
+                    "../../guest-contracts/tests/fixtures/runtime-counter-oom.json"
+                ))
+                .unwrap();
+                let tool_oom: OomEvidence = serde_json::from_str(include_str!(
+                    "../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+                ))
+                .unwrap();
+                let mut unproven = runtime_oom.clone();
+                unproven.groups[1].local_baseline.oom_kill = None;
+                for incident in &mut unproven.incidents {
+                    incident.groups[1].local_baseline.oom_kill = None;
+                }
+                let diagnostic = FailureDiagnostic::new(
+                    FailureClass::CliExecutionError,
+                    AgentFramework::Codex,
+                    PromptMetadata::from_prompt("plain prompt"),
+                )
+                .with_cli_exit_code(137)
+                .with_cli_observed_exit(CliObservedExitDiagnostic::from_signal(libc::SIGKILL));
+                let hard_limit = WorkloadResourceLimitDiagnostic {
+                    memory_max_events: 0,
+                    memory_oom_events: 0,
+                    memory_oom_kill_events: 1,
+                    memory_oom_group_kill_events: 0,
+                    pids_max_events: 0,
+                };
+                let original = "execution: codex app-server child exited while waiting for initialize: signal: 9 (SIGKILL)";
+                let session_metadata = session_metadata::CapturedSessionMetadata::for_test(
+                    "11111111-1111-4111-8111-111111111111",
+                    None,
+                );
+                for (evidence, expected) in [
+                    (Some(&runtime_oom), GUEST_MEMORY_OOM_KILLED_ERROR),
+                    (Some(&tool_oom), original),
+                    (Some(&unproven), original),
+                    (None, original),
+                ] {
+                    server.reset_async().await;
+                    let complete = server.mock(|when, then| {
+                        when.method(POST)
+                            .path("/api/webhooks/agent/complete")
+                            .json_body_includes(json!({"exitCode": 1, "error": expected}).to_string());
+                        then.status(200)
+                            .json_body(json!({"success": true, "status": "failed"}));
+                    });
+                    let _telemetry = server.mock(|when, then| {
+                        when.method(POST).path("/api/webhooks/agent/telemetry");
+                        then.status(200).json_body(json!({}));
+                    });
+                    let (exit, error, retained) = complete_after_workload_resource_limit(
+                        server,
+                        1,
+                        original,
+                        Some(diagnostic.clone()),
+                        hard_limit,
+                        evidence,
+                        Some(&session_metadata),
+                    )
+                    .await;
+                    assert_eq!(exit, 1);
+                    assert_eq!(error.as_deref(), Some(expected));
+                    assert_eq!(
+                        retained,
+                        Some(diagnostic.clone().with_workload_resource_limit(hard_limit))
+                    );
+                    complete.assert_calls(1);
+                }
+            });
     }
 
     async fn complete_execution_writes_finalization_failure_diagnostic_inner() {
