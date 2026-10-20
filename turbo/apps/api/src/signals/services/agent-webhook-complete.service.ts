@@ -15,7 +15,7 @@ import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   publishChatThreadDetailChangedSafely,
@@ -24,7 +24,7 @@ import {
 } from "../external/realtime";
 import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
-import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
+import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import {
@@ -678,24 +678,29 @@ export const dispatchCompleteSideEffectsCore$ = command(
  * Expire the run's unconsumed time budget steer after the completion commit;
  * the heartbeat-timeout branch never finalizes input, so it is skipped too.
  */
-async function expireCommittedRunTimeBudget<T extends CompletionCommit>(
-  db: Db,
-  runId: string,
-  commit: T,
-  signal: AbortSignal,
-): Promise<T> {
-  if (commit.run.chatThreadId === null || commit.run.status === "timeout") {
-    return commit;
-  }
-  const expired = await expireRunTimeBudgetInput(
-    db,
-    { runId, chatThreadId: commit.run.chatThreadId },
-    signal,
-  );
-  return expired
-    ? { ...commit, finalization: { finalized: true, chatEventsAppended: true } }
-    : commit;
-}
+const expireCommittedRunTimeBudget$ = command(
+  async (
+    { set },
+    runId: string,
+    commit: ReleasedCompletionCommit,
+    signal: AbortSignal,
+  ): Promise<ReleasedCompletionCommit> => {
+    if (commit.run.chatThreadId === null || commit.run.status === "timeout") {
+      return commit;
+    }
+    const expired = await set(
+      expireRunTimeBudgetInput$,
+      { runId, chatThreadId: commit.run.chatThreadId },
+      signal,
+    );
+    return expired
+      ? {
+          ...commit,
+          finalization: { finalized: true, chatEventsAppended: true },
+        }
+      : commit;
+  },
+);
 
 /**
  * Record telemetry for the committed completion: terminal-transition metrics
@@ -808,8 +813,8 @@ export function createAgentRunCompletion(runId: string, userId: string) {
         break;
       }
 
-      commit = await expireCommittedRunTimeBudget(
-        db,
+      commit = await set(
+        expireCommittedRunTimeBudget$,
         input.body.runId,
         commit,
         signal,
