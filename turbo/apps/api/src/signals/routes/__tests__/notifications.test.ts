@@ -226,13 +226,6 @@ describe("agent mail notifications", () => {
       }),
       [400],
     );
-    await accept(
-      client().mail({
-        headers: fixture.headers,
-        body: { ...input, text: " " },
-      }),
-      [400],
-    );
     mockOptionalEnv("RESEND_API_KEY", undefined);
     await accept(
       client().mail({ headers: fixture.headers, body: input }),

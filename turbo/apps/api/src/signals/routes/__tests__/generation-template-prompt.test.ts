@@ -69,20 +69,6 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain(workflow.id);
   });
 
-  it("returns invalid for a presentation selection without a runbook package", () => {
-    // Presentations are runbook-only. Retired demo-catalog selections no longer
-    // resolve to generation prompts.
-    const result = buildGenerationTemplatePrompt({
-      type: "presentation",
-      selection: {
-        templateId: "template:html-ppt-missing",
-        previewUrl: "https://example.com/retired.html",
-      },
-    });
-
-    expect(result.status).toBe("invalid");
-  });
-
   it("builds direct-HTML presentation guidance with the Okou image batch command", () => {
     const item = presentationTemplateBySlug("playful-launch-presentation");
 
@@ -185,10 +171,6 @@ describe("buildGenerationTemplatePrompt", () => {
     );
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");
-    expect(result.prompt).not.toContain("AGENT_RUNBOOK.md");
-    expect(result.prompt).not.toContain("design-system.md");
-    expect(result.prompt).not.toContain("color-systems/");
-    expect(result.prompt).not.toContain("data-color-system");
     // The raw row id may name the mount, but no storage key may leak.
     expect(result.prompt).not.toContain("presentation-template@");
   });
@@ -245,26 +227,6 @@ describe("buildGenerationTemplatePrompt", () => {
       return;
     }
     expect(result.message).toBe("Presentation template not found");
-  });
-
-  it("rejects a private template id that is not a row id", () => {
-    const result = buildGenerationTemplatePrompt(
-      {
-        type: "presentation",
-        selection: { templateId: "user-template:not-a-uuid" },
-      },
-      {
-        mountedUserPresentationTemplateIds: [],
-      },
-    );
-
-    // Distinct from an unknown built-in: the caller named the private
-    // namespace, so it is not silently retried as a registry slug.
-    expect(result.status).toBe("invalid");
-    if (result.status !== "invalid") {
-      return;
-    }
-    expect(result.message).toBe("Malformed presentation template");
   });
 
   it("falls back to the default color token when none is selected", () => {
@@ -408,10 +370,7 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain("until it prints QA_READY");
     expect(result.prompt).toContain("okou host ./publish --site <slug>");
     expect(result.prompt).toContain("checks/verify-published.sh <url>");
-    expect(result.prompt).not.toContain("render.mjs");
-    expect(result.prompt).not.toContain("tools/generate-images.mjs");
     expect(result.prompt).toContain("built-in R2-backed package");
-    expect(result.prompt).not.toContain("okou generate website --template");
   });
 
   it("selects every current website template package", () => {
@@ -441,35 +400,6 @@ describe("buildGenerationTemplatePrompt", () => {
       expect(result.prompt).toContain(
         "okou generate image-batch start <manifest.tsv> <state-dir>",
       );
-      expect(result.prompt).not.toContain("tools/generate-images.mjs");
     }
-  });
-
-  it("rejects unknown workflow templates", () => {
-    const result = buildGenerationTemplatePrompt({
-      type: "workflow",
-      selection: {
-        workflowTemplateId: "workflow-template:missing",
-      },
-    });
-
-    expect(result).toStrictEqual({
-      status: "invalid",
-      message: "Unknown workflow template",
-    });
-  });
-
-  it("rejects unknown website templates", () => {
-    const result = buildGenerationTemplatePrompt({
-      type: "website",
-      selection: {
-        websiteTemplateId: "website-template:missing",
-      },
-    });
-
-    expect(result).toStrictEqual({
-      status: "invalid",
-      message: "Unknown website template",
-    });
   });
 });

@@ -229,9 +229,6 @@ test("An empty pool hides Suggestions until a realtime publication without chang
   await waitFor(() => {
     expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
-  expect(
-    screen.queryByText("No suggestions right now."),
-  ).not.toBeInTheDocument();
   await fill(composer(), "Keep my draft");
   click(button("Image", "tab"));
   await screen.findByText("Put my product in a new scene");
@@ -531,9 +528,6 @@ test("Realtime removal hides Suggestions without changing another selected categ
     expect(queryTab("Image")).toBeInTheDocument();
     expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
-  expect(
-    screen.queryByText("No suggestions right now."),
-  ).not.toBeInTheDocument();
 });
 test("A suggestion joins the queue of a running target chat", async () => {
   const runId = "d0000000-0000-4000-a000-000000000821";

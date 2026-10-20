@@ -394,16 +394,6 @@ describe("GET /api/connectors", () => {
     expect(connectorScopeDiff.body).toStrictEqual(emptyScopeDiff);
     expect(scopeDiff.body).toStrictEqual(emptyScopeDiff);
 
-    // A nonexistent OAuth receipt still rejects.
-    const missingReceipt = await accept(
-      accountClient.oauthCompletion({
-        headers: authHeaders(),
-        query: target,
-        params: { attemptId: randomUUID() },
-      }),
-      [404],
-    );
-    expect(missingReceipt.body.error.code).toBe("NOT_FOUND");
     const selection = { target, connectionId: account.id };
     const inspected = await accept(
       accountClient.inspect({

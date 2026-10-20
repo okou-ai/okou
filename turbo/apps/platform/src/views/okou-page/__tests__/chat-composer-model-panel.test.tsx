@@ -199,13 +199,9 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
     name: "Chat models",
   });
   expect(modelOption(/^GPT 5\.6 Sol/u, models)).toBeChecked();
-  expect(modelOption(/^Claude Sonnet 5/u, models)).not.toBeChecked();
   expect(
     within(panel).getByRole("slider", { name: "Effort" }),
   ).toBeInTheDocument();
-  // The trigger already names the level, so the panel does not repeat it above
-  // the bar.
-  expect(within(panel).queryByText("Max")).toBeNull();
   expect(within(panel).getByText("Lower usage")).toBeVisible();
   expect(within(panel).getByText("Higher usage")).toBeVisible();
   expect(

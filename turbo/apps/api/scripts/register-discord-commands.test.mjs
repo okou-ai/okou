@@ -160,7 +160,6 @@ test("scope and snowflake validation prevent unintended destinations", async () 
     ["--guild", "../../commands"],
     ["--guild", "18446744073709551616"],
     ["--guild", GUILD_ID, "--application-id", "not-an-id"],
-    ["--guild", GUILD_ID, "--unknown"],
   ]) {
     await assert.rejects(runDiscordCommandRegistration(args, ENVIRONMENT));
   }

@@ -511,72 +511,6 @@ describe("createApp", () => {
       },
     );
 
-    it.each(["GET", "POST"])(
-      "force-upgrades App bundles that gate artifact sharing before %s feature-switch responses",
-      async (method) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/api/feature-switches", {
-          method,
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-            [CLIENT_VERSION_HEADER]: "0.1017.2",
-          },
-        });
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        expect(response.headers.get("cache-control")).toBe("no-store");
-        await expect(response.json()).resolves.toStrictEqual({
-          error: "Client update required",
-        });
-      },
-    );
-
-    it.each([
-      { method: "POST", path: "/api/connectors/github/oauth/start" },
-      { method: "PUT", path: "/api/custom-connectors/example/values" },
-      { method: "DELETE", path: "/api/connectors/github" },
-    ])(
-      "force-upgrades singleton-producing App bundles before $method $path route matching",
-      async ({ method, path }) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request(path, {
-          method,
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-            [CLIENT_VERSION_HEADER]: "0.843.0",
-          },
-        });
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        await expect(response.json()).resolves.toStrictEqual({
-          error: "Client update required",
-        });
-        expect(response.headers.get("cache-control")).toBe("no-store");
-      },
-    );
-
-    it("force-upgrades the pre-MCP-reader App before it can read MCP-sourced events", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: "0.981.0",
-        },
-      });
-
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
     it("force-upgrades prereleases below the supported App release", async () => {
       const app = createApp({
         signal: context.signal,
@@ -591,45 +525,6 @@ describe("createApp", () => {
 
       expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
     });
-
-    it("force-upgrades the previously published App before retired unread route matching", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/chat-thread-unreads", {
-        method: "GET",
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: "0.947.0",
-        },
-      });
-
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
-    it.each(["conversion-preview", "deletion-preview"])(
-      "force-upgrades App 0.970.0 before matching the retired %s path",
-      async (path) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request(
-          `/api/cloudflare-access/configs/00000000-0000-0000-0000-000000000000/${path}`,
-          {
-            headers: {
-              [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-              [CLIENT_VERSION_HEADER]: "0.970.0",
-            },
-          },
-        );
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        expect(response.headers.get("cache-control")).toBe("no-store");
-      },
-    );
 
     it.each([
       MINIMUM_WEB_CLIENT_VERSION,

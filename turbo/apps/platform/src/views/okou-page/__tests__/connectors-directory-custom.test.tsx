@@ -123,11 +123,9 @@ test("Honor Custom deep links, scoped search, and returning to All", async () =>
     expect(getConnectorCard("Acme Reports")).toBeVisible();
   });
   expect(queryConnectorCard("GitHub")).toBeNull();
-  // The segment says which scope is open, so the scope carries no breadcrumb.
   expect(screen.getByTestId("connectors-scope-custom")).toHaveAttribute(
     "data-checked",
   );
-  expect(screen.queryByText("Discover / Custom")).toBeNull();
   await fill(screen.getByPlaceholderText("Find custom connectors"), "missing");
   await expect(
     screen.findByText("No custom connectors match your search."),

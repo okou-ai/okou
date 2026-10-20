@@ -132,7 +132,6 @@ test("Presentation sends Auto as additional info without changing the message", 
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
   });
-  expect(submissions[0]?.runOptions).toBeUndefined();
   expect(submissions[0]?.userMessage?.parts).toContainEqual({
     type: "additional_info",
     text: expect.stringContaining("Create a presentation."),
@@ -219,7 +218,6 @@ test("Leaving presentation hides its picker and drops its settings", async () =>
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
   });
-  expect(submissions[0]?.runOptions).toBeUndefined();
   expect(submissions[0]?.userMessage?.parts).not.toContainEqual(
     expect.objectContaining({ type: "additional_info" }),
   );

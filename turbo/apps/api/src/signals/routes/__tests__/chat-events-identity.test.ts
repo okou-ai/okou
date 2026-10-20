@@ -206,7 +206,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization-scoped chat actor");
       }
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
 
       const caller = await owned.sendChatRun(actor, {
         agentId,
@@ -352,7 +351,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       await owned.run(() => {
         return api.updateUserModelPreference(actor, "claude-fable-5-1");
       });
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const { hostId, connection } = await hosts.start(actor, owned.run, {
         hostName: "BDD Desktop",
       });

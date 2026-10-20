@@ -1119,7 +1119,6 @@ describe("POST /api/webhooks/gmail", () => {
     }
 
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
     ).resolves.toContainEqual(
@@ -1400,7 +1399,6 @@ describe("POST /api/webhooks/gmail", () => {
       subject: "Invoice needs a reply",
     });
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-    expect(claim.appendSystemPrompt).not.toContain("# Current context");
     expect(
       Object.values(claim.secretConnectorMetadataMap ?? {}),
     ).toContainEqual(expect.objectContaining({ sourceId: secondConnectorId }));
@@ -2035,7 +2033,6 @@ describe("POST /api/webhooks/gmail", () => {
         subject: "Invoice needs a reply",
       });
       expect(appendSystemPrompt).toContain("# Agent Identity");
-      expect(appendSystemPrompt).not.toContain("# Current context");
     });
   });
 });

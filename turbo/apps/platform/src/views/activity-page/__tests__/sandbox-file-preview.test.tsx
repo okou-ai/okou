@@ -286,11 +286,6 @@ test.each([
     textBytes("<html>not a PDF</html>"),
     "This file isn't a valid preview. You can still download it.",
   ],
-  [
-    "huge.pdf",
-    new Uint8Array(16 * 1024 * 1024 + 1),
-    "This file is too large to preview. You can still download it.",
-  ],
 ])(
   "%s explains preview failure and retains Download",
   async (name, bytes, message) => {

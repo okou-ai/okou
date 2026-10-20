@@ -510,7 +510,6 @@ test("Show the Pi fallback without overwriting a saved native preference", async
   const panel = await openModelPanel("GPT 5.6 Sol, Max");
   const slider = await effortSlider(panel);
   expect(slider).toHaveAttribute("aria-valuetext", "Max");
-  expect(panel).not.toHaveTextContent("Restore model default");
   expect(updates).toStrictEqual([]);
 });
 

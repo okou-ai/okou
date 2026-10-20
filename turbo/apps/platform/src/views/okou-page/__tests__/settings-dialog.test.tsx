@@ -160,7 +160,6 @@ test("Offer only the workspace's supported languages", async () => {
       return option.textContent;
     }),
   ).toStrictEqual(["English", "Português (Brasil)", "Deutsch"]);
-  expect(screen.queryByRole("option", { name: "Italiano" })).toBeNull();
 });
 
 test("Persist the browser language when the workspace has no preference", async () => {

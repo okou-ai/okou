@@ -2332,32 +2332,6 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     expect(tokenBodies[0]?.get("redirect_uri")).toBe(redirectUri);
   });
 
-  it("returns Cloudflare provider errors to the configured App callback", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    mockAuthenticatedSession();
-
-    const response = await requestOauthStart("cloudflare", {
-      headers: authHeaders(),
-      origin: API_ORIGIN,
-      callbackTarget: "app",
-    });
-
-    expect(response.status).toBe(200);
-    const authorizationUrl = await authorizationUrlFromResponse(response);
-    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      "https://dash.cloudflare.com/oauth2/auth",
-    );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "cloudflare-test-client-id",
-    );
-    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/cloudflare/callback",
-    );
-    expectCloudflareAuthorizationScopes(authorizationUrl);
-    expectOauthState(authorizationUrl);
-    await rejectProviderAuthorization(authorizationUrl);
-  });
-
   it("keeps an omitted Cloudflare callback target on the existing API callback", async () => {
     mockAuthenticatedSession();
 

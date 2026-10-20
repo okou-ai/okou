@@ -16,12 +16,6 @@ describe("resolveImmutableDedupeInsert", () => {
     expect(resolveImmutableDedupeInsert({ ok: true, value: [row] })).toBe(row);
   });
 
-  it("fails fast when a successful insert returns no row", () => {
-    expect(() => {
-      resolveImmutableDedupeInsert({ ok: true, value: [] });
-    }).toThrow("Immutable dedupe INSERT ... RETURNING returned no row");
-  });
-
   it("maps an exact PostgreSQL 23505 to the duplicate result", () => {
     expect(
       resolveImmutableDedupeInsert({

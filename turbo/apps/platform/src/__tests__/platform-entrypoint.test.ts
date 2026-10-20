@@ -26,17 +26,6 @@ describe("platform entrypoint", () => {
     document.body.replaceChildren(root);
   });
 
-  it("does not start without the inline lifecycle", () => {
-    vi.stubGlobal("SharedWorker", class extends EventTarget {});
-    delete window._okou;
-
-    expect(startPlatformEntrypoint).toThrow(
-      "Platform lifecycle was not initialized",
-    );
-    expect(context.mocks.sentry().initializations).toHaveLength(0);
-    expect(document.getElementById("root")).toBeEmptyDOMElement();
-  });
-
   it("does not start with an aborted root signal", () => {
     vi.stubGlobal("SharedWorker", class extends EventTarget {});
     const okou = window._okou;

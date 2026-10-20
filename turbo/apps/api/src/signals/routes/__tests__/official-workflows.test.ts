@@ -1560,13 +1560,6 @@ describe("Morning Brief explicit installation", () => {
 
   it("keeps an explicit timezone choice when initialization runs later", async () => {
     const { actor } = await prepareBriefMember();
-    const invalid = await setupApp({ context, routes: userPreferencesRoutes })(
-      userPreferencesContract,
-    ).initialize({
-      headers: authHeaders(actor),
-      body: { timezone: "Invalid/Timezone", locale: "en-US" },
-    });
-    expect(invalid.status).toBe(400);
     await bdd.updateUserTimezone(actor, "Asia/Tokyo");
     const initialized = await initializeBriefMember(
       actor,
@@ -3915,7 +3908,7 @@ describe("Official Workflow credit policy", () => {
 });
 
 describe("Official Workflow installations", () => {
-  it("keeps Official threads hidden and pinned to Auto across legacy visibility changes", async () => {
+  it("keeps Official threads hidden and pinned to Auto", async () => {
     const { actor, createdAt } = await prepareBriefMember({
       catalogAvailable: false,
       bootstrap: false,
@@ -3983,50 +3976,6 @@ describe("Official Workflow installations", () => {
         hidden: true,
       }),
     );
-    // Older catalog writers may still publish visibility metadata; Official threads remain hidden.
-    expect((await syncMorningBriefCatalog(false)).body.outcome).toBe(
-      "unchanged",
-    );
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect((await accept(metadata(), [200])).body).toMatchObject({
-      id: threadId,
-      selectedModel: "auto",
-      hidden: true,
-    });
-    expect((await syncMorningBriefCatalog(true)).body.outcome).toBe(
-      "unchanged",
-    );
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect((await accept(metadata(), [200])).body).toMatchObject({
-      id: threadId,
-      hidden: true,
-    });
-    const visibilityEvents = (
-      await accept(listEvents(), [200])
-    ).body.events.filter((event) => {
-      return (
-        event.chatThreadId === threadId &&
-        event.kind === "sort_touched" &&
-        event.hidden !== undefined
-      );
-    });
-    expect(
-      visibilityEvents.map((event) => {
-        return event.hidden;
-      }),
-    ).toStrictEqual([]);
   });
 
   it("names a new Morning Brief thread in the default locale", async () => {

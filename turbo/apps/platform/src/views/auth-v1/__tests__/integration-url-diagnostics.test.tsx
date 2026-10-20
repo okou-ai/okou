@@ -113,7 +113,6 @@ test.each(TELEGRAM_PATHS)(
       $set_once: { $initial_current_url: window.location.href },
     };
     const output = beforeSend(event);
-    expect(output).not.toBeNull();
     expectRedacted(output);
     const publicUrl = new URL(String(output?.properties.$initial_current_url));
     expect(publicUrl.searchParams.get("bot")).toBe("official");

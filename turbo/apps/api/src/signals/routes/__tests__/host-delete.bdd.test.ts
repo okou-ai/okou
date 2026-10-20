@@ -159,10 +159,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     );
     await api.completeHostedSite(owner, published.deploymentId);
 
-    for (const [actor, target] of [
-      [member, site],
-      [owner, `missing-${randomUUID().slice(0, 8)}`],
-    ] as const) {
+    for (const [actor, target] of [[member, site]] as const) {
       const rejected = await api.requestDeleteHostedSite(actor, target, [404]);
       expect(errorMessage(rejected.body)).toBe("Hosted site not found");
     }

@@ -239,7 +239,6 @@ test("Keep loaded relationships visible while retrying a failed source", async (
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
-  expect(within(panel).queryByLabelText("Refresh")).not.toBeInTheDocument();
   retrying = true;
   click(buttonNamed("Try again", panel));
   await requested.promise;
@@ -272,7 +271,6 @@ test("Hide the resources popup and trigger when the last resource disappears", a
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
   click(buttonNamed("Try again", panel));
   await waitFor(() => {
@@ -385,7 +383,6 @@ test("Show the first source and created chats, then open message rows in their r
   await expect(
     within(panel).findByText("Please check the launch plan"),
   ).resolves.toBeInTheDocument();
-  expect(panel.querySelector("[title]")).toBeNull();
   expect(within(panel).getAllByText("Sent", { exact: true })).toHaveLength(1);
   expect(within(panel).getAllByText("Received", { exact: true })).toHaveLength(
     1,

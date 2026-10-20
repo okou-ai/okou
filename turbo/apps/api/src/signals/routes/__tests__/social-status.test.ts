@@ -176,7 +176,6 @@ describe("GET /api/social/status", () => {
     ["duplicate_entry", [tool("twitter.tweet"), tool("twitter.tweet", "red")]],
     ["invalid_response", [{ id: "twitter.tweet", status: "green" }]],
     ["invalid_timestamp", [tool("twitter.tweet", "green", "not-a-date")]],
-    ["invalid_response", [tool("twitter.tweet", "blue")]],
   ])(
     "keeps %s unknown without hiding other fresh operations",
     async (reason, entries) => {

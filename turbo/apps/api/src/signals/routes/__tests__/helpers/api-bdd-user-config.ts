@@ -1,6 +1,5 @@
 import { mockClerkUsers } from "./clerk-users";
 
-import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -9,11 +8,6 @@ import {
   type UpdateUserModelPreferenceRequest,
   type UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import {
-  userPreferencesContract,
-  type UpdateUserPreferencesRequest,
-} from "@okouai/api-contracts/contracts/user-preferences";
-import { z } from "zod";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -53,35 +47,6 @@ interface RegisterPushBody {
     readonly auth: string;
   };
 }
-
-const c = initContract();
-
-/**
- * Permissive mirror of the user-model-preference update route used to send
- * contract-invalid bodies through the app (the real contract types reject
- * them at compile time).
- *
- * The path is the one the real contract declares. This client runs against an
- * app built from `userConfigRoutes`, so it reaches the real handler instead of
- * registering a route of its own.
- */
-const rawModelPreferenceContract = c.router({
-  update: {
-    method: "PUT" as const,
-    path: "/api/user-model-preference",
-    headers: z.object({ authorization: z.string().optional() }),
-    body: z.unknown(),
-    responses: {
-      200: z.unknown(),
-      400: z.object({
-        error: z.object({ message: z.string(), code: z.string() }),
-      }),
-      401: z.object({
-        error: z.object({ message: z.string(), code: z.string() }),
-      }),
-    },
-  },
-});
 
 const userConfigRoutes = [
   ...authMeRoutes,
@@ -323,20 +288,6 @@ export function createUserConfigBddApi(context: TestContext) {
       );
     },
 
-    async rawUpdateModelPreference(
-      actor: ApiTestUser,
-      body: unknown,
-      statuses: readonly (200 | 400 | 401)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        rawModelPreferenceContract,
-      );
-      return await accept(
-        client.update({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
     async requestRegisterPush(
       credential: Credential | null,
       body: RegisterPushBody,
@@ -347,20 +298,6 @@ export function createUserConfigBddApi(context: TestContext) {
       );
       return await accept(
         client.register({ headers: authenticate(credential), body }),
-        statuses,
-      );
-    },
-
-    async requestUpdatePreferences(
-      actor: ApiTestUser | null,
-      body: UpdateUserPreferencesRequest,
-      statuses: readonly (200 | 400 | 401)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userPreferencesContract,
-      );
-      return await accept(
-        client.update({ headers: authenticate(actor), body }),
         statuses,
       );
     },

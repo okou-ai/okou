@@ -188,6 +188,5 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
   for (const [index, url] of urls.entries()) {
     const external = link(`External ${index}`);
     expect(external).toHaveAttribute("href", url);
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
   }
 });

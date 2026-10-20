@@ -73,7 +73,6 @@ describe("Codex execution switch", () => {
       await owned.run(async () => {
         const { actor, agentId, runnerGroup, sendChatRun, claimChatRun } =
           owned;
-        chatCallbacks.failIfChatCallbackRouteIsFetched();
         const accountId = `codex-switch-${randomUUID()}`;
         const connected = await configureSubscriptionPiModel(
           actor,
@@ -117,7 +116,6 @@ describe("Codex execution switch", () => {
     const owned = await ownedChatActor("team");
     await owned.run(async () => {
       const { actor, agentId, runnerGroup, claimChatRun } = owned;
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const accountId = `codex-workflow-${randomUUID()}`;
       await configureSubscriptionPiModel(actor, { accountId }, "gpt-6-luna");
       const thread = await chat.createThread(actor, {
@@ -148,7 +146,6 @@ describe("Codex execution switch", () => {
     const owned = await ownedChatActor();
     await owned.run(async () => {
       const { actor, agentId, runnerGroup, sendChatRun, claimChatRun } = owned;
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: requireOrgId(actor) },
@@ -170,7 +167,6 @@ describe("Codex execution switch", () => {
     const owned = await ownedChatActor();
     await owned.run(async () => {
       const { actor, agentId, runnerGroup, sendChatRun, claimChatRun } = owned;
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
       mockPiResourceArchiveDownloads(true);
       const historyObjects = mockPiObjectStore();

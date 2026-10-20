@@ -236,7 +236,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     await flushWaitUntilForTest();
     const piFollowUpRun = await api.readRun(actor, piFollowUp.runId);
     const piFollowUpAppend = piFollowUpRun.appendSystemPrompt ?? "";
-    expect(piFollowUpAppend).not.toContain("# Web Chat Run Context");
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
     const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);

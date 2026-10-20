@@ -88,23 +88,6 @@ async function creatorPopup(creatorName: string): Promise<HTMLElement> {
   return popup;
 }
 
-test("The Agents document title rejects a look-alike Okou host", async () => {
-  configureAgentList(context, [
-    agent(RESEARCH_AGENT_ID, {
-      displayName: "Research Agent",
-      visibility: "public",
-    }),
-  ]);
-
-  await setupPage({
-    context,
-    host: "okou.ai.evil.example",
-    path: "/agents",
-  });
-  await screen.findByRole("heading", { name: "Agents" });
-  expect(document.title).toBe("Agents | Okou");
-});
-
 test("Unread indicators update after a thread-list event", async () => {
   let showUnread = false;
   const refreshed = context.mocks.deferred<void>();

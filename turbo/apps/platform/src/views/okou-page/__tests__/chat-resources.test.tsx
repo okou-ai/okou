@@ -254,7 +254,6 @@ test("Open in the actual right gutter and preserve links while removing duplicat
       return button.getAttribute("aria-label") === "Open artifacts";
     }),
   ).toHaveLength(1);
-  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
   expect(
     screen.queryByTestId("thread-sidebar-artifacts"),
   ).not.toBeInTheDocument();

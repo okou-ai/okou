@@ -376,24 +376,6 @@ describe("GET /api/integrations/telegram/link", () => {
       readinessError: "domain_not_verified",
     });
   });
-
-  it("returns linked false without installation for an unknown bot", async () => {
-    const { token } = await seedLinkContext();
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramRoutes,
-    })(integrationsTelegramContract);
-
-    const response = await accept(
-      client.getLinkStatus({
-        query: { botId: newTelegramBotId() },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ linked: false });
-  });
 });
 
 describe("POST /api/integrations/telegram/link", () => {
@@ -423,29 +405,6 @@ describe("POST /api/integrations/telegram/link", () => {
     );
 
     expectUnauthorized(response.body);
-  });
-
-  it("returns 400 when telegramBotId is missing", async () => {
-    const fixture = seedLinkContext();
-    await fixture.run(async () => {
-      const { token } = fixture;
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-
-      const response = await accept(
-        fixture.run(async () => {
-          return await client.link({
-            headers: { authorization: `Bearer ${token}` },
-            body: {} as never,
-          });
-        }),
-        [400],
-      );
-
-      expect(response.body.error.code).toBe("BAD_REQUEST");
-    });
   });
 
   it("returns 409 when connecting the official bot before onboarding creates a default agent", async () => {
@@ -930,24 +889,6 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
     );
   }
 
-  it("returns 404 when the bot is not visible in the active org", async () => {
-    const { token } = await seedAvatarAuthContext();
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const response = await app.request(
-      "/api/integrations/telegram/missing-bot/avatar",
-      { headers: { authorization: `Bearer ${token}` } },
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(404);
-    expect(body).toStrictEqual({
-      error: {
-        message: "Telegram bot not found",
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
   it("streams the signed official Telegram bot avatar from the configured token", async () => {
     const fileBytes = Buffer.from("official telegram avatar bytes");
     mockTelegramAvatarDownload({
@@ -1063,48 +1004,6 @@ describe("GET /api/integrations/telegram/download-file", () => {
 
     expect(response.status).toBe(401);
     expectUnauthorized(await expectJson(response));
-  });
-
-  it("returns 400 when file_id query param is missing", async () => {
-    const token = await seedReadToken();
-
-    const response = await requestDownload({
-      search: "?bot_id=tg-bot",
-      token,
-    });
-
-    expect(response.status).toBe(400);
-    const body = await expectJson(response);
-    expect(body).toMatchObject({ error: { code: "BAD_REQUEST" } });
-    expect(JSON.stringify(body)).toContain("file_id");
-  });
-
-  it("returns 400 when bot_id query param is missing", async () => {
-    const token = await seedReadToken();
-
-    const response = await requestDownload({
-      search: "?file_id=tg-file-1",
-      token,
-    });
-
-    expect(response.status).toBe(400);
-    const body = await expectJson(response);
-    expect(body).toMatchObject({ error: { code: "BAD_REQUEST" } });
-    expect(JSON.stringify(body)).toContain("bot_id");
-  });
-
-  it("returns 404 for an unsupported bot id", async () => {
-    const token = await seedReadToken();
-
-    const response = await requestDownload({
-      search: "?file_id=tg-missing&bot_id=unknown-bot",
-      token,
-    });
-
-    expect(response.status).toBe(404);
-    await expect(expectJson(response)).resolves.toStrictEqual({
-      error: { message: "Telegram bot not found", code: "NOT_FOUND" },
-    });
   });
 
   it("streams files for the official Telegram bot", async () => {

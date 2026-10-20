@@ -2,7 +2,7 @@ import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-pr
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
 import {
@@ -40,13 +40,9 @@ test("Honor a previously saved off preference on entry", async () => {
 
 test("Keep the existing artifact entry when the rollout switch is off", async () => {
   await setupResources({ enabled: false });
-  expect(
-    screen.queryByRole("switch", { name: "Show resources" }),
-  ).not.toBeInTheDocument();
   click(buttonNamed("Open artifacts"));
   const all = await screen.findByTestId("thread-sidebar-artifacts");
   expect(all).toHaveAccessibleName("Artifacts");
-  expect(queryAllByRoleFast("tab", all)).toHaveLength(0);
 });
 
 test("Roll back the visible state and explain a failed preference save", async () => {

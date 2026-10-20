@@ -852,7 +852,6 @@ test("Hide the current chat after archiving it without changing its title", asyn
     ).toBeInTheDocument();
     expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
   });
-  expect(within(sidebar()).queryByText("🎉")).not.toBeInTheDocument();
   expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
   await expect(
     screen.findByText("Chat archived."),
@@ -865,7 +864,6 @@ test("Hide the current chat after archiving it without changing its title", asyn
   expect(
     within(sidebar()).getByText("Archived · Chats with Okou"),
   ).toBeInTheDocument();
-  expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
 

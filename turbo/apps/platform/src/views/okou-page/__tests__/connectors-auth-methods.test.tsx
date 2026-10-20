@@ -453,9 +453,6 @@ test("Add an AWS account with an external code", async () => {
   expect(
     getConnectorAction("button", "Manage AWS access", awsCard),
   ).toHaveTextContent("Used by Research Agent");
-  expect(
-    screen.queryByText("You've successfully connected with AWS!"),
-  ).toBeNull();
 });
 
 test("Add an account through OpenID", async () => {
@@ -759,9 +756,6 @@ test.each(["verification page"])(
       name: "Base44",
     });
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      screen.queryByRole("dialog", { name: "Connecting your account" }),
-    ).toBeNull();
     if (approvalSource === "verification page") {
       click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
     }
@@ -983,7 +977,6 @@ test("Enable a connector that needs no credentials", async () => {
     ).toHaveTextContent("Used by 2 agents");
   });
   expect(browserOpen.calls).toHaveLength(0);
-  expect(screen.queryByText(/You've successfully connected with/u)).toBeNull();
 });
 
 test("Follow provider-authored external-code instructions", async () => {

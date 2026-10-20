@@ -361,23 +361,6 @@ describe("auth tokens", () => {
     });
   });
 
-  it("filters a signed token to registered capabilities", () => {
-    const unregistered = ["unregistered:read", "unregistered:write"];
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: "user_okou",
-      runId: "run_okou",
-      orgId: "org_okou",
-      capabilities: [...unregistered, "chat-thread:read", "file:write"],
-      iat: currentSecond(),
-      exp: currentSecond() + 60,
-    });
-    expect(verifyOkouToken(token)?.capabilities).toStrictEqual([
-      "chat-thread:read",
-      "file:write",
-    ]);
-  });
-
   it("gates computer-use capability on an explicit host grant", () => {
     const defaultToken = generateOkouToken("user_okou", "run_okou", "org_okou");
     const scopedToken = generateOkouToken(

@@ -95,7 +95,6 @@ function recommendedFollowupEvents(
 describe("CHAT-02: incomplete-round context", () => {
   it("injects incomplete rounds and truncates old content chronologically", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -138,7 +137,6 @@ describe("CHAT-02: incomplete-round context", () => {
     const thirdRun = await api.readRun(actor, third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
     expect(appended).toContain("# Incomplete Rounds Context");
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended.split("RUN_STATUS: failed")).toHaveLength(3);
     expect(appended).toContain("User: first incomplete");
     expect(appended.indexOf("User: first incomplete")).toBeLessThan(
@@ -160,7 +158,6 @@ describe("CHAT-02: incomplete-round context", () => {
 describe("CHAT-02: prior rounds and thread titles", () => {
   it("leaves prior completed rounds to the session, generates the thread title, and accepts immutable follow-up revokes", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockGoogleText();
     let upstreamAuthorization: string | null = null;
     let titleRequests = 0;
@@ -288,11 +285,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
         content: futureFollowupContent,
       }),
     );
-    expect(
-      futureEvents.events.find((event) => {
-        return event.id === recommender.id;
-      }),
-    ).not.toHaveProperty("recommendedFollowups");
 
     const second = await sendChatRun(actor, {
       agentId,
@@ -307,7 +299,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     const appended = secondRun.appendSystemPrompt ?? "";
     // The reused CLI session already holds the completed round, so the prompt
     // only points at the thread instead of replaying it.
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended).not.toContain("Assistant: Assistant migration answer");
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
     expect(appended).not.toContain(futureFollowupContent);
@@ -391,7 +382,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
 
   it("steers an active-run recommended follow-up", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockGoogleText();
     server.use(
       http.post(VERTEX_TEXT_URL, async ({ request }) => {

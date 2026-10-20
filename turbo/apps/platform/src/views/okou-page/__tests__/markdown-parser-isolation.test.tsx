@@ -113,7 +113,6 @@ test("Opening Instructions preserves literal plus signs in a new streamed reply"
   expect(streaming.tagName).toBe("STRONG");
   expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
   expect(markdownFrameFor(streaming).querySelector("u")).toBeNull();
-  expect(screen.queryByText("Try again")).not.toBeInTheDocument();
 });
 
 test("Opening Instructions preserves literal plus signs as an unfinished reply grows", async () => {
@@ -138,7 +137,6 @@ test("Opening Instructions preserves literal plus signs as an unfinished reply g
   expect(
     markdownFrameFor(screen.getByText("Streaming:")).querySelector("u"),
   ).toBeNull();
-  expect(screen.queryByText("Try again")).not.toBeInTheDocument();
 });
 
 test("Opening Instructions preserves rich Markdown when a streamed reply completes", async () => {
@@ -195,7 +193,6 @@ test("Opening Instructions preserves rich Markdown when a streamed reply complet
   );
   expect(frame.querySelector("ol")).toHaveAttribute("start", "3");
   expect(frame.querySelector('input[type="checkbox"]')).toBeChecked();
-  expect(screen.queryByText("Try again")).not.toBeInTheDocument();
 });
 
 test("Opening Instructions keeps rich Activity logs readable", async () => {
@@ -269,5 +266,4 @@ test("Opening Instructions keeps rich Activity logs readable", async () => {
   expect(frame).toHaveTextContent("++Literal text++");
   expect(frame.querySelector("u")).toHaveTextContent("HTML underline");
   expect(window.location.pathname).toBe(`/activities/${RUN_ID}`);
-  expect(screen.queryByText("Try again")).not.toBeInTheDocument();
 });

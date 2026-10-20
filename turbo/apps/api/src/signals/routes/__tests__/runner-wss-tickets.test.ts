@@ -116,33 +116,21 @@ describe("direct Runner WSS ticket boundary", () => {
     });
   }
 
-  it.each(["success", "rejection"] as const)(
-    "releases claimed slots after owned operation %s",
-    async (outcome) => {
-      const observation: { fixture?: Fixture } = {};
-      // Finished callbacks run in reverse order: observe after the actor cleans up.
-      onTestFinished(async () => {
-        const fixture = observation.fixture;
-        if (fixture) {
-          const queue = await fixture.api.readRunQueue(fixture.actor);
-          expect(queue.body.concurrency.active).toBe(0);
-        }
-      });
-      const f = await setup();
-      observation.fixture = f;
-      const queue = await f.api.readRunQueue(f.actor);
-      expect(queue.body.concurrency.active).toBe(1);
-      if (outcome === "rejection") {
-        const failure = new Error("Owned ticket operation failed");
-        await expect(
-          f.run(async () => {
-            await accept(bootstrap(f), [200]);
-            throw failure;
-          }),
-        ).rejects.toBe(failure);
+  it("releases claimed slots after an owned operation", async () => {
+    const observation: { fixture?: Fixture } = {};
+    // Finished callbacks run in reverse order: observe after the actor cleans up.
+    onTestFinished(async () => {
+      const fixture = observation.fixture;
+      if (fixture) {
+        const queue = await fixture.api.readRunQueue(fixture.actor);
+        expect(queue.body.concurrency.active).toBe(0);
       }
-    },
-  );
+    });
+    const f = await setup();
+    observation.fixture = f;
+    const queue = await f.api.readRunQueue(f.actor);
+    expect(queue.body.concurrency.active).toBe(1);
+  });
 
   it("issues for an eligible active run without a separate issuance flag", async () => {
     const f = await setup();

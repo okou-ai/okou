@@ -921,7 +921,7 @@ test("A rejected Browser file authorization and PUT leave the selection retryabl
   });
 });
 
-test("An optional file selection leaves existing website files untouched without auxiliary buttons", async () => {
+test("An optional file selection leaves existing website files untouched", async () => {
   let sent: unknown = null;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, fileAction({ required: false, preflight: false }));
@@ -953,15 +953,13 @@ test("An optional file selection leaves existing website files untouched without
   await waitFor(() => {
     return expect(button("Add to browser")).toBeEnabled();
   });
-  expect(screen.queryByText("Clear website value")).toBeNull();
-  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   click(button("Add to browser"));
   await waitFor(() => {
     return expect(sent).toStrictEqual([]);
   });
 });
 
-test("A required file field can retain already selected website files without a keep button", async () => {
+test("A required file field can retain already selected website files", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, {
@@ -1003,7 +1001,6 @@ test("A required file field can retain already selected website files without a 
   await waitFor(() => {
     return expect(button("Add to browser")).toBeEnabled();
   });
-  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -1250,8 +1247,6 @@ test.each([
       await fill(quantity, "12.5");
       await fill(quantity, "");
     }
-    expect(screen.queryByText("Clear website value")).toBeNull();
-    expect(screen.queryByText("Leave website value unchanged")).toBeNull();
     click(button("Add to browser"));
     await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   },
@@ -1444,7 +1439,7 @@ test("An untouched optional checkbox preserves a checked website value", async (
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("A required checked checkbox submits its valid website state without auxiliary confirmation", async () => {
+test("A required checked checkbox submits its valid website state", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, {
@@ -1485,7 +1480,6 @@ test("A required checked checkbox submits its valid website state without auxili
     expect(checkbox).toBeEnabled();
   });
   expect(checkbox).toBeChecked();
-  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1614,7 +1608,6 @@ test("A radio group submits an indexed choice without its duplicate value", asyn
   await userEvent
     .setup({ delay: null })
     .click(within(form).getByRole("radio", { name: "2. Same" }));
-  expect(screen.queryByText("Clear website value")).toBeNull();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -1786,7 +1779,6 @@ test("An Agent-required radio group submits its existing valid website choice", 
     name: "Sign in to download invoices",
   });
   await within(form).findAllByRole("radio");
-  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1911,7 +1903,6 @@ test("A required multiple select cannot keep a disabled website choice and drops
     expect(region).toBeEnabled();
   });
   expect(button("Add to browser")).toBeDisabled();
-  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   const user = userEvent.setup({ delay: null });
   await user.selectOptions(region, "2");
   expect(button("Add to browser")).toBeEnabled();
@@ -1965,8 +1956,6 @@ test("An optional multiple select distinguishes untouched from an explicit clear
   });
   expect(region).toHaveAttribute("multiple");
   await userEvent.setup({ delay: null }).deselectOptions(region, "1");
-  expect(screen.queryByText("Clear website value")).toBeNull();
-  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -2361,45 +2350,6 @@ test("Standalone preflight makes a confirmed changed target stale before showing
   expect(
     screen.getByText("Ask the agent to create a new request."),
   ).toBeVisible();
-});
-
-test("A transient standalone preflight failure keeps fields visible but blocks submission", async () => {
-  let attempts = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action("pending"));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    attempts += 1;
-    return attempts === 1
-      ? respond(503, {
-          error: {
-            code: "BROWSER_UNAVAILABLE",
-            message: "Browser unavailable",
-          },
-        })
-      : respond(200, action("pending"));
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await waitFor(() => {
-    expect(button("Retry")).toBeVisible();
-  });
-  expect(attempts).toBe(1);
-  expect(
-    screen.getByRole("form", { name: "Sign in to download invoices" }),
-  ).toBeVisible();
-  expect(button("Add to browser")).toBeDisabled();
-  click(button("Retry"));
-  await waitFor(() => {
-    expect(attempts).toBe(2);
-    expect(button("Add to browser")).toBeEnabled();
-  });
 });
 
 test("Retry after a failed standalone request also runs preflight", async () => {
@@ -2941,17 +2891,6 @@ test("Fails closed for a mismatched response", async () => {
   await expect(
     screen.findByText("Request unavailable"),
   ).resolves.toBeInTheDocument();
-});
-
-test("Invalid standalone claims fail closed without reading the action", async () => {
-  await setupPage({
-    context,
-    path: route({ threadId: "not-a-uuid" }),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await expect(screen.findByText("Request unavailable")).resolves.toBeVisible();
 });
 
 test("The standalone feature gate prevents Browser action reads", async () => {

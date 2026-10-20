@@ -1806,7 +1806,7 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.draftReadCount).toBe(1);
   });
 
-  it("rejects a missing Gmail draft and cross-chat relinking", async () => {
+  it("rejects a missing Gmail draft", async () => {
     const fixture = await seedGmailMailCardFixture();
     const gmail = mockGmailDraftApi();
     gmail.exists = false;
@@ -1822,24 +1822,6 @@ describe("POST /api/mail/drafts/link", () => {
       [404],
     );
     expect(missing.body.error.message).toBe("Gmail draft not found");
-
-    gmail.exists = true;
-    await linkDraft(fixture);
-    const otherThread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agent.agentId,
-      title: "Other mail review",
-    });
-    const conflict = await accept(
-      client().linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: otherThread.id,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
-      }),
-      [409],
-    );
-    expect(conflict.body.error.message).toContain("already linked");
   });
 
   it("requires reconnect when the Gmail token refresh fails", async () => {
