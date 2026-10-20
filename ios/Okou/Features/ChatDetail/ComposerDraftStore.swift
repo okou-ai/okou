@@ -24,6 +24,7 @@ final class ComposerDraftStore {
   }
   private(set) var document = ChatDraftDocument()
   let attachments: AttachmentDraftStore
+  let editor = ComposerEditor()
   var error: String? { localError ?? syncError }
   private var localReadFailed = false
   private var localError: String?
