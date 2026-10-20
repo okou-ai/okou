@@ -9,7 +9,7 @@ import {
 
 import { agentRuns } from "./agent-run";
 
-/** Pending one-use credentials; redeem by atomic deletion within 30 seconds. */
+/** Migration-owned retired storage retained for outgoing API SQL; not exported by the runtime DB. */
 export const runnerWssTickets = pgTable(
   "runner_wss_tickets",
   {

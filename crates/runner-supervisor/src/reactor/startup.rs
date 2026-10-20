@@ -16,7 +16,7 @@ use super::home_cache_observation::{
 use super::signals::{SignalController, handle_stopping_signal};
 use super::{
     ProviderState, ProxyState, RunPaths, RunnerInfo, RunnerSharedState, SandboxRuntimeConfig,
-    ShutdownHandles, SignalSource, SignalState, WssConfig, abort_signal_handler_task, runner_wss,
+    ShutdownHandles, SignalSource, SignalState, abort_signal_handler_task,
 };
 use crate::SharedFactory;
 use crate::executor::ExecutorConfig;
@@ -58,7 +58,6 @@ pub(super) struct StartupInventory<'a> {
 pub(super) struct StartedRunner {
     pub resources: StartupResources,
     pub signal: SignalController,
-    pub wss_task: Option<runner_wss::AcceptTask>,
     pub factories: BTreeMap<String, (SharedFactory, bool)>,
     pub prune_listener: PruneIdleListener,
     pub prune_admission: Arc<Semaphore>,
@@ -68,33 +67,19 @@ pub(super) struct StartedRunner {
 }
 
 struct StartupOwner {
-    // Keep factory/listener/signal custody ahead of their backing resources
+    // Keep factory/signal custody ahead of their backing resources
     // in the default field drop order, without adding another cleanup task.
     factories: BTreeMap<String, (SharedFactory, bool)>,
     initial_inventory: Option<InitialHomeCacheTask>,
     home_cache_observation: Option<HomeCacheObservation>,
     heartbeat: Option<HeartbeatController>,
-    wss_task: Option<runner_wss::AcceptTask>,
     signal: SignalController,
     resources: StartupResources,
 }
 
 impl StartupOwner {
-    async fn stop_listener(&mut self) {
-        if let Some(task) = self.wss_task.take() {
-            task.stop().await;
-        }
-    }
-
-    fn listener_failed(&self) -> bool {
-        self.wss_task
-            .as_ref()
-            .is_some_and(runner_wss::AcceptTask::failed_or_finished)
-    }
-
     /// Consume startup custody only after its dependent work has been joined.
     async fn rollback(mut self, ctx: &StartupContext<'_>, context: &'static str) {
-        self.stop_listener().await;
         if let Some(task) = self.initial_inventory.take() {
             task.abort();
             match task.await {
@@ -126,7 +111,7 @@ impl StartupOwner {
                     "failed to shut down factories after startup status persistence failure"
                 );
             } else {
-                warn!(%error, "failed to shut down factories after WSS startup failure");
+                warn!(%error, context, "failed to shut down factories after startup failure");
             }
         }
         if let Some(cache) = ctx.exec_config.home_cache.as_ref() {
@@ -168,12 +153,11 @@ impl StartupOwner {
     }
 }
 
-/// None means readiness was cancelled without a failed listener, after rollback.
+/// None means readiness was cancelled, after rollback.
 pub(super) async fn start(
     resources: StartupResources,
     ctx: StartupContext<'_>,
     signals: SignalState,
-    wss: Option<WssConfig>,
     inventory: StartupInventory<'_>,
 ) -> RunnerResult<Option<StartedRunner>> {
     let signal = match signals.signal_source {
@@ -189,14 +173,13 @@ pub(super) async fn start(
     let mut startup = StartupOwner {
         resources,
         signal,
-        wss_task: None,
         factories: BTreeMap::new(),
         initial_inventory: None,
         home_cache_observation: None,
         heartbeat: None,
     };
 
-    // Both failures precede WSS and own the same startup resources.
+    // Both early failures own the same startup resources.
     let prune_listener = match ctx
         .shared
         .status
@@ -230,53 +213,13 @@ pub(super) async fn start(
         inventory.test_hooks,
     ));
 
-    // Required binding and bounded admission precede readiness and claims.
-    let wss_started = match wss {
-        Some(config) => match runner_wss::start(
-            config,
-            ctx.runner.identity.runner_id(),
-            ctx.exec_config.guest_duplex.clone(),
-            ctx.shared,
-            ctx.provider,
-            &startup.signal.lifecycle,
-        ) {
-            Ok(listener) => {
-                startup.wss_task = Some(listener.task);
-                Some(listener.started)
-            }
-            Err(error) => {
-                startup.rollback(&ctx, "wss_socket_startup_failure").await;
-                return Err(RunnerError::Internal(format!(
-                    "bind required Runner WSS listener: {error}"
-                )));
-            }
-        },
-        None => None,
-    };
-    if let Some(started) = wss_started
-        && started.await.is_err()
-    {
-        startup.rollback(&ctx, "wss_accept_startup_failure").await;
-        return Err(RunnerError::Internal(
-            "required Runner WSS accept loop failed to start".into(),
-        ));
-    }
-
-    let readiness: RunnerResult<()> = if let Some(task) = startup.wss_task.as_mut() {
-        tokio::select! {
-            result = ctx.provider.provider.prepare_startup_readiness() => result.map_err(Into::into),
-            result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during startup: {result:?}"))),
-        }
-    } else {
-        ctx.provider
-            .provider
-            .prepare_startup_readiness()
-            .await
-            .map_err(Into::into)
-    };
+    let readiness: RunnerResult<()> = ctx
+        .provider
+        .provider
+        .prepare_startup_readiness()
+        .await
+        .map_err(Into::into);
     if let Err(error) = readiness {
-        let listener_failed = startup.listener_failed();
-        startup.stop_listener().await;
         let startup_readiness_cancelled = ctx.provider.cancel.is_cancelled();
         let cleanup_reason = if startup_readiness_cancelled {
             "provider_startup_readiness_cancelled"
@@ -284,58 +227,25 @@ pub(super) async fn start(
             "provider_startup_readiness_failure"
         };
         startup.rollback(&ctx, cleanup_reason).await;
-        if startup_readiness_cancelled && !listener_failed {
+        if startup_readiness_cancelled {
             return Ok(None);
         }
         return Err(error);
     }
 
-    let (factory_result, startup_listener_error) = if let Some(task) = startup.wss_task.as_mut() {
-        let factories = start_factories(
-            &ctx.runner.profiles,
-            startup.resources.sandbox_runtime.runtime.as_mut(),
-            ctx.exec_config.home_cache.as_ref(),
-        );
-        tokio::pin!(factories);
-        tokio::select! {
-            result = &mut factories => (result, None),
-            result = task.wait() => {
-                let error = RunnerError::Internal(format!(
-                    "required Runner WSS accept loop stopped during factory startup: {result:?}"
-                ));
-                // Listener failure already closes admission and changes lifecycle.
-                // Keep external factory work owned until it returns: dropping it
-                // bypasses partial-factory cleanup and detaches physical IO over
-                // shared runtime resources. Rollback joins every completed factory
-                // before runtime teardown.
-                (factories.await, Some(error))
-            }
-        }
-    } else {
-        (
-            start_factories(
-                &ctx.runner.profiles,
-                startup.resources.sandbox_runtime.runtime.as_mut(),
-                ctx.exec_config.home_cache.as_ref(),
-            )
-            .await,
-            None,
-        )
-    };
-    startup.factories = match factory_result {
+    startup.factories = match start_factories(
+        &ctx.runner.profiles,
+        startup.resources.sandbox_runtime.runtime.as_mut(),
+        ctx.exec_config.home_cache.as_ref(),
+    )
+    .await
+    {
         Ok(factories) => factories,
         Err(error) => {
             startup.rollback(&ctx, "factory_startup_failure").await;
             return Err(error);
         }
     };
-    // A dead listener cannot be followed by healthy status, heartbeat or claims.
-    if startup_listener_error.is_some() || startup.listener_failed() {
-        startup.rollback(&ctx, "wss_accept_startup_failure").await;
-        return Err(startup_listener_error.unwrap_or_else(|| {
-            RunnerError::Internal("required Runner WSS accept loop exited during startup".into())
-        }));
-    }
     let readiness = {
         let cache_readiness = finish_initial_inventory(
             &mut startup.initial_inventory,
@@ -347,36 +257,21 @@ pub(super) async fn start(
         let cache_readiness =
             tokio::time::timeout(INITIAL_HOME_CACHE_READINESS_TIMEOUT, cache_readiness);
         tokio::pin!(cache_readiness);
-        if let Some(task) = startup.wss_task.as_mut() {
-            tokio::select! {
-                biased;
-                () = ctx.provider.cancel.cancelled() => Err(RunnerError::Internal("initial home-cache readiness cancelled".into())),
-                result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during inventory readiness: {result:?}"))),
-                result = &mut cache_readiness => result.unwrap_or_else(|_| Err(RunnerError::Internal("initial home-cache readiness timed out after 60s".into()))),
-            }
-        } else {
-            tokio::select! {
-                biased;
-                () = ctx.provider.cancel.cancelled() => Err(RunnerError::Internal("initial home-cache readiness cancelled".into())),
-                result = &mut cache_readiness => result.unwrap_or_else(|_| Err(RunnerError::Internal("initial home-cache readiness timed out after 60s".into()))),
-            }
+        tokio::select! {
+            biased;
+            () = ctx.provider.cancel.cancelled() => Err(RunnerError::Internal("initial home-cache readiness cancelled".into())),
+            result = &mut cache_readiness => result.unwrap_or_else(|_| Err(RunnerError::Internal("initial home-cache readiness timed out after 60s".into()))),
         }
     };
     if let Err(error) = readiness {
         let cancelled = ctx.provider.cancel.is_cancelled();
-        let listener_failed = startup.listener_failed();
         startup
             .rollback(&ctx, "initial_home_cache_readiness_failure")
             .await;
-        return if cancelled && !listener_failed {
-            Ok(None)
-        } else {
-            Err(error)
-        };
+        return if cancelled { Ok(None) } else { Err(error) };
     }
     let startup_mode = startup.signal.lifecycle.mark_startup_ready();
     if let Err(error) = ctx.shared.status.set_mode(startup_mode).await {
-        startup.stop_listener().await;
         handle_stopping_signal(
             "startup status persistence failure",
             &ctx.provider.cancel,
@@ -396,7 +291,6 @@ pub(super) async fn start(
         StartupOwner {
             resources,
             signal,
-            wss_task,
             factories,
             initial_inventory: None,
             home_cache_observation: Some(home_cache_observation),
@@ -404,7 +298,6 @@ pub(super) async fn start(
         } => Ok(Some(StartedRunner {
             resources,
             signal,
-            wss_task,
             factories,
             prune_listener,
             prune_admission,

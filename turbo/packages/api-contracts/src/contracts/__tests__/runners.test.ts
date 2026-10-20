@@ -1104,15 +1104,24 @@ describe("runner reuse preference contract", () => {
     for (const tier of [
       "exactSandbox",
       "finalizingPredecessor",
+      "peerFinalizingPredecessor",
       "reusableSandbox",
       "homeCache",
     ] as const) {
+      const preference = {
+        ...runnerPreference,
+        tier,
+        ...(tier === "finalizingPredecessor" ||
+        tier === "peerFinalizingPredecessor"
+          ? { finalizingSourceRunId: "11111111-1111-4111-8111-111111111111" }
+          : {}),
+      };
       expect(
         jobSchema.parse({
           ...jobInput,
-          runnerPreference: { ...runnerPreference, tier },
+          runnerPreference: preference,
         }).runnerPreference,
-      ).toStrictEqual({ ...runnerPreference, tier });
+      ).toStrictEqual(preference);
     }
     expect(
       jobSchema.safeParse({

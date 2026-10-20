@@ -9,7 +9,7 @@ import { Command } from "commander";
 
 import {
   listConnectorAccountConnections,
-  listConnectorCatalogStatus,
+  listConnectorCatalog,
   listCustomConnectors,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
@@ -110,6 +110,7 @@ function jsonOutput(
   connector: ConnectorDiscoveryItem,
   target: ConnectorAccountTarget,
   connections: readonly ConnectorAccountConnection[],
+  defaultConnection: ConnectorAccountConnection | null,
 ): object {
   return {
     context: "available",
@@ -119,6 +120,7 @@ function jsonOutput(
       label: connector.label,
       target,
     },
+    defaultConnectionId: defaultConnection?.id ?? null,
     accounts: connections.map((account) => {
       return {
         connectionId: account.id,
@@ -164,7 +166,7 @@ Use only an exact connectionId returned for this connector; never invent an ID o
         }
 
         const [{ connectors }, customConnectors] = await Promise.all([
-          listConnectorCatalogStatus(),
+          listConnectorCatalog(),
           listCustomConnectors(),
         ]);
         const discoveredConnectors = connectorDiscoveryItems(
@@ -209,7 +211,12 @@ Use only an exact connectionId returned for this connector; never invent an ID o
         if (options.json) {
           console.log(
             JSON.stringify(
-              jsonOutput(connector, target, result.connections),
+              jsonOutput(
+                connector,
+                target,
+                result.connections,
+                result.defaultConnection,
+              ),
               null,
               2,
             ),
@@ -220,6 +227,16 @@ Use only an exact connectionId returned for this connector; never invent an ID o
         console.log(
           `Available accounts for ${connector.label} (${connector.slug}):`,
         );
+        if (
+          result.defaultConnection &&
+          !result.connections.some((account) => {
+            return account.id === result.defaultConnection?.id;
+          })
+        ) {
+          console.log(
+            `Default account: ${connectorAccountCliInventoryLabel({ ...result.defaultConnection, connectionId: result.defaultConnection.id })} (${result.defaultConnection.id})`,
+          );
+        }
         if (result.connections.length === 0) {
           printEmptyState(connector, search);
           return;

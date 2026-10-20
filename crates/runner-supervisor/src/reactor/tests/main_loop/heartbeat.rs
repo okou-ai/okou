@@ -332,8 +332,7 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
 
 #[tokio::test(start_paused = true)]
 async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
-    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    config.wss_ingress_service_probe = Arc::new(|| Box::pin(async { true }));
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let status_path = env._temp_dir.path().join("status.json");
     let run_handle = tokio::spawn(run(config));
     wait_for_blocked_routine_heartbeat(&env).await;
@@ -380,13 +379,6 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
                 .iter()
                 .all(|heartbeat| heartbeat.snapshot_generation == 7)
         );
-        assert_eq!(
-            heartbeats
-                .iter()
-                .map(|heartbeat| heartbeat.wss_ingress_service_active)
-                .collect::<Vec<_>>(),
-            [true, false],
-        );
         assert_final_basic_heartbeat(heartbeats.last().unwrap());
     }
     assert_eq!(env.handle.heartbeat_in_flight(), 0);
@@ -395,8 +387,7 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
 
 #[tokio::test(start_paused = true)]
 async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
-    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    config.wss_ingress_service_probe = Arc::new(|| Box::pin(async { true }));
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let run_handle = tokio::spawn(run(config));
     wait_for_blocked_routine_heartbeat(&env).await;
 
@@ -446,13 +437,6 @@ async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
             heartbeats
                 .iter()
                 .all(|heartbeat| heartbeat.snapshot_generation == 7)
-        );
-        assert_eq!(
-            heartbeats
-                .iter()
-                .map(|heartbeat| heartbeat.wss_ingress_service_active)
-                .collect::<Vec<_>>(),
-            [true, true, false],
         );
         assert_final_basic_heartbeat(heartbeats.last().unwrap());
     }

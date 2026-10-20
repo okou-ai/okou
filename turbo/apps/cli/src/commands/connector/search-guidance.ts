@@ -1,6 +1,5 @@
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
-import { memberConnectorFacts } from "./member-status";
+import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   connectorActionUrl,
@@ -9,6 +8,7 @@ import {
 } from "./action-url";
 import {
   isConnectorDiscoveryAuthorized,
+  connectorHasSavedAccounts,
   type ConnectorDiscoveryDefinition,
   type ConnectorDiscoveryItem,
 } from "./discovery";
@@ -69,29 +69,21 @@ export function runConnectorSearchAction(
 export function currentConnectorSearchAction(
   connector: ConnectorDiscoveryItem,
   agentContext: ConnectorDiscoveryAgentContext | null,
-  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
+  directory: ConnectedConnectors,
 ): ConnectorSearchAction | null {
   const authorized =
     !agentContext || isConnectorDiscoveryAuthorized(connector, agentContext);
-  const facts = memberConnectorFacts(
-    connector.kind === "catalog"
-      ? connector.catalogConnector
-      : connector.customConnector,
-    summaries,
-  );
+  const hasSavedAccounts = connectorHasSavedAccounts(connector, directory);
   if (connector.kind === "custom") {
-    return facts.memberStatus === "connected" && authorized
-      ? null
-      : accountSettingsAction(connector);
+    return accountSettingsAction(connector);
   }
-  if (facts.memberStatus !== "connected") {
-    return facts.memberStatus === "not-connected" &&
-      connector.catalogConnector.connection === null
-      ? connectAction(connector)
-      : accountSettingsAction(connector);
+  if (!hasSavedAccounts) {
+    return connectAction(connector);
   }
+  // The directory cannot establish the health or default of a saved account.
+
   return authorized
-    ? null
+    ? accountSettingsAction(connector)
     : {
         label: `Authorize ${connector.label}`,
         path: `/connectors/${connector.slug}/authorize`,

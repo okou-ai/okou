@@ -3,9 +3,3 @@ declare module "virtual:shared-database-worker" {
 
   export default SharedDatabaseWorker;
 }
-
-declare module "virtual:sandbox-file-download-worker" {
-  const workerUrl: string;
-
-  export default workerUrl;
-}

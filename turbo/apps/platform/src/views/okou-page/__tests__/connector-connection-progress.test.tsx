@@ -24,7 +24,7 @@ import {
   getConnectorAction,
   listAgent,
   mcpCustomConnector,
-  mockConnectorOverviewAccountSummaries,
+  mockSavedConnectorAccounts,
   mockConnectors,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
@@ -377,17 +377,8 @@ test.each(["http", "mcp", "automatic"] as const)(
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
-    mockConnectorOverviewAccountSummaries(context, () => {
-      return authorized
-        ? [
-            {
-              target: account.target,
-              accountCount: 1,
-              attentionCount: 0,
-              defaultConnection: account,
-            },
-          ]
-        : [];
+    mockSavedConnectorAccounts(context, () => {
+      return authorized ? [account] : [];
     });
     context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
       return respond(200, { grants: [] });

@@ -16,17 +16,11 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { searchCommand } from "../search";
 import chalk from "chalk";
-import {
-  catalogAccountSummaries,
-  customAccountSummaries,
-  stubConnectorAccountSummaries,
-} from "../../__tests__/helpers/connector-accounts";
+import { stubConnectedConnectors } from "../../__tests__/helpers/connector-accounts";
 import {
   authCodeMethod,
   catalogItem,
-  catalogStatusItem,
   stubConnectorCatalog,
-  stubConnectorCatalogStatus,
 } from "../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
@@ -44,69 +38,15 @@ const ALT_AGENT_UUID = "550e8400-e29b-41d4-a716-446655440099";
 const RUN_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
 const THREAD_UUID = "22222222-2222-4222-8222-222222222222";
 
-const connectedGithub = {
-  id: "1",
-  slug: "github",
-  authMethod: "oauth",
-  externalId: "12345",
-  externalUsername: "octocat",
-  externalEmail: "octocat@github.com",
-  oauthScopes: ["repo", "project", "workflow"],
-  connectionStatus: "connected",
-  createdAt: "2025-01-01T00:00:00Z",
-  updatedAt: "2025-01-01T00:00:00Z",
-};
-
-function stubConnectors(connectors: Array<Record<string, unknown>>) {
-  const connectedBySlug = new Map(
-    connectors.map((connector) => {
-      const scopeMismatch =
-        Array.isArray(connector.oauthScopes) &&
-        connector.oauthScopes.length === 1 &&
-        connector.oauthScopes[0] === "repo";
-      return [
-        connector.slug as string,
-        catalogStatusItem({
-          connectorSlug: connector.slug as string,
-          authMethods: [authCodeMethod(connector.authMethod as string)],
-          tags: connector.slug === "github" ? ["vcs"] : [],
-          connection: {
-            authMethod: connector.authMethod as string,
-            externalUsername:
-              (connector.externalUsername as string | null) ?? null,
-            externalEmail: (connector.externalEmail as string | null) ?? null,
-            reconnectReason: null,
-          },
-          connected: true,
-          connectionStatus: scopeMismatch
-            ? "scope-mismatch"
-            : ((connector.connectionStatus as
-                "connected" | "reconnect-required") ?? "connected"),
-          scopeMismatch,
-        }),
-      ] as const;
-    }),
-  );
-  const visibleConnectorSlugs = new Set([
-    "github",
-    "mercury",
-    ...connectedBySlug.keys(),
-  ]);
-  server.use(
-    stubConnectorAccountSummaries(
-      catalogAccountSummaries([...connectedBySlug.values()]),
-    ),
-  );
-  return stubConnectorCatalogStatus(
-    [...visibleConnectorSlugs].map((connectorSlug) => {
-      return (
-        connectedBySlug.get(connectorSlug) ??
-        catalogStatusItem({
-          connectorSlug,
-          authMethods: [authCodeMethod("oauth")],
-          tags: connectorSlug === "github" ? ["vcs"] : [],
-        })
-      );
+function stubConnectors(savedSlugs: readonly string[]) {
+  server.use(stubConnectedConnectors(savedSlugs));
+  return stubConnectorCatalog(
+    [...new Set(["github", "mercury", ...savedSlugs])].map((connectorSlug) => {
+      return catalogItem({
+        connectorSlug,
+        authMethods: [authCodeMethod("oauth")],
+        tags: connectorSlug === "github" ? ["vcs"] : [],
+      });
     }),
   );
 }
@@ -136,10 +76,10 @@ function stubUserConnectors(id: string, enabledConnectorSlugs: string[]) {
 }
 
 function stubAvailableConnectors(connectorSlugs: string[]) {
-  server.use(stubConnectorAccountSummaries([]));
-  return stubConnectorCatalogStatus(
+  server.use(stubConnectedConnectors([]));
+  return stubConnectorCatalog(
     connectorSlugs.map((connectorSlug) => {
-      return catalogStatusItem({
+      return catalogItem({
         connectorSlug,
         label: connectorSlug.replaceAll("-", " "),
         authMethods: [authCodeMethod("oauth")],
@@ -188,7 +128,7 @@ describe("okou connector search command", () => {
     server.use(
       stubCustomConnectors([]),
       stubAgentCustomConnectors([]),
-      stubConnectorAccountSummaries([]),
+      stubConnectedConnectors([]),
     );
   });
 
@@ -201,13 +141,13 @@ describe("okou connector search command", () => {
   });
 
   describe("JSON output", () => {
-    it("identifies all three connector types and separates current connection from Agent grants", async () => {
-      const custom = customConnector({ connectedAccountId: RUN_CONNECTION_ID });
+    it("identifies all three connector types and separates directory membership from Agent grants", async () => {
+      const custom = customConnector();
       const mcp = customMcpConnector();
       server.use(
-        stubConnectorAccountSummaries(customAccountSummaries([custom])),
-        stubConnectorCatalogStatus([
-          catalogStatusItem({ connectorSlug: "acme", label: "Acme Builtin" }),
+        stubConnectedConnectors([], [custom]),
+        stubConnectorCatalog([
+          catalogItem({ connectorSlug: "acme", label: "Acme Builtin" }),
         ]),
         stubCustomConnectors([custom, mcp]),
         stubAgent(AGENT_UUID, "Agent"),
@@ -238,19 +178,20 @@ describe("okou connector search command", () => {
             connectorType: "builtin",
             kind: "builtin",
             target: { kind: "builtin", connectorSlug: "acme" },
-            connected: false,
+            hasSavedAccounts: false,
             authorized: true,
           }),
           expect.objectContaining({
             connectorType: "custom-http",
             kind: "custom",
             id: custom.id,
-            connectionId: RUN_CONNECTION_ID,
+            hasSavedAccounts: true,
             authorized: true,
           }),
           expect.objectContaining({
             connectorType: "custom-mcp",
             target: { kind: "custom", customConnectorId: mcp.id },
+            hasSavedAccounts: false,
             authorized: false,
           }),
         ]),
@@ -313,7 +254,7 @@ describe("okou connector search command", () => {
       ]);
       server.use(
         stubConnectorCatalog([catalogItem({ connectorSlug: "github" })]),
-        stubConnectors([connectedGithub]),
+        stubConnectedConnectors(["github"]),
         stubAgent(AGENT_UUID, "Agent"),
         stubUserConnectors(AGENT_UUID, []),
         stubRunConnectorAccountInspection([
@@ -357,7 +298,6 @@ describe("okou connector search command", () => {
           },
         ],
       });
-      expect(output).not.toContain("octocat");
     });
 
     it.each([
@@ -463,8 +403,8 @@ describe("okou connector search command", () => {
       expect(output).not.toContain("Showing top");
       expect(output).not.toContain("AUTHORIZED FOR");
       expect(output).not.toContain("LABEL");
-      expect(output).toContain("AVAILABLE");
-      expect(output).toContain("CONNECTED AS");
+      expect(output).toContain("SAVED ACCOUNTS");
+      expect(output).toContain("ACCOUNT STATUS");
 
       const dataRows = findDataRows(lines);
       expect(dataRows[0]).toMatch(/^github\s/);
@@ -539,15 +479,10 @@ describe("okou connector search command", () => {
     });
 
     it("finds a custom connector by display name", async () => {
-      const connector = customConnector({
-        connected: true,
-        connectedAccountId: "55555555-5555-4555-8555-555555555555",
-        missingRequiredFields: [],
-        configuredFieldKeys: ["apiKey"],
-      });
+      const connector = customConnector();
       server.use(
         stubCustomConnectors([connector]),
-        stubConnectorAccountSummaries(customAccountSummaries([connector])),
+        stubConnectedConnectors([], [connector]),
       );
 
       await searchCommand.parseAsync(["node", "cli", "Acme Search"]);
@@ -556,8 +491,7 @@ describe("okou connector search command", () => {
       const customRow = findDataRows(lines).find((line) => {
         return line.startsWith(connector.slug);
       });
-      expect(customRow).toContain("Account #55555555");
-      expect(customRow).not.toContain("not connected");
+      expect(customRow).toContain("saved accounts (inspect status)");
     });
 
     it("finds org connectors with the custom keyword", async () => {
@@ -753,58 +687,67 @@ describe("okou connector search command", () => {
     });
   });
 
-  describe("CONNECTED AS column", () => {
-    it("renders @username for a connected slug", async () => {
-      server.use(stubConnectors([connectedGithub]));
+  describe("saved-account directory", () => {
+    it("shows saved accounts with review guidance instead of assuming a usable default", async () => {
+      server.use(stubConnectors(["github"]));
 
       await searchCommand.parseAsync(["node", "cli", "github"]);
 
-      const output = (mockConsoleLog.mock.calls.flat() as string[]).join("\n");
-      expect(output).toContain("CONNECTED AS");
-      expect(output).not.toContain("LABEL");
-      expect(output).toContain("@octocat");
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(output).toContain("SAVED ACCOUNTS");
+      expect(output).toMatch(
+        /github\s+yes\s+saved accounts \(inspect status\)/u,
+      );
+      expect(output).toContain(
+        "[Review github accounts and agent access](http://localhost:3000/connectors)",
+      );
     });
 
-    it("renders (not connected) for a slug with no connector", async () => {
+    it("offers a connection for catalog entries with no saved accounts", async () => {
       server.use(stubConnectors([]));
 
       await searchCommand.parseAsync(["node", "cli", "github"]);
 
-      const output = (mockConsoleLog.mock.calls.flat() as string[]).join("\n");
-      expect(output).toContain("(not connected)");
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(output).toContain("(no saved accounts)");
       expect(output).toContain(
         "http://localhost:3000/connectors/github/connect",
       );
     });
 
-    it("renders reconnect-needed state", async () => {
-      server.use(
-        stubConnectors([
-          { ...connectedGithub, connectionStatus: "reconnect-required" },
-        ]),
+    it("does not infer health, defaults, scopes, or authorization from directory membership", async () => {
+      server.use(stubConnectors(["github"]));
+
+      await searchCommand.parseAsync(["node", "cli", "github", "--json"]);
+
+      const json: unknown = JSON.parse(
+        mockConsoleLog.mock.calls.flat().join("\n"),
       );
-
-      await searchCommand.parseAsync(["node", "cli", "github"]);
-
-      const output = (mockConsoleLog.mock.calls.flat() as string[]).join("\n");
-      expect(output).toContain("@octocat (reconnect needed)");
-    });
-
-    it("renders permissions-update-available when oauth scopes are insufficient", async () => {
-      server.use(
-        stubConnectors([{ ...connectedGithub, oauthScopes: ["repo"] }]),
-      );
-
-      await searchCommand.parseAsync(["node", "cli", "github"]);
-
-      const output = (mockConsoleLog.mock.calls.flat() as string[]).join("\n");
-      expect(output).toContain("(permissions update available)");
+      expect(json).toMatchObject({
+        context: "current",
+        connectors: [{ hasSavedAccounts: true, authorized: null }],
+        actions: [
+          { supportsCallback: false, url: "http://localhost:3000/connectors" },
+        ],
+      });
+      expect(json).toHaveProperty("connectors", [
+        {
+          target: { kind: "builtin", connectorSlug: "github" },
+          connectorType: "builtin",
+          slug: "github",
+          label: "github",
+          kind: "builtin",
+          hasSavedAccounts: true,
+          authorized: null,
+          integrationManaged: false,
+          score: 100,
+        },
+      ]);
     });
   });
 
   describe("run account column", () => {
-    it("renders the exact reconnect-required run account instead of a healthy default sibling", async () => {
-      let defaultStatusRequests = 0;
+    it("renders the exact reconnect-required run account independently of saved-account directory membership", async () => {
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         {
@@ -838,24 +781,7 @@ describe("okou connector search command", () => {
         ]),
         stubAgent(AGENT_UUID, "maya"),
         stubUserConnectors(AGENT_UUID, ["github"]),
-        http.get("http://localhost:3000/api/connector-catalog/status", () => {
-          defaultStatusRequests += 1;
-          return HttpResponse.json({
-            connectors: [
-              catalogStatusItem({
-                connectorSlug: "github",
-                connection: {
-                  authMethod: "oauth",
-                  externalUsername: "default-account-a",
-                  externalEmail: null,
-                  reconnectReason: null,
-                },
-                connected: true,
-                connectionStatus: "connected",
-              }),
-            ],
-          });
-        }),
+        stubConnectedConnectors(["github"]),
       );
 
       await searchCommand.parseAsync(["node", "cli", "github"]);
@@ -868,8 +794,6 @@ describe("okou connector search command", () => {
       expect(text).toContain(
         `http://localhost:3000/connectors/github/reconnect/${RUN_CONNECTION_ID}?agentId=${AGENT_UUID}`,
       );
-      expect(text).not.toContain("default-account-a");
-      expect(defaultStatusRequests).toBe(0);
     });
 
     it("matches a custom run account by custom connector ID", async () => {
@@ -1122,7 +1046,7 @@ describe("okou connector search command", () => {
 
     it("offers authorization for a connected service when inspecting an agent outside a run", async () => {
       vi.stubEnv("OKOU_AGENT_ID", "");
-      server.use(stubConnectors([connectedGithub]));
+      server.use(stubConnectors(["github"]));
 
       await searchCommand.parseAsync([
         "node",
@@ -1202,9 +1126,9 @@ describe("okou connector search command", () => {
   });
 
   describe("error handling", () => {
-    it("surfaces auth errors from public connector catalog status", async () => {
+    it("surfaces auth errors from the public connector catalog", async () => {
       server.use(
-        http.get("http://localhost:3000/api/connector-catalog/status", () => {
+        http.get("http://localhost:3000/api/connector-catalog", () => {
           return HttpResponse.json(
             {
               error: { message: "Not authenticated", code: "UNAUTHORIZED" },
@@ -1221,6 +1145,32 @@ describe("okou connector search command", () => {
       expect(mockConsoleError).toHaveBeenCalledWith(
         expect.stringContaining("Authentication failed"),
       );
+    });
+
+    it("fails visibly when the saved-account directory is unavailable", async () => {
+      server.use(
+        http.get("http://localhost:3000/api/connectors/connected", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                message: "Saved-account directory unavailable",
+                code: "UNAVAILABLE",
+              },
+            },
+            { status: 503 },
+          );
+        }),
+      );
+
+      await expect(
+        searchCommand.parseAsync(["node", "cli", "github", "--json"]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+        "Saved-account directory unavailable",
+      );
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+      expect(mockExit).toHaveBeenCalledWith(1);
     });
   });
 });

@@ -54,11 +54,6 @@ const contracts = c.router({
     path: "/api/connector-accounts/connections",
     responses: { 200: z.object({ source: z.literal("accounts") }) },
   },
-  accountSummaries: {
-    method: "GET",
-    path: "/api/connector-accounts/summaries",
-    responses: { 200: z.object({ source: z.literal("summaries") }) },
-  },
   events: {
     method: "GET",
     path: "/api/chat-threads/events",
@@ -173,9 +168,7 @@ test("Account detail mocks leave static lists to their own handlers", async () =
   context.mocks.api(contracts.accounts, ({ respond }) => {
     return respond(200, { source: "accounts" });
   });
-  context.mocks.api(contracts.accountSummaries, ({ respond }) => {
-    return respond(200, { source: "summaries" });
-  });
+
   context.mocks.api(contracts.account, ({ params, respond }) => {
     return respond(200, { connectionId: params.connectionId });
   });
@@ -184,12 +177,6 @@ test("Account detail mocks leave static lists to their own handlers", async () =
     "http://localhost/api/connector-accounts/connections?kind=builtin&connectorSlug=github",
   );
   await expect(list.json()).resolves.toStrictEqual({ source: "accounts" });
-  const summaries = await fetch(
-    "http://localhost/api/connector-accounts/summaries",
-  );
-  await expect(summaries.json()).resolves.toStrictEqual({
-    source: "summaries",
-  });
   const detail = await fetch(
     "http://localhost/api/connector-accounts/account-one",
   );

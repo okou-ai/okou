@@ -180,7 +180,6 @@ impl Fixture {
             mitm_jsonl_flush: None,
             connector_runtime_sync: None,
             guest_rpc: None,
-            guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
             fresh_archive_delivery: FreshArchiveDeliveryAdmission::new(),
             background_fill: StorageCacheBackgroundFillCoordinator::new()?,
             decoded_cache: DecodedCache::new(home.clone()),

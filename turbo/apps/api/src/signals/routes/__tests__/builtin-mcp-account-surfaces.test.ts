@@ -143,10 +143,6 @@ describe("builtin MCP account surfaces", () => {
     );
     const connectionId = connected.body.id;
     createdAccounts.push(connectionId);
-    const summaries = await accept(accounts().summaries({ headers }), [200]);
-    expect(summaries.body.summaries).toMatchObject([
-      { target, accountCount: 1, defaultConnection: { id: connectionId } },
-    ]);
     const list = await accept(
       setupApp({ context, routes })(builtinConnectorsMainContract).list({
         headers,
@@ -217,6 +213,10 @@ describe("builtin MCP account surfaces", () => {
     expect(connections.body.connections).toMatchObject([
       { id: connectionId, target },
     ]);
+    expect(connections.body.defaultConnection).toMatchObject({
+      id: connectionId,
+      target,
+    });
     expect(account.body).toMatchObject({ id: connectionId, target });
     expect(scopeDiff.body).toMatchObject({
       addedScopes: [],

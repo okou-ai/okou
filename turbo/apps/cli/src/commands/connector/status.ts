@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import {
-  listConnectorAccountSummaries,
-  listConnectorCatalogStatus,
+  listConnectorCatalog,
+  getConnectorCatalogDetail,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "./connector-selector";
@@ -25,7 +25,7 @@ import {
 } from "./run-account-context";
 import {
   memberConnectorAccountText,
-  memberConnectorFacts,
+  readMemberConnectorFacts,
   memberConnectorStatusText,
   type MemberConnectorFacts,
 } from "./member-status";
@@ -321,7 +321,7 @@ Scope:
   and shows the current member's connection plus optional --agent authorization.
   Qualify a selector with builtin: or custom: within the supported connector types.
   For org custom definition/member status, use connector custom status <selector>.
-  Current-member JSON accountSummary/memberStatus describe saved account facts;
+  Current-member JSON accountSummary/memberStatus describe target-specific account facts;
   connected retains catalog metadata semantics and authorization is separate.
   To choose another account, run connector account list <selector> --json and
   use only an exact returned connectionId. Never invent or reuse an ID from a
@@ -347,16 +347,15 @@ Examples:
           await printRunConnectorStatus(connectorSlug, options.json ?? false);
           return;
         }
-        const [catalog, agentCtx, summaries] = await Promise.all([
-          listConnectorCatalogStatus(),
+        const [catalog, agentCtx] = await Promise.all([
+          listConnectorCatalog(),
           resolveAgentContext(agentId),
-          listConnectorAccountSummaries(),
         ]);
-        const connector = findConnectorStatusItem(
+        const definition = findConnectorStatusItem(
           catalog.connectors,
           connectorSlug,
         );
-        if (!connector) {
+        if (!definition) {
           throw new Error(
             `Unknown or unavailable connector: ${connectorSlug}`,
             {
@@ -367,7 +366,10 @@ Examples:
           );
         }
 
-        const facts = memberConnectorFacts(connector, summaries);
+        const connector = await getConnectorCatalogDetail(definition.slug);
+        if (!connector)
+          throw new Error(`Connector is unavailable: ${definition.slug}`);
+        const facts = await readMemberConnectorFacts(connector);
         if (options.json) {
           console.log(
             JSON.stringify(

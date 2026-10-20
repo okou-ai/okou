@@ -9,6 +9,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState, hasMessages: Bool)
+  case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
 
   var id: String {
     switch self {
@@ -16,6 +17,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .message(let message, _, _, _, _, _): message.id
     case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
+    case .followups: "conversation-followups"
     }
   }
 

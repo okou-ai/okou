@@ -9,7 +9,6 @@ import {
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
   type ConnectorAccountSelection,
-  type ConnectorAccountSummary,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -83,7 +82,6 @@ interface ConnectorFixtureOptions {
     Record<string, readonly AgentCustomConnectorGrant[]>
   >;
   readonly authorizationGates?: Readonly<Record<string, Promise<void>>>;
-  readonly accountSummaries?: readonly ConnectorAccountSummary[];
   readonly accounts?: readonly ConnectorAccountConnection[];
   readonly threadSelections?: Readonly<
     Record<string, readonly ConnectorAccountSelection[]>
@@ -257,18 +255,11 @@ function browseSlice<
   });
 }
 
-function savedAccountSummaries(
+function savedConnectorAccounts(
   catalog: readonly PublicConnectorCatalogStatusItem[],
   customConnectors: readonly CustomConnectorResponse[],
-  accounts: readonly ConnectorAccountConnection[],
-): readonly ConnectorAccountSummary[] {
+): ConnectorAccountConnection[] {
   const byTarget = new Map<string, ConnectorAccountConnection[]>();
-  for (const account of accounts) {
-    const key = connectorAccountTargetKey(account.target);
-    const group = byTarget.get(key) ?? [];
-    group.push(account);
-    byTarget.set(key, group);
-  }
   for (const connector of catalog) {
     const target = { kind: "builtin", connectorSlug: connector.slug } as const;
     const key = connectorAccountTargetKey(target);
@@ -314,9 +305,7 @@ function savedAccountSummaries(
       ]);
     }
   }
-  return [...byTarget.values()].map((group) => {
-    return accountSummary(group[0]!.target, group);
-  });
+  return [...byTarget.values()].flat();
 }
 
 export function installComposerConnectorFixture(
@@ -332,29 +321,9 @@ export function installComposerConnectorFixture(
     options.customAuthorizations,
   );
   const threadSelections = copyAuthorizationRecord(options.threadSelections);
-  const accounts = [...(options.accounts ?? [])];
-  const summaries = new Map(
-    (
-      options.accountSummaries ??
-      savedAccountSummaries(catalog, customConnectors, accounts)
-    ).map((summary) => {
-      return [connectorAccountTargetKey(summary.target), summary];
-    }),
-  );
-  for (const summary of summaries.values()) {
-    const account = summary.defaultConnection;
-    if (
-      account &&
-      !accounts.some((candidate) => {
-        return candidate.id === account.id;
-      })
-    ) {
-      accounts.push(account);
-    }
-  }
-  const currentAccountSummaries = () => {
-    return [...summaries.values()];
-  };
+  const accounts = [
+    ...(options.accounts ?? savedConnectorAccounts(catalog, customConnectors)),
+  ];
   const completeAccount = (
     target: ConnectorAccountTarget,
     id: string,
@@ -365,13 +334,14 @@ export function installComposerConnectorFixture(
       return account.id === id;
     });
     const previous = accounts[index];
-    const key = connectorAccountTargetKey(target);
     const account = {
       ...connectorAccount({
         id,
         target,
         displayName: "",
-        isDefault: (summaries.get(key)?.accountCount ?? 0) === 0,
+        isDefault: !accounts.some((candidate) => {
+          return targetMatches(candidate.target, target);
+        }),
       }),
       ...previous,
       displayName: previous?.displayName ?? null,
@@ -392,15 +362,6 @@ export function installComposerConnectorFixture(
     } else {
       accounts[index] = account;
     }
-    summaries.set(
-      key,
-      accountSummary(
-        target,
-        accounts.filter((candidate) => {
-          return targetMatches(candidate.target, target);
-        }),
-      ),
-    );
     return account;
   };
   const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
@@ -529,12 +490,9 @@ export function installComposerConnectorFixture(
     return respond(200, { connectors: customConnectors });
   });
   context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    const summaries = currentAccountSummaries();
     const savedTargets = new Set(
-      summaries.flatMap((summary) => {
-        return summary.accountCount > 0
-          ? [connectorAccountTargetKey(summary.target)]
-          : [];
+      accounts.map((account) => {
+        return connectorAccountTargetKey(account.target);
       }),
     );
     return respond(200, {
@@ -553,7 +511,9 @@ export function installComposerConnectorFixture(
       customConnectors: customConnectors
         .filter((connector) => {
           return (
-            connector.connected || savedTargets.has(`custom:${connector.id}`)
+            (isIntegrationManagedCustomConnector(connector) &&
+              connector.connected) ||
+            savedTargets.has(`custom:${connector.id}`)
           );
         })
         .map((connector) => {
@@ -643,9 +603,6 @@ export function installComposerConnectorFixture(
       return respond(200, { grants: next });
     },
   );
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [...currentAccountSummaries()] });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, query, respond }) => {
@@ -1154,22 +1111,5 @@ export function connectorAccount(args: {
     tokenExpiresAt: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
-  };
-}
-
-export function accountSummary(
-  target: ConnectorAccountTarget,
-  accounts: readonly ConnectorAccountConnection[],
-): ConnectorAccountSummary {
-  return {
-    target,
-    accountCount: accounts.length,
-    attentionCount: accounts.filter((account) => {
-      return account.connectionStatus === "reconnect-required";
-    }).length,
-    defaultConnection:
-      accounts.find((account) => {
-        return account.isDefault;
-      }) ?? null,
   };
 }
