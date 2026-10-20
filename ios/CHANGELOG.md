@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/ios-v0.15.0...ios-v0.16.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add native chat connector authorization cards ([#41798](https://github.com/okou-ai/okou/issues/41798)) ([faeb0f9](https://github.com/okou-ai/okou/commit/faeb0f9992cf8d9750780a89538ea0d0aebc02c3))
+* **ios:** add native chat connector permission cards ([#41815](https://github.com/okou-ai/okou/issues/41815)) ([ec4c254](https://github.com/okou-ai/okou/commit/ec4c2541550380dbf2fbfad690352f020b35b6b8))
+* **ios:** add native chat failure recovery ([#41835](https://github.com/okou-ai/okou/issues/41835)) ([14202e2](https://github.com/okou-ai/okou/commit/14202e2fbac3612ac2705abbe94b5699c0d37ad2))
+
+
+### Bug Fixes
+
+* **ios:** align optimistic chat pin interactions with pwa ([#41879](https://github.com/okou-ai/okou/issues/41879)) ([37a8415](https://github.com/okou-ai/okou/commit/37a8415d88fe906316c678243cf5e057881eef80))
+* **ios:** blend chat headers with native scroll edges ([#41901](https://github.com/okou-ai/okou/issues/41901)) ([a9752b3](https://github.com/okou-ai/okou/commit/a9752b39593bc4887f1ddbf65f3f99815bf40728))
+* **ios:** dismiss the keyboard when sending chat messages ([#41885](https://github.com/okou-ai/okou/issues/41885)) ([45387a2](https://github.com/okou-ai/okou/commit/45387a2507fad5b8e0e06162ba34045a40f67fdc))
+* **ios:** keep model settings visible beside send ([#41894](https://github.com/okou-ai/okou/issues/41894)) ([79e882a](https://github.com/okou-ai/okou/commit/79e882a83882832794d8b4e9745b1876c8478257))
+* **ios:** suspend transcript scrolling during sidebar gestures ([#41888](https://github.com/okou-ai/okou/issues/41888)) ([e284c6a](https://github.com/okou-ai/okou/commit/e284c6ae6f6eb4447d89510e1729e2cf00efdfe2))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/ios-v0.14.0...ios-v0.15.0) (2026-10-20)
 
 

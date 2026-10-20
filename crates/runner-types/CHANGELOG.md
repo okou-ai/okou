@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-types-v0.8.2...runner-types-v0.9.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
 ## [0.8.2](https://github.com/okou-ai/okou/compare/runner-types-v0.8.1...runner-types-v0.8.2) (2026-10-20)
 
 

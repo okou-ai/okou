@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.3...runner-supervisor-v0.20.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
 ## [0.19.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.2...runner-supervisor-v0.19.3) (2026-10-20)
 
 

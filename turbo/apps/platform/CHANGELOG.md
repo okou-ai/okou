@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1048.3](https://github.com/okou-ai/okou/compare/app-v0.1048.2...app-v0.1048.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* drive browser action cards only from thread notifications ([#41834](https://github.com/okou-ai/okou/issues/41834)) ([41c8ae9](https://github.com/okou-ai/okou/commit/41c8ae9bc8eb4879f42873452e162380c3166c73))
+
+
+### Refactoring
+
+* retire telegram callback capability and teams completion marker ([#41927](https://github.com/okou-ai/okou/issues/41927)) ([0d2568c](https://github.com/okou-ai/okou/commit/0d2568c8b662d989146d468879cd757c433cdb8d))
+
+
+### Performance Improvements
+
+* **app:** avoid unused workflow copy status renders ([#41913](https://github.com/okou-ai/okou/issues/41913)) ([1a4caa7](https://github.com/okou-ai/okou/commit/1a4caa768e736136d04838426b85916418739e1c))
+* **app:** isolate resource pagination rendering ([#41887](https://github.com/okou-ai/okou/issues/41887)) ([afdbb39](https://github.com/okou-ai/okou/commit/afdbb3934463941a9b872ac160595cc43964a4b6))
+* **app:** retain resource copy tooltip content ([#41914](https://github.com/okou-ai/okou/issues/41914)) ([85e978a](https://github.com/okou-ai/okou/commit/85e978ab71f2207429aa2457b22474a299b73d38))
+* **app:** share resource row actions ([#41928](https://github.com/okou-ai/okou/issues/41928)) ([9d8d4fe](https://github.com/okou-ai/okou/commit/9d8d4fea51c4f2975a5d6266fd90c5f2f6b448a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.583.0
+    * @okouai/core bumped to 8.774.6
+
 ## [0.1048.2](https://github.com/okou-ai/okou/compare/app-v0.1048.1...app-v0.1048.2) (2026-10-20)
 
 

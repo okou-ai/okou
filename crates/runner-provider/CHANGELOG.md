@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.2...runner-provider-v0.11.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
+
+### Refactoring
+
+* **runner-provider:** converge catalog refresh cancellation completion ([#41899](https://github.com/okou-ai/okou/issues/41899)) ([6c63f17](https://github.com/okou-ai/okou/commit/6c63f175ba93c0b7b1f13357e42cd4ea5d2b8b06))
+
 ## [0.10.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.1...runner-provider-v0.10.2) (2026-10-20)
 
 
