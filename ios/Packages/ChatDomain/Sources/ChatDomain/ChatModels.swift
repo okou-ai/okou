@@ -107,6 +107,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
   public let inputError: String?
   public let modelChange: ChatModelChange?
   public var copyText: String { userMessage?.displayText ?? text }
+  public let failure: ChatFailure?
 
   public init(
     id: String,
@@ -118,7 +119,8 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     isQueued: Bool,
     isError: Bool,
     userMessage: ChatUserMessage? = nil, inputError: String? = nil,
-    modelChange: ChatModelChange? = nil
+    modelChange: ChatModelChange? = nil,
+    failure: ChatFailure? = nil
   ) {
     self.id = id
     self.role = role
@@ -131,6 +133,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     self.userMessage = userMessage
     self.inputError = inputError
     self.modelChange = modelChange
+    self.failure = failure
   }
 }
 
@@ -167,6 +170,7 @@ public struct ChatHistory: Equatable, Sendable {
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
   public let latestRunFinishAt: Date?
+  public let latestFailureID: String?
   public let recommendedFollowups: ChatRecommendedFollowupSource?
   public let usageEventIDs: [String: String]
   public let runUsageAnchors: [String: String]
@@ -180,6 +184,7 @@ public struct ChatHistory: Equatable, Sendable {
     persistedEventIDs: Set<String> = [],
     workSections: [ChatWorkSection] = [],
     latestRunFinishAt: Date? = nil,
+    latestFailureID: String? = nil,
     recommendedFollowups: ChatRecommendedFollowupSource? = nil,
     usageEventIDs: [String: String] = [:],
     runUsageAnchors: [String: String] = [:]
@@ -187,6 +192,7 @@ public struct ChatHistory: Equatable, Sendable {
     self.messages = messages
     self.workSections = workSections
     self.latestRunFinishAt = latestRunFinishAt
+    self.latestFailureID = latestFailureID
     self.recommendedFollowups = recommendedFollowups
     self.usageEventIDs = usageEventIDs
     self.runUsageAnchors = runUsageAnchors

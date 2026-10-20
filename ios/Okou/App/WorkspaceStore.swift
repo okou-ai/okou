@@ -158,7 +158,8 @@ final class WorkspaceStore {
       didFail: { [weak self] in self?.handle($0) },
       didSettle: { [weak self] in self?.requestPrune() },
       modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
-      draftRepository: draftRepository, draftStorage: draftStorage)
+      draftRepository: draftRepository, draftStorage: draftStorage,
+      didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) })
     conversations[id] = conversation
     return conversation
   }

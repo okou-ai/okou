@@ -9,6 +9,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState)
+  case failure(ChatMessage, AssistantFailureState, topSpacing: CGFloat)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
   case usage(runID: String, state: ConversationRunUsageState)
 
@@ -18,6 +19,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .message(let message, _, _, _, _, _): message.id
     case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
+    case .failure(let message, _, _): message.id
     case .followups: "conversation-followups"
     case .usage(let runID, _): "usage:\(runID)"
     }
@@ -25,6 +27,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
 
   var message: ChatMessage? {
     if case .message(let message, _, _, _, _, _) = self { return message }
+    if case .failure(let message, _, _) = self { return message }
     return nil
   }
 }

@@ -67,7 +67,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(history.runUsageAnchors, ["run": "late", "other-run": "other"])
   }
 
-  func testFailureOutcomeIsShownOnceAndRetiredByTheNextInput() throws {
+  func testFailureOutcomeIsShownOnceAndBecomesReadOnlyAfterTheNextInput() throws {
     let rows = [
       input("ask", at: 0), output("progress", at: 10),
       event("error", .outputError, at: 20, error: "Connection lost"),
@@ -81,7 +81,8 @@ final class ChatWorkProjectionTests: XCTestCase {
       payload: .init(
         userMessage: .init(version: 1, parts: [.init(type: "text", text: "Try again")])))
     let retried = try project(rows + [queued])
-    XCTAssertFalse(retried.messages.contains { $0.role == .system })
+    XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["failed"])
+    XCTAssertNil(retried.latestFailureID)
     XCTAssertEqual(retried.executionState, .queued)
   }
 

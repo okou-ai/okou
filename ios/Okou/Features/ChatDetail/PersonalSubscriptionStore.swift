@@ -9,6 +9,7 @@ final class PersonalSubscriptionStore {
   private let didFail: @MainActor (Error) -> Void
   var didMutate: (@MainActor () async -> Void)?
   private(set) var accounts: [PersonalSubscription] = []
+  private(set) var accountRevision = 0
   private(set) var isLoading = false
   private(set) var isMutating = false
   private(set) var error: String?
@@ -35,26 +36,32 @@ final class PersonalSubscriptionStore {
     service = PersonalSubscriptionService(client: client)
     self.didFail = didFail
   }
-  func refresh(force: Bool = false) async {
-    guard !closed, !Task.isCancelled else { return }
-    guard force || lastRead.map({ Date().timeIntervalSince($0) >= 60 }) != false else { return }
-    guard !isLoading || force else { return }
+  @discardableResult
+  func refresh(force: Bool = false) async -> Bool {
+    guard !closed, !Task.isCancelled else { return false }
+    guard force || lastRead.map({ Date().timeIntervalSince($0) >= 60 }) != false else {
+      return error == nil
+    }
+    guard !isLoading || force else { return false }
     readRevision += 1
     let request = readRevision
     isLoading = true
     defer { if request == readRevision { isLoading = false } }
     do {
       let result = try await service.list()
-      guard !closed, !Task.isCancelled, request == readRevision else { return }
+      guard !closed, !Task.isCancelled, request == readRevision else { return false }
       accounts = result
+      accountRevision += 1
       lastRead = Date()
       error = nil
+      return true
     } catch is CancellationError {
     } catch {
-      guard !closed, request == readRevision else { return }
+      guard !closed, request == readRevision else { return false }
       self.error = error.localizedDescription
       didFail(error)
     }
+    return false
   }
   func activate(_ account: PersonalSubscription) async {
     await mutate { try await self.service.activate(id: account.id) }
@@ -62,11 +69,13 @@ final class PersonalSubscriptionStore {
   func disconnect(_ account: PersonalSubscription) async {
     await mutate { try await self.service.disconnect(id: account.id) }
   }
-  func reset(_ account: PersonalSubscription) async {
-    guard !isMutating else { return }
+  @discardableResult
+  func reset(_ account: PersonalSubscription) async -> Bool {
+    guard !isMutating else { return false }
     let key = resetKeys[account.id] ?? UUID().uuidString
     resetKeys[account.id] = key
-    await mutate {
+    var canContinue = false
+    let succeeded = await mutate {
       let outcome = try await self.service.reset(id: account.id, idempotencyKey: key)
       switch outcome {
       case "reset", "alreadyRedeemed": self.notice = String(localized: "Usage reset.")
@@ -74,25 +83,30 @@ final class PersonalSubscriptionStore {
       case "noCredit": self.notice = String(localized: "No reset credits available.")
       default: throw APIClientError.invalidResponse
       }
+      canContinue = outcome != "noCredit"
       self.resetKeys[account.id] = nil
     }
+    return succeeded && canContinue
   }
-  private func mutate(_ action: @MainActor () async throws -> Void) async {
-    guard !closed, !isMutating else { return }
+  @discardableResult
+  private func mutate(_ action: @MainActor () async throws -> Void) async -> Bool {
+    guard !closed, !isMutating else { return false }
     isMutating = true
     error = nil
     notice = nil
     defer { isMutating = false }
     do {
       try await action()
-      guard !closed, !Task.isCancelled else { return }
+      guard !closed, !Task.isCancelled else { return false }
       await refreshAfterMutation()
+      return !closed && !Task.isCancelled && error == nil
     } catch is CancellationError {
     } catch {
-      guard !closed else { return }
+      guard !closed else { return false }
       self.error = error.localizedDescription
       didFail(error)
     }
+    return false
   }
   func reconnect(type: PersonalSubscriptionType) async -> Bool {
     await refresh(force: true)

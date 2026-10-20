@@ -3,7 +3,7 @@ import Foundation
 
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.
 public actor ChatCommands {
-  private let client: APIClient
+  let client: APIClient
   private let sync: ChatSync
   private var sendingThreads = Set<String>()
   private var writingReadState = false
