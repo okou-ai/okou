@@ -40,6 +40,14 @@ build() {
 build aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "${tmp_dir}/first" >/dev/null
 first_sha="$(jq -r '.package.sha256' "${tmp_dir}/first/manifest.json")"
 
+bash "${fixture}/.github/scripts/artifacts/verify-okou-cli-artifact.sh" \
+  "${tmp_dir}/first" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null
+if bash "${fixture}/.github/scripts/artifacts/verify-okou-cli-artifact.sh" \
+  "${tmp_dir}/first" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb >/dev/null 2>&1; then
+  echo 'Verifier accepted a CLI artifact for another source revision' >&2
+  exit 1
+fi
+
 # Packaging must use the already-built package identity, not reread the workspace.
 jq '.version = "1.36.1"' "${fixture}/turbo/packages/pi-agent-runtime/package.json" > "${tmp_dir}/runtime.json"
 mv "${tmp_dir}/runtime.json" "${fixture}/turbo/packages/pi-agent-runtime/package.json"
@@ -95,6 +103,37 @@ for name, values in cases.items():
                 archive.addfile(entry, io.BytesIO(value))
     result = subprocess.run([sys.executable, reader, str(path)], capture_output=True, text=True)
     assert result.returncode != 0 and not result.stdout, (name, result.stdout, result.stderr)
+
+# Standalone packages must supply canonical regular assets and unambiguous
+# installation metadata, even when their runtime identity is well formed.
+installation = json.dumps({**metadata, "private": True, "bin": {"okou": "okou.js"}}).encode()
+for name in ("symlink-worker", "duplicate-worker", "noncanonical-worker", "duplicate-bin"):
+    path = root / (name + '.tgz')
+    document = installation
+    if name == 'duplicate-bin':
+        document = document.replace(b'"bin": {', b'"bin": {"okou": "okou.js"}, "bin": {')
+    with tarfile.open(path, 'w:gz') as archive:
+        entry = tarfile.TarInfo('package/package.json')
+        entry.size = len(document)
+        archive.addfile(entry, io.BytesIO(document))
+        for asset in ('okou.js', 'image-resize-worker.js', 'photon_rs_bg.wasm'):
+            entry_name = 'package/' + asset
+            if asset == 'image-resize-worker.js' and name == 'noncanonical-worker':
+                entry_name = 'package//image-resize-worker.js'
+            entry = tarfile.TarInfo(entry_name)
+            if asset == 'image-resize-worker.js' and name == 'symlink-worker':
+                entry.type = tarfile.SYMTYPE
+                entry.linkname = 'okou.js'
+                archive.addfile(entry)
+            else:
+                entry.size = 1
+                archive.addfile(entry, io.BytesIO(b'x'))
+                if asset == 'image-resize-worker.js' and name == 'duplicate-worker':
+                    archive.addfile(entry, io.BytesIO(b'y'))
+    result = subprocess.run([sys.executable, reader, str(path), '--verify-package'],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and not result.stdout, (name, result.stdout, result.stderr)
+
 class Zeros:
     def read(self, size):
         return b'\0' * size
