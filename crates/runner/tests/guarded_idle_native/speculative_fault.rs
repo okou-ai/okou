@@ -20,6 +20,7 @@ use super::*;
 pub(super) enum Injection {
     Callback(bool),
     Native(super::native_unpark::Fault),
+    NativePause(super::native_pause::Fault),
 }
 
 impl Injection {
@@ -27,6 +28,7 @@ impl Injection {
         match self {
             Self::Callback(_) => proof.speculative_fault_witness(phase, value),
             Self::Native(_) => proof.unpark_witness(phase, value),
+            Self::NativePause(_) => proof.pause_witness(phase, value),
         }
     }
 }
@@ -358,9 +360,14 @@ pub(super) async fn exercise(
             Injection::Callback(panic) => {
                 inject(&context, proof, &backing, owner, history, panic).await?
             }
-            Injection::Native(fault) => {
-                native_hold = Some(native_unpark::Hold::new(sandbox_id)?);
-                native_unpark::inject(
+            Injection::Native(fault) | Injection::NativePause(fault) => {
+                let transition = if matches!(injection, Injection::NativePause(_)) {
+                    sandbox_firecracker::api_request_gate::Transition::Pause
+                } else {
+                    sandbox_firecracker::api_request_gate::Transition::Resume
+                };
+                native_hold = Some(native_transition::Hold::new(sandbox_id, transition)?);
+                native_transition::inject(
                     &context,
                     proof,
                     &backing,
@@ -374,7 +381,9 @@ pub(super) async fn exercise(
                 .await?;
             }
         }
-        if let (Injection::Native(fault), Some(hold)) = (injection, native_hold.as_mut()) {
+        if let (Injection::Native(fault) | Injection::NativePause(fault), Some(hold)) =
+            (injection, native_hold.as_mut())
+        {
             hold.finish(&context, proof, &backing, owner, &mut probe, fault)
                 .await?;
         }

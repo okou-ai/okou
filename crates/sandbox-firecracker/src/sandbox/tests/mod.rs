@@ -119,7 +119,7 @@ where
 {
     super::park_with_ready_for_park(
         log_id,
-        coordinator,
+        coordinator.into(),
         || async { Ok(TestNormalOperationFence) },
         quiesce_guest,
         park_firecracker,
@@ -202,6 +202,7 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
         is_parked: false,
         park_outcome: None,
         park_fence: None,
+        park_attempt: None,
         unpark_attempt: None,
         terminal_unpark: None,
         guest_rpc_endpoint: None,
@@ -1096,7 +1097,7 @@ async fn ready_for_park_boundary_preserves_non_reusable_outcome() {
 
     let (_fence, outcome) = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async { Ok(TestNormalOperationFence) },
         || async { Ok(()) },
         || async { Ok(test_severe_memory_retention_outcome()) },
@@ -1118,7 +1119,7 @@ async fn final_preparation_runs_after_operation_admission_closes() {
 
     let transition = super::park_with_ready_for_park_and_preparation(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             preparation_entered_tx.send(()).unwrap();
             release_preparation_rx.await.unwrap();
@@ -1161,7 +1162,7 @@ async fn final_preparation_transport_failure_marks_dirty_without_quiesce_or_paus
 
     let result = super::park_with_ready_for_park_and_preparation(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async {
             Err::<(TestNormalOperationFence, ()), _>(ParkNormalOperationFenceError::FinalOperation(
                 io::Error::new(io::ErrorKind::ConnectionReset, "final exec disconnected"),
@@ -1193,7 +1194,7 @@ async fn final_exec_park_observer_reports_completed_stages_in_order() {
 
     super::park_with_ready_for_park_and_preparation_with_observer(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         Some(&mut observer),
         |_| false,
         || async { Ok((TestNormalOperationFence, "prepared")) },
@@ -1225,7 +1226,7 @@ async fn final_exec_park_observer_reports_preparation_failure_only() {
 
     let result = super::park_with_ready_for_park_and_preparation_with_observer(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         Some(&mut observer),
         |_| false,
         || async {
@@ -1258,7 +1259,7 @@ async fn final_exec_park_observer_reports_physical_park_failure() {
 
     let result = super::park_with_ready_for_park_and_preparation_with_observer(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         Some(&mut observer),
         |_| false,
         || async { Ok((TestNormalOperationFence, ())) },
@@ -1296,7 +1297,7 @@ async fn final_exec_park_observer_keeps_completed_substage_on_cancellation() {
     {
         let transition = super::park_with_ready_for_park_and_preparation_with_observer(
             "test-sandbox",
-            &coordinator,
+            (&coordinator).into(),
             Some(&mut observer),
             |_| false,
             || async { Ok((TestNormalOperationFence, ())) },
@@ -1352,7 +1353,7 @@ async fn ready_for_park_boundary_fences_before_quiesce_and_holds_until_returned(
 
     let fence = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             fence_events.lock().unwrap().push("fence");
             Ok(RecordedFence {
@@ -1392,7 +1393,7 @@ fn ready_for_park_boundary_cancel_after_fence_releases_before_reopening_gate() {
     let coordinator = ParkCoordinator::new();
     let attempt = coordinator.begin_prepare_park().unwrap();
     let events = event_log();
-    let mut guard = ParkBoundaryGuard::new(coordinator.clone(), attempt);
+    let mut guard = ParkBoundaryGuard::new(coordinator.clone(), attempt, None);
 
     guard.mark_normal_operations_fenced(ClosingStateFence {
         coordinator: coordinator.clone(),
@@ -1409,7 +1410,7 @@ fn ready_for_park_boundary_missing_fence_marks_dirty_after_ready_for_park() {
     let coordinator = ParkCoordinator::new();
     let attempt = coordinator.begin_prepare_park().unwrap();
     let mut guard: ParkBoundaryGuard<RecordedFence> =
-        ParkBoundaryGuard::new(coordinator.clone(), attempt);
+        ParkBoundaryGuard::new(coordinator.clone(), attempt, None);
 
     guard.complete_prepare().unwrap();
     let error = guard.mark_completed(false).unwrap_err();
@@ -1431,7 +1432,7 @@ async fn ready_for_park_boundary_busy_fence_aborts_without_dirtying() {
 
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             fence_events.lock().unwrap().push("fence");
             Err::<RecordedFence, _>(ParkNormalOperationFenceError::Rejected(
@@ -1459,7 +1460,7 @@ async fn ready_for_park_boundary_not_parkable_fence_marks_dirty() {
     let coordinator = ParkCoordinator::new();
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async {
             Err::<RecordedFence, _>(ParkNormalOperationFenceError::Rejected(
                 NormalOperationFenceRejection::NotParkable,
@@ -1486,7 +1487,7 @@ async fn ready_for_park_boundary_guest_unavailable_fence_marks_dirty_without_pau
 
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async {
             Err::<RecordedFence, _>(ParkNormalOperationFenceError::GuestUnavailable(
                 io::Error::new(io::ErrorKind::NotConnected, "guest missing"),
@@ -1581,7 +1582,7 @@ async fn ready_for_park_boundary_quiesce_failure_marks_dirty_without_pause() {
 
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             fence_events.lock().unwrap().push("fence");
             Ok(RecordedFence {
@@ -1621,7 +1622,7 @@ async fn ready_for_park_boundary_complete_prepare_failure_marks_dirty_without_pa
 
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             fence_events.lock().unwrap().push("fence");
             Ok(RecordedFence {
@@ -1661,7 +1662,7 @@ async fn ready_for_park_boundary_firecracker_failure_after_quiesce_marks_dirty()
 
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             fence_events.lock().unwrap().push("fence");
             Ok(RecordedFence {
@@ -1709,7 +1710,7 @@ async fn ready_for_park_boundary_mark_parked_failure_marks_dirty() {
 
     let result = super::park_with_ready_for_park(
         "test-sandbox",
-        &coordinator,
+        (&coordinator).into(),
         || async move {
             fence_events.lock().unwrap().push("fence");
             Ok(RecordedFence {
@@ -1755,7 +1756,7 @@ async fn ready_for_park_boundary_cancel_during_guest_quiesce_marks_dirty() {
     {
         let park = super::park_with_ready_for_park(
             "test-sandbox",
-            &coordinator,
+            (&coordinator).into(),
             || async move {
                 fence_events.lock().unwrap().push("fence");
                 Ok(RecordedFence {
@@ -1799,7 +1800,7 @@ async fn ready_for_park_boundary_cancel_after_ready_for_park_marks_dirty() {
     {
         let park = super::park_with_ready_for_park(
             "test-sandbox",
-            &coordinator,
+            (&coordinator).into(),
             || async move {
                 fence_events.lock().unwrap().push("fence");
                 Ok(RecordedFence {
@@ -6588,6 +6589,7 @@ async fn park_pauses_when_balloon_stats_are_unavailable() {
             api.socket_path(),
             "stats-error",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -6645,6 +6647,7 @@ async fn exact_handoff_before_balloon_reverses_target_without_pausing() {
             api.socket_path(),
             "handoff-before-balloon",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -6720,6 +6723,7 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
             api.socket_path(),
             "handoff-during-balloon",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -7067,6 +7071,7 @@ async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
             api.socket_path(),
             "test-park-small",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -7394,6 +7399,7 @@ async fn park_balloon_failure_leaves_flag_false() {
             api.socket_path(),
             "test-park-fail",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -7894,6 +7900,7 @@ async fn severe_park_retries_terminal_snapshot_after_failed_progress_probe() {
             api.socket_path(),
             "failed-progress-probe-terminal-retry",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest,
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -7974,6 +7981,7 @@ async fn severe_park_collects_terminal_guest_memory_before_pause() {
             &socket_path,
             "terminal-memory-snapshot",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest,
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -8046,6 +8054,7 @@ async fn reusable_park_does_not_request_terminal_guest_memory() {
             api.socket_path(),
             "reusable-no-memory-snapshot",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest,
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
@@ -8102,6 +8111,7 @@ async fn park_small_vm_pause_failure_leaves_flag_false() {
             api.socket_path(),
             "small-fail",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,

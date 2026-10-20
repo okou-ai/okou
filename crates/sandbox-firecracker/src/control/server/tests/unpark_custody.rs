@@ -23,7 +23,7 @@ async fn old_control_cannot_cross_terminal_unpark_fence_release() {
         fixture.coordinator.bind_run_control("run-a").unwrap();
         fixture
             .coordinator
-            .mark_dirty(DirtyReason::abandoned_unpark(
+            .mark_dirty(DirtyReason::abandoned_native_transition(
                 "borrowed unpark cancelled",
                 Some(uuid::Uuid::new_v4()),
             ));
