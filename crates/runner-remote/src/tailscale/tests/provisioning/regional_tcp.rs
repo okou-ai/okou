@@ -433,12 +433,15 @@ async fn independent_b(retirement: u8) {
         let retained = serde_json::to_value(source.evidence.layers().snapshot()).unwrap();
         assert_eq!(retained["root"], "relay");
         assert_eq!(retained["region"], 1);
+        // A reused loopback port can accept TCP before TLS or DERP fails. The
+        // complete setup attempt fails in every case, independently of that stage.
         assert!(
             retained["steps"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|s| s["stage"] == "relay_dial" && s["status"] == "failed")
+                .any(|s| s["stage"] == "relay_attempt" && s["status"] == "failed"),
+            "{retained}"
         );
         let mut byte = [0];
         assert!(matches!(bounded(ca.read(&mut byte)).await, Ok(0) | Err(_)));
