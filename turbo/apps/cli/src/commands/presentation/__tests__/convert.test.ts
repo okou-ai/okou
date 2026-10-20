@@ -1230,6 +1230,46 @@ describe("okou presentation convert", () => {
     );
   });
 
+  it("retains canonical font provenance on the final shape without replacing embedded fonts", async () => {
+    state.slideXml = [
+      slideXml(["Hello deck"]).replace(
+        "<p:sp>",
+        '<p:sp><p:nvSpPr><p:cNvPr id="2" name="okou-object-0"/></p:nvSpPr>',
+      ),
+      slideXml(["Second line"]),
+    ];
+    state.nativePaint = {
+      "1": {
+        "okou-object-0": {
+          resolvedFonts: true,
+          textSource: {
+            line: "owner-1-line-0",
+            runs: [
+              {
+                text: "Hello deck",
+                family:
+                  "A complete family name longer than eighteen characters",
+                weight: 500,
+                italic: true,
+              },
+            ],
+          },
+        },
+      },
+    };
+    await convert([]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    expect(slide).toContain('<a:latin typeface="Lexend"/>');
+    expect(slide).toContain(
+      'uri="https://okou.ai/presentation/text-source/v1"',
+    );
+    expect(slide).toContain(
+      '<okou:run family="A complete family name longer than eighteen characters" weight="500" italic="1">Hello deck</okou:run>',
+    );
+    expect(slide).toContain('line="owner-1-line-0"');
+  });
+
   it("uses measured table row heights and fills without deleting border paint", async () => {
     const cell =
       '<a:tc><a:tcPr><a:lnL><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:lnL><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:tcPr></a:tc>';
