@@ -229,6 +229,9 @@ export const connectorAccountsContract = c.router({
     method: "GET",
     path: "/api/connector-accounts",
     headers: authHeadersSchema,
+    query: z
+      .object({ includeScopeMismatch: z.literal("true").optional() })
+      .optional(),
     responses: {
       200: z.object({ summaries: z.array(connectorAccountSummarySchema) }),
       401: apiErrorSchema,

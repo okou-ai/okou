@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ConnectorAccountConnection } from "./connector-accounts";
 
 import { initContract } from "./base";
 import { connectorReaderRouteSpec } from "./connector-reader-contract";
@@ -15,6 +16,10 @@ const c = initContract();
 const optionalCatalogProjection = {
   connected: true,
   connection: true,
+  connectionStatus: true,
+  scopeMismatch: true,
+  authMethodSupportsRefresh: true,
+  tokenExpiresAt: true,
 } as const;
 const catalogStatusReaderSchema =
   publicConnectorCatalogStatusItemSchema.partial(optionalCatalogProjection);
@@ -30,6 +35,50 @@ export type PublicConnectorCatalogStatusReaderItem = z.infer<
 export type PublicConnectorCatalogConnectReaderItem = z.infer<
   typeof catalogConnectReaderSchema
 >;
+
+function optionalAccountFact(value: unknown): boolean | undefined {
+  if (value === undefined || typeof value === "boolean") {
+    return value;
+  }
+  throw new Error(
+    "Connector account metadata is invalid. Refresh and try again.",
+  );
+}
+
+// Old APIs omit account scope and method refresh facts. Only their exact
+// default ID/method may supply either fact; never use a sibling's projection.
+// #41699 removes this bridge after prepared API/App/CLI uptake and API drain.
+export function readBuiltinConnectorAccountFacts(
+  connector: PublicConnectorCatalogConnectReaderItem,
+  account: ConnectorAccountConnection,
+) {
+  if (
+    account.target.kind !== "builtin" ||
+    account.target.connectorSlug !== connector.slug
+  ) {
+    throw new Error("Connector account metadata identity mismatch");
+  }
+  const legacyMatches =
+    connector.connection?.id === account.id &&
+    connector.connection.authMethod === account.authMethod;
+  const method = connector.authMethods.find((candidate) => {
+    return candidate.id === account.authMethod;
+  });
+  const scopeMismatch = optionalAccountFact(account.scopeMismatch);
+  const supportsRefresh = optionalAccountFact(method?.supportsRefresh);
+  return {
+    scopeMismatch:
+      scopeMismatch ??
+      (legacyMatches
+        ? optionalAccountFact(connector.scopeMismatch)
+        : undefined),
+    supportsRefresh:
+      supportsRefresh ??
+      (legacyMatches
+        ? optionalAccountFact(connector.authMethodSupportsRefresh)
+        : undefined),
+  };
+}
 export type PublicConnectorCatalogStatusReaderResponse = z.infer<
   typeof catalogStatusListReaderSchema
 >;

@@ -1158,6 +1158,7 @@ export function connectorAccount(args: {
     externalUsername: null,
     externalEmail: null,
     oauthScopes: [],
+    ...(args.target.kind === "builtin" ? { scopeMismatch: false } : {}),
     connectionStatus: "connected",
     setupStatus: "complete",
     missingRequiredFields: [],

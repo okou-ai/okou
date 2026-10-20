@@ -3,6 +3,7 @@ import {
   type ConnectorAccountSummary,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import { readBuiltinConnectorAccountFacts } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { type CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   listConnectorAccountSummaries,
@@ -21,6 +22,7 @@ type MemberConnectionStatus =
   | "connected";
 
 export interface MemberConnectorFacts {
+  readonly scopeMismatch?: boolean;
   readonly integrationManaged: boolean;
   readonly accountSummary: ConnectorAccountSummary | null;
   readonly connectionId: string | null;
@@ -79,11 +81,23 @@ export function memberConnectorFacts(
   // reach this projection, so a missing target establishes no saved account.
   const accountSummary =
     summaries.get(connectorAccountTargetKey(target)) ?? null;
+  const account = accountSummary?.defaultConnection;
+  const scopeMismatch =
+    !("kind" in connector) && account
+      ? readBuiltinConnectorAccountFacts(connector, account).scopeMismatch
+      : undefined;
+  const memberStatus = memberAccountStatus(accountSummary);
   return {
     integrationManaged: false,
     accountSummary,
     connectionId: accountSummary?.defaultConnection?.id ?? null,
-    memberStatus: memberAccountStatus(accountSummary),
+    scopeMismatch,
+    memberStatus:
+      !("kind" in connector) &&
+      memberStatus === "connected" &&
+      scopeMismatch === undefined
+        ? "account-review-required"
+        : memberStatus,
   };
 }
 
@@ -139,7 +153,7 @@ export function memberConnectorAccountText(
       `(${summary.attentionCount}/${summary.accountCount} need attention)`,
     );
   }
-  if (!("kind" in connector) && connector.scopeMismatch) {
+  if (!("kind" in connector) && facts.scopeMismatch) {
     parts.push("(permissions update available)");
   }
   return parts.join(" ");

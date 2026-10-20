@@ -105,7 +105,10 @@ export async function listConnectorAccountSummaries(): Promise<
     ...config,
     validateResponse: true,
   });
-  const result = await client.summaries({ headers: {} });
+  const result = await client.summaries({
+    headers: {},
+    query: { includeScopeMismatch: "true" },
+  });
   if (result.status !== 200) {
     handleError(result, "Failed to read connector account summaries");
   }

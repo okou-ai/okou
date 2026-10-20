@@ -1402,116 +1402,122 @@ test.each(["incomplete", "invalid"] as const)(
   },
 );
 
-test("Reconnect the expired public OAuth account shown on the page", async () => {
-  const connectionId = crypto.randomUUID();
-  context.mocks.data.connectors([
-    {
-      ...connectedConnectorResponse({
-        slug: "github",
-        authMethod: "oauth",
-        updatedAt: "2026-01-01T00:00:00Z",
-      }),
-      id: connectionId,
-      connectionStatus: "reconnect-required",
-      reconnectReason: "authorization_expired_or_revoked",
-    },
-  ]);
-  const connector = publicOAuthConnectorStatus({
-    slug: "github",
-    label: "Public GitHub",
-    singleAuthCodeAuthMethodId: null,
-  });
-  mockPublicConnectorStatus({
-    ...connector,
-    connected: true,
-    connectionStatus: "reconnect-required",
-    connection: {
-      id: connectionId,
-      authMethod: "oauth",
-      externalUsername: "mock-connected-account",
-      externalEmail: null,
-      reconnectReason: "authorization_expired_or_revoked",
-    },
-    authMethods: [
-      ...connector.authMethods,
+test.each(["matching", "stale"] as const)(
+  "Reconnect the expired public OAuth account with a %s catalog identity",
+  async (identity) => {
+    const connectionId = crypto.randomUUID();
+    context.mocks.data.connectors([
       {
-        id: "api-token",
-        label: "Alternate API token",
-        description: null,
-        grantKind: "manual",
-        manualFields: [
-          {
-            id: "apiToken",
-            label: "Alternate API token",
-            required: true,
-            placeholder: "alternate-token",
-            inputType: "password",
-          },
-        ],
-        startOptions: [],
+        ...connectedConnectorResponse({
+          slug: "github",
+          authMethod: "oauth",
+          updatedAt: "2026-01-01T00:00:00Z",
+        }),
+        id: connectionId,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
       },
-    ],
-  });
-  const authWindow = context.mocks.browser.authWindow();
-  Object.defineProperty(authWindow, "location", {
-    value: { href: "" },
-    configurable: true,
-  });
-  context.mocks.browser.open(authWindow);
-  let oauthStarted = false;
-  let startedConnectorSlug: string | null = null;
-  let startedAccountIntent: string | null = null;
-  let startedAuthMethod: string | null = null;
-  let startedAgentId: string | null = null;
-  let startedAuthorizeAgent = false;
-  let startedConnectionId: string | null = null;
-  mockOAuthCompletions(context);
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ body, params, respond }) => {
-      oauthStarted = true;
-      startedConnectorSlug = params.connectorSlug;
-      startedAccountIntent = body.account.intent;
-      startedAuthMethod = body.authMethod;
-      startedAgentId = body.agentId ?? null;
-      startedAuthorizeAgent = body.authorizeAgent === true;
-      if (body.account.intent === "reconnect") {
-        startedConnectionId = body.account.connectionId;
-      }
-      return respond(200, {
-        authorizationUrl: "https://oauth.test/github/reconnect",
-        oauthAttemptId: crypto.randomUUID(),
-      });
-    },
-  );
+    ]);
+    const connector = publicOAuthConnectorStatus({
+      slug: "github",
+      label: "Public GitHub",
+      singleAuthCodeAuthMethodId: null,
+    });
+    mockPublicConnectorStatus({
+      ...connector,
+      connected: true,
+      connectionStatus: "reconnect-required",
+      connection: {
+        id: identity === "matching" ? connectionId : crypto.randomUUID(),
+        authMethod: "oauth",
+        externalUsername: "mock-connected-account",
+        externalEmail: null,
+        reconnectReason: "authorization_expired_or_revoked",
+      },
+      authMethods: [
+        ...connector.authMethods,
+        {
+          id: "api-token",
+          label: "Alternate API token",
+          description: null,
+          grantKind: "manual",
+          manualFields: [
+            {
+              id: "apiToken",
+              label: "Alternate API token",
+              required: true,
+              placeholder: "alternate-token",
+              inputType: "password",
+            },
+          ],
+          startOptions: [],
+        },
+      ],
+    });
+    const authWindow = context.mocks.browser.authWindow();
+    Object.defineProperty(authWindow, "location", {
+      value: { href: "" },
+      configurable: true,
+    });
+    context.mocks.browser.open(authWindow);
+    let oauthStarted = false;
+    let startedConnectorSlug: string | null = null;
+    let startedAccountIntent: string | null = null;
+    let startedAuthMethod: string | null = null;
+    let startedAgentId: string | null = null;
+    let startedAuthorizeAgent = false;
+    let startedConnectionId: string | null = null;
+    mockOAuthCompletions(context);
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ body, params, respond }) => {
+        oauthStarted = true;
+        startedConnectorSlug = params.connectorSlug;
+        startedAccountIntent = body.account.intent;
+        startedAuthMethod = body.authMethod;
+        startedAgentId = body.agentId ?? null;
+        startedAuthorizeAgent = body.authorizeAgent === true;
+        if (body.account.intent === "reconnect") {
+          startedConnectionId = body.account.connectionId;
+        }
+        return respond(200, {
+          authorizationUrl: "https://oauth.test/github/reconnect",
+          oauthAttemptId: crypto.randomUUID(),
+        });
+      },
+    );
 
-  await setupPage({
-    context,
-    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
-  });
+    await setupPage({
+      context,
+      path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+    });
 
-  await screen.findByText("Okou needs Public GitHub to proceed");
-  expect(screen.queryByText("Public GitHub connected")).not.toBeInTheDocument();
-  click(getButtonByText("Connect"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Public GitHub",
-  });
-  expect(within(dialog).getByText("Connection expired")).toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText("Alternate API token"),
-  ).not.toBeInTheDocument();
-  click(getButtonByText("Reconnect", dialog));
+    await screen.findByText("Okou needs Public GitHub to proceed");
+    expect(
+      screen.queryByText("Public GitHub connected"),
+    ).not.toBeInTheDocument();
+    expect(getButtonByText("Connect")).toBeEnabled();
+    click(getButtonByText("Connect"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Public GitHub",
+    });
+    expect(within(dialog).getByText("Connection expired")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByLabelText("Alternate API token"),
+    ).not.toBeInTheDocument();
+    click(getButtonByText("Reconnect", dialog));
 
-  await waitFor(() => {
-    expect(oauthStarted).toBeTruthy();
-  });
-  expect(startedConnectorSlug).toBe("github");
-  expect(startedAccountIntent).toBe("reconnect");
-  expect(startedAuthMethod).toBe("oauth");
-  expect(startedAgentId).toBe(AGENT_ID);
-  expect(startedAuthorizeAgent).toBeTruthy();
-  expect(startedConnectionId).toBe(connectionId);
-});
+    await waitFor(() => {
+      expect(oauthStarted).toBeTruthy();
+    });
+    expect(startedConnectorSlug).toBe("github");
+    expect(startedAccountIntent).toBe("reconnect");
+    expect(startedAuthMethod).toBe("oauth");
+    expect(startedAgentId).toBe(AGENT_ID);
+    expect(startedAuthorizeAgent).toBeTruthy();
+    expect(startedConnectionId).toBe(connectionId);
+  },
+);
 
 test("Reconnect the exact account and continue the originating chat only after success", async () => {
   mockPublicConnectorStatus(
