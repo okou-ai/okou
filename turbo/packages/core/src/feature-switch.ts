@@ -308,13 +308,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
     enabled: false,
   },
-  [FeatureSwitchKey.WalletSettings]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Show Wallet in Settings > Billing & pricing for personal Link wallet connections in the current workspace.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:

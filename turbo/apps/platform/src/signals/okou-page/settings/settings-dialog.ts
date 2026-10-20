@@ -2,7 +2,6 @@ import type { UsagePackManagementResponse } from "@okouai/api-contracts/contract
 import {
   observeWalletConnection$,
   refreshWalletConnection$,
-  walletSettingsEnabled$,
 } from "./wallet.ts";
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
@@ -270,9 +269,7 @@ export const setSettingsDialogOpen$ = command(
       { once: true },
     );
     set(internalSettingsDialogSignal$, modalSignal);
-    if (get(walletSettingsEnabled$)) {
-      set(observeWalletConnection$, modalSignal);
-    }
+    set(observeWalletConnection$, modalSignal);
     set(internalSettingsDialogSessionActive$, true);
     // A plans sub-page that is already open when the session starts was opened
     // by an entry point outside Settings, so that flow owns the whole dialog.

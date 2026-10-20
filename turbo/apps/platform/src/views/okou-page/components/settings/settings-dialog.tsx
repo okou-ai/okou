@@ -42,7 +42,6 @@ import {
   type SettingsSection,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
-import { walletSettingsEnabled$ } from "../../../../signals/okou-page/settings/wallet.ts";
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { BillingSection } from "./sections/billing-section.tsx";
 import { ChatSection } from "./sections/chat-section.tsx";
@@ -155,7 +154,6 @@ function SettingsDialog({
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
-  const showWallet = useGet(walletSettingsEnabled$);
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
 
   const sectionMeta = {
@@ -330,15 +328,11 @@ function SettingsDialog({
             },
           ]
         : []),
-      ...(showWallet
-        ? [
-            {
-              id: "wallet" as const,
-              label: sectionMeta.wallet.title,
-              icon: Wallet,
-            },
-          ]
-        : []),
+      {
+        id: "wallet" as const,
+        label: sectionMeta.wallet.title,
+        icon: Wallet,
+      },
     ],
   };
   const sidebarGroups: readonly SidebarGroup[] = [
@@ -359,8 +353,7 @@ function SettingsDialog({
     isAdmin,
   });
   const resolvedSection: SettingsSection =
-    (!showDebug && availableSection === "debug") ||
-    (!showWallet && availableSection === "wallet")
+    !showDebug && availableSection === "debug"
       ? "preference"
       : availableSection;
   const meta = sectionMeta[resolvedSection];
