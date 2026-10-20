@@ -2,6 +2,8 @@ use super::*;
 use std::path::PathBuf;
 
 #[cfg(feature = "test-support")]
+mod pause_custody;
+#[cfg(feature = "test-support")]
 mod request_route;
 #[cfg(feature = "test-support")]
 mod unpark_custody;

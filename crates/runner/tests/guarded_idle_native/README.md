@@ -1,5 +1,57 @@
 # Guarded idle terminal fixture
 
+## Accepted physical pause with public repark awaiting HTTP
+
+`native_pause::native_accepted_physical_pause_loss_preserves_required_saving`
+exercises borrowed drop, observer unwind and post-delivery response-relay unwind
+for fresh and newly restored matching-snapshot Guests. Actual unpark, production
+Guest restore and complete original private/home/64 KiB payload verification
+precede the public speculative repark. Its real final exec, Guest quiesce and
+balloon work precede an exact pause-only gate. Complete original PATCH /vm bytes
+are captured before dispatch; only the actual Firecracker 204 establishes pause
+acceptance while the public repark is still Pending on response delivery. This
+does not claim unfinished internal VMM execution.
+
+The original Sandbox retains the actual pause producer/result and operation fence;
+the external GuardedSpeculativeIdleOwner retains backing, history, promotion and
+the full lease. Observer loss leaves Uncertain and refuses commit/repark/incoming.
+Earlier Guest/balloon cancellation and unrelated dirtiness grant no pause recovery.
+Terminal recovery joins that exact pause, then the original native/Guest resume
+readiness, and grants only original terminal data operations. Shared ordinary
+policy remains Dirty, keeping controls, assignment, RPC admission and reuse closed.
+Normal successful physical park and exact-successor handoff keep their behavior.
+
+While the actual response is held, cancelled terminal observations retain the same
+work; memory observation and an acknowledged heartbeat progress under held pool
+contention and the complete allocation refuses another full profile. Release and
+join the actual relay before positively joining terminal readiness. Producer unwind
+is injected only after actual HTTP delivery. A separate readiness witness precedes
+required cleanup; it never publishes ordinary inventory or proves data saving.
+
+The common saving path then holds real 64 MiB post-exit IO and proves complete
+original home/payload recovery, private-runtime removal, positive exit, full
+lease/growth through late IO, independent pool/status/IO progress and final zero
+accounting/status with all producers joined. Failed or unknown work keeps original
+unresolved custody; emergency Drop and P1 intervention cannot establish success.
+Existing unpark and C8 witnesses retain their own formats and regression coverage.
+
+Freeze committed Host/all canonical Guests, verify owned RootFS installed bytes
+and create a new actual matching snapshot. Keep unchanged supplied policy/P1 and
+original files, including raw `native_pause_policy_json`, `native_terminal_artifacts`
+and `snapshot-preparation.json`. Run the exact ignored entry and original reader:
+
+```sh
+<native-test-binary> native_pause::native_accepted_physical_pause_loss_preserves_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/native_pause_report.py <p1-directory>
+```
+
+The strict reader requires actual pause bytes, original owner/data/phase/clock
+bindings, separate pause/resume readiness and complete saving/progress/joins.
+Synthetic original-file/CLI negatives are ordinary consumer checks, not native
+proof. Guest RPC cancellation, full Supervisor shutdown, claim/API arbitration,
+D/E and calibrated or production P4 memory relief remain separate.
+
 ## Accepted native resume with public unpark awaiting HTTP
 
 `native_unpark::native_accepted_unpark_loss_preserves_required_saving` runs

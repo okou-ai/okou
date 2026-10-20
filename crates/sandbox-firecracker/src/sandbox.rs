@@ -74,6 +74,7 @@ use crate::runtime_dirs::{prepare_private_runtime_vsock_dir, set_private_runtime
 use crate::snapshot_mount_namespace::{BindMount, SnapshotMountMode, build_command};
 
 mod guest_connection_timing;
+mod park_attempt;
 mod snapshot_restore;
 mod state;
 mod unpark_attempt;
@@ -561,6 +562,8 @@ pub struct FirecrackerSandbox {
     park_outcome: Option<SandboxParkOutcome>,
     /// Host-side normal-operation fence held while this sandbox is parked.
     park_fence: Option<NormalOperationFence>,
+    /// Original operation fence and actual physical pause survive borrowed park.
+    park_attempt: Option<park_attempt::Attempt<NormalOperationFence>>,
     /// Accepted readiness producers survive cancellation of borrowed unpark.
     unpark_attempt: Option<unpark_attempt::Attempt>,
     /// Only terminal data operations may use a positively joined cancelled attempt.
@@ -686,6 +689,7 @@ impl FirecrackerSandbox {
             is_parked: false,
             park_outcome: None,
             park_fence: None,
+            park_attempt: None,
             unpark_attempt: None,
             terminal_unpark: None,
             guest_rpc_endpoint: None,
@@ -707,6 +711,9 @@ impl FirecrackerSandbox {
     }
 
     pub(crate) async fn terminate_process_for_cleanup(&mut self) -> bool {
+        if self.join_retained_park().await.is_err() {
+            return false;
+        }
         if self.join_retained_unpark().await.is_err() {
             return false;
         }
@@ -2271,6 +2278,11 @@ impl FirecrackerSandbox {
         let coordinator = self.park_coordinator.clone();
         let guest = Arc::clone(&self.guest);
         let final_exec_guest = Arc::clone(&guest);
+        let custody = self
+            .park_attempt
+            .get_or_insert_with(|| park_attempt::Attempt::new(coordinator.clone()))
+            .clone();
+        let pause_custody = custody.clone();
         let physical_park_guest = Arc::clone(&guest);
         let id = self.id.clone();
         let park_id = id.clone();
@@ -2282,7 +2294,10 @@ impl FirecrackerSandbox {
         let (normal_operations_fence, physical_outcome, exec_result) =
             park_with_ready_for_park_and_preparation_with_observer(
                 &id,
-                &coordinator,
+                ParkContext {
+                    coordinator: &coordinator,
+                    custody: Some(custody),
+                },
                 observer,
                 |outcome| matches!(outcome, PhysicalParkOutcome::Handoff(_)),
                 || async move {
@@ -2331,6 +2346,7 @@ impl FirecrackerSandbox {
                         PhysicalParkRequest {
                             guest: physical_park_guest,
                             handoff,
+                            pause_custody: Some(&pause_custody),
                             memory_policy: ParkMemoryPolicy::Reclaim,
                             state_rx,
                         },
@@ -2342,6 +2358,7 @@ impl FirecrackerSandbox {
             )
             .await?;
         self.park_fence = Some(normal_operations_fence);
+        self.park_attempt = None;
         drop(self.guest_rpc_endpoint.take());
         match physical_outcome {
             PhysicalParkOutcome::Idle(park_outcome) => {
@@ -2383,12 +2400,20 @@ impl FirecrackerSandbox {
         let guest = Arc::clone(&self.guest);
         let fence_guest = Arc::clone(&guest);
         let physical_park_guest = Arc::clone(&guest);
+        let custody = self
+            .park_attempt
+            .get_or_insert_with(|| park_attempt::Attempt::new(coordinator.clone()))
+            .clone();
+        let pause_custody = custody.clone();
         let id = self.id.clone();
         let api_sock = self.sock_paths.api_sock();
         let state_rx = self.state_tx.subscribe();
         let (normal_operations_fence, outcome) = park_with_ready_for_park(
             &id,
-            &coordinator,
+            ParkContext {
+                coordinator: &coordinator,
+                custody: Some(custody),
+            },
             || async move {
                 let guest = fence_guest.lock().await.as_ref().cloned().ok_or_else(|| {
                     ParkNormalOperationFenceError::GuestUnavailable(io::Error::new(
@@ -2418,6 +2443,7 @@ impl FirecrackerSandbox {
                     PhysicalParkRequest {
                         guest: physical_park_guest,
                         handoff: None,
+                        pause_custody: Some(&pause_custody),
                         memory_policy,
                         state_rx,
                     },
@@ -2429,6 +2455,7 @@ impl FirecrackerSandbox {
         )
         .await?;
         self.park_fence = Some(normal_operations_fence);
+        self.park_attempt = None;
         self.park_outcome = Some(outcome.clone());
         drop(self.guest_rpc_endpoint.take());
         Ok(outcome)
@@ -2480,39 +2507,7 @@ impl FirecrackerSandbox {
             )
         })?;
         if self.unpark_attempt.is_none() {
-            let guest = Arc::clone(&self.guest);
-            let id = self.id.clone();
-            let api_sock = self.sock_paths.api_sock();
-            let memory_mb = self.config.resources.memory_mb;
-            let park_outcome = self.park_outcome.clone();
-            let state_rx = self.state_tx.subscribe();
-            let mut is_parked = self.is_parked;
-            self.unpark_attempt = Some(unpark_attempt::Attempt::new(
-                async move {
-                    unpark_inner(
-                        &mut is_parked,
-                        memory_mb,
-                        park_outcome.as_ref(),
-                        &api_sock,
-                        state_rx,
-                        &id,
-                    )
-                    .await
-                    .map_err(|error| match error {
-                        SandboxError::IdleTransition { message, .. } => io::Error::other(message),
-                        error => io::Error::other(error.to_string()),
-                    })
-                },
-                async move {
-                    let guest = guest.lock().await.as_ref().cloned().ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::NotConnected,
-                            "guest connection missing during unpark resume",
-                        )
-                    })?;
-                    guest.resume_operations(GUEST_PARK_LIFECYCLE_TIMEOUT).await
-                },
-            ));
+            self.unpark_attempt = Some(self.make_unpark_attempt(uuid::Uuid::new_v4()));
         }
 
         let coordinator = self.park_coordinator.clone();
@@ -2542,6 +2537,65 @@ impl FirecrackerSandbox {
         self.unpark_attempt = None;
         self.guest_rpc_endpoint = Some(guest_rpc_endpoint);
         Ok(())
+    }
+
+    fn make_unpark_attempt(&self, attempt: uuid::Uuid) -> unpark_attempt::Attempt {
+        let guest = Arc::clone(&self.guest);
+        let id = self.id.clone();
+        let api_sock = self.sock_paths.api_sock();
+        let memory_mb = self.config.resources.memory_mb;
+        let park_outcome = self.park_outcome.clone();
+        let state_rx = self.state_tx.subscribe();
+        let mut is_parked = self.is_parked;
+        unpark_attempt::Attempt::new(
+            attempt,
+            async move {
+                unpark_inner(
+                    &mut is_parked,
+                    memory_mb,
+                    park_outcome.as_ref(),
+                    &api_sock,
+                    state_rx,
+                    &id,
+                )
+                .await
+                .map_err(|error| match error {
+                    SandboxError::IdleTransition { message, .. } => io::Error::other(message),
+                    error => io::Error::other(error.to_string()),
+                })
+            },
+            async move {
+                let guest = guest.lock().await.as_ref().cloned().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "guest connection missing during unpark resume",
+                    )
+                })?;
+                guest.resume_operations(GUEST_PARK_LIFECYCLE_TIMEOUT).await
+            },
+        )
+    }
+
+    async fn join_retained_park(&mut self) -> sandbox::Result<()> {
+        let Some(custody) = &self.park_attempt else {
+            return Ok(());
+        };
+        match custody.join().await {
+            Ok(Some(outcome)) => {
+                self.is_parked = true;
+                self.park_outcome = Some(outcome);
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+            Err(error) => {
+                self.park_coordinator
+                    .mark_dirty(DirtyReason::new(error.to_string()));
+                Err(idle_transition_error(
+                    SandboxIdleTransition::Park,
+                    error.to_string(),
+                ))
+            }
+        }
     }
 
     async fn join_retained_unpark(&mut self) -> sandbox::Result<()> {
@@ -2665,6 +2719,7 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn stop(&mut self) -> sandbox::Result<()> {
+        self.join_retained_park().await?;
         self.join_retained_unpark().await?;
         drop(self.guest_rpc_endpoint.take());
         if !self.transition(SandboxState::Running, SandboxState::Stopping) {
@@ -2748,6 +2803,7 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn kill(&mut self) -> sandbox::Result<()> {
+        self.join_retained_park().await?;
         self.join_retained_unpark().await?;
         drop(self.guest_rpc_endpoint.take());
         if !self.transition(SandboxState::Running, SandboxState::Stopping) {
@@ -2906,6 +2962,36 @@ impl Sandbox for FirecrackerSandbox {
     async fn unpark_for_terminal_operations(&mut self) -> sandbox::Result<()> {
         if let Some(attempt) = self.terminal_unpark {
             return self.check_terminal_unpark(attempt);
+        }
+        if self.unpark_attempt.is_none()
+            && let Some(custody) = self
+                .park_attempt
+                .as_ref()
+                .filter(|attempt| attempt.has_pause())
+                .cloned()
+        {
+            self.check_terminal_unpark(custody.id)?;
+            self.join_retained_park().await?;
+            self.check_terminal_unpark(custody.id)?;
+            if self.park_fence.is_some() {
+                self.park_coordinator.mark_dirty(DirtyReason::new(
+                    "cancelled pause found another operation fence",
+                ));
+                return Err(idle_transition_error(
+                    SandboxIdleTransition::Unpark,
+                    "cancelled pause found another operation fence",
+                ));
+            }
+            self.park_fence = Some(custody.take_fence().ok_or_else(|| {
+                idle_transition_error(
+                    SandboxIdleTransition::Unpark,
+                    "cancelled pause lost its original operation fence",
+                )
+            })?);
+            self.unpark_attempt = Some(self.make_unpark_attempt(custody.id));
+            self.park_attempt = None;
+            drop(self.guest_rpc_endpoint.take());
+            drop(self.guest_duplex_endpoint.take());
         }
         let Some(attempt) = self.unpark_attempt.as_ref().map(|attempt| attempt.id) else {
             return self.unpark_ready_for_operations().await;
@@ -3387,26 +3473,57 @@ enum ParkNormalOperationFenceError {
     FinalOperation(io::Error),
 }
 
+struct ParkContext<'a, Fence> {
+    coordinator: &'a ParkCoordinator,
+    custody: Option<park_attempt::Attempt<Fence>>,
+}
+
+impl<'a, Fence> From<&'a ParkCoordinator> for ParkContext<'a, Fence> {
+    fn from(coordinator: &'a ParkCoordinator) -> Self {
+        Self {
+            coordinator,
+            custody: None,
+        }
+    }
+}
+
 struct ParkBoundaryGuard<Fence> {
     coordinator: ParkCoordinator,
     attempt: ParkAttempt,
     state: ParkBoundaryGuardState,
     normal_operations_fence: Option<Fence>,
+    custody: Option<park_attempt::Attempt<Fence>>,
 }
 
 impl<Fence> ParkBoundaryGuard<Fence> {
-    fn new(coordinator: ParkCoordinator, attempt: ParkAttempt) -> Self {
+    fn new(
+        coordinator: ParkCoordinator,
+        attempt: ParkAttempt,
+        custody: Option<park_attempt::Attempt<Fence>>,
+    ) -> Self {
         Self {
             coordinator,
             attempt,
             state: ParkBoundaryGuardState::Closing,
             normal_operations_fence: None,
+            custody,
         }
     }
 
     fn mark_normal_operations_fenced(&mut self, fence: Fence) {
-        self.normal_operations_fence = Some(fence);
+        if let Some(custody) = &self.custody {
+            custody.retain_fence(fence);
+        } else {
+            self.normal_operations_fence = Some(fence);
+        }
         self.state = ParkBoundaryGuardState::NormalOperationsFenced;
+    }
+
+    fn take_fence(&mut self) -> Option<Fence> {
+        match &self.custody {
+            Some(custody) => custody.take_fence(),
+            None => self.normal_operations_fence.take(),
+        }
     }
 
     fn mark_guest_quiesce_started(&mut self) {
@@ -3434,7 +3551,7 @@ impl<Fence> ParkBoundaryGuard<Fence> {
         match result {
             Ok(()) => {
                 self.state = ParkBoundaryGuardState::Disarmed;
-                match self.normal_operations_fence.take() {
+                match self.take_fence() {
                     Some(fence) => Ok(fence),
                     None => {
                         let reason =
@@ -3465,7 +3582,7 @@ impl<Fence> Drop for ParkBoundaryGuard<Fence> {
                 let _ = self.coordinator.abort_prepare_park(&self.attempt);
             }
             ParkBoundaryGuardState::NormalOperationsFenced => {
-                drop(self.normal_operations_fence.take());
+                drop(self.take_fence());
                 let _ = self.coordinator.abort_prepare_park(&self.attempt);
             }
             ParkBoundaryGuardState::GuestQuiesceStarted => {
@@ -3474,8 +3591,12 @@ impl<Fence> Drop for ParkBoundaryGuard<Fence> {
                 ));
             }
             ParkBoundaryGuardState::ReadyForPark => {
-                self.coordinator
-                    .mark_dirty(DirtyReason::new("park attempt dropped after ReadyForPark"));
+                let message = "park attempt dropped after ReadyForPark";
+                let reason = self.custody.as_ref().map_or_else(
+                    || DirtyReason::new(message),
+                    |custody| custody.cancellation_reason(message),
+                );
+                self.coordinator.mark_dirty(reason);
             }
             ParkBoundaryGuardState::Disarmed => {}
         }
@@ -3521,13 +3642,13 @@ impl Drop for UnparkBoundaryGuard {
     fn drop(&mut self) {
         match self.state {
             UnparkBoundaryGuardState::FirecrackerResumeStarted => {
-                self.coordinator.mark_dirty(DirtyReason::abandoned_unpark(
+                self.coordinator.mark_dirty(DirtyReason::abandoned_native_transition(
                     "unpark attempt dropped during Firecracker resume before guest operations reopened",
                     self.attempt,
                 ));
             }
             UnparkBoundaryGuardState::FirecrackerResumed => {
-                self.coordinator.mark_dirty(DirtyReason::abandoned_unpark(
+                self.coordinator.mark_dirty(DirtyReason::abandoned_native_transition(
                     "unpark attempt dropped after Firecracker resume before guest operations reopened",
                     self.attempt,
                 ));
@@ -3549,7 +3670,7 @@ fn release_park_state_for_termination<Fence>(
 
 async fn park_with_ready_for_park<Fence, Outcome, F, FF, Q, QF, P, PF>(
     log_id: &str,
-    coordinator: &ParkCoordinator,
+    context: ParkContext<'_, Fence>,
     fence_normal_operations: F,
     quiesce_guest: Q,
     park_firecracker: P,
@@ -3564,7 +3685,7 @@ where
 {
     let (fence, outcome, ()) = park_with_ready_for_park_and_preparation(
         log_id,
-        coordinator,
+        context,
         || async move { fence_normal_operations().await.map(|fence| (fence, ())) },
         quiesce_guest,
         park_firecracker,
@@ -3585,7 +3706,7 @@ async fn park_with_ready_for_park_and_preparation<
     PF,
 >(
     log_id: &str,
-    coordinator: &ParkCoordinator,
+    context: ParkContext<'_, Fence>,
     fence_and_prepare: F,
     quiesce_guest: Q,
     park_firecracker: P,
@@ -3600,7 +3721,7 @@ where
 {
     park_with_ready_for_park_and_preparation_with_observer(
         log_id,
-        coordinator,
+        context,
         None,
         |_| false,
         fence_and_prepare,
@@ -3626,7 +3747,7 @@ async fn park_with_ready_for_park_and_preparation_with_observer<
     PF,
 >(
     log_id: &str,
-    coordinator: &ParkCoordinator,
+    context: ParkContext<'_, Fence>,
     observer: Option<&'observer mut dyn SandboxFinalExecParkObserver>,
     is_running_handoff: fn(&Outcome) -> bool,
     fence_and_prepare: F,
@@ -3650,6 +3771,10 @@ where
         ),
     >,
 {
+    let ParkContext {
+        coordinator,
+        custody,
+    } = context;
     let mut timing = SandboxFinalExecParkTiming::new(observer);
     let preparation_started = Instant::now();
     info!(
@@ -3688,7 +3813,7 @@ where
             return Err(prepare_park_error(SandboxIdleTransition::Park, error));
         }
     };
-    let mut guard = ParkBoundaryGuard::new(coordinator.clone(), attempt);
+    let mut guard = ParkBoundaryGuard::new(coordinator.clone(), attempt, custody);
 
     info!(
         id = %log_id,
@@ -5020,6 +5145,7 @@ enum ParkMemoryPolicy {
 struct PhysicalParkRequest<'handoff> {
     guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
     handoff: Option<&'handoff SandboxFinalExecParkHandoff>,
+    pause_custody: Option<&'handoff park_attempt::Attempt<NormalOperationFence>>,
     memory_policy: ParkMemoryPolicy,
     state_rx: watch::Receiver<SandboxState>,
 }
@@ -5038,6 +5164,7 @@ async fn park_inner_with_guest_and_handoff<'observer>(
     let PhysicalParkRequest {
         guest,
         handoff,
+        pause_custody,
         memory_policy,
         state_rx,
     } = request;
@@ -5272,7 +5399,13 @@ async fn park_inner_with_guest_and_handoff<'observer>(
     // scheduling). Small VMs and blank preparation skip idle inflation
     // but still pause — timer ticks waste CPU regardless of memory size.
     let vcpu_pause_started = Instant::now();
-    if let Err(e) = client.pause().await {
+    let pause_result = match (&outcome, pause_custody) {
+        (PhysicalParkOutcome::Idle(outcome), Some(custody)) => {
+            custody.pause(client, outcome.clone()).await
+        }
+        _ => client.pause().await.map_err(io::Error::other),
+    };
+    if let Err(e) = pause_result {
         events.record(
             SandboxFinalExecParkSubstage::VcpuPause,
             vcpu_pause_started.elapsed(),
@@ -5365,6 +5498,7 @@ async fn park_inner(
         PhysicalParkRequest {
             guest: Arc::new(tokio::sync::Mutex::new(None)),
             handoff: None,
+            pause_custody: None,
             memory_policy: ParkMemoryPolicy::Reclaim,
             state_rx,
         },
