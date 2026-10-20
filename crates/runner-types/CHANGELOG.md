@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/okou-ai/okou/compare/runner-types-v0.8.0...runner-types-v0.8.1) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-types-v0.7.14...runner-types-v0.8.0) (2026-10-20)
 
 
