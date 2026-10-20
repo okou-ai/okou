@@ -8,7 +8,6 @@ import {
   withConnectorCompletion,
 } from "../external/connectors.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { waitForOperation } from "../utils.ts";
 
 /**
  * The onboarding sources with what their cards draw and what connecting one
@@ -27,7 +26,7 @@ export const onboardingSourceConnectors$ = computed(
 /** Wait for the sources already requested by the first onboarding step. */
 export const waitForSourcesFirstCatalog$ = command(
   async ({ get }, signal: AbortSignal): Promise<void> => {
-    await waitForOperation(get(onboardingSourceConnectors$), signal);
+    await get(onboardingSourceConnectors$);
     signal.throwIfAborted();
   },
 );

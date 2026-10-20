@@ -6,11 +6,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
-import {
-  createDeferredPromise,
-  settle,
-  waitForOperation,
-} from "../../signals/utils.ts";
+import { createDeferredPromise, settle } from "../../signals/utils.ts";
 import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import { mockNow, now } from "../time.ts";
 import { createAblyAuthCallback } from "../ably-auth.ts";
@@ -149,13 +145,12 @@ function controlledDeadline() {
   };
 }
 
-test("Auth deadline rejects the SDK request and ignores a late page token before a fresh renewal", async () => {
+test("Auth deadline rejects a pending page token and permits a fresh renewal", async () => {
   prepare();
   const sentry = context.mocks.sentry();
   initSharedDatabaseWorkerSentry();
   const expire = controlledDeadline();
   const tokenStarted = createDeferredPromise<AbortSignal>(context.signal);
-  const token = createDeferredPromise<string | null>(context.signal);
   let tokenReads = 0;
   let apiRequests = 0;
   context.mocks.http.post("https://auth.example.com/api/realtime/token", () => {
@@ -180,10 +175,9 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
     if (!signal) {
       throw new Error("Token acquisition requires the auth signal");
     }
+    const token = createDeferredPromise<string | null>(signal);
     tokenStarted.resolve(signal);
-    // Match the production Worker provider: stop waiting on cancellation
-    // even though the page can still deliver its token later.
-    return waitForOperation(token.promise, signal);
+    return token.promise;
   });
   const result = settle(ably.auth.requestToken());
   const signal = await tokenStarted.promise;
@@ -198,7 +192,6 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
   expect(context.signal.aborted).toBeFalsy();
   expect(apiRequests).toBe(0);
 
-  token.resolve("late-clerk-token");
   await expect(ably.auth.requestToken()).resolves.toMatchObject({
     token: "secret-response-token",
   });

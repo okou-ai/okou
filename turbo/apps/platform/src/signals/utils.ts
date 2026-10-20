@@ -263,37 +263,6 @@ export function withAbortAfter<T>(
   });
 }
 
-/** Stop waiting for a shared operation without cancelling its other owners. */
-export function waitForOperation<T>(
-  operation: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  const cancelled = createDeferredPromise<never>(signal);
-  return withCleanup(Promise.race([operation, cancelled.promise]), () => {
-    if (!cancelled.settled()) {
-      cancelled.reject(new DOMException("Operation settled", "AbortError"));
-    }
-  });
-}
-
-/** Race independently owned attempts and cancel the losers when one settles. */
-export function raceWithCancellation<T>(
-  operations: readonly ((signal: AbortSignal) => Promise<T>)[],
-  signal: AbortSignal,
-): Promise<T> {
-  signal.throwIfAborted();
-  const controller = new AbortController();
-  const raceSignal = AbortSignal.any([signal, controller.signal]);
-  const attempts = operations.map(async (operation) => {
-    return await operation(raceSignal);
-  });
-  return withCleanup(
-    waitForOperation(Promise.race(attempts), raceSignal),
-    () => {
-      controller.abort();
-    },
-  );
-}
 // ---------------------------------------------------------------------------
 // Polling loop with fibonacci backoff
 // ---------------------------------------------------------------------------

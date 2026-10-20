@@ -61,13 +61,7 @@ import {
 import { invalidateSsh$ } from "./ssh.ts";
 import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
 import { invalidateTailscale$ } from "./tailscale.ts";
-import {
-  onRef,
-  resetSignal,
-  settle,
-  waitForOperation,
-  withCleanup,
-} from "./utils.ts";
+import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 export const vncIdentity$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.VncAccess]) {
@@ -1178,10 +1172,7 @@ export const openVncDialog$ = command(
     };
     set(dialog$, dialog);
     if (kind === "create") {
-      const credentials = await settle(
-        waitForOperation(get(vncCredentials$), signal),
-        signal,
-      );
+      const credentials = await settle(get(vncCredentials$), signal);
       signal.throwIfAborted();
       if (
         get(dialog$) !== dialog ||

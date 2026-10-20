@@ -59,7 +59,6 @@ import {
 import {
   resetSignal,
   waitLoopUntil,
-  waitForOperation,
   tapError,
   withCleanup,
   onRejection,
@@ -1011,7 +1010,7 @@ const authorizeConnectorForVisibleAgents$ = command(
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleAgents = await waitForOperation(get(agents$), signal);
+    const visibleAgents = await get(agents$);
     signal.throwIfAborted();
     const client = get(apiClient$)(userBuiltinConnectorsContract);
     await withCleanup(
@@ -1355,10 +1354,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
     return await withCleanup(
       (async () => {
         signal.throwIfAborted();
-        await waitForOperation(
-          Promise.resolve(onSuccess(connectionId, signal)),
-          signal,
-        );
+        await onSuccess(connectionId, signal);
         signal.throwIfAborted();
       })(),
       () => {

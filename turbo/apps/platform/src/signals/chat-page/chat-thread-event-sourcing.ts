@@ -20,7 +20,6 @@ import { rootSignal$ } from "../root-signal.ts";
 import { pathParams$ } from "../route.ts";
 import {
   resetSignal,
-  waitForOperation,
   createDeferredPromise,
   settle,
   withCleanup,
@@ -412,7 +411,7 @@ const lookupEventStreamThreadMeta$ = command(
     signal: AbortSignal,
   ): Promise<CacheMissThreadMetaResolution> => {
     signal.throwIfAborted();
-    await waitForOperation(eventStreamReady, signal);
+    await eventStreamReady;
     signal.throwIfAborted();
     return {
       source: "event-stream",
@@ -513,7 +512,7 @@ export function createThreadMetaLookup(): Command<
       }
 
       const cacheHydrationStartedAt = performance.now();
-      await waitForOperation(get(initialChatThreadEventCacheHydrated$), signal);
+      await get(initialChatThreadEventCacheHydrated$);
       signal.throwIfAborted();
       const cacheHydrationWaitMs = Math.round(
         performance.now() - cacheHydrationStartedAt,
