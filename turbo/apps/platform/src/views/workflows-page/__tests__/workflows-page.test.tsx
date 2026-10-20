@@ -2926,6 +2926,7 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
     return respond(200, {
       connections: [healthyAccount, reconnectAccount],
       nextCursor: null,
+      defaultConnection: healthyAccount,
     });
   });
   const submittedAccounts: unknown[] = [];
@@ -2965,7 +2966,7 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
       const manager = await screen.findByRole("dialog", {
         name: "Manage Google Calendar accounts",
       });
-      const healthyRow = within(manager).getByRole("group", {
+      const healthyRow = await within(manager).findByRole("group", {
         name: "Work Calendar",
       });
       const reconnectRow = within(manager).getByRole("group", {
