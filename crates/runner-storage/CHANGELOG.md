@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.24...runner-storage-v0.5.25) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-storage:** converge processed group failure retirement ([#41921](https://github.com/okou-ai/okou/issues/41921)) ([42179f5](https://github.com/okou-ai/okou/commit/42179f50155d8cd316b6ed91955b08bdb7d042d3))
+
 ## [0.5.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.23...runner-storage-v0.5.24) (2026-10-20)
 
 

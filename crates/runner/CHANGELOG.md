@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.236.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.5...runner-rs-v0.236.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.235.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.4...runner-rs-v0.235.5) (2026-10-20)
 
 
