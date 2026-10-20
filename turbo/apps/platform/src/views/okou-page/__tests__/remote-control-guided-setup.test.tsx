@@ -137,14 +137,12 @@ async function page(
 async function directForm() {
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
-  click(
-    getAction("button", "Already have connection details? Enter them directly"),
-  );
+  click(getAction("button", "Use existing connection details"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
   click(screen.getByText("Direct connection"));
-  await screen.findByLabelText("Computer address");
+  await screen.findByLabelText("Device address");
   return await screen.findByLabelText("SSH username");
 }
 test.each([
@@ -180,9 +178,9 @@ test("The guided switch alone exposes both SSH and VNC from connection managemen
   expect(queryAction("button", "Add credential")).toBeNull();
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Set up a connection" });
-  expect(screen.getByText("Operate through commands.")).toBeInTheDocument();
+  expect(screen.getByText("Run commands on the device.")).toBeInTheDocument();
   expect(
-    screen.getByText("Operate through the screen, mouse and keyboard."),
+    screen.getByText("Control the device’s screen with a mouse and keyboard."),
   ).toBeInTheDocument();
 });
 test("Private network links to connection management without starting device setup", async () => {
@@ -242,26 +240,19 @@ test.each([
     click(getAction("button", "Start setup"));
     await screen.findByRole("heading", {
       name:
-        protocol === "ssh"
-          ? "Install Tailscale on the target computer"
-          : "Target operating system",
+        protocol === "ssh" ? "Install Tailscale" : "Device operating system",
     });
     click(getAction("button", "Back"));
     await screen.findByRole("heading", { name: "Set up a connection" });
-    click(
-      getAction(
-        "button",
-        "Already have connection details? Enter them directly",
-      ),
-    );
+    click(getAction("button", "Use existing connection details"));
     await screen.findByRole("heading", {
       name:
         protocol === "ssh"
-          ? "Use existing connection settings"
-          : "Which login settings does the VNC service use?",
+          ? "Use existing connection details"
+          : "Choose a VNC login method",
     });
     expect(
-      screen.queryByRole("heading", { name: "Target operating system" }),
+      screen.queryByRole("heading", { name: "Device operating system" }),
     ).toBeNull();
     click(getAction("button", "Back"));
     await screen.findByRole("heading", { name: "Set up a connection" });
@@ -270,15 +261,13 @@ test.each([
 test("First-time setup from existing settings opens installation without cycling through the entry page", async () => {
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
-  click(
-    getAction("button", "Already have connection details? Enter them directly"),
-  );
+  click(getAction("button", "Use existing connection details"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
-  click(getAction("button", "First time? Set up your computer step by step"));
+  click(getAction("button", "Set up your device step by step"));
   await screen.findByRole("heading", {
-    name: "Install Tailscale on the target computer",
+    name: "Install Tailscale",
   });
   expect(
     screen.queryByRole("heading", { name: "Set up a connection" }),
@@ -287,7 +276,7 @@ test("First-time setup from existing settings opens installation without cycling
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("button", "Start setup"));
   await screen.findByRole("heading", {
-    name: "Install Tailscale on the target computer",
+    name: "Install Tailscale",
   });
 });
 test("Existing Tailscale settings open the saved network and device login form, preserving the draft on return", async () => {
@@ -296,21 +285,15 @@ test("Existing Tailscale settings open the saved network and device login form, 
   });
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
-  click(
-    getAction("button", "Already have connection details? Enter them directly"),
-  );
+  click(getAction("button", "Use existing connection details"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
-  click(
-    screen.getByText(
-      "The device is already on Tailscale. Use its network settings.",
-    ),
-  );
+  click(screen.getByText("For devices already connected to Tailscale."));
   const username = await screen.findByLabelText("SSH username");
   expect(
     screen.queryByRole("heading", {
-      name: "Install Tailscale on the target computer",
+      name: "Install Tailscale",
     }),
   ).toBeNull();
   await expect(
@@ -323,13 +306,9 @@ test("Existing Tailscale settings open the saved network and device login form, 
   );
   click(getAction("button", "Back"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
-  click(
-    screen.getByText(
-      "The device is already on Tailscale. Use its network settings.",
-    ),
-  );
+  click(screen.getByText("For devices already connected to Tailscale."));
   await expect(screen.findByLabelText("SSH username")).resolves.toHaveValue(
     "draft-user",
   );
@@ -341,11 +320,9 @@ test("Existing Tailscale settings open the saved network and device login form, 
 async function openCloudflareSetup() {
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
-  click(
-    getAction("button", "Already have connection details? Enter them directly"),
-  );
+  click(getAction("button", "Use existing connection details"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
   click(screen.getByText("Cloudflare Access", { exact: true }));
   await fill(
@@ -354,7 +331,7 @@ async function openCloudflareSetup() {
   );
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Allow access through Cloudflare",
+    name: "Set up Cloudflare access",
   });
 }
 
@@ -389,7 +366,7 @@ test("Adding a Service Token preserves the draft on Back and continues to comput
   click(getAction("button", "Save and continue"));
   const username = await screen.findByLabelText("SSH username");
   expect(configs).toHaveLength(2);
-  expect(screen.getByLabelText("Computer address")).toHaveValue(
+  expect(screen.getByLabelText("Device address")).toHaveValue(
     "device.example.com",
   );
   expect(
@@ -516,7 +493,7 @@ test("Direct SSH requires a name, retains input through username help and saves 
   const name = screen.getByLabelText(/Connection name/u);
   expect(name).toHaveValue("");
   expect(name).toBeRequired();
-  await fill(screen.getByLabelText("Computer address"), "server.example.com");
+  await fill(screen.getByLabelText("Device address"), "server.example.com");
   await fill(username, "operator");
   expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
@@ -552,7 +529,7 @@ test("Direct SSH requires a name, retains input through username help and saves 
     }),
   ]);
   expect(
-    screen.getByText("You can review and edit this connection in settings."),
+    screen.getByText("You can view or edit connection details in Settings."),
   ).toBeInTheDocument();
   expect(queryAction("link", "Open chat")).toBeNull();
   expect(getAction("link", "View connection").getAttribute("href")).toContain(
@@ -579,32 +556,32 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("button", "Start setup"));
   await screen.findByRole("heading", {
-    name: "Install Tailscale on the target computer",
+    name: "Install Tailscale",
   });
-  click(getAction("button", "I have installed it"));
-  await screen.findByLabelText("Computer address");
-  await fill(screen.getByLabelText("Computer address"), "100.64.0.20");
+  click(getAction("button", "Installed, continue"));
+  await screen.findByLabelText("Device address");
+  await fill(screen.getByLabelText("Device address"), "100.64.0.20");
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Create an Okou tag in Tailscale",
+    name: "Create an Okou tag",
   });
   expect(
     screen.getByText("Access controls → Definitions → Tags → Create tag"),
   ).toBeInTheDocument();
   expect(screen.queryByText("Show detailed instructions")).toBeNull();
-  click(getAction("button", "Tag created, continue"));
+  click(getAction("button", "Created, continue"));
   await screen.findByRole("heading", {
     name: "Allow Okou to reach this computer",
   });
   expect(screen.queryByLabelText("Port")).toBeNull();
-  click(screen.getByText("Show grant to add"));
+  click(screen.getByText("View rule code"));
   expect(screen.getByText(/"tcp:\*"/u)).toBeInTheDocument();
   expect(
-    screen.getByText(/broader rules already in your policy remain effective/u),
+    screen.getByText(/broader permissions already granted still apply/u),
   ).toBeInTheDocument();
-  click(getAction("button", "Rule saved, continue"));
+  click(getAction("button", "Saved, continue"));
   await screen.findByRole("heading", {
-    name: "Create and enter connection credentials",
+    name: "Create connection credentials",
   });
   await screen.findByLabelText("Client Secret");
   expect(screen.getByLabelText("Client Secret")).toHaveAttribute(
@@ -612,14 +589,12 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
     "password",
   );
   expect(getAction("button", "Save and continue")).toBeInTheDocument();
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
   for (let index = 0; index < 3; index++) {
     click(getAction("button", "Next"));
   }
-  expect(
-    screen.getByText(/Click Save and continue after copying/u),
-  ).toBeInTheDocument();
+  expect(screen.getByText(/click “Save and continue”/u)).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   await fill(screen.getByLabelText("Network name"), "Custom tag network");
   await fill(screen.getByLabelText("Client ID"), "test-only-client-id");
@@ -641,7 +616,7 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
       "Access controls → Policies → General access rules → Add rule",
     ),
   ).toBeVisible();
-  click(screen.getByText("Show grant to add"));
+  click(screen.getByText("View rule code"));
   expect(JSON.parse(screen.getByText(/"tcp:\*"/u).textContent!)).toStrictEqual({
     src: ["tag:office-review", "tag:remote-review"],
     dst: ["100.64.0.20"],
@@ -649,14 +624,14 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   });
   click(getAction("button", "Back"));
   await screen.findByRole("heading", {
-    name: "Create an Okou tag in Tailscale",
+    name: "Create an Okou tag",
   });
   expect(screen.getByText("office-review")).toBeVisible();
   expect(screen.getByText("remote-review")).toBeVisible();
-  click(getAction("button", "Tag created, continue"));
-  click(getAction("button", "Rule saved, continue"));
+  click(getAction("button", "Created, continue"));
+  click(getAction("button", "Saved, continue"));
   await screen.findByRole("heading", {
-    name: "Create and enter connection credentials",
+    name: "Create connection credentials",
   });
   expect(screen.getByLabelText("Network name")).toHaveValue(
     "Custom tag network",
@@ -664,20 +639,22 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   expect(screen.getByLabelText("Client Secret")).toHaveValue(
     "test-only-client-secret",
   );
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   click(getAction("button", "Next"));
   click(getAction("button", "Next"));
   expect(
     screen.getByText(
-      /tag:office-review, tag:remote-review from the current Okou form/u,
+      /tag:office-review, tag:remote-review to match the tags in the Okou form/u,
     ),
   ).toBeVisible();
-  click(screen.getByText("Tag missing?"));
-  expect(screen.getByText(/Definitions → Tags → Create tag/u)).toBeVisible();
+  click(screen.getByText("Can’t find the tag?"));
+  expect(
+    screen.getByText(/Definitions → Tags and click Create tag/u),
+  ).toBeVisible();
   click(getAction("button", "Return to form"));
   click(getAction("button", "Save and continue"));
   await screen.findByRole("heading", {
-    name: "Enable SSH on the target computer",
+    name: "Enable SSH on the computer you want to connect",
   });
   expect(savedNetworks).toHaveLength(1);
 });
@@ -696,8 +673,8 @@ test("A single saved network is explicitly selected and can be changed", async (
   });
   click(getAction("button", "Set up a new network"));
   expect(picker).not.toHaveTextContent("Office network");
-  click(getAction("button", "I have installed it"));
-  await fill(await screen.findByLabelText("Computer address"), "100.64.0.20");
+  click(getAction("button", "Installed, continue"));
+  await fill(await screen.findByLabelText("Device address"), "100.64.0.20");
   click(getAction("button", "Continue"));
   const tagName = await screen.findByText("existing-office");
   expect(tagName).toBeVisible();
@@ -706,23 +683,23 @@ test("VNC groups actual service methods and retains the connection step while ad
   await page("/connectors?scope=remote-control&setup=vnc");
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("button", "Start setup"));
-  await screen.findByRole("heading", { name: "Target operating system" });
+  await screen.findByRole("heading", { name: "Device operating system" });
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Enable screen access on the target computer",
+    name: "Enable screen sharing on the computer you want to connect",
   });
-  click(getAction("button", "The service is ready"));
+  click(getAction("button", "Enabled, continue"));
   const group = await screen.findByLabelText("Service type");
   click(group);
   click(await screen.findByRole("option", { name: "Apple screen sharing" }));
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Connect to the target computer",
+    name: "Connect a device",
   });
   click(screen.getByText("More settings", { selector: "summary" }));
   const port = screen.getByLabelText("Port");
   await fill(port, "5901");
-  click(getAction("button", "Add the required SSH connection"));
+  click(getAction("button", "Add SSH connection"));
   const ssh = await screen.findByRole("dialog", { name: "Add host" });
   click(getAction("button", "Cancel", ssh));
   await waitFor(() => {
@@ -731,42 +708,40 @@ test("VNC groups actual service methods and retains the connection step while ad
   expect(port).toHaveValue(5901);
   click(getAction("button", "Back"));
   await screen.findByRole("heading", {
-    name: "Which login settings does the VNC service use?",
+    name: "Choose a VNC login method",
   });
   expect(group).toHaveTextContent("Apple screen sharing");
   click(group);
-  click(
-    await screen.findByRole("option", { name: "Certificate-protected VNC" }),
-  );
-  expect(group).toHaveTextContent("Certificate-protected VNC");
+  click(await screen.findByRole("option", { name: "Certificate-based VNC" }));
+  expect(group).toHaveTextContent("Certificate-based VNC");
 });
 test("VNC with no saved network shows an actionable empty state and preserves the address through help", async () => {
   await page("/connectors?scope=remote-control&setup=vnc");
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("button", "Start setup"));
-  await screen.findByRole("heading", { name: "Target operating system" });
+  await screen.findByRole("heading", { name: "Device operating system" });
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Enable screen access on the target computer",
+    name: "Enable screen sharing on the computer you want to connect",
   });
-  click(getAction("button", "The service is ready"));
+  click(getAction("button", "Enabled, continue"));
   await screen.findByLabelText("Login method");
   click(getAction("button", "Continue"));
   const address = await screen.findByLabelText("Device address");
   await fill(address, "screen.example.com");
   click(screen.getByLabelText("Connection method"));
   click(await screen.findByRole("option", { name: "Cloudflare Access" }));
-  await screen.findByText(/No Cloudflare Access network saved yet/u);
+  await screen.findByText(/No Cloudflare Access network added yet/u);
   expect(screen.queryByRole("combobox", { name: "Saved network" })).toBeNull();
   expect(getAction("button", "Add a private network")).toBeEnabled();
   expect(getAction("button", "Continue")).toBeDisabled();
-  click(getAction("button", "Where can I find the address?"));
+  click(getAction("button", "Where can I find the device address?"));
   await screen.findByText(/open Zero Trust → Access controls → Applications/u);
   await userEvent.keyboard("{Escape}");
   expect(address).toHaveValue("screen.example.com");
   click(getAction("button", "Add a private network"));
   const picker = await screen.findByRole("dialog", {
-    name: "Choose a network provider",
+    name: "Choose a network type",
   });
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
@@ -818,7 +793,7 @@ test("A rejected SSH save retains the entered name and does not show a success s
     });
   });
   const username = await directForm();
-  await fill(screen.getByLabelText("Computer address"), "invalid.example.com");
+  await fill(screen.getByLabelText("Device address"), "invalid.example.com");
   await fill(username, "operator");
   expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
@@ -854,12 +829,12 @@ test("VNC saves only after the separate login and server-identity steps", async 
   await page("/connectors?scope=remote-control&setup=vnc");
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("button", "Start setup"));
-  await screen.findByRole("heading", { name: "Target operating system" });
+  await screen.findByRole("heading", { name: "Device operating system" });
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Enable screen access on the target computer",
+    name: "Enable screen sharing on the computer you want to connect",
   });
-  click(getAction("button", "The service is ready"));
+  click(getAction("button", "Enabled, continue"));
   click(await screen.findByLabelText("Login method"));
   click(
     await screen.findByRole("option", {
@@ -868,7 +843,7 @@ test("VNC saves only after the separate login and server-identity steps", async 
   );
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Connect to the target computer",
+    name: "Connect a device",
   });
   await fill(screen.getByLabelText("Device address"), "screen.example.com");
   click(getAction("button", "Continue"));
@@ -882,7 +857,7 @@ test("VNC saves only after the separate login and server-identity steps", async 
   expect(requests).toHaveLength(0);
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Verify the identity of the target computer",
+    name: "Verify device identity",
   });
   expect(screen.getByLabelText("Server certificate trust")).toHaveTextContent(
     "System certificate authorities",
@@ -907,20 +882,20 @@ test("Switching protocols starts the matching editor instead of retaining the pr
   await fill(username, "operator");
   click(getAction("button", "Back"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
   click(getAction("button", "Back"));
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("radio", "VNC"));
   click(getAction("button", "Start setup"));
-  await screen.findByRole("heading", { name: "Target operating system" });
+  await screen.findByRole("heading", { name: "Device operating system" });
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
-    name: "Enable screen access on the target computer",
+    name: "Enable screen sharing on the computer you want to connect",
   });
-  click(getAction("button", "The service is ready"));
+  click(getAction("button", "Enabled, continue"));
   await screen.findByRole("heading", {
-    name: "Which login settings does the VNC service use?",
+    name: "Choose a VNC login method",
   });
   expect(screen.queryByLabelText("SSH username")).toBeNull();
 });
@@ -933,11 +908,9 @@ test("Leaving setup cancels an editor that is still loading credentials", async 
   });
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
-  click(
-    getAction("button", "Already have connection details? Enter them directly"),
-  );
+  click(getAction("button", "Use existing connection details"));
   await screen.findByRole("heading", {
-    name: "Use existing connection settings",
+    name: "Use existing connection details",
   });
   click(screen.getByText("Direct connection"));
   const directory = queryAction("button", "Connectors");
@@ -972,7 +945,7 @@ test("An idempotent retry keeps the connection name from the locked draft", asyn
       : respond(204);
   });
   const username = await directForm();
-  await fill(screen.getByLabelText("Computer address"), "retry.example.com");
+  await fill(screen.getByLabelText("Device address"), "retry.example.com");
   await fill(username, "operator");
   expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
@@ -1305,7 +1278,7 @@ test.each(["ssh", "vnc"] as const)(
     expect(secret).toHaveValue("newpass");
     expect(
       screen.getByText(
-        "Connection settings were saved. Review the login information update before leaving.",
+        "Connection settings are saved. Review the login information update before leaving.",
       ),
     ).toBeInTheDocument();
     click(keep);
@@ -1364,7 +1337,7 @@ async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
         ? "Tailscale connection setup"
         : "Cloudflare connection setup",
   });
-  click(getAction("button", "Already have credentials? Enter them directly"));
+  click(getAction("button", "Enter existing credentials"));
   return await screen.findByRole("textbox", { name: "Network name" });
 }
 test("Cloudflare four-step guide preserves the draft and resumes after returning", async () => {
@@ -1378,7 +1351,7 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
     "type",
     "password",
   );
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
   expect(getAction("link", "Open Cloudflare dashboard")).toHaveAttribute(
     "target",
@@ -1391,14 +1364,16 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
   expect(secret).toHaveValue("test-only-draft-secret");
   click(getAction("button", "Hide entered value"));
   expect(secret).toHaveAttribute("type", "password");
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   expect(screen.getByText("2 / 4")).toBeInTheDocument();
   click(getAction("button", "Previous"));
   expect(screen.getByText("1 / 4")).toBeInTheDocument();
   click(getAction("button", "Next"));
   click(getAction("button", "Next"));
-  expect(screen.getByText(/Action: Service Auth/u)).toBeInTheDocument();
-  expect(screen.getByText(/Keep all existing rules/u)).toBeInTheDocument();
+  expect(screen.getByText(/Action to Service Auth/u)).toBeInTheDocument();
+  expect(
+    screen.getByText(/keep existing rules unchanged/u),
+  ).toBeInTheDocument();
   click(getAction("button", "Next"));
   expect(
     screen.getByText("Return to the form and click Save network."),
@@ -1419,32 +1394,32 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   await fill(screen.getByLabelText("Allowed tags"), "tag:office, tag:review");
   const secret = screen.getByLabelText("Client Secret");
   await fill(secret, "test-only-draft-secret");
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
   click(getAction("button", "Next"));
   click(getAction("button", "Next"));
   expect(
-    screen.getByText(/tag:office, tag:review from the current Okou form/u),
+    screen.getByText(
+      /tag:office, tag:review to match the tags in the Okou form/u,
+    ),
   ).toBeInTheDocument();
-  click(screen.getByText("Tag missing?"));
+  click(screen.getByText("Can’t find the tag?"));
   expect(
-    screen.getByText(/Definitions → Tags → Create tag/u),
+    screen.getByText(/Definitions → Tags and click Create tag/u),
   ).toBeInTheDocument();
   expect(
-    screen.getByText(/Enter office, review as Tag name/u),
+    screen.getByText(/Enter office, review in Tag name/u),
   ).toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
   expect(name).toHaveValue("Tailnet draft");
   expect(secret).toHaveValue("test-only-draft-secret");
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   expect(screen.getByText("3 / 4")).toBeInTheDocument();
   click(getAction("button", "Next"));
-  expect(
-    screen.getByText(/Click Save network after copying/u),
-  ).toBeInTheDocument();
+  expect(screen.getByText(/click “Save network”/u)).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   expect(getAction("button", "Save network")).toBeInTheDocument();
-  click(getAction("button", "Get Client ID and Client Secret"));
+  click(getAction("button", "How do I get connection credentials?"));
   click(getAction("button", "Return to selection"));
   await screen.findByRole("heading", { name: "Add a private network" });
   click(screen.getByText("Tailscale", { exact: true }));
@@ -1452,7 +1427,9 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   click(getAction("button", "Next"));
   click(getAction("button", "Next"));
   expect(
-    screen.getByText(/tag:office, tag:review from the current Okou form/u),
+    screen.getByText(
+      /tag:office, tag:review to match the tags in the Okou form/u,
+    ),
   ).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   expect(name).toHaveValue("Tailnet draft");
@@ -1461,7 +1438,7 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
 
 test("Private network starts with one neutral provider selector and both guides can return to it", async () => {
   await page("/connectors?scope=private-network");
-  await screen.findByRole("heading", { name: "No private networks yet" });
+  await screen.findByRole("heading", { name: "No private networks added yet" });
   expect(
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add private network";
@@ -1470,7 +1447,7 @@ test("Private network starts with one neutral provider selector and both guides 
   click(getAction("button", "Add private network"));
   await screen.findByRole("heading", { name: "Add a private network" });
   expect(
-    screen.getByText("Choose a network type to continue setup."),
+    screen.getByText("Choose the network your device uses."),
   ).toBeInTheDocument();
   for (const provider of ["Tailscale", "Cloudflare Access"]) {
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1484,14 +1461,14 @@ test("Private network starts with one neutral provider selector and both guides 
     });
     expect(screen.getByText("1 / 4")).toBeInTheDocument();
     expect(
-      getAction("button", "Already have credentials? Enter them directly"),
+      getAction("button", "Enter existing credentials"),
     ).toBeInTheDocument();
     click(getAction("button", "Return to selection"));
     await screen.findByRole("heading", { name: "Add a private network" });
   }
   expect(
     screen.queryByRole("heading", {
-      name: "Install Tailscale on the target computer",
+      name: "Install Tailscale",
     }),
   ).toBeNull();
   expect(
@@ -1502,7 +1479,7 @@ test("Private network starts with one neutral provider selector and both guides 
   });
   click(screen.getByText("Cloudflare Access", { exact: true }));
   await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
-  click(getAction("button", "Already have credentials? Enter them directly"));
+  click(getAction("button", "Enter existing credentials"));
   const name = await screen.findByRole("textbox", { name: "Network name" });
   const form = name.closest("form");
   if (!form) {
@@ -1512,7 +1489,7 @@ test("Private network starts with one neutral provider selector and both guides 
   await fill(within(form).getByLabelText("Client ID"), "test-client");
   await fill(within(form).getByLabelText("Client Secret"), "test-secret");
   click(getAction("button", "Save network"));
-  await screen.findByRole("heading", { name: "No private networks yet" });
+  await screen.findByRole("heading", { name: "No private networks added yet" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
 });
@@ -1548,7 +1525,7 @@ test("Members see personal and organization networks together, with separate man
   ).toBeInTheDocument();
   expect(
     within(organization).getByText(
-      "Engineering · Organization members can use these networks",
+      "Engineering · Available to organization members",
     ),
   ).toBeInTheDocument();
   await expect(
@@ -1579,7 +1556,7 @@ test("Organization network details let members use the network without managemen
   await screen.findByRole("heading", { name: shared.name });
   expect(
     screen.getByText(
-      "You can use this network; organization administrators manage it",
+      "You can use this network. Organization administrators manage it.",
     ),
   ).toBeInTheDocument();
   expect(queryAction("button", "Edit settings")).toBeNull();
@@ -1590,12 +1567,14 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
   "%s creation defaults to personal and explains the unavailable organization option for members",
   async (provider) => {
     await page("/connectors?scope=private-network", true, "member");
-    await screen.findByRole("heading", { name: "No private networks yet" });
+    await screen.findByRole("heading", {
+      name: "No private networks added yet",
+    });
     click(getAction("button", "Add private network"));
     await screen.findByRole("heading", { name: "Add a private network" });
     click(screen.getByText(provider, { exact: true }));
     await screen.findByRole("dialog");
-    click(getAction("button", "Already have credentials? Enter them directly"));
+    click(getAction("button", "Enter existing credentials"));
     await screen.findByLabelText("Network name");
     const personal = screen.getByLabelText(/Only me/u, { selector: "input" });
     const organization = screen.getByLabelText(/Organization members/u, {
@@ -1605,12 +1584,12 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     expect(organization).toBeDisabled();
     expect(
       screen.getByText(
-        "Members of Engineering can select this network when adding a device.",
+        "Members of Engineering can use this network to connect devices.",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Organization networks are created and managed by organization administrators.",
+        "Organization administrators create and manage organization networks.",
       ),
     ).toBeInTheDocument();
   },
@@ -1661,7 +1640,7 @@ test("Sharing Tailscale requires confirmation, keeps the draft on cancel, and pr
   expect(within(confirmation).getByText("Owner computer")).toBeInTheDocument();
   expect(
     within(confirmation).getByText(
-      "Sharing network settings does not share your device connections.",
+      "Sharing network settings does not share device connections.",
     ),
   ).toBeInTheDocument();
   click(getAction("button", "Continue editing", confirmation));
@@ -1731,23 +1710,23 @@ test("Restricting Cloudflare requires the current impact acknowledgement and ret
   click(screen.getByText("Only me", { exact: true }));
   click(getAction("button", "Save network"));
   const confirmation = await screen.findByRole("dialog", {
-    name: "Make this network personal?",
+    name: "Make this network available only to you?",
   });
   await within(confirmation).findByText("Alex");
-  expect(
-    getAction("button", "Confirm personal scope", confirmation),
-  ).toBeDisabled();
+  expect(getAction("button", "Make personal", confirmation)).toBeDisabled();
   expect(saved.scope).toBe("organization");
   click(
     within(confirmation).getByText(
-      "I understand that affected members must select another network for their saved connections.",
+      "I understand that affected members must select another network before using their saved connections again.",
     ),
   );
-  click(getAction("button", "Confirm personal scope", confirmation));
-  await screen.findByText("You can use and manage this network");
+  click(getAction("button", "Make personal", confirmation));
+  await screen.findByText("You can use and manage this network.");
   await waitFor(() => {
     expect(
-      screen.queryByRole("dialog", { name: "Make this network personal?" }),
+      screen.queryByRole("dialog", {
+        name: "Make this network available only to you?",
+      }),
     ).toBeNull();
   });
   expect(saved.scope).toBe("personal");
@@ -1784,7 +1763,7 @@ test("A scope revision conflict keeps the edit draft and prevents another unrevi
   });
   click(getAction("button", "Confirm sharing", confirmation));
   await within(confirmation).findByText(
-    /This network or its references changed/u,
+    /The network or its linked connections changed/u,
   );
   expect(getAction("button", "Confirm sharing", confirmation)).toBeDisabled();
   click(getAction("button", "Continue editing", confirmation));
@@ -1830,7 +1809,7 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     await screen.findByRole("heading", { name: "Add a private network" });
     click(screen.getByText(provider, { exact: true }));
     await screen.findByRole("dialog");
-    click(getAction("button", "Already have credentials? Enter them directly"));
+    click(getAction("button", "Enter existing credentials"));
     const name = await screen.findByLabelText("Network name");
     const form = name.closest("form")!;
     await fill(name, "New team network");
