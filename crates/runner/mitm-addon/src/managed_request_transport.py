@@ -267,13 +267,14 @@ def install(register: Callable[[ManagedRequestBodyHook], None]) -> None:
             yield from current(self, event)
             return
 
-        yield from checkpoint("finish")
-        if (yield from self.check_killed(True)):
-            return
-        # The native buffer remains empty; the normal request hook performs
-        # current authorization before native connection acquisition and TLS.
-        native = current(self, event)
+        native = None
         try:
+            yield from checkpoint("finish")
+            if (yield from self.check_killed(True)):
+                return
+            # The native buffer remains empty; the normal request hook performs
+            # current authorization before native connection acquisition and TLS.
+            native = current(self, event)
             command = next(native)
             while True:
                 if isinstance(command, SendHttp) and command.connection == self.context.server:
@@ -318,7 +319,11 @@ def install(register: Callable[[ManagedRequestBodyHook], None]) -> None:
         except StopIteration:
             return
         finally:
-            native.close()
+            try:
+                if native is not None:
+                    native.close()
+            finally:
+                body.upload_done.set()
 
     setattr(state_consume_request_body, _BRIDGE, True)
     HttpStream.state_consume_request_body = state_consume_request_body

@@ -128,6 +128,8 @@ class TemporaryBody:
         self.validated = False
         self.closed = False
         self.failure: str | None = None
+        # The native continuation, including its final replay hook, owns this
+        # checkpoint. Storage closure alone does not finish transport progress.
         self.upload_done = asyncio.Event()
         self.replay_ready = asyncio.Event()
         self.replay_ready.set()
@@ -264,7 +266,6 @@ class TemporaryBody:
             if self.worker is None:
                 self._close_storage()
         finally:
-            self.upload_done.set()
             self.replay_ready.set()
 
     def _close_storage(self) -> None:

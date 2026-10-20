@@ -138,10 +138,17 @@ async def test_early_response_overflow_aborts_before_a_blocked_read_returns(
                 assert closed == [flow.server_conn]
             assert not replay.done()
             assert not files[0].closed
+            stored = managed_request_body.get(flow)
+            assert stored is not None
+            # The finish checkpoint owns the entire native continuation. A
+            # stopped body must not release its client reader while file I/O
+            # still keeps that continuation paused.
+            assert not stored.upload_done.is_set()
             release.set()
             await asyncio.wait_for(replay, 5)
             assert flow.error is not None
             assert files[0].closed
+            assert stored.upload_done.is_set()
             assert managed.admission_state_for_tests() == (0, 0)
         finally:
             release.set()

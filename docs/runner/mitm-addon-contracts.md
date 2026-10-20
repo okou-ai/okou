@@ -734,7 +734,9 @@ request hook, current authorization, connection selection and TLS to mitmproxy.
 Each receive hook is joined before another connection read. The finish
 checkpoint additionally joins authorization, connection acquisition and the
 complete upload, so a paused continuation cannot accumulate subsequent socket
-input. Cancellation during authorization resumes the native hook once with a
+input. Completion belongs to the native continuation, including its last replay
+hook. Closing storage cannot release that checkpoint while native processing
+still waits for file I/O. Cancellation during authorization resumes the native hook once with a
 killed flow. Other requests retain the original native body state.
 
 Anonymous files use the Runner-owned launch TMPDIR. A process-local FIFO budget
