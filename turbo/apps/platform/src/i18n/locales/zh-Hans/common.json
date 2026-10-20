@@ -4672,6 +4672,7 @@
     "copy": "复制",
     "createNetwork": "填写网络凭据",
     "customPort": "使用自定义端口",
+    "deleteConnection": "删除连接",
     "description": "让 Okou 在你指定的电脑或服务器上工作。",
     "destination": "Destination · 目标",
     "details": "查看详细说明",

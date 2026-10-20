@@ -678,7 +678,7 @@ async function editConnection(protocol: "ssh" | "vnc") {
   await screen.findByRole("heading", {
     name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
   });
-  click(getAction("button", "Edit host"));
+  click(getAction("button", "Edit connection"));
   await screen.findByRole("heading", { name: "Edit connection" });
   return await screen.findByLabelText(
     protocol === "ssh" ? "Password" : "VNC password",

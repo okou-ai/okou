@@ -435,7 +435,7 @@ export function VncHostCard({
           }}
         >
           {t(($) => {
-            return $.vnc.edit;
+            return detail ? $.remoteControlSetup.editConnection : $.vnc.edit;
           })}
         </Button>
         <Button
@@ -445,7 +445,9 @@ export function VncHostCard({
           }}
         >
           {t(($) => {
-            return $.vnc.delete;
+            return detail
+              ? $.remoteControlSetup.deleteConnection
+              : $.vnc.delete;
           })}
         </Button>
       </div>

@@ -1045,6 +1045,7 @@ function SshConflictReview({ dialog }: { readonly dialog: SshDialogState }) {
 
 function useDialogCopy(dialog: SshDialogState | null, inline: boolean) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const editor = useGet(sshConnectionModeEditor$);
   if (inline && dialog?.kind === "edit") {
     return {
@@ -1092,7 +1093,7 @@ function useDialogCopy(dialog: SshDialogState | null, inline: boolean) {
     case "delete": {
       return {
         title: t(($) => {
-          return $.ssh.delete;
+          return guided ? $.remoteControlSetup.deleteConnection : $.ssh.delete;
         }),
         description: t(($) => {
           return dialog.connection && !("credentialId" in dialog.connection)
@@ -1941,7 +1942,7 @@ export function SshHostCard({
           }}
         >
           {t(($) => {
-            return $.ssh.edit;
+            return detail ? $.remoteControlSetup.editConnection : $.ssh.edit;
           })}
         </Button>
         <Button
@@ -1969,7 +1970,9 @@ export function SshHostCard({
           }}
         >
           {t(($) => {
-            return $.ssh.delete;
+            return detail
+              ? $.remoteControlSetup.deleteConnection
+              : $.ssh.delete;
           })}
         </Button>
       </div>

@@ -4746,6 +4746,7 @@
     "copy": "Copy",
     "createNetwork": "Enter network credentials",
     "customPort": "Use a custom port",
+    "deleteConnection": "Delete connection",
     "description": "Let Okou work on a computer or server you choose.",
     "destination": "Destination",
     "details": "Show detailed instructions",

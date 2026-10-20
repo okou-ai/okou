@@ -56,6 +56,7 @@ import {
 
 function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   switch (kind) {
     case "create": {
       return {
@@ -78,7 +79,7 @@ function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
     case "delete": {
       return {
         title: t(($) => {
-          return $.vnc.delete;
+          return guided ? $.remoteControlSetup.deleteConnection : $.vnc.delete;
         }),
         description: t(($) => {
           return $.vnc.deleteHelp;
