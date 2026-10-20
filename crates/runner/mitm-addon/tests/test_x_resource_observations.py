@@ -173,34 +173,36 @@ def test_ndjson_reports_complete_rows_during_stream_and_never_at_terminal_again(
 def test_rows_crossing_midnight_keep_their_observation_time_after_delayed_completion(
     real_flow, tmp_path, usage_webhook_api, monkeypatch
 ):
-    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight = datetime(2026, 9, 18, tzinfo=UTC)
 
     class Clock(datetime):
-        value = today - timedelta(milliseconds=1)
+        value = midnight - timedelta(milliseconds=1)
 
         @classmethod
         def now(cls, tz=None):
             return cls.value
 
+    # Observation and expiry checks must share the synthetic UTC timeline.
     monkeypatch.setattr(x_resources, "datetime", Clock)
+    monkeypatch.setattr(usage.webhook, "datetime", Clock)
     flow = _flow(real_flow, tmp_path, path="/2/tweets/search/stream")
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         stream = response_stream(flow)
         stream(b'{"data":{"id":"1"}}\n')
-        Clock.value = today
+        Clock.value = midnight
         stream(b'{"data":{"id":"1"}}\n')
-        Clock.value = today + timedelta(hours=1)
+        Clock.value = midnight + timedelta(hours=1)
         stream(b"")
         mitm_addon.response(flow)
         usage.flush_usage_events(trigger="test")
     events = webhook.usage_events()
     assert len(events) == 2
     assert [event["observedAt"] for event in events] == [
-        (today - timedelta(milliseconds=1))
+        (midnight - timedelta(milliseconds=1))
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
-        today.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        midnight.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
     ]
     assert all(event["quantity"] == 1 for event in events)
     assert all(event["resources"] == [{"id": "1", "occurrences": 1}] for event in events)
