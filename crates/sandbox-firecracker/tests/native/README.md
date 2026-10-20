@@ -10,6 +10,22 @@ owner outside observer timeouts; the separate arrival/release controls own neith
 Arrival means a complete validated request is captured **before backend dispatch**.
 Only explicit release connects and forwards the original bytes once.
 
+To intercept a lifecycle method's internally constructed `ApiClient`, create
+`RequestRoute::new(original_api_socket, front_socket)` and await
+`route.scope(sandbox.unpark())` (or the intended park future). This opt-in route
+matches lexical `Path` equality and only `PATCH /vm`; balloon and other API
+traffic use their original transport. It never resolves symlinks, renames sockets
+or retries the backend after a selected front fails. Both paths and the front
+listener must belong to this invocation. Gate capture still precedes dispatch.
+
+The route is active only while polling the supplied future. Completion, panic
+and cancellation restore the prior scope, including nested scopes. Spawned tasks
+do not inherit it; put `scope` inside a deliberately spawned task when needed.
+The operation itself is never spawned or transferred by `scope`. Keep the gate
+producer and complete native capsule outside that future and its observation
+timeouts. Original `Dirty`/`NotParkable` fences remain authoritative after a
+cancelled lifecycle operation, even if its independent response later drains.
+
 `producer.join()` borrows its handle, so cancelling a bounded wait leaves accepted
 work joinable. Dropped arrival/release observers or a cancelled client cannot abort
 an already dispatched backend drain. Before release, losing its sender produces
