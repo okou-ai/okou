@@ -73,6 +73,7 @@ import {
   pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
+import { compareAppVersions } from "../../lib/app-version";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -86,6 +87,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$, type Db } from "../external/db";
+import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
 import {
   createRunnerGroupRealtimeToken,
   publishChatThreadMessageCreatedSafely,
@@ -1564,6 +1566,7 @@ function claimResponseBody(args: {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     storageMounts: _storedStorageMounts,
+    agentInstructionsSource: _agentInstructionsSource,
     ...runnerStoredContext
   } = args.storedContext;
   return {
@@ -2048,6 +2051,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
     readonly nativeContinuationSupported: boolean;
+    readonly runnerVersion: string | undefined;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2074,6 +2078,18 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
+    };
+  }
+  // Release #41438 shipped the prepared inline reader in Runner 0.234.18.
+  if (
+    storedContextResult.data.agentInstructionsSource === "agent" &&
+    (args.runnerVersion === undefined ||
+      (compareAppVersions(args.runnerVersion, "0.234.18") ?? -1) < 0)
+  ) {
+    // Older runners ignore inline instructions. Leave the job pending for a prepared reader.
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
     };
   }
   if (!args.nativeContinuationSupported) {
@@ -2122,6 +2138,7 @@ const claimAuthorizedJob$ = command(
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
       readonly nativeContinuationSupported: boolean;
+      readonly runnerVersion: string | undefined;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2140,6 +2157,7 @@ const claimAuthorizedJob$ = command(
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         nativeContinuationSupported: args.nativeContinuationSupported,
+        runnerVersion: args.runnerVersion,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs, signal);
@@ -2152,7 +2170,7 @@ const claimAuthorizedJob$ = command(
     }
     const storedContext = storedContextResult.value;
 
-    const responseBody = await set(
+    let responseBody = await set(
       buildClaimResponseBodyForClaim$,
       {
         run,
@@ -2163,6 +2181,25 @@ const claimAuthorizedJob$ = command(
       signal,
     );
     signal.throwIfAborted();
+
+    if (storedContext.agentInstructionsSource === "agent") {
+      const instructions = await set(
+        readAgentInstructionsForClaim$,
+        {
+          agentId: run.agentId,
+          orgId: run.orgId,
+          userId: run.userId,
+        },
+        signal,
+      );
+      if (!instructions.available) {
+        return instructions.response;
+      }
+      responseBody = {
+        ...responseBody,
+        agentInstructions: instructions.instructions,
+      };
+    }
 
     claimRouteTiming.recordElapsed(
       "claim_route_request_to_transition_start",
@@ -2293,6 +2330,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       runId,
       authType: auth.type,
       runnerAttribution,
+      runnerVersion: runnerVersionResult.data,
       capabilities: body.data.capabilities,
       nativeContinuationSupported:
         body.data.nativeContinuationSupported === true,

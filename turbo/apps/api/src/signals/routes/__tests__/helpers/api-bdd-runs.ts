@@ -828,7 +828,7 @@ export function createRunsApi(context: TestContext) {
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(true),
-          extraHeaders,
+          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,
@@ -1001,7 +1001,7 @@ export function createRunsApi(context: TestContext) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: authorization === undefined ? {} : { authorization },
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
           body: {
             capabilities: defaultClaimCapabilities(),
@@ -1465,7 +1465,7 @@ export function createRunsApi(context: TestContext) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(validAuth),
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,

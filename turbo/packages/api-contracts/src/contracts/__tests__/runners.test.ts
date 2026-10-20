@@ -895,6 +895,39 @@ describe("runner storage manifest contract", () => {
     );
   });
 
+  it("distinguishes current-Agent claims from retained captured instruction mounts", () => {
+    const legacy = {
+      ...storedContext,
+      storageMounts: [
+        {
+          name: "instructions-agent",
+          storageId: "instruction-storage",
+          versionId: "captured-version",
+          orgId: "org",
+          userId: "__org__",
+          mountPath: "/home/user/.codex",
+          archiveUrl: "https://storage.example/instructions.tar.gz",
+          instructionsTargetFilename: "AGENTS.md",
+        },
+      ],
+    };
+    expect(storedExecutionContextSchema.parse(legacy)).toEqual(legacy);
+    expect(
+      storedExecutionContextSchema.parse({
+        ...storedContext,
+        agentInstructionsSource: "agent",
+      }),
+    ).toEqual({ ...storedContext, agentInstructionsSource: "agent" });
+    for (const agentInstructionsSource of [null, "storage", "", 1]) {
+      expect(
+        storedExecutionContextSchema.safeParse({
+          ...storedContext,
+          agentInstructionsSource,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("requires canonical mounts while ignoring previous stored fields", () => {
     expect(
       storedExecutionContextSchema.parse({

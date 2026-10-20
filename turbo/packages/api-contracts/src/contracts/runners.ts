@@ -1068,6 +1068,9 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
+  // Absent on retained contexts that captured an instruction Storage mount.
+  // API-only protocol metadata; the body is read from the Agent at claim time.
+  agentInstructionsSource: z.literal("agent").optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),
@@ -1175,7 +1178,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
-  // Release 1 prepares the reader; producers omit this until DB cutover (#41367).
+  // Claim-only current Agent body; absence retains the captured Storage protocol.
   agentInstructions: z.string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: z.boolean().optional(),

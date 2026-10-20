@@ -2,7 +2,6 @@ import { exportJobs } from "@okouai/db/schema/export-job";
 import { storages } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { eq, or, sql } from "drizzle-orm";
-import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
 import { nowDate } from "../../lib/time";
@@ -15,12 +14,10 @@ import {
   retryBackgroundJob$,
   yieldBackgroundJob$,
   type ClaimedBackgroundJob,
-  backgroundJobDatabaseNow,
 } from "./background-job.service";
 
 export const STORAGE_OBJECT_CLEANUP_JOB_KIND = "storage-object-cleanup";
 const HANDLER_VERSION = 1;
-const JOB_NAMESPACE = "4dffb9a7-4137-4f5e-9213-8939a99fce2c";
 const PAGE_SIZE = 1000;
 const WORK_BATCH_SIZE = 8;
 const inputSchema = z.object({
@@ -28,28 +25,6 @@ const inputSchema = z.object({
   target: z.object({ kind: z.literal("prefix"), value: z.string().min(1) }),
 });
 type CleanupInput = z.infer<typeof inputSchema>;
-
-/** Pure admission values; the reference-deletion owner writes this durable receipt. */
-export function storageObjectCleanupJobValues(
-  args: CleanupInput & { readonly userId: string; readonly orgId: string },
-) {
-  const input = inputSchema.parse({ bucket: args.bucket, target: args.target });
-  const id = uuidv5(
-    `${input.bucket}\0${input.target.kind}\0${input.target.value}\0${args.userId}\0${args.orgId}`,
-    JOB_NAMESPACE,
-  );
-  return {
-    id,
-    kind: STORAGE_OBJECT_CLEANUP_JOB_KIND,
-    handlerVersion: HANDLER_VERSION,
-    userId: args.userId,
-    orgId: args.orgId,
-    input,
-    availableAt: backgroundJobDatabaseNow,
-    createdAt: backgroundJobDatabaseNow,
-    updatedAt: backgroundJobDatabaseNow,
-  };
-}
 
 const assertUnreferenced$ = command(
   async (

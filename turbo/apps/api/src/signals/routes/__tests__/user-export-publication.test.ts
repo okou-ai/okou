@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
 import {
+  agentInstructionsContract,
   agentsByIdContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
@@ -28,6 +29,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
+import { agentInstructionsRoutes } from "../agent-instructions";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadPatchRoutes } from "../chat-threads-patch";
@@ -49,6 +51,7 @@ const cronSecret = "user-export-publication-cron";
 const cronHeaders = Object.freeze({ authorization: `Bearer ${cronSecret}` });
 const routes = Object.freeze([
   ...agentsRoutes,
+  ...agentInstructionsRoutes,
   ...chatThreadCreateRoutes,
   ...chatThreadPatchRoutes,
   ...workflowsRoutes,
@@ -305,6 +308,16 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   const outsider = actor();
   const fixture = await initialize([owner, peer, outsider]);
   const agentId = await ownedAgent(fixture, owner);
+  const rawInstructions =
+    "[AGENT_PROFILE]\nLegacy display metadata\n[/AGENT_PROFILE]\nExported current instructions";
+  await accept(
+    fixture.app(agentInstructionsContract).update({
+      headers,
+      params: { id: agentId },
+      body: { content: rawInstructions },
+    }),
+    [200],
+  );
   const workflow = await accept(
     fixture.app(workflowsCollectionContract).create({
       headers,
@@ -349,7 +362,7 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   expect(JSON.parse(zip.readAsText(`agents/${agentId}.json`))).toMatchObject({
     id: agentId,
     visibility: "private",
-    instructions: "",
+    instructions: "Exported current instructions",
   });
   expect(
     JSON.parse(zip.readAsText(`workflows/${workflow.body.id}.json`)),

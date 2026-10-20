@@ -5,15 +5,13 @@ import {
   storagePublicationGenerations,
   storagePublicationTokens,
 } from "@okouai/db/schema/storage-publication-fence";
-import { count, eq, sql, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 
 /**
- * Reserve-before-IO ordering for Agent instructions and workflow volume
- * publication. A newer reservation replaces the exact key/token, so an older,
+ * Reserve-before-IO ordering for workflow volume publication. A newer reservation replaces the exact key/token, so an older,
  * slower preparation can no longer publish its Storage HEAD.
  */
 const AGENT_SUBJECT = "@agent";
-export const AGENT_INSTRUCTIONS_PUBLICATION_KEY = "agent-instructions";
 
 export function workflowPublicationKey(workflowId: string): string {
   return `workflow:${workflowId}`;
@@ -69,17 +67,6 @@ export function publicationFenceFromReceipt(
   return { scope, publicationKey, token, generation: receipt.generation };
 }
 
-/** The reservation's scope generation and exact key/token are one statement. */
-export function beginPublicationSql(
-  scope: PublicationFenceScope,
-  publicationKey: string,
-  token: string,
-  at: Date,
-): SQL {
-  return sql`WITH ${beginPublicationCtesSql(scope, publicationKey, token, at)}
-    SELECT generation FROM reserved`;
-}
-
 /** Pure top-level clauses; an optional source gates reservation on actual rows. */
 export function beginPublicationCtesSql(
   scope: PublicationFenceScope,
@@ -115,24 +102,6 @@ export function lockPublicationScopeSql(
 ): SQL {
   return sql`UPDATE ${storagePublicationGenerations} SET updated_at = ${at.toISOString()}::timestamp
     WHERE ${generationScopeCondition(scope)}`;
-}
-
-export function completePublicationSql(fence: StoragePublicationFence): SQL {
-  return sql`DELETE FROM ${storagePublicationTokens} WHERE ${publicationScopeCondition(fence)} AND EXISTS (SELECT 1 FROM ${storagePublicationGenerations} WHERE ${generationScopeCondition(fence.scope)})`;
-}
-
-/**
- * Exhaust the scope UPDATE before deleting the exact instruction token.
- * Zero updated scopes still permits settlement; scope existence is checked
- * in this statement's snapshot, independently of the UPDATE receipt.
- */
-export function settleInstructionPublicationSql(
-  fence: StoragePublicationFence,
-  at: Date,
-): SQL {
-  return sql`WITH locked_scope AS (
-    ${lockPublicationScopeSql(fence.scope, at)} RETURNING 1
-  ) ${completePublicationSql(fence)} AND (SELECT ${count()} FROM locked_scope) >= 0`;
 }
 
 export function retirePublicationSql(
