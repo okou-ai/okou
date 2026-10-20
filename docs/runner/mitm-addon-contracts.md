@@ -40,6 +40,11 @@ response-scoped selective extractor, including escaped text. The existing 65,536
 budget spans all steps and decoder deliveries. Usage becomes authoritative only
 after complete-document and compression validation; an abandoned inspection
 never finalizes an already valid prefix or reports partial selected fields.
+Buffered ordinary X JSON uses the same steps after strict complete-capture
+decoding. Its normal terminal response hook starts and joins one inspection
+owner before final usage reporting and cleanup; wire callbacks only retain the
+existing capped raw capture. Connection errors do not start buffered inspection.
+The 64 KiB capture, 5 MiB decoded-body and zstd frame limits remain unchanged.
 X NDJSON steps validate at most 4 KiB of row bytes, including slow escaped
 scalars, while preserving the total-row work budget, trailing-CR policy and
 identity limits. Counts and row reports commit only after a complete accepted
@@ -95,6 +100,9 @@ abandonment without partial JSON usage.
 `tests/test_x_json_cooperative_streaming.py` covers ordinary X JSON scheduling,
 document budgets, complete-document counts and identities, request-hint fallback
 and cancellation recovery.
+`tests/test_x_json_buffered_inspection.py` covers bounded terminal JSON steps,
+strict zstd/capture admission, native terminal-hook completion and cancellation,
+and request-admitted usage tracking with explicit encoding constraints.
 `tests/test_mitmproxy_response_inspection.py` uses the real runtime read loop,
 native HTTP stream hooks and fixture-owned TCP peers for these paths to verify
 fairness, byte forwarding and read backpressure. These tests do not claim

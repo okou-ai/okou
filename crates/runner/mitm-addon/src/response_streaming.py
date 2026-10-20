@@ -13,7 +13,7 @@ Lifecycle:
   ``flow.metadata``.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import NamedTuple
 
 from mitmproxy import http
@@ -45,6 +45,7 @@ _MODEL_JSON_USAGE_FINISH = "model_json_usage_finish"
 _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
 _CONNECTOR_RESPONSE_FINISH = "connector_response_finish"
 _CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION = "connector_response_report_on_interruption"
+_BUFFERED_CONNECTOR_INSPECTION_START = "_buffered_connector_inspection_start"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _RESPONSE_INSPECTION = "_response_inspection"
 
@@ -158,6 +159,55 @@ def _log_response_encoding_fail_closed(
         request_encoding_negotiation=flow.metadata.get(metadata_keys.RESPONSE_ENCODING_NEGOTIATION),
         decode_skip_reason=skip_reason,
     )
+
+
+def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
+    """Defer bounded capture inspection to the normal response hook's owner."""
+    parser = usage.create_connector_response_parser(flow)
+    if parser is None or parser.feed_steps is None or parser.finish_decode_error is None:
+        raise RuntimeError("buffered connector inspection requires cooperative parser hooks")
+    feed_steps = parser.feed_steps
+    finish_decode_error = parser.finish_decode_error
+    inspection_failed = False
+
+    def inspect_body(_chunk: bytes) -> Generator[None, None, None]:
+        nonlocal inspection_failed
+        captured = stream_capture.captured_response_stream_body(flow)
+        if captured is None or flow.response is None:
+            raise RuntimeError("buffered connector inspection requires a response capture")
+        body, error = body_decoding.decode_captured_json_usage_body(captured, flow.response.headers)
+        if error is not None:
+            inspection_failed = True
+            finish_decode_error(error)
+            return
+        yield from feed_steps(body)
+
+    def fail_inspection(error: str) -> None:
+        nonlocal inspection_failed
+        inspection_failed = True
+        finish_decode_error(error)
+        log_usage_underbilling(
+            flow_metadata.proxy_log_path(flow.metadata),
+            "Deferred connector response inspection was interrupted",
+            "response_inspection_interrupted",
+            "risk",
+            run_id=flow_metadata.run_id(flow.metadata),
+            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            parse_error=error,
+        )
+
+    inspection = response_inspection.CooperativeResponseInspection(inspect_body, fail_inspection)
+
+    def start_inspection() -> None:
+        inspection.feed(b"")
+
+    def finish_response() -> None:
+        if not inspection_failed and parser.finish is not None:
+            parser.finish()
+
+    flow.metadata[_RESPONSE_INSPECTION] = inspection
+    flow.metadata[_BUFFERED_CONNECTOR_INSPECTION_START] = start_inspection
+    flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finish_response
 
 
 def _configure_response_inspection_stream(
@@ -429,6 +479,8 @@ def _configure_response_inspection_stream(
             and body_decoding.can_decode_json_usage_body(response.headers)
             and usage.needs_connector_response_buffer_fallback(flow)
         )
+        if needs_buffered_fallback:
+            _configure_buffered_connector_inspection(flow)
         return _ResponseStreamSetup(
             None,
             needs_buffered_fallback,
@@ -631,6 +683,13 @@ def configure_response_stream(
     flow.metadata[_RESPONSE_STREAM_CALLBACK] = stream_and_observe
 
 
+def start_buffered_response_inspection(flow: http.HTTPFlow) -> None:
+    """Start complete-body inspection once, only on normal terminal completion."""
+    start = flow.metadata.pop(_BUFFERED_CONNECTOR_INSPECTION_START, None)
+    if start is not None:
+        start()
+
+
 def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:
     inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     return isinstance(inspection, response_inspection.CooperativeResponseInspection) and (
@@ -768,5 +827,6 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION, None)
+    flow.metadata.pop(_BUFFERED_CONNECTOR_INSPECTION_START, None)
     if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
         flow.response.stream = False

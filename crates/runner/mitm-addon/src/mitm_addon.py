@@ -1955,9 +1955,10 @@ async def responseinspection(flow: http.HTTPFlow) -> None:
 
 
 def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
-    if response_streaming.has_pending_response_inspection(flow):
-        return _complete_response(flow, _handle_response_after_inspection(flow))
     try:
+        response_streaming.start_buffered_response_inspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            return _complete_response(flow, _handle_response_after_inspection(flow))
         continuation = _handle_response(flow)
     except BaseException:
         _release_terminal_flow_state(
