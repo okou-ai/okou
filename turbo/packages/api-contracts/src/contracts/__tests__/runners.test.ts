@@ -1104,6 +1104,7 @@ describe("runner reuse preference contract", () => {
     for (const tier of [
       "exactSandbox",
       "finalizingPredecessor",
+      "peerFinalizingPredecessor",
       "reusableSandbox",
       "homeCache",
     ] as const) {
