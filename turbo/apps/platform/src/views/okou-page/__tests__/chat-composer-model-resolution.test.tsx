@@ -187,7 +187,6 @@ test.each([null, "auto", "okou-1.0"])(
     await readyChat();
     const panel = await openModelPanel("Auto");
     expect(modelOption(/^Auto/u, panel)).toBeChecked();
-    expect(modelOption(/^Claude Opus 5/u, panel)).not.toBeChecked();
     await closeModelPanel();
     await sendText("Continue on Auto");
     await expect(

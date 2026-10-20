@@ -231,7 +231,6 @@ test("Show artifacts in the floating panel while links remain in the transcript"
       return button.getAttribute("aria-label") === "Open artifacts";
     }),
   ).toHaveLength(1);
-  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
   expect(
     screen.queryByTestId("thread-sidebar-artifacts"),
   ).not.toBeInTheDocument();

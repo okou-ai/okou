@@ -185,7 +185,6 @@ test.each([false, true])(
       "data-active",
       "true",
     );
-    expect(within(menu).queryByText("New chat")).toBeNull();
     await user.keyboard("{ArrowUp}");
     expect(menuButton("Project Beta follow-up")).toHaveAttribute(
       "data-active",

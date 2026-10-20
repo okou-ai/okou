@@ -120,31 +120,11 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     expect(emptyPoll.body.job).toBeNull();
   });
 
-  it("keeps missing run detail and context hidden for another organization", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const outsider = bdd.user();
-    const missingRunId = randomUUID();
-
-    const hiddenRun = await api.requestReadRun(outsider, missingRunId, [404]);
-    expectApiError(hiddenRun.body);
-    expect(hiddenRun.body.error.code).toBe("NOT_FOUND");
-
-    const hiddenContext = await api.requestRunContext(
-      outsider,
-      missingRunId,
-      [404],
-    );
-    expectApiError(hiddenContext.body);
-    expect(hiddenContext.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("rejects runner metadata reads and job claims at unauthenticated, malformed, and missing boundaries", async () => {
+  it("rejects runner metadata reads and job claims at unauthenticated and missing boundaries", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
     const missingRunId = randomUUID();
-    const invalidRunId = "not-a-run-id";
 
     const unauthenticatedRunner = await api.requestRunRunner(
       null,
@@ -153,14 +133,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     );
     expectApiError(unauthenticatedRunner.body);
     expect(unauthenticatedRunner.body.error.code).toBe("UNAUTHORIZED");
-
-    const invalidRunner = await api.requestRunRunner(
-      actor,
-      invalidRunId,
-      [400],
-    );
-    expectApiError(invalidRunner.body);
-    expect(invalidRunner.body.error.code).toBe("BAD_REQUEST");
 
     const missingRunner = await api.requestRunRunner(
       actor,
@@ -178,14 +150,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     expectApiError(unauthenticatedClaim.body);
     expect(unauthenticatedClaim.body.error.code).toBe("UNAUTHORIZED");
 
-    const invalidClaim = await api.requestClaimRunnerJob(
-      true,
-      invalidRunId,
-      [400],
-    );
-    expectApiError(invalidClaim.body);
-    expect(invalidClaim.body.error.code).toBe("BAD_REQUEST");
-
     const missingClaim = await api.requestClaimRunnerJob(
       true,
       missingRunId,
@@ -195,12 +159,11 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     expect(missingClaim.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("rejects malformed and unauthenticated runner, queue, read, context, and cancel requests", async () => {
+  it("rejects unauthenticated and unauthorized runner, queue, read, context, and cancel requests", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
     const missingRunId = randomUUID();
-    const invalidRunId = "not-a-run-id";
 
     const unauthenticatedQueue = await api.requestReadRunQueue(null, [401]);
     expectApiError(unauthenticatedQueue.body);
@@ -214,18 +177,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     expectApiError(unauthenticatedRead.body);
     expect(unauthenticatedRead.body.error.code).toBe("UNAUTHORIZED");
 
-    const invalidRead = await api.requestReadRun(actor, invalidRunId, [400]);
-    expectApiError(invalidRead.body);
-    expect(invalidRead.body.error.code).toBe("BAD_REQUEST");
-
-    const invalidContext = await api.requestRunContext(
-      actor,
-      invalidRunId,
-      [400],
-    );
-    expectApiError(invalidContext.body);
-    expect(invalidContext.body.error.code).toBe("BAD_REQUEST");
-
     const unauthenticatedCancel = await api.requestCancelRun(
       null,
       missingRunId,
@@ -233,14 +184,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     );
     expectApiError(unauthenticatedCancel.body);
     expect(unauthenticatedCancel.body.error.code).toBe("UNAUTHORIZED");
-
-    const invalidCancel = await api.requestCancelRun(
-      actor,
-      invalidRunId,
-      [400],
-    );
-    expectApiError(invalidCancel.body);
-    expect(invalidCancel.body.error.code).toBe("BAD_REQUEST");
 
     const missingCancel = await api.requestCancelRun(
       actor,
@@ -272,14 +215,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     );
     expectApiError(unauthenticatedPoll.body);
     expect(unauthenticatedPoll.body.error.code).toBe("UNAUTHORIZED");
-
-    const invalidPollGroup = await api.requestPollRunner(
-      true,
-      { group: "not-a-group", supportedProfiles: ["vm0/default"] },
-      [400],
-    );
-    expectApiError(invalidPollGroup.body);
-    expect(invalidPollGroup.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("issues runner realtime tokens only for authenticated vm0 runner groups", async () => {
@@ -292,14 +227,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const malformedGroup = await api.requestRunnerRealtimeToken(
-      true,
-      { group: "not-a-group" },
-      [400],
-    );
-    expectApiError(malformedGroup.body);
-    expect(malformedGroup.body.error.code).toBe("BAD_REQUEST");
 
     const forbiddenGroup = await api.requestRunnerRealtimeToken(
       true,

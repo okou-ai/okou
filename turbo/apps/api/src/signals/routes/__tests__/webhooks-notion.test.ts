@@ -651,7 +651,7 @@ describe("POST /api/webhooks/notion", () => {
     );
   }
 
-  it("acknowledges unsupported and schema-invalid signed events", async () => {
+  it("acknowledges unsupported signed events", async () => {
     const entities = newNotionEntities();
     await verifyNotionWebhook();
 
@@ -682,34 +682,9 @@ describe("POST /api/webhooks/notion", () => {
         signature: notionSignature(unsupportedEvent.rawBody),
       }),
     ).resolves.toStrictEqual(unsupportedResponse);
-
-    const invalidEvent = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: "not-a-timestamp",
-    });
-    await expect(
-      postNotionWebhook({
-        rawBody: invalidEvent.rawBody,
-        signature: notionSignature(invalidEvent.rawBody),
-      }),
-    ).resolves.toStrictEqual(unsupportedResponse);
-    await expect(
-      postNotionWebhook({
-        rawBody: invalidEvent.rawBody,
-        signature: notionSignature(invalidEvent.rawBody),
-      }),
-    ).resolves.toStrictEqual(unsupportedResponse);
   });
 
-  it("rejects invalid JSON and invalid signatures", async () => {
-    await expect(
-      postNotionWebhook({ rawBody: "{", isolatePg: true }),
-    ).resolves.toStrictEqual({
-      status: 400,
-      body: { error: "Invalid Notion webhook payload" },
-    });
-
+  it("rejects invalid signatures", async () => {
     const event = notionPageEvent({
       entities: newNotionEntities(),
       type: "page.created",

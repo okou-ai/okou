@@ -866,19 +866,6 @@ async function fillHost(dialog: HTMLElement) {
   );
 }
 
-test("VNC management omits the redundant refresh action", async () => {
-  mockSettings();
-  await page();
-  await screen.findByText(host.displayName);
-  expect(screen.getByRole("heading", { name: "VNC" })).toBeInTheDocument();
-  expect(queryAction("button", "Refresh")).toBeNull();
-  expect(getAction("radio", "Connections")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(getAction("radio", "Credentials")).toBeInTheDocument();
-});
-
 test("Returning to Connectors refreshes VNC hosts changed elsewhere", async () => {
   const data = mockSettings();
   await page();

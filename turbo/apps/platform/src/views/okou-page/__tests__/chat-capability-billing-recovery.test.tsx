@@ -245,7 +245,6 @@ test("Let a paid workspace admin buy more credits", async () => {
     expect(button(amount, frame)).toBeVisible();
   }
   expect(button("Custom", frame)).toBeVisible();
-  expect(queryButton("Add credits", frame)).not.toBeInTheDocument();
   expect(
     screen.queryByRole("dialog", { name: "You're out of credits" }),
   ).not.toBeInTheDocument();

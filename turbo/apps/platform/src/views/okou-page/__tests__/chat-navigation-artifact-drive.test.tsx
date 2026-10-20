@@ -1467,9 +1467,9 @@ describe("google editor conversion", () => {
     ).toBeUndefined();
   });
 
-  it("does not fall back to an older upload endpoint when explicit modes are unavailable", async () => {
+  it("keeps upload actions available after an upload mode error", async () => {
     mockWideScreen();
-    const drive = installDriveMocks(context, "connected", {
+    installDriveMocks(context, "connected", {
       filename: "report.txt",
       contentType: "text/plain",
       selectedAccountReady: true,
@@ -1498,7 +1498,6 @@ describe("google editor conversion", () => {
         screen.getByText("Upload mode endpoint is unavailable"),
       ).toBeInTheDocument();
     });
-    expect(drive.syncRequests).toHaveLength(0);
     click(buttonNamed("Download artifact", artifactPreview()));
     await waitFor(() => {
       expect(

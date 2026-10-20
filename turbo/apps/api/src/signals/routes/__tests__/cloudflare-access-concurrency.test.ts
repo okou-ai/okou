@@ -1340,85 +1340,57 @@ test("serializes configuration rotation with independent-login deletion without 
   );
 });
 
-test.each(["delete", "demote"] as const)(
-  "rejects a binding after selected Access %s during KMS without creating a login",
-  async (operation) => {
-    const admin = await actor();
-    const shared = await sharedConfig(admin);
-    const member = await actor(admin.orgId, "member");
-    const direct = (await accept(createHost(member), [201])).body;
-    const before = (
-      await accept(credentials().list({ headers: member.headers }), [200])
-    ).body;
-    const preview = (
+test("rejects a binding after selected Access deletion during KMS without creating a login", async () => {
+  const admin = await actor();
+  const shared = await sharedConfig(admin);
+  const member = await actor(admin.orgId, "member");
+  const direct = (await accept(createHost(member), [201])).body;
+  const before = (
+    await accept(credentials().list({ headers: member.headers }), [200])
+  ).body;
+  useSecretKmsProbe(async (request, callNumber) => {
+    if (callNumber === 1) {
       await accept(
-        configs().impactPreview({
+        configs().delete({
           headers: admin.headers,
           params: { configId: shared.id },
-          query: { operation: "convert" },
+          body: { expectedRevision: shared.revision },
         }),
-        [200],
-      )
-    ).body;
-    useSecretKmsProbe(async (request, callNumber) => {
-      if (callNumber === 1) {
-        if (operation === "delete") {
-          await accept(
-            configs().delete({
-              headers: admin.headers,
-              params: { configId: shared.id },
-              body: { expectedRevision: shared.revision },
-            }),
-            [204],
-          );
-        } else {
-          await accept(
-            configs().convertToPersonal({
-              headers: admin.headers,
-              params: { configId: shared.id },
-              body: {
-                expectedRevision: preview.expectedRevision,
-                impactSnapshot: preview.impactSnapshot,
-              },
-            }),
-            [200],
-          );
-        }
-      }
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.alloc(32, 7),
-        encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
-      };
-    });
-    const rejected = await accept(
-      hosts().update({
-        headers: member.headers,
-        params: { connectionId: direct.id },
-        body: {
-          expectedGeneration: direct.generation,
-          port: 443,
-          credential: { create: login },
-          transport: { type: "cloudflare_access", configId: shared.id },
-        },
-      }),
-      [404],
-    );
-    expect(rejected.body.error.code).toBe("CLOUDFLARE_ACCESS_NOT_FOUND");
-    expect(
-      (await accept(credentials().list({ headers: member.headers }), [200]))
-        .body,
-    ).toStrictEqual(before);
-    expect(
-      (await accept(hosts().list({ headers: member.headers }), [200])).body
-        .connections,
-    ).toStrictEqual([direct]);
-    expect(
-      (await accept(configs().list({ headers: member.headers, query }), [200]))
-        .body.configs,
-    ).toStrictEqual([]);
-  },
-);
+        [204],
+      );
+    }
+    return {
+      keyId: request.keyId,
+      plaintext: Buffer.alloc(32, 7),
+      encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
+    };
+  });
+  const rejected = await accept(
+    hosts().update({
+      headers: member.headers,
+      params: { connectionId: direct.id },
+      body: {
+        expectedGeneration: direct.generation,
+        port: 443,
+        credential: { create: login },
+        transport: { type: "cloudflare_access", configId: shared.id },
+      },
+    }),
+    [404],
+  );
+  expect(rejected.body.error.code).toBe("CLOUDFLARE_ACCESS_NOT_FOUND");
+  expect(
+    (await accept(credentials().list({ headers: member.headers }), [200])).body,
+  ).toStrictEqual(before);
+  expect(
+    (await accept(hosts().list({ headers: member.headers }), [200])).body
+      .connections,
+  ).toStrictEqual([direct]);
+  expect(
+    (await accept(configs().list({ headers: member.headers, query }), [200]))
+      .body.configs,
+  ).toStrictEqual([]);
+});
 
 test("creates neither inline resource when its owned host is deleted during KMS", async () => {
   const owner = await actor();

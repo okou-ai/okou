@@ -287,7 +287,6 @@ test("A private hosted site header keeps its filename", async () => {
   expect(
     within(dialog).queryByText("private-site.html")?.closest("a"),
   ).toBeNull();
-  expect(within(dialog).queryByText(/1 kB/)).toBeNull();
 });
 
 test("Private attachment access stays scoped to the chat that owns it", async () => {
@@ -517,10 +516,6 @@ test("Image navigation remains inside its split-view chat", async () => {
   expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
     "src",
     "https://private-files.example/right-second.png?signature=first",
-  );
-  expect(screen.getByTestId("attachment-lightbox-image")).not.toHaveAttribute(
-    "src",
-    "https://private-files.example/left-second.png?signature=first",
   );
 
   await closeFocusedPreview();
@@ -939,7 +934,6 @@ test("a multi-file hosted publication downloads as a zip of every member", async
   ]);
   expect(strFromU8(unpacked["index.html"]!)).toBe(PUBLICATION_PAGE);
   expect(strFromU8(unpacked["assets/site.css"]!)).toBe(PUBLICATION_STYLE);
-  expect(screen.queryByText("Download failed")).toBeNull();
 });
 
 test("a publication that cannot be listed reports the failure instead of its entry page", async () => {

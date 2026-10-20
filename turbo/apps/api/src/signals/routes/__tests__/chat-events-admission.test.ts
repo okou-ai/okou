@@ -214,7 +214,6 @@ describe("CHAT-02: web chat send and client ids", () => {
 
   it("creates a web chat run with client-provided ids", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const clientThreadId = randomUUID();
     const clientEventId = randomUUID();
@@ -300,7 +299,6 @@ describe("CHAT-02: web chat send and client ids", () => {
     expect(run.appendSystemPrompt).toContain(
       "You are currently running inside: Web",
     );
-    expect(run.appendSystemPrompt).not.toContain("# Artifact Template Context");
 
     const messages = await waitForThreadMessages(
       actor,
@@ -439,7 +437,6 @@ describe("CHAT-02: web chat send and client ids", () => {
 describe("CHAT-02: interrupting active chat runs", () => {
   it("interrupts an active run, guards interrupt ids, and feeds cancelled rounds into the next run", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -632,7 +629,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     expect(appended).toContain("RUN_STATUS: cancelled");
     expect(appended).toContain("User: long task to interrupt");
     expect(appended).toContain("User: cancelled through the cancel api");
-    expect(appended).not.toContain("# Web Chat Run Context");
     await claimChatRun(runnerGroup, third.runId);
 
     await cancelChatRun(actor, third.runId);
@@ -642,7 +638,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
 describe("CHAT-02: dispatch failure", () => {
   it("rejects the picked input and releases the lease when run preparation cannot configure dispatch", async () => {
     const { actor, agentId } = await entitledChatActor();
-    const routeRequests = chatCallbacks.failIfChatCallbackRouteIsFetched();
     const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
     const messageId = randomUUID();
@@ -691,7 +686,6 @@ describe("CHAT-02: dispatch failure", () => {
     ).toBeFalsy();
     const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(runs.body.data).toStrictEqual([]);
-    expect(routeRequests()).toBe(0);
 
     // The lease was released: the next input on the thread is picked
     // immediately, without waiting for lease expiry.

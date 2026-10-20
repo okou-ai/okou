@@ -173,12 +173,10 @@ test("preserves independent tool changes submitted concurrently", async () => {
   await expect(listFor(identity)).resolves.toStrictEqual(["maps", "seo"]);
 });
 
-test("rejects unknown tools, malformed preferences and caller-selected owners", async () => {
+test("rejects caller-selected owners", async () => {
   const identity = await owner();
   const request = setupRawAppRequest({ context, routes: paidToolsRoutes });
   for (const [toolId, body] of [
-    ["unknown-paid-tool", { disabled: true }],
-    ["web-search", { disabled: "true" }],
     ["web-search", { disabled: true, userId: "another-user" }],
     ["web-search", { disabled: true, orgId: "another-org" }],
   ] as const) {

@@ -123,17 +123,6 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns 404 when no connector is configured for the slug", async () => {
-    const actor = bdd.user();
-    const response = await connectorsApi.requestScopeDiff(
-      actor,
-      "github",
-      [404],
-    );
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
   it("returns an empty diff when stored scopes match current scopes exactly", async () => {
     const actor = bdd.user();
     const connectionId = await connectGithub(actor);

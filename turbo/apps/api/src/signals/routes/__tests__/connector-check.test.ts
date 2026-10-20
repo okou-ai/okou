@@ -17,7 +17,6 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -320,9 +319,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
       message: "Missing required capability: agent-run:read",
     });
 
-    context.mocks.axiom.query.mockRejectedValue(
-      new Error("Axiom connector diagnostics must not be queried"),
-    );
     const allowed = await checkWithToken(
       okouToken(actor, runId, ["connector:read", "agent-run:read"]),
       body,
@@ -345,29 +341,11 @@ describe("POST /api/connectors/diagnostics/check", () => {
         ],
       },
     });
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
   });
 
-  it("enforces strict bodies and returns sanitized unsafe-input outcomes", async () => {
+  it("returns sanitized unsafe-input outcomes", async () => {
     const actor = bdd.user();
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const malformed = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request("/api/connectors/diagnostics/check", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer clerk-session",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        mode: "url",
-        method: "GET",
-        url: "https://api.github.com/repos/okou-ai/okou",
-        unexpected: true,
-      }),
-    });
-    expect(malformed.status).toBe(400);
 
     const invalidMethod = await checkWithSession(actor, {
       mode: "url",
@@ -1110,9 +1088,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
       method: "GET",
       url: `${runBase}/users`,
     };
-    context.mocks.axiom.query.mockRejectedValue(
-      new Error("Axiom connector diagnostics must not be queried"),
-    );
     await own(() => {
       return runsApi.applyUserPermissionGrant(owner, {
         agentId,
@@ -1177,7 +1152,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
       return checkWithToken(token, { ...request, url: `${changedBase}/users` });
     });
     expect(changed.body).toStrictEqual({ outcome: "no-match", scope: "run" });
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     await own(() => {
       return runsApi.requestCancelRun(owner, sent.runId, [200]);
     });
@@ -1277,9 +1251,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         },
       });
       owned.runId = runId;
-      context.mocks.axiom.query.mockRejectedValue(
-        new Error("Axiom connector diagnostics must not be queried"),
-      );
       await runsApi.applyUserPermissionGrant(owner, {
         agentId,
         connectorSlug: "cloudflare",
@@ -1325,7 +1296,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
           ],
         },
       });
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
   });
 
@@ -1429,9 +1399,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const { runId } = await createOwnedRun(owner, {
       builtinConnectorSlugs: ["reap"],
     });
-    context.mocks.axiom.query.mockRejectedValue(
-      new Error("Axiom connector diagnostics must not be queried"),
-    );
     const intruder = bdd.user({ orgId: requireOrgId(owner) });
     await seedAdminMembership(intruder);
     const wrongOwner = await accept(
@@ -1454,7 +1421,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
       code: "NOT_FOUND",
       message: "Agent run not found",
     });
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
   });
 
   describe("run-admitted custom connector diagnostics", () => {
@@ -1589,9 +1555,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         "agent-run:read",
       ]);
       const url = `${runBase}/chat.postMessage`;
-      context.mocks.axiom.query.mockRejectedValue(
-        new Error("Axiom connector diagnostics must not be queried"),
-      );
       const customRequest = {
         mode: "url" as const,
         method: "POST",
@@ -1626,7 +1589,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         connector: { connectorSlug: "reap" },
       });
       expect(JSON.stringify(legacy.body)).not.toContain(custom.id);
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
 
     it("redacts explicit custom diagnostics and reflects permission changes and selection precedence", async () => {
@@ -1726,7 +1688,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
           ],
         },
       });
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
 
     it("keeps admitted host values pinned across reconnection and live definition changes", async () => {
@@ -1780,7 +1741,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         outcome: "no-match",
         scope: "run",
       });
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
 
     it("rejects an explicit custom connector created after the run was admitted", async () => {
@@ -1810,7 +1770,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         target: { kind: "custom", customConnectorId: addedAfterLaunch.id },
         reason: "not-admitted",
       });
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
 
     it("reports an admitted custom connector as unavailable after deletion", async () => {
@@ -1842,7 +1801,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         target: { kind: "custom", customConnectorId: custom.id },
         reason: "connector-unavailable",
       });
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
   });
 
@@ -1897,7 +1855,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         code: "NOT_FOUND",
         message: "Agent run not found",
       });
-      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
   });
 });

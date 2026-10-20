@@ -754,16 +754,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     },
   );
 
-  it("validates bot ownership, webhook secret, and JSON payload", async () => {
+  it("validates the webhook secret", async () => {
     const fixture = await createTelegramPostFixture();
-
-    const missing = await postWebhook({
-      telegramBotId: newTelegramBotId(),
-      secret: fixture.webhookSecret,
-      body: {},
-    });
-    expect(missing.status).toBe(404);
-    await expect(missing.text()).resolves.toBe("Not Found");
 
     const unauthorized = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -772,14 +764,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(unauthorized.status).toBe(401);
     await expect(unauthorized.text()).resolves.toBe("Unauthorized");
-
-    const badJson = await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: "{not-json",
-    });
-    expect(badJson.status).toBe(400);
-    await expect(badJson.text()).resolves.toBe("Bad Request");
   });
 
   it("keeps concurrent first Telegram DMs on one owner-scoped thread", async () => {

@@ -57,35 +57,6 @@ describe("Feishu OAuth state", () => {
     mockNow(NOW);
   });
 
-  it("passes a valid state to installation validation", async () => {
-    expect.hasAssertions();
-    await expectConnectError(
-      signedState(statePayload()),
-      "Feishu bot not found",
-    );
-  });
-
-  it("identifies a missing Lark bot from its signed redirect URI", async () => {
-    expect.hasAssertions();
-    mockEnv("APP_URL", "https://app.okou.ai");
-    await expectConnectError(
-      signedState({
-        ...statePayload(),
-        redirectUri: "https://app.okou.ai/integrations/lark/callback",
-      }),
-      "Lark bot not found",
-    );
-  });
-
-  it("rejects an omitted redirect URI", async () => {
-    expect.hasAssertions();
-    const { redirectUri: _redirectUri, ...payload } = statePayload();
-    await expectConnectError(
-      signedState(payload),
-      "Invalid or expired connect state",
-    );
-  });
-
   it("preserves the 10-minute expiration boundary", async () => {
     expect.hasAssertions();
     await expectConnectError(

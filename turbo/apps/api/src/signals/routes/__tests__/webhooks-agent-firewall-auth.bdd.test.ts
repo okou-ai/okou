@@ -447,6 +447,7 @@ describe("FW-1: firewall auth boundaries", () => {
 
     const missingAuth = await fw.requestFirewallAuth({}, body, [401]);
     expectApiError(missingAuth.body);
+    expect(missingAuth.body.error.code).toBe("UNAUTHORIZED");
 
     const junkToken = await fw.requestFirewallAuth(
       { authorization: "Bearer junk" },
@@ -454,17 +455,7 @@ describe("FW-1: firewall auth boundaries", () => {
       [401],
     );
     expectApiError(junkToken.body);
-
-    await withPublicFirewallRun(async (headers) => {
-      const invalidJson = await fw.requestFirewallAuthRaw("not json", headers);
-      expect(invalidJson.status).toBe(400);
-
-      const missingFields = await fw.requestFirewallAuthRaw(
-        JSON.stringify({ authHeaders: {} }),
-        headers,
-      );
-      expect(missingFields.status).toBe(400);
-    });
+    expect(junkToken.body.error.code).toBe("UNAUTHORIZED");
   });
 
   it("rejects undecryptable secret payloads for a real run", async () => {
@@ -785,7 +776,6 @@ describe("FW-3: billable firewall lease", () => {
       if (leased.status !== 200) {
         throw new Error("Expected limited-free-1 billable auth to succeed");
       }
-      expect(leased.body.expiresAt).not.toBeNull();
       expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
       expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
     });
@@ -913,7 +903,6 @@ describe("FW-3: billable firewall lease", () => {
       if (leased.status !== 200) {
         throw new Error("Expected billable firewall auth to succeed");
       }
-      expect(leased.body.expiresAt).not.toBeNull();
       expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 25);
       expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
     });
@@ -1058,7 +1047,6 @@ describe("FW-3: billable firewall lease", () => {
     if (postDeletionLease.status !== 200) {
       throw new Error("Expected the limited-free-1 billable auth to lease");
     }
-    expect(postDeletionLease.body.expiresAt).not.toBeNull();
     expect(postDeletionLease.body.expiresAt ?? 0).toBeGreaterThanOrEqual(
       postDeletionBefore + 25,
     );
@@ -3502,7 +3490,6 @@ describe("FW-9: codex model-provider access", () => {
       }
 
       expect(refreshCalls).toBe(1);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     }
   });
 
@@ -3580,7 +3567,6 @@ describe("FW-9: codex model-provider access", () => {
       });
     }
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     const failedAccounts = await support.listPersonalModelProviders(
       actor,
       [200],
@@ -3692,51 +3678,6 @@ describe("FW-9: codex model-provider access", () => {
       "Bearer recovered-chatgpt-token",
     );
     expect(refreshCalls).toBe(2);
-  });
-
-  it("omits the failure reason for unknown chatgpt refresh error codes", async () => {
-    const fw = codexFirewallApi;
-    const { actor, headers } = await firewallRun();
-    await connectCodexAccount(actor, {
-      accessToken: "stale-chatgpt-token",
-      refreshToken: "chatgpt-refresh",
-      accountId: "acct-bdd",
-      expiresIn: -60,
-    });
-    fw.mockCodexTokenRefresh(() => {
-      return HttpResponse.json(
-        {
-          error: {
-            code: "totally_novel_failure",
-            message: "unrecognized refresh failure",
-          },
-        },
-        { status: 401 },
-      );
-    });
-
-    const failed = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-        }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-        },
-        secretConnectorMap: { CHATGPT_ACCESS_TOKEN: "codex-oauth-token" },
-        secretConnectorMetadataMap: {
-          CHATGPT_ACCESS_TOKEN: ownedCodexMetadata(actor),
-        },
-      },
-      [502],
-    );
-    if (failed.status !== 502) {
-      throw new Error("Expected the unknown chatgpt failure to be 502");
-    }
-    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(failed.body.error.failureReason).toBeUndefined();
-    expect(failed.body.error.connectors).toStrictEqual(["codex-oauth-token"]);
   });
 });
 

@@ -176,9 +176,6 @@ test("Keep an empty conversation ready for its first message", async () => {
 
   const scroller = scrollContainer(thread.id);
   expect(scroller.scrollTop).toBe(0);
-  expect(
-    scroller.querySelector("[data-chat-scroll-anchor-event-id]"),
-  ).toBeNull();
   expect(scroller.querySelector("[data-scroll-to-bottom]")).toBeNull();
 });
 

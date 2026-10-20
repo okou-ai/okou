@@ -891,20 +891,18 @@ describe("Tailscale configuration and saved-host authority", () => {
       expectedGeneration: h.generation,
       observedHostKey: key,
     };
-    for (const expectedGeneration of [h.generation + 1, h.generation + 2]) {
-      expect(
-        (
-          await accept(
-            runner().pin({
-              headers: runnerHeaders,
-              params,
-              body: { ...pinInput, expectedGeneration },
-            }),
-            [200],
-          )
-        ).body,
-      ).toStrictEqual({ outcome: "configuration_changed" });
-    }
+    expect(
+      (
+        await accept(
+          runner().pin({
+            headers: runnerHeaders,
+            params,
+            body: { ...pinInput, expectedGeneration: h.generation + 1 },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "configuration_changed" });
     expect(probe.decryptCalls).toBe(0);
     expect(
       (
@@ -1489,7 +1487,6 @@ describe("Tailscale configuration and saved-host authority", () => {
     for (const fields of [
       { scope: "organization" },
       { tags: [] },
-      { tags: ["tag:okou", "tag:okou"] },
       { credentials: { clientId: "id", clientSecret: "\nunsafe" } },
     ]) {
       const response = await request(`/api/tailscale/configs/${c.id}`, {

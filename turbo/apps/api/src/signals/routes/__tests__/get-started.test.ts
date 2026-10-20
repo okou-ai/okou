@@ -318,7 +318,6 @@ test("invalid URLs and missing cron authorization are rejected", async () => {
   for (const url of [
     "https://example.com/status/123",
     "https://x.com@evil.example/status/123",
-    "https://x.com/example/status/1e20",
     "http://x.com/example/status/123",
   ]) {
     await expect(

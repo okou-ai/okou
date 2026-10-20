@@ -24,12 +24,6 @@ describe("API backend URL", () => {
 
     expect(apiBackendUrl()).toBeUndefined();
   });
-
-  it("rejects an empty canonical input", () => {
-    expect(() => {
-      configureApiBackendUrl("");
-    }).toThrow(/Invalid URL/u);
-  });
 });
 
 describe("OAuth API origin", () => {

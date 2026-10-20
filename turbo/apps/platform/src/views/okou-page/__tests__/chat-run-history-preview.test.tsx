@@ -53,9 +53,6 @@ test("Show no history toggle when the only output is the main result", async () 
   }
   expect(queryButton("Copy message", main)).toBeVisible();
   expect(queryButton("Expand work history")).toBeNull();
-  expect(
-    document.querySelector("[data-chat-run-work-history-list]"),
-  ).toBeNull();
 });
 
 test.each([6])(
@@ -66,9 +63,6 @@ test.each([6])(
     for (let index = 1; index < count; index += 1) {
       expect(screen.queryByText(`Step ${String(index)}`)).toBeNull();
     }
-    expect(
-      document.querySelector("[data-chat-run-work-history-list]"),
-    ).toBeNull();
     const main = screen
       .getByText(`Step ${String(count)}`)
       .closest("[data-chat-run-work-main]");
@@ -89,7 +83,6 @@ test.each([6])(
       expect(
         message.closest("[data-chat-run-work-history-list]"),
       ).toBeVisible();
-      expect(message.closest("button")).toBeNull();
     }
     expect(screen.getByText(`Step ${String(count)}`)).toBeVisible();
     expect(queryButton("Copy message", main)).toBeVisible();

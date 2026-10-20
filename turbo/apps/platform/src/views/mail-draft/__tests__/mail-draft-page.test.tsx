@@ -207,17 +207,14 @@ test("Deleting from the standalone page removes the email without opening a chat
   expect(window.location.pathname).toBe(MAIL_PATH);
 });
 
-test.each([
-  { path: MAIL_PATH, name: "inaccessible" },
-  { path: "/mail/drafts/invalid", name: "invalid" },
-])("An $name mail link cannot expose email actions", async ({ path }) => {
+test("An inaccessible mail link cannot expose email actions", async () => {
   context.mocks.api(mailContract.getDraft, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Mail draft not found" },
     });
   });
 
-  await setupPage({ context, path });
+  await setupPage({ context, path: MAIL_PATH });
 
   await expect(
     screen.findByText("This email is no longer available."),

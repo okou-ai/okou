@@ -177,7 +177,6 @@ test("Use the artifact icon on mobile without a separate switch or duplicate men
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });

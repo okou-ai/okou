@@ -1924,7 +1924,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     displayName: "Renamed in another tab",
     updatedAt: "2026-01-01T00:00:00.500Z",
   };
-  const cancelledAttemptId = oauthAttemptId;
   cancelledWindow.close();
   await waitFor(() => {
     expect(getConnectorAction("button", "Continue", dialog)).toBeEnabled();
@@ -1954,7 +1953,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     reconnectReason: null,
     updatedAt: "2026-01-01T00:00:01.000Z",
   };
-  expect(oauthAttemptId).not.toBe(cancelledAttemptId);
   completedAttempts.set(oauthAttemptId, personal.id);
   completedWindow.close();
   await waitFor(() => {

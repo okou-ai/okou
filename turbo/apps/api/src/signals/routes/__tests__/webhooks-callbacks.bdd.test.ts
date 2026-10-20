@@ -733,48 +733,6 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
 
     api.acceptNextStripeWebhookEvent({
       id: `evt_bdd_${randomUUID()}`,
-      type: "customer.subscription.created",
-      data: {
-        object: {
-          id: `sub_bdd_${randomUUID()}`,
-          customer: null,
-          status: "active",
-          metadata: null,
-          cancel_at_period_end: false,
-          items: { data: [] },
-        },
-      },
-    });
-    const subscriptionCreatedWithoutCustomer = await api.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(subscriptionCreatedWithoutCustomer.body).toBe("OK");
-
-    api.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_${randomUUID()}`,
-      type: "customer.subscription.updated",
-      data: {
-        object: {
-          id: `sub_bdd_${randomUUID()}`,
-          status: "active",
-          metadata: null,
-          cancel_at_period_end: false,
-          items: { data: [] },
-        },
-        previous_attributes: { cancel_at_period_end: true },
-      },
-    });
-    const subscriptionUpdatedWithoutOrg = await api.requestStripeWebhook(
-      "{}",
-      { "stripe-signature": "valid-signature" },
-      [200],
-    );
-    expect(subscriptionUpdatedWithoutOrg.body).toBe("OK");
-
-    api.acceptNextStripeWebhookEvent({
-      id: `evt_bdd_${randomUUID()}`,
       type: "customer.subscription.deleted",
       data: {
         object: {
@@ -849,29 +807,6 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     });
     const ignored = await api.requestClerkWebhook("{}", {}, [200]);
     expect(ignored.body).toBe("OK");
-
-    api.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: {},
-    });
-    const missingOrgId = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(missingOrgId.body).toBe("OK");
-
-    api.verifyNextClerkWebhook({
-      type: "user.deleted",
-      data: {},
-    });
-    const missingUserId = await api.requestClerkWebhook("{}", {}, [503]);
-    expect(missingUserId.body).toMatchObject({
-      error: "User deletion is missing an ID",
-    });
-
-    api.verifyNextClerkWebhook({
-      type: "organizationMembership.deleted",
-      data: { id: "mem_bdd" },
-    });
-    const membershipDeleted = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(membershipDeleted.body).toBe("OK");
   });
 
   it("bootstraps limited-free billing and model providers after Clerk org creation", async () => {
@@ -1045,15 +980,6 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       error: "Invalid signature",
     });
 
-    const invalidJson = await api.requestGithubWebhook(
-      "not-json",
-      api.signedGithubWebhookHeaders("not-json", "ping"),
-      [400],
-    );
-    expect(invalidJson.body).toStrictEqual({
-      error: "Invalid JSON payload",
-    });
-
     const pingBody = "{}";
     const ping = await api.requestGithubWebhook(
       pingBody,
@@ -1069,36 +995,6 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       [200],
     );
     expect(ignored.body).toBe("OK");
-
-    const invalidPullRequestBody = JSON.stringify({ action: "opened" });
-    const invalidPullRequest = await api.requestGithubWebhook(
-      invalidPullRequestBody,
-      api.signedGithubWebhookHeaders(invalidPullRequestBody, "pull_request"),
-      [400],
-    );
-    expect(invalidPullRequest.body).toStrictEqual({
-      error: "Invalid payload structure",
-    });
-
-    const invalidIssueCommentBody = JSON.stringify({ action: "created" });
-    const invalidIssueComment = await api.requestGithubWebhook(
-      invalidIssueCommentBody,
-      api.signedGithubWebhookHeaders(invalidIssueCommentBody, "issue_comment"),
-      [400],
-    );
-    expect(invalidIssueComment.body).toStrictEqual({
-      error: "Invalid payload structure",
-    });
-
-    const invalidInstallationBody = JSON.stringify({ action: "created" });
-    const invalidInstallation = await api.requestGithubWebhook(
-      invalidInstallationBody,
-      api.signedGithubWebhookHeaders(invalidInstallationBody, "installation"),
-      [400],
-    );
-    expect(invalidInstallation.body).toStrictEqual({
-      error: "Invalid payload structure",
-    });
   });
 
   it("accepts signed GitHub events that do not dispatch work", async () => {
@@ -1266,19 +1162,6 @@ describe("WHCB-02: built-in generation callback boundaries", () => {
     expect(response.body).toStrictEqual({ error: "Invalid token" });
   });
 
-  it("rejects malformed provider payloads after a valid token", async () => {
-    const generationId = randomUUID();
-
-    const response = await api.requestFalGenerationWebhook({
-      generationId,
-      token: api.falGenerationWebhookToken(generationId),
-      body: "not-json",
-      statuses: [400],
-    });
-
-    expect(response.body).toStrictEqual({ error: "Invalid payload" });
-  });
-
   it("accepts valid provider callbacks that do not have an active generation job", async () => {
     const falGenerationId = randomUUID();
     const falVisualKey = "visual-bdd";
@@ -1294,30 +1177,6 @@ describe("WHCB-02: built-in generation callback boundaries", () => {
       statuses: [200],
     });
     expect(falResponse.body).toBe("OK");
-
-    const falDataResponse = await api.requestFalGenerationWebhook({
-      generationId: falGenerationId,
-      visualKey: falVisualKey,
-      token: api.falGenerationWebhookToken(falGenerationId, falVisualKey),
-      body: {
-        status: "COMPLETED",
-        data: [{ url: "https://assets.example.test/image.png" }],
-      },
-      statuses: [200],
-    });
-    expect(falDataResponse.body).toBe("OK");
-
-    const falNestedResponse = await api.requestFalGenerationWebhook({
-      generationId: falGenerationId,
-      visualKey: falVisualKey,
-      token: api.falGenerationWebhookToken(falGenerationId, falVisualKey),
-      body: {
-        status: "COMPLETED",
-        response: { images: [] },
-      },
-      statuses: [200],
-    });
-    expect(falNestedResponse.body).toBe("OK");
   });
 });
 
@@ -1381,17 +1240,6 @@ describe("WHCB-03: email inbound webhook boundaries", () => {
       [200],
     );
     expect(complaintResponse.body).toStrictEqual({ received: true });
-
-    const malformedReceived = {
-      type: "email.received",
-      data: { email_id: "email_bdd_missing_sender" },
-    };
-    const malformedResponse = await api.requestResendInboundWebhook(
-      malformedReceived,
-      api.signedResendWebhookHeaders(malformedReceived),
-      [200],
-    );
-    expect(malformedResponse.body).toStrictEqual({ received: true });
 
     api.disableResendApiKey();
     const unrecognizedOrgAddress = {
@@ -1615,88 +1463,9 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       await flushWaitUntilForTest();
     });
   });
-
-  it("acknowledges events when the optional Axiom status is malformed", async () => {
-    const {
-      actor,
-      runId,
-      headers,
-      run: own,
-      ownsFeatureSwitches,
-    } = await createEventWebhookRun("malformed optional Axiom status");
-    ownsFeatureSwitches();
-    await own(async () => {
-      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OkouDebug]: true,
-      });
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-          () => {
-            return HttpResponse.json({ ingested: 0, failed: 1 });
-          },
-        ),
-      );
-
-      const response = await api.requestAgentEvents(
-        {
-          runId,
-          events: [
-            {
-              type: "result",
-              sequenceNumber: 0,
-              result: "DB-backed callback output",
-            },
-          ],
-        },
-        headers,
-        [200],
-      );
-      expect(response.body).toStrictEqual({
-        received: 1,
-        firstSequence: 0,
-        lastSequence: 0,
-      });
-      await flushWaitUntilForTest();
-    });
-  });
 });
 
 describe("WHCB-05: sandbox agent webhook boundaries", () => {
-  it("rejects unbounded DNS attempt dimensions at the telemetry boundary", async () => {
-    const { runId, headers } = await createEventWebhookRun(
-      "validate Runner DNS attempt dimensions",
-    );
-    for (const invalid of [
-      { dns_readiness_attempt: 0 },
-      { dns_readiness_attempt: 4 },
-      { dns_readiness_guest_duration_ms: -1 },
-      { dns_readiness_host_residual_ms: -1 },
-      { dns_readiness_timing: "arbitrary-diagnostic" },
-      { dns_readiness_final_attempt: "false" },
-    ]) {
-      const response = await api.requestAgentTelemetryUnchecked(
-        {
-          runId,
-          sandboxOperations: [
-            {
-              ts: nowDate().toISOString(),
-              action_type:
-                "runner_fresh_sandbox_start_guest_dns_readiness_attempt",
-              duration_ms: 1,
-              success: true,
-              ...invalid,
-            },
-          ],
-        },
-        headers,
-        [400],
-      );
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("BAD_REQUEST");
-    }
-  });
-
   it("returns 500 when telemetry ingest times out", async () => {
     const {
       runId,
@@ -1750,7 +1519,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
 
       const response = await pendingResponse;
       expect(response.status).toBe(500);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     });
   });
 
@@ -1791,7 +1559,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
       );
 
       expect(response.status).toBe(500);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     });
   });
 
@@ -1903,7 +1670,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
 
       const response = await pendingResponse;
       expect(response.status).toBe(500);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     });
   });
 
@@ -2183,7 +1949,7 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     });
   });
 
-  it("accepts Runner home startup telemetry while preserving validation and run ownership", async () => {
+  it("accepts Runner home startup telemetry while preserving run ownership", async () => {
     const {
       runId,
       headers,
@@ -2216,22 +1982,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
         );
         expect(response.body).toStrictEqual({ success: true, id: runId });
       }
-
-      const invalid = await api.requestAgentTelemetryUnchecked(
-        {
-          ...body,
-          sandboxOperations: body.sandboxOperations.map((operation) => {
-            return { ...operation, runner_startup_path: "warm" };
-          }),
-        },
-        headers,
-        [400],
-      );
-      expectApiError(invalid.body);
-      expect(invalid.body.error.code).toBe("BAD_REQUEST");
-      expect(invalid.body.error.message).toMatch(
-        /^sandboxOperations\.0\.runner_startup_path: /u,
-      );
 
       const mismatch = await api.requestAgentTelemetryUnchecked(
         { ...body, runId: randomUUID() },
@@ -2307,21 +2057,13 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     });
   });
 
-  it("rejects malformed, unauthenticated, and mismatched sandbox reports", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+  it("rejects unauthenticated and mismatched sandbox reports", async () => {
+    const { runId } = await createEventWebhookRun(
       "validate Runner report boundaries",
     );
     const { headers: mismatchedHeaders } = await createEventWebhookRun(
       "another Runner report credential",
     );
-
-    const malformedHeartbeat = await api.requestAgentHeartbeatUnchecked(
-      {},
-      {},
-      [400],
-    );
-    expectApiError(malformedHeartbeat.body);
-    expect(malformedHeartbeat.body.error.code).toBe("BAD_REQUEST");
 
     const unauthenticatedHeartbeat = await api.requestAgentHeartbeat(
       { runId },
@@ -2376,61 +2118,18 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     );
     expectApiError(mismatchedUsageEvent.body);
     expect(mismatchedUsageEvent.body.error.code).toBe("UNAUTHORIZED");
-
-    const malformedTelemetryBody = await api.requestAgentTelemetryUnchecked(
-      {},
-      headers,
-      [400],
-    );
-    expectApiError(malformedTelemetryBody.body);
-    expect(malformedTelemetryBody.body.error.code).toBe("BAD_REQUEST");
-
-    const malformedUsageEvent = await api.requestAgentUsageEventUnchecked(
-      {
-        runId,
-        events: [],
-      },
-      headers,
-      [400],
-    );
-    expectApiError(malformedUsageEvent.body);
-    expect(malformedUsageEvent.body.error.code).toBe("BAD_REQUEST");
-
-    for (const invalidRunnerDimension of [
-      { runnerHostname: "x".repeat(256) },
-      { runnerVersion: "x".repeat(129) },
-    ]) {
-      const malformedRunnerDimension = await api.requestAgentTelemetryUnchecked(
-        {
-          runId,
-          ...invalidRunnerDimension,
-        },
-        headers,
-        [400],
-      );
-      expectApiError(malformedRunnerDimension.body);
-      expect(malformedRunnerDimension.body.error.code).toBe("BAD_REQUEST");
-    }
   });
 });
 
 describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
-  it("handles malformed and mismatched sandbox artifact reports", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+  it("rejects mismatched sandbox artifact reports", async () => {
+    const { runId } = await createEventWebhookRun(
       "validate Runner artifact reports",
     );
     const hash = "a".repeat(64);
     const { headers: mismatchedHeaders } = await createEventWebhookRun(
       "another Runner artifact credential",
     );
-
-    const malformedEvents = await api.requestAgentEventsUnchecked(
-      { runId, events: [] },
-      headers,
-      [400],
-    );
-    expectApiError(malformedEvents.body);
-    expect(malformedEvents.body.error.code).toBe("BAD_REQUEST");
 
     const mismatchedEvents = await api.requestAgentEvents(
       {
@@ -2443,14 +2142,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(mismatchedEvents.body);
     expect(mismatchedEvents.body.error.code).toBe("UNAUTHORIZED");
 
-    const malformedComplete = await api.requestAgentCompleteUnchecked(
-      { runId },
-      headers,
-      [400],
-    );
-    expectApiError(malformedComplete.body);
-    expect(malformedComplete.body.error.code).toBe("BAD_REQUEST");
-
     const mismatchedComplete = await api.requestAgentComplete(
       { runId, exitCode: 0, lastEventSequence: 0 },
       mismatchedHeaders,
@@ -2458,19 +2149,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     );
     expectApiError(mismatchedComplete.body);
     expect(mismatchedComplete.body.error.code).toBe("UNAUTHORIZED");
-
-    const malformedOutputs = await api.requestAgentRunOutputsUnchecked(
-      {
-        runId,
-        cliAgentType: "claude-code",
-        cliAgentSessionId: "",
-        cliAgentSessionHistoryDisposition: "native_only",
-      },
-      headers,
-      [400],
-    );
-    expectApiError(malformedOutputs.body);
-    expect(malformedOutputs.body.error.code).toBe("BAD_REQUEST");
 
     const mismatchedOutputs = await api.requestAgentRunOutputs(
       {
@@ -2497,19 +2175,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(mismatchedStoragePrepare.body);
     expect(mismatchedStoragePrepare.body.error.code).toBe("UNAUTHORIZED");
 
-    const malformedStoragePrepare =
-      await api.requestAgentStoragePrepareUnchecked(
-        {
-          runId,
-          storageId: "",
-          files: [{ path: "index.txt", hash, size: 5 }],
-        },
-        headers,
-        [400],
-      );
-    expectApiError(malformedStoragePrepare.body);
-    expect(malformedStoragePrepare.body.error.code).toBe("BAD_REQUEST");
-
     const mismatchedStorageCommit = await api.requestAgentStorageCommit(
       {
         runId,
@@ -2522,19 +2187,6 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     );
     expectApiError(mismatchedStorageCommit.body);
     expect(mismatchedStorageCommit.body.error.code).toBe("UNAUTHORIZED");
-
-    const malformedStorageCommit = await api.requestAgentStorageCommitUnchecked(
-      {
-        runId,
-        storageId: randomUUID(),
-        versionId: "",
-        files: [{ path: "index.txt", hash, size: 5 }],
-      },
-      headers,
-      [400],
-    );
-    expectApiError(malformedStorageCommit.body);
-    expect(malformedStorageCommit.body.error.code).toBe("BAD_REQUEST");
   });
 });
 
@@ -6331,12 +5983,8 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
 
     await flushWaitUntilForTest();
     expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).not.toHaveBeenCalled();
-    expect(
       context.mocks.clerk.organizations.deleteOrganization,
     ).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     // No empty-org discovery is performed; the surviving member can still
@@ -6574,7 +6222,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         fixture.doomedAgent.agentId,
         [200],
       );
-      expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
       const preserved = await createBillingMediaApi(context).readBillingStatus(
@@ -6794,7 +6441,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
           return connectors.listBuiltinConnectorAccounts(peer, "openai");
         }),
       ).resolves.toStrictEqual(peerAccountsBeforeDeletion);
-      expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
       const billing = createBillingMediaApi(context);

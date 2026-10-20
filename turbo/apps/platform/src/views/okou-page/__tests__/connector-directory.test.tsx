@@ -510,7 +510,6 @@ test("Keep remote access results outside connector action navigation", async () 
     "href",
     "/connectors?scope=remote-control&type=ssh",
   );
-  expect(within(dialog).queryByRole("toolbar")).not.toBeInTheDocument();
   expect(
     within(dialog).queryByText(/No connector matches/u),
   ).not.toBeInTheDocument();

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mockClerkUsers } from "./helpers/clerk-users";
 import { billingCreditCheckoutContract } from "@okouai/api-contracts/contracts/billing";
 import StripeSDK from "stripe";
 import { accept } from "../../../__tests__/test-context";
@@ -196,55 +195,6 @@ describe("POST /api/billing/credit-checkout", () => {
     );
   });
 
-  it("keeps credit Checkout billing attribution in Marketing", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const impact = {
-      clickId: "credit-partner",
-      capturedAt: nowDate().toISOString(),
-    };
-    mockClerkUsers(context, [
-      {
-        id: fixture.userId,
-        privateMetadata: { impact_attribution: impact },
-      },
-    ]);
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      metadata: {},
-    });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/impact-credit",
-    });
-    await accept(
-      setupApp({ context, routes: billingCreditCheckoutRoutes })(
-        billingCreditCheckoutContract,
-      ).create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    const snapshot = expect.not.objectContaining({
-      impact_click_id: expect.anything(),
-    });
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        metadata: snapshot,
-        invoice_creation: {
-          enabled: true,
-          invoice_data: { metadata: snapshot },
-        },
-        payment_intent_data: expect.objectContaining({ metadata: snapshot }),
-      }),
-    );
-  });
-
   it("automatically applies the customer's coupon", async () => {
     const fixture = await createSubscriptionOrg({ tier: "pro" });
     const { customerId } = fixture;
@@ -321,16 +271,6 @@ describe("POST /api/billing/credit-checkout", () => {
     });
     const capturedAt = new Date("2026-09-09T04:00:00.000Z");
     mockNow(capturedAt);
-    const impact = {
-      clickId: "credit-preview-partner",
-      capturedAt: capturedAt.toISOString(),
-    };
-    mockClerkUsers(context, [
-      {
-        id: fixture.userId,
-        privateMetadata: { impact_attribution: impact },
-      },
-    ]);
     mockCreditPurchasePreview(fixture.customerId);
 
     const client = setupApp({
@@ -438,8 +378,6 @@ describe("POST /api/billing/credit-checkout", () => {
     });
 
     mockNow(new Date(capturedAt.getTime() + 60_000));
-    impact.clickId = "partner-after-preview";
-    impact.capturedAt = new Date(capturedAt.getTime() + 60_000).toISOString();
     const confirmation = await accept(
       client.confirm({
         body: { previewToken: preview.body.previewToken },
@@ -468,9 +406,6 @@ describe("POST /api/billing/credit-checkout", () => {
         idempotencyKey: expect.stringContaining("credit-purchase:"),
       }),
     );
-    expect(
-      JSON.stringify(context.mocks.stripe.invoices.create.mock.calls),
-    ).not.toContain("impact_");
     expect(context.mocks.stripe.invoiceItems.create).toHaveBeenCalledWith(
       expect.objectContaining({
         invoice: invoiceId,

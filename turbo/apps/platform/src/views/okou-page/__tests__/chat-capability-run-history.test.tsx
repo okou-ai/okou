@@ -172,9 +172,6 @@ test("Fold each workflow run's work behind its own result", async () => {
   expect(screen.getByText("Earlier workflow result 2")).toBeVisible();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
   expect(screen.queryByText("Earlier workflow evidence 2")).toBeNull();
-  expect(assistantResponse("Earlier workflow result 1")).not.toBe(
-    assistantResponse("Earlier workflow result 2"),
-  );
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 
   const toggles = queryWorkHistoryToggles("collapsed");

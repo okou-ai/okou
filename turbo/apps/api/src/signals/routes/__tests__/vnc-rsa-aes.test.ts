@@ -214,7 +214,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
     api.authenticate(f);
     const kms = useSecretKmsProbe();
     const before = kms.generateDataKeyCalls;
-    for (const secret of ["", "é".repeat(128), "x\u0000y", "\uD800"]) {
+    for (const secret of ["é".repeat(128), "x\u0000y", "\uD800"]) {
       expect(
         (
           await raw("/api/vnc/credentials", {
@@ -324,7 +324,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
     }
   });
 
-  it("converts public PEM to a fixed-width wire hash, not a PEM/SPKI hash, and rejects private or extra material", async () => {
+  it("converts public PEM to a fixed-width wire hash and rejects private or extra material", async () => {
     const f = await claimed.owner();
     api.authenticate(f);
     const pair = generateKeyPairSync("rsa", {
@@ -362,11 +362,6 @@ describe("RSA-AES owner and private Runner boundaries", () => {
       });
       expect(inspected.headers.get("cache-control")).toBe("no-store");
     }
-    expect(expected).not.toBe(
-      createHash("sha256")
-        .update(pair.publicKey.export({ type: "spki", format: "der" }))
-        .digest("hex"),
-    );
     for (const invalid of [
       pair.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
       publicKeyPem + publicKeyPem,

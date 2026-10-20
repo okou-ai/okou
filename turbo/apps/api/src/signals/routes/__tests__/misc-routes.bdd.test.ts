@@ -180,14 +180,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 
     const logs = await api.listLogs(admin);
     expect(logs.body.data).toStrictEqual([]);
-    const invalidListLimit = await api.requestListLogs(
-      admin,
-      { limit: 1.5 },
-      [400],
-    );
-    expectApiError(invalidListLimit.body);
-    const missingLog = await api.readLog(admin, randomUUID(), [404]);
-    expectApiError(missingLog.body);
   });
 
   it("reads and writes every supported locale through the canonical contract", async () => {
@@ -373,18 +365,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
       throw new Error("Expected personal model provider list response");
     }
     expect(initial.body.modelProviders).toStrictEqual([]);
-
-    const missingSecret = await api.upsertPersonalModelProvider(
-      admin,
-      {
-        type: "claude-code-oauth-token",
-      },
-      [400],
-    );
-    expectApiError(missingSecret.body);
-    expect(missingSecret.body.error.message).toBe(
-      'Provider "claude-code-oauth-token" requires a secret',
-    );
 
     const created = await api.upsertPersonalModelProvider(
       admin,

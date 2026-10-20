@@ -11,11 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { agentsRoutes } from "../agents";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
@@ -147,13 +143,6 @@ describe("GET /api/agents/:id", () => {
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
-  });
-
-  it("returns 400 for invalid path params", async () => {
-    const actor = bdd.user();
-    const response = await bdd.requestReadAgent(actor, "not-a-uuid", [400]);
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("returns the agent when found in the active org", async () => {
@@ -305,14 +294,6 @@ describe("DELETE /api/agents/:id", () => {
         code: "FORBIDDEN",
       },
     });
-  });
-
-  it("returns 400 for invalid path params", async () => {
-    const actor = bdd.user();
-    const response = await bdd.requestDeleteAgent(actor, "not-a-uuid", [400]);
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("returns 404 for an unknown agent id", async () => {

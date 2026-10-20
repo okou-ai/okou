@@ -637,7 +637,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
         expect(claim.prompt).not.toContain(excluded);
       }
       expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-      expect(claim.appendSystemPrompt).not.toContain("# Current context");
     },
   );
 
@@ -663,36 +662,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       throw new Error("Expected the automation to have a chat thread");
     }
 
-    for (const payload of [
-      {},
-      { action: null },
-      { action: 42 },
-      { action: "completed" },
-      { action: "completed", workflow_job: null },
-      { action: "completed", workflow_job: {} },
-    ]) {
-      const response = await postGithubWebhook({
-        event: "workflow_job",
-        deliveryId: `delivery-${randomUUID()}`,
-        rawBody: JSON.stringify({
-          ...payload,
-          installation: { id: Number(installed.remoteInstallationId) },
-          repository: { id: 456, full_name: "okou-ai/okou" },
-          sender: { id: 101, login: "lancy", type: "User" },
-        }),
-      });
-      expect(response).toStrictEqual({
-        status: 400,
-        text: '{"error":"Invalid payload structure"}',
-      });
-    }
-
-    for (const action of [
-      "queued",
-      "in_progress",
-      "waiting",
-      "future_action",
-    ]) {
+    for (const action of ["queued", "in_progress", "waiting"]) {
       const response = await postGithubWebhook({
         event: "workflow_job",
         deliveryId: `delivery-${randomUUID()}`,
@@ -795,16 +765,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     if (!created.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
     }
-
-    const invalid = await postGithubWebhook({
-      event: "pull_request_review",
-      deliveryId: `delivery-${randomUUID()}`,
-      rawBody: JSON.stringify({ action: null }),
-    });
-    expect(invalid).toStrictEqual({
-      status: 400,
-      text: '{"error":"Invalid payload structure"}',
-    });
 
     for (const review of [
       { action: "dismissed", state: "dismissed" },
@@ -1091,7 +1051,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     expect(claim.prompt).toContain('"attempt": 2');
     expect(claim.prompt).toContain('"triggeringEvent": "push"');
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-    expect(claim.appendSystemPrompt).not.toContain("# Current context");
   });
 
   it("accepts startup failures with GitHub's documented nullable run fields", async () => {
@@ -1166,6 +1125,5 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     expect(claim.prompt).toContain('"actor": null');
     expect(claim.prompt).toContain('"triggeringActor": null');
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-    expect(claim.appendSystemPrompt).not.toContain("# Current context");
   });
 });

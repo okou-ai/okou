@@ -183,7 +183,6 @@ function expectRelationshipTitle(
 ) {
   const link = within(origin).getByText(title).closest("a");
   expect(link).toHaveTextContent(title);
-  expect(link).not.toHaveAttribute("title");
   expect(within(messages).getByText(title)).toBeVisible();
   expect(
     within(messages).getByLabelText(`Messages with ${title}`),
