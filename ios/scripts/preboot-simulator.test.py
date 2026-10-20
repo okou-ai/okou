@@ -26,6 +26,10 @@ elif sys.argv[1:3] == ['simctl', 'boot']:
         sys.exit('Device is already booted')
     device['state'] = 'Booted'
     path.write_text(json.dumps(inventory))
+elif sys.argv[1:3] == ['simctl', 'bootstatus']:
+    if os.environ.get('SIMULATOR_READY_FAILURE'):
+        sys.exit('Simulator readiness failed')
+    path.with_suffix('.ready').write_text(sys.argv[3])
 else:
     raise ValueError(sys.argv)
 """
@@ -72,6 +76,7 @@ class PrebootSimulatorTests(unittest.TestCase):
         devices = json.loads(self.state.read_text())["devices"]
         self.assertEqual(devices[RUNTIME][0]["state"], "Booted")
         self.assertEqual(devices[OTHER_RUNTIME][0]["state"], "Shutdown")
+        self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
 
     def test_already_booted_target_is_retained_without_rebooting(self):
         self.inventory["devices"][RUNTIME][0]["state"] = "Booted"
@@ -79,6 +84,13 @@ class PrebootSimulatorTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.state.read_text()), self.inventory)
+        self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
+
+    def test_readiness_failure_blocks_ci_after_boot_was_requested(self):
+        self.env["SIMULATOR_READY_FAILURE"] = "true"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Simulator readiness failed", result.stderr)
 
     def test_missing_runtime_does_not_start_the_same_model_on_another_os(self):
         del self.inventory["devices"][RUNTIME]

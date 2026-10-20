@@ -291,8 +291,9 @@ the Clerk key and overrides service origins with reserved `.invalid` domains.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
 server contract verification. CI starts its configured simulator while
-`build-for-testing` compiles the App test products, waits for both to
-succeed, then executes every native test with `test-without-building`. Failed or
+`build-for-testing` compiles the App test products, waits for system boot readiness
+and compilation to succeed, then executes every native test with
+`test-without-building`. Failed or
 cancelled preparation still blocks the required gate. The standalone command
 builds and runs every suite sequentially with an explicit local simulator:
 

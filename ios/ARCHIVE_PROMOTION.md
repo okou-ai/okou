@@ -16,6 +16,8 @@ checkout retains bounded queue ancestry (32 commits; the current squash queue
 merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an
 R2 client on macOS to resolve potential prior evidence.
+The simulator job waits for `simctl bootstatus` concurrently with compilation;
+requesting a boot alone does not establish that first-boot preparation is complete.
 
 All three native jobs must succeed before the Ubuntu publisher writes canonical
 objects. The publisher compares their independently captured **complete input

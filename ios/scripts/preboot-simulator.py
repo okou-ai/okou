@@ -2,8 +2,9 @@
 """Start the explicit CI simulator while source compilation proceeds.
 
 IOS_TEST_DESTINATION must specify platform=iOS Simulator, name and OS.
-The command requests boot without waiting for readiness; xcodebuild owns that
-wait after compilation. Missing/ambiguous devices and boot failures fail CI.
+Wait for system boot readiness while compilation proceeds, rather than deferring
+first-boot preparation to test launch. Missing/ambiguous devices and boot or
+readiness failures fail CI.
 """
 
 import json
@@ -44,6 +45,7 @@ def main():
         subprocess.run(["xcrun", "simctl", "boot", device["udid"]], check=True)
     elif device["state"] != "Booted":
         raise ValueError(f"Simulator cannot start from state {device['state']}")
+    subprocess.run(["xcrun", "simctl", "bootstatus", device["udid"]], check=True)
 
 
 if __name__ == "__main__":

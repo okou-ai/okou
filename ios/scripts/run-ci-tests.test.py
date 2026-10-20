@@ -35,6 +35,8 @@ if command == 'xcrun':
         print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
             [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
     elif args == ['simctl', 'boot', 'configured']:
+        pass
+    elif args == ['simctl', 'bootstatus', 'configured']:
         role = 'boot'
         mark('boot-started')
         if scenario == 'boot-failure':
