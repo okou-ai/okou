@@ -182,6 +182,16 @@ class PromotionTest(unittest.TestCase):
                         },
                     ],
                 },
+                {
+                    "name": "test-packages",
+                    "conclusion": "success",
+                    "steps": [
+                        {
+                            "name": "Run isolated Swift package tests",
+                            "conclusion": "success",
+                        },
+                    ],
+                },
             ],
         }
         self.save_records()
@@ -214,6 +224,7 @@ class PromotionTest(unittest.TestCase):
             self.work / "inputs.json",
         )
         shutil.copyfile(self.work / "inputs.json", self.work / "test-inputs.json")
+        shutil.copyfile(self.work / "inputs.json", self.work / "package-inputs.json")
         return json.loads((self.work / "inputs.json").read_bytes())
 
     def archive(self):
@@ -414,7 +425,7 @@ class PromotionTest(unittest.TestCase):
         self.cli("publish", self.work, error="exact main merge-group")
 
     def test_failed_or_skipped_native_jobs_cannot_publish(self):
-        for job_index in (0, 1):
+        for job_index in (0, 1, 2):
             for conclusion in ("failure", "skipped", "cancelled"):
                 with self.subTest(job_index=job_index, conclusion=conclusion):
                     self.record()
@@ -422,6 +433,38 @@ class PromotionTest(unittest.TestCase):
                     self.save_records()
                     self.cli("publish", self.work, error="did not pass")
                     self.assertFalse(self.ready().exists())
+
+    def test_package_job_and_actual_test_step_are_required_for_evidence(self):
+        for conclusion in ("failure", "skipped", "cancelled"):
+            with self.subTest(conclusion=conclusion):
+                self.record()
+                self.records["123"]["jobs"][2]["steps"][0]["conclusion"] = conclusion
+                self.save_records()
+                self.cli("publish", self.work, error="did not pass")
+                self.assertFalse(self.ready().exists())
+        self.record()
+        self.records["123"]["jobs"].pop()
+        self.save_records()
+        self.cli("publish", self.work, error="did not pass")
+        self.assertFalse(self.ready().exists())
+
+    def test_package_inputs_must_match_archive_and_simulator(self):
+        target = self.capture()
+        for field, mismatch in [
+            ("testInputSha256", "0" * 64),
+            ("toolchain", target["toolchain"] | {"xcode": "another Xcode build"}),
+        ]:
+            with self.subTest(field=field):
+                (self.work / "package-inputs.json").write_text(
+                    json.dumps(target | {field: mismatch})
+                )
+                self.cli(
+                    "publish", self.work, error="archive and package test inputs differ"
+                )
+                self.assertFalse(self.ready().exists())
+        (self.work / "package-inputs.json").unlink()
+        self.cli("publish", self.work, error="package-inputs.json")
+        self.assertFalse(self.ready().exists())
 
     def test_native_jobs_must_observe_identical_source_and_toolchain_inputs(self):
         target = self.capture()
@@ -475,6 +518,14 @@ class PromotionTest(unittest.TestCase):
         self.records["123"]["run"]["head_sha"] = "0" * 40
         self.save_records()
         self.cli("resolve-tests", self.work, error="exact main merge-group")
+
+    def test_prior_evidence_requires_successful_package_tests(self):
+        self.cli("publish", self.work)
+        self.release()
+        self.capture()
+        self.records["123"]["jobs"][2]["steps"][0]["conclusion"] = "skipped"
+        self.save_records()
+        self.cli("resolve-tests", self.work, error="did not pass")
 
     def test_missing_ready_and_access_denied_fail_without_rebuilding(self):
         self.cli(

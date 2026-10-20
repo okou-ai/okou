@@ -44,7 +44,7 @@ public actor ChatSync {
   }
 
   public func threadsWithIndicators() async throws -> (
-    threads: [ChatThread], indicators: Indicators?
+    threads: [ChatThread], indicators: Indicators?, eventIDs: Set<String>
   ) {
     let cached = await readCachedThreadList()
     var state: ThreadListState
@@ -58,6 +58,8 @@ public actor ChatSync {
         snapshot: state.snapshot.map(\.thread), events: state.events.map(\.change)
       ).map(\.id))
     state = try await catchUpThreadEvents(state)
+    // A snapshot rebase can compact events observed during this catch-up.
+    var eventIDs = Set(state.events.map(\.id))
     if !state.replaced && state.events.count > threadEventRebaseThreshold {
       let rebased: ThreadListState?
       do {
@@ -72,6 +74,7 @@ public actor ChatSync {
       }
       if let rebased { state = try await catchUpThreadEvents(rebased) }
     }
+    eventIDs.formUnion(state.events.map(\.id))
     await persistThreadList(state)
     let current = ChatThreadReplay.sidebarOrder(
       ChatThreadReplay.replay(
@@ -103,7 +106,7 @@ public actor ChatSync {
       if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
       return updated
     }
-    return (threads, indicators)
+    return (threads, indicators, eventIDs)
   }
 
   public func indicators() async throws -> Indicators {

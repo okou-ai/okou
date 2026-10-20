@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run exact simulator startup and test compilation concurrently; both must pass.
+# Resolve dependencies while the exact simulator becomes ready, then compile.
+# Keep cold system startup ahead of asset-tool discovery during compilation.
 # Uses ci-test.sh's RUNNER_TEMP and IOS_TEST_DESTINATION contracts.
 set -euo pipefail
 # Each owned job gets a process group, including its compiler/simctl descendants.
@@ -23,12 +24,17 @@ trap 'exit 143' TERM
 
 python3 ios/scripts/preboot-simulator.py &
 ios_preboot_pid=$!
-bash ios/scripts/ci-test.sh build &
+bash ios/scripts/ci-test.sh prepare &
 ios_phase_pid=$!
 wait "$ios_phase_pid"
 ios_phase_pid=""
 wait "$ios_preboot_pid"
 ios_preboot_pid=""
+
+bash ios/scripts/ci-test.sh compile &
+ios_phase_pid=$!
+wait "$ios_phase_pid"
+ios_phase_pid=""
 
 bash ios/scripts/ci-test.sh run &
 ios_phase_pid=$!

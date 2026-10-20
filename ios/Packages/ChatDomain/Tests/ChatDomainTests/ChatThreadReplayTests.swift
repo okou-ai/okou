@@ -8,6 +8,23 @@ private let replayAgent = "10000000-0000-4000-8000-000000000103"
 
 final class ChatThreadReplayTests: XCTestCase {
 
+  func testPrependingPinsMatchesPWAFractionalKeysAndLegacyRanking() throws {
+    XCTAssertEqual(try ChatThreadReplay.firstPinOrder([]), "a0")
+    let smallest = "A" + String(repeating: "0", count: 26)
+    for (existing, expected) in [
+      ("a1", "a0"), ("a0", "Zz"), ("Zz", "Zy"), ("Z0", "Yzz"),
+      ("Y00", "Xzzz"), ("b00", "az"), ("a0V", "a0"),
+      (smallest + "V", smallest + "G"), (smallest + "01", smallest + "00V"),
+    ] {
+      let snapshot = ChatThreadReplay.replay(
+        snapshot: [], events: [event(.created, at: 1), event(.pinned, at: 2, pinOrder: existing)])
+      XCTAssertEqual(try ChatThreadReplay.firstPinOrder(snapshot), expected, existing)
+    }
+    let legacy = ChatThreadReplay.replay(
+      snapshot: [], events: [event(.created, at: 1), event(.pinned, at: 2)])
+    XCTAssertEqual(try ChatThreadReplay.firstPinOrder(legacy), "a0")
+  }
+
   func testMuteReplaySuppressesUnreadWithoutChangingActivityOrPinRanking() throws {
     var original = try XCTUnwrap(
       ChatThreadReplay.replay(

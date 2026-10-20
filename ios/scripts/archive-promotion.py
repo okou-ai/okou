@@ -29,6 +29,7 @@ VERSION_LINE = re.compile(
     + rb"( // x-release-please-version)$"
 )
 TEST_STEP = "Build app and run isolated simulator tests"
+PACKAGE_STEP = "Run isolated Swift package tests"
 ARCHIVE_STEP = "Build unsigned device Release archive"
 
 
@@ -278,7 +279,11 @@ def github_record(record, required_step):
     pages = json.loads(
         command("gh", "api", f"{route}/jobs?per_page=100", "--paginate", "--slurp")
     )
-    job_name = "build-archive" if required_step == ARCHIVE_STEP else "build-test"
+    job_name = {
+        ARCHIVE_STEP: "build-archive",
+        TEST_STEP: "build-test",
+        PACKAGE_STEP: "test-packages",
+    }[required_step]
     jobs = [job for page in pages for job in page["jobs"] if job["name"] == job_name]
     if (
         len(jobs) != 1
@@ -298,6 +303,7 @@ def verify_evidence(evidence, target):
     ):
         raise ValueError("Test evidence does not match these inputs")
     github_record(evidence, TEST_STEP)
+    github_record(evidence, PACKAGE_STEP)
     actual = inputs(evidence["commitSha"], target["toolchain"])
     if (
         evidence["toolchain"] != target["toolchain"]
@@ -342,9 +348,12 @@ def publish(work):
     target = read_json(work / "inputs.json")
     if read_json(work / "test-inputs.json") != target:
         raise ValueError("Native archive and simulator inputs differ")
+    if read_json(work / "package-inputs.json") != target:
+        raise ValueError("Native archive and package test inputs differ")
     if os.environ["GITHUB_EVENT_NAME"] != "merge_group":
         raise ValueError("Only main merge groups can publish canonical archives")
     record = provenance()
+    github_record(record, PACKAGE_STEP)
     if inputs(record["commitSha"], target["toolchain"]) != target:
         raise ValueError("Builder inputs changed")
     github_record(record, ARCHIVE_STEP)
