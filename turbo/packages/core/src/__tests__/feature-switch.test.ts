@@ -6,6 +6,7 @@ import {
   filterFeatureSwitchOverrides,
   getFeatureSwitchDescriptions,
   getFeatureSwitchMetadata,
+  isFeatureSwitchAvailable,
 } from "../feature-switch";
 
 describe("FeatureSwitchKey", () => {
@@ -61,6 +62,7 @@ describe("isFeatureEnabled", () => {
     ]) {
       expect(isFeatureEnabled(key, { userId, orgId })).toBe(true);
       expect(getAllFeatureStates({ userId, orgId })[key]).toBe(true);
+      expect(isFeatureSwitchAvailable(key, { userId, orgId })).toBe(true);
       expect(
         getAllFeatureStates({ userId, orgId, overrides: { [key]: false } })[
           key
@@ -80,6 +82,45 @@ describe("isFeatureEnabled", () => {
     ]) {
       expect(isFeatureEnabled(key, context)).toBe(false);
       expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureSwitchAvailable(key, context)).toBe(false);
+      const overridden = { ...context, overrides: { [key]: true } };
+      expect(isFeatureEnabled(key, overridden)).toBe(false);
+      expect(getAllFeatureStates(overridden)[key]).toBe(false);
+    }
+  });
+
+  it("keeps remote UI, VNC, and Tailscale switch values independent", () => {
+    const ui = FeatureSwitchKey.RemoteControlGuidedSetup;
+    const vnc = FeatureSwitchKey.VncAccess;
+    const tailscale = FeatureSwitchKey.TailscaleAccess;
+    for (const uiEnabled of [false, true]) {
+      for (const vncEnabled of [false, true]) {
+        for (const tailscaleEnabled of [false, true]) {
+          const context = {
+            userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+            overrides: {
+              [ui]: uiEnabled,
+              [vnc]: vncEnabled,
+              [tailscale]: tailscaleEnabled,
+            },
+          };
+          const actual = getAllFeatureStates(context);
+          for (const [key, expected] of Object.entries(context.overrides)) {
+            expect(actual[key as FeatureSwitchKey]).toBe(expected);
+            expect(isFeatureEnabled(key as FeatureSwitchKey, context)).toBe(
+              expected,
+            );
+          }
+          const withoutUi = getAllFeatureStates({
+            ...context,
+            overrides: { ...context.overrides, [ui]: !uiEnabled },
+          });
+          expect({ ...actual, [ui]: undefined }).toEqual({
+            ...withoutUi,
+            [ui]: undefined,
+          });
+        }
+      }
     }
   });
 

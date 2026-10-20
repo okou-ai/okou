@@ -1,7 +1,11 @@
 import { isOrgAdmin$ } from "../../signals/org.ts";
-import { useRemoteNetworkOrganization } from "./remote-network-scope.tsx";
-import { searchParams$ } from "../../signals/route.ts";
-import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
+import type { ReactNode } from "react";
+import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
+import {
+  remoteResourceSearchParams,
+  remoteNetworkConnections$,
+  closeRemoteNetworkConnections$,
+} from "../../signals/remote-resource-detail.ts";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
@@ -10,7 +14,6 @@ import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contrac
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  Laptop,
   LockKeyhole,
   Network,
   Cloud,
@@ -19,7 +22,17 @@ import {
   Monitor,
   ChevronRight,
 } from "lucide-react";
-import { Button, Card, LoadErrorRow } from "@okouai/ui";
+import {
+  Button,
+  Card,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  LoadErrorRow,
+} from "@okouai/ui";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
 import { Link } from "../router/link.tsx";
@@ -43,6 +56,7 @@ import { SshLoadError } from "./ssh-load-error.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
+import { RemoteNetworkConnections } from "./remote-network-summary.tsx";
 import { TailscaleDialog } from "./tailscale-management.tsx";
 import {
   CloudflareAccessDialog,
@@ -51,6 +65,45 @@ import {
   CloudflareAccessDeletionDialog,
   CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
+
+function RemoteDirectoryGroup({
+  title,
+  description,
+  empty,
+  children,
+}: {
+  readonly title: string;
+  readonly description: string;
+  readonly empty: boolean;
+  readonly children?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section aria-label={title}>
+      <Card className="overflow-hidden rounded-3xl border-divider">
+        <header
+          className={cn(
+            "flex items-center justify-between gap-4 px-4 py-4 sm:px-5",
+            !empty && "border-b border-divider bg-gray-50",
+          )}
+        >
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h3 className="text-sm font-semibold">{title}</h3>
+            <p className="text-xs text-muted-foreground">{description}</p>
+          </div>
+          {empty && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {t(($) => {
+                return $.remoteNetworkScope.notAdded;
+              })}
+            </span>
+          )}
+        </header>
+        {!empty && children}
+      </Card>
+    </section>
+  );
+}
 
 function RemoteVncConnectionRow({
   connection,
@@ -70,7 +123,7 @@ function RemoteVncConnectionRow({
       className="block"
     >
       <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
-        <span className="rounded-lg bg-gray-50 p-2">
+        <span className="shrink-0 rounded-lg bg-gray-50 p-2">
           <Monitor size={20} aria-hidden />
         </span>
         <span className="grid min-w-0 flex-1 gap-1">
@@ -104,11 +157,11 @@ function RemoteVncConnectionRow({
                     })}
           </span>
         </span>
-        <ChevronRight
-          size={18}
-          aria-hidden
-          className="shrink-0 text-muted-foreground"
-        />
+        <span className={buttonVariants({ variant: "outline", size: "sm" })}>
+          {t(($) => {
+            return $.remoteNetworkScope.manage;
+          })}
+        </span>
       </div>
     </Link>
   );
@@ -118,73 +171,96 @@ function RemoteConnectionRows({
   sshRows,
   vncRows,
   networkLabel,
+  empty,
 }: {
   readonly sshRows: readonly SshConnectionResponse[] | null;
   readonly vncRows: readonly VncConnectionResponse[] | null;
   readonly networkLabel: (type: string, id: string | undefined) => string;
+  readonly empty: boolean;
 }) {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
+  if (!empty && !sshRows?.length && !vncRows?.length) {
+    return null;
+  }
   return (
-    <div className="overflow-hidden rounded-3xl border-divider bg-card has-[a]:border divide-y divide-divider">
-      {sshRows?.map((connection) => {
-        return (
-          <Link
-            key={connection.id}
-            pathname="/connectors"
-            options={{
-              searchParams: remoteResourceSearchParams(
-                params,
-                "ssh",
-                connection.id,
-              ),
-            }}
-            className="block"
-          >
-            <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
-              <span className="rounded-lg bg-gray-50 p-2">
-                <Terminal size={20} aria-hidden />
-              </span>
-              <span className="grid min-w-0 flex-1 gap-1">
-                <strong className="truncate text-sm">
-                  {connection.displayName}
-                </strong>
-                <span className="break-all text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.ssh.label;
-                  })}{" "}
-                  · {connection.username}@{connection.host}:{connection.port} ·{" "}
-                  {"transport" in connection
-                    ? networkLabel(
-                        connection.transport.type,
-                        "configId" in connection.transport
-                          ? connection.transport.configId
-                          : undefined,
-                      )
-                    : t(($) => {
-                        return $.remoteControlSetup.direct;
-                      })}
-                </span>
-              </span>
-              <ChevronRight
-                size={18}
-                aria-hidden
-                className="shrink-0 text-muted-foreground"
+    <RemoteDirectoryGroup
+      title={t(($) => {
+        return $.remoteControlSetup.personalConnections;
+      })}
+      description={t(($) => {
+        return $.remoteNetworkScope.personalGroupHelp;
+      })}
+      empty={empty}
+    >
+      <ul className="divide-y divide-divider">
+        {sshRows?.map((connection) => {
+          return (
+            <li key={connection.id}>
+              <Link
+                pathname="/connectors"
+                options={{
+                  searchParams: remoteResourceSearchParams(
+                    params,
+                    "ssh",
+                    connection.id,
+                  ),
+                }}
+                className="block"
+              >
+                <div className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5">
+                  <span className="shrink-0 rounded-lg bg-gray-50 p-2">
+                    <Terminal size={20} aria-hidden />
+                  </span>
+                  <span className="grid min-w-0 flex-1 gap-1">
+                    <strong className="truncate text-sm">
+                      {connection.displayName}
+                    </strong>
+                    <span className="break-all text-xs text-muted-foreground">
+                      {t(($) => {
+                        return $.ssh.label;
+                      })}{" "}
+                      · {connection.username}@{connection.host}:
+                      {connection.port} ·{" "}
+                      {"transport" in connection
+                        ? networkLabel(
+                            connection.transport.type,
+                            "configId" in connection.transport
+                              ? connection.transport.configId
+                              : undefined,
+                          )
+                        : t(($) => {
+                            return $.remoteControlSetup.direct;
+                          })}
+                    </span>
+                  </span>
+                  <span
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                    })}
+                  >
+                    {t(($) => {
+                      return $.remoteNetworkScope.manage;
+                    })}
+                  </span>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
+        {vncRows?.map((connection) => {
+          return (
+            <li key={connection.id}>
+              <RemoteVncConnectionRow
+                connection={connection}
+                sshRows={sshRows}
               />
-            </div>
-          </Link>
-        );
-      })}
-      {vncRows?.map((connection) => {
-        return (
-          <RemoteVncConnectionRow
-            key={connection.id}
-            connection={connection}
-            sshRows={sshRows}
-          />
-        );
-      })}
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </RemoteDirectoryGroup>
   );
 }
 function RemoteConnectionList({
@@ -197,7 +273,6 @@ function RemoteConnectionList({
   const vnc = useLoadable(vncConnections$);
   const tailscale = useLoadable(tailscaleConfigs$);
   const access = useLoadable(cloudflareAccessConfigs$);
-  const start = useSet(enterRemoteSetup$);
   const sshRows = ssh.state === "hasData" ? ssh.data : null;
   const vncRows = vncEnabled && vnc.state === "hasData" ? vnc.data : null;
   const loading =
@@ -252,41 +327,11 @@ function RemoteConnectionList({
           })}
         </p>
       )}
-      {empty && (
-        <Card
-          surface="composer"
-          className="grid justify-items-center gap-4 px-6 py-8 text-center"
-        >
-          <span className="rounded-xl bg-gray-50 p-3">
-            <Laptop size={24} aria-hidden />
-          </span>
-          <h3 className="font-semibold">
-            {t(($) => {
-              return $.remoteControlSetup.empty;
-            })}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.emptyHelp;
-            })}
-          </p>
-          <Button
-            className={REMOTE_PAGE_ACTION}
-            onClick={() => {
-              start();
-            }}
-          >
-            <Plus size={16} aria-hidden />
-            {t(($) => {
-              return $.remoteControlSetup.first;
-            })}
-          </Button>
-        </Card>
-      )}
       <RemoteConnectionRows
         sshRows={sshRows}
         vncRows={vncRows}
         networkLabel={networkLabel}
+        empty={empty}
       />
     </div>
   );
@@ -353,6 +398,7 @@ function PrivateNetworkGroupRows({
   const { t } = useTranslation();
   const admin = useLoadable(isOrgAdmin$);
   const params = useGet(searchParams$);
+  const updateParams = useSet(updateSearchParams$);
   const rows = [
     ...(ts ?? []).map((config) => {
       return {
@@ -374,61 +420,79 @@ function PrivateNetworkGroupRows({
     }),
   ];
   return (
-    <div className="overflow-hidden rounded-3xl border-divider bg-card divide-y divide-divider has-[a]:border">
+    <ul className="divide-y divide-divider">
       {rows.map(({ config, kind, label }) => {
+        const detailParams = remoteResourceSearchParams(
+          params,
+          kind,
+          config.id,
+        );
+        const connectionParams = new URLSearchParams(detailParams);
+        connectionParams.delete("remoteResource");
+        connectionParams.set("networkConnections", `${kind}:${config.id}`);
+        const canManage =
+          config.scope === "personal" ||
+          (admin.state === "hasData" && admin.data);
+        const action = t(($) => {
+          return canManage
+            ? $.remoteNetworkScope.manage
+            : $.remoteNetworkScope.view;
+        });
+        const countLabel = t(
+          ($) => {
+            return $.remoteNetworkScope.connectionCount;
+          },
+          { count: privateNetworkHostCount(config) },
+        );
         return (
-          <Link
+          <li
             key={`${kind}:${config.id}`}
-            pathname="/connectors"
-            options={{
-              searchParams: remoteResourceSearchParams(params, kind, config.id),
-            }}
-            className="flex items-center gap-3 p-4 hover:bg-gray-50 sm:p-5"
+            className="flex items-center gap-3 p-4 sm:p-5"
           >
-            <span className="rounded-lg bg-gray-50 p-2">
+            <span className="shrink-0 rounded-lg bg-gray-50 p-2">
               {kind === "cloudflare" ? (
                 <Cloud size={20} aria-hidden />
               ) : (
                 <Network size={20} aria-hidden />
               )}
             </span>
-            <span className="grid min-w-0 flex-1 gap-1">
-              <strong className="truncate text-sm font-medium">
+            <div className="grid min-w-0 flex-1 gap-1">
+              <Link
+                pathname="/connectors"
+                options={{ searchParams: detailParams }}
+                className="truncate text-sm font-semibold hover:underline"
+                title={config.name}
+              >
                 {config.name}
-              </strong>
-              <span className="text-xs text-muted-foreground">
-                {label} ·{" "}
-                {privateNetworkHostCount(config) > 0
-                  ? t(
-                      ($) => {
-                        return $.remoteNetworkScope.connectionCount;
-                      },
-                      { count: privateNetworkHostCount(config) },
-                    )
-                  : t(($) => {
-                      return $.remoteNetworkScope.unused;
-                    })}
-              </span>
-            </span>
-            <span className="text-right text-xs text-muted-foreground">
-              <span>
-                {t(($) => {
-                  return config.scope === "personal" ||
-                    (admin.state === "hasData" && admin.data)
-                    ? $.remoteNetworkScope.manageBadge
-                    : $.remoteNetworkScope.useBadge;
-                })}
-              </span>
-            </span>
-            <ChevronRight
-              size={16}
-              className="shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-          </Link>
+              </Link>
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                <span>{label}</span>
+                <span aria-hidden>·</span>
+                <Button
+                  variant="link"
+                  onClick={() => {
+                    updateParams(connectionParams);
+                  }}
+                  aria-label={`${config.name} · ${countLabel}`}
+                  className="h-auto p-0 text-xs font-normal text-muted-foreground gap-1 hover:text-foreground"
+                >
+                  {countLabel}
+                  <ChevronRight size={14} aria-hidden />
+                </Button>
+              </div>
+            </div>
+            <Link
+              pathname="/connectors"
+              options={{ searchParams: detailParams }}
+              aria-label={`${action} ${config.name}`}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              {action}
+            </Link>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 function PrivateNetworkRows({
@@ -439,12 +503,9 @@ function PrivateNetworkRows({
   readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
 }) {
   const { t } = useTranslation();
-  const organization = useRemoteNetworkOrganization();
-  if ((ts?.length ?? 0) + (cf?.length ?? 0) === 0) {
-    return null;
-  }
+  const admin = useLoadable(isOrgAdmin$);
   return (
-    <div className="grid gap-7">
+    <div className="grid gap-5">
       {(["personal", "organization"] as const).map((scope) => {
         const tailscale =
           ts?.filter((config) => {
@@ -455,61 +516,85 @@ function PrivateNetworkRows({
             return config.scope === scope;
           }) ?? [];
         const count = tailscale.length + cloudflare.length;
+        if (count === 0 && (ts === null || cf === null)) {
+          return null;
+        }
         return (
-          <section
+          <RemoteDirectoryGroup
             key={scope}
-            className="grid gap-3"
-            aria-label={t(($) => {
+            title={t(($) => {
               return scope === "personal"
                 ? $.remoteNetworkScope.personalGroup
                 : $.remoteNetworkScope.organizationGroup;
             })}
+            description={t(($) => {
+              return scope === "personal"
+                ? $.remoteNetworkScope.personalGroupHelp
+                : admin.state === "hasData" && admin.data
+                  ? $.remoteNetworkScope.organizationGroupHelp
+                  : $.remoteNetworkScope.organizationMemberHelp;
+            })}
+            empty={count === 0}
           >
-            <header className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold">
-                {t(($) => {
-                  return scope === "personal"
-                    ? $.remoteNetworkScope.personalGroup
-                    : $.remoteNetworkScope.organizationGroup;
-                })}
-              </h3>
-              <span className="rounded-md bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
-                {count}
-              </span>
-            </header>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                ($) => {
-                  return scope === "personal"
-                    ? $.remoteNetworkScope.personalGroupHelp
-                    : $.remoteNetworkScope.organizationGroupHelp;
-                },
-                { organization },
-              )}
-            </p>
-            {count > 0 ? (
-              <PrivateNetworkGroupRows ts={tailscale} cf={cloudflare} />
-            ) : (
-              <p className="rounded-xl border border-dashed border-divider p-4 text-sm text-muted-foreground">
-                {t(($) => {
-                  return scope === "personal"
-                    ? $.remoteNetworkScope.noPersonal
-                    : $.remoteNetworkScope.noOrganization;
-                })}
-              </p>
-            )}
-          </section>
+            <PrivateNetworkGroupRows ts={tailscale} cf={cloudflare} />
+          </RemoteDirectoryGroup>
         );
       })}
     </div>
   );
 }
+
+function PrivateNetworkConnectionsDialog({
+  ts,
+  cf,
+}: {
+  readonly ts: readonly TailscaleConfig[] | null;
+  readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
+}) {
+  const { t } = useTranslation();
+  const selection = useGet(remoteNetworkConnections$);
+  const close = useSet(closeRemoteNetworkConnections$);
+  const config = (selection?.kind === "tailscale" ? ts : cf)?.find((item) => {
+    return item.id === selection?.id;
+  });
+  if (!config) {
+    return null;
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          close();
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.remoteControlSetup.linkedConnections;
+            })}
+          </DialogTitle>
+          <DialogDescription className="break-words">
+            {config.name}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <RemoteNetworkConnections config={config} showHeading={false} />
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function GuidedPrivateNetworkPanel() {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const connectionsParams = new URLSearchParams(params);
   connectionsParams.set("scope", "remote-control");
   connectionsParams.delete("remoteResource");
+  connectionsParams.delete("networkConnections");
   connectionsParams.delete("setup");
   const tailscale = useLoadable(tailscaleConfigs$);
   const access = useLoadable(cloudflareAccessConfigs$);
@@ -517,10 +602,12 @@ export function GuidedPrivateNetworkPanel() {
   const open = useSet(setRemoteNetworkPicker$);
   const retry = useSet(retryTailscale$);
   const signal = useGet(pageSignal$);
-  const ts =
-    tailscaleEnabled && tailscale.state === "hasData" ? tailscale.data : null;
+  const ts = !tailscaleEnabled
+    ? []
+    : tailscale.state === "hasData"
+      ? tailscale.data
+      : null;
   const cf = access.state === "hasData" ? access.data : null;
-  const empty = cf?.length === 0 && (!tailscaleEnabled || ts?.length === 0);
   return (
     <div className="grid gap-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -530,25 +617,18 @@ export function GuidedPrivateNetworkPanel() {
               return $.remoteControlSetup.networkTitle;
             })}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.networkDescription;
-            })}
-          </p>
         </div>
-        {!empty && (
-          <Button
-            className={REMOTE_PAGE_ACTION}
-            onClick={() => {
-              open(true);
-            }}
-          >
-            <Plus size={16} aria-hidden />
-            {t(($) => {
-              return $.remoteControlSetup.addNetwork;
-            })}
-          </Button>
-        )}
+        <Button
+          className={REMOTE_PAGE_ACTION}
+          onClick={() => {
+            open(true);
+          }}
+        >
+          <Plus size={16} aria-hidden />
+          {t(($) => {
+            return $.remoteControlSetup.addNetwork;
+          })}
+        </Button>
       </header>
       {(access.state === "loading" ||
         (tailscaleEnabled && tailscale.state === "loading")) && (
@@ -572,38 +652,8 @@ export function GuidedPrivateNetworkPanel() {
           }}
         />
       )}
-      {empty && (
-        <Card
-          surface="composer"
-          className="grid justify-items-center gap-4 px-6 py-8 text-center"
-        >
-          <span className="rounded-xl bg-gray-50 p-3">
-            <Network size={24} aria-hidden />
-          </span>
-          <h3 className="font-semibold">
-            {t(($) => {
-              return $.remoteControlSetup.networkEmpty;
-            })}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.networkEmptyHelp;
-            })}
-          </p>
-          <Button
-            className={REMOTE_PAGE_ACTION}
-            onClick={() => {
-              open(true);
-            }}
-          >
-            <Plus size={16} aria-hidden />
-            {t(($) => {
-              return $.remoteControlSetup.addNetwork;
-            })}
-          </Button>
-        </Card>
-      )}
       <PrivateNetworkRows ts={ts} cf={cf} />
+      <PrivateNetworkConnectionsDialog ts={ts} cf={cf} />
       <Link
         pathname="/connectors"
         options={{ searchParams: connectionsParams }}

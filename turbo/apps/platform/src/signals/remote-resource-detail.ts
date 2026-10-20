@@ -77,6 +77,7 @@ export function remoteResourceSearchParams(
 ) {
   const next = new URLSearchParams(params);
   next.delete("setup");
+  next.delete("networkConnections");
   next.set(
     "scope",
     kind === "ssh" || kind === "vnc" ? "remote-control" : "private-network",
@@ -84,6 +85,26 @@ export function remoteResourceSearchParams(
   next.set("remoteResource", `${kind}:${id}`);
   return next;
 }
+export const remoteNetworkConnections$ = computed((get) => {
+  const params = get(searchParams$);
+  if (
+    !get(remoteControlGuidedEnabled$) ||
+    params.get("scope") !== "private-network"
+  ) {
+    return null;
+  }
+  const [kind, id] = (params.get("networkConnections") ?? "").split(":");
+  return id &&
+    (kind === "cloudflare" ||
+      (kind === "tailscale" && get(tailscaleSettingsEnabled$)))
+    ? { kind, id }
+    : null;
+});
+export const closeRemoteNetworkConnections$ = command(({ get, set }) => {
+  const params = new URLSearchParams(get(searchParams$));
+  params.delete("networkConnections");
+  set(updateSearchParams$, params);
+});
 export const remoteResource$ = computed((get) => {
   if (!get(remoteControlGuidedEnabled$)) {
     return null;

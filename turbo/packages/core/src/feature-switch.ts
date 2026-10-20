@@ -4,7 +4,7 @@
  * Provides centralized feature flag management with user-identity based overrides.
  * User IDs are stored as FNV-1a hashes to avoid exposing plain-text identifiers in source code.
  *
- * NOT AN AUTHORIZATION BOUNDARY. Every registered switch accepts user overrides
+ * NOT AN AUTHORIZATION BOUNDARY. Most registered switches accept user overrides
  * through `POST /api/feature-switches`. For money-granting, credential, or
  * privilege-escalation endpoints, gate with a hard identity check (e.g.
  * `isStaffOrg()` from `./staff-org`) instead of this system.
@@ -21,6 +21,8 @@ export interface FeatureSwitch {
   readonly enabledUserHashes?: readonly string[];
   readonly enabledEmailHashes?: readonly string[];
   readonly enabledOrgIdHashes?: readonly string[];
+  /** Keep opt-in overrides within the configured rollout audience. */
+  readonly restrictOverridesToAudience?: boolean;
 }
 
 export interface FeatureSwitchMetadata {
@@ -98,6 +100,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     // The same verified product account used by PresentationConvert. No org rollout.
     enabledUserHashes: ["032a75d8"],
+    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ChatResourcePanel]: {
     maintainer: "bingjie@okou.ai",
@@ -487,6 +490,22 @@ function evaluateSwitch(fs: FeatureSwitch, hashes: ResolvedHashes): boolean {
   return false;
 }
 
+/** Whether this identity may opt into or manage a switch in Lab. */
+export function isFeatureSwitchAvailable(
+  key: FeatureSwitchKey,
+  ctx: FeatureSwitchContext,
+): boolean {
+  const feature = FEATURE_SWITCHES[key];
+  return (
+    !feature.restrictOverridesToAudience ||
+    evaluateSwitch(feature, {
+      userHash: ctx.userId ? fnv1a(ctx.userId) : undefined,
+      emailHash: ctx.email ? fnv1a(ctx.email.toLowerCase()) : undefined,
+      orgIdHash: ctx.orgId ? fnv1a(ctx.orgId) : undefined,
+    })
+  );
+}
+
 /**
  * Return defaults enabled by the supplied email identity alone.
  *
@@ -552,7 +571,8 @@ export function getAllFeatureStates(
   if (ctx?.overrides) {
     for (const [key, value] of Object.entries(ctx.overrides)) {
       if (key in FEATURE_SWITCHES && value !== undefined) {
-        result[key as FeatureSwitchKey] = value;
+        result[key as FeatureSwitchKey] =
+          value && isFeatureSwitchAvailable(key as FeatureSwitchKey, ctx);
       }
     }
   }
@@ -642,6 +662,9 @@ export function isFeatureEnabled(
   key: FeatureSwitchKey,
   ctx: FeatureSwitchContext,
 ): boolean {
+  if (!isFeatureSwitchAvailable(key, ctx)) {
+    return false;
+  }
   const override = ctx.overrides?.[key];
   if (override !== undefined) {
     return override;

@@ -108,7 +108,7 @@ test("Lab groups active feature switches", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  // Every switch is listed once, in the group named for its rollout stage.
+  // Available switches are listed once, in their rollout-stage group.
   const metadata = getFeatureSwitchMetadata();
   const stageGroups = {
     released: "Released",
@@ -116,7 +116,9 @@ test("Lab groups active feature switches", async () => {
     alpha: "Alpha",
     internal: "Internal",
   } as const;
-  const keys = Object.values(FeatureSwitchKey);
+  const keys = Object.values(FeatureSwitchKey).filter((key) => {
+    return key !== FeatureSwitchKey.RemoteControlGuidedSetup;
+  });
   for (const key of keys) {
     const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
     expect(
@@ -124,6 +126,7 @@ test("Lab groups active feature switches", async () => {
     ).toBeInTheDocument();
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
+  expect(screen.queryByText("Remote control guided setup")).toBeNull();
   expect(
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
@@ -136,6 +139,23 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
+});
+
+test("Only Bingjie can manage the remote UI switch in Lab", async () => {
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: {
+      user: { id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", fullName: "Bingjie" },
+    },
+    featureSwitches: { [FeatureSwitchKey.Lab]: true },
+  });
+  await screen.findByText("Remote control guided setup");
+  expect(
+    within(
+      featureSwitchRow(FeatureSwitchKey.RemoteControlGuidedSetup),
+    ).getByRole("switch"),
+  ).toBeEnabled();
 });
 
 test("Maintainer filters narrow the feature list", async () => {

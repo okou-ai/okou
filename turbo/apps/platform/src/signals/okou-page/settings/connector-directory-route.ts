@@ -52,6 +52,7 @@ export const setConnectorsScope$ = command(
     // nothing in a catalog of four thousand.
     params.delete("setup");
     params.delete("remoteResource");
+    params.delete("networkConnections");
     params.delete("keywords");
     params.delete("category");
     params.delete("connection");

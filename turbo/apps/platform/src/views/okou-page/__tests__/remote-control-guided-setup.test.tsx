@@ -20,6 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/tailscale";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -27,9 +28,14 @@ import {
   click,
   fill,
   setupPage,
+  startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  emitMockedClerkEvent,
+  mockUser,
+} from "../../../__tests__/mock-auth.ts";
 import {
   getAction,
   queryAction,
@@ -105,6 +111,7 @@ async function page(
   enabled = true,
   role?: "admin" | "member",
   capabilities: { vnc?: boolean; tailscale?: boolean } = {},
+  userId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
 ) {
   if (role) {
     context.mocks.data.org({
@@ -116,17 +123,17 @@ async function page(
   await setupPage({
     context,
     path,
-    ...(role
-      ? {
-          auth: {
-            user: { id: "network-owner", fullName: "Network Owner" },
+    auth: {
+      user: { id: userId, fullName: "Network Owner" },
+      ...(role
+        ? {
             organization: {
               activeOrg: { id: "org_network_scope", name: "Engineering" },
               memberships: [{ id: "org_network_scope" }],
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
+    },
     featureSwitches: {
       [FeatureSwitchKey.RemoteControlGuidedSetup]: enabled,
       [FeatureSwitchKey.VncAccess]: capabilities.vnc ?? true,
@@ -170,7 +177,7 @@ test.each([
 );
 test("Guided connection management shows the protocols enabled by their existing switches", async () => {
   await page();
-  await screen.findByRole("heading", { name: "No devices added yet" });
+  await screen.findByRole("heading", { name: "Personal connections" });
   expect(
     screen.queryByRole("heading", { name: "Set up a connection" }),
   ).toBeNull();
@@ -183,12 +190,110 @@ test("Guided connection management shows the protocols enabled by their existing
     screen.getByText("Control the device’s screen with a mouse and keyboard."),
   ).toBeInTheDocument();
 });
+test.each(["staff-colleague", "external-user"])(
+  "A stored UI override cannot expose guided setup to %s",
+  async (userId) => {
+    await page(
+      "/connectors?scope=remote-control&setup=vnc",
+      true,
+      "member",
+      { vnc: true, tailscale: true },
+      userId,
+    );
+    await waitFor(() => {
+      expect(getAction("button", "Add host")).toBeInTheDocument();
+    });
+    expect(queryAction("button", "Add connection")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Set up a connection" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Personal connections" }),
+    ).toBeNull();
+  },
+);
+test("Another account cannot open the network list or count dialog through a stored override", async () => {
+  mockSavedConnections();
+  await page(
+    `/connectors?scope=private-network&networkConnections=tailscale:${network.id}`,
+    true,
+    "member",
+    {},
+    "other-account",
+  );
+  await screen.findByRole("heading", { name: "Cloudflare Access" });
+  expect(
+    screen.queryByRole("region", { name: "Personal networks" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("dialog", { name: "Connections using this network" }),
+  ).toBeNull();
+});
+test("Switching accounts immediately removes the previous account's remote UI", async () => {
+  await page();
+  await screen.findByRole("heading", { name: "Personal connections" });
+  act(() => {
+    mockUser(
+      { id: "another-account", fullName: "Another account" },
+      { id: "another-session", token: "test-token" },
+    );
+    emitMockedClerkEvent();
+  });
+  await waitFor(() => {
+    expect(getAction("button", "Add host")).toBeInTheDocument();
+  });
+  expect(
+    screen.queryByRole("heading", { name: "Personal connections" }),
+  ).toBeNull();
+  expect(queryAction("button", "Add connection")).toBeNull();
+});
+test("A delayed feature response cannot enable remote UI for the next account", async () => {
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    featureSwitchesContract.get,
+    async ({ respond, withSignal }) => {
+      requested.resolve();
+      await withSignal(release.promise);
+      return respond(200, {
+        switches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: true },
+        effectiveSwitches: {
+          [FeatureSwitchKey.RemoteControlGuidedSetup]: true,
+        },
+      });
+    },
+  );
+  const loading = await startPage({
+    context,
+    path: "/connectors?scope=remote-control&setup=ssh",
+    auth: {
+      user: { id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", fullName: "Bingjie" },
+    },
+  });
+  await requested.promise;
+  act(() => {
+    mockUser(
+      { id: "another-account", fullName: "Another account" },
+      { id: "another-session", token: "test-token" },
+    );
+    emitMockedClerkEvent();
+  });
+  release.resolve();
+  await loading.ready;
+  await waitFor(() => {
+    expect(getAction("button", "Add host")).toBeInTheDocument();
+  });
+  expect(queryAction("button", "Add connection")).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Set up a connection" }),
+  ).toBeNull();
+});
 test("The UI switch does not expose disabled VNC or Tailscale setup", async () => {
   await page("/connectors?scope=remote-control&setup=vnc", true, undefined, {
     vnc: false,
     tailscale: false,
   });
-  await screen.findByRole("heading", { name: "No devices added yet" });
+  await screen.findByRole("heading", { name: "Personal connections" });
   expect(screen.queryByLabelText("Login method")).toBeNull();
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", {
@@ -228,11 +333,11 @@ test.each([false, true])(
       await screen.findByText(network.name);
     } else {
       await screen.findByRole("heading", {
-        name: "No private networks added yet",
+        name: "Personal networks",
       });
     }
     expect(screen.queryAllByText(network.name)).toHaveLength(vnc ? 1 : 0);
-    click(getAction("button", "Add private network"));
+    click(getAction("button", "Add network"));
     await screen.findByRole("heading", { name: "Add a private network" });
     expect(
       screen.getByText("Cloudflare Access", { exact: true }),
@@ -249,7 +354,7 @@ test("Private network links to connection management without starting device set
       return getAction("link", "Manage device connections");
     }),
   );
-  await screen.findByRole("heading", { name: "No devices added yet" });
+  await screen.findByRole("heading", { name: "Personal connections" });
   expect(
     screen.queryByRole("heading", { name: "Set up a connection" }),
   ).toBeNull();
@@ -1375,9 +1480,9 @@ test.each(["ssh", "vnc"] as const)(
 async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
   await page("/connectors?scope=private-network");
   await waitFor(() => {
-    expect(getAction("button", "Add private network")).toBeInTheDocument();
+    expect(getAction("button", "Add network")).toBeInTheDocument();
   });
-  click(getAction("button", "Add private network"));
+  click(getAction("button", "Add network"));
   await screen.findByRole("heading", { name: "Add a private network" });
   click(screen.getByText(provider, { exact: true }));
   await screen.findByRole("dialog", {
@@ -1487,13 +1592,13 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
 
 test("Private network starts with one neutral provider selector and both guides can return to it", async () => {
   await page("/connectors?scope=private-network");
-  await screen.findByRole("heading", { name: "No private networks added yet" });
+  await screen.findByRole("heading", { name: "Personal networks" });
   expect(
     queryAllByRoleFast("button").filter((button) => {
-      return button.textContent?.trim() === "Add private network";
+      return button.textContent?.trim() === "Add network";
     }),
   ).toHaveLength(1);
-  click(getAction("button", "Add private network"));
+  click(getAction("button", "Add network"));
   await screen.findByRole("heading", { name: "Add a private network" });
   expect(
     screen.getByText("Choose the network your device uses."),
@@ -1538,7 +1643,7 @@ test("Private network starts with one neutral provider selector and both guides 
   await fill(within(form).getByLabelText("Client ID"), "test-client");
   await fill(within(form).getByLabelText("Client Secret"), "test-secret");
   click(getAction("button", "Save network"));
-  await screen.findByRole("heading", { name: "No private networks added yet" });
+  await screen.findByRole("heading", { name: "Personal networks" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
 });
@@ -1570,22 +1675,118 @@ test("Members see personal and organization networks together, with separate man
   });
   expect(within(personal).getByText(network.name)).toBeInTheDocument();
   expect(
-    within(personal).getByText("Can use · Can manage"),
+    getAction("link", `Manage ${network.name}`, personal),
   ).toBeInTheDocument();
   expect(
     within(organization).getByText(
-      "Engineering · Available to organization members",
+      "Available to members; managed by administrators",
     ),
   ).toBeInTheDocument();
-  await expect(
-    within(organization).findByText("Can use · Administrators manage"),
-  ).resolves.toBeInTheDocument();
+  expect(
+    getAction("link", `View ${shared.name}`, organization),
+  ).toBeInTheDocument();
+  expect(within(organization).queryByText("Engineering")).toBeNull();
   expect(
     within(organization).getByText(shared.name).closest("a"),
   ).toHaveAttribute(
     "href",
     expect.stringContaining(`remoteResource=cloudflare%3A${shared.id}`),
   );
+});
+
+test("Network counts open only that network's device connections and preserve in-app navigation", async () => {
+  mockSavedConnections();
+  const shared = {
+    ...cloudflareNetwork,
+    name: "Shared gateway",
+    scope: "organization" as const,
+    sshHosts: [{ id: sshHost.id, displayName: sshHost.displayName }],
+    vncHosts: [],
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [
+        {
+          ...network,
+          vncHosts: [
+            {
+              id: vncHost.id,
+              displayName: vncHost.displayName,
+              roles: ["rfb"],
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page("/connectors?scope=private-network", true, "member");
+  const count = await waitFor(() => {
+    return getAction("button", "Shared gateway · Your 1 connection");
+  });
+  click(count);
+  await waitFor(() => {
+    const dialog = screen.getByRole("dialog", {
+      name: "Connections using this network",
+    });
+    expect(within(dialog).getByText(sshHost.displayName)).toBeInTheDocument();
+    expect(within(dialog).queryByText(vncHost.displayName)).toBeNull();
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(
+    await waitFor(() => {
+      return getAction("button", "Office network · Your 1 connection");
+    }),
+  );
+  const hostLink = await waitFor(() => {
+    const dialog = screen.getByRole("dialog", {
+      name: "Connections using this network",
+    });
+    const host = within(dialog).getByText(vncHost.displayName);
+    expect(host).toBeInTheDocument();
+    return host;
+  });
+  click(hostLink);
+  await screen.findByRole("heading", { name: vncHost.displayName });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("SSH and VNC stay personal even when their transport uses an organization network", async () => {
+  mockSavedConnections();
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [{ ...cloudflareNetwork, scope: "organization" as const }],
+    });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: [
+        {
+          ...sshHost,
+          port: 443,
+          transport: {
+            type: "cloudflare_access",
+            configId: cloudflareNetwork.id,
+          },
+        },
+      ],
+    });
+  });
+  await page("/connectors?scope=remote-control", true, "member");
+  const personal = await screen.findByRole("region", {
+    name: "Personal connections",
+  });
+  expect(within(personal).getByText(sshHost.displayName)).toBeInTheDocument();
+  expect(within(personal).getByText(vncHost.displayName)).toBeInTheDocument();
+  expect(within(personal).getAllByText("Manage")).toHaveLength(2);
+  expect(
+    screen.queryByRole("region", { name: "Organization connections" }),
+  ).toBeNull();
 });
 
 test("Organization network details let members use the network without management actions", async () => {
@@ -1617,9 +1818,9 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
   async (provider) => {
     await page("/connectors?scope=private-network", true, "member");
     await screen.findByRole("heading", {
-      name: "No private networks added yet",
+      name: "Personal networks",
     });
-    click(getAction("button", "Add private network"));
+    click(getAction("button", "Add network"));
     await screen.findByRole("heading", { name: "Add a private network" });
     click(screen.getByText(provider, { exact: true }));
     await screen.findByRole("dialog");
@@ -1854,7 +2055,7 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     });
     await page("/connectors?scope=private-network", true, "admin");
     await screen.findByRole("region", { name: "Personal networks" });
-    click(getAction("button", "Add private network"));
+    click(getAction("button", "Add network"));
     await screen.findByRole("heading", { name: "Add a private network" });
     click(screen.getByText(provider, { exact: true }));
     await screen.findByRole("dialog");
