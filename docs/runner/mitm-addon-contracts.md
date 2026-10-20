@@ -749,6 +749,11 @@ discarded until native framing completes; no file, JSON state or body prefix is
 retained for that failed request.
 
 Filesystem submissions use four cooperative slots and joined worker operations.
+The private pool starts all four workers on body-free bootstrap jobs before
+accepting file operations. Failed worker startup cancels and joins that candidate
+pool, returns a content-free storage failure, and leaves no inaccessible file
+operation to execute after cleanup. Addon shutdown closes admission, joins
+accepted work and releases its files before the process exits.
 Receive/replay buffers are at most 64 KiB on the native read path, and parsing
 yields between 4 KiB slices. Replay drains the native writers before reading each
 next chunk. HTTP/2 additionally waits for native stream admission and for the

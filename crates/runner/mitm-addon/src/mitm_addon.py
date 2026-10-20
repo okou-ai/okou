@@ -2355,8 +2355,8 @@ def done():
     responses. JSONL writer shutdown is also bounded and best-effort; if it times
     out, process shutdown continues with accepted log entries possibly still
     pending.
-    Catalog validation and SigV4 hashing close admission and join their bounded
-    off-loop work.
+    Catalog validation, SigV4 hashing and managed request storage close admission
+    and join their bounded off-loop work.
     """
     global _runner_control, _registry_control
 
@@ -2388,7 +2388,10 @@ def _drain_addon_workers() -> None:
                 try:
                     aws_sigv4_hash_executor.shutdown()
                 finally:
-                    shutdown_log_writer()
+                    try:
+                        managed_request_body.shutdown()
+                    finally:
+                        shutdown_log_writer()
 
 
 # ============================================================================

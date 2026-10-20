@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import subprocess
+import textwrap
 import threading
 import time
 from contextlib import contextmanager
@@ -29,6 +30,86 @@ from tests.control_helpers import (
 from tests.pending_helpers import result_data
 from tests.registry_builtin_helpers import write_catalog_cache
 from tests.usage_helpers import UsageWebhookServer
+
+
+def test_packaged_runtime_spools_and_replays_a_managed_body(tmp_path):
+    source = Path(__file__).parents[1] / "src"
+    receipt = tmp_path / "managed-body.json"
+    script = tmp_path / "managed-body.py"
+    script.write_text(
+        textwrap.dedent(
+            f"""\
+            import json
+            import sys
+            from pathlib import Path
+            from mitmproxy import ctx
+
+            sys.path.insert(0, {str(source)!r})
+            import managed_request_body
+            from managed_openrouter_json import PolicyJsonValidator
+
+            async def running():
+                raw = (
+                    b'{{"model":"@preset/test","messages":[{{"content":"'
+                    + b'x' * 70000
+                    + b'"}}]}}'
+                )
+                body = managed_request_body.TemporaryBody(
+                    len(raw),
+                    PolicyJsonValidator(
+                        preset='@preset/test', service_tier=None,
+                        fields=frozenset(('model', 'messages')),
+                        max_depth=128, max_work=262144,
+                    ),
+                    capture=False,
+                )
+                result = {{}}
+                try:
+                    await body.receive(raw)
+                    await body.finish()
+                    file = body.file
+                    replayed = bytearray()
+                    while not body.closed:
+                        await body.read()
+                        chunk = body.take_chunk()
+                        replayed.extend(chunk)
+                        body.replayed += len(chunk)
+                    result = {{
+                        'exact': replayed == raw,
+                        'closed': file.closed,
+                        'active': managed_request_body.state_for_tests(),
+                    }}
+                except Exception as error:
+                    result = {{'error': type(error).__name__, 'message': str(error)}}
+                finally:
+                    body.close()
+                    managed_request_body.shutdown()
+                    Path({str(receipt)!r}).write_text(json.dumps(result))
+                    ctx.master.shutdown()
+            """
+        )
+    )
+    binary = Path(os.environ["MITMDUMP_CONTROL_TEST_BINARY"]).resolve(strict=True)
+    process = subprocess.run(  # noqa: S603
+        [
+            str(binary),
+            "--listen-host",
+            "127.0.0.1",
+            "--listen-port",
+            "0",
+            "--scripts",
+            str(script),
+            "--set",
+            f"confdir={tmp_path / 'certificates'}",
+        ],
+        env={"PATH": os.defpath, "TMPDIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert process.returncode == 0, process.stdout + process.stderr
+    assert json.loads(receipt.read_text()) == {"exact": True, "closed": True, "active": [0, 0]}
 
 
 @contextmanager
