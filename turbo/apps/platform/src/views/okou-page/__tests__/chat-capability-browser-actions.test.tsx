@@ -619,17 +619,30 @@ test.each([true, false])(
     const description = hasTaskContext
       ? "The website requires sign-in to access your invoices."
       : "";
-    let reads = 0;
     let preflights = 0;
     let state: BrowserUserActionResponse["state"] = "pending";
+    const companionToken = `vm0_browser_user_action_${"d".repeat(43)}`;
+    let companionState: BrowserUserActionResponse["state"] = "pending";
     let sentPrompt = "";
     const firstCheckStarted = createDeferredPromise<void>(context.signal);
     const releaseFirstCheck = createDeferredPromise<void>(context.signal);
     installCapabilityChat({
-      events: completedConversation(`[Enter details](${browserInputUrl()})`),
+      events: completedConversation(
+        [
+          `[Enter details](${browserInputUrl()})`,
+          `[Companion request](${browserInputUrl().replace(BROWSER_INPUT_TOKEN, companionToken)})`,
+        ].join("\n\n"),
+      ),
     });
-    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      reads += 1;
+    context.mocks.api(browserUserActionsContract.get, ({ params, respond }) => {
+      if (params.requestToken === companionToken) {
+        return respond(200, {
+          ...browserInputAction(companionState),
+          requestToken: companionToken,
+          title: "Companion request",
+          callbackDelivered: false,
+        });
+      }
       return respond(200, {
         ...browserInputAction(state, hasTaskContext),
         fields: [
@@ -746,11 +759,11 @@ test.each([true, false])(
     expect(window.location.href).toBe(currentUrl);
     expect(preflights).toBe(1);
     await browserUserActionSubscribed();
-    const readsBeforeSignal = reads;
+    companionState = "succeeded";
     context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
-    await waitFor(() => {
-      expect(reads).toBe(readsBeforeSignal + 1);
-    });
+    await expect(
+      screen.findByText("Information added"),
+    ).resolves.toBeInTheDocument();
     expect(dialog).toBeVisible();
     expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
 
