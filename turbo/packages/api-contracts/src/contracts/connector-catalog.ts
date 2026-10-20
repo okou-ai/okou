@@ -282,7 +282,7 @@ export const connectorCatalogContract = c.router({
       403: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "List public connector catalog metadata with connection status",
+    summary: "List public connector catalog metadata and connect hints",
   },
   discovery: {
     method: "GET",
@@ -315,8 +315,7 @@ export const connectorCatalogContract = c.router({
       403: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary:
-      "List connectors that connect in one browser step, with connection status",
+    summary: "List metadata for connectors that connect in one browser step",
   },
   get: {
     method: "GET",
@@ -331,7 +330,7 @@ export const connectorCatalogContract = c.router({
       404: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Get public connector catalog metadata with connection status",
+    summary: "Get public connector catalog metadata and connect hints",
   },
   permissions: {
     method: "GET",
