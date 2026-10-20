@@ -270,7 +270,8 @@ final class ThreadListStore {
       let current = threads.first(where: { $0.id == thread.id }),
       (current.pinnedAt != nil) != pinned
     else { return }
-    let eventID = UUID().uuidString
+    // Match PostgreSQL's canonical UUID text in the persistent event stream.
+    let eventID = UUID().uuidString.lowercased()
     let pinOrder: String?
     do {
       pinOrder =

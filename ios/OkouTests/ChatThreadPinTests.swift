@@ -333,7 +333,7 @@ private final class PinFixture: Sendable {
   private static func event(_ write: Write, sequence: Int) -> String {
     let rank = write.rank.map { "\"\($0)\"" } ?? "null"
     return """
-      {"id":"\(write.eventID)","seqId":\(sequence),"kind":"\(write.action == "pin" ? "pinned" : "unpinned")","chatThreadId":"\(target)","agentId":"\(agent)","pinOrder":\(rank),"createdAt":"2026-10-20T01:00:00Z"}
+      {"id":"\(write.eventID.lowercased())","seqId":\(sequence),"kind":"\(write.action == "pin" ? "pinned" : "unpinned")","chatThreadId":"\(target)","agentId":"\(agent)","pinOrder":\(rank),"createdAt":"2026-10-20T01:00:00Z"}
       """
   }
 }
