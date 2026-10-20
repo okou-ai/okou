@@ -9,6 +9,80 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.756.0](https://github.com/okou-ai/okou/compare/api-v1.755.0...api-v1.756.0) (2026-10-20)
+
+
+### Features
+
+* **api:** cancel atom subscription grants ([#41692](https://github.com/okou-ai/okou/issues/41692)) ([099ca7e](https://github.com/okou-ai/okou/commit/099ca7e661dfd95436dda3d101ddfc2bc5d637eb))
+* enable discord integration for all users ([#41619](https://github.com/okou-ai/okou/issues/41619)) ([d7ea540](https://github.com/okou-ai/okou/commit/d7ea54097c343c791f5373ce7df45f7c0687c212))
+* **ios:** align chat model selection and personal subscriptions ([#41668](https://github.com/okou-ai/okou/issues/41668)) ([3c7a3cb](https://github.com/okou-ai/okou/commit/3c7a3cbda46f217ebedf178a6ea2083a24f08291))
+* restore original document designs and add sidebar report ([#41464](https://github.com/okou-ai/okou/issues/41464)) ([d4a7eed](https://github.com/okou-ai/okou/commit/d4a7eedf3347eaa393954e3aeabc58247b68002e))
+
+
+### Bug Fixes
+
+* **api:** settle free official usage without a transaction ([#41662](https://github.com/okou-ai/okou/issues/41662)) ([3a6fee2](https://github.com/okou-ai/okou/commit/3a6fee2d52618726914c5f9a16a9681ac0f4553f))
+* keep auto on pi when codex execution is enabled ([#41648](https://github.com/okou-ai/okou/issues/41648)) ([1a3d4c8](https://github.com/okou-ai/okou/commit/1a3d4c8229ffdd4175b5ac510d6421ea5ee60076))
+* log provider image-size rejections as expected input failures ([#41635](https://github.com/okou-ai/okou/issues/41635)) ([d0bce92](https://github.com/okou-ai/okou/commit/d0bce92f6c403596f5f2210fe24051f452d53ecb))
+* **maps:** distinguish unverified results from invalid citations ([#41644](https://github.com/okou-ai/okou/issues/41644)) ([a67d84c](https://github.com/okou-ai/okou/commit/a67d84c337e379278b959dec5788d42743102223))
+
+
+### Refactoring
+
+* activate account-scoped connector setup status ([#41531](https://github.com/okou-ai/okou/issues/41531)) ([ae50917](https://github.com/okou-ai/okou/commit/ae50917fdaa73697ac66badac03ca8b2abd6c2e8))
+* **api:** capture terminal billing facts in the terminal statement ([#41670](https://github.com/okou-ai/okou/issues/41670)) ([b6d1b17](https://github.com/okou-ai/okou/commit/b6d1b17ea713c103a0d7de4292f252c81f32aecb))
+* **api:** keep changed-migration failure writes in their owner ([#41552](https://github.com/okou-ai/okou/issues/41552)) ([52ff630](https://github.com/okou-ai/okou/commit/52ff6304f269c0d6e646ba472288d9820b32d251))
+* **api:** keep discord ingress claim db local ([#41554](https://github.com/okou-ai/okou/issues/41554)) ([42a13ff](https://github.com/okou-ai/okou/commit/42a13ff39d7dc9c3e6b8a3a16d38c46932843297))
+* **api:** keep pending recall read in its owning command ([#41515](https://github.com/okou-ai/okou/issues/41515)) ([3d4c98a](https://github.com/okou-ai/okou/commit/3d4c98a128d4b73e9b8a57234608f6526ddf0271))
+* **api:** keep slack ingress claims in their owning command ([#41529](https://github.com/okou-ai/okou/issues/41529)) ([5bc23f3](https://github.com/okou-ai/okou/commit/5bc23f35f00eb26ed74dba887a85c09a2edf4421))
+* **api:** keep threadless candidate reads in their owner ([#41561](https://github.com/okou-ai/okou/issues/41561)) ([a94375a](https://github.com/okou-ai/okou/commit/a94375a129781f271fedc4f08eb55d7c9f144fec))
+* **api:** keep usage pack credit reads in their route owner ([#41537](https://github.com/okou-ai/okou/issues/41537)) ([7ec7c42](https://github.com/okou-ai/okou/commit/7ec7c4262e8ca334ef794b3b6d593bca4b4bd71c)) [#41534](https://github.com/okou-ai/okou/issues/41534)
+* **api:** localize banned last-admin subscription cleanup ([#41562](https://github.com/okou-ai/okou/issues/41562)) ([fcd4ac8](https://github.com/okou-ai/okou/commit/fcd4ac832fc7c24bd0a8fb101be6bb61cbb6292e))
+* **api:** localize billing reconcile candidate reads ([#41543](https://github.com/okou-ai/okou/issues/41543)) ([1b2640e](https://github.com/okou-ai/okou/commit/1b2640ee344910e42901c601c8d6f08b26ef70f7))
+* **api:** localize claimed slack ingress reads ([#41576](https://github.com/okou-ai/okou/issues/41576)) ([3aaa5df](https://github.com/okou-ai/okou/commit/3aaa5dfc09a4e8ded003706de717f8ebf43745c0))
+* **api:** localize connector diagnostic cleanup ([#41555](https://github.com/okou-ai/okou/issues/41555)) ([8a09f2c](https://github.com/okou-ai/okou/commit/8a09f2c6c49c39edc9b3df72db35cd3649998318))
+* **api:** localize discord delivery receipt read ([#41521](https://github.com/okou-ai/okou/issues/41521)) ([e150e00](https://github.com/okou-ai/okou/commit/e150e0081a999c15434b20ffc1aef103978f4224))
+* **api:** localize discord heartbeat typing cadence read ([#41566](https://github.com/okou-ai/okou/issues/41566)) ([f2fab24](https://github.com/okou-ai/okou/commit/f2fab248e7975d777d02769787c923f4e09acd99)) [#41564](https://github.com/okou-ai/okou/issues/41564)
+* **api:** localize discord lost-claim delivery readback ([#41608](https://github.com/okou-ai/okou/issues/41608)) ([43e3f23](https://github.com/okou-ai/okou/commit/43e3f23c7c098384c12cf621d653ca0b4831fa8b))
+* **api:** localize feishu callback message sends ([#41618](https://github.com/okou-ai/okou/issues/41618)) ([478774b](https://github.com/okou-ai/okou/commit/478774b5e915eb23f645c9b1cd2a5b96a202f8c7))
+* **api:** localize integration footer model reads ([#41593](https://github.com/okou-ai/okou/issues/41593)) ([63a6767](https://github.com/okou-ai/okou/commit/63a6767ad16fd76a614e53c7d95c34bef7535f9a))
+* **api:** localize slack disconnect writes ([#41598](https://github.com/okou-ai/okou/issues/41598)) ([c7fa5cc](https://github.com/okou-ai/okou/commit/c7fa5ccae599b774759bf5ef9ed7a51a5329a63d))
+* **api:** localize slack ingress failure writes ([#41524](https://github.com/okou-ai/okou/issues/41524)) ([48ebdfa](https://github.com/okou-ai/okou/commit/48ebdfa2241709d17a8598c46c150054ed1d0c87))
+* **api:** localize slack workspace installation reads ([#41621](https://github.com/okou-ai/okou/issues/41621)) ([9f796ff](https://github.com/okou-ai/okou/commit/9f796ff0a900750a3c0bc2a1fff1e2437ea8cfdc))
+* **api:** localize steered input consumption ([#41573](https://github.com/okou-ai/okou/issues/41573)) ([50c2a65](https://github.com/okou-ai/okou/commit/50c2a6531a688c9188882d57ecfce5c1c8b92635))
+* **api:** localize telegram connect agent reads ([#41569](https://github.com/okou-ai/okou/issues/41569)) ([893daf5](https://github.com/okou-ai/okou/commit/893daf5745def5931aa09084e056d8795327f131))
+* **api:** own agentphone workspace-agent read ([#41601](https://github.com/okou-ai/okou/issues/41601)) ([5f89c37](https://github.com/okou-ai/okou/commit/5f89c37b8a5cff4da9565ffb20d91ebb74c98f87))
+* **api:** own canonical slack reconciliation in preparation ([#41563](https://github.com/okou-ai/okou/issues/41563)) ([c4d25fc](https://github.com/okou-ai/okou/commit/c4d25fcf94f5badc175e6200583194c7c5f60f42)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own discord delivery readbacks ([#41585](https://github.com/okou-ai/okou/issues/41585)) ([b66ea3c](https://github.com/okou-ai/okou/commit/b66ea3c3f051ff15fa23ecbea9486386220098aa))
+* **api:** own discord failure recording in send command ([#41578](https://github.com/okou-ai/okou/issues/41578)) ([6c91633](https://github.com/okou-ai/okou/commit/6c91633d9d512dc7a57d3555244a674f0f8ade16))
+* **api:** own discord sticky route reads in commands ([#41581](https://github.com/okou-ai/okou/issues/41581)) ([65d5396](https://github.com/okou-ai/okou/commit/65d5396d9e7470ed74858618b99eb6f0a0aa48a8))
+* **api:** own feishu connector id preflight ([#41589](https://github.com/okou-ai/okou/issues/41589)) ([bf6f91d](https://github.com/okou-ai/okou/commit/bf6f91de24e85bcf277d60d292426ff2a15f290f))
+* **api:** own feishu ingress processed writes ([#41646](https://github.com/okou-ai/okou/issues/41646)) ([261ea53](https://github.com/okou-ai/okou/commit/261ea53d06352b0b82a2dcf2bfdf24c65b7d1872))
+* **api:** own feishu message delivery in commands ([#41560](https://github.com/okou-ai/okou/issues/41560)) ([9a4ae1b](https://github.com/okou-ai/okou/commit/9a4ae1bee4b28c01468d8f124ec8d53e30f9432c))
+* **api:** own feishu thinking reaction cleanup ([#41577](https://github.com/okou-ai/okou/issues/41577)) ([21b1ae3](https://github.com/okou-ai/okou/commit/21b1ae3fdb005eca77119bcb7f1c55d0d8ee4e5e))
+* **api:** own slack command workspace context ([#41606](https://github.com/okou-ai/okou/issues/41606)) ([27930e9](https://github.com/okou-ai/okou/commit/27930e94b0caf9679475067bdba30cca0762e043))
+* **api:** own teams callback mentioner-count reads ([#41603](https://github.com/okou-ai/okou/issues/41603)) ([53b82c4](https://github.com/okou-ai/okou/commit/53b82c43cc4cbac3beaab9931b8ff606cdd9e63c))
+* **api:** own telegram context lookup ([#41582](https://github.com/okou-ai/okou/issues/41582)) ([172e7f6](https://github.com/okou-ai/okou/commit/172e7f6afd57a61c16d3020d1546c5ae06b95355)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own telegram unaddressed message storage ([#41548](https://github.com/okou-ai/okou/issues/41548)) ([1794fdd](https://github.com/okou-ai/okou/commit/1794fdd34b3f01beec78ae1a9e33ea3510d78321)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own the terminal callback run locator read ([#41590](https://github.com/okou-ai/okou/issues/41590)) ([3033a58](https://github.com/okou-ai/okou/commit/3033a582bb77dca964801b69ffa43230a6f410f9))
+* **api:** own three slack connection reads ([#41686](https://github.com/okou-ai/okou/issues/41686)) ([3925912](https://github.com/okou-ai/okou/commit/392591209106eb16115dfc944b38761ef88fa6f4))
+* **api:** own usage pack management context reads ([#41540](https://github.com/okou-ai/okou/issues/41540)) ([5a2cdb9](https://github.com/okou-ai/okou/commit/5a2cdb9480488a9ac6afcb687d5918a4661865fb))
+* **api:** prepare storage-named run completion metadata ([#41656](https://github.com/okou-ai/okou/issues/41656)) ([89ed595](https://github.com/okou-ai/okou/commit/89ed595a100601fa615430b3f5aa9a828e68d1fa))
+* **api:** read chat usage receipts from billing lifecycle ([#41655](https://github.com/okou-ai/okou/issues/41655)) ([01f53c2](https://github.com/okou-ai/okou/commit/01f53c2a2640227e2cbbecab62ee97581b21d9e9))
+* remove expired teams install redirect and wallet spend compatibility ([#41583](https://github.com/okou-ai/okou/issues/41583)) ([bad6179](https://github.com/okou-ai/okou/commit/bad61790761ccd91d8dc1224f4ca43ad87ab1ba5))
+* remove remote control cli management feature switch ([#41671](https://github.com/okou-ai/okou/issues/41671)) ([3e2cc22](https://github.com/okou-ai/okou/commit/3e2cc2296a0919f015a94f40035c39ef37355a95))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.578.0
+    * @okouai/core bumped to 8.772.0
+    * @okouai/db bumped to 1.349.0
+    * @okouai/pi-agent-runtime bumped to 1.50.28
+
 ## [1.755.0](https://github.com/okou-ai/okou/compare/api-v1.754.0...api-v1.755.0) (2026-10-19)
 
 

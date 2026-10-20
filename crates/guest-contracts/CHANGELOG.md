@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.26.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.3...guest-contracts-v0.26.4) (2026-10-20)
+
+
+### Bug Fixes
+
+* log provider image-size rejections as expected input failures ([#41635](https://github.com/okou-ai/okou/issues/41635)) ([d0bce92](https://github.com/okou-ai/okou/commit/d0bce92f6c403596f5f2210fe24051f452d53ecb))
+* **runner:** align codex stdio framing with upstream ([#41530](https://github.com/okou-ai/okou/issues/41530)) ([a514057](https://github.com/okou-ai/okou/commit/a5140578b5b1829b4bbcfebf583486299c8fdeb9))
+* **runner:** attribute nested codex child oom kills ([#41641](https://github.com/okou-ai/okou/issues/41641)) ([ff587f5](https://github.com/okou-ai/okou/commit/ff587f591fbf75370f90ab510b7e1dea03a16df0))
+* **runner:** retain native codex failure evidence ([#41632](https://github.com/okou-ai/okou/issues/41632)) ([4688a72](https://github.com/okou-ai/okou/commit/4688a72a87552541b43c80769a926907f5e74921))
+
 ## [0.26.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.2...guest-contracts-v0.26.3) (2026-10-19)
 
 ## [0.26.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.1...guest-contracts-v0.26.2) (2026-10-19)
