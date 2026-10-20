@@ -1608,7 +1608,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-overlap-${initialRun.runId}`,
               cliAgentSessionHistoryDisposition: "native_only",
-              artifactSnapshots: [
+              storageOutputs: [
                 {
                   name: initialMemory.name,
                   version: preparedMemory.versionId,
@@ -2114,7 +2114,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-cli-${initialRun.runId}`,
               cliAgentSessionHistoryDisposition: "native_only",
-              artifactSnapshots: [
+              storageOutputs: [
                 {
                   name: initialMemory.name,
                   version: preparedMemory.versionId,
@@ -12578,23 +12578,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
             cliAgentSessionHistoryDisposition: "native_only" as const,
           };
-          await webhooks.requestAgentCompleteUnchecked(
-            {
-              runId: created.runId,
-              exitCode: 0,
-              completion: {
-                ...nativeMetadata,
-                storageOutputs,
-                artifactSnapshots: storageOutputs,
-              },
-            },
-            sandboxHeaders,
-            [400],
-          );
-          expect((await api.readRun(actor, created.runId)).status).toBe(
-            "running",
-          );
-
           const completion = await webhooks.requestAgentComplete(
             {
               runId: created.runId,
@@ -12631,19 +12614,23 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             version: outputVersion,
           });
 
-          const legacyReplay = await webhooks.requestAgentComplete(
+          const replay = await webhooks.requestAgentComplete(
             {
               runId: created.runId,
               exitCode: 0,
+              lastEventSequence: 3,
               completion: {
                 ...nativeMetadata,
-                artifactSnapshots: storageOutputs,
+                storageOutputs,
+                volumeVersionsSnapshot: {
+                  versions: { [cacheVolume]: cachePrepared.versionId },
+                },
               },
             },
             sandboxHeaders,
             [200],
           );
-          expect(legacyReplay.body).toStrictEqual(completion.body);
+          expect(replay.body).toStrictEqual(completion.body);
           await expect(
             api.readRun(actor, created.runId),
           ).resolves.toStrictEqual(completed);

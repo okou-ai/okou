@@ -34,10 +34,7 @@ import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
 
-export type AgentRunOutputBody = Omit<
-  z.infer<typeof runCompletionMetadataSchema>,
-  "artifactSnapshots"
-> & {
+export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
 

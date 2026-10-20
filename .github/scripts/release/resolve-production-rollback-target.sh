@@ -16,6 +16,9 @@ readonly STRUCTURED_DISK_TELEMETRY_READER_COMMIT=e01702c7d762b5d2a76d557db77ccaf
 # Final receiving cleanup must not restart a Runner whose embedded Guest still
 # emits the retired disk pair. Check the selected Runner tag independently.
 readonly PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT=625c4607ccdcd2d46a5c7227f61419928035e13f
+# Completion now accepts only storageOutputs. The selected Runner must embed
+# #41742's Guest writer even when its paired API still accepts the old field.
+readonly GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT=2eff576ad75d328676834643c1380ff35c2297e2
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -762,6 +765,9 @@ if ! git merge-base --is-ancestor "$BUNDLED_ONLY_CLI_RUNNER_COMMIT" "$runner_tag
 fi
 if ! git merge-base --is-ancestor "$PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the pair-free disk telemetry writer: ${PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Guest Storage-output completion writer: ${GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then

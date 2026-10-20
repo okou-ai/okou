@@ -516,7 +516,7 @@ export function createPiMemoryMaintenanceFixture(
         cliAgentType: "pi" as const,
         cliAgentSessionId: run.runId,
         cliAgentSessionHistoryDisposition: "native_only" as const,
-        artifactSnapshots: [
+        storageOutputs: [
           {
             name: run.memory.name,
             mountPath: run.memory.mountPath,

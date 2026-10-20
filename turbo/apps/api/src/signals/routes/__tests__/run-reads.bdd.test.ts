@@ -856,7 +856,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
             cliAgentType: "claude-code",
             cliAgentSessionId,
             cliAgentSessionHistoryDisposition: "native_only",
-            artifactSnapshots: [
+            storageOutputs: [
               {
                 name: "memory",
                 version: memory1.versionId,

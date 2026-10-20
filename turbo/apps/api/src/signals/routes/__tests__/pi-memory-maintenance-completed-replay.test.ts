@@ -28,15 +28,10 @@ describe("Genuine Pi maintenance publication results", () => {
         status: "completed",
         result: { storageOutputs: [{ version: first.versionId }] },
       });
-      const { artifactSnapshots, ...metadata } = completed.body.completion;
-      const canonicalReplay = {
-        ...completed.body,
-        completion: { ...metadata, storageOutputs: artifactSnapshots },
-      };
       const recoveryReplay = {
         ...completed.body,
         completion: {
-          ...metadata,
+          ...completed.body.completion,
           storageOutputs: [
             {
               name: run.memory.name,
@@ -78,7 +73,7 @@ describe("Genuine Pi maintenance publication results", () => {
       });
 
       const replay = await webhooks.requestAgentComplete(
-        kind === "original" ? canonicalReplay : recoveryReplay,
+        kind === "original" ? completed.body : recoveryReplay,
         run.headers,
         [200],
       );

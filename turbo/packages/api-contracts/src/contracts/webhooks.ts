@@ -331,33 +331,16 @@ const volumeVersionsSnapshotSchema = z.object({
   versions: z.record(z.string(), z.string()),
 });
 
-const runCompletionMetadataShape = {
-  cliAgentType: z.string().min(1, "cliAgentType is required"),
-  cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
-  cliAgentSessionHistoryDisposition: z.enum(["native_only"]),
-  // Versions of the run's authorized writeback mounts after publication.
-  storageOutputs: storageOutputsSchema.optional(),
-  // Old Runner -> new API compatibility. Remove with #41332 after old Runner
-  // owners finish execution/finalization and exit, with compatible rollbacks.
-  artifactSnapshots: storageOutputsSchema.optional(),
-  volumeVersionsSnapshot: volumeVersionsSnapshotSchema.optional(),
-} as const;
-
 export const runCompletionMetadataSchema = z
-  .object(runCompletionMetadataShape)
-  .strict()
-  .refine(
-    (metadata) => {
-      return (
-        metadata.storageOutputs === undefined ||
-        metadata.artifactSnapshots === undefined
-      );
-    },
-    {
-      message: "Specify only one of storageOutputs and artifactSnapshots",
-      path: ["storageOutputs"],
-    },
-  );
+  .object({
+    cliAgentType: z.string().min(1, "cliAgentType is required"),
+    cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
+    cliAgentSessionHistoryDisposition: z.enum(["native_only"]),
+    // Versions of the run's authorized writeback mounts after publication.
+    storageOutputs: storageOutputsSchema.optional(),
+    volumeVersionsSnapshot: volumeVersionsSnapshotSchema.optional(),
+  })
+  .strict();
 
 const webhookCompleteBodySchema = z.object({
   runId: z.string().min(1, "runId is required"),

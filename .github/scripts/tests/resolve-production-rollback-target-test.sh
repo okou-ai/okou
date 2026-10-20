@@ -28,6 +28,8 @@ case "${1:-}" in
       else
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "2eff576ad75d328676834643c1380ff35c2297e2" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+      [ "${MOCK_GUEST_STORAGE_COMPLETION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN:-1}" = "1" ]
@@ -438,6 +440,14 @@ for storage_reader_case in \
     fail "unsupported Storage reader must fail before artifact or host access"
   fi
 done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the Guest Storage-output completion writer" \
+  run_resolver "${tmp_dir}/completion-writer-floor.output" MOCK_GUEST_STORAGE_COMPLETION_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/completion-writer-floor.output" ] || fail "old Guest writer must not publish rollback outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "old Guest writer must fail before Runner artifact or host access"
+fi
 
 for completion_reader_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

@@ -116,7 +116,7 @@ describe("Serial private Pi maintenance", () => {
             ...completed.body,
             completion: {
               ...completed.body.completion,
-              artifactSnapshots: [
+              storageOutputs: [
                 {
                   name: run.memory.name,
                   mountPath: run.memory.mountPath,

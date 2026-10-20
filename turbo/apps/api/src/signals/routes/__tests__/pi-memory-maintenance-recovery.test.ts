@@ -34,7 +34,7 @@ describe("Pi maintenance recovery", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.runId,
           cliAgentSessionHistoryDisposition: "native_only",
-          artifactSnapshots: [
+          storageOutputs: [
             {
               name: run.memory.name,
               mountPath: run.memory.mountPath,
@@ -156,7 +156,7 @@ describe("Pi maintenance recovery", () => {
           ...recovered.body,
           completion: {
             ...recovered.body.completion,
-            artifactSnapshots: [
+            storageOutputs: [
               {
                 name: run.memory.name,
                 mountPath: run.memory.mountPath,

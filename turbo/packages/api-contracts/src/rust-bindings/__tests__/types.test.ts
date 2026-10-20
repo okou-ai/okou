@@ -522,14 +522,14 @@ describe("Rust type bindings", () => {
       "/// Final Run output metadata included with completion.",
     );
     expect(firstRender).toContain(
-      "pub struct RequestCompletionArtifactSnapshot {",
+      "pub struct RequestCompletionStorageOutput {",
     );
     expect(firstRender).toContain(
-      "pub artifact_snapshots: Option<Vec<RequestCompletionArtifactSnapshot>>,",
+      "pub storage_outputs: Option<Vec<RequestCompletionStorageOutput>>,",
     );
     expect(firstRender).toContain("pub completion: Option<RequestCompletion>,");
     expect(firstRender).toMatch(
-      /pub missing_root_policy:\s+Option<RequestCompletionArtifactSnapshotMissingRootPolicy>,/,
+      /pub missing_root_policy:\s+Option<RequestCompletionStorageOutputMissingRootPolicy>,/,
     );
     expect(firstRender).toContain(
       "pub volume_versions_snapshot: Option<RequestCompletionVolumeVersionsSnapshot>,",
@@ -680,7 +680,7 @@ describe("Rust type bindings", () => {
       storageMountEntrySchema.shape.missingRootPolicy,
     );
     const completionPolicySchema = z.toJSONSchema(
-      runCompletionMetadataSchema.shape.artifactSnapshots.unwrap().element.shape
+      runCompletionMetadataSchema.shape.storageOutputs.unwrap().element.shape
         .missingRootPolicy,
     );
     expect(completionPolicySchema).toEqual(runnerPolicySchema);
