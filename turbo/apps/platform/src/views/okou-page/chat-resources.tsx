@@ -339,7 +339,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   return (
     <div
       data-resource-scroll
-      className="isolate min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-1 [overflow-anchor:none]"
+      className="isolate mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [overflow-anchor:none]"
     >
       <ChatOrigin thread={thread} />
       <ChatRelationships thread={thread} />
