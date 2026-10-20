@@ -734,7 +734,10 @@ request hook, current authorization, connection selection and TLS to mitmproxy.
 Managed body hooks carry one structured argument because the production
 `ProxyConnectionHandler` requires single-argument hooks. That payload owns the
 flow, operation stage and bounded bytes until the native continuation resumes.
-Each receive hook is joined before another connection read. The finish
+Each receive hook is joined before another connection read. Checkpoints
+created when requestheaders completes also transfer to the owning
+reader: the first body bytes may already be buffered behind that native hook.
+An already-pending read must join that work before reading again. The finish
 checkpoint additionally joins authorization, connection acquisition and the
 complete upload, so a paused continuation cannot accumulate subsequent socket
 input. Completion belongs to the native continuation, including its last replay
@@ -814,7 +817,8 @@ hostnames and untrusted certificates fail before HTTP credentials or body bytes.
 before releasing a blocked real-file read, then checks physical storage cleanup.
 `test_mitmproxy_managed_request_connection.py` exercises the concrete production
 hook dispatcher, real sockets and native framing for both managed dialects under
-ordinary and eager task scheduling.
+ordinary and eager task scheduling. A blocked first real-file write verifies
+that headers completion cannot leave later native reads accumulating body bytes.
 
 ## Header-phase credential-resolution failures
 

@@ -243,15 +243,16 @@ def _install_response_inspection_bridge() -> None:
                 and isinstance(
                     event.command,
                     (
+                        HttpRequestHeadersHook,
                         websocket.WebsocketMessageHook,
                         managed_request_transport.ManagedRequestBodyHook,
                     ),
                 )
             )
         ):
-            # A single read can contain many small WebSocket messages. Transfer
-            # successor checkpoints to the reader instead of retaining a chain
-            # of native hook tasks waiting on all later messages in that read.
+            # Headers completion can start the first managed body hook from
+            # already-buffered input. Transfer it, and later body/message
+            # checkpoints, to the reader rather than only joining its hook task.
             if reader.closed:
                 for checkpoint in checkpoints:
                     _abandon_inspection(checkpoint)
