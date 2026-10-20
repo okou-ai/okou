@@ -8,15 +8,9 @@ use serde_json::Value;
 const REQUEST_SEND_MESSAGE: &str = "stream disconnected before completion: error sending request";
 const REMOTE_COMPACTION_PREFIX: &str = "Error running remote compact task: ";
 
-/// Call only for one native Codex terminal event. The optional top-level message
-/// belongs to that same event, never stderr, tool output, or an assistant answer.
-pub(crate) fn terminal_evidence(
-    error: Option<&Value>,
-    fallback_message: Option<&str>,
-) -> Option<CodexFailureEvidence> {
-    let info = error
-        .and_then(|error| error.get("codex_error_info"))
-        .filter(|info| !info.is_null());
+/// Call only for the error object selected from a native Codex terminal event.
+pub(crate) fn terminal_evidence(error: &Value) -> Option<CodexFailureEvidence> {
+    let info = error.get("codex_error_info").filter(|info| !info.is_null());
     let variant = match info {
         Some(Value::String(kind)) => Some(kind.as_str()),
         Some(Value::Object(object)) if object.len() == 1 => object
@@ -53,11 +47,7 @@ pub(crate) fn terminal_evidence(
         .and_then(|status| u16::try_from(status).ok())
         .filter(|status| (100..=599).contains(status));
 
-    if let Some(message) = error
-        .and_then(|error| error.get("message"))
-        .and_then(Value::as_str)
-        .or(fallback_message)
-    {
+    if let Some(message) = error.get("message").and_then(Value::as_str) {
         if message
             .strip_prefix(REMOTE_COMPACTION_PREFIX)
             .is_some_and(|detail| !detail.trim().is_empty())
@@ -86,7 +76,9 @@ mod tests {
     #[test]
     fn owned_terminal_signature_reports_send_stage_without_inventing_cause() {
         for event in [
-            json!({"type":"error", "message":REQUEST_SEND_MESSAGE}),
+            json!({"type":"error", "message":REQUEST_SEND_MESSAGE, "error":{
+                "message":REQUEST_SEND_MESSAGE
+            }}),
             json!({"type":"error", "message":REQUEST_SEND_MESSAGE, "error":{
                 "message":REQUEST_SEND_MESSAGE, "codex_error_info":null
             }}),
@@ -151,14 +143,14 @@ mod tests {
                 let error = json!({"message":REQUEST_SEND_MESSAGE, "codex_error_info":{
                     variant:{"httpStatusCode":status}
                 }});
-                let evidence = terminal_evidence(Some(&error), None).unwrap();
+                let evidence = terminal_evidence(&error).unwrap();
                 assert_eq!(evidence.reported_stage, expected, "{variant}");
                 assert_eq!(evidence.http_status, Some(status));
             }
         }
         let error = json!({"message":format!("{REMOTE_COMPACTION_PREFIX}{REQUEST_SEND_MESSAGE}"),
             "codex_error_info":{"responseStreamDisconnected":{"httpStatusCode":200}}});
-        let evidence = terminal_evidence(Some(&error), None).unwrap();
+        let evidence = terminal_evidence(&error).unwrap();
         assert_eq!(
             evidence.reported_stage,
             Some(CodexFailureStage::RemoteCompaction)
@@ -184,7 +176,7 @@ mod tests {
             let error = json!({"message":"private body", "codex_error_info":{
                 "httpConnectionFailed":{"httpStatusCode":status,"body":"private-body"}
             }});
-            let evidence = terminal_evidence(Some(&error), None).unwrap();
+            let evidence = terminal_evidence(&error).unwrap();
             assert_eq!(evidence.http_status, None);
             assert!(
                 !serde_json::to_string(&evidence)
@@ -200,7 +192,7 @@ mod tests {
             json!({"private-kind":{"httpStatusCode":503}}),
         ] {
             let error = json!({"message":REQUEST_SEND_MESSAGE,"codex_error_info":info});
-            assert_eq!(terminal_evidence(Some(&error), None), None, "{info}");
+            assert_eq!(terminal_evidence(&error), None, "{info}");
         }
     }
 
@@ -221,10 +213,7 @@ mod tests {
             "stream disconnected before completion: connection reset by peer".to_string(),
             REMOTE_COMPACTION_PREFIX.to_string(),
         ] {
-            assert_eq!(
-                terminal_evidence(Some(&json!({"message":message})), None),
-                None
-            );
+            assert_eq!(terminal_evidence(&json!({"message":message})), None);
         }
         let event = json!({"type":"error","message":REQUEST_SEND_MESSAGE,"error":{
             "message":REQUEST_SEND_MESSAGE,"codex_error_info":"unauthorized"

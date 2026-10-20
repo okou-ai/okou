@@ -291,10 +291,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 message: raw_message_from_field(event.get("message"))
                     .unwrap_or_else(|| "error".into()),
                 failure_reason: codex_error_failure_reason(event, error),
-                evidence: crate::codex_failure::terminal_evidence(
-                    error,
-                    event.get("message").and_then(Value::as_str),
-                ),
+                evidence: error.and_then(crate::codex_failure::terminal_evidence),
             })
         }
         "turn.completed" => {
@@ -307,7 +304,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 message: codex_error_message(turn_error)
                     .unwrap_or_else(|| format!("turn {status}")),
                 failure_reason: codex_error_failure_reason(event, turn_error),
-                evidence: crate::codex_failure::terminal_evidence(turn_error, None),
+                evidence: turn_error.and_then(crate::codex_failure::terminal_evidence),
             })
         }
         _ => None,
