@@ -138,6 +138,7 @@ export async function publicChatActor(
   return {
     ...entitled,
     run,
+    rememberClaim: owner.rememberClaim,
     ownsFeatureSwitches() {
       ownsFeatures = true;
     },
