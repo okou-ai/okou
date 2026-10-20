@@ -85,16 +85,18 @@ export function DeviceAuthRetryContent({
   label,
   onStart,
 }: {
-  readonly message: string;
+  readonly message: string | undefined;
   readonly testId: string;
   readonly label: ReactNode;
   readonly onStart: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-destructive" role="alert">
-        {message}
-      </p>
+      {message && (
+        <p className="text-sm text-destructive" role="alert">
+          {message}
+        </p>
+      )}
       <Button
         type="button"
         variant="outline"

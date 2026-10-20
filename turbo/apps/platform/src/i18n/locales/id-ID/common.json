@@ -207,7 +207,6 @@
       "documentTitle": "Inspeksi Log",
       "errors": {
         "invalid": "File JSON tidak valid. Unggah file JSON log aktivitas yang diekspor.",
-        "load": "Tidak dapat memuat file JSON. Unggah file JSON log aktivitas yang diekspor.",
         "oversized": "File JSON terlalu besar. Unggah file JSON log aktivitas yang diekspor di bawah 25 MB."
       },
       "fallbackName": "Log Impor",
@@ -1294,7 +1293,6 @@
       "downgradeScheduledPeriod": "Penurunan paket dijadwalkan. Paket Anda saat ini tetap aktif hingga periode tagihan berakhir.",
       "planRestored": "Paket dipulihkan. Langganan Anda akan diperbarui seperti biasa.",
       "preparingReceiptDownload": "Menyiapkan unduhan struk...",
-      "receiptDownloadFailed": "Gagal mengunduh struk",
       "receiptsDownloaded": "Struk diunduh",
       "subscriptionChangeConfirmed": "Perubahan langganan dikonfirmasi."
     },
@@ -1562,9 +1560,7 @@
       "title": "Lampiran",
       "unavailable": "{{filename}} tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
       "unavailableCount_other": "{{count}} lampiran tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
-      "uploadFailed": "Gagal mengunggah {{filename}}",
-      "uploadFailedRetry": "Gagal mengunggah {{filename}}. Coba lagi.",
-      "uploadsFailed": "Beberapa lampiran gagal diunggah. Coba lagi."
+      "uploadFailedRetry": "Gagal mengunggah {{filename}}. Coba lagi."
     },
     "automations": {
       "active": "Aktif",
@@ -4818,7 +4814,6 @@
           "codeRequired": "Tempel kode otorisasi Claude untuk melanjutkan.",
           "connectedToast": "Claude terhubung",
           "connectTitle": "Hubungkan Claude",
-          "error": "Koneksi Claude gagal. Mulai lagi untuk mencoba ulang.",
           "expired": "Sesi koneksi Claude kedaluwarsa. Mulai lagi untuk mencoba ulang.",
           "instructions": "Pertama klik Buka halaman persetujuan Claude. Lalu setujui {{brandName}} di Claude dan salin kode otorisasi yang ditampilkan setelah persetujuan. Terakhir, tempel kode itu di sini dan klik Hubungkan.",
           "openApproval": "Buka halaman persetujuan Claude",
@@ -4833,7 +4828,6 @@
           "connectedToast": "ChatGPT terhubung",
           "connectTitle": "Hubungkan Codex",
           "deviceCode": "Kode perangkat",
-          "error": "Koneksi ChatGPT gagal. Mulai lagi untuk mencoba kembali.",
           "expired": "Sesi koneksi Codex kedaluwarsa. Mulai lagi untuk mencoba kembali.",
           "freePlanRejected": "Paket ChatGPT gratis tidak dapat menggunakan Codex melalui {{brandName}}. Tingkatkan ke Plus atau Pro lalu coba lagi.",
           "instructions": "Salin dulu kode perangkat dengan tombol salin, lalu buka halaman persetujuan. Lalu tempel kode perangkat ke OpenAI saat diminta. Terakhir, setujui akses dan biarkan dialog ini tetap terbuka sampai {{brandName}} selesai menyambungkan.",

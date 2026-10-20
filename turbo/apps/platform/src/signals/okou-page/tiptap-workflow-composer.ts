@@ -240,7 +240,7 @@ export interface WorkflowComposerSignals {
   readonly slashWorkflowsExpanded$: Computed<boolean>;
   /** The open menu's inner height when its workflows were revealed. */
   readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
-  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
+  readonly recentWorkflowIds$: Computed<readonly string[]>;
   readonly expandSlashWorkflows$: Command<void, []>;
   /** The composer edge the open slash menu hugs: the half its `/` is in. */
   readonly slashMenuSide$: Computed<SlashMenuSide>;

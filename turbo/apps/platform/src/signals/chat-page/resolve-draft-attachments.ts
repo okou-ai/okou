@@ -51,42 +51,9 @@ export function collectSuccessfulAttachmentInfos(
   });
 }
 
-function attachmentUploadFailureMessage(
-  attachments: readonly ChatAttachment[],
-  results: readonly PromiseSettledResult<AttachmentFileInfo | null>[],
-): string | null {
-  const failedFilenames = results.flatMap((result, index) => {
-    const attachment = attachments[index];
-    if (!attachment) {
-      return [];
-    }
-    if (result.status === "rejected" || result.value === null) {
-      return [attachment.filename];
-    }
-    return [];
-  });
-
-  if (failedFilenames.length === 0) {
-    return null;
-  }
-
-  if (failedFilenames.length === 1) {
-    return i18n.t(
-      ($) => {
-        return $.chat.attachments.uploadFailedRetry;
-      },
-      { filename: failedFilenames[0] },
-    );
-  }
-
-  return i18n.t(($) => {
-    return $.chat.attachments.uploadsFailed;
-  });
-}
-
 /**
  * Resolves a draft's pending attachments (waits for uploads to finish,
- * rejects failed entries) and shapes the result into both the
+ * omits failed entries) and shapes the result into
  * canonical file parts for the outbound user-message document.
  *
  * Returns `null` when the user has typed nothing and no attachments are
@@ -110,14 +77,6 @@ export const prepareUserMessageFromDraft$ = command(
       }),
     );
     signal.throwIfAborted();
-
-    const uploadFailureMessage = attachmentUploadFailureMessage(
-      allAttachments,
-      allInfos,
-    );
-    if (uploadFailureMessage) {
-      throw new Error(uploadFailureMessage);
-    }
 
     const ready = collectSuccessfulAttachmentInfos(allAttachments, allInfos);
 

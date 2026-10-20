@@ -97,7 +97,6 @@ function CodexDeviceAuthBody({
   const brandName = useGet(brandName$);
   const { t } = useTranslation();
   switch (flow.status) {
-    case "idle":
     case "starting": {
       return (
         <DeviceAuthLoadingContent
@@ -166,11 +165,12 @@ function CodexDeviceAuthBody({
         </div>
       );
     }
+    case "idle":
     case "expired":
     case "error": {
       return (
         <DeviceAuthRetryContent
-          message={flow.message}
+          message={flow.status === "idle" ? undefined : flow.message}
           testId="codex-device-auth-start"
           onStart={onStart}
           label={

@@ -207,7 +207,6 @@
       "documentTitle": "檢查日誌",
       "errors": {
         "invalid": "JSON 檔案無效。請上傳匯出的活動日誌 JSON 檔案。",
-        "load": "無法載入 JSON 檔案。請上傳匯出的活動日誌 JSON 檔案。",
         "oversized": "JSON 檔案太大。請上傳小於 25 MB 的活動日誌 JSON 檔案。"
       },
       "fallbackName": "匯入的日誌",
@@ -1294,7 +1293,6 @@
       "downgradeScheduledPeriod": "降級已安排。當前套餐在本個帳單週期結束前仍然有效。",
       "planRestored": "套餐已恢復，訂閱將正常續費。",
       "preparingReceiptDownload": "正在準備下載收據…",
-      "receiptDownloadFailed": "收據下載失敗",
       "receiptsDownloaded": "收據已下載",
       "subscriptionChangeConfirmed": "訂閱變更已確認。"
     },
@@ -1562,9 +1560,7 @@
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上傳後才能傳送。",
       "unavailableCount_other": "有 {{count}} 個附件已不可用。重新上傳後才能傳送。",
-      "uploadFailed": "{{filename}} 上傳失敗",
-      "uploadFailedRetry": "{{filename}} 上傳失敗，請重試。",
-      "uploadsFailed": "部分附件上傳失敗，請重試。"
+      "uploadFailedRetry": "{{filename}} 上傳失敗，請重試。"
     },
     "automations": {
       "active": "已啟用",
@@ -4818,7 +4814,6 @@
           "codeRequired": "請貼上 Claude 授權碼後繼續。",
           "connectedToast": "Claude 已連線",
           "connectTitle": "連線 Claude",
-          "error": "Claude 連線失敗。請重新開始並重試。",
           "expired": "Claude 連線會話已過期。請重新開始並重試。",
           "instructions": "先點選「開啟 Claude 授權頁面」。然後在 Claude 中為 {{brandName}} 授權，並複製授權後顯示的授權碼。最後把授權碼貼上到這裡，點選「連線」。",
           "openApproval": "開啟 Claude 授權頁面",
@@ -4833,7 +4828,6 @@
           "connectedToast": "ChatGPT 已連線",
           "connectTitle": "連線 Codex",
           "deviceCode": "裝置碼",
-          "error": "ChatGPT 連線失敗。請重新開始並重試。",
           "expired": "Codex 連線會話已過期。請重新開始並重試。",
           "freePlanRejected": "免費版 ChatGPT 套餐無法透過 {{brandName}} 使用 Codex。請升級到 Plus 或 Pro 後重試。",
           "instructions": "先使用複製按鈕複製裝置碼，再開啟授權頁面。然後按 OpenAI 的提示貼上裝置碼。最後確認授權，並在 {{brandName}} 完成連線前保持這個對話方塊開啟。",

@@ -56,7 +56,6 @@ import {
   resetSignal,
   waitLoopUntil,
   waitForOperation,
-  tapError,
   withCleanup,
   settle,
 } from "../../utils.ts";
@@ -1806,35 +1805,16 @@ const connectConnectorOAuthDeviceAuth$ = command(
           args.options,
           flowSignal,
         );
-        const startResponse = await tapError(
-          accept(
-            client.create({
-              params: { connectorSlug },
-              body: connectorOAuthDeviceAuthStartBody({ ...args, options }),
-              fetchOptions: { signal: flowSignal },
-            }),
-            [200],
-          ),
+        const startResponse = await accept(
+          client.create({
+            params: { connectorSlug },
+            body: connectorOAuthDeviceAuthStartBody({ ...args, options }),
+            fetchOptions: { signal: flowSignal },
+          }),
+          [200],
         );
         flowSignal.throwIfAborted();
-        const startResult = startResponse?.body ?? null;
-        if (!startResponse) {
-          if (flowSignal.aborted) {
-            return false;
-          }
-          set(internalConnectorOAuthDeviceAuthState$, {
-            status: "error",
-            connectorSlug,
-            authMethod,
-            message: i18n.t(($) => {
-              return $.connectors.connectDialog.errors.failed;
-            }),
-          });
-        }
-        flowSignal.throwIfAborted();
-        if (!startResult) {
-          return false;
-        }
+        const startResult = startResponse.body;
 
         set(internalConnectorOAuthDeviceAuthState$, {
           status: "pending",
@@ -2074,42 +2054,23 @@ const connectConnectorExternalCodeCommand$ = command(
           args,
           flowSignal,
         );
-        const startResponse = await tapError(
-          accept(
-            client.create({
-              params: { connectorSlug },
-              body: {
-                account: options.account,
-                authMethod,
-                ...(shouldAuthorizeAgent(options)
-                  ? { authorizeAgent: true as const }
-                  : {}),
-                ...(args.agentId ? { agentId: args.agentId } : {}),
-              },
-              fetchOptions: { signal: flowSignal },
-            }),
-            [200],
-          ),
+        const startResponse = await accept(
+          client.create({
+            params: { connectorSlug },
+            body: {
+              account: options.account,
+              authMethod,
+              ...(shouldAuthorizeAgent(options)
+                ? { authorizeAgent: true as const }
+                : {}),
+              ...(args.agentId ? { agentId: args.agentId } : {}),
+            },
+            fetchOptions: { signal: flowSignal },
+          }),
+          [200],
         );
         flowSignal.throwIfAborted();
-        const startResult = startResponse?.body ?? null;
-        if (!startResponse) {
-          if (flowSignal.aborted) {
-            return false;
-          }
-          set(internalConnectorExternalCodeState$, {
-            status: "error",
-            connectorSlug,
-            authMethod,
-            message: i18n.t(($) => {
-              return $.connectors.connectDialog.errors.failed;
-            }),
-          });
-        }
-        flowSignal.throwIfAborted();
-        if (!startResult) {
-          return false;
-        }
+        const startResult = startResponse.body;
 
         set(internalConnectorExternalCodeState$, {
           status: "pending",

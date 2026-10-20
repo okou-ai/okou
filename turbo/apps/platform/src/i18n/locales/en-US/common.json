@@ -207,7 +207,6 @@
       "documentTitle": "Inspect Log",
       "errors": {
         "invalid": "Invalid JSON file. Upload an exported activity log JSON file.",
-        "load": "Could not load JSON file. Upload an exported activity log JSON file.",
         "oversized": "JSON file is too large. Upload an exported activity log JSON file under 25 MB."
       },
       "fallbackName": "Imported Log",
@@ -1295,7 +1294,6 @@
       "downgradeScheduledPeriod": "Downgrade scheduled. Your current plan stays active until the billing period ends.",
       "planRestored": "Plan restored. Your subscription will renew normally.",
       "preparingReceiptDownload": "Preparing receipt download...",
-      "receiptDownloadFailed": "Failed to download receipts",
       "receiptsDownloaded": "Receipts downloaded",
       "subscriptionChangeConfirmed": "Subscription change confirmed."
     },
@@ -1564,9 +1562,7 @@
       "unavailable": "{{filename}} is no longer available. Upload it again to send.",
       "unavailableCount_one": "{{count}} attachment is no longer available. Upload it again to send.",
       "unavailableCount_other": "{{count}} attachments are no longer available. Upload them again to send.",
-      "uploadFailed": "Failed to upload {{filename}}",
-      "uploadFailedRetry": "Failed to upload {{filename}}. Try again.",
-      "uploadsFailed": "Some attachments failed to upload. Try again."
+      "uploadFailedRetry": "Failed to upload {{filename}}. Try again."
     },
     "automations": {
       "active": "Active",
@@ -4831,7 +4827,6 @@
           "codeRequired": "Paste the Claude authorization code to continue.",
           "connectedToast": "Claude connected",
           "connectTitle": "Connect Claude",
-          "error": "Claude connection failed. Start again to retry.",
           "expired": "Claude connection session expired. Start again to retry.",
           "instructions": "First click Open Claude approval page. Then approve {{brandName}} in Claude and copy the authorization code shown after approval. Finally paste that code here and click Connect.",
           "openApproval": "Open Claude approval page",
@@ -4846,7 +4841,6 @@
           "connectedToast": "ChatGPT connected",
           "connectTitle": "Connect Codex",
           "deviceCode": "Device code",
-          "error": "ChatGPT connection failed. Start again to retry.",
           "expired": "Codex connection session expired. Start again to retry.",
           "freePlanRejected": "Free ChatGPT plans cannot use Codex via {{brandName}}. Upgrade to Plus or Pro and try again.",
           "instructions": "First copy the device code using the copy button, then open the approval page. Then paste the device code into OpenAI when prompted. Finally approve access and keep this dialog open while {{brandName}} finishes the connection.",

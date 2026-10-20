@@ -34,8 +34,8 @@ function initialTimezone(): string {
 }
 
 function initialLocale() {
-  // initLocale$ has already selected a usable locale before authenticated
-  // bootstrap; it may have fallen back after a resource load failure.
+  // initLocale$ has already loaded the initial locale before authenticated
+  // bootstrap initializes the workspace preference.
   const locale = document.documentElement.lang;
   return isSupportedLocale(locale)
     ? locale
