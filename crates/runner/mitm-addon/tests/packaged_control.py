@@ -32,7 +32,7 @@ from tests.registry_builtin_helpers import write_catalog_cache
 from tests.usage_helpers import UsageWebhookServer
 
 
-def test_packaged_runtime_spools_and_replays_a_managed_body(tmp_path):
+def test_packaged_runtime_validates_a_public_request_stream(tmp_path):
     source = Path(__file__).parents[1] / "src"
     receipt = tmp_path / "managed-body.json"
     script = tmp_path / "managed-body.py"
@@ -42,7 +42,7 @@ def test_packaged_runtime_spools_and_replays_a_managed_body(tmp_path):
             import json
             import sys
             from pathlib import Path
-            from mitmproxy import ctx
+            from mitmproxy import ctx, http
 
             sys.path.insert(0, {str(source)!r})
             import managed_request_body
@@ -54,36 +54,35 @@ def test_packaged_runtime_spools_and_replays_a_managed_body(tmp_path):
                     + b'x' * 70000
                     + b'"}}]}}'
                 )
-                body = managed_request_body.TemporaryBody(
+                body = managed_request_body.StreamBody(
                     len(raw),
                     PolicyJsonValidator(
                         preset='@preset/test', service_tier=None,
                         fields=frozenset(('model', 'messages')),
                         max_depth=128, max_work=262144,
                     ),
-                    capture=False,
                 )
                 result = {{}}
                 try:
-                    await body.receive(raw)
-                    await body.finish()
-                    file = body.file
-                    replayed = bytearray()
-                    while not body.closed:
-                        await body.read()
-                        chunk = body.take_chunk()
-                        replayed.extend(chunk)
-                        body.replayed += len(chunk)
+                    request = http.Request.make('POST', 'https://example.com', b'')
+                    flow = http.HTTPFlow(None, None)
+                    flow.request = request
+                    body.flow = flow
+                    body.revalidate = lambda: True
+                    forwarded = body(raw)
+                    assert forwarded == raw[:-1]
+                    forwarded += body(b'')
                     result = {{
-                        'exact': replayed == raw,
-                        'closed': file.closed,
+
+                        'exact': forwarded == raw,
+                        'validated': body.validated,
                         'active': managed_request_body.state_for_tests(),
                     }}
                 except Exception as error:
                     result = {{'error': type(error).__name__, 'message': str(error)}}
                 finally:
                     body.close()
-                    managed_request_body.shutdown()
+                    managed_request_body.reset_for_tests()
                     Path({str(receipt)!r}).write_text(json.dumps(result))
                     ctx.master.shutdown()
             """
@@ -109,7 +108,7 @@ def test_packaged_runtime_spools_and_replays_a_managed_body(tmp_path):
         check=False,
     )
     assert process.returncode == 0, process.stdout + process.stderr
-    assert json.loads(receipt.read_text()) == {"exact": True, "closed": True, "active": [0, 0]}
+    assert json.loads(receipt.read_text()) == {"exact": True, "validated": True, "active": [0, 0]}
 
 
 @contextmanager

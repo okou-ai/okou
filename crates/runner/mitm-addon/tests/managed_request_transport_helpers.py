@@ -2,7 +2,12 @@
 
 from mitmproxy import http
 from mitmproxy.proxy import commands, events
-from mitmproxy.proxy.layers.http import HTTPMode, HttpStream
+from mitmproxy.proxy.layers.http import (
+    GetHttpConnection,
+    GetHttpConnectionCompleted,
+    HTTPMode,
+    HttpStream,
+)
 from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
 from mitmproxy.test import tutils
@@ -13,7 +18,7 @@ from tests.mitmproxy_http_framing_helpers import start_http_layer
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 
-async def finish_hooks(context, stream, pending):
+async def finish_hooks(context, stream, pending, *, connect=True):
     observed = []
     queue = list(pending)
     while queue:
@@ -22,10 +27,24 @@ async def finish_hooks(context, stream, pending):
         if isinstance(command, commands.StartHook):
             await context.master.addons.invoke_addon(mitm_addon, command)
             queue.extend(stream.handle_event(events.HookCompleted(command, None)))
+        elif connect and isinstance(command, GetHttpConnection):
+            queue.extend(
+                stream.handle_event(
+                    GetHttpConnectionCompleted(command, (stream.flow.server_conn, None))
+                )
+            )
     return observed
 
 
-async def begin_upload(context, length, *, dialect="openai-completions", http2=False):
+async def begin_upload(
+    context,
+    length,
+    *,
+    dialect="openai-completions",
+    http2=False,
+    connect=True,
+    commands_out=None,
+):
     _, layer = start_http_layer(
         context,
         alpn=b"h2" if http2 else b"http/1.1",
@@ -62,5 +81,7 @@ async def begin_upload(context, length, *, dialect="openai-completions", http2=F
         server_address=("openrouter.ai", 443),
         peername=("104.18.32.47", 443),
     )
-    await finish_hooks(context, stream, pending)
+    observed = await finish_hooks(context, stream, pending, connect=connect)
+    if commands_out is not None:
+        commands_out.extend(observed)
     return stream, hook.flow

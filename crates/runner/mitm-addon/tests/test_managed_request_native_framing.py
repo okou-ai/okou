@@ -23,12 +23,13 @@ from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
-@pytest.mark.parametrize("http2", [False, True])
+@pytest.mark.parametrize(("http2", "empty_data"), [(False, False), (True, False), (True, True)])
 async def test_complete_native_framing_forwards_original_body_and_provider_response(
     tmp_path,
     fake_firewall_headers,
     dialect,
     http2,
+    empty_data,
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
     value = payload(dialect)
@@ -66,8 +67,12 @@ async def test_complete_native_framing_forwards_original_body_and_provider_respo
                     *fields,
                 ],
             )
+            if empty_data:
+                peer.send_data(1, b"")
             for offset in range(0, len(body), 16384):
                 peer.send_data(1, body[offset : offset + 16384])
+            if empty_data:
+                peer.send_data(1, b"")
             peer.end_stream(1)
             wire = peer.data_to_send()
         else:

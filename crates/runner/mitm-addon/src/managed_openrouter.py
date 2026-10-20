@@ -1,9 +1,10 @@
-"""Enforce captured presets before applying platform OpenRouter credentials.
+"""Enforce captured presets during managed OpenRouter request streaming.
 
 The Runner writes piModelConfig from the API-owned execution context into its
 private registry. It is request policy, not proof of the sandbox caller's identity.
-Caller/connector-owner isolation is a separate boundary. No request may bypass
-this policy through header-phase auth or request streaming.
+Caller/connector-owner isolation is a separate boundary. Header credentials and
+validated prefixes may be sent before the complete body is checked. Complete
+validation precedes release of the final pending byte; sent bytes cannot be recalled.
 
 Managed requests use incrementally validated, identity-encoded JSON with a declared length.
 Only Pi's supported content/protocol/output/cache fields are forwarded; preset,
@@ -191,7 +192,7 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
 
 
 def admit_request(flow: http.HTTPFlow, sandbox: dict) -> None:
-    """Select private spooling before native request-body accumulation starts."""
+    """Select incremental validation before native request-body accumulation."""
     policy = policy_for_sandbox(sandbox)
     if policy is None:
         raise RequestRejectedError("captured_policy")
@@ -199,11 +200,7 @@ def admit_request(flow: http.HTTPFlow, sandbox: dict) -> None:
     release_from_flow(flow)
     managed_request_body.attach(
         flow,
-        managed_request_body.TemporaryBody(
-            length,
-            _validator(policy),
-            capture=sandbox.get("captureNetworkBodies") is True,
-        ),
+        managed_request_body.StreamBody(length, _validator(policy)),
     )
     flow.metadata[_CAPTURED_POLICY] = _CapturedPolicy(sandbox["runId"], policy)
     flow.request.stream = False
@@ -220,7 +217,7 @@ def _validator(policy: PresetPolicy) -> PolicyJsonValidator:
 
 
 def validate_request(flow: http.HTTPFlow, sandbox: dict) -> PresetPolicy:
-    """Validate complete, original bytes before any managed auth resolution."""
+    """Require completed stream validation or validate a complete buffered body."""
     policy = policy_for_sandbox(sandbox)
     if policy is None:
         raise RequestRejectedError("captured_policy")
@@ -251,7 +248,7 @@ def validate_request(flow: http.HTTPFlow, sandbox: dict) -> PresetPolicy:
 
 
 def release_from_flow(flow: http.HTTPFlow) -> None:
-    """Idempotent abandonment; successful replay releases storage before SSE."""
+    """Idempotently release the parser and pending tail."""
     managed_request_body.release(flow)
     flow.metadata.pop(_CAPTURED_POLICY, None)
 

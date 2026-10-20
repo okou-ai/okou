@@ -2,8 +2,6 @@
 
 import asyncio
 import json
-from contextlib import contextmanager
-from threading import Event
 from unittest.mock import patch
 
 import pytest
@@ -15,8 +13,8 @@ from mitmproxy.proxy.server import ConnectionHandler, ConnectionIO
 from mitmproxy.test import taddons
 
 import managed_openrouter as managed
-import managed_request_body
 import mitm_addon
+from tests.firewall_auth_helpers import firewall_auth_response
 from tests.managed_openrouter_helpers import PATHS, PI_ATTRIBUTION_HEADERS, payload, sandbox
 from tests.mitmproxy_http_framing_helpers import start_http_layer
 from tests.request_handler_helpers import _write_registry
@@ -36,7 +34,7 @@ async def task_factory(request):
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
-@pytest.mark.parametrize("blocked_first_write", [False, True])
+@pytest.mark.parametrize("blocked_first_write", [False, True, "cancel"])
 async def test_native_framing_and_hook_tasks_complete_a_managed_request(
     tmp_path,
     fake_firewall_headers,
@@ -62,11 +60,11 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
     loop = asyncio.get_running_loop()
     first_packet_size = 20000 if blocked_first_write else len(wire)
     first_write_started, send_rest, second_read = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    release_write = Event()
+    release_write = asyncio.Event()
     read_calls = []
     guest_done, provider_done = loop.create_future(), loop.create_future()
     close_peers = asyncio.Event()
-    hooks, flows = [], []
+    hooks, flows, header_tasks = [], [], []
     response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}"
 
     class GuestReader(asyncio.StreamReader):
@@ -81,31 +79,6 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
             if index == 1:
                 second_read.set()
             return data
-
-    real_file = managed_request_body.tempfile.TemporaryFile
-
-    class GatedFile:
-        def __init__(self, file):
-            self.file = file
-            self.first_write = True
-
-        def write(self, data):
-            if blocked_first_write and self.first_write:
-                self.first_write = False
-                loop.call_soon_threadsafe(first_write_started.set)
-                release_write.wait()
-            return self.file.write(data)
-
-        def read(self, size):
-            return self.file.read(size)
-
-        def seek(self, offset):
-            return self.file.seek(offset)
-
-    @contextmanager
-    def temporary_file(*args, **kwargs):
-        with real_file(*args, **kwargs) as file:
-            yield GatedFile(file)
 
     async def guest(reader, writer):
         try:
@@ -141,13 +114,20 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
 
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
-        patch.object(managed_request_body.tempfile, "TemporaryFile", temporary_file),
         taddons.context(Proxyserver(), mitm_addon) as context,
         fake_firewall_headers(headers={"Authorization": "Bearer native-connection"}) as auth_fetch,
     ):
         context.options.update(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
         )
+        if blocked_first_write:
+
+            async def resolve(*_args, **_kwargs):
+                first_write_started.set()
+                await release_write.wait()
+                return firewall_auth_response(headers={"Authorization": "Bearer native-connection"})
+
+            auth_fetch.side_effect = resolve
         _, native = start_http_layer(
             context, alpn=b"http/1.1", host="openrouter.ai", mode=HTTPMode.transparent
         )
@@ -174,6 +154,8 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
 
             async def hook_task(self, hook):
                 hooks.append(asyncio.current_task())
+                if isinstance(hook, HttpRequestHeadersHook):
+                    header_tasks.append(asyncio.current_task())
                 await super().hook_task(hook)
 
         handler = Handler()
@@ -205,16 +187,21 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
             try:
                 if blocked_first_write:
                     await asyncio.wait_for(first_write_started.wait(), 5)
-                    auth_fetch.assert_not_called()
+                    assert auth_fetch.await_count == 1
                     send_rest.set()
-                    await asyncio.wait_for(second_read.wait(), 5)
                     pulse = loop.create_future()
                     loop.call_soon(pulse.set_result, None)
                     await pulse
                     # One read may already be pending when headers finish.
-                    # Its return must join the first managed receive instead
+                    # Its return must join managed header authorization instead
                     # of continuing to queue the rest of the request in RAM.
-                    assert read_calls == [65535, 65535]
+                    assert read_calls in ([65535], [65535, 65535])
+                    if blocked_first_write == "cancel":
+                        header_tasks[0].cancel()
+                        await asyncio.gather(header_tasks[0], return_exceptions=True)
+                        assert flows[0].error is not None
+                        assert managed.admission_state_for_tests() == (0, 0)
+                        return
                     release_write.set()
                 head, forwarded = await asyncio.wait_for(asyncio.shield(provider_done), 5)
                 assert forwarded == body

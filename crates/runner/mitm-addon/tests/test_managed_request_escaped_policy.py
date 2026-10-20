@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from mitmproxy.addons.proxyserver import Proxyserver
-from mitmproxy.proxy.layers.http import GetHttpConnection, GetHttpConnectionCompleted, SendHttp
+from mitmproxy.proxy.layers.http import SendHttp
 from mitmproxy.proxy.layers.http._events import RequestData, RequestEndOfMessage
 from mitmproxy.test import taddons
 
@@ -60,19 +60,16 @@ async def test_equivalent_escaped_policy_strings_are_authorized_and_forwarded_un
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
         )
         stream, flow = await begin_upload(context, len(body), dialect="openai-responses")
+        sent = []
         for offset in range(0, len(body), 7):
-            await finish_hooks(
-                context, stream, stream.handle_event(RequestData(1, body[offset : offset + 7]))
+            sent.extend(
+                await finish_hooks(
+                    context, stream, stream.handle_event(RequestData(1, body[offset : offset + 7]))
+                )
             )
-            auth_fetch.assert_not_called()
         pending = await finish_hooks(context, stream, stream.handle_event(RequestEndOfMessage(1)))
         assert flow.response is None
-        acquire = next(command for command in pending if isinstance(command, GetHttpConnection))
-        sent = await finish_hooks(
-            context,
-            stream,
-            stream.handle_event(GetHttpConnectionCompleted(acquire, (flow.server_conn, None))),
-        )
+        sent.extend(pending)
         assert (
             b"".join(
                 command.event.data
@@ -115,38 +112,26 @@ async def test_opaque_escaped_keys_preserve_json_identity_and_duplicate_rejectio
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
         )
         stream, flow = await begin_upload(context, len(body), dialect=dialect)
+        sent = []
         try:
             for offset in range(0, len(body), 7):
-                await finish_hooks(
-                    context, stream, stream.handle_event(RequestData(1, body[offset : offset + 7]))
+                sent.extend(
+                    await finish_hooks(
+                        context,
+                        stream,
+                        stream.handle_event(RequestData(1, body[offset : offset + 7])),
+                    )
                 )
-                auth_fetch.assert_not_called()
             pending = await finish_hooks(
                 context, stream, stream.handle_event(RequestEndOfMessage(1))
             )
             if duplicate:
-                auth_fetch.assert_not_called()
-                assert flow.response is not None
-                assert flow.response.status_code == 403
-                assert b"duplicate_json_key" in (flow.response.raw_content or b"")
-                assert b"private-first" not in (flow.response.raw_content or b"")
-                assert not any(
-                    isinstance(command, GetHttpConnection)
-                    or (isinstance(command, SendHttp) and command.connection == flow.server_conn)
-                    for command in pending
-                )
+                auth_fetch.assert_awaited_once()
+                assert flow.error is not None
+                assert flow.response is None
             else:
                 assert flow.response is None
-                acquire = next(
-                    command for command in pending if isinstance(command, GetHttpConnection)
-                )
-                sent = await finish_hooks(
-                    context,
-                    stream,
-                    stream.handle_event(
-                        GetHttpConnectionCompleted(acquire, (flow.server_conn, None))
-                    ),
-                )
+                sent.extend(pending)
                 assert (
                     b"".join(
                         command.event.data

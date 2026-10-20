@@ -11,7 +11,7 @@ import flow_metadata_keys as metadata_keys
 import managed_openrouter as managed
 import mitm_addon
 from logging_utils import flush_log_path
-from tests.managed_openrouter_helpers import payload, request, sandbox
+from tests.managed_openrouter_helpers import payload, prepare_request_headers, request, sandbox
 from tests.request_handler_helpers import _write_registry
 
 
@@ -108,14 +108,14 @@ async def test_lengths_at_or_below_limit_still_admit_before_body_arrives(
     flow.request.headers["Content-Length"] = str(declared_bytes)
     flow.request.raw_content = None
     with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
+        await prepare_request_headers(flow)
         assert flow.error is None
         assert flow.response is None
-        assert flow.request.stream is False
+        assert callable(flow.request.stream)
         assert managed.admission_state_for_tests() == (1, declared_bytes)
         flow.error = Error("client disconnected while uploading")
         mitm_addon.error(flow)
-        auth_fetch.assert_not_called()
+        auth_fetch.assert_awaited_once()
     assert managed.admission_state_for_tests() == (0, 0)
     proxy_path = Path(info["proxyLogPath"])
     assert await asyncio.to_thread(flush_log_path, str(proxy_path))
@@ -131,7 +131,6 @@ async def test_other_policy_rejection_does_not_claim_a_length_failure(
     registry = _write_registry(tmp_path, sandbox_info=info)
     flow = request(real_flow, {**payload(), "model": "@preset/other"})
     with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
         await mitm_addon.request(flow)
         assert flow.response is not None
         assert flow.response.status_code == 403

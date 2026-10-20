@@ -128,9 +128,9 @@ Firewall and auth context
 - ``PUBLIC_DESTINATION_BODY_ADMISSION``: opaque count/byte reservation for a
   large body kept buffered for publicDestination authorization. Written before
   buffering; released on request failure/cancellation or terminal response/error.
-- ``MANAGED_OPENROUTER_BODY``: private incremental validator and temporary-file
-  owner. Written before receiving managed JSON; storage releases after upload
-  or abandonment. Terminal cleanup removes the small completed owner.
+- ``MANAGED_OPENROUTER_BODY``: incremental public-stream validator and pending
+  final-byte owner. Parser state releases at upload completion or abandonment;
+  terminal cleanup removes the small completed owner.
 - ``AWS_SIGV4_REQUEST_INSPECTION``: opaque bounded request-representation
   inspection written by managed SigV4 auth. Reused by request-header and request
   auth phases while the raw URL/header identity is unchanged, restored with an
@@ -157,16 +157,15 @@ Request streaming
 -----------------
 - ``REQUEST_STREAM_BUFFER``: capped ``bytearray`` written by
   ``requestheaders()`` only when this module installs its callback with body
-  capture or bounded billing inspection enabled, or by
-  ``request_streaming.record_completed_body()`` after private spooling with
-  capture enabled. Inspection does not enable
+  capture or bounded billing inspection enabled. Managed validation composes
+  this observer with its public stream callback. Inspection does not enable
   persisted body capture. A setup attempt that finds an externally owned callable
   does not create this buffer; repeated addon setup preserves the existing buffer. Read
   by request body capture and connector billing refinement. Removed by stream
   cleanup after terminal hooks.
 - ``REQUEST_STREAM_BUFFER_STATE``: ``dict`` with at least ``truncated`` and
-  ``total_bytes``. Written when this module installs its callback or records a
-  completed private spool, and read for request size. A setup attempt that finds
+  ``total_bytes``. Written when this module installs its callback and read
+  for request size. A setup attempt that finds
   an externally owned callable does not create this state; repeated addon setup
   preserves existing state.
   Capture/inspection paths also write ``REQUEST_STREAM_BUFFER`` and use this state
@@ -174,8 +173,7 @@ Request streaming
   cleanup.
 - ``REQUEST_STREAM_COMPLETE``: ``bool`` written by ``request()`` after
   mitmproxy finishes delivering a request whose stream size is tracked by this
-  module, or by ``request_streaming.record_completed_body()`` after complete
-  spool validation. The external-callable no-op path provides no addon stream state from
+  module. The external-callable no-op path provides no addon stream state from
   which to establish this marker. Read by connector billing before treating a
   non-truncated request stream buffer as a complete request body. Removed by
   stream cleanup.

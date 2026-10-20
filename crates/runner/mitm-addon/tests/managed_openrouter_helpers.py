@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import managed_openrouter
+import mitm_addon
 from tests.request_handler_helpers import _single_firewall_sandbox
 
 PRESET = "@preset/captured-org-route"
@@ -83,3 +84,10 @@ def request(real_flow, body: dict | bytes | None = None, dialect: str = "openai-
     for name, value in PI_ATTRIBUTION_HEADERS:
         flow.request.headers[name] = value
     return flow
+
+
+async def prepare_request_headers(flow) -> None:
+    """Execute the public optional-async addon hook."""
+    pending = mitm_addon.requestheaders(flow)
+    if pending is not None:
+        await pending

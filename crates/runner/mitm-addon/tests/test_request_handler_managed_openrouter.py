@@ -1,4 +1,4 @@
-"""Production-hook enforcement before platform credentials are resolved."""
+"""Public header authorization, streaming policy and terminal cleanup."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -16,16 +16,17 @@ from tests.managed_openrouter_helpers import (
     PI_ATTRIBUTION_HEADERS,
     model_config,
     payload,
+    prepare_request_headers,
     request,
     sandbox,
 )
 from tests.request_handler_helpers import _write_registry
-from tests.upstream_connection_helpers import seed_server_binding
+from tests.upstream_connection_helpers import mark_connected_tls_upstream, seed_server_binding
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("large", [False, True])
-async def test_no_auth_or_stream_until_the_complete_body_passes(
+async def test_header_auth_and_public_stream_preserve_the_complete_body(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, large
 ):
     info = sandbox(tmp_path, dialect)
@@ -43,22 +44,31 @@ async def test_no_auth_or_stream_until_the_complete_body_passes(
         mitm_ctx(registry_path=str(path)),
         fake_firewall_headers(headers={"Authorization": "Bearer managed-token"}) as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        auth_fetch.assert_not_called()
-        assert flow.error is None
-        assert flow.request.stream is False
-        assert "X-Okou-Connector-Intent" not in flow.request.headers
-        assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
-        flow.request.raw_content = raw
-        await mitm_addon.request(flow)
+        await prepare_request_headers(flow)
         auth_fetch.assert_awaited_once()
+        assert flow.error is None
+        assert callable(flow.request.stream)
+        assert "X-Okou-Connector-Intent" not in flow.request.headers
+        mark_connected_tls_upstream(
+            flow,
+            sni="openrouter.ai",
+            server_address=("openrouter.ai", 443),
+            peername=("104.18.32.47", 443),
+        )
+        first = flow.request.stream(raw)
+        last = flow.request.stream(b"")
+        assert isinstance(first, bytes)
+        assert isinstance(last, bytes)
+        forwarded = first + last
+        assert forwarded == raw
+        await mitm_addon.request(flow)
         assert flow.response is None
-        assert flow.request.raw_content == raw
+        assert flow.request.raw_content is None
         assert flow.request.headers["Authorization"] == "Bearer managed-token"
         assert flow.request.headers["Accept-Encoding"] == "gzip, br"
         for name, value in PI_ATTRIBUTION_HEADERS:
             assert flow.request.headers[name] == value
-        assert managed.admission_state_for_tests()[0] == 1
+        assert managed.admission_state_for_tests() == (0, 0)
         flow.response = http.Response.make(200, b"{}", {"Content-Type": "application/json"})
         mitm_addon.response(flow)
     assert managed.admission_state_for_tests() == (0, 0)
@@ -68,7 +78,7 @@ async def test_no_auth_or_stream_until_the_complete_body_passes(
 @pytest.mark.parametrize(
     "override", [{"model": "@preset/another"}, {"provider": {}}, {"preset": "@preset/another"}]
 )
-async def test_invalid_body_never_resolves_or_injects_platform_auth(
+async def test_invalid_stream_aborts_after_accepted_header_auth(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, override
 ):
     path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
@@ -78,15 +88,15 @@ async def test_invalid_body_never_resolves_or_injects_platform_auth(
         mitm_ctx(registry_path=str(path)),
         fake_firewall_headers(headers={"Authorization": "Bearer must-not-appear"}) as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        await mitm_addon.request(flow)
-        auth_fetch.assert_not_called()
-        assert flow.response is not None
-        assert flow.response.status_code == 403
-        assert flow.response.json()["error"] == "managed_openrouter_request_rejected"
-        assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
+        raw, flow.request.raw_content = flow.request.raw_content, None
+        await prepare_request_headers(flow)
+        auth_fetch.assert_awaited_once()
+        assert callable(flow.request.stream)
+        assert flow.request.stream(raw) == b""
+        assert flow.error is not None
+        assert flow.response is None
         assert flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] is True
-        mitm_addon.response(flow)
+        mitm_addon.error(flow)
     assert managed.admission_state_for_tests() == (0, 0)
 
 
@@ -139,26 +149,25 @@ async def test_changed_captured_preset_during_auth_cannot_authorize_an_old_reque
         mitm_ctx(registry_path=str(path)),
         patch.object(auth, "get_firewall_headers", AsyncMock(side_effect=resolve)),
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        await mitm_addon.request(flow)
-        assert flow.response is not None
-        assert flow.response.status_code == 409
-        assert flow.response.json()["error"] == "firewall_authorization_changed"
+        flow.request.raw_content = None
+        await prepare_request_headers(flow)
+        assert flow.error is not None
+        assert flow.response is None
         assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
-        mitm_addon.response(flow)
+        mitm_addon.error(flow)
     assert managed.admission_state_for_tests() == (0, 0)
 
 
-async def test_cancelled_auth_releases_the_retained_body(tmp_path, real_flow, mitm_ctx):
+async def test_cancelled_header_auth_releases_the_validator(tmp_path, real_flow, mitm_ctx):
     path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
     flow = request(real_flow)
     with (
         mitm_ctx(registry_path=str(path)),
         patch.object(auth, "get_firewall_headers", AsyncMock(side_effect=asyncio.CancelledError)),
     ):
-        assert mitm_addon.requestheaders(flow) is None
+        flow.request.raw_content = None
         with pytest.raises(asyncio.CancelledError):
-            await mitm_addon.request(flow)
+            await prepare_request_headers(flow)
     assert managed.admission_state_for_tests() == (0, 0)
 
 
@@ -184,17 +193,17 @@ async def test_existing_upstream_binding_cannot_skip_managed_body_admission(
     )
     flow.server_conn.address = ("openrouter.ai", 443)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
+        await prepare_request_headers(flow)
         assert flow.error is None
-        assert flow.request.stream is False
+        assert callable(flow.request.stream)
         assert managed.admission_state_for_tests() == (1, length)
-        auth_fetch.assert_not_called()
+        auth_fetch.assert_awaited_once()
         flow.error = Error("client disconnected during body")
         mitm_addon.error(flow)
     assert managed.admission_state_for_tests() == (0, 0)
 
 
-async def test_partial_body_error_releases_ownership_without_auth(
+async def test_partial_body_error_releases_validation_ownership(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers
 ):
     path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
@@ -203,9 +212,9 @@ async def test_partial_body_error_releases_ownership_without_auth(
     for flow in (first, second, replacement):
         flow.request.raw_content = None
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(first) is None
+        await prepare_request_headers(first)
         assert managed.admission_state_for_tests() == (1, length)
-        assert mitm_addon.requestheaders(second) is None
+        await prepare_request_headers(second)
         assert second.error is None
         assert managed.admission_state_for_tests() == (2, 2 * length)
         first.error = Error("client disconnected during body")
@@ -213,10 +222,10 @@ async def test_partial_body_error_releases_ownership_without_auth(
         mitm_addon.error(first)
         assert managed.admission_state_for_tests() == (1, length)
         mitm_addon.error(second)
-        assert mitm_addon.requestheaders(replacement) is None
+        await prepare_request_headers(replacement)
         assert replacement.error is None
         mitm_addon.error(replacement)
-        auth_fetch.assert_not_called()
+        assert auth_fetch.await_count == 3
     assert managed.admission_state_for_tests() == (0, 0)
 
 

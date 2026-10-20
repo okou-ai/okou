@@ -1,14 +1,12 @@
-"""Pinned native request-body interception; HTTP framing stays with mitmproxy."""
+"""Version-bound cancellation and H2 capacity gaps in public streaming APIs.
 
-import asyncio
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from http import HTTPStatus
-from typing import Literal
+Normal payload transformation and forwarding use public request.stream. Native
+mitmproxy 12.2.3 owns HTTP framing, TLS and queues. flow.kill cannot interrupt an
+in-transit callback, and socket drains do not bound its H2 stream buffers.
+"""
 
-from mitmproxy import http
 from mitmproxy.proxy import commands, events, layer
-from mitmproxy.proxy.layers.http import HttpStream, SendHttp
+from mitmproxy.proxy.layers.http import DropStream, HttpStream, SendHttp
 from mitmproxy.proxy.layers.http._base import ReceiveHttp
 from mitmproxy.proxy.layers.http._events import (
     ErrorCode,
@@ -16,144 +14,20 @@ from mitmproxy.proxy.layers.http._events import (
     RequestEndOfMessage,
     RequestHeaders,
     RequestProtocolError,
-    RequestTrailers,
-    ResponseData,
-    ResponseEndOfMessage,
-    ResponseHeaders,
     ResponseProtocolError,
 )
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHook
-from mitmproxy.proxy.layers.http._http1 import Http1Client
+from mitmproxy.proxy.layers.http._hooks import HttpResponseHook
 from mitmproxy.proxy.layers.http._http2 import Http2Client
 
 import managed_request_body
 
-_BRIDGE = "_managed_request_body_bridge"
-_REQUEST_HOOK_RESUMED = "_managed_request_hook_resumed"
-_BODY_EVENT_ATTRIBUTE = "_managed_request_upload"
+_BRIDGE = "_managed_public_stream_bridge"
 _HTTP2_UPLOADS = "_managed_request_uploads"
-_HTTP1_UPLOAD = "_managed_request_upload"
-_INPUT_COMPLETE = "_managed_request_input_complete"
-
-
-def _observe_response(
-    body: managed_request_body.TemporaryBody | None, command: commands.Command
-) -> bool:
-    if body is None or body.closed or not isinstance(command, ReceiveHttp):
-        return False
-    event = command.event
-    if isinstance(event, ResponseHeaders):
-        body.early_response_status = event.response.status_code
-    if isinstance(event, ResponseProtocolError) or (
-        isinstance(event, ResponseEndOfMessage)
-        and body.early_response_status is not None
-        and body.early_response_status >= HTTPStatus.OK
-    ):
-        body.stop()
-        return True
-    if isinstance(event, ResponseData):
-        body.early_response_bytes += len(event.data)
-        if body.early_response_bytes > managed_request_body.CHUNK_BYTES:
-            body.failure = "upstream_response_buffer"
-            body.close()
-            return True
-    return False
-
-
-def _observe_commands(native, observe) -> layer.CommandGenerator[None]:
-    """Delegate native commands, or finish with an observer's abort continuation."""
-    try:
-        command = next(native)
-        while True:
-            interruption = observe(command)
-            if interruption is not None:
-                yield from interruption
-                return
-            try:
-                completion = yield command
-            except GeneratorExit:
-                raise
-            except BaseException as error:
-                command = native.throw(error)
-            else:
-                command = native.send(completion)
-    except StopIteration:
-        return
-    finally:
-        native.close()
-
-
-def _install_http1_upload_progress() -> None:
-    current = Http1Client._handle_event
-    if hasattr(current, _BRIDGE):
-        return
-
-    def handle_event(self: Http1Client, event: events.Event) -> layer.CommandGenerator[None]:
-        body = getattr(event, _BODY_EVENT_ATTRIBUTE, None)
-        if isinstance(event, RequestHeaders) and isinstance(
-            body, managed_request_body.TemporaryBody
-        ):
-            setattr(self, _HTTP1_UPLOAD, body)
-        else:
-            body = getattr(self, _HTTP1_UPLOAD, None)
-        if (
-            isinstance(event, RequestEndOfMessage)
-            and isinstance(body, managed_request_body.TemporaryBody)
-            and body.stopped
-        ):
-            # An early final response is already complete. Closing aborts the
-            # incomplete upload without emitting an invalid HTTP/1 terminator.
-            yield commands.CloseConnection(self.conn)
-            return
-        if isinstance(body, managed_request_body.TemporaryBody) and not body.closed:
-
-            def observe(command):
-                _observe_response(body, command)
-                if body.failure == "upstream_response_buffer" and isinstance(command, ReceiveHttp):
-                    return current(
-                        self,
-                        RequestProtocolError(
-                            command.event.stream_id,
-                            "upstream response exceeded managed upload buffer",
-                            ErrorCode.CANCEL,
-                        ),
-                    )
-                return None
-
-            yield from _observe_commands(current(self, event), observe)
-        else:
-            yield from current(self, event)
-
-    setattr(handle_event, _BRIDGE, True)
-    Http1Client._handle_event = handle_event
-
-
-def request_hook_resumed(hook: HttpRequestHook) -> bool:
-    return getattr(hook, _REQUEST_HOOK_RESUMED, False) is True
-
-
-def _install_input_completion() -> None:
-    current = HttpStream.handle_event
-    if hasattr(current, _BRIDGE):
-        return
-
-    def handle_event(self: HttpStream, event: events.Event) -> layer.CommandGenerator[None]:
-        if isinstance(event, RequestEndOfMessage):
-            # EOF can be queued behind an active receive/headers hook. Its
-            # file can now finish without another read, even before validation.
-            setattr(self, _INPUT_COMPLETE, True)
-            body = managed_request_body.get(self.flow)
-            if body is not None:
-                body.input_complete = True
-        yield from current(self, event)
-
-    setattr(handle_event, _BRIDGE, True)
-    HttpStream.handle_event = handle_event
 
 
 class _Http2Uploads:
     def __init__(self) -> None:
-        self.bodies: dict[int, managed_request_body.TemporaryBody] = {}
+        self.bodies: dict[int, managed_request_body.StreamBody] = {}
 
     def update(self, client: Http2Client) -> None:
         for stream_id, body in tuple(self.bodies.items()):
@@ -163,66 +37,67 @@ class _Http2Uploads:
             upstream_id = client.our_stream_id.get(stream_id)
             pending = upstream_id is None or client.h2_conn.stream_buffers.get(upstream_id)
             if pending:
-                body.replay_ready.clear()
+                body.writable.clear()
             else:
-                body.replay_ready.set()
+                body.writable.set()
+                if body.validated:
+                    body.upload_complete()
+                    del self.bodies[stream_id]
 
     def close_queued(self, client: Http2Client) -> layer.CommandGenerator[None]:
-        # Native close_connection notifies allocated streams only. A managed
-        # upload waiting for a stream slot still owns storage and a replay hook.
+        # Native close_connection only notifies allocated upstream streams.
         for stream_id, body in tuple(self.bodies.items()):
             if stream_id not in client.our_stream_id:
                 client.stream_queue.pop(stream_id, None)
-                if not body.closed:
-                    body.stop()
-                    yield ReceiveHttp(
-                        ResponseProtocolError(
-                            stream_id,
-                            "upstream closed before managed upload admission",
-                            ErrorCode.CONNECT_FAILED,
-                        )
+                body.close()
+                yield ReceiveHttp(
+                    ResponseProtocolError(
+                        stream_id,
+                        "upstream closed before managed upload admission",
+                        ErrorCode.CONNECT_FAILED,
                     )
+                )
 
 
-def _install_http2_upload_progress() -> None:
+def _install_http2_capacity() -> None:
     current = Http2Client._handle_event
     if hasattr(current, _BRIDGE):
         return
 
     def handle_event(self: Http2Client, event: events.Event) -> layer.CommandGenerator[None]:
         uploads = getattr(self, _HTTP2_UPLOADS, None)
-        body = getattr(event, _BODY_EVENT_ATTRIBUTE, None)
-        if isinstance(event, RequestHeaders) and isinstance(
-            body, managed_request_body.TemporaryBody
+        if isinstance(event, RequestHeaders):
+            body = managed_request_body.from_request(event.request)
+            if body is not None:
+                if not isinstance(uploads, _Http2Uploads):
+                    uploads = _Http2Uploads()
+                    setattr(self, _HTTP2_UPLOADS, uploads)
+                body.protocol_bound = True
+                uploads.bodies[event.stream_id] = body
+        if (
+            isinstance(event, RequestProtocolError)
+            and isinstance(uploads, _Http2Uploads)
+            and event.stream_id in uploads.bodies
+            and event.stream_id not in self.our_stream_id
         ):
-            if not isinstance(uploads, _Http2Uploads):
-                uploads = _Http2Uploads()
-                setattr(self, _HTTP2_UPLOADS, uploads)
-            uploads.bodies[event.stream_id] = body
-        closed = False
+            self.stream_queue.pop(event.stream_id, None)
+            uploads.bodies.pop(event.stream_id).close()
+            return
         try:
-
-            def observe(command):
-                nonlocal closed
+            closed = False
+            for command in current(self, event):
                 if (
                     isinstance(command, commands.CloseConnection)
                     and command.connection == self.conn
                 ):
                     closed = True
-                if isinstance(uploads, _Http2Uploads) and isinstance(command, ReceiveHttp):
-                    body = uploads.bodies.get(command.event.stream_id)
-                    if _observe_response(body, command):
-                        upstream_id = self.our_stream_id.get(command.event.stream_id)
-                        if upstream_id is not None and not self.is_closed(upstream_id):
-                            # The complete final response can still reach the
-                            # client. Reset only the unfinished outbound body.
-                            self.h2_conn.reset_stream(upstream_id)
-
-            if isinstance(uploads, _Http2Uploads) and uploads.bodies:
-                yield from _observe_commands(current(self, event), observe)
-            else:
-                yield from current(self, event)
+                yield command
             if closed and isinstance(uploads, _Http2Uploads):
+                for stream_id, body in tuple(uploads.bodies.items()):
+                    upstream_id = self.our_stream_id.get(stream_id)
+                    if upstream_id is not None:
+                        self.h2_conn.stream_buffers.pop(upstream_id, None)
+                        body.close()
                 yield from uploads.close_queued(self)
         finally:
             if isinstance(uploads, _Http2Uploads):
@@ -232,123 +107,71 @@ def _install_http2_upload_progress() -> None:
     Http2Client._handle_event = handle_event
 
 
-@dataclass
-class ManagedRequestBodyHook(commands.StartHook):
-    """Join one receive, finish, or replay step and its native continuation."""
-
-    name = "managedrequestbody"
-    flow: http.HTTPFlow
-    stage: Literal["receive", "finish", "replay"]
-    data: bytes = field(default=b"", repr=False)
-    completed: asyncio.Future[None] | None = field(default=None, repr=False)
-    resumed: bool = False
-
-    def args(self) -> list[object]:
-        # The production ProxyConnectionHandler accepts one hook argument.
-        # Keep the bounded operation payload together through that dispatcher.
-        return [self]
-
-
-def install(register: Callable[[ManagedRequestBodyHook], None]) -> None:
-    _install_input_completion()
-    _install_http1_upload_progress()
-    _install_http2_upload_progress()
-    current = HttpStream.state_consume_request_body
+def _install_early_response_completion() -> None:
+    current = HttpStream.send_response
     if hasattr(current, _BRIDGE):
         return
 
-    def state_consume_request_body(
-        self: HttpStream,
-        event: events.Event,
+    def send_response(self: HttpStream, already_streamed: bool = False):
+        body = managed_request_body.get(self.flow)
+        unfinished = body is not None and not body.validated
+        native = current(self, already_streamed=already_streamed)
+        try:
+            for command in native:
+                yield command
+                if unfinished and isinstance(command, HttpResponseHook):
+                    # Native waits for request EOF even after a final response.
+                    # Cancel only its unfinished upload, preserving that response.
+                    yield SendHttp(
+                        RequestProtocolError(
+                            self.stream_id, "managed upload ended by response", ErrorCode.CANCEL
+                        ),
+                        self.context.server,
+                    )
+                    self.client_state = self.state_done
+        finally:
+            native.close()
+
+    setattr(send_response, _BRIDGE, True)
+    HttpStream.send_response = send_response
+
+
+def install() -> None:
+    _install_http2_capacity()
+    _install_early_response_completion()
+    current = HttpStream.state_stream_request_body
+    if hasattr(current, _BRIDGE):
+        return
+
+    def state_stream_request_body(
+        self: HttpStream, event: RequestData | RequestEndOfMessage
     ) -> layer.CommandGenerator[None]:
         body = managed_request_body.get(self.flow)
         if body is None:
             yield from current(self, event)
             return
-        if getattr(self, _INPUT_COMPLETE, False) is True:
-            body.input_complete = True
-
-        def checkpoint(stage: Literal["receive", "finish", "replay"], data: bytes = b""):
-            hook = ManagedRequestBodyHook(self.flow, stage, data)
-            # The finish checkpoint owns the entire upload continuation.
-            # Replay hooks drain writers, but do not accumulate one completed
-            # reader checkpoint per outbound chunk while that owner waits.
-            if stage != "replay":
-                register(hook)
-            try:
-                yield hook
-            finally:
-                hook.resumed = True
-                hook.data = b""
-
-        if isinstance(event, RequestData):
-            yield from checkpoint("receive", event.data)
-            yield from self.check_killed(True)
+        if isinstance(event, RequestData) and not event.data:
+            # Empty non-EOS H2 DATA is legal. The public callback reserves b""
+            # for EOF, so only native RequestEndOfMessage may invoke it here.
             return
-        if isinstance(event, RequestTrailers):
-            self.flow.request.trailers = event.trailers
-            return
-        if not isinstance(event, RequestEndOfMessage):
-            yield from current(self, event)
-            return
-
-        native = None
+        native = current(self, event)
         try:
-            yield from checkpoint("finish")
-            if (yield from self.check_killed(True)):
-                return
-            # The native buffer remains empty; the normal request hook performs
-            # current authorization before native connection acquisition and TLS.
-            native = current(self, event)
-            command = next(native)
-            while True:
-                if isinstance(command, SendHttp) and command.connection == self.context.server:
-                    if isinstance(command.event, RequestHeaders):
-                        command.event.end_stream = False
-                        setattr(command.event, _BODY_EVENT_ATTRIBUTE, body)
-                    elif isinstance(command.event, RequestEndOfMessage):
-                        while not body.closed:
-                            yield from checkpoint("replay")
-                            if self.flow.error is not None:
-                                yield SendHttp(
-                                    RequestProtocolError(
-                                        self.stream_id,
-                                        "managed upload interrupted",
-                                        ErrorCode.CANCEL,
-                                    ),
-                                    self.context.server,
-                                )
-                            if (yield from self.check_killed(True)):
-                                return
-                            chunk = body.take_chunk()
-                            if not chunk:
-                                break
-                            yield SendHttp(RequestData(self.stream_id, chunk), self.context.server)
-                            body.replayed += len(chunk)
-                            del chunk
-                try:
-                    if isinstance(command, HttpRequestHook):
-                        setattr(command, _REQUEST_HOOK_RESUMED, False)
-                        try:
-                            completion = yield command
-                        finally:
-                            setattr(command, _REQUEST_HOOK_RESUMED, True)
-                    else:
-                        completion = yield command
-                except GeneratorExit:
-                    raise
-                except BaseException as error:
-                    command = native.throw(error)
-                else:
-                    command = native.send(completion)
-        except StopIteration:
-            return
+            for command in native:
+                if body.failure is not None or self.flow.error is not None:
+                    # Public flow.kill only marks an in-flight flow. Emit native
+                    # upstream cancellation before yielding the callback's data/EOM.
+                    yield SendHttp(
+                        RequestProtocolError(
+                            self.stream_id, "managed upload rejected", ErrorCode.CANCEL
+                        ),
+                        self.context.server,
+                    )
+                    yield from self.check_killed(True)
+                    yield DropStream(self.stream_id)
+                    return
+                yield command
         finally:
-            try:
-                if native is not None:
-                    native.close()
-            finally:
-                body.upload_done.set()
+            native.close()
 
-    setattr(state_consume_request_body, _BRIDGE, True)
-    HttpStream.state_consume_request_body = state_consume_request_body
+    setattr(state_stream_request_body, _BRIDGE, True)
+    HttpStream.state_stream_request_body = state_stream_request_body

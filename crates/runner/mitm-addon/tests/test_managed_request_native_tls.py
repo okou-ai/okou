@@ -1,4 +1,4 @@
-"""Managed spooling resumes real native connection acquisition and TLS."""
+"""Managed public streaming uses real native connection acquisition and TLS."""
 
 import json
 from collections import deque
