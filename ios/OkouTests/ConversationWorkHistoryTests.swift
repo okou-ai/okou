@@ -6,6 +6,47 @@ import XCTest
 
 @MainActor
 final class ConversationWorkHistoryTests: XCTestCase {
+  func testTogglingVisibleWorkHistoryKeepsItsOffsetOnEveryDisplayFrame() async throws {
+    let fixture = ConversationHistoryFixture(rows: [
+      try row(
+        1, type: "input.prompt",
+        text: String(repeating: "Review these release requirements. ", count: 35)),
+      try row(2, text: String(repeating: "Earlier work. ", count: 60)),
+      try row(
+        3, text: "## Result\n\n" + String(repeating: "The result remains visible.\n\n", count: 30)),
+      try row(4, type: "run.completed"),
+    ])
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    let section = try XCTUnwrap(conversation.history?.workSections.first)
+    let position = ConversationReadingPosition(messageID: section.id, offset: 140)
+    conversation.rememberReadingPosition(position)
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let window = try await mountConversationHost(host)
+    defer { unmount(window) }
+    let collection = try XCTUnwrap(
+      markers(in: host.view).first?.enclosingScrollView as? UICollectionView)
+    try await eventually {
+      abs((offset(of: section.id, in: host.view) ?? .infinity) - position.offset) < 1
+    }
+
+    for expanded in [true, false, true, false] {
+      let samples = await WorkHistoryViewportFrames.sample(
+        in: host.view, messageID: section.id
+      ) {
+        conversation.toggleWorkHistory(section.id)
+      }
+      try await eventually {
+        (try? self.rowIDs(collection).contains(ConversationHistoryFixture.id(2))) == expanded
+      }
+      XCTAssertTrue(
+        samples.allSatisfy { abs(($0 ?? .infinity) - position.offset) < 1 },
+        "The visible work control must stay at its saved offset on every frame: \(samples)")
+      try await savedReadingPositionMatchesViewport(conversation, in: host.view)
+    }
+  }
+
   func testNativeTranscriptFoldsWorkAndPreservesItsControlDuringExpansionAndRefresh() async throws {
     let fixture = ConversationHistoryFixture(rows: [
       try row(1, type: "input.prompt", text: "Review the release"),
@@ -106,5 +147,39 @@ final class ConversationWorkHistoryTests: XCTestCase {
     return """
       {"id":"\(ConversationHistoryFixture.id(sequence))","chatThreadId":"\(ConversationHistoryFixture.threadID)","runId":"70000000-0000-4000-8000-000000000001","seqId":\(sequence),"createdAt":"2026-10-19T00:00:\(String(format: "%02d", sequence)).000Z","eventType":"\(type)","payload":\(payload)}
       """
+  }
+}
+
+/// Observe the intermediate native frames, not only the final restored position.
+@MainActor
+private final class WorkHistoryViewportFrames: NSObject {
+  private let view: UIView
+  private let messageID: String
+  private let continuation: CheckedContinuation<[CGFloat?], Never>
+  private var offsets: [CGFloat?] = []
+
+  private init(
+    view: UIView, messageID: String, continuation: CheckedContinuation<[CGFloat?], Never>
+  ) {
+    self.view = view
+    self.messageID = messageID
+    self.continuation = continuation
+  }
+
+  static func sample(in view: UIView, messageID: String, action: () -> Void) async -> [CGFloat?] {
+    await withCheckedContinuation { continuation in
+      let target = WorkHistoryViewportFrames(
+        view: view, messageID: messageID, continuation: continuation)
+      let link = CADisplayLink(target: target, selector: #selector(frame(_:)))
+      link.add(to: .main, forMode: .common)
+      action()
+    }
+  }
+
+  @objc private func frame(_ link: CADisplayLink) {
+    offsets.append(offset(of: messageID, in: view))
+    guard offsets.count == 12 else { return }
+    link.invalidate()
+    continuation.resume(returning: offsets)
   }
 }
