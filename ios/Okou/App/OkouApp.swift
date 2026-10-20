@@ -145,14 +145,15 @@ private struct WorkspaceRootView: View {
           } else {
             newChatHome
               .safeAreaBar(edge: .bottom, spacing: 0) {
+                @Bindable var composer = store.newComposer
                 ChatComposerView(
-                  draft: $store.newChatDraft, isBusy: store.isCreating,
+                  draft: $composer.text, isBusy: store.isCreating,
                   showsProgress: store.isCreating, canStop: false,
                   needsUpgrade: store.needsUpgrade,
                   error: store.error ?? store.list.error, attachmentURL: store.webURL,
-                  attachments: store.newAttachmentDraft,
+                  attachments: composer.attachments,
                   supportsAttachments: store.list.canAttachFiles,
-                  draftState: store.newComposer,
+                  draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
                   modelSelection: store.newModelSelection)
               }

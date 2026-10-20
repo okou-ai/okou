@@ -8,8 +8,8 @@ require XcodeGen, CocoaPods, or a pnpm workspace wrapper.
 
 The app uses existing production APIs for native authentication, workspace
 selection, chat lists, conversation history, creating chats, sending text,
-retrying uncertain sends, and stopping work. The `iosChatAttachments` switch
-enables native photo, video and file selection in new and existing chats, with
+retrying uncertain sends, and stopping work. The composer supports system image
+paste in new and existing chats alongside native photo, video and file selection, with
 local previews, upload progress, removal and retry. Uploads use the existing
 direct-to-storage API and its 1 GB limit; files of 5 MB or more use multipart
 uploads. A message can contain files with or without text. Selected files and
