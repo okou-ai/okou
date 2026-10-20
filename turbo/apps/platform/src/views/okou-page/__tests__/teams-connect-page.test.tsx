@@ -3,10 +3,6 @@ import {
   type TeamsConnectBody,
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
-import {
-  teamsBrowserConnectContract,
-  type TeamsBrowserConnectQuery,
-} from "@okouai/api-contracts/contracts/teams-browser-connect";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -608,10 +604,9 @@ test("Conflicting repeated identity parameters cannot enable binding", async () 
 
 test("Reloading a success link with no current connection remains read-only", async () => {
   mockStatus(status());
-  // Binding is an explicit user action. Observe both mutation entry points at
+  // Binding is an explicit user action. Observe the mutation entry point at
   // the HTTP boundary so the default POST fixture cannot hide a replay.
   let attemptedBinding: TeamsConnectBody | undefined;
-  let attemptedLegacyBinding: TeamsBrowserConnectQuery | undefined;
   context.mocks.api(teamsConnectContract.connect, ({ body, respond }) => {
     attemptedBinding = body;
     return respond(403, {
@@ -621,13 +616,6 @@ test("Reloading a success link with no current connection remains read-only", as
       },
     });
   });
-  context.mocks.api(
-    teamsBrowserConnectContract.connect,
-    ({ query, respond }) => {
-      attemptedLegacyBinding = query;
-      return respond(500, { error: "Binding requires an explicit action" });
-    },
-  );
   await setupPage({
     context,
     path: path({
@@ -650,7 +638,6 @@ test("Reloading a success link with no current connection remains read-only", as
     "old@example.com",
   );
   expect(attemptedBinding).toBeUndefined();
-  expect(attemptedLegacyBinding).toBeUndefined();
 });
 
 test("A failed readback after binding stays visible until a successful retry", async () => {

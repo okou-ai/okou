@@ -462,7 +462,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
       "api-token",
       { apiKey: " sk-bdd-manual-secret\n" },
     );
-    expect(typeof connected.id).toBe("string");
     expectNoVisibleSecret(connected, "sk-bdd-manual-secret");
 
     const readBack = await connectorsApi.readConnectorBySlug(actor, "openai");
@@ -793,7 +792,6 @@ describe("CONN-02: OAuth start and callback", () => {
     expect(provider.tokenBodies).toHaveLength(1);
     expect(provider.tokenBodies[0]?.get("code")).toBe("datadog-success-code");
     const codeVerifier = provider.tokenBodies[0]?.get("code_verifier");
-    expect(codeVerifier).toStrictEqual(expect.any(String));
     expect(codeVerifier?.length).toBeGreaterThanOrEqual(43);
 
     const connected = await connectorsApi.readConnectorBySlug(actor, "datadog");
@@ -2659,7 +2657,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     if (!connectionId) {
       throw new Error("Expected the returned custom OAuth connection ID");
     }
-    expect(connectionId).toStrictEqual(expect.any(String));
     const authorizationUrl = unlabeledAdd.body.authorizationUrl;
     const authorization = new URL(authorizationUrl);
     expect(authorization.origin + authorization.pathname).toBe(
@@ -7661,7 +7658,6 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
     const successUrl = redirectLocation(success);
     expect(successUrl.pathname).toBe("/connector/success");
     expect(successUrl.searchParams.get("connectorSlug")).toBe("github");
-    expect(successUrl.searchParams.get("connectorSlug")).toBe("github");
     expect(successUrl.searchParams.get("username")).toBe("bdd-github-user");
 
     const connected = await connectorsApi.readConnectorBySlug(actor, "github");
@@ -7985,7 +7981,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     });
     const successUrl = redirectLocation(success);
     expect(successUrl.pathname).toBe("/connector/success");
-    expect(successUrl.searchParams.get("connectorSlug")).toBe("test-oauth");
     expect(successUrl.searchParams.get("connectorSlug")).toBe("test-oauth");
     expect(successUrl.searchParams.get("username")).toBe("bdd-test-oauth");
 

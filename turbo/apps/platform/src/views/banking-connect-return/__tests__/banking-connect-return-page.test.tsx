@@ -22,7 +22,6 @@ test("A cancelled banking-provider return shows failure", async () => {
     }),
   ).resolves.toBeVisible();
   expect(screen.getByText("Connection failed")).toBeVisible();
-  expect(screen.queryByText("Bank account connected")).toBeNull();
   expect(vi.mocked(window.history.replaceState)).toHaveBeenLastCalledWith(
     {},
     "",

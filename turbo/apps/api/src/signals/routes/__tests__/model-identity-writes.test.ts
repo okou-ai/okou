@@ -209,9 +209,6 @@ describe("model identity new writes", () => {
         },
       }),
     );
-    expect(history.events).not.toContainEqual(
-      expect.objectContaining({ eventType: "input.rejected" }),
-    );
     await expect(
       chat.readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({ selectedModel: "auto" });

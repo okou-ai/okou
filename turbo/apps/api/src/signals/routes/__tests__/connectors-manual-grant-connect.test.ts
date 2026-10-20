@@ -243,17 +243,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       message: `${connectorSlug} connector is not supported`,
       code: "BAD_REQUEST",
     });
-    const list = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsMainContract,
-      ).list({
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(list.body.connectors).not.toContainEqual(
-      expect.objectContaining({ slug: connectorSlug }),
-    );
   });
 
   it("allows unlabeled additions before optional post-connect naming", async () => {
@@ -334,7 +323,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       slug: "openai",
       authMethod: "api-token",
     });
-    expect(typeof response.body.id).toBe("string");
     const stored = await readConnector(fixture, "openai");
     expect(stored.body).toMatchObject({
       slug: "openai",

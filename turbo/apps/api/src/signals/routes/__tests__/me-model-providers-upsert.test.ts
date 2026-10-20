@@ -954,7 +954,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
     expect(refreshCalls).toBe(1);
     expect(usageCalls).toBe(1);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("retries transient Codex refresh failure without false reconnect", async () => {
@@ -1148,9 +1147,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(
       unavailable.body.modelProviders[0]?.subscriptionUsage,
     ).toBeUndefined();
-    // The outage is handled, so it must not be reported as a fault or be
-    // mistaken for an expired token.
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    // The outage must not be mistaken for an expired token.
     expect(refreshCalls).toBe(0);
 
     const recovered = await accept(

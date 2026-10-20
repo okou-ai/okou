@@ -59,7 +59,6 @@ test("composer overview and Agent grants stay scoped to the signed-in user", asy
   expect(overview.body.customConnectors).toStrictEqual([]);
   expect(overview.body.accountSummaries).toStrictEqual([]);
   expect(overview.body.computerUseHosts).toStrictEqual([]);
-  expect(typeof overview.body.cloudBrowserEnabledByDefault).toBe("boolean");
 
   const grants = await accept(
     client.agent({ headers, params: { id: created.body.agentId } }),

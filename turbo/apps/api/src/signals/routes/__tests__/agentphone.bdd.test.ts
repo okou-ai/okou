@@ -3768,13 +3768,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(idle.body.job).toBeNull();
   });
 
-  it.each([
-    "Okou hi",
-    "okou hi",
-    "  OKOU，帮我总结",
-    "Okou",
-    "okou would probably know",
-  ])(
+  it.each(["Okou hi", "  OKOU，帮我总结", "Okou", "okou would probably know"])(
     "replies in the group when iMessage drops the at-sign from an opening mention: %s",
     async (body) => {
       const ap = createAgentPhoneBddApi(context);

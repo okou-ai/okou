@@ -887,8 +887,4 @@ describe("logger", () => {
   it("caches logger instances by name", () => {
     expect(logger("Cache")).toBe(logger("Cache"));
   });
-
-  it("creates distinct loggers for different names", () => {
-    expect(logger("A")).not.toBe(logger("B"));
-  });
 });

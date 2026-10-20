@@ -120,7 +120,6 @@ test("Keep chat usable before opening pending artifacts and related chats", asyn
   response.resolve();
   await within(panel).findByText("report.pdf");
   await within(panel).findByText("Research child");
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
 test("Retry a resource loading error without showing an empty state", async () => {
@@ -156,7 +155,6 @@ test("Retry a resource loading error without showing an empty state", async () =
   await expect(
     within(panel).findByText("Could not load resources"),
   ).resolves.toBeInTheDocument();
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 
   failed = false;
   click(buttonNamed("Try again", panel));

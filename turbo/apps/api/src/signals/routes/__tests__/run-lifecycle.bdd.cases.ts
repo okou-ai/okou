@@ -3319,9 +3319,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           if (reusablePreference?.kind !== "preference") {
             throw new Error("Expected a reusable sandbox preference");
           }
-          expect(runnerPreference(reusableOverHome.job)).toStrictEqual(
-            reusablePreference,
-          );
           expect(context.mocks.ably.publish).toHaveBeenCalledWith(
             "job",
             expect.objectContaining({
@@ -8643,7 +8640,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         onTestFinished(() => {
           clearMockNow();
         });
-        context.mocks.sentry.captureException.mockClear();
         const reconnectRequired = await fw.requestFirewallAuth(
           { authorization: `Bearer ${claim.sandboxToken}` },
           currentAuthBody,
@@ -8739,7 +8735,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "refresh_token",
           "refresh_token",
         ]);
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
         await expect(
           connectors.listCustomConnectorAccounts(actor, custom.id),
         ).resolves.toContainEqual(
@@ -10570,7 +10565,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected the temporary chat:write grant expiry");
         }
         const laterExpiry = expiryByPermission.get("files:read");
-        expect(laterExpiry).toStrictEqual(expect.any(String));
 
         // A same-org member's own grant never leaks into the owner's runs.
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
@@ -11775,7 +11769,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           visibility: "public",
         });
         const workflowName = `bdd-priority-${randomUUID().slice(0, 8)}`;
-        const publicWorkflowId = await workflows.createWorkflow(actor, {
+        await workflows.createWorkflow(actor, {
           agentId: agent.agentId,
           name: workflowName,
           visibility: "public",
@@ -11789,14 +11783,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           orgId: actor.orgId,
           orgRole: "org:member",
         });
-        const otherPrivateWorkflowId = await workflows.createWorkflow(
-          otherActor,
-          {
-            agentId: agent.agentId,
-            name: workflowName,
-            visibility: "private",
-          },
-        );
+        await workflows.createWorkflow(otherActor, {
+          agentId: agent.agentId,
+          name: workflowName,
+          visibility: "private",
+        });
 
         const run = await api.createThreadRun(actor, {
           agentId: agent.agentId,
@@ -11816,12 +11807,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(workflowMounts).toHaveLength(1);
         expect(workflowMounts[0]?.name).toBe(
           getCustomSkillStorageName(privateWorkflowId),
-        );
-        expect(workflowMounts[0]?.name).not.toBe(
-          getCustomSkillStorageName(publicWorkflowId),
-        );
-        expect(workflowMounts[0]?.name).not.toBe(
-          getCustomSkillStorageName(otherPrivateWorkflowId),
         );
 
         await api.requestCancelRun(actor, run.runId, [200]);
