@@ -2653,7 +2653,7 @@ export const recordQueuedPromptRunLaunch$ = command(
     signal: AbortSignal,
   ): void => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
+    set(writeDb$);
     const { userId, runInput } = args;
     const threadId = runInput.threadId;
     waitUntil(
@@ -2670,7 +2670,7 @@ export const recordQueuedPromptRunLaunch$ = command(
       ),
     );
     if (runInput.discordDelivery) {
-      set(scheduleDiscordRunTyping$, db, {
+      set(scheduleDiscordRunTyping$, {
         runId,
         chatThreadId: threadId,
         target: runInput.discordDelivery,
@@ -3478,7 +3478,7 @@ const processChatInternalCallback$ = command(
         );
       }
       if (payload.data.discordDelivery) {
-        set(scheduleDiscordRunTyping$, args.db, {
+        set(scheduleDiscordRunTyping$, {
           runId: args.callback.runId,
           chatThreadId: payload.data.threadId,
           target: payload.data.discordDelivery,
