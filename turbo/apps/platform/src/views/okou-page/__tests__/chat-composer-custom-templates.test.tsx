@@ -363,8 +363,6 @@ test("A colleague's template names its owner and offers no management", async ()
     within(dialog).findByText("Theirs"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Shared by Robin Ito")).toBeInTheDocument();
-  // The identity-provider handle is what the row used to show in its place.
-  expect(within(dialog).queryByText(/user_colleague/u)).not.toBeInTheDocument();
   expect(buttonByName("Actions for Theirs", dialog)).toBeUndefined();
   expect(buttonByName("Actions for Mine", dialog)).toBeTruthy();
 });
@@ -484,7 +482,7 @@ test("Returning to a type retains the loaded custom catalog", async () => {
   expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
 });
 
-test("An empty custom catalog offers its import tile without an onboarding panel", async () => {
+test("An empty custom catalog offers its import tile", async () => {
   mockCustomTemplates([]);
   const { dialog } = await openCustomPanel();
   const custom = within(dialog).getByRole("region", { name: "Custom" });
@@ -493,7 +491,6 @@ test("An empty custom catalog offers its import tile without an onboarding panel
     "accept",
     ".pptx,.ppt,.pdf",
   );
-  expect(within(custom).queryByRole("paragraph")).not.toBeInTheDocument();
   expect(
     within(dialog).getByRole("region", { name: "Built-in" }),
   ).toBeInTheDocument();

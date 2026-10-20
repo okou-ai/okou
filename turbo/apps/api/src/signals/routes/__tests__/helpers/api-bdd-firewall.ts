@@ -5,7 +5,6 @@ import { mockClerkUsers } from "./clerk-users";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import { server } from "../../../../mocks/server";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
 import type { ApiTestUser } from "./api-bdd";
@@ -107,24 +106,6 @@ export function createFirewallApi(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    async requestFirewallAuthRaw(
-      body: string,
-      headers: SandboxHeaders,
-    ): Promise<{ status: number; body: unknown }> {
-      const response = await createAppWithRoutes({
-        signal: context.signal,
-        routes: firewallRoutes,
-      }).request("/api/webhooks/agent/firewall/auth", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...headers,
-        },
-        body,
-      });
-      return { status: response.status, body: await response.json() };
     },
 
     mockTestOauthTokenRefresh(

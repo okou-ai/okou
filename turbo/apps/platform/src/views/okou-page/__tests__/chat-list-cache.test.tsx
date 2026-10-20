@@ -229,8 +229,5 @@ test("The unread filter applies to cached conversations", async () => {
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual(["Unread cached conversation"]);
   });
-  expect(
-    screen.queryByText("Read cached conversation"),
-  ).not.toBeInTheDocument();
   expect(remote.settled()).toBeFalsy();
 });

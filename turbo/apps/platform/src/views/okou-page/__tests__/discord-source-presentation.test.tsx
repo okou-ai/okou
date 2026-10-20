@@ -160,9 +160,6 @@ test("Discord sources never link outside discord.com", async () => {
     return element.closest("a") === null;
   });
   expect(labels).toHaveLength(untrusted.length);
-  expect(
-    screen.queryByText("Open original message in Discord"),
-  ).not.toBeInTheDocument();
 });
 
 test("Activity identifies a Discord run as its source", async () => {

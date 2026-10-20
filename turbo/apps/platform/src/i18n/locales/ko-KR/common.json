@@ -2169,11 +2169,8 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "emptyLinks": "이 채팅에는 아직 링크가 없습니다",
       "expand": "펼치기",
-      "links": "링크",
       "loadFailed": "리소스를 불러오지 못했습니다",
-      "loadingLinks": "링크 불러오는 중",
       "retry": "다시 시도",
       "title": "채팅 리소스"
     },

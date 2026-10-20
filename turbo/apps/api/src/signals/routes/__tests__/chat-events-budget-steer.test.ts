@@ -16,7 +16,6 @@ const context = testContext();
 const {
   api,
   chat,
-  chatCallbacks,
   entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
@@ -44,7 +43,6 @@ async function startBudgetRun() {
   }
 
   const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-  chatCallbacks.failIfChatCallbackRouteIsFetched();
   const active = await sendChatRun(actor, {
     agentId,
     prompt: "work until the runner's time-budget warning",

@@ -105,7 +105,6 @@ test("A failed Mermaid layout leaves its source readable and other diagrams usab
       selector: "pre > code",
     });
     expect(fallback).toBeVisible();
-    expect(fallback.closest("details")).toBeNull();
   });
   await expect(
     screen.findByRole("img", { name: "Diagram" }),

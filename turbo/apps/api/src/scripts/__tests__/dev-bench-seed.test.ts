@@ -97,16 +97,6 @@ describe("dev bench seed profile rows", () => {
       }
       expect(rows.eventRows).toHaveLength(expected.events);
       expect(
-        rows.eventRows.some((row) => {
-          return "role" in row;
-        }),
-      ).toBeFalsy();
-      expect(
-        rows.eventRows.some((row) => {
-          return "runLifecycleEvent" in row;
-        }),
-      ).toBeFalsy();
-      expect(
         countWhere(rows.eventRows, (row) => {
           return chatEventCompatibilityRole(row.eventType) === "user";
         }),

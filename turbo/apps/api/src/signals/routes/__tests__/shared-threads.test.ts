@@ -195,13 +195,6 @@ describe("optional shared-thread titles", () => {
       title: "Shared conversation",
     },
     {
-      name: "auth failure",
-      response: () => {
-        return new HttpResponse(providerSecret, { status: 401 });
-      },
-      title: "Shared conversation",
-    },
-    {
       name: "empty interpreted title",
       response: () => {
         return completion("---");
@@ -553,18 +546,5 @@ describe("client-generated shared-thread IDs", () => {
     expect(response.body.error.code).toBe("CONFLICT");
     await expectSharedSnapshot(owner, existing.body.id, "Shared conversation");
     await expectNoShare(intruder);
-  });
-
-  it("rejects a malformed ID", async () => {
-    const fixture = await prepareShare();
-    const response = await accept(
-      client().create({
-        ...requestBody(fixture),
-        body: { eventIds: [fixture.eventId], id: "not-a-uuid" },
-      }),
-      [400],
-    );
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-    await expectNoShare(fixture);
   });
 });

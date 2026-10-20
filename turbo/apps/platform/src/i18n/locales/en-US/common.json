@@ -2177,11 +2177,8 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
-      "links": "Links",
       "loadFailed": "Could not load resources",
-      "loadingLinks": "Loading links",
       "retry": "Try again",
       "title": "Resources"
     },

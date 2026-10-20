@@ -4,9 +4,11 @@ import {
   connectorCatalogReaderContract as connectorCatalogContract,
   type PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse,
   type PublicConnectorCatalogStatusReaderItem,
+  readBuiltinConnectorAccountFacts,
 } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { PublicConnectorCatalogConnectionStatus } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorAccountSummaryByTarget$,
   connectorAccountTargetKey,
@@ -28,7 +30,7 @@ const internalReloadBuiltinConnectors$ = state(0);
 
 /** UI completion is the saved default's configuration and credential facts. */
 export function withMemberAccountStatus<
-  T extends { readonly slug: ConnectorSlug },
+  T extends PlatformConnectorCatalogConnectItem,
 >(item: T, summaries: ReadonlyMap<string, ConnectorAccountSummary>) {
   const account = summaries.get(
     connectorAccountTargetKey({ kind: "builtin", connectorSlug: item.slug }),
@@ -41,22 +43,84 @@ export function withMemberAccountStatus<
   return withMemberAccount(item, account);
 }
 
-/** Project a known canonical default for UI; unknown setup never claims readiness. */
-export function withMemberAccount<T extends { readonly slug: ConnectorSlug }>(
-  item: T,
+function memberAccountConnectionStatus(
   account: ConnectorAccountSummary["defaultConnection"] | undefined,
-): T & {
-  readonly connected: boolean;
-  readonly connection: Exclude<
-    PlatformConnectorCatalogStatusItem["connection"],
-    undefined
-  >;
-} {
+  scopeMismatch: boolean | undefined,
+): PublicConnectorCatalogConnectionStatus | undefined {
+  if (!account) {
+    return "not-connected";
+  }
+  if (account.connectionStatus === "reconnect-required") {
+    return "reconnect-required";
+  }
+  if (scopeMismatch === undefined) {
+    return undefined;
+  }
+  return scopeMismatch ? "scope-mismatch" : "connected";
+}
+
+// Keep cross-request snapshot conflicts as management-only context. #41699
+// removes this old-projection comparison after catalog/client exclusion.
+function memberAccountProjectionConflict(
+  item: PlatformConnectorCatalogConnectItem,
+  account: ConnectorAccountSummary["defaultConnection"] | undefined,
+) {
+  if (item.accountProjectionConflict === true) {
+    return true;
+  }
+  if (item.connection === undefined) {
+    return false;
+  }
+  if ((item.connection?.id ?? null) !== (account?.id ?? null)) {
+    return true;
+  }
+  if (item.connection === null) {
+    return false;
+  }
+  return (
+    item.connection.authMethod !== account?.authMethod ||
+    (item.connectionStatus !== undefined &&
+      (item.connectionStatus === "reconnect-required") !==
+        (account?.connectionStatus === "reconnect-required"))
+  );
+}
+
+/** Project a known canonical default for UI; unknown setup never claims readiness. */
+export function withMemberAccount<
+  T extends PlatformConnectorCatalogConnectItem,
+>(item: T, account: ConnectorAccountSummary["defaultConnection"] | undefined) {
+  const facts = account
+    ? readBuiltinConnectorAccountFacts(item, account)
+    : undefined;
+  const connectionStatus = memberAccountConnectionStatus(
+    account,
+    facts?.scopeMismatch,
+  );
+  const accountProjectionConflict = memberAccountProjectionConflict(
+    item,
+    account,
+  );
+  const {
+    connected: _connected,
+    connection: _connection,
+    connectionStatus: _connectionStatus,
+    scopeMismatch: _scopeMismatch,
+    authMethodSupportsRefresh: _authMethodSupportsRefresh,
+    tokenExpiresAt: _tokenExpiresAt,
+    ...metadata
+  } = item;
   return {
-    ...item,
+    ...metadata,
+    accountProjectionConflict,
     connected:
       account?.connectionStatus === "connected" &&
-      account.setupStatus === "complete",
+      account.setupStatus === "complete" &&
+      connectionStatus !== undefined &&
+      (account.tokenExpiresAt === null || facts?.supportsRefresh !== undefined),
+    connectionStatus,
+    scopeMismatch: account ? facts?.scopeMismatch : false,
+    authMethodSupportsRefresh: account ? facts?.supportsRefresh : false,
+    tokenExpiresAt: account?.tokenExpiresAt ?? null,
     connection: account
       ? {
           id: account.id,

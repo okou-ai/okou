@@ -177,7 +177,6 @@ test("Use the artifact icon on mobile without a separate switch or duplicate men
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -227,13 +226,13 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
     resourceButton().focus();
   });
   expect(resourceButton()).toHaveFocus();
-  const link = queryAllByRoleFast("link", panel).find((candidate) => {
-    return candidate.textContent === "Current guide";
-  })!;
+  const artifact = (await within(panel).findByText("report.pdf")).closest(
+    "button",
+  )!;
   act(() => {
-    link.focus();
+    artifact.focus();
   });
-  expect(link).toHaveFocus();
+  expect(artifact).toHaveFocus();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });

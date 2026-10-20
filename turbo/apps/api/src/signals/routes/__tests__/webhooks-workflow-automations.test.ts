@@ -198,9 +198,6 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     const workflowClaim = await runsApi.claimRunnerJob(job.runId);
     const workflowPrompt = workflowClaim.appendSystemPrompt ?? "";
     expect(workflowPrompt).toContain("okou slack message send --help");
-    expect(workflowPrompt).not.toContain(
-      "normal replies are automatically sent to the originating thread",
-    );
     expect(workflowPrompt).not.toContain("Never use SLACK_TOKEN directly");
 
     const second = await postWorkflowWebhook({

@@ -41,7 +41,7 @@ function buildIntegrationToolsPrompt(
       ? [
           "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
           "Choose the delivery format for every artifact based on the user's request, relevant remembered preferences, and intended use. Honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
-          "Producing docx, xlsx, or PDF requires the `office-files` skill, which carries the toolchain install and the exact command for each format.",
+          "Producing DOCX, XLSX, or PDF requires the `office` skill. Read its `SKILL.md` entry point, then the relevant `docx/SKILL.md`, `xlsx/SKILL.md`, or `pdf/SKILL.md` within that package for setup, creation, and validation.",
         ]
       : [
           "For static HTML or site artifacts, a hosted URL is the user-accessible artifact view; the local `index.html` is an implementation file inside the authored bundle.",

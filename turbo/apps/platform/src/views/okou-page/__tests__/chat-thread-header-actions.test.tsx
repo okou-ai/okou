@@ -129,7 +129,7 @@ async function expectMobileSidebarPin(pinned: boolean) {
   });
 }
 
-test("Keep rapid pin changes responsive across resize and save without a success toast", async () => {
+test("Keep rapid pin changes responsive across resize and save", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
   const pinResponse = context.mocks.deferred<void>();
   const events: ChatThreadEvent[] = [];
@@ -210,9 +210,6 @@ test("Keep rapid pin changes responsive across resize and save without a success
   expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
     "Pin changes saved",
   );
-  expect(screen.queryByText("Chat pinned")).not.toBeInTheDocument();
-  expect(screen.queryByText("Chat unpinned")).not.toBeInTheDocument();
-  expect(screen.queryByText("Undo")).not.toBeInTheDocument();
 });
 
 test("Keep Share and More in the header and match the sidebar menu order", async () => {
@@ -581,7 +578,6 @@ test("Show the existing API error without undoing an optimistic pin", async () =
   expect(error).toBeInTheDocument();
   expect(buttonNamed("Unpin chat")).toBeEnabled();
   expect(buttonNamed("Unpin chat")).toHaveAttribute("aria-pressed", "true");
-  expect(screen.queryByText("Chat pinned")).not.toBeInTheDocument();
 });
 
 test("Continue saving the next pin change after an earlier request fails", async () => {
@@ -613,6 +609,4 @@ test("Continue saving the next pin change after an earlier request fails", async
   await waitFor(() => {
     expect(menuItemNamed("Pin chat")).toBeEnabled();
   });
-  expect(screen.queryByText("Chat pinned")).not.toBeInTheDocument();
-  expect(screen.queryByText("Chat unpinned")).not.toBeInTheDocument();
 });

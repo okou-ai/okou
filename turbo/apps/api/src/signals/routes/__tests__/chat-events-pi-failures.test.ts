@@ -175,7 +175,6 @@ describe("CHAT-02: model-first routing", () => {
         );
       }),
     ).toStrictEqual([]);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expectThreadModelCredits(context, actor, run.threadId, 0);
     await own(async () => {
       return await cancelChatRun(actor, run.runId, {

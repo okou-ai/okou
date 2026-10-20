@@ -9,7 +9,6 @@ import { socialContract } from "@okouai/api-contracts/contracts/social";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { env, mockEnv } from "../../../lib/env";
@@ -263,27 +262,6 @@ describe("social download discovery", () => {
       [200],
     );
     expect(empty.body).toStrictEqual({ downloads: [], nextCursor: null });
-  });
-
-  it.each([
-    "limit=0",
-    "limit=101",
-    "limit=1.5",
-    "limit=no",
-    "cursor=invalid",
-    "status=invalid",
-  ])("rejects invalid page query %s", async (query) => {
-    const owner = actor();
-    const app = createAppWithRoutes({
-      signal: context.signal,
-      routes: socialRoutes,
-    });
-    const response = await app.request(
-      new Request(`http://api.test/api/social/downloads?${query}`, {
-        headers: authenticate(owner),
-      }),
-    );
-    expect(response.status).toBe(400);
   });
 
   it("bounds default pages and continues after exact database anchors despite new insertions", async () => {

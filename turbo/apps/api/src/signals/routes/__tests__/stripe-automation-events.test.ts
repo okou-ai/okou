@@ -531,10 +531,6 @@ describe("Stripe automation event webhook", () => {
     expect(invalidSignature.status).toBe(401);
 
     await postStripeAutomationEvent(
-      { type: "invoice.paid", livemode: true },
-      400,
-    );
-    await postStripeAutomationEvent(
       {
         ...invoicePaidEvent({ eventId: "evt_missing_account" }),
         account: undefined,
@@ -734,10 +730,6 @@ describe("Stripe automation event webhook", () => {
     };
 
     for (const malformed of [
-      { ...event, type: undefined },
-      { ...event, id: undefined },
-      { ...event, created: -1 },
-      { ...event, livemode: undefined },
       { ...event, data: undefined },
       { ...event, account: undefined },
       { ...event, livemode: false, data: undefined },

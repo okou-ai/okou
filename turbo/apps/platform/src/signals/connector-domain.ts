@@ -7,10 +7,14 @@ import type {
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 
 export type PlatformConnectorCatalogStatusItem =
-  PublicConnectorCatalogStatusReaderItem;
+  PublicConnectorCatalogStatusReaderItem & {
+    readonly accountProjectionConflict?: boolean;
+  };
 /** What a connect surface lists: enough to draw a card and connect from it. */
 export type PlatformConnectorCatalogConnectItem =
-  PublicConnectorCatalogConnectReaderItem;
+  PublicConnectorCatalogConnectReaderItem & {
+    readonly accountProjectionConflict?: boolean;
+  };
 export type PlatformConnectorPermissionMetadata =
   PublicConnectorCatalogPermissionDetail;
 export type PlatformUserPermissionGrant = UserPermissionGrantResponse;

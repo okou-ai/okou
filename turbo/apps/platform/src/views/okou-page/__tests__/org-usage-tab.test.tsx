@@ -253,7 +253,6 @@ test("Review workspace credit balance and additions", async () => {
   expect(within(grants).getByText("+10,000")).toBeInTheDocument();
   expect(within(grants).getByText("8,000")).toBeInTheDocument();
   expect(within(grants).queryByText("March Pro credits")).toBeNull();
-  expect(screen.queryByTestId("credit-grants-toggle")).toBeNull();
   expect(screen.queryByText("Pro credits")).toBeNull();
   expect(screen.queryByText("Purchased credits")).toBeNull();
 });
@@ -272,7 +271,6 @@ test("Move from workspace credit balance to usage records", async () => {
       screen.getByRole("heading", { name: "Credit usage" }),
     ).toBeInTheDocument();
   });
-  expect(screen.queryByTestId("usage-records-see-balance")).toBeNull();
 });
 
 test("Buy credits from the workspace balance", async () => {

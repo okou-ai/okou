@@ -5,6 +5,7 @@ import {
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import type { PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -75,6 +76,50 @@ async function openCustom(dialog: HTMLElement) {
   click(await findFastControl("radio", "Custom", dialog));
 }
 
+function mockCanonicalBuiltinCatalog(
+  catalog: readonly PublicConnectorCatalogStatusItem[],
+) {
+  const connectors = catalog.map(
+    ({
+      connected: _connected,
+      connection: _connection,
+      connectionStatus: _connectionStatus,
+      scopeMismatch: _scopeMismatch,
+      authMethodSupportsRefresh: _authMethodSupportsRefresh,
+      tokenExpiresAt: _tokenExpiresAt,
+      ...item
+    }) => {
+      return item;
+    },
+  );
+  context.mocks.api(
+    connectorCatalogReaderContract.get,
+    ({ params, respond }) => {
+      const connector = connectors.find((item) => {
+        return item.slug === params.connectorSlug;
+      });
+      return connector
+        ? respond(200, { connector })
+        : respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
+    },
+  );
+  context.mocks.api(
+    connectorCatalogReaderContract.discovery,
+    ({ query, respond }) => {
+      const keyword = query.keyword?.toLowerCase() ?? "";
+      return respond(200, {
+        connectors: connectors.filter((item) => {
+          return (
+            item.slug.includes(keyword) ||
+            item.label.toLowerCase().includes(keyword)
+          );
+        }),
+        totalConnectorCount: connectors.length,
+      });
+    },
+  );
+}
+
 test("Expired builtin and custom defaults with healthy siblings remain in Needs attention", async () => {
   const builtinTarget = { kind: "builtin", connectorSlug: "github" } as const;
   const customTarget = {
@@ -130,28 +175,7 @@ test.each(["current", "canonical"] as const)(
       ],
     });
     if (definitionShape === "canonical") {
-      context.mocks.api(
-        connectorCatalogReaderContract.discovery,
-        ({ query, respond }) => {
-          const keyword = query.keyword?.toLowerCase() ?? "";
-          const connectors = catalog
-            .filter((item) => {
-              return (
-                item.slug.includes(keyword) ||
-                item.label.toLowerCase().includes(keyword)
-              );
-            })
-            .map(
-              ({ connected: _connected, connection: _connection, ...item }) => {
-                return item;
-              },
-            );
-          return respond(200, {
-            connectors,
-            totalConnectorCount: catalog.length,
-          });
-        },
-      );
+      mockCanonicalBuiltinCatalog(catalog);
     }
     const {
       connected: _connected,
@@ -186,7 +210,10 @@ test.each(["current", "canonical"] as const)(
   },
 );
 
-async function openExpiringBuiltinDirectory(refreshable: boolean) {
+async function openExpiringBuiltinDirectory(
+  refreshable: boolean,
+  shape: "current" | "canonical" | "conflicting",
+) {
   const clock = { nowMs: new Date("2026-10-19T08:00:00.000Z").getTime() };
   mockNow(() => {
     return clock.nowMs;
@@ -212,60 +239,154 @@ async function openExpiringBuiltinDirectory(refreshable: boolean) {
       isDefault: false,
     }),
   ];
+  const response = {
+    ...catalog,
+    authMethods: catalog.authMethods.map((method) => {
+      return {
+        ...method,
+        ...(shape === "current" ? {} : { supportsRefresh: refreshable }),
+      };
+    }),
+    authMethodSupportsRefresh:
+      shape === "conflicting" ? !refreshable : refreshable,
+    tokenExpiresAt:
+      shape === "conflicting" ? "2000-01-01T00:00:00Z" : tokenExpiresAt,
+  };
   installComposerConnectorFixture({
-    catalog: [
-      { ...catalog, authMethodSupportsRefresh: refreshable, tokenExpiresAt },
-    ],
+    catalog: [response],
     accounts,
     accountSummaries: [accountSummary(target, accounts)],
   });
+  if (shape === "canonical") {
+    mockCanonicalBuiltinCatalog([response]);
+  }
   const directory = await openDirectory();
   const search = within(directory).getByPlaceholderText("Find connectors...");
   await fill(search, "github");
   return { directory, search, clock };
 }
 
-test("An open directory recognizes expiry of a saved non-refreshable builtin default", async () => {
-  const { directory, search, clock } =
-    await openExpiringBuiltinDirectory(false);
-  await expect(
-    findFastControl("button", "Open GitHub details", directory),
-  ).resolves.toHaveTextContent("Work");
-  clock.nowMs += 120_000;
-  await fill(search, "git");
-  await within(directory).findByText("Needs attention");
-  const expired = await findFastControl(
-    "button",
-    "Open GitHub details",
-    directory,
-  );
-  expect(expired).toHaveTextContent("Connection expired");
-  expect(expired).toHaveTextContent("1/2 need attention");
-  await fill(search, "github");
-  const current = await findFastControl(
-    "button",
-    "Open GitHub details",
-    directory,
-  );
-  expect(current).toHaveTextContent("1/2 need attention");
-  click(current);
-  await expect(
-    findFastControl("button", "Reconnect", directory),
-  ).resolves.toBeEnabled();
-});
+test.each([true, false])(
+  "Canonical scope mismatch %s overrides the opposite catalog projection",
+  async (scopeMismatch) => {
+    const target = { kind: "builtin", connectorSlug: "github" } as const;
+    const catalog = builtinConnector({ slug: "github", label: "GitHub" });
+    const account = {
+      ...connectorAccount({
+        id: catalog.connection!.id!,
+        target,
+        displayName: "Work",
+        isDefault: true,
+      }),
+      scopeMismatch,
+    };
+    installComposerConnectorFixture({
+      catalog: [{ ...catalog, scopeMismatch: !scopeMismatch }],
+      accounts: [account],
+      accountSummaries: [accountSummary(target, [account])],
+    });
+    const directory = await openDirectory();
+    await fill(
+      within(directory).getByPlaceholderText("Find connectors..."),
+      "github",
+    );
+    const card = await findFastControl(
+      "button",
+      "Open GitHub details",
+      directory,
+    );
+    expect(card).toHaveTextContent(
+      scopeMismatch ? "Update permissions" : "Work",
+    );
+  },
+);
 
-test("An open directory keeps a saved refreshable builtin default usable after token expiry", async () => {
-  const { directory, search, clock } = await openExpiringBuiltinDirectory(true);
-  await expect(
-    findFastControl("button", "Open GitHub details", directory),
-  ).resolves.toHaveTextContent("Work");
-  clock.nowMs += 120_000;
-  await fill(search, "git");
-  await expect(
-    findFastControl("button", "Open GitHub details", directory),
-  ).resolves.toHaveTextContent("Work");
-  expect(within(directory).queryByText("Needs attention")).toBeNull();
-});
+test.each(["scope", "refresh"] as const)(
+  "Missing canonical %s facts cannot borrow a different account's catalog projection",
+  async (missingFact) => {
+    const target = { kind: "builtin", connectorSlug: "github" } as const;
+    const account = {
+      ...connectorAccount({
+        id: crypto.randomUUID(),
+        target,
+        displayName: "Work",
+        isDefault: true,
+      }),
+      scopeMismatch: missingFact === "scope" ? undefined : false,
+      tokenExpiresAt: missingFact === "refresh" ? "2099-01-01T00:00:00Z" : null,
+    };
+    const fixture = installComposerConnectorFixture({
+      catalog: [builtinConnector({ slug: "github", label: "GitHub" })],
+      accounts: [account],
+      accountSummaries: [accountSummary(target, [account])],
+    });
+    const directory = await openDirectory();
+    const card = await findFastControl(
+      "button",
+      "Open GitHub details",
+      directory,
+    );
+    expect(card).toHaveTextContent("Account status unavailable");
+    click(card);
+    await findFastControl("link", "Manage GitHub accounts", directory);
+    expect(queryFastControl("button", "Connect", directory)).toBeNull();
+    expect(queryFastControl("button", "Reconnect", directory)).toBeNull();
+    expect(fixture.oauthConnectionRequests).toStrictEqual([]);
+  },
+);
+
+test.each(["current", "canonical", "conflicting"] as const)(
+  "An open directory recognizes expiry of a saved non-refreshable builtin default with %s metadata",
+  async (shape) => {
+    const { directory, search, clock } = await openExpiringBuiltinDirectory(
+      false,
+      shape,
+    );
+    await expect(
+      findFastControl("button", "Open GitHub details", directory),
+    ).resolves.toHaveTextContent("Work");
+    clock.nowMs += 120_000;
+    await fill(search, "git");
+    await within(directory).findByText("Needs attention");
+    const expired = await findFastControl(
+      "button",
+      "Open GitHub details",
+      directory,
+    );
+    expect(expired).toHaveTextContent("Connection expired");
+    expect(expired).toHaveTextContent("1/2 need attention");
+    await fill(search, "github");
+    const current = await findFastControl(
+      "button",
+      "Open GitHub details",
+      directory,
+    );
+    expect(current).toHaveTextContent("1/2 need attention");
+    click(current);
+    await expect(
+      findFastControl("button", "Reconnect", directory),
+    ).resolves.toBeEnabled();
+  },
+);
+
+test.each(["current", "canonical", "conflicting"] as const)(
+  "An open directory keeps a saved refreshable builtin default usable after token expiry with %s metadata",
+  async (shape) => {
+    const { directory, search, clock } = await openExpiringBuiltinDirectory(
+      true,
+      shape,
+    );
+    await expect(
+      findFastControl("button", "Open GitHub details", directory),
+    ).resolves.toHaveTextContent("Work");
+    clock.nowMs += 120_000;
+    await fill(search, "git");
+    await expect(
+      findFastControl("button", "Open GitHub details", directory),
+    ).resolves.toHaveTextContent("Work");
+    expect(within(directory).queryByText("Needs attention")).toBeNull();
+  },
+);
 
 test("A saved custom account with incomplete setup is visible without claiming it is ready", async () => {
   const target = {

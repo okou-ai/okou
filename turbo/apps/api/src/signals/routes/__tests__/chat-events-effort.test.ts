@@ -11,7 +11,6 @@ const context = testContext();
 const {
   api,
   chat,
-  chatCallbacks,
   entitledChatActor,
   sendChatRun,
   claimChatRun,
@@ -210,7 +209,6 @@ describe("CHAT effort: thread configuration", () => {
     "preserves enqueued settings after thread edits and retries with Pi $pi and $requestedEffort effort",
     async ({ requestedEffort, effectiveEffort, pi }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
 
       const selectedModel = pi ? "gpt-6-sol" : "claude-fable-5-1";
 

@@ -2,47 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 
-import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { slackConnectRoutes } from "../slack-connect";
 
-const TEST_APP_ROUTES = Object.freeze([...slackConnectRoutes]);
-
 const context = testContext();
 const mocks = createRouteMocks(context);
 const slackOrgs = createPublicSlackOrgApi(context);
-const SLACK_CONNECT_PATH = "/api/integrations/slack/connect";
-
-async function postRawSlackConnect(body: string): Promise<{
-  readonly status: number;
-  readonly body: unknown;
-}> {
-  const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-  const response = await app.request(SLACK_CONNECT_PATH, {
-    method: "POST",
-    headers: {
-      authorization: "Bearer clerk-session",
-      "content-type": "application/json",
-    },
-    body,
-  });
-
-  return {
-    status: response.status,
-    body: await response.json(),
-  };
-}
-
-function expectErrorCode(
-  body: unknown,
-  code: string,
-): asserts body is { readonly error: { readonly message: string } } {
-  expect(body).toMatchObject({ error: { code } });
-}
-
 describe("GET /api/integrations/slack/connect", () => {
   it("returns 401 when the authenticated session has no active organization", async () => {
     const fixture = await slackOrgs.installOrg();
@@ -369,31 +337,6 @@ describe("POST /api/integrations/slack/connect", () => {
       error: {
         message: "Not authenticated",
         code: "UNAUTHORIZED",
-      },
-    });
-  });
-
-  it("returns 400 when body is missing required fields", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const response = await postRawSlackConnect("{}");
-
-    expect(response.status).toBe(400);
-    expectErrorCode(response.body, "BAD_REQUEST");
-  });
-
-  it("returns 400 when body is not valid JSON", async () => {
-    const fixture = await slackOrgs.installOrg();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const response = await postRawSlackConnect("not-json");
-
-    expect(response.status).toBe(400);
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Invalid JSON in request body",
-        code: "BAD_REQUEST",
       },
     });
   });

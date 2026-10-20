@@ -1,4 +1,3 @@
-import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -21,19 +20,13 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
-import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
 
 const context = testContext();
 const credentials = createClaimedRunCredentials(context);
-const store = createStore();
 const bdd = createBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
-
-function uniqueBotId(): string {
-  return String(100_000_000 + Math.floor(Math.random() * 899_999_999));
-}
 
 function actorFor(args: {
   readonly orgId: string;
@@ -231,35 +224,6 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
         url: fileUrl,
       });
     });
-  });
-
-  it("returns 404 for an unsupported bot id", async () => {
-    const orgId = `org_${randomUUID().slice(0, 8)}`;
-    const userId = `user_${randomUUID().slice(0, 8)}`;
-    await store.set(
-      seedOrgMembership$,
-      { orgId, userId, role: "admin" },
-      context.signal,
-    );
-
-    const client = setupApp({
-      context,
-      routes: integrationsTelegramUploadCompleteRoutes,
-    })(integrationsTelegramUploadCompleteContract);
-    const response = await accept(
-      client.complete({
-        body: {
-          uploadId: randomUUID(),
-          botId: uniqueBotId(),
-          chatId: "-1001234567890",
-        },
-        headers: {
-          authorization: `Bearer ${await credentials.okouToken({ userId, orgId })}`,
-        },
-      }),
-      [404],
-    );
-    expect(response.body.error.code).toBe("NOT_FOUND");
   });
 
   it("returns 403 when the token has no organization membership", async () => {

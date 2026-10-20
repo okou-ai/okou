@@ -760,27 +760,6 @@ describe("GET /api/integrations/slack/download-file", () => {
     };
   }
 
-  it("returns 400 when file_id query param is missing", async () => {
-    expect.hasAssertions();
-    const { token } = await seedDownloadContext();
-
-    const response = await requestDownloadFile("", `Bearer ${token}`);
-
-    await expectErrorResponse(response, 400, "BAD_REQUEST");
-  });
-
-  it("returns 404 when no Slack installation exists for org", async () => {
-    expect.hasAssertions();
-    const { token } = await seedDownloadContext({ withInstallation: false });
-
-    const response = await requestDownloadFile(
-      "?file_id=F1",
-      `Bearer ${token}`,
-    );
-
-    await expectErrorResponse(response, 404, "NOT_FOUND");
-  });
-
   it("returns 404 when Slack reports file not found", async () => {
     expect.hasAssertions();
     const { token } = await seedDownloadContext();

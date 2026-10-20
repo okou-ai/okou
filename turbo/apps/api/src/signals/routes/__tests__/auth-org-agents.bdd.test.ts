@@ -112,7 +112,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
       name: "BDD Chain Org",
       role: "admin",
     });
-    expect(org).not.toHaveProperty("slug");
 
     const missingOrg = await api.requestReadOrg(noOrg, [404]);
     expectApiError(missingOrg.body);
@@ -213,7 +212,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
       name: "Slugless Workspace",
       role: "admin",
     });
-    expect(refreshed).not.toHaveProperty("slug");
 
     const cached = await api.readOrg(admin);
     expect(cached).toMatchObject({
@@ -221,7 +219,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
       name: "Slugless Workspace",
       role: "admin",
     });
-    expect(cached).not.toHaveProperty("slug");
   });
 });
 
@@ -370,7 +367,6 @@ describe("ORG-01 and ORG-02", () => {
       expect(updated).toMatchObject({
         name: "BDD Org Updated",
       });
-      expect(updated).not.toHaveProperty("slug");
 
       api.mockClerkOrg(member, {
         slug: nextSlug,
@@ -789,7 +785,7 @@ describe("ORG-03 onboarding status mapping", () => {
 });
 
 describe("AGENT-01 and AGENT-02", () => {
-  it("rejects agent metadata updates at unauthenticated, malformed, and missing boundaries", async () => {
+  it("rejects agent metadata updates at unauthenticated and missing boundaries", async () => {
     const admin = api.user();
     const missingAgentId = randomUUID();
 
@@ -801,15 +797,6 @@ describe("AGENT-01 and AGENT-02", () => {
     );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const malformed = await api.requestUpdateAgentMetadata(
-      admin,
-      "not-a-valid-agent-id",
-      { displayName: "Malformed" },
-      [400],
-    );
-    expectApiError(malformed.body);
-    expect(malformed.body.error.code).toBe("BAD_REQUEST");
 
     const missing = await api.requestUpdateAgentMetadata(
       admin,

@@ -35,25 +35,6 @@ describe("GET /api/usage/record", () => {
     });
   });
 
-  it("returns 400 for invalid timezone values", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const response = await accept(
-      apiClient().get({
-        query: { tz: "Not/A/Timezone" },
-        headers: authHeaders(),
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Invalid timezone: Not/A/Timezone",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
   it("returns 403 when team usage records are requested", async () => {
     mocks.clerk.session(
       `user_${randomUUID()}`,

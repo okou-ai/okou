@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
 
-import {
-  logsByIdContract,
-  logsListContract,
-} from "@okouai/api-contracts/contracts/logs";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import type { z } from "zod";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
@@ -552,20 +549,6 @@ export function createMiscRoutesApi(context: TestContext) {
       statuses: readonly TStatus[],
     ) {
       return await requestLogsList(context, actor, query, statuses);
-    },
-
-    async readLog(
-      actor: ApiTestUser,
-      id: string,
-      statuses: readonly (200 | 401 | 403 | 404)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: logsRoutes })(logsByIdContract).getById({
-          headers: authenticate(context, actor),
-          params: { id },
-        }),
-        statuses,
-      );
     },
   };
 }

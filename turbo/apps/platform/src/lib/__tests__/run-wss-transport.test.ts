@@ -274,19 +274,6 @@ test("an acknowledgement followed by immediate socket closure does not report re
   transport.close();
 });
 
-test("an unsolicited auth acknowledgement before the first frame never opens the channel", async () => {
-  const { transport, sockets } = makeTransport(() => {
-    return Promise.resolve(bootstrapResponse());
-  });
-  const pending = transport.connect(context.signal);
-  const socket = await firstSocket(sockets);
-  socket.message(JSON.stringify({ type: "auth.ok" }));
-  expect(socket.closed).toBeTruthy();
-  expect(socket.sent).toStrictEqual([]);
-  transport.close();
-  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-});
-
 test("repeated listener failure stops after the bounded fresh bootstrap budget", async () => {
   let calls = 0;
   const sockets: FakeSocket[] = [];

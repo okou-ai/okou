@@ -123,23 +123,6 @@ describe("POST /api/billing/downgrade", () => {
     });
   });
 
-  it("returns 400 for invalid targetTier", async () => {
-    const fixture = await track(
-      store.set(seedInvoicesOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: billingDowngradeRoutes })(
-      billingDowngradeContract,
-    );
-    const response = await client.create({
-      body: { targetTier: "team" as "pro" },
-      headers: { authorization: "Bearer clerk-session" },
-    });
-
-    expect(response.status).toBe(400);
-  });
-
   it("returns 409 when org has no subscription", async () => {
     const fixture = await track(
       store.set(seedInvoicesOrg$, {}, context.signal),

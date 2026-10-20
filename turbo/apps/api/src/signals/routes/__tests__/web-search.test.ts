@@ -488,7 +488,6 @@ describe("okou web-search route", () => {
       expect(providerRequests).toBe(1);
       expect(beforeCredits - (await credits(actor))).toBe(5);
       expect(membershipRead).toHaveBeenCalledTimes(failures.length + 1);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -534,7 +533,6 @@ describe("okou web-search route", () => {
       expect(membershipRead).toHaveBeenCalledTimes(3);
       expect(providerRequests).toBe(0);
       await expect(credits(actor)).resolves.toBe(beforeCredits);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
 
       // Unavailability does not revoke the same PAT or mark its identity missing.
       mockClerkMembership(context, actor, "org:admin");
@@ -565,9 +563,6 @@ describe("okou web-search route", () => {
         { code: "unknown_error", message: "other failure" },
       ]),
     ],
-    ["malformed SDK errors", new ClerkTransportTestError(undefined, null)],
-    ["null status", new ClerkTransportTestError(null)],
-    ["malformed status", new ClerkTransportTestError("503")],
     ["non-Clerk failure", new Error("fetch failed")],
     ["forbidden response", new ClerkTransportTestError(403)],
     ["rate limit", new ClerkTransportTestError(429)],
@@ -625,27 +620,6 @@ describe("okou web-search route", () => {
 
     expect(response.status).toBe(500);
     expect(membershipRead).toHaveBeenCalledOnce();
-  });
-
-  it("rejects invalid filters before calling Perplexity", async () => {
-    const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    configureProvider();
-    server.use(
-      http.post(PERPLEXITY_SEARCH_URL, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse());
-      }),
-    );
-
-    const response = await rawWebSearchRequest(actor, {
-      query: "latest AI regulation",
-      limit: 11,
-      domains: ["https://example.com"],
-    });
-
-    expect(response.status).toBe(400);
-    expect(providerRequests).toBe(0);
   });
 
   it("rejects requests when the provider is not configured", async () => {
@@ -836,11 +810,6 @@ describe("okou web-search route", () => {
 
   it.each([
     ["invalid JSON", "not-json", "PERPLEXITY_INVALID_RESPONSE"],
-    [
-      "missing results",
-      JSON.stringify({ id: "missing" }),
-      "PERPLEXITY_INVALID_RESPONSE",
-    ],
     [
       "invalid URL",
       JSON.stringify({

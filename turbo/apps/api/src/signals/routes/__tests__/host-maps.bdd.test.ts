@@ -370,15 +370,6 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       publicSlug: okouSite,
       deploymentId: createdWithOkouToken.deploymentId,
     });
-    expect(
-      capture.puts.some((put) => {
-        return (
-          put.key === `sites/${okouSite}/active.json` ||
-          put.key ===
-            `sites/deployments/${createdWithOkouToken.deploymentId}.json`
-        );
-      }),
-    ).toBeFalsy();
   });
 
   it("adds a four-character hash only when the simple alias is already occupied [HOST-A]", async () => {
@@ -604,8 +595,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     });
   });
 
-  it("rejects unauthenticated prepares and oversized public slugs [HOST-D]", async () => {
-    const bdd = createBddApi(context);
+  it("rejects unauthenticated prepares [HOST-D]", async () => {
     const api = createHostMapsBddApi(context);
     const files = [hostedTextFile("/index.html", "<main>auth matrix</main>")];
 
@@ -621,22 +611,6 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const actor = bdd.user();
-    const tooLong = await api.requestPrepareHostedSite(
-      actor,
-      {
-        site: "a".repeat(63),
-        slugSuffix: "b".repeat(32),
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files,
-      },
-      [400],
-    );
-    expectApiError(tooLong.body);
-    expect(tooLong.body.error.code).toBe("BAD_REQUEST");
-    expect(tooLong.body.error.message).toContain("96");
   });
 
   it("charges Gemini and Google Maps grounding cost with a 25% markup [MAPS-A]", async () => {

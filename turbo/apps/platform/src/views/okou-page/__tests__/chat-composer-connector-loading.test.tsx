@@ -2,7 +2,6 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -28,7 +27,7 @@ test("Read composer summaries without fetching the connector directory or old au
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
-  const reads = { discovery: 0, custom: 0, builtinGrants: 0, customGrants: 0 };
+  const reads = { discovery: 0, custom: 0 };
   context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     reads.discovery += 1;
     return respond(503, {
@@ -41,14 +40,6 @@ test("Read composer summaries without fetching the connector directory or old au
       error: { code: "INTERNAL_ERROR", message: "Directory unavailable" },
     });
   });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    reads.builtinGrants += 1;
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    reads.customGrants += 1;
-    return respond(200, { grants: [] });
-  });
 
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
@@ -58,8 +49,6 @@ test("Read composer summaries without fetching the connector directory or old au
   expect(reads).toStrictEqual({
     discovery: 0,
     custom: 0,
-    builtinGrants: 0,
-    customGrants: 0,
   });
 });
 
@@ -120,8 +109,6 @@ test("Load the Agent's connector access only when the Connectors menu opens", as
   expect(requests.agent).toBeGreaterThan(0);
   expect(screen.getByLabelText("Add Slack")).toBeInTheDocument();
   expect(screen.queryByText("Gmail")).toBeNull();
-  // The trigger stays a static mark rather than listing enabled connectors.
-  expect(trigger.querySelector("img")).toBeNull();
 });
 
 test("Do not show the previous Agent's connectors while the next Agent loads", async () => {

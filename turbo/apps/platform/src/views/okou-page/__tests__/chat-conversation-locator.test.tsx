@@ -106,7 +106,7 @@ test("first-turn navigation reaches beyond the rendered conversation", async () 
   });
 });
 
-test("repeat marker selection restarts the landing feedback", async () => {
+test("repeat marker selection keeps the landing feedback visible", async () => {
   const user = userEvent.setup();
   const { container, rail, tickCount } = await setupLocatorConversation({
     threadId: "b0000000-0000-4000-a000-000000000826",
@@ -127,13 +127,8 @@ test("repeat marker selection restarts the landing feedback", async () => {
     ).toBeInTheDocument();
   });
 
-  const firstHighlight = requiredElement(
-    "[data-locator-landed]",
-    messageAnchor("Locator question 1", container),
-  );
   click(rail);
   await waitFor(() => {
-    expect(firstHighlight).not.toBeInTheDocument();
     expect(
       messageAnchor("Locator question 1", container).querySelector(
         "[data-locator-landed]",

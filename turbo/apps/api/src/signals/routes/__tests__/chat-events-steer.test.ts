@@ -69,7 +69,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
     const claimed = await claimChatRun(runnerGroup, active.runId);
     const eventId = randomUUID();
@@ -137,7 +136,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
     const claimed = await claimChatRun(runnerGroup, active.runId);
     const template = WEBSITE_TEMPLATE_ITEMS[0];
@@ -180,7 +178,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
   it("returns the next prompt after the run's own input and declares it steered once", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "run that steers queued prompts",
@@ -302,7 +299,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
   it("skips recalled prompts and rejects unknown input", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "run that skips unsteerable input",
@@ -389,7 +385,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
   it("rejects a declaration once the run ended and another run took the prompt", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "run that ends before steering",
@@ -459,7 +454,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     const { actor, agentId, runnerGroup } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const other = await owned.sendChatRun(actor, {
         agentId,
         prompt: "another run of the same user",

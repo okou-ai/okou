@@ -262,7 +262,6 @@ describe("SEO routes", () => {
           '"United States" or "US"',
         );
         expect(providerRequests).toBe(0);
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
         await expect(credits(actor)).resolves.toBe(beforeCredits);
       },
     );

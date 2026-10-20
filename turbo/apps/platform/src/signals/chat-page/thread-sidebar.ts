@@ -175,13 +175,8 @@ export type ThreadSidebarArtifactSource =
   | { readonly kind: "catalog"; readonly artifactId: string }
   | { readonly kind: "attachment"; readonly ref: ArtifactRef };
 
-export type ThreadResourceSection = "artifacts" | "links";
-
 export type ThreadSidebarTarget =
-  | {
-      readonly type: "artifacts";
-      readonly section?: ThreadResourceSection;
-    }
+  | { readonly type: "artifacts" }
   | { readonly type: "artifact"; readonly source: ThreadSidebarArtifactSource }
   | { readonly type: "email-draft"; readonly signals: MailDraftSignals }
   | { readonly type: "browser" }

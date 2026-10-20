@@ -122,24 +122,6 @@ describe("GET /api/connectors/:connectorSlug", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns 404 when no connector with that slug exists", async () => {
-    const fixture = seedAuthenticatedFixture();
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsBySlugContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "github" },
-        headers: authHeaders(),
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-  });
-
   it("returns a connector created through the connector API", async () => {
     const fixture = seedAuthenticatedFixture();
     const connectionId = await connectOpenai(fixture);

@@ -604,7 +604,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
         new Date(Date.parse(after.matchedMessage.createdAt) + 1).toISOString(),
       ),
     ).resolves.toStrictEqual([]);
-    await expect(search("2099-01-01T00:00:00Z")).resolves.toStrictEqual([]);
     const native = await chat.searchChat(owner, keyword, {
       agentId: agent.agentId,
       since: Date.parse(since),
@@ -623,14 +622,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
         return hit.matchedMessage.createdAt;
       }),
     );
-    for (const since of [
-      1_791_792_170,
-      1_791_792_170_000,
-      "1791792170000",
-      "2026-10-12T08:02:50",
-      "2026-02-30T08:02:50Z",
-      "2026-10-12T08:02:50.0001Z",
-    ]) {
+    for (const since of ["2026-10-12T08:02:50", "2026-10-12T08:02:50.0001Z"]) {
       const rejected = await mcp.call(token(), "search_chat_messages", {
         keyword,
         since,

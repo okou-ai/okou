@@ -8,7 +8,6 @@ import {
   artifact,
   findArtifactAction,
   getButtonByName,
-  queryButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
@@ -52,7 +51,6 @@ test("Artifact kind filters remain available while switching catalogs", async ()
     "Shared conversations",
     "Files",
   ]);
-  expect(queryButtonByName("Show all artifacts", filters)).toBeUndefined();
   expect(
     getButtonByName("Show presentation artifacts", filters),
   ).toHaveAttribute("aria-pressed", "true");

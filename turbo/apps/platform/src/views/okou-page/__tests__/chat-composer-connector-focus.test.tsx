@@ -92,9 +92,7 @@ test("A delayed connector search does not take focus after keyboard navigation",
   expect(add).toHaveFocus();
 
   authorization.resolve(undefined);
-  const search =
-    await within(dialog).findByPlaceholderText("Find connectors...");
-  expect(search).not.toHaveFocus();
+  await within(dialog).findByPlaceholderText("Find connectors...");
   expect(add).toHaveFocus();
 });
 

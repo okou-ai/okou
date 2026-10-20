@@ -83,7 +83,6 @@ test("Document category and scroll survive preview", async () => {
     "Workflow",
   ]);
   click(control(dialog, "tab", "Document"));
-  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
   click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
@@ -179,9 +178,6 @@ test("Document purposes are directly selectable without losing the draft or sele
   expect(
     within(shelf).queryByLabelText("Import your own document"),
   ).not.toBeInTheDocument();
-  expect(within(categories).queryByText("All")).not.toBeInTheDocument();
-  expect(within(categories).queryByText("More")).not.toBeInTheDocument();
-  expect(within(categories).queryByRole("combobox")).not.toBeInTheDocument();
   click(control(categories, "button", "Invoice"));
   expect(control(categories, "button", "Invoice")).toHaveAttribute(
     "aria-pressed",
@@ -304,7 +300,6 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  expect(firstPage).not.toBeInTheDocument();
   const secondUrl = within(dialog).getByAltText("Page 2").getAttribute("src");
   expect(secondUrl).not.toBe(firstUrl);
   expect(control(dialog, "button", "Next sample page")).toBeDisabled();

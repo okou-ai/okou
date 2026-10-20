@@ -162,6 +162,10 @@ describe("okou connector list command", () => {
       const {
         connected: _connected,
         connection: _connection,
+        connectionStatus: _connectionStatus,
+        scopeMismatch: _scopeMismatch,
+        authMethodSupportsRefresh: _authMethodSupportsRefresh,
+        tokenExpiresAt: _tokenExpiresAt,
         ...metadata
       } = current;
       server.use(
