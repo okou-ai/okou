@@ -53,17 +53,17 @@ export function createPlatformSentryOptions(
     // fix cannot be verified against the build that produced the events.
     release: __OKOU_APP_VERSION__,
 
-    // Tagging only: this applies `third_party_code` and never drops an event,
-    // so Sentry-side triage can separate user-agent and extension captures from
-    // our own frames. Only the page bundle carries the application key: the
-    // shared worker is built by a separate Vite worker pipeline that the Sentry
-    // plugin does not process, so tagging its frames as third-party would be
-    // wrong.
+    // Drop page errors only when every frame comes from third-party code;
+    // errors containing our application frames still report. Only the page
+    // bundle carries the application key: the shared worker is built by a
+    // separate Vite worker pipeline that the Sentry plugin does not process,
+    // so applying this filter there would drop application errors.
     integrations:
       runtime === "page"
         ? [
             Sentry.thirdPartyErrorFilterIntegration({
-              behaviour: "apply-tag-if-exclusively-contains-third-party-frames",
+              behaviour:
+                "drop-error-if-exclusively-contains-third-party-frames",
               filterKeys: [SENTRY_APPLICATION_KEY],
             }),
           ]
