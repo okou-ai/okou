@@ -1318,11 +1318,10 @@ async fn exercise_selected_factories(
             .await;
             // A failed measured case is not permission to tear down dependencies
             // or delete its files. Accepted cleanup retains its own factory owner.
-            if proof.is_some() {
-                result
-                    .as_ref()
-                    .map_err(|error| io::Error::other(error.to_string()))?;
-            }
+            let result = match result {
+                Err(error) if proof.is_some() => return Err(error),
+                result => result,
+            };
             if let Some(proof) = &proof {
                 proof.release_completed_owners();
             }
