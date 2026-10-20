@@ -119,7 +119,10 @@ final class ConversationRunUsageTests: XCTestCase {
     try await eventually { visible.allSatisfy { conversation.runUsage.states[$0] != .loading } }
     XCTAssertEqual(Set(reads.withLock { $0 }), visible)
     while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
-    try await eventually { reads.withLock { $0.count } == 16 }
+    try await eventually {
+      reads.withLock { $0.count } == 16
+        && conversation.runUsage.states.values.allSatisfy { $0 == .available(Self.usage(5)) }
+    }
     conversation.resetRenderWindowToLatest()
     while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
     await conversation.refresh()
