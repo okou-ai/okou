@@ -109,6 +109,37 @@ for name, values in cases.items():
                 archive.addfile(entry, io.BytesIO(value))
     result = subprocess.run([sys.executable, reader, str(path)], capture_output=True, text=True)
     assert result.returncode != 0 and not result.stdout, (name, result.stdout, result.stderr)
+
+# Cached packages must supply canonical regular assets and unambiguous
+# installation metadata, even when their runtime identity is well formed.
+installation = json.dumps({**metadata, "private": True, "bin": {"okou": "okou.js"}}).encode()
+for name in ("symlink-worker", "duplicate-worker", "noncanonical-worker", "duplicate-bin"):
+    path = root / (name + '.tgz')
+    document = installation
+    if name == 'duplicate-bin':
+        document = document.replace(b'"bin": {', b'"bin": {"okou": "okou.js"}, "bin": {')
+    with tarfile.open(path, 'w:gz') as archive:
+        entry = tarfile.TarInfo('package/package.json')
+        entry.size = len(document)
+        archive.addfile(entry, io.BytesIO(document))
+        for asset in ('okou.js', 'image-resize-worker.js', 'photon_rs_bg.wasm'):
+            entry_name = 'package/' + asset
+            if asset == 'image-resize-worker.js' and name == 'noncanonical-worker':
+                entry_name = 'package//image-resize-worker.js'
+            entry = tarfile.TarInfo(entry_name)
+            if asset == 'image-resize-worker.js' and name == 'symlink-worker':
+                entry.type = tarfile.SYMTYPE
+                entry.linkname = 'okou.js'
+                archive.addfile(entry)
+            else:
+                entry.size = 1
+                archive.addfile(entry, io.BytesIO(b'x'))
+                if asset == 'image-resize-worker.js' and name == 'duplicate-worker':
+                    archive.addfile(entry, io.BytesIO(b'y'))
+    result = subprocess.run([sys.executable, reader, str(path), '--verify-package'],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and not result.stdout, (name, result.stdout, result.stderr)
+
 class Zeros:
     def read(self, size):
         return b'\0' * size
