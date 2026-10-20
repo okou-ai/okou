@@ -38,7 +38,7 @@ import {
   loadDiscordQueuedLaunchMaterial$,
 } from "./discord-queued-launch-context.service";
 import { loadTeamsQueuedLaunchMaterial } from "./teams-queued-launch-context.service";
-import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
+import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
@@ -282,7 +282,7 @@ const loadIntegrationPromptMaterial$ = command(
         return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);
       }
       case "telegram": {
-        return await loadTelegramQueuedLaunchMaterial(db, loaderArgs);
+        return await set(loadTelegramQueuedLaunchMaterial$, loaderArgs);
       }
       case "agentphone": {
         return await loadAgentPhoneQueuedLaunchMaterial(db, loaderArgs);
