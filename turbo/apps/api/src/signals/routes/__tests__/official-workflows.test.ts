@@ -1709,8 +1709,7 @@ describe("Morning Brief explicit installation", () => {
     "keeps an existing brief paused when membership lookup returns $providerStatus",
     async ({ providerStatus, expectedStatus }) => {
       const { actor, installationId, automationId } =
-        await pauseBriefWithoutTimezone(true);
-      await publishRecoveryBrief("Asia/Shanghai");
+        await pauseBriefForMembershipFailure();
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
         new ClerkTransportTestError(providerStatus),
       );
@@ -2130,6 +2129,98 @@ async function publishRecoveryBrief(timezone?: string) {
       },
     ]),
   );
+}
+
+async function pauseBriefForMembershipFailure() {
+  const { actor, createdAt } = await prepareBriefMember({
+    catalogAvailable: false,
+    bootstrap: false,
+  });
+  expect((await syncMorningBriefCatalog()).body.outcome).toBe("accepted");
+  await deliverClerkOrganizationCreated(actor, createdAt);
+  await initializeBriefMember(actor, "Asia/Shanghai");
+  await accept(
+    morningBriefPreferenceClient().update({
+      headers: authHeaders(actor),
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  const [installation] = await listMorningBriefInstallations(actor);
+  if (!installation) {
+    throw new Error("Expected the existing Morning Brief installation");
+  }
+  const [before] = await readMorningBriefAutomations(actor, installation.id);
+  if (!before) {
+    throw new Error("Expected its existing automation");
+  }
+  expect(before).toMatchObject({
+    enabled: true,
+    official: { intendedEnabled: true, reconciliationStatus: "current" },
+  });
+
+  const publish = async (defaultTimezone?: string) => {
+    const result = await syncCatalog(
+      catalog(
+        MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+          return activeDefinition(name, [
+            {
+              key: "daily-delivery",
+              parameters: [
+                {
+                  key: "delivery-cron",
+                  type: "string",
+                  format: "text",
+                  required: true,
+                  default: "0 7 * * *",
+                },
+                {
+                  key: "delivery-timezone",
+                  type: "string",
+                  format: "timezone",
+                  required: true,
+                  ...(defaultTimezone === undefined
+                    ? {}
+                    : { default: defaultTimezone }),
+                },
+              ],
+              desiredState: {
+                kind: "schedule",
+                schedule: {
+                  type: "cron",
+                  cronExpression: { parameter: "delivery-cron" },
+                  timezone: { parameter: "delivery-timezone" },
+                },
+              },
+            },
+          ]);
+        }),
+      ),
+    );
+    expect(result.body).toMatchObject({ outcome: "accepted", diagnostics: [] });
+  };
+
+  // Pause this same live automation through a genuine missing catalog binding.
+  // Membership departure/rejoin is covered by the timezone recovery scenarios.
+  await publish();
+  await executeAutomationCron();
+  await flushWaitUntilForTest();
+  await expect(
+    readMorningBriefAutomations(actor, installation.id),
+  ).resolves.toMatchObject([
+    {
+      id: before.id,
+      enabled: false,
+      nextRunAt: null,
+      official: {
+        intendedEnabled: true,
+        reconciliationStatus: "needs_reconfiguration",
+      },
+    },
+  ]);
+  // Recovery is otherwise possible before the provider starts rejecting reads.
+  await publish("Asia/Shanghai");
+  return { actor, installationId: installation.id, automationId: before.id };
 }
 
 async function pauseBriefWithoutTimezone(intendedEnabled: boolean) {
