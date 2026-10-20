@@ -21,7 +21,7 @@ from mitmproxy.proxy.layers.http._events import (
     ResponseEndOfMessage,
     ResponseHeaders,
 )
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
+from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
 from mitmproxy.test import taddons, tutils
 
 import managed_openrouter as managed
@@ -109,7 +109,9 @@ async def test_complete_body_is_validated_before_any_upstream_request(
         for fragment in (body[:80_000], body[80_000:]):
             pending = list(stream.handle_event(RequestData(1, fragment)))
             assert not any(isinstance(c, (GetHttpConnection, SendHttp)) for c in pending)
-            observed.extend(pending)
+            observed.extend(await _finish_hooks(context, stream, pending))
+            assert not stream.request_body_buf
+            assert flow.request.raw_content is None
             auth_fetch.assert_not_called()
         if case == "trailers":
             pending = list(
@@ -119,11 +121,9 @@ async def test_complete_body_is_validated_before_any_upstream_request(
             )
             assert not any(isinstance(c, (GetHttpConnection, SendHttp)) for c in pending)
         pending = list(stream.handle_event(RequestEndOfMessage(1)))
-        request_hook = next(c for c in pending if isinstance(c, HttpRequestHook))
-        await context.master.addons.invoke_addon(mitm_addon, request_hook)
-        pending = list(stream.handle_event(events.HookCompleted(request_hook, None)))
+        pending = await _finish_hooks(context, stream, pending)
         if case != "accepted":
-            observed.extend(await _finish_hooks(context, stream, pending))
+            observed.extend(pending)
             auth_fetch.assert_not_called()
             assert flow.response is not None
             assert flow.response.status_code == 403
@@ -140,6 +140,7 @@ async def test_complete_body_is_validated_before_any_upstream_request(
                     GetHttpConnectionCompleted(connection, (flow.server_conn, None))
                 )
             )
+            sent = await _finish_hooks(context, stream, sent)
             heads = [
                 c.event
                 for c in sent
@@ -157,6 +158,8 @@ async def test_complete_body_is_validated_before_any_upstream_request(
                 )
                 == body
             )
+            assert flow.request.raw_content == b""
+            assert managed.admission_state_for_tests() == (0, 0)
             pending = list(
                 stream.handle_event(ResponseHeaders(1, http.Response.make(200), end_stream=False))
             )

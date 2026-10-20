@@ -194,26 +194,25 @@ async def test_existing_upstream_binding_cannot_skip_managed_body_admission(
     assert managed.admission_state_for_tests() == (0, 0)
 
 
-@pytest.mark.parametrize("limit", ["MAX_ADMITTED_REQUESTS", "MAX_ADMITTED_BODY_BYTES"])
-async def test_saturation_and_partial_body_error_release_capacity_without_auth(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, monkeypatch, limit
+async def test_partial_body_error_releases_ownership_without_auth(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
 ):
     path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
-    first, blocked, replacement = (request(real_flow) for _ in range(3))
+    first, second, replacement = (request(real_flow) for _ in range(3))
     length = len(first.request.raw_content)
-    monkeypatch.setattr(managed, limit, 1 if limit == "MAX_ADMITTED_REQUESTS" else length)
-    for flow in (first, blocked, replacement):
+    for flow in (first, second, replacement):
         flow.request.raw_content = None
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers() as auth_fetch:
         assert mitm_addon.requestheaders(first) is None
         assert managed.admission_state_for_tests() == (1, length)
-        assert mitm_addon.requestheaders(blocked) is None
-        assert blocked.error is not None
-        assert managed.admission_state_for_tests() == (1, length)
+        assert mitm_addon.requestheaders(second) is None
+        assert second.error is None
+        assert managed.admission_state_for_tests() == (2, 2 * length)
         first.error = Error("client disconnected during body")
         mitm_addon.error(first)
         mitm_addon.error(first)
-        assert managed.admission_state_for_tests() == (0, 0)
+        assert managed.admission_state_for_tests() == (1, length)
+        mitm_addon.error(second)
         assert mitm_addon.requestheaders(replacement) is None
         assert replacement.error is None
         mitm_addon.error(replacement)

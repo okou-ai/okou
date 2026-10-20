@@ -69,6 +69,22 @@ def streamed_request_size(flow: http.HTTPFlow) -> int | None:
     return int(state["total_bytes"])
 
 
+def record_completed_body(
+    flow: http.HTTPFlow,
+    *,
+    total_bytes: int,
+    prefix: bytearray | None,
+) -> None:
+    """Keep bounded capture and size after a private body spool is validated."""
+    flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER_STATE] = {
+        "total_bytes": total_bytes,
+        "truncated": prefix is None or total_bytes > len(prefix),
+    }
+    flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
+    if prefix is not None:
+        flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER] = prefix
+
+
 def captured_request_stream_body(flow: http.HTTPFlow) -> stream_capture.CapturedStreamBody | None:
     """Return buffered bytes and truncation state to capture and billing consumers.
 

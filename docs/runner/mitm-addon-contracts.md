@@ -716,6 +716,72 @@ their embedded-addon behavior until replaced. Native dependency coverage in
 byte accounting, capture privacy, admission and terminal release; cryptographic
 TLS verification remains covered by the native auth-wait suites.
 
+## Validated request spooling and native transfer ownership
+
+Requests whose credentials depend on complete JSON policy validation use private
+temporary-file spooling rather than mitmproxy's complete request-body buffer.
+Managed OpenRouter is the current owner. Incremental syntax observation retains
+only policy strings and bounded object-key state; unselected prompt strings are
+validated without decoding or materializing the complete payload. Duplicate
+keys, late policy overrides, incomplete JSON, non-finite numbers and framing
+mismatches reject before managed credential resolution or upstream request bytes.
+Depth (128), document work (262,144 units), object keys (4,096 raw bytes) and
+numeric tokens (4,300 bytes) remain parser resource bounds.
+
+The exact-version compatibility bridge intercepts only marked requests in
+`HttpStream.state_consume_request_body`. It delegates framing, the terminal
+request hook, current authorization, connection selection and TLS to mitmproxy.
+Each receive hook is joined before another connection read. The finish
+checkpoint additionally joins authorization, connection acquisition and the
+complete upload, so a paused continuation cannot accumulate subsequent socket
+input. Cancellation during authorization resumes the native hook once with a
+killed flow. Other requests retain the original native body state.
+
+Anonymous files use the Runner-owned launch TMPDIR. A process-local FIFO budget
+atomically reserves complete declared lengths against half the filesystem's
+available space at the beginning of an active epoch; the snapshot refreshes when
+idle. Competing uploads wait with reader backpressure. A request that cannot fit
+that storage capacity, or a receive-side filesystem failure, gets a local 503
+after body completion without resolving credentials. Replay failures terminate
+the upload. Invalid headers still terminate before
+body receipt. After an early parse/storage failure, subsequent body chunks are
+discarded until native framing completes; no file, JSON state or body prefix is
+retained for that failed request.
+
+Filesystem submissions use four cooperative slots and joined worker operations.
+Receive/replay buffers are at most 64 KiB on the native read path, and parsing
+yields between 4 KiB slices. Replay drains the native writers before reading each
+next chunk. HTTP/2 additionally waits for native stream admission and for the
+previous chunk's protocol flow-control buffer to empty; a socket drain alone
+does not bound those internal queues. Only the receive and finish checkpoints join the reader; completed
+replay hooks do not accumulate a document-sized checkpoint history. There is no
+managed-specific request-count, 32 MiB body or 128 MiB retained-RAM admission.
+Filesystem space, parser bounds and native connection deadlines still apply.
+Upstream resets and complete early error responses stop replay and release the
+file. HTTP/1 closes the unfinished upload; HTTP/2 resets it through the pinned
+protocol implementation. The complete provider error still follows the native
+response path. Unexpected response data queued before upload completion is
+bounded to one chunk; exceeding that bound terminates the flow. Normal response
+streaming after upload has no new response-size limit.
+
+Storage releases after upload or abandonment, independently of response/SSE
+duration. Terminal usage and network logging retain only byte counts and an
+optional 64 KiB diagnostic prefix. Cancellation joins an in-flight filesystem
+operation before closing its file or releasing its reservation. Repeated error
+and terminal cleanup is idempotent. Runner and addon ship together; old Runner
+processes retain their embedded limits until replaced. No wire/registry/schema
+or dependency change is required.
+
+`test_managed_request_streaming.py` and
+`test_mitmproxy_managed_openrouter.py` cover both dialects and HTTP versions,
+large original-byte replay, late overrides, tool/Unicode partitions, storage
+waits, and more than 16 live responses. The fixture-owned TCP read/write loops
+in `test_mitmproxy_managed_request_backpressure.py` verify progress and reader,
+authorization-hook and replay cancellation. Native HTTP/1 error and HTTP/2
+window, stream-slot, reset and early-response tests cover the upstream protocol
+queues. These are native protocol tests,
+not live-provider or production-load acceptance.
+
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated

@@ -18,9 +18,11 @@ from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers import websocket
 from mitmproxy.proxy.layers.http import HttpStream
 from mitmproxy.proxy.layers.http._events import RequestHeaders
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
+from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
 from mitmproxy.proxy.server import ConnectionHandler
 
+import managed_request_body
+import managed_request_transport
 import model_websocket_usage
 import response_streaming
 import websocket_framing
@@ -65,13 +67,21 @@ class _WebsocketInspectionCheckpoint:
     resumed: bool = False
 
 
-type _InspectionHook = ResponseInspectionHook | _WebsocketInspectionCheckpoint
+type _InspectionHook = (
+    ResponseInspectionHook
+    | _WebsocketInspectionCheckpoint
+    | managed_request_transport.ManagedRequestBodyHook
+)
 _WEBSOCKET_CHECKPOINT_ATTRIBUTE = "_okou_websocket_inspection_checkpoint"
 _ACTIVE_WEBSOCKET_CHECKPOINT = "_okou_active_websocket_inspection_checkpoint"
 
 
 def _abandon_inspection(checkpoint: _InspectionHook) -> None:
-    if isinstance(checkpoint, _WebsocketInspectionCheckpoint):
+    if isinstance(checkpoint, managed_request_transport.ManagedRequestBodyHook):
+        managed_request_body.release(checkpoint.flow)
+        if checkpoint.flow.killable:
+            checkpoint.flow.kill()
+    elif isinstance(checkpoint, _WebsocketInspectionCheckpoint):
         if not checkpoint.started and not checkpoint.abandoned:
             model_websocket_usage.interrupt_inspection(checkpoint.flow)
         checkpoint.abandoned = True
@@ -181,6 +191,8 @@ def _install_response_inspection_bridge() -> None:
             checkpoint.completed = asyncio.get_running_loop().create_future()
             checkpoints.append(checkpoint)
 
+    managed_request_transport.install(register_checkpoint)
+
     def state_stream_response_body(
         self: HttpStream, event: events.Event
     ) -> layer.CommandGenerator[None]:
@@ -228,7 +240,13 @@ def _install_response_inspection_bridge() -> None:
             (isinstance(event, events.DataReceived) and reader.owner is asyncio.current_task())
             or (
                 isinstance(event, events.HookCompleted)
-                and isinstance(event.command, websocket.WebsocketMessageHook)
+                and isinstance(
+                    event.command,
+                    (
+                        websocket.WebsocketMessageHook,
+                        managed_request_transport.ManagedRequestBodyHook,
+                    ),
+                )
             )
         ):
             # A single read can contain many small WebSocket messages. Transfer
@@ -289,13 +307,46 @@ def _install_response_inspection_bridge() -> None:
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
         checkpoint = (
             hook
-            if isinstance(hook, ResponseInspectionHook)
+            if isinstance(
+                hook, (ResponseInspectionHook, managed_request_transport.ManagedRequestBodyHook)
+            )
             else getattr(hook, _WEBSOCKET_CHECKPOINT_ATTRIBUTE, None)
         )
-        if not isinstance(checkpoint, (ResponseInspectionHook, _WebsocketInspectionCheckpoint)):
-            await current_hook(self, hook)
+        if not isinstance(
+            checkpoint,
+            (
+                ResponseInspectionHook,
+                _WebsocketInspectionCheckpoint,
+                managed_request_transport.ManagedRequestBodyHook,
+            ),
+        ):
+            managed_body = (
+                managed_request_body.get(hook.flow) if isinstance(hook, HttpRequestHook) else None
+            )
+            if managed_body is None or not isinstance(hook, HttpRequestHook):
+                await current_hook(self, hook)
+                return
+            try:
+                await current_hook(self, hook)
+            except BaseException:
+                managed_request_body.release(hook.flow)
+                if hook.flow.killable:
+                    hook.flow.kill()
+                if not managed_request_transport.request_hook_resumed(hook):
+                    await self.server_event(events.HookCompleted(hook))
+                raise
             return
+        managed_body = (
+            managed_request_body.get(checkpoint.flow)
+            if isinstance(checkpoint, managed_request_transport.ManagedRequestBodyHook)
+            else None
+        )
         try:
+            if (
+                isinstance(checkpoint, managed_request_transport.ManagedRequestBodyHook)
+                and checkpoint.stage == "replay"
+            ):
+                await current_drain(self)
             if isinstance(checkpoint, _WebsocketInspectionCheckpoint):
                 if checkpoint.abandoned:
                     if hook.blocking:
@@ -303,6 +354,12 @@ def _install_response_inspection_bridge() -> None:
                     return
                 checkpoint.started = True
             await current_hook(self, hook)
+            if (
+                isinstance(checkpoint, managed_request_transport.ManagedRequestBodyHook)
+                and checkpoint.stage == "finish"
+                and managed_body is not None
+            ):
+                await managed_body.upload_done.wait()
         except BaseException:
             _abandon_inspection(checkpoint)
             # The stock hook task does not resume a stream after an exception.

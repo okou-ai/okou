@@ -61,6 +61,8 @@ import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
+import managed_openrouter_json
+import managed_request_body
 import matching
 import mitmproxy_compat
 import model_websocket_usage
@@ -1106,13 +1108,18 @@ def _reject_managed_openrouter_request(
         managed_openrouter.release_from_flow(flow)
         flow.kill()
     else:
+        storage_unavailable = str(error).startswith("body_storage")
         flow.response = http_local_responses.make_local_json_response(
             flow,
-            403,
+            503 if storage_unavailable else 403,
             {
                 "error": "managed_openrouter_request_rejected",
                 "reason": str(error),
-                "message": "Request blocked by the managed model preset policy",
+                "message": (
+                    "Managed model request storage is unavailable"
+                    if storage_unavailable
+                    else "Request blocked by the managed model preset policy"
+                ),
             },
         )
 
@@ -1881,6 +1888,48 @@ def _is_valid_websocket_key(value: bytes) -> bool:
 # ============================================================================
 
 
+async def managedrequestbody(
+    flow: http.HTTPFlow,
+    stage: Literal["receive", "finish", "replay"],
+    data: bytes,
+) -> None:
+    """Own one bounded body operation before native transport may continue."""
+    body = managed_request_body.get(flow)
+    if body is None:
+        if flow.killable:
+            flow.kill()
+        return
+    try:
+        if body.failure is not None:
+            if stage == "receive":
+                body.received += len(data)
+            elif stage == "replay" and flow.killable:
+                flow.kill()
+            return
+        if stage == "receive":
+            await body.receive(data)
+        elif stage == "finish":
+            await body.finish(trailers=bool(flow.request.trailers))
+            request_streaming.record_completed_body(
+                flow,
+                total_bytes=body.received,
+                prefix=body.capture,
+            )
+            body.capture = None
+        else:
+            await body.read()
+    except (managed_openrouter_json.PolicyError, managed_request_body.BodyError, OSError) as error:
+        body.failure = "body_storage" if isinstance(error, OSError) else str(error)
+        body.close()
+        if stage == "replay" and flow.killable:
+            flow.kill()
+    except BaseException:
+        body.close()
+        if flow.killable:
+            flow.kill()
+        raise
+
+
 def responseheaders(flow: http.HTTPFlow) -> None:
     """Install response stream buffering and incremental body parsers."""
     codex_model_catalog_cache.observe_authenticated_models_etag(flow)
@@ -1921,6 +1970,9 @@ def _request_size(flow: http.HTTPFlow) -> int:
     streamed_size = request_streaming.streamed_request_size(flow)
     if streamed_size is not None:
         return streamed_size
+    body = managed_request_body.get(flow)
+    if body is not None and not flow.request.raw_content:
+        return body.received
     return len(flow.request.raw_content or b"")
 
 
@@ -2380,6 +2432,7 @@ addons = [
     tls_clienthello,
     client_disconnected,
     request,
+    managedrequestbody,
     responseheaders,
     responseinspection,
     websocket_message,

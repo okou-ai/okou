@@ -20,7 +20,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Literal, TypeVar, cast
+from typing import Literal, Protocol, TypeVar, cast
 
 
 class _PathMarker(Enum):
@@ -36,6 +36,24 @@ WildcardPath = tuple[str, ...]
 _ScalarPath = TypeVar("_ScalarPath", bound=Path)
 ScalarKind = Literal["string", "int", "bool"]
 ScalarOverflowPolicy = Literal["error", "discard"]
+JsonValueKind = Literal["object", "array", "string", "number", "literal"]
+
+
+class JsonSyntaxObserver(Protocol):
+    """Optional document policy; exceptions reject the complete inspection.
+
+    ``start`` may request bounded string capture by returning a byte limit.
+    Every object key and numeric token is bounded and decoded in observer mode;
+    unrequested value strings are still validated without being retained.
+    The observer belongs to one document and receives no partial success result.
+    """
+
+    def start(self, path: Path, kind: JsonValueKind) -> int | None: ...
+    def member(self, path: Path, key: str) -> None: ...
+    def scalar(self, path: Path, value: object) -> None: ...
+    def end(self, path: Path, kind: Literal["object", "array"]) -> None: ...
+
+
 _JsonStringScanner = Callable[[str, int, bool], tuple[str, int]]
 # `scanstring` is the stdlib JSON string scanner, but typeshed does not expose it.
 _SCAN_JSON_STRING = cast(_JsonStringScanner, vars(json.decoder)["scanstring"])
@@ -216,7 +234,7 @@ class _Frame:
 
 @dataclass
 class _StringState:
-    role: Literal["key", "selected", "skip"]
+    role: Literal["key", "selected", "skip", "observed"]
     path: Path | None
     max_bytes: int
     raw: bytearray | None
@@ -301,6 +319,7 @@ class JsonSelectiveExtractor:
         max_number_bytes: int = 128,
         max_wildcard_keys: int = 256,
         max_work_units: int | None = None,
+        observer: JsonSyntaxObserver | None = None,
     ) -> None:
         """Create an extractor for selected JSON observations.
 
@@ -315,6 +334,10 @@ class JsonSelectiveExtractor:
         ``scalar_consistency_paths`` tracks whether every occurrence of a
         selected scalar path has the expected kind and the same value,
         including occurrences later overwritten by a duplicate object member.
+        ``observer`` optionally validates syntax events without building an
+        object graph. It receives every bounded object key and number, and
+        may request bounded strings. It belongs to one document; default
+        extraction and duplicate semantics are unchanged when it is absent.
         """
         self.scalar_fields: dict[Path, ScalarField] = {}
         if scalar_fields is not None:
@@ -340,6 +363,7 @@ class JsonSelectiveExtractor:
         self.max_number_bytes = max_number_bytes
         self.max_wildcard_keys = max_wildcard_keys
         self.max_work_units = max_work_units
+        self._observer = observer
         _validate_extractor_config(
             self.scalar_fields,
             self.array_count_paths,
@@ -544,7 +568,9 @@ class JsonSelectiveExtractor:
                 )
                 return i + 1
             if frame.collect_keys is None:
-                collect_keys = frame.path in self._exact_key_collection_paths
+                collect_keys = (
+                    self._observer is not None or frame.path in self._exact_key_collection_paths
+                )
                 if not collect_keys and self._wildcard_key_collection_paths:
                     collect_keys = _matches_any_path_pattern(
                         self._wildcard_key_collection_paths, frame.path
@@ -621,6 +647,20 @@ class JsonSelectiveExtractor:
             consistency = self._scalar_consistency.setdefault(path, _ScalarConsistency())
             consistency.occurrences += 1
         b = chunk[i]
+        observed_limit = None
+        if self._observer is not None:
+            kind: JsonValueKind = (
+                "object"
+                if b == ord("{")
+                else "array"
+                if b == ord("[")
+                else "string"
+                if b == ord('"')
+                else "number"
+                if b in b"-0123456789"
+                else "literal"
+            )
+            observed_limit = self._observer.start(path, kind)
         if b == ord("{"):
             self._start_object(path, from_array=from_array)
             return i + 1
@@ -629,7 +669,11 @@ class JsonSelectiveExtractor:
             return i + 1
         if b == ord('"'):
             field = self.scalar_fields.get(path)
-            if field and field.kind == "string":
+            if observed_limit is not None:
+                self._string = _StringState(
+                    role="observed", path=path, max_bytes=observed_limit, raw=bytearray()
+                )
+            elif field and field.kind == "string":
                 self._string = _StringState(
                     role="selected",
                     path=path,
@@ -651,7 +695,7 @@ class JsonSelectiveExtractor:
             self._number = _NumberState(
                 path=path,
                 selected=selected,
-                raw=bytearray() if selected else None,
+                raw=bytearray() if selected or self._observer is not None else None,
                 max_bytes=min(self.max_number_bytes, field.max_bytes)
                 if selected and field
                 else self.max_number_bytes,
@@ -784,7 +828,9 @@ class JsonSelectiveExtractor:
         if not self._stack:
             self._error = "unexpected container end"
             return i + 1
-        self._stack.pop()
+        frame = self._stack.pop()
+        if self._observer is not None:
+            self._observer.end(frame.path, frame.kind)
         self._value_complete()
         return i + 1
 
@@ -948,6 +994,9 @@ class JsonSelectiveExtractor:
             return
         state.raw.append(b)
         if len(state.raw) > state.max_bytes:
+            if state.role == "key" and self._observer is not None:
+                self._error = "key limit exceeded"
+                return
             if state.role == "key" or state.overflow_policy == "discard":
                 state.raw = None
                 return
@@ -973,6 +1022,11 @@ class JsonSelectiveExtractor:
                 self._error = "object key outside object"
                 return
             frame = self._stack[-1]
+            if self._observer is not None:
+                if not isinstance(value, str):
+                    self._error = "invalid object key"
+                    return
+                self._observer.member(frame.path, value)
             frame.pending_key = value
             frame.state = "colon"
             return
@@ -983,6 +1037,10 @@ class JsonSelectiveExtractor:
             self._value_complete()
             return
         if _contains_surrogate(value):
+            self._value_complete()
+            return
+        if state.role == "observed" and self._observer is not None:
+            self._observer.scalar(state.path, value)
             self._value_complete()
             return
         self._record_scalar_consistency(state.path, value)
@@ -1102,7 +1160,7 @@ class JsonSelectiveExtractor:
         if state.phase not in ("zero", "int", "frac", "exp_digits"):
             self._error = "invalid number"
             return
-        if not state.selected:
+        if not state.selected and self._observer is None:
             self._value_complete()
             return
         try:
@@ -1111,6 +1169,8 @@ class JsonSelectiveExtractor:
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             self._error = "invalid number"
             return
+        if self._observer is not None:
+            self._observer.scalar(state.path, value)
         if state.selected and isinstance(value, int) and not isinstance(value, bool):
             field = self.scalar_fields[state.path]
             if field.max_int_value is not None and value > field.max_int_value:

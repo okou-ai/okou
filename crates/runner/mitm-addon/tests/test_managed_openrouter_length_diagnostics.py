@@ -24,17 +24,6 @@ from tests.request_handler_helpers import _write_registry
         pytest.param(["private-length-canary"], "invalid", None, id="invalid-private-value"),
         pytest.param(["33554433", "33554434"], "conflicting", None, id="conflicting"),
         pytest.param(["0000"], "zero", 0, id="zero"),
-        pytest.param(["33554433"], "over_limit", 33_554_433, id="limit-plus-one"),
-        pytest.param(["100000000"], "over_limit", 100_000_000, id="longer-than-limit"),
-        pytest.param(
-            [" \t000100000000\t ", "100000000"],
-            "over_limit",
-            100_000_000,
-            id="normalized-matching-duplicates",
-        ),
-        pytest.param(
-            ["9007199254740991"], "over_limit", 9_007_199_254_740_991, id="json-safe-limit"
-        ),
         pytest.param(["9007199254740992"], "over_limit", None, id="beyond-json-safe-limit"),
         pytest.param(["9" * 5000], "over_limit", None, id="unbounded-numeral"),
     ],
@@ -94,7 +83,7 @@ async def test_length_rejection_persists_exact_or_explicitly_unavailable_evidenc
     assert policy["reason"] == "body_length"
     assert policy["rejection_phase"] == phase
     assert policy["content_length_kind"] == kind
-    assert policy["content_length_limit_bytes"] == 33_554_432
+    assert policy["content_length_limit_bytes"] == 9_007_199_254_740_991
     assert policy["declared_content_length_bytes"] == declared_bytes
     assert policy["declared_content_length_is_exact"] is (declared_bytes is not None)
     assert len(json.dumps(policy)) < 1024
@@ -109,7 +98,7 @@ async def test_length_rejection_persists_exact_or_explicitly_unavailable_evidenc
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
-@pytest.mark.parametrize("declared_bytes", [33_554_431, 33_554_432])
+@pytest.mark.parametrize("declared_bytes", [33_554_431, 33_554_432, 33_554_433, 134_217_729])
 async def test_lengths_at_or_below_limit_still_admit_before_body_arrives(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, declared_bytes
 ):

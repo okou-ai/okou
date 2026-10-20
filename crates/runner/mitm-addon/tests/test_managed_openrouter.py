@@ -172,19 +172,18 @@ def test_deep_json_fails_closed(real_flow):
         managed.validate_request(request(real_flow, body), {"piModelConfig": model_config()})
 
 
-def test_admission_counts_retained_bytes_and_releases_once(real_flow, monkeypatch):
-    monkeypatch.setattr(managed, "MAX_ADMITTED_REQUESTS", 1)
+def test_body_ownership_releases_once_without_a_shared_request_count_limit(real_flow):
     info = {"runId": "run-1", "piModelConfig": model_config()}
     first, second = request(real_flow), request(real_flow)
     managed.admit_request(first, info)
     assert managed.admission_state_for_tests() == (1, len(first.request.raw_content))
-    with pytest.raises(managed.RequestRejectedError, match="body_admission"):
-        managed.admit_request(second, info)
-    managed.release_from_flow(first)
-    managed.release_from_flow(first)
-    assert managed.admission_state_for_tests() == (0, 0)
     managed.admit_request(second, info)
+    assert managed.admission_state_for_tests() == (2, 2 * len(first.request.raw_content))
+    managed.release_from_flow(first)
+    managed.release_from_flow(first)
+    assert managed.admission_state_for_tests() == (1, len(second.request.raw_content))
     managed.release_from_flow(second)
+    assert managed.admission_state_for_tests() == (0, 0)
 
 
 def test_policy_is_bound_to_the_header_phase_run(real_flow):
