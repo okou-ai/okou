@@ -2145,7 +2145,7 @@
       "skipAutomationEvent": "ऑटोमेशन ईवेंट छोड़ें"
     },
     "relations": {
-      "communications": "संदेश",
+      "communications": "चैट",
       "idle": "निष्क्रिय",
       "loadFailed": "लोड नहीं हुआ",
       "messageUnavailable": "संदेश उपलब्ध नहीं",

@@ -2138,7 +2138,7 @@
       "skipAutomationEvent": "자동화 이벤트 건너뛰기"
     },
     "relations": {
-      "communications": "메시지",
+      "communications": "채팅",
       "idle": "유휴",
       "loadFailed": "불러오기 실패",
       "messageUnavailable": "메시지를 볼 수 없음",

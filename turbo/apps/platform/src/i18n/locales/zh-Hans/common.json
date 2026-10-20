@@ -2138,7 +2138,7 @@
       "skipAutomationEvent": "跳过自动化事件"
     },
     "relations": {
-      "communications": "消息",
+      "communications": "聊天",
       "idle": "空闲",
       "loadFailed": "加载失败",
       "messageUnavailable": "消息不可用",

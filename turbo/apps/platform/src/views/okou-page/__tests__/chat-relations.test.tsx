@@ -192,7 +192,7 @@ test.each(["children", "communications"] as const)(
     ).toHaveTextContent("Slack");
     expect(within(sourcePanel).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(sourcePanel).queryByRole("region", { name: "Messages" }),
+      within(sourcePanel).queryByRole("region", { name: "Chats" }),
     ).not.toBeInTheDocument();
 
     response.resolve();
@@ -201,7 +201,7 @@ test.each(["children", "communications"] as const)(
     expect(within(panel).getByText("Slack")).toBeInTheDocument();
     expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(panel).getByRole("region", { name: "Messages" }),
+      within(panel).getByRole("region", { name: "Chats" }),
     ).toBeInTheDocument();
   },
 );
@@ -466,7 +466,7 @@ test("Show empty chats and unavailable relationship targets without inventing an
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
   expect(
-    within(panel).getByRole("region", { name: "Messages" }),
+    within(panel).getByRole("region", { name: "Chats" }),
   ).toBeInTheDocument();
 });
 
@@ -508,7 +508,7 @@ test("Keep resources and relationships hidden while chat resources are disabled"
     screen.queryByRole("region", { name: "Resources" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("region", { name: "Messages" }),
+    screen.queryByRole("region", { name: "Chats" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("region", { name: "From" }),
@@ -547,7 +547,7 @@ test.each(["artifacts", "links"] as const)(
       resource === "artifacts" ? "report.pdf" : "Reference",
     );
     expect(
-      within(popup).queryByRole("region", { name: "Messages" }),
+      within(popup).queryByRole("region", { name: "Chats" }),
     ).not.toBeInTheDocument();
   },
 );
@@ -682,7 +682,7 @@ test("Preview three unique chats and expand the complete list", async () => {
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   const messages = await within(panel).findByRole("region", {
-    name: "Messages",
+    name: "Chats",
   });
   expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).getAllByText("Child 1")).toHaveLength(1);
@@ -728,7 +728,7 @@ test("Show exactly three related chats without an expand control", async () => {
       });
     },
   });
-  const messages = await screen.findByRole("region", { name: "Messages" });
+  const messages = await screen.findByRole("region", { name: "Chats" });
   expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).queryByText("Expand")).not.toBeInTheDocument();
 });
