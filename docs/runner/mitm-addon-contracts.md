@@ -44,6 +44,8 @@ Buffered ordinary X JSON uses the same steps after strict complete-capture
 decoding. Its normal terminal response hook starts and joins one inspection
 owner before final usage reporting and cleanup; wire callbacks only retain the
 existing capped raw capture. Connection errors do not start buffered inspection.
+Network latency is sampled before starting buffered terminal inspection, so
+parser work and its scheduling waits do not inflate the network latency field.
 The 64 KiB capture, 5 MiB decoded-body and zstd frame limits remain unchanged.
 X NDJSON steps validate at most 4 KiB of row bytes, including slow escaped
 scalars, while preserving the total-row work budget, trailing-CR policy and

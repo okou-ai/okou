@@ -1,6 +1,7 @@
 """Buffered X JSON fairness, strict admission and terminal-hook ownership."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -17,11 +18,13 @@ from mitmproxy.test import taddons
 
 import body_decoding
 import flow_metadata_keys as metadata_keys
+import logging_utils
 import mitm_addon
 import response_streaming
 import usage
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import response_stream
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.x_flow_helpers import make_x_pipeline_flow, x_json_user_page
 from usage.json_selective import JsonSelectiveExtractor
@@ -52,6 +55,38 @@ def _stream_body(flow, wire, chunk_size=None):
         assert response_stream(flow)(chunk) == chunk
         assert not response_streaming.has_pending_response_inspection(flow)
     assert response_stream(flow)(b"") == b""
+
+
+async def test_network_latency_excludes_buffered_terminal_inspection(
+    real_flow, tmp_path, usage_webhook_api, monkeypatch
+):
+    flow = _user_flow(real_flow, tmp_path)
+    mitm_addon.responseheaders(flow)
+    _stream_body(flow, zstandard.ZstdCompressor().compress(x_json_user_page()))
+    flow.metadata[metadata_keys.HTTP_REQUEST_START_MONOTONIC] = 10.0
+    now = 10.125
+    # Replace only the logging clock, leaving asyncio's monotonic clock real.
+    monkeypatch.setattr(logging_utils, "time", SimpleNamespace(monotonic=lambda: now))
+    loop = asyncio.get_running_loop()
+    inspection_waited = loop.create_future()
+
+    def advance_clock():
+        nonlocal now
+        now = 20.0
+        inspection_waited.set_result(response_streaming.has_pending_response_inspection(flow))
+
+    with usage_webhook_api() as webhook:
+        loop.call_soon(advance_clock)
+        completion = mitm_addon.response(flow)
+        assert completion is not None
+        await completion
+        usage.flush_usage_events(trigger="test")
+    assert await inspection_waited is True
+    [entry] = read_jsonl_entries_after_flush(tmp_path / "network.jsonl")
+    assert entry["latency_ms"] == 125
+    [event] = webhook.usage_events()
+    assert event["quantity"] == 1_000
+    assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
 
 
 @pytest.mark.parametrize("count", [500, 1_000])
