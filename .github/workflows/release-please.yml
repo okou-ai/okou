@@ -1040,6 +1040,8 @@ jobs:
         env:
           CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN: ${{ secrets.CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
         run: |
           set -euo pipefail
           if [[ -z "${CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN:-}" ]]; then
@@ -1050,7 +1052,28 @@ jobs:
             echo "::error::CF_ACCOUNT_ID must be configured as a GitHub Actions variable or secret"
             exit 1
           fi
-          CLOUDFLARE_API_TOKEN="$CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN" pnpm -F @okouai/host-worker run deploy
+          : "${CLERK_PUBLISHABLE_KEY:?production Clerk publishable key is required}"
+          : "${CLERK_SECRET_KEY:?production Clerk secret key is required}"
+          case "$CLERK_PUBLISHABLE_KEY" in
+            pk_live_*) ;;
+            *) echo "Host Worker production requires a Clerk live publishable key" >&2; exit 1 ;;
+          esac
+          case "$CLERK_SECRET_KEY" in
+            sk_live_*) ;;
+            *) echo "Host Worker production requires a Clerk live secret key" >&2; exit 1 ;;
+          esac
+
+          umask 077
+          worker_secrets="$(mktemp)"
+          trap 'rm -f "$worker_secrets"' EXIT
+          jq -n '{
+            CLERK_PUBLISHABLE_KEY: env.CLERK_PUBLISHABLE_KEY,
+            CLERK_SECRET_KEY: env.CLERK_SECRET_KEY
+          }' > "$worker_secrets"
+          unset CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY
+
+          CLOUDFLARE_API_TOKEN="$CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN" \
+            pnpm -F @okouai/host-worker run deploy --secrets-file "$worker_secrets"
 
       - name: Calculate duration
         id: duration
