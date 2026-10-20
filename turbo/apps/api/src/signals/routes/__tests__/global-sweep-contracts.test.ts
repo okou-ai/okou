@@ -86,6 +86,14 @@ describe("production-global sweep route contracts", () => {
       scopes: 0,
       eventsApplied: 0,
       eventsPruned: 0,
+      gc: {
+        pagesScanned: 16,
+        objectsScanned: 0,
+        deleteAttempts: 0,
+        objectsDeleted: 0,
+        deferred: false,
+        failed: false,
+      },
     });
   });
 

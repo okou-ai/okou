@@ -2458,6 +2458,13 @@
       "when": 1792421309143,
       "tag": "1428_retire_workflow_deferred_retry_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1429,
+      "version": "7",
+      "when": 1792471702239,
+      "tag": "1429_chat_thread_snapshot_gc_state",
+      "breakpoints": true
     }
   ]
 }
