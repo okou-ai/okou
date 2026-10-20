@@ -6,6 +6,7 @@ import zlib
 from pathlib import Path
 
 import brotli
+import zstandard
 from mitmproxy import http
 from mitmproxy.test import tutils
 
@@ -84,4 +85,6 @@ def encode_model_json(body: bytes, encoding: str) -> bytes:
         return zlib.compress(body)
     if encoding == "br":
         return brotli.compress(body)
+    if encoding == "zstd":
+        return zstandard.ZstdCompressor().compress(body)
     return body
