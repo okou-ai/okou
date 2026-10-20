@@ -13,6 +13,8 @@ use crate::support::{BIN, ChildWaitOutcome, ProcessGroupChild, require_session_f
 const APP_SERVER_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const APP_SERVER_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const MOCK_CODEX_SESSION_TIMESTAMP_ENV: &str = "MOCK_CODEX_SESSION_TIMESTAMP";
+pub(crate) const MOCK_CODEX_RESUME_PERSISTENCE_SOCKET_ENV: &str =
+    "MOCK_CODEX_RESUME_PERSISTENCE_SOCKET";
 
 pub(crate) struct AppServerProcess {
     child: Option<ProcessGroupChild>,
@@ -43,7 +45,7 @@ impl AppServerProcess {
         }))
     }
 
-    fn send(&mut self, message: &Value) -> std::io::Result<()> {
+    pub(crate) fn send(&mut self, message: &Value) -> std::io::Result<()> {
         let stdin = self.stdin.as_mut().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "app-server stdin is closed")
         })?;
@@ -60,7 +62,7 @@ impl AppServerProcess {
         stdin.flush()
     }
 
-    fn read_required(&mut self) -> std::io::Result<Value> {
+    pub(crate) fn read_required(&mut self) -> std::io::Result<Value> {
         self.read_message()?.ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
@@ -181,6 +183,7 @@ pub(crate) fn spawn_app_server_with_env(
     cmd.env("CODEX_HOME", codex_home).args(args);
     cmd.env_remove("MOCK_CODEX_APP_SERVER_SCENARIO");
     cmd.env_remove(MOCK_CODEX_SESSION_TIMESTAMP_ENV);
+    cmd.env_remove(MOCK_CODEX_RESUME_PERSISTENCE_SOCKET_ENV);
     if let Some(value) = scenario {
         cmd.env("MOCK_CODEX_APP_SERVER_SCENARIO", value);
     }
