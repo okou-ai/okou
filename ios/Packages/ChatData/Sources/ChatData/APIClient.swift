@@ -186,6 +186,37 @@ public struct APIClient: Sendable {
     progress(1)
   }
 
+  func downloadAttachmentBytes(_ url: URL, maximumSize: Int) async throws -> URL {
+    guard Self.isStorageURL(url) else { throw APIClientError.invalidURL }
+    var request = URLRequest(url: url)
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    request.httpShouldHandleCookies = false
+    let (file, response) = try await session.download(
+      for: request, delegate: AttachmentDownloadDelegate(maximumSize: maximumSize))
+    do {
+      try Task.checkCancellation()
+      guard let response = response as? HTTPURLResponse else {
+        throw APIClientError.invalidResponse
+      }
+      guard (200..<300).contains(response.statusCode) else {
+        throw APIClientError.http(
+          status: response.statusCode,
+          message: HTTPURLResponse.localizedString(forStatusCode: response.statusCode))
+      }
+      let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize
+      guard let size, size <= maximumSize else { throw URLError(.dataLengthExceedsMaximum) }
+      return file
+    } catch {
+      try? FileManager.default.removeItem(at: file)
+      throw error
+    }
+  }
+
+  fileprivate static func isStorageURL(_ url: URL) -> Bool {
+    url.scheme == "https"
+      || (url.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(url.host ?? ""))
+  }
+
   public static func decoder() -> JSONDecoder {
     let decoder = JSONDecoder()
     let fractional = ISO8601DateFormatter()
@@ -233,5 +264,36 @@ private final class AttachmentUploadProgress: NSObject, URLSessionTaskDelegate, 
   ) {
     guard totalBytesExpectedToSend > 0 else { return }
     progress(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
+  }
+}
+
+private final class AttachmentDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendable {
+  let maximumSize: Int
+  init(maximumSize: Int) { self.maximumSize = maximumSize }
+
+  func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask,
+    didFinishDownloadingTo location: URL
+  ) {}
+
+  func urlSession(
+    _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
+  ) {
+    if totalBytesWritten > maximumSize || totalBytesExpectedToWrite > maximumSize {
+      downloadTask.cancel()
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest
+  ) async -> URLRequest? {
+    guard let url = request.url, APIClient.isStorageURL(url) else { return nil }
+    var redirected = URLRequest(url: url)
+    redirected.cachePolicy = .reloadIgnoringLocalCacheData
+    redirected.httpShouldHandleCookies = false
+    return redirected
   }
 }

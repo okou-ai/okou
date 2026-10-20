@@ -11,7 +11,7 @@ let package = Package(
   dependencies: [.package(path: "../ChatDomain")],
   targets: [
     .target(name: "ChatData", dependencies: [.product(name: "ChatDomain", package: "ChatDomain")]),
-    .target(name: "ChatDataTestSupport", dependencies: ["ChatData"]),
+    .target(name: "ChatDataTestSupport"),
     .testTarget(name: "ChatDataTests", dependencies: ["ChatData", "ChatDataTestSupport"]),
   ],
   swiftLanguageModes: [.v6]
