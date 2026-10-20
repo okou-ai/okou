@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.234.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.19...runner-rs-v0.234.20) (2026-10-20)
+
+
+### Bug Fixes
+
+* align variable-completed hostname escape validation ([#41695](https://github.com/okou-ai/okou/issues/41695)) ([dbddea1](https://github.com/okou-ai/okou/commit/dbddea157414522c6d102bd829176f56516f382a))
+
+
+### Performance Improvements
+
+* **runner:** make buffered x json inspection cooperative ([#41688](https://github.com/okou-ai/okou/issues/41688)) ([1954365](https://github.com/okou-ai/okou/commit/19543651b1c55d261ba6158a0f4254b0561019da))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.18...runner-rs-v0.234.19) (2026-10-20)
 
 

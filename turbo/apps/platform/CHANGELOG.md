@@ -12,6 +12,39 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1046.0](https://github.com/okou-ai/okou/compare/app-v0.1045.0...app-v0.1046.0) (2026-10-20)
+
+
+### Features
+
+* **api:** stagger morning brief starts per owner before 07:00 ([#41703](https://github.com/okou-ai/okou/issues/41703)) ([6f5b51f](https://github.com/okou-ai/okou/commit/6f5b51fd5c08f4065a66eeec687feb97efd0879c))
+
+
+### Bug Fixes
+
+* **app:** rename the resources messages section to chats ([#41726](https://github.com/okou-ai/okou/issues/41726)) ([d28fc7d](https://github.com/okou-ai/okou/commit/d28fc7d61ddb6e62ae6896f12e2375e99b6fe6e8))
+
+
+### Refactoring
+
+* prepare connector projection and runtime readers ([#41715](https://github.com/okou-ai/okou/issues/41715)) ([7500d09](https://github.com/okou-ai/okou/commit/7500d0902eb219e3a2c190a8b0057308e3db8aa9))
+
+
+### Performance Improvements
+
+* **app:** localize hosted site share subscriptions ([#41737](https://github.com/okou-ai/okou/issues/41737)) ([0d7f6c8](https://github.com/okou-ai/okou/commit/0d7f6c8c8d6088d5b3c01f749854f8550ec4d947))
+* **platform:** defer chat resources until visible ([#41722](https://github.com/okou-ai/okou/issues/41722)) ([fb43646](https://github.com/okou-ai/okou/commit/fb43646d42f3ab1617c6f63566933e6126663b10))
+* **platform:** remove links from chat resources ([#41721](https://github.com/okou-ai/okou/issues/41721)) ([48e332a](https://github.com/okou-ai/okou/commit/48e332a080ebfd9f219561f393cb098f5935bda8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/connectors bumped to 3.16.12
+    * @okouai/core bumped to 8.773.0
+
 ## [0.1045.0](https://github.com/okou-ai/okou/compare/app-v0.1044.0...app-v0.1045.0) (2026-10-20)
 
 
