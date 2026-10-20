@@ -2630,7 +2630,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxStartupPath: null,
           runnerHostname: null,
-          runnerVersion: null,
+          runnerVersion: "0.234.18",
           runnerId: expect.any(String),
           runnerHeartbeatGeneration: 1,
         });
@@ -2869,6 +2869,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               jobDiscoveredToClaimRequestMs: -1,
             },
           },
+          { [CLIENT_VERSION_HEADER]: "0.234.18" },
         );
         expect(claimed.status).toBe(200);
 
@@ -13149,7 +13150,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxStartupPath: null,
           runnerHostname: null,
-          runnerVersion: null,
+          runnerVersion: "0.234.18",
           runnerId: expect.any(String),
           runnerHeartbeatGeneration: 1,
         });

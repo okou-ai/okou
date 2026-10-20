@@ -2625,7 +2625,7 @@ describe("RUN-04: agent run telemetry families", () => {
     expect(runner.body).toStrictEqual({
       sandboxStartupPath: null,
       runnerHostname: null,
-      runnerVersion: null,
+      runnerVersion: "0.234.18",
       runnerId: expect.any(String),
       runnerHeartbeatGeneration: 1,
     });

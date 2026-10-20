@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { onTestFinished } from "vitest";
 import {
   agentInstructionsContract,
   agentsMainContract,
@@ -25,12 +23,10 @@ import { mockNow, now } from "../../../lib/time";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
 import { userPreferencesRoutes } from "../user-preferences";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -68,43 +64,6 @@ function authenticateAdmin(): string {
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(`user_${randomUUID()}`, orgId, "org:admin");
   return orgId;
-}
-
-function pausedSeedUpload(orgId: string) {
-  const started = createDeferredPromise<string>(context.signal);
-  const released = createDeferredPromise<"success" | "failure">(context.signal);
-  let paused = false;
-  const storage = installDurableUserExportStorage(context, {
-    prefixes: [`${orgId}/`],
-    afterWrite: async (command) => {
-      if (
-        !paused &&
-        command instanceof PutObjectCommand &&
-        command.input.Key?.endsWith("/archive.tar.gz")
-      ) {
-        paused = true;
-        started.resolve(command.input.Key);
-        const outcome = await released.promise;
-        if (outcome === "failure") {
-          throw new Error("Seed upload response failed after persisting bytes");
-        }
-      }
-    },
-  });
-  onTestFinished(() => {
-    if (!released.settled()) {
-      released.resolve("success");
-    }
-  });
-  return {
-    storage,
-    started: started.promise,
-    release(outcome: "success" | "failure") {
-      if (!released.settled()) {
-        released.resolve(outcome);
-      }
-    },
-  };
 }
 
 async function readDefaultId(api: ReturnType<typeof clients>): Promise<string> {
@@ -150,24 +109,9 @@ async function expectSingleOnboardingGrant(
   ]);
 }
 
-function joinPendingRequest(
-  pending: Promise<unknown>,
-  release: () => void,
-): void {
-  const joined = Promise.allSettled([pending]);
-  onTestFinished(async () => {
-    release();
-    await joined;
-  });
-}
-
-// Bootstrap, Agent, instruction, billing and deletion interactions use production
-// APIs. The two explicitly historical parent setups use the existing named
-// Storage fixture; that generic production prepare API was retired in #23143.
 describe("default Agent bootstrap", () => {
   it("preserves saved member preferences during lazy bootstrap", async () => {
-    const orgId = authenticateAdmin();
-    installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
+    authenticateAdmin();
     const preferences = setupApp({ context, routes: userPreferencesRoutes })(
       userPreferencesContract,
     );
@@ -193,8 +137,7 @@ describe("default Agent bootstrap", () => {
   });
 
   it("publishes one usable default and one grant for concurrent status requests", async () => {
-    const orgId = authenticateAdmin();
-    installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
+    authenticateAdmin();
     const api = clients();
     const responses = await Promise.all([
       accept(api.status.getStatus({ headers }), [200]),
@@ -254,9 +197,6 @@ describe("default Agent bootstrap", () => {
       throw new Error("Expected a workspace creator");
     }
     mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-    installDurableUserExportStorage(context, {
-      prefixes: [`${creator.orgId}/`],
-    });
     const api = clients();
     await readDefaultId(api);
     await expectSingleOnboardingGrant(api);
@@ -288,8 +228,7 @@ describe("default Agent bootstrap", () => {
     const grantedAt = new Date("2027-01-01T12:34:56.789Z");
     const expiresAt = new Date("2027-01-31T12:34:56.789Z");
     mockNow(grantedAt);
-    const orgId = authenticateAdmin();
-    installDurableUserExportStorage(context, { prefixes: [`${orgId}/`] });
+    authenticateAdmin();
     const api = clients();
     const agentId = await readDefaultId(api);
     await expectSingleOnboardingGrant(api);
@@ -326,9 +265,6 @@ describe("default Agent bootstrap", () => {
       throw new Error("Expected a workspace creator");
     }
     mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
-    installDurableUserExportStorage(context, {
-      prefixes: [`${creator.orgId}/`],
-    });
     const webhooks = createWebhookCallbackApi(context);
     webhooks.configureClerkWebhookSecret();
     const event = {
@@ -357,174 +293,41 @@ describe("default Agent bootstrap", () => {
     expect(replayed.body).toStrictEqual(initial.body);
   });
 
-  it.each(["archive.tar.gz", "manifest.json"])(
-    "recovers a usable default after %s upload fails without granting twice",
-    async (filename) => {
-      const orgId = authenticateAdmin();
-      let rejectArchiveUpload = true;
-      installDurableUserExportStorage(context, {
-        prefixes: [`${orgId}/`],
-        afterWrite: (command) => {
-          if (
-            rejectArchiveUpload &&
-            command instanceof PutObjectCommand &&
-            command.input.Key?.endsWith(`/${filename}`)
-          ) {
-            rejectArchiveUpload = false;
-            // Model an object store that persisted the bytes before the response
-            // failed, so bootstrap must compensate even though its row rolls back.
-            return Promise.reject(
-              new Error("Object store upload response failed"),
-            );
-          }
-          return Promise.resolve();
-        },
-      });
-      const api = clients();
-      const failed = await accept(api.status.getStatus({ headers }), [200]);
-      expect(failed.body).toMatchObject({
-        hasDefaultAgent: false,
-        defaultAgentId: null,
-      });
-      const beforeRetry = await accept(api.agents.list({ headers }), [200]);
-      expect(beforeRetry.body).toStrictEqual([]);
-      const creditsBeforeRetry = await accept(
-        api.usagePack.get({ headers }),
-        [200],
-      );
-      expect(creditsBeforeRetry.body.totalCredits).toBe(0);
-      expect(creditsBeforeRetry.body.creditGrants).toStrictEqual([]);
-
-      const retries = await Promise.all([
-        accept(api.status.getStatus({ headers }), [200]),
-        accept(api.status.getStatus({ headers }), [200]),
-      ]);
-      const agentId = retries[0]?.body.defaultAgentId;
-      if (!agentId) {
-        throw new Error("Expected bootstrap retry to publish a default Agent");
-      }
-      for (const retry of retries) {
-        expect(retry.body.defaultAgentId).toBe(agentId);
-      }
-      const instructions = await accept(
-        api.instructions.get({ headers, params: { id: agentId } }),
-        [200],
-      );
-      expect(instructions.body.content).toBe(SEED_INSTRUCTIONS);
-      await expectSingleOnboardingGrant(api);
-    },
-  );
-
-  it.each(["success", "failure", "cancel"] as const)(
-    "lets a peer finish during stalled seed IO and preserves edits after the late %s",
-    async (outcome) => {
-      const orgId = authenticateAdmin();
-      const upload = pausedSeedUpload(orgId);
-      const controller = new AbortController();
-      onTestFinished(() => {
-        controller.abort();
-      });
-      const api = clients();
-      const pending = clients(
-        { rethrowErrors: outcome === "cancel" },
-        AbortSignal.any([context.signal, controller.signal]),
-      ).status.getStatus({ headers });
-      joinPendingRequest(pending, () => {
-        upload.release("success");
-      });
-      const losingArchiveKey = await upload.started;
-
-      // Completion before releasing the provider proves preparation does not
-      // hold bootstrap's canonical publication boundary across network work.
-      const agentId = await readDefaultId(api);
-      await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-      const edited = `Instructions edited while the ${outcome} upload is pending.`;
-      await accept(
-        api.instructions.update({
-          headers,
-          params: { id: agentId },
-          body: { content: edited },
-        }),
-        [200],
-      );
-      if (outcome === "cancel") {
-        controller.abort(new DOMException("Request cancelled", "AbortError"));
-      }
-      upload.release(outcome === "failure" ? "failure" : "success");
-      if (outcome === "cancel") {
-        await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-      } else {
-        const late = await accept(pending, [200]);
-        if (outcome === "success") {
-          expect(late.body.defaultAgentId).toBe(agentId);
-        }
-      }
-      await expect(readDefaultId(api)).resolves.toBe(agentId);
-      await expectInstructions(api, agentId, edited);
-      const listed = await accept(api.agents.list({ headers }), [200]);
-      expect(listed.body).toHaveLength(1);
-      expect(listed.body[0]?.agentId).toBe(agentId);
-      await expectSingleOnboardingGrant(api);
-      expect(upload.storage.hasObject(losingArchiveKey)).toBeFalsy();
-    },
-  );
-
-  it("leaves no default on first-attempt cancellation and recovers with one grant", async () => {
-    const orgId = authenticateAdmin();
-    const upload = pausedSeedUpload(orgId);
-    const controller = new AbortController();
-    onTestFinished(() => {
-      controller.abort();
-    });
-    const pending = clients(
-      { rethrowErrors: true },
-      AbortSignal.any([context.signal, controller.signal]),
-    ).status.getStatus({ headers });
-    joinPendingRequest(pending, () => {
-      upload.release("success");
-    });
-    const archiveKey = await upload.started;
-    controller.abort(new DOMException("Request cancelled", "AbortError"));
-    upload.release("success");
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  it("bootstraps and preserves edits while object storage is unavailable", async () => {
+    authenticateAdmin();
+    context.mocks.s3.send.mockRejectedValue(
+      new Error("Object storage is unavailable"),
+    );
     const api = clients();
-    const beforeRetry = await accept(api.agents.list({ headers }), [200]);
-    expect(beforeRetry.body).toStrictEqual([]);
-    expect(upload.storage.hasObject(archiveKey)).toBeFalsy();
     const agentId = await readDefaultId(api);
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
+    await accept(
+      api.instructions.update({
+        headers,
+        params: { id: agentId },
+        body: { content: "Edited default" },
+      }),
+      [200],
+    );
+    const peers = await Promise.all([readDefaultId(api), readDefaultId(api)]);
+    expect(peers).toStrictEqual([agentId, agentId]);
+    await expectInstructions(api, agentId, "Edited default");
     await expectSingleOnboardingGrant(api);
   });
 
   it.each(["pro", "team"] as const)(
-    "preserves a %s purchase racing final bootstrap publication",
+    "preserves a %s purchase racing bootstrap",
     async (tier) => {
       const actor = createBddApi(context).user();
       if (!actor.orgId) {
-        throw new Error("Expected a paid organization fixture");
+        throw new Error("Expected a paid workspace");
       }
       mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const upload = pausedSeedUpload(actor.orgId);
       const api = clients();
-      const pending = api.status.getStatus({ headers });
-      joinPendingRequest(pending, () => {
-        upload.release("success");
-      });
-      await upload.started;
-
-      // Allow the real Stripe write and bootstrap publication to compete. The
-      // purchase must remain authoritative whether it commits before or after
-      // the bootstrap's earlier tier read; no database pause point is exposed.
-      const purchase = createRunsApi(context).grantProEntitlement(actor, {
-        tier,
-      });
-      const completed = Promise.all([accept(pending, [200]), purchase]);
-      joinPendingRequest(completed, () => {
-        upload.release("success");
-      });
-      upload.release("success");
-      await completed;
-
+      await Promise.all([
+        accept(api.status.getStatus({ headers }), [200]),
+        createRunsApi(context).grantProEntitlement(actor, { tier }),
+      ]);
       const agentId = await readDefaultId(api);
       const billing = await accept(api.billing.get({ headers }), [200]);
       expect(billing.body.tier).toBe(tier);
@@ -534,100 +337,30 @@ describe("default Agent bootstrap", () => {
           agentId,
           ownerId: actor.userId,
           isDefaultAgent: true,
-          visibility: "public",
         }),
       ]);
       await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     },
   );
-
   it.each(["pro", "team"] as const)(
-    "preserves a %s purchase during stalled bootstrap IO without a free grant",
+    "does not grant limited-free credits to an already %s workspace",
     async (tier) => {
       const actor = createBddApi(context).user();
       if (!actor.orgId) {
-        throw new Error("Expected a paid organization fixture");
+        throw new Error("Expected a paid workspace");
       }
-      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-      const upload = pausedSeedUpload(actor.orgId);
-      const api = clients();
-      const pending = api.status.getStatus({ headers });
-      joinPendingRequest(pending, () => {
-        upload.release("success");
-      });
-      await upload.started;
-      // The real Stripe invoice endpoint grants the tier, and its subsequent
-      // onboarding request publishes the paid default before this upload ends.
       await createRunsApi(context).grantProEntitlement(actor, { tier });
+      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+      const api = clients();
       const agentId = await readDefaultId(api);
-      const before = await accept(api.billing.get({ headers }), [200]);
-      expect(before.body.tier).toBe(tier);
-      expect(before.body.creditGrants).not.toContainEqual(
-        expect.objectContaining({ source: "onboarding" }),
-      );
-      const personalBefore = await accept(
-        api.usagePack.get({ headers }),
-        [200],
-      );
-      expect(personalBefore.body.totalCredits).toBe(0);
-      expect(personalBefore.body.creditGrants).toStrictEqual([]);
-      upload.release("success");
-      const late = await accept(pending, [200]);
-      expect(late.body.defaultAgentId).toBe(agentId);
-      const after = await accept(api.billing.get({ headers }), [200]);
-      expect(after.body.tier).toBe(tier);
-      expect(after.body.credits).toBe(before.body.credits);
-      expect(after.body.creditGrants).toStrictEqual(before.body.creditGrants);
-      const personalAfter = await accept(api.usagePack.get({ headers }), [200]);
-      expect(personalAfter.body).toStrictEqual(personalBefore.body);
-      const listed = await accept(api.agents.list({ headers }), [200]);
-      expect(listed.body).toStrictEqual([
-        expect.objectContaining({
-          agentId,
-          ownerId: actor.userId,
-          isDefaultAgent: true,
-          visibility: "public",
-        }),
-      ]);
+      const peers = await Promise.all([readDefaultId(api), readDefaultId(api)]);
+      expect(peers).toStrictEqual([agentId, agentId]);
+      const billing = await accept(api.billing.get({ headers }), [200]);
+      expect(billing.body.tier).toBe(tier);
+      const credits = await accept(api.usagePack.get({ headers }), [200]);
+      expect(credits.body.totalCredits).toBe(0);
+      expect(credits.body.creditGrants).toStrictEqual([]);
       await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     },
   );
-
-  it("preserves the onboarding winner when candidate cleanup fails at R2", async () => {
-    const orgId = authenticateAdmin();
-    const upload = pausedSeedUpload(orgId);
-    const api = clients();
-    const pending = api.status.getStatus({ headers });
-    joinPendingRequest(pending, () => {
-      upload.release("success");
-    });
-    const losingArchiveKey = await upload.started;
-    const losingPrefix = losingArchiveKey.slice(
-      0,
-      losingArchiveKey.lastIndexOf("/"),
-    );
-    const agentId = await readDefaultId(api);
-    const durableSend = context.mocks.s3.send.getMockImplementation();
-    let failCleanup = true;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (
-        failCleanup &&
-        command instanceof DeleteObjectsCommand &&
-        command.input.Delete?.Objects?.some((object) => {
-          return object.Key?.startsWith(`${losingPrefix}/`);
-        })
-      ) {
-        failCleanup = false;
-        throw new Error("R2 cleanup unavailable");
-      }
-      return (await durableSend?.(command)) ?? {};
-    });
-    upload.release("failure");
-    expect((await pending).status).toBe(200);
-    expect(upload.storage.hasObject(losingArchiveKey)).toBeTruthy();
-    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-    await expect(readDefaultId(api)).resolves.toBe(agentId);
-    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
-    await expectSingleOnboardingGrant(api);
-  });
 });

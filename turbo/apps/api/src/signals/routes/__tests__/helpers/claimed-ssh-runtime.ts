@@ -90,6 +90,7 @@ export function createClaimedSshRuntimeApi(
         runnersJobClaimContract,
       ).claim({
         headers: options.runnerHeaders,
+        extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: runId },
         body: {
           runnerIdentity,

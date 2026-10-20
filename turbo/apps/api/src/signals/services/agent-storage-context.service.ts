@@ -6,7 +6,6 @@ import {
   VOLUME_ORG_USER_ID,
   getSkillStorageName,
   getCustomSkillStorageName,
-  getInstructionsStorageName,
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
 import {
@@ -36,7 +35,6 @@ function agentStorageRequests(
   owner: {
     readonly orgId: string;
     readonly userId: string;
-    readonly agent: Pick<BootstrapAgent, "name" | "orgId"> | null;
   },
   workflows: readonly SelectedAgentWorkflow[],
   connectors: AgentConnectorSelection,
@@ -58,9 +56,6 @@ function agentStorageRequests(
       version,
     });
   };
-  if (owner.agent) {
-    add(owner.agent.orgId, getInstructionsStorageName(owner.agent.name));
-  }
   for (const skill of SEED_SKILLS) {
     const parsed = parseGitHubTreeUrl(resolveSkillRef(skill));
     if (parsed) {
@@ -130,9 +125,9 @@ export function agentStorageReadPlan(
     OfficialWorkflowContextFacts,
   ],
 ) {
-  const [agent, workflows, connectors, catalog, official] = facts;
+  const [, workflows, connectors, catalog, official] = facts;
   const requests = agentStorageRequests(
-    { ...owner, agent },
+    owner,
     workflows,
     connectors,
     catalog,

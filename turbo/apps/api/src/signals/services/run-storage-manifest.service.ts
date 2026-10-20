@@ -3,7 +3,6 @@ import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  PI_AGENT_DIR,
   PI_MEMORY_ROOT,
   PI_SKILLS_ROOT,
   type PiModelConfig,
@@ -31,10 +30,7 @@ import {
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
-import {
-  getInstructionsFilename,
-  type SupportedFramework,
-} from "@okouai/core/frameworks";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import {
   MEMORY_ARTIFACT_NAME,
   SYSTEM_ORG_ID,
@@ -80,7 +76,6 @@ interface AdditionalVolume {
 
 interface PrepareAgentRunStorageManifestArgs {
   readonly db: ReadonlyDb;
-  readonly instructionsStorageName: string;
   readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
@@ -278,32 +273,6 @@ class StorageManifestEntryPhaseTiming {
       dimensions,
     );
   }
-}
-
-function instructionsMountPath(framework: SupportedFramework | "pi"): string {
-  if (framework === "pi") {
-    return PI_AGENT_DIR;
-  }
-  return framework === "codex"
-    ? CANONICAL_CODEX_HOME_DIR
-    : CANONICAL_CLAUDE_CONFIG_DIR;
-}
-
-function instructionsFilename(framework: SupportedFramework | "pi"): string {
-  return framework === "pi" ? "AGENTS.md" : getInstructionsFilename(framework);
-}
-
-function runInstructionsVolume(args: {
-  readonly instructionsStorageName: string;
-  readonly framework: SupportedFramework | "pi";
-}): ResolvedVolume {
-  return {
-    name: args.instructionsStorageName,
-    mountPath: instructionsMountPath(args.framework),
-    vasStorageName: args.instructionsStorageName,
-    vasVersion: "latest",
-    instructionsTargetFilename: instructionsFilename(args.framework),
-  };
 }
 
 function dedupArtifacts(
@@ -905,7 +874,6 @@ function normalizeAdditionalVolumeSources(args: {
 }
 
 export async function resolveStorageManifestInputs(args: {
-  readonly instructionsStorageName: string;
   readonly framework: SupportedFramework | "pi";
   readonly artifacts: readonly ContextArtifact[];
   readonly timing?: ApiDispatchTimingCollector;
@@ -917,7 +885,7 @@ export async function resolveStorageManifestInputs(args: {
     () => {
       return {
         artifacts: dedupArtifacts(args.artifacts),
-        composeVolumes: [runInstructionsVolume(args)],
+        composeVolumes: [],
       };
     },
   );
@@ -1408,7 +1376,7 @@ function skillsRootForRun(
 
 type RunStorageExecution = Pick<
   ResolvedRunExecution,
-  "orgId" | "instructionsStorageName" | "additionalVolumes"
+  "orgId" | "additionalVolumes"
 >;
 
 /**
@@ -1506,7 +1474,6 @@ export type AdditionalVolumeSources =
   readonly StorageManifestSource[] | undefined;
 
 export interface ResolvedAgentExecution {
-  readonly instructionsStorageName: string;
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly orgId: string;
