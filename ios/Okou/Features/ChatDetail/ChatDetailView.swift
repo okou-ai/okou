@@ -5,17 +5,21 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let supportsAttachments: Bool
+  let supportsActivitySummary: Bool
   let topContentInset: CGFloat
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
+  @State private var activityOwner = UUID()
 
   init(
-    conversation: ConversationStore, supportsAttachments: Bool = false, topContentInset: CGFloat = 0
+    conversation: ConversationStore, supportsAttachments: Bool = false,
+    supportsActivitySummary: Bool = false, topContentInset: CGFloat = 0
   ) {
     self.conversation = conversation
     self.supportsAttachments = supportsAttachments
+    self.supportsActivitySummary = supportsActivitySummary
     self.topContentInset = topContentInset
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
@@ -62,7 +66,14 @@ struct ChatDetailView: View {
       refresh: { await conversation.refresh() }, content: rowContent
     )
     .ignoresSafeArea(.container, edges: .vertical)
-    .onAppear { scrolling.activate(reduceMotion: reduceMotion) }
+    .onAppear {
+      scrolling.activate(reduceMotion: reduceMotion)
+      conversation.setActivitySummaryEnabled(supportsActivitySummary)
+      conversation.setDetailVisible(true, owner: activityOwner)
+    }
+    .onChange(of: supportsActivitySummary) { _, enabled in
+      conversation.setActivitySummaryEnabled(enabled)
+    }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
       if scrolling.showsBottomButton {
@@ -84,7 +95,10 @@ struct ChatDetailView: View {
     .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
-    .onDisappear { scrolling.deactivate() }
+    .onDisappear {
+      scrolling.deactivate()
+      conversation.setDetailVisible(false, owner: activityOwner)
+    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
@@ -165,10 +179,8 @@ struct ChatDetailView: View {
     case .footer(let executionState, let hasMessages):
       VStack(alignment: .leading, spacing: 24) {
         if executionState.isActive {
-          HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            Text(executionState.label).font(.subheadline).foregroundStyle(.secondary)
-          }.accessibilityIdentifier("execution-status")
+          ConversationActivityLabel(
+            summary: conversation.activitySummary, state: executionState)
         }
         if hasMessages {
           Link(

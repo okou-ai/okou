@@ -17,7 +17,12 @@ final class WorkspaceStore {
   private(set) var isCreating = false
   var error: String?
   var selectedThreadID: String? {
-    didSet { selectedConversation = selectedThreadID.flatMap { conversation(for: $0) } }
+    didSet {
+      let previous = selectedConversation
+      selectedConversation = selectedThreadID.flatMap { conversation(for: $0) }
+      previous?.reconcileActivitySummary()
+      selectedConversation?.reconcileActivitySummary()
+    }
   }
   var selectedAgentID: String?
   var newChatDraft = ""
@@ -132,7 +137,10 @@ final class WorkspaceStore {
     newAttachmentDraft.close()
   }
 
-  func setForeground(_ active: Bool) { isForeground = active }
+  func setForeground(_ active: Bool) {
+    isForeground = active
+    selectedConversation?.reconcileActivitySummary()
+  }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
     guard !closed, !needsUpgrade else { return }
