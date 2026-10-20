@@ -2145,9 +2145,12 @@
     "relations": {
       "chats": "Chats",
       "loadFailed": "Laden fehlgeschlagen",
+      "messageUnavailable": "Nachricht nicht verfügbar",
       "origin": "Von",
       "queued": "In Warteschlange",
+      "received": "Empfangen",
       "running": "Läuft",
+      "sent": "Gesendet",
       "unavailable": "Nicht verfügbar",
       "untitled": "Unbenannt"
     },

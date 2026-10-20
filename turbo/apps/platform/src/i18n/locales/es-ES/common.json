@@ -2184,9 +2184,12 @@
     "relations": {
       "chats": "Chats",
       "loadFailed": "Error al cargar",
+      "messageUnavailable": "Mensaje no disponible",
       "origin": "Desde",
       "queued": "En cola",
+      "received": "Recibido",
       "running": "En curso",
+      "sent": "Enviado",
       "unavailable": "No disponible",
       "untitled": "Sin título"
     },

@@ -2139,9 +2139,12 @@
     "relations": {
       "chats": "チャット",
       "loadFailed": "読み込み失敗",
+      "messageUnavailable": "メッセージ取得不可",
       "origin": "開始元",
       "queued": "待機中",
+      "received": "受信",
       "running": "実行中",
+      "sent": "送信",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
