@@ -1,5 +1,5 @@
 {
-  "id": "6af49fad-0b76-4524-8dbe-c8c8f23b58f8",
+  "id": "2b8ecb12-12a4-41c8-b019-8575d0ec043f",
   "prevId": "129ba933-b5e2-4756-aaa6-5fe3b18cc73a",
   "version": "7",
   "dialect": "postgresql",
@@ -6750,28 +6750,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "chat_event_snapshots_repair_candidates_idx": {
-          "name": "chat_event_snapshots_repair_candidates_idx",
-          "columns": [
-            {
-              "expression": "archive_schema_version",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "(\n          \"chat_event_snapshots\".\"last_seq_id\" <= 0\n          OR \"chat_event_snapshots\".\"terminal_seq_id\" IS NULL\n          OR btrim(\"chat_event_snapshots\".\"object_key\") = ''\n          OR NOT (\"chat_event_snapshots\".\"object_key\" ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')\n          OR \"chat_event_snapshots\".\"object_key\" ~ '^chat-events/[0-9a-f-]{36}/[0-9]+-[0-9a-f]{64}[.]ndjson[.]gz$'\n        )",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -18616,6 +18594,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "atom_grant_id": {
+          "name": "atom_grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "external_account_id": {
           "name": "external_account_id",
           "type": "varchar(255)",
@@ -18884,6 +18868,12 @@
         "cancelled_at": {
           "name": "cancelled_at",
           "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_provider_account_id": {
+          "name": "model_provider_account_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         }

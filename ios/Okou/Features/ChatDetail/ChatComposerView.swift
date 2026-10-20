@@ -12,6 +12,7 @@ struct ChatComposerView: View {
   let attachmentURL: URL
   let attachments: AttachmentDraftStore
   let supportsAttachments: Bool
+  var draftState: ComposerDraftStore? = nil
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
@@ -22,11 +23,31 @@ struct ChatComposerView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-  private var hasContent: Bool { hasText || attachments.hasAttachments }
+  private var hasContent: Bool {
+    hasText || attachments.hasAttachments || draftState?.hasContent == true
+  }
   private var showsStop: Bool { canStop && !hasContent }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
+      if let state = draftState {
+        if !state.contextLabels.isEmpty {
+          Text(state.contextLabels.joined(separator: " · "))
+            .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            .accessibilityLabel("Saved context: " + state.contextLabels.joined(separator: ", "))
+        }
+        if let draftError = state.error {
+          Text(draftError).font(.caption).foregroundStyle(.red)
+          if state.conflictingRemote != nil {
+            HStack {
+              Button("Keep this draft") { state.keepLocal() }.frame(minHeight: 44)
+              Button("Use other device's draft") { state.useRemote() }.frame(minHeight: 44)
+            }.font(.caption)
+          } else {
+            Button("Retry draft sync") { Task { await state.synchronize() } }.font(.caption)
+          }
+        }
+      }
       if !attachments.items.isEmpty {
         ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
       }
@@ -83,6 +104,10 @@ struct ChatComposerView: View {
             } else {
               Link("Attach files on the web", destination: attachmentURL)
             }
+            if let state = draftState, state.hasContent || state.error != nil {
+              Divider()
+              Button("Clear draft", role: .destructive) { state.clear() }
+            }
           } label: {
             Image(systemName: "plus")
               .font(.system(size: 22, weight: .regular))
@@ -114,7 +139,10 @@ struct ChatComposerView: View {
           .buttonBorderShape(.circle)
           .controlSize(.small)
           .tint(Color.primary)
-          .disabled((!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade)
+          .disabled(
+            (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
+              || draftState?.canSend == false
+          )
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
           .frame(width: 44, height: 44)

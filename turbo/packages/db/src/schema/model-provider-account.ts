@@ -34,6 +34,8 @@ export const modelProviderAccounts = pgTable(
     authMethod: varchar("auth_method", { length: 50 }),
     isActive: boolean("is_active").notNull().default(false),
     disconnectedAt: timestamp("disconnected_at"),
+    // Only the grant that last connected this account may cancel its binding.
+    atomGrantId: uuid("atom_grant_id"),
     externalAccountId: varchar("external_account_id", { length: 255 }),
     accountEmail: varchar("account_email", { length: 320 }),
     workspaceName: varchar("workspace_name", { length: 255 }),
