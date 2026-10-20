@@ -52,6 +52,8 @@ function ConnectorDetailHeader({
   const hasConflictingPresence =
     connector.connection !== null && (accountSummary?.accountCount ?? 0) === 0;
   const needsAccountChoice =
+    connector.accountProjectionConflict === true ||
+    status === "unavailable" ||
     hasConflictingPresence ||
     (accountSummary !== undefined &&
       accountSummary.accountCount > 0 &&

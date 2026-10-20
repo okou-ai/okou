@@ -933,6 +933,7 @@ interface ConnectorsBrowseModel {
  */
 function buildConnectorsBrowseModel({
   catalogItems,
+  accountSummaries,
   categoryMetadata,
   categoryCounts,
   otherCategoryLabel,
@@ -942,6 +943,8 @@ function buildConnectorsBrowseModel({
   ready,
 }: {
   readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
+  readonly accountSummaries:
+    ReadonlyMap<string, ConnectorAccountDisplaySummary> | undefined;
   readonly categoryMetadata: ConnectorCategoryLabels;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly otherCategoryLabel: string;
@@ -993,7 +996,10 @@ function buildConnectorsBrowseModel({
         : null,
     layout,
     connected: catalogItems.filter((connector) => {
-      return connector.connected;
+      return (
+        (accountSummaries?.get(`builtin:${connector.slug}`)?.accountCount ??
+          0) > 0
+      );
     }),
     // Chips come from the whole catalog, not the filtered view: a chip row
     // that empties itself when you pick a chip cannot be used to pick another.
@@ -1533,6 +1539,10 @@ export function ConnectorsPage() {
   });
   const browse = buildConnectorsBrowseModel({
     catalogItems: filteredConnectors,
+    accountSummaries:
+      accountSummariesLoadable.state === "hasData"
+        ? accountSummariesLoadable.data
+        : undefined,
     categoryMetadata,
     categoryCounts: discoveryCategoryCounts(catalogStatusLoadable),
     otherCategoryLabel,

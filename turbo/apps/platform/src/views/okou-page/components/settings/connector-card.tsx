@@ -185,7 +185,17 @@ function DirectoryConnectorStatusLine({
       </>
     );
   }
-  if (builtinConnectorCurrentConnectionStatus(connector) === "scope-mismatch") {
+  const status = builtinConnectorCurrentConnectionStatus(connector);
+  if (status === "unavailable") {
+    return (
+      <span className="truncate text-muted-foreground">
+        {t(($) => {
+          return $.connectors.accounts.setupUnavailable;
+        })}
+      </span>
+    );
+  }
+  if (status === "scope-mismatch") {
     return (
       <>
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
@@ -240,7 +250,11 @@ function DirectoryConnectorCard({
     if (!interactive) {
       return;
     }
-    if (connected || connector.connection !== null) {
+    if (
+      connected ||
+      connector.accountProjectionConflict === true ||
+      (connector.connection !== null && connector.connection !== undefined)
+    ) {
       onOpenDetail?.();
       return;
     }
