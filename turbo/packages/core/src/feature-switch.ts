@@ -44,22 +44,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IosChatActivitySummary]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS chat activity summaries",
-    description:
-      "Show public activity summaries in the native iOS chat detail.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.IosChatAttachments]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS chat attachments",
-    description:
-      "Choose photos, videos and files in the native iOS chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.JsonTreePreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "JSON tree previews",

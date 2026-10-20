@@ -455,7 +455,7 @@ final class ChatComposerPasteTests: XCTestCase {
       isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
       error: nil, attachmentURL: URL(string: "https://app.example.invalid")!,
       attachments: conversation.attachmentDraft,
-      supportsAttachments: true, draftState: conversation.composer,
+      draftState: conversation.composer,
       submit: { await conversation.send() }, refresh: nil)
   }
 
@@ -498,6 +498,6 @@ private struct WorkspacePasteComposerHarness: View {
       draft: $composer.text,
       isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
       error: nil, attachmentURL: workspace.webURL, attachments: composer.attachments,
-      supportsAttachments: true, draftState: composer, submit: {}, refresh: nil)
+      draftState: composer, submit: {}, refresh: nil)
   }
 }
