@@ -627,11 +627,6 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
                       : $.remoteControlSetup.addressLinux;
                 })}
               </p>
-              <ExternalGuide href="https://console.tailscale.com/admin/machines">
-                {t(($) => {
-                  return $.remoteControlSetup.machines;
-                })}
-              </ExternalGuide>
             </div>
           </details>
         )}
