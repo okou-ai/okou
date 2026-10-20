@@ -176,12 +176,17 @@ async def test_storage_waits_and_cancelled_waiter_recovers_without_resolving_aut
         waiting = asyncio.create_task(
             finish_hooks(context, second, second.handle_event(RequestData(1, body)))
         )
-        # A ready callback runs only after the receiving hook has yielded to
-        # filesystem/admission work; no deadline is used as a synchronization.
+        # This body fits one parser quantum. Its queued continuation runs
+        # before this task wakes; observe the blocked admission itself.
         ready = asyncio.get_running_loop().create_future()
         asyncio.get_running_loop().call_soon(ready.set_result, None)
         await ready
         assert not waiting.done()
+        queued_body = managed_request_body.get(second_flow)
+        assert queued_body is not None
+        assert queued_body.waiter is not None
+        assert not queued_body.waiter.done()
+        assert queued_body.file is None
         auth_fetch.assert_not_called()
         if cancel_waiter:
             waiting.cancel()

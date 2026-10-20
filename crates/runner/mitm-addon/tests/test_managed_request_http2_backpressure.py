@@ -117,8 +117,10 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
             stored = managed_request_body.get(flow)
             assert stored is not None
             assert stored.file is not None
+            assert stored.worker is None
             assert managed.admission_state_for_tests() == (1, len(body))
             if blocked_by in {"window", "reset", "early-error", "early-data"}:
+                assert stored.file.tell() == 64 * 1024
                 assert len(received) == 65535
                 buffered = sum(
                     len(item.data)
@@ -138,6 +140,7 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
                     peer.increment_flow_control_window(1_000_000)
                     peer.increment_flow_control_window(1_000_000, stream_id=1)
             else:
+                assert stored.file.tell() == 0
                 assert not received
                 assert not headers
                 assert sum(len(queue) for queue in upstream.stream_queue.values()) == 1
