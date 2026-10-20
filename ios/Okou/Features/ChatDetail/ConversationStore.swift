@@ -90,6 +90,13 @@ final class ConversationStore {
 
   private let sync: ChatSync
   private let commands: ChatCommands
+  @ObservationIgnored lazy var permissionActions = PermissionActionRegistry(
+    commands: commands, sync: sync, didFail: didFail,
+    didContinue: { [weak self] in
+      guard let self, !closed else { return }
+      await refresh()
+      didSend()
+    })
   private let isVisible: @MainActor () -> Bool
   private let didMarkRead: @MainActor (Date?) -> Void
   private let didSend: @MainActor () -> Void
@@ -161,7 +168,7 @@ final class ConversationStore {
     (!composer.hasContent || composer.isDurable) && pending.isEmpty
       && modelSelection?.isBusy != true
       && !isLoading && !isSending && !isStopping && !isLoadingEarlier
-      && !isRecoveringFailure
+      && !isRecoveringFailure && !permissionActions.isBusy
       && history?.executionState.isActive != true
   }
 
@@ -197,6 +204,7 @@ final class ConversationStore {
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
+          await permissionActions.refresh()
           if !pending.contains(where: \.needsRetry) { error = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
           if suppressAutomaticRead, let unreadThrough {
@@ -470,6 +478,7 @@ final class ConversationStore {
       failureAccountsRequestedID = nil
       failureRecoveryTask?.cancel()
       if isRecoveringFailure { sendTask?.cancel() }
+      permissionActions.deactivate()
     }
     reconcileVisibility()
   }
@@ -502,6 +511,7 @@ final class ConversationStore {
     composer.close()
     attachmentViewer.close()
     connectorActions.close()
+    permissionActions.close()
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {
