@@ -11,7 +11,7 @@ import {
  * purpose. Custom is a filter like the others rather than a section above
  * them, the same model the composer's document shelf uses.
  */
-type DocumentTemplatePickerCategory =
+export type DocumentTemplatePickerCategory =
   DocumentTemplateCategory | "all" | "custom";
 
 export function createDocumentTemplateSignals() {

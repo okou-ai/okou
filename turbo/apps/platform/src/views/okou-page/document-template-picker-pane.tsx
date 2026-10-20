@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, UIEvent } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -12,8 +12,12 @@ import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { TemplateSourceSection } from "./template-source-section.tsx";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import type { DocumentTemplatePickerCategory } from "../../signals/okou-page/document-template-picker.ts";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
+import { composerRailFade } from "./composer-rail.tsx";
+import { RailPager } from "./rail-pager.tsx";
+import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import {
   TEMPLATE_CARD_GRID,
   TEMPLATE_TILE_CAPTION,
@@ -38,7 +42,6 @@ export function DocumentTemplatePickerPane({
   onSelect,
   customTemplates,
 }: Props) {
-  const { t } = useTranslation();
   const category = useGet(signals.template.documentCategory$);
   const items = useGet(signals.template.documentItems$);
   const search = useGet(signals.template.templatePickerSearch$);
@@ -48,57 +51,16 @@ export function DocumentTemplatePickerPane({
         return item.title.toLowerCase().includes(search.trim().toLowerCase());
       })
     : items;
-  const setCategory = useSet(signals.template.setDocumentCategory$);
   const saveScroll = useSet(signals.template.saveDocumentScroll$);
   const restoreScroll = useSet(signals.template.restoreDocumentScroll$);
   const builtInEnabled =
     features[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
-  // Custom is one more filter beside All and the purposes, as on the composer
-  // shelf, rather than a section stacked above the filters: the filters stay
-  // at the top of the pane instead of scrolling away under the member's own
-  // documents. Without the built-in rollout there is nothing to filter.
+  // Without the built-in rollout there is nothing to filter.
   const filters = builtInEnabled ? (
-    <TemplateFilterPillRow
-      className={
-        customTemplates
-          ? "shrink-0 px-6 pb-4 pt-0.5"
-          : "shrink-0 px-6 py-5 pr-14"
-      }
-      active={category}
-      label={t(($) => {
-        return $.documentTemplates.filter;
-      })}
-      pills={DOCUMENT_TEMPLATE_CATEGORIES.flatMap((id) => {
-        const pill = {
-          id,
-          label: t(($) => {
-            return $.documentTemplates.categories[id];
-          }),
-        };
-        return id === "all" && customTemplates
-          ? [
-              pill,
-              {
-                id: "custom",
-                label: t(($) => {
-                  return $.templates.custom;
-                }),
-              },
-            ]
-          : [pill];
-      })}
-      onSelect={(id) => {
-        if (id === "custom" && customTemplates) {
-          setCategory("custom");
-          return;
-        }
-        const found = DOCUMENT_TEMPLATE_CATEGORIES.find((entry) => {
-          return entry === id;
-        });
-        if (found) {
-          setCategory(found);
-        }
-      }}
+    <DocumentTemplatePickerFilters
+      signals={signals}
+      category={category}
+      withCustom={customTemplates !== undefined}
     />
   ) : null;
   const cards = (
@@ -146,6 +108,126 @@ export function DocumentTemplatePickerPane({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Custom is one more filter beside All and the purposes, as on the composer
+ * shelf, rather than a section stacked above the filters: the filters stay at
+ * the top of the pane instead of scrolling away under the member's own
+ * documents.
+ */
+function DocumentTemplatePickerFilters({
+  signals,
+  category,
+  withCustom,
+}: {
+  readonly signals: ComposerSignals;
+  readonly category: DocumentTemplatePickerCategory;
+  readonly withCustom: boolean;
+}) {
+  const { t } = useTranslation();
+  const setCategory = useSet(signals.template.setDocumentCategory$);
+  const filterTravel = useGet(signals.taskChips.railTravel$)[
+    PICKER_FILTER_RAIL
+  ];
+  const setTravel = useSet(signals.taskChips.setRailTravel$);
+  const bindRail = useSet(signals.taskChips.bindRail$);
+  const filterRow = (
+    <TemplateFilterPillRow
+      className={
+        withCustom
+          ? cn("px-6 py-0.5", composerRailFade(filterTravel))
+          : "shrink-0 px-6 py-5 pr-14"
+      }
+      // Under the header band the row holds ten pills, one more than fits on
+      // a line, so it travels like the composer shelf's filters rather than
+      // wrapping a lone pill onto a second line. Without the band the row
+      // shares its line with the close button and keeps wrapping.
+      layout={withCustom ? "scroll" : "wrap"}
+      {...(withCustom
+        ? {
+            rail: PICKER_FILTER_RAIL,
+            scrollerRef: bindRail,
+            onScroll: (event: UIEvent<HTMLDivElement>) => {
+              setTravel(PICKER_FILTER_RAIL, measureRail(event.currentTarget));
+            },
+          }
+        : {})}
+      active={category}
+      label={t(($) => {
+        return $.documentTemplates.filter;
+      })}
+      pills={DOCUMENT_TEMPLATE_CATEGORIES.flatMap((id) => {
+        const pill = {
+          id,
+          label: t(($) => {
+            return $.documentTemplates.categories[id];
+          }),
+        };
+        return id === "all" && withCustom
+          ? [
+              pill,
+              {
+                id: "custom",
+                label: t(($) => {
+                  return $.templates.custom;
+                }),
+              },
+            ]
+          : [pill];
+      })}
+      onSelect={(id) => {
+        if (id === "custom" && withCustom) {
+          setCategory("custom");
+          return;
+        }
+        const found = DOCUMENT_TEMPLATE_CATEGORIES.find((entry) => {
+          return entry === id;
+        });
+        if (found) {
+          setCategory(found);
+        }
+      }}
+    />
+  );
+  return withCustom ? (
+    // A pager centres on its positioning root, so the row's spacing below
+    // sits outside that root, as in the connector directory's category row.
+    <div className="shrink-0 pb-3.5">
+      <div className="relative" data-rail-root="">
+        {filterRow}
+        {filterTravel?.canScrollBack ? <PickerFilterPager side="back" /> : null}
+        {filterTravel?.canScrollForward ? (
+          <PickerFilterPager side="forward" />
+        ) : null}
+      </div>
+    </div>
+  ) : (
+    filterRow
+  );
+}
+
+/** The picker's filter row, as a rail id beside the composer shelf's. */
+const PICKER_FILTER_RAIL = "filters:document-picker";
+
+/**
+ * The dialog's surface is `--card`, so the pager takes that fill, and it sits
+ * inside the row's 24px gutter like the connector directory's category pager.
+ */
+function PickerFilterPager({ side }: { readonly side: "back" | "forward" }) {
+  const { t } = useTranslation();
+  return (
+    <RailPager
+      side={side}
+      surfaceClassName="bg-card"
+      className={side === "back" ? "left-3" : "right-3"}
+      label={t(($) => {
+        return side === "back"
+          ? $.chat.taskChips.shelf.previousPage
+          : $.chat.taskChips.shelf.nextPage;
+      })}
+    />
   );
 }
 
