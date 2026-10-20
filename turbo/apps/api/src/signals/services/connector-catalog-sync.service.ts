@@ -1,5 +1,4 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { isDeepStrictEqual } from "node:util";
 
 import type {
   ConnectorCatalogSyncAttemptReport,
@@ -10,12 +9,11 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
-  type ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
@@ -29,7 +27,6 @@ import {
 import { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 import type { ConnectorCatalogRelationshipRule } from "@okouai/connectors/connector-catalog/artifacts/relationship-error";
 
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -67,6 +64,10 @@ import {
 } from "./connector-runtime-wakeup.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import { createAcceptedConnectorServerFirewallCatalog } from "./connector-server-firewall-catalog.service";
+import {
+  builtinCatalogWakeupReadPlan,
+  builtinCatalogWakeupAccountsByOrg,
+} from "./connector-catalog-builtin-wakeup-plan";
 
 const log = logger("connector-catalog:sync");
 
@@ -229,119 +230,6 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
   });
 }
 
-function builtinRuntimeConfig(
-  connector: ConnectorCatalogArtifactConnector | undefined,
-) {
-  return connector
-    ? {
-        mcp: connector.mcp,
-        authMethods: connector.authMethods,
-        firewall: connector.firewall,
-      }
-    : undefined;
-}
-
-async function publishBuiltinCatalogWakeups(args: {
-  readonly db: Db;
-  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
-  readonly currentArtifact: ConnectorCatalogArtifact;
-}): Promise<void> {
-  const previous = new Map(
-    args.previousSnapshot?.acceptedSnapshot.artifact.connectors.map(
-      (connector) => {
-        return [connector.slug, connector] as const;
-      },
-    ),
-  );
-  const current = new Map(
-    args.currentArtifact.connectors.map((connector) => {
-      return [connector.slug, connector] as const;
-    }),
-  );
-  const changedSlugs = [
-    ...new Set([...previous.keys(), ...current.keys()]),
-  ].filter((slug) => {
-    const before = previous.get(slug);
-    const after = current.get(slug);
-    return !isDeepStrictEqual(
-      builtinRuntimeConfig(before),
-      builtinRuntimeConfig(after),
-    );
-  });
-  if (changedSlugs.length === 0) {
-    return;
-  }
-  const accounts = await args.db
-    .selectDistinct({
-      orgId: connectors.orgId,
-      connectorSlug: sql`${connectors.connectorSlug}`
-        .mapWith(pgTextDecoder)
-        .as("connector_slug"),
-    })
-    .from(connectors)
-    .where(
-      and(
-        isNull(connectors.customConnectorId),
-        inArray(connectors.connectorSlug, changedSlugs),
-      ),
-    );
-  const byOrg = new Map<string, string[]>();
-  for (const account of accounts) {
-    const slugs = byOrg.get(account.orgId) ?? [];
-    slugs.push(account.connectorSlug);
-    byOrg.set(account.orgId, slugs);
-  }
-  const pending = byOrg.entries();
-  async function publishOrgWakeups() {
-    for (const [orgId, slugs] of pending) {
-      const wakeupDb = args.db;
-      const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
-        scope: { orgId },
-        targets: slugs.map((connectorSlug) => {
-          return { kind: "builtin" as const, connectorSlug };
-        }),
-      };
-      await (async () => {
-        const result = await settle(
-          (async () => {
-            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
-            if (targets.length === 0) {
-              return;
-            }
-
-            const rows = await wakeupDb
-              .select({
-                runId: agentRuns.id,
-                runnerGroup: agentRuns.runnerGroup,
-              })
-              .from(agentRuns)
-
-              .where(connectorRuntimeWakeupCondition(wakeup.scope));
-
-            await publishConnectorRuntimeWakeupRows({
-              scope: wakeup.scope,
-              targets,
-              rows,
-            });
-          })(),
-        );
-        if (!result.ok) {
-          reportConnectorRuntimeWakeupDiscoveryFailure({
-            orgId: wakeup.scope.orgId,
-            scopedToUser: wakeup.scope.userId !== undefined,
-            scopedToAgent: wakeup.scope.agentId !== undefined,
-            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
-            error: result.error,
-          });
-        }
-      })();
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(4, byOrg.size) }, publishOrgWakeups),
-  );
-}
-
 async function publishCatalogRuntimeWakeups(args: {
   readonly db: Db;
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
@@ -349,7 +237,72 @@ async function publishCatalogRuntimeWakeups(args: {
 }): Promise<void> {
   const results = await Promise.all([
     settle(publishCatalogPermissionBundleWakeupsInner(args)),
-    settle(publishBuiltinCatalogWakeups(args)),
+    settle(
+      (async () => {
+        const plan = builtinCatalogWakeupReadPlan({
+          previousArtifact: args.previousSnapshot?.acceptedSnapshot.artifact,
+          currentArtifact: args.currentArtifact,
+        });
+        if (!plan.needsRead) {
+          return;
+        }
+        const accounts = await args.db
+          .selectDistinct(plan.columns)
+          .from(connectors)
+          .where(plan.condition);
+        const byOrg = builtinCatalogWakeupAccountsByOrg(accounts);
+        const pending = byOrg.entries();
+        async function publishOrgWakeups() {
+          for (const [orgId, slugs] of pending) {
+            const wakeupDb = args.db;
+            const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
+              scope: { orgId },
+              targets: slugs.map((connectorSlug) => {
+                return { kind: "builtin" as const, connectorSlug };
+              }),
+            };
+            await (async () => {
+              const result = await settle(
+                (async () => {
+                  const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+                  if (targets.length === 0) {
+                    return;
+                  }
+
+                  const rows = await wakeupDb
+                    .select({
+                      runId: agentRuns.id,
+                      runnerGroup: agentRuns.runnerGroup,
+                    })
+                    .from(agentRuns)
+
+                    .where(connectorRuntimeWakeupCondition(wakeup.scope));
+
+                  await publishConnectorRuntimeWakeupRows({
+                    scope: wakeup.scope,
+                    targets,
+                    rows,
+                  });
+                })(),
+              );
+              if (!result.ok) {
+                reportConnectorRuntimeWakeupDiscoveryFailure({
+                  orgId: wakeup.scope.orgId,
+                  scopedToUser: wakeup.scope.userId !== undefined,
+                  scopedToAgent: wakeup.scope.agentId !== undefined,
+                  targetCount: uniqueConnectorRuntimeTargets(wakeup.targets)
+                    .length,
+                  error: result.error,
+                });
+              }
+            })();
+          }
+        }
+        await Promise.all(
+          Array.from({ length: Math.min(4, byOrg.size) }, publishOrgWakeups),
+        );
+      })(),
+    ),
   ]);
   for (const result of results) {
     if (!result.ok) {
