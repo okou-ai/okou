@@ -108,6 +108,7 @@ type VertexMapsFailureReason =
   | "non_stop"
   | "empty_output"
   | "invalid_source"
+  | "no_verified_sources"
   | "invalid_citation"
   | "invalid_usage";
 
@@ -118,8 +119,7 @@ type VertexMapsCitationFailure =
   | "invalid_utf8_span"
   | "answer_span_mismatch"
   | "support_text_mismatch"
-  | "source_index_out_of_range"
-  | "missing_sources";
+  | "source_index_out_of_range";
 
 export class VertexMapsError extends Error {
   constructor(
@@ -442,7 +442,7 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     sources.length > 0,
   );
   if (usage.mapsQueries > 0 && sources.length === 0) {
-    throw new VertexMapsError(502, "invalid_citation", "missing_sources");
+    throw new VertexMapsError(502, "no_verified_sources");
   }
   return {
     answer: answer.text,
@@ -528,7 +528,7 @@ export async function generateVertexMapsSearch(
     (error) => {
       signal.throwIfAborted();
       if (error instanceof VertexMapsError) {
-        L.warn("Google Maps grounding request rejected", {
+        const fields = {
           model: VERTEX_MAPS_MODEL,
           location: LOCATION,
           status: error.status,
@@ -536,7 +536,15 @@ export async function generateVertexMapsSearch(
           ...(error.citationFailure
             ? { citationFailure: error.citationFailure }
             : {}),
-        });
+        };
+        if (error.reason === "no_verified_sources") {
+          L.debug(
+            "Google Maps grounding returned no verifiable sources",
+            fields,
+          );
+        } else {
+          L.warn("Google Maps grounding request rejected", fields);
+        }
       }
     },
   );
