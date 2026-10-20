@@ -79,7 +79,7 @@ enum LocalAdmissionResource {
 /// One owned resource transferred with a successful claim to Runner activation.
 pub enum AdmittedResource {
     Fresh(BudgetLease),
-    /// Ordinary B-owned capacity retained through the peer publication wait.
+    /// This Runner's ordinary capacity retained through the peer publication wait.
     PeerFinalizing {
         lease: BudgetLease,
         deadline: Instant,

@@ -1,6 +1,6 @@
 //! Resource-backed peer publication waiting after successful claim.
 //!
-//! The existing activation guard owns the claim, cancellation and B's ordinary
+//! The existing activation guard owns the claim, cancellation and local ordinary
 //! capacity from the RPC result through this owned job and executor handoff.
 
 use std::panic::AssertUnwindSafe;
