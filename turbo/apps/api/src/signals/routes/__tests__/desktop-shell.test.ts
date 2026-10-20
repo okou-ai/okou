@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRouteMocks } from "./helpers/route-test";
+import { browserAuthorizationRoutes } from "../browser-authorization";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockNow, now } from "../../../lib/time";
 
@@ -219,6 +223,171 @@ describe("Desktop Shell command pipeline", () => {
         if (nextRunId) {
           await scenario.cancelRun(actor, nextRunId);
         }
+      });
+    },
+  );
+
+  it.each(["cloud browser", "another computer", "queued send"] as const)(
+    "notifies the owner when %s changes the computer for a pending Shell approval",
+    { timeout: 30_000 },
+    async (authorization) => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const api = scenario.computerUse;
+        const chat = createChatFilesBddApi(context);
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          desktopShell: true,
+        });
+        const host = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const source = await scenario.claim(actor, host.hostId);
+        const requested = await api.requestDesktopShellAccess(
+          { bearer: source.token },
+          "Inspect the project in Terminal",
+        );
+        if (requested.status !== 200) {
+          throw new Error("Expected pending Shell access");
+        }
+        const browser = setupApp({
+          context,
+          routes: browserAuthorizationRoutes,
+        })(browserAuthorizationRequestsContract);
+        const created =
+          authorization === "cloud browser"
+            ? (
+                await accept(
+                  browser.create({
+                    headers: {
+                      authorization: `Bearer ${source.sandboxToken}`,
+                    },
+                    body: {},
+                  }),
+                  [200],
+                )
+              ).body
+            : authorization === "another computer"
+              ? await api.createComputerUseAuthorizationRequest({
+                  bearer: source.token,
+                })
+              : null;
+        const requestToken = created
+          ? decodeURIComponent(
+              new URL(created.authorizationUrl).pathname.slice(
+                authorization === "cloud browser"
+                  ? "/browser/authorize/".length
+                  : "/computer-use/authorize/".length,
+              ),
+            )
+          : null;
+        const secondHost =
+          authorization !== "cloud browser"
+            ? await api.startComputerUseHost(actor, {
+                supportedCapabilities: capabilities,
+              })
+            : null;
+        await scenario.cancelRun(actor, source.runId);
+        await scenario.run(flushWaitUntilForTest);
+        expect(
+          (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+        ).toMatchObject({ status: "pending", approvalBlockedReason: null });
+        const { agentId } = await scenario.prepareActor(actor);
+        const nextEventId = randomUUID();
+        if (authorization === "queued send") {
+          await chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              threadId: source.threadId,
+              prompt: "Keep working on this computer",
+              clientEventId: randomUUID(),
+            },
+            [201],
+          );
+          await scenario.run(flushWaitUntilForTest);
+          expect(
+            (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+          ).toMatchObject({ approvalBlockedReason: "chat_busy" });
+        }
+
+        const notifiedReasons: (string | null)[] = [];
+        context.mocks.ably.publish.mockClear();
+        context.mocks.ably.channelGet.mockClear();
+        context.mocks.ably.publish.mockImplementation(async (topic) => {
+          if (topic === "desktopShellAuthorizationChanged") {
+            const current = await api.readDesktopShellAccess(
+              actor,
+              requested.body.id,
+            );
+            if (current.status !== 200) {
+              throw new Error("Expected the pending Shell authorization");
+            }
+            notifiedReasons.push(current.body.approvalBlockedReason);
+          }
+        });
+        createRouteMocks(context).clerk.session(
+          actor.userId,
+          actor.orgId,
+          actor.orgRole,
+        );
+        if (authorization === "queued send" && secondHost) {
+          await chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              threadId: source.threadId,
+              prompt: "Continue on the other computer",
+              computerUseHostId: secondHost.hostId,
+              clientEventId: nextEventId,
+            },
+            [201],
+          );
+        } else if (secondHost && requestToken) {
+          await api.applyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            secondHost.hostId,
+          );
+        } else if (requestToken) {
+          await accept(
+            browser.apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken },
+              body: {},
+            }),
+            [200],
+          );
+        } else {
+          throw new Error("Expected the public computer-selection request");
+        }
+        await scenario.run(flushWaitUntilForTest);
+        if (authorization === "queued send") {
+          const { events } = await chat.listThreadEvents(
+            actor,
+            source.threadId,
+          );
+          expect(
+            events.some((event) => {
+              return (
+                event.eventType === "input.prompt" &&
+                event.revokesEventId === nextEventId &&
+                event.runId !== undefined
+              );
+            }),
+          ).toBeFalsy();
+        }
+        expect(notifiedReasons).toStrictEqual(["computer_changed"]);
+        expect(context.mocks.ably.channelGet.mock.calls).toContainEqual([
+          `user:${actor.userId}`,
+        ]);
+        await api.actDesktopShellAccess(
+          actor,
+          requested.body.id,
+          "approve",
+          [409],
+        );
+        context.mocks.ably.publish.mockResolvedValue(undefined);
       });
     },
   );

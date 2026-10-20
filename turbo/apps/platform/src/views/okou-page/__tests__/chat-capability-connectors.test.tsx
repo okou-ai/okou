@@ -389,7 +389,13 @@ describe("with an unconnected banking conversation", () => {
     );
     expect(waitingNotice).toBeVisible();
 
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscription("bankingAccessChanged"),
+      ).toBeTruthy();
+    });
     preparedScenario.status = connectedBankingStatus();
+    context.mocks.ably.trigger("bankingAccessChanged", {});
     const account = await within(card).findByRole("checkbox", {
       name: /Operating account/u,
     });

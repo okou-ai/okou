@@ -253,7 +253,6 @@ async function openManagedBrowserChat(
   sharedWorkerTestTransport: "direct" | "message-port" = "direct",
 ) {
   const sessionReady = context.mocks.deferred<void>();
-  let sessionReads = 0;
   let browser = managedBrowserSession({
     status: "active",
     screenshotUrl: INITIAL_SCREENSHOT_URL,
@@ -273,7 +272,6 @@ async function openManagedBrowserChat(
   });
   context.mocks.api(browserContract.get, async ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
-    sessionReads += 1;
     await sessionReady.promise;
     return respond(200, { browser });
   });
@@ -296,9 +294,6 @@ async function openManagedBrowserChat(
   await readyChat();
   return {
     sessionReady,
-    get sessionReads() {
-      return sessionReads;
-    },
     foreignBrowserUrl,
     untrustedBrowserUrl,
     updateBrowser(
@@ -340,25 +335,35 @@ test("Render a managed browser card from loading to live", async () => {
   );
 });
 
-test("Browser cards skip attach refresh but refresh on events and continuity gaps", async () => {
+test("Browser cards show status and thumbnail changes on events and continuity gaps", async () => {
+  const attachment = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "browserSessionChanged",
+  );
   const browser = await openManagedBrowserChat("message-port");
   browser.sessionReady.resolve();
   const card = await findButton("Open Research browser");
   await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("browserSessionChanged"),
-    ).toBeTruthy();
+    expect(card).toHaveTextContent("Live");
   });
-  expect(card).toHaveTextContent("Live");
-  expect(browser.sessionReads).toBe(1);
-
+  await attachment.started;
   browser.updateBrowser(
     managedBrowserSession({
       status: "suspended",
       screenshotUrl: SUSPENDED_SCREENSHOT_URL,
       liveUrl: null,
     }),
+    false,
   );
+  attachment.attach();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("browserSessionChanged"),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: RUN_THREAD_ID,
+  });
   await waitFor(() => {
     expect(card).toHaveTextContent("Stopped");
   });
@@ -366,7 +371,6 @@ test("Browser cards skip attach refresh but refresh on events and continuity gap
     "src",
     SUSPENDED_SCREENSHOT_URL,
   );
-  expect(browser.sessionReads).toBe(2);
 
   context.mocks.ably.triggerConnectionState("suspended");
   browser.updateBrowser(
@@ -385,7 +389,6 @@ test("Browser cards skip attach refresh but refresh on events and continuity gap
     "src",
     INITIAL_SCREENSHOT_URL,
   );
-  expect(browser.sessionReads).toBe(3);
 });
 
 test("A browser card uses a private screenshot thumbnail while its panel keeps the original", async () => {

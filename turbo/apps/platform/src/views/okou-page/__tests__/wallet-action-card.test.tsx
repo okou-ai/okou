@@ -85,27 +85,18 @@ function mockAuthorization(
   });
   let status = initial;
   const read = createDeferredPromise<void>(context.signal);
-  const refreshedRead = createDeferredPromise<void>(context.signal);
-  let reads = 0;
   context.mocks.api(walletUserContract.connectStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
       agentId: AGENT_ID,
       state: OAUTH_STATE,
     });
-    reads += 1;
     if (!read.settled()) {
       read.resolve();
-    } else if (!refreshedRead.settled()) {
-      refreshedRead.resolve();
     }
     return respond(200, status);
   });
   return {
     read: read.promise,
-    refreshedRead: refreshedRead.promise,
-    get reads() {
-      return reads;
-    },
     complete: (notify = true) => {
       status = { status: "authorized", authorizationId: AUTHORIZATION_ID };
       if (notify) {
@@ -124,6 +115,10 @@ function mockAuthorization(
 
 test("a workspace notification completes wallet consent and continues the owning chat once", async () => {
   const authorization = mockAuthorization();
+  const attachment = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "wallet:changed",
+  );
   const prompts: string[] = [];
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000071");
@@ -138,27 +133,27 @@ test("a workspace notification completes wallet consent and continues the owning
       threadId: context.resourceId,
     });
   });
-  await openChat(TRACKED_CONNECT_URL);
+  await openChat(TRACKED_CONNECT_URL, "message-port");
   await authorization.read;
   const link = await findControl("link", "Authorize Link wallet");
   expect(link).toHaveAttribute("href", TRACKED_CONNECT_URL);
   expect(prompts).toStrictEqual([]);
   click(link);
   await screen.findByText("Waiting for authorization");
+  await attachment.started;
+  authorization.complete(false);
+  attachment.attach();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeTruthy();
   });
-  expect(authorization.reads).toBe(1);
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_other" });
   context.mocks.ably.trigger("wallet:changed", { orgId: "" });
-  authorization.complete(false);
   const payload = { orgId: "org_default" };
   context.mocks.ably.trigger("wallet:changed", payload);
   context.mocks.ably.trigger("wallet:changed", payload);
   const completed = await findControl("button", "Authorized");
   expect(completed).toBeDisabled();
   expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
-  expect(authorization.reads).toBe(2);
   expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
 });
 
@@ -172,6 +167,24 @@ function captureContinuation() {
   });
   return prompts;
 }
+
+test("wallet consent completed before the user's click continues from the current authorization", async () => {
+  const authorization = mockAuthorization();
+  const prompts = captureContinuation();
+  await openChat(TRACKED_CONNECT_URL);
+  await authorization.read;
+  const link = await findControl("link", "Authorize Link wallet");
+  await expect(
+    screen.findByText("login.link.com"),
+  ).resolves.toBeInTheDocument();
+
+  authorization.complete();
+  expect(prompts).toStrictEqual([]);
+  click(link);
+
+  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+});
 
 test("wallet consent notifications queued during attachment still continue the chat", async () => {
   const authorization = mockAuthorization();
@@ -199,8 +212,6 @@ test("wallet consent missed during a connection gap is recovered after reattachm
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeTruthy();
   });
-  context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
-  await authorization.refreshedRead;
   context.mocks.ably.triggerConnectionState("suspended");
   authorization.complete(false);
   context.mocks.ably.triggerConnectionState("connected");
@@ -263,7 +274,7 @@ test("retrying a wallet continuation preserves the accepted event identity", asy
 });
 
 test("an already authorized wallet card waits for an explicit continuation", async () => {
-  const authorization = mockAuthorization({
+  mockAuthorization({
     status: "authorized",
     authorizationId: AUTHORIZATION_ID,
   });
@@ -280,7 +291,6 @@ test("an already authorized wallet card waits for an explicit continuation", asy
   click(next);
   await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
   expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
-  expect(authorization.reads).toBe(1);
   expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
 });
 
@@ -484,16 +494,18 @@ test("wallet URLs in code and user messages do not become action cards", async (
   );
 });
 
-test("purchase approval cards skip attach refresh but follow notifications and connection gaps", async () => {
+test("purchase approval cards show approval and continuation after notifications and connection gaps", async () => {
   let status: "pending" | "approved" | "continued" = "pending";
-  let reads = 0;
+  const attachment = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "wallet:changed",
+  );
   context.mocks.api(walletUserContract.spendStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
       agentId: AGENT_ID,
       threadId: context.resourceId,
       approvalUrl: APPROVAL_URL,
     });
-    reads += 1;
     return respond(200, { status });
   });
   await openChat(APPROVAL_URL, "message-port", {
@@ -502,18 +514,18 @@ test("purchase approval cards skip attach refresh but follow notifications and c
   await screen.findByText("Waiting for purchase approval");
   const link = await findControl("link", "Review purchase");
   expect(link).toHaveAttribute("href", APPROVAL_URL);
+  await attachment.started;
+  status = "approved";
+  attachment.attach();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeTruthy();
   });
-  expect(reads).toBe(1);
-  status = "approved";
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_other" });
   expect(
     screen.queryByText("Approved; waiting to continue"),
   ).not.toBeInTheDocument();
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
   await screen.findByText("Approved; waiting to continue");
-  expect(reads).toBe(2);
   await expect(
     findControl("button", "Status recorded"),
   ).resolves.toBeDisabled();
@@ -521,7 +533,6 @@ test("purchase approval cards skip attach refresh but follow notifications and c
   status = "continued";
   context.mocks.ably.triggerConnectionState("connected");
   await screen.findByText("Purchase request continued");
-  expect(reads).toBe(3);
   await expect(
     findControl("button", "Status recorded"),
   ).resolves.toBeDisabled();

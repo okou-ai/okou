@@ -120,7 +120,12 @@ function createWalletConnectSignals(
       (async () => {
         const initialStatus = await get(status$);
         signal.throwIfAborted();
-        if (initialStatus.status === "pending") {
+        // A pending card may have been rendered before consent completed in
+        // another tab. Refresh for this user action before waiting for events.
+        if (
+          initialStatus.status === "pending" &&
+          !(await set(refreshCompletion$, signal))
+        ) {
           await set(
             waitAblyPayloadLoopUntil$,
             {

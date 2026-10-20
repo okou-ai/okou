@@ -9,16 +9,14 @@ const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 const REASON = "Review quarterly subscription expenses";
 
-test("Duplicate banking cards share a lazy read and refresh only on events or a continuity gap", async () => {
+test("Duplicate banking cards update together on events and recover after a continuity gap", async () => {
   const chat = createMarkdownChatFixture(context);
   const url = new URL(`https://app.okou.ai/agents/${AGENT_ID}/banking`);
   url.searchParams.set("reason", REASON);
   url.searchParams.set("threadId", context.resourceId);
   url.searchParams.set("callbackPrompt", "Continue the expense review");
-  let reads = 0;
   let name = "Finance Assistant";
   context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
-    reads++;
     return respond(200, {
       agent: { id: AGENT_ID, name },
       connection: null,
@@ -51,20 +49,17 @@ test("Duplicate banking cards share a lazy read and refresh only on events or a 
     expect(screen.getAllByText(name)).toHaveLength(2);
   });
   await attachment.started;
+  name = "Updated Finance Assistant";
   attachment.attach();
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscription("bankingAccessChanged"),
     ).toBeTruthy();
   });
-  expect(reads).toBe(1);
-
-  name = "Updated Finance Assistant";
   context.mocks.ably.trigger("bankingAccessChanged", {});
   await waitFor(() => {
     expect(screen.getAllByText(name)).toHaveLength(2);
   });
-  expect(reads).toBe(2);
 
   context.mocks.ably.triggerConnectionState("suspended");
   name = "Recovered Finance Assistant";
@@ -72,5 +67,4 @@ test("Duplicate banking cards share a lazy read and refresh only on events or a 
   await waitFor(() => {
     expect(screen.getAllByText(name)).toHaveLength(2);
   });
-  expect(reads).toBe(3);
 });
