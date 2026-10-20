@@ -14,8 +14,10 @@ export const chatThreadSnapshots = pgTable(
     latestEventId: uuid("latest_event_id"),
     /** Sequence position represented by the compacted snapshot. */
     latestEventSeqId: bigint("latest_event_seq_id", { mode: "number" }),
-    /** Immutable R2 snapshot object; null only in old rows or test fixtures. */
+    /** Opaque key of an immutable R2 snapshot object. */
     objectKey: text("object_key"),
+    /** SHA-256 of the compressed snapshot bytes, independent of its key. */
+    contentDigest: text("content_digest"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
