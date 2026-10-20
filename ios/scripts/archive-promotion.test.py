@@ -288,10 +288,30 @@ class PromotionTest(unittest.TestCase):
             b"compiled-device-code",
         )
 
-    def test_release_reuses_prior_tests_but_builds_version_specific_archive(self):
+    def test_shallow_release_checkout_fetches_prior_tests_and_publishes(self):
+        builder = self.git("rev-parse", "HEAD")
         old = self.capture()
         self.cli("publish", self.work)
+        for index in range(32):
+            self.git("commit", "--allow-empty", "-qm", f"later main commit {index}")
+        self.env["MERGE_GROUP_BASE_SHA"] = self.git("rev-parse", "HEAD")
         self.release()
+        clone = self.root / "shallow-publisher"
+        subprocess.run(
+            ["git", "clone", "-q", "--depth=32", self.repo.as_uri(), str(clone)],
+            check=True,
+        )
+        self.repo = clone
+        self.assertEqual(self.git("rev-parse", "--is-shallow-repository"), "true")
+        self.assertNotEqual(
+            subprocess.run(
+                ["git", "cat-file", "-e", f"{builder}^{{commit}}"],
+                cwd=self.repo,
+                capture_output=True,
+                check=False,
+            ).returncode,
+            0,
+        )
         current = self.capture()
         self.assertEqual(old["testInputSha256"], current["testInputSha256"])
         self.assertNotEqual(old["archiveInputSha256"], current["archiveInputSha256"])
