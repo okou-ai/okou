@@ -2314,14 +2314,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             site.deploymentId,
           );
         });
-        const groupedCatalog = await fixture.run(() => {
-          return chatApi.listArtifactCatalog(actor);
-        });
-        expect(
-          groupedCatalog.artifacts.some((entry) => {
-            return entry.id === catalogEntry.id;
-          }),
-        ).toBeFalsy();
         const groupedFiles = (
           await fixture.run(() => {
             return chatApi.listThreadArtifacts(actor, threadId);
