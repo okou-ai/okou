@@ -66,6 +66,11 @@ def release_from_flow(flow: http.HTTPFlow) -> None:
     _budget.release_from_flow(flow)
 
 
+def require_from_flow(flow: http.HTTPFlow) -> None:
+    """Require a live AWS reservation covering the body before hashing/signing."""
+    _budget.require_from_flow(flow, len(flow.request.raw_content or b""))
+
+
 def state_for_tests() -> tuple[int, int]:
     """Return admitted flow count and declared bytes for tests."""
     return _budget.state_for_tests()

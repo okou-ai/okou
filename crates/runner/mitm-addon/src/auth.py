@@ -12,9 +12,11 @@ import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 from mitmproxy import http
 
+import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import flow_metadata
 import flow_metadata_keys as metadata_keys
@@ -803,6 +805,8 @@ def _sign_flow_request_with_aws_sigv4(
 ) -> None:
     state = _inspect_aws_sigv4_flow(flow)
     try:
+        if state.inspection is not None and state.requires_body:
+            aws_sigv4_body_admission.require_from_flow(flow)
         request_input = state.request_input or _bounded_aws_sigv4_request_input(flow)
         signed_url, signed_headers = sign_request(
             method=flow.request.method,
@@ -835,6 +839,7 @@ async def _precompute_aws_sigv4_body_hash(
     if flow_inspection.inspection is None or not flow_inspection.requires_body:
         return None
 
+    aws_sigv4_body_admission.require_from_flow(flow)
     hash_future = asyncio.get_running_loop().run_in_executor(
         aws_sigv4_hash_executor.get_executor(),
         hash_request_body,
@@ -1137,6 +1142,7 @@ def mark_aws_sigv4_request_too_large(
     proxy_log_path: str,
     firewall_base: str,
     observed_size: int,
+    action: Literal["ALLOW", "BLOCK"] = "ALLOW",
 ) -> None:
     """Record an oversized body-dependent SigV4 request before killing it."""
     _log_aws_sigv4_request_too_large(
@@ -1147,7 +1153,7 @@ def mark_aws_sigv4_request_too_large(
     )
     _mark_matched_firewall_failure(
         flow,
-        action="ALLOW",
+        action=action,
         error_code=AWS_SIGV4_REQUEST_BODY_TOO_LARGE_ERROR,
     )
 
@@ -1158,6 +1164,7 @@ def mark_aws_sigv4_request_length_required(
     proxy_log_path: str,
     firewall_base: str,
     reason: str,
+    action: Literal["ALLOW", "BLOCK"] = "ALLOW",
 ) -> None:
     """Record unbounded SigV4 body framing before killing the flow."""
     flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
@@ -1172,7 +1179,7 @@ def mark_aws_sigv4_request_length_required(
     )
     _mark_matched_firewall_failure(
         flow,
-        action="ALLOW",
+        action=action,
         error_code=AWS_SIGV4_REQUEST_BODY_LENGTH_REQUIRED_ERROR,
     )
 
@@ -1182,6 +1189,7 @@ def mark_aws_sigv4_request_admission_saturated(
     *,
     proxy_log_path: str,
     firewall_base: str,
+    action: Literal["ALLOW", "BLOCK"] = "ALLOW",
 ) -> None:
     """Record aggregate SigV4 body admission saturation before killing the flow."""
     flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
@@ -1194,7 +1202,7 @@ def mark_aws_sigv4_request_admission_saturated(
     )
     _mark_matched_firewall_failure(
         flow,
-        action="ALLOW",
+        action=action,
         error_code=AWS_SIGV4_REQUEST_BODY_ADMISSION_SATURATED_ERROR,
     )
 
@@ -1313,6 +1321,11 @@ def _preflight_firewall_auth(
             permission=context.allow.name,
         )
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
+
+    if plan.uses_aws_sigv4 and not plan.uses_auth_base:
+        inspection = _inspect_aws_sigv4_flow(flow)
+        if inspection.inspection is not None and inspection.requires_body:
+            aws_sigv4_body_admission.require_from_flow(flow)
 
     return None
 
