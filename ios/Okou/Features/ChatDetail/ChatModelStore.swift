@@ -134,6 +134,12 @@ final class ChatModelSelectionStore {
       models.report(error)
     }
   }
+  /// Starting the first send gives this pending chat its own inherited choice.
+  func captureNewChatSelection() -> ChatModelSelection {
+    let value = selection
+    stored = value
+    return value
+  }
   func resetNewChat() {
     guard threadID == nil, !isBusy else { return }
     stored = nil

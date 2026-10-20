@@ -318,7 +318,9 @@ final class WorkspaceStore {
   func createChat(agentID: String? = nil) async -> ChatThread? {
     guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
     guard newModelSelection.canSend else { return nil }
-    let selection = modelStore.configuration.map { _ in newModelSelection.selection }
+    let selection = modelStore.configuration.map { _ in
+      newModelSelection.captureNewChatSelection()
+    }
     let effort = newModelSelection.requestedEffort
     newModelSelection.isSending = true
     isCreating = true

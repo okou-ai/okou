@@ -62,58 +62,100 @@ final class ChatModelStoreTests: XCTestCase {
     XCTAssertEqual(selection.effectiveEffort, "max")
   }
 
-  func testFirstMessageUsesTheAcknowledgedNewChatChoiceBeforeDetailMetadataLoads() async throws {
-    let sends = Mutex<[Data]>([])
-    let creations = Mutex<[Data]>([])
-    let fixture = ChatHTTPFixture { request in
-      let path = request.url!.path
-      switch path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body: "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"isDefaultAgent\":true}]")
-      case "/api/chat-threads":
-        creations.withLock { $0.append(chatRequestBody(request)) }
-        return ChatHTTPResponse(
-          body:
-            "{\"id\":\"\(ModelHTTPFixtures.threadID)\",\"createdAt\":\"2026-10-20T00:00:00Z\",\"selectedModel\":\"claude-model\"}"
-        )
-      case "/api/chat/events":
-        sends.withLock { $0.append(chatRequestBody(request)) }
-        return ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
-      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/connector-selections":
-        return ChatHTTPResponse(body: "{\"selections\":[]}")
-      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/event-snapshot":
-        return ChatHTTPResponse(
-          status: 404,
-          body:
-            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
-      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/event-rows":
-        return ChatHTTPResponse(
-          body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
-      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)":
-        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
-      default: return try XCTUnwrap(ModelHTTPFixtures.response(path))
+  func testFirstMessageKeepsItsChoiceWhenDefaultsChangeDuringCreation() async throws {
+    for explicit in [false, true] {
+      let model = explicit ? "claude-model" : "codex-model"
+      let nextDefault = explicit ? "codex-model" : "claude-model"
+      let gate = ModelResponseGate()
+      let creationStarted = expectation(description: "Creation captured \(model)")
+      let changed = Mutex(false)
+      let sends = Mutex<[Data]>([])
+      let creations = Mutex<[Data]>([])
+      let fixture = ChatHTTPFixture { request in
+        let path = request.url!.path
+        switch path {
+        case "/api/agents":
+          return ChatHTTPResponse(
+            body: "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"isDefaultAgent\":true}]")
+        case "/api/chat-threads":
+          creations.withLock { $0.append(chatRequestBody(request)) }
+          creationStarted.fulfill()
+          await gate.wait()
+          return ChatHTTPResponse(
+            body:
+              "{\"id\":\"\(ModelHTTPFixtures.threadID)\",\"createdAt\":\"2026-10-20T00:00:00Z\",\"selectedModel\":\"\(model)\"}"
+          )
+        case "/api/chat-threads/snapshot":
+          return ChatHTTPResponse(
+            body: """
+              {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","agentId":"\(ModelHTTPFixtures.agentID)","title":null,"selectedModel":"\(model)","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+              """)
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+        case "/api/indicators":
+          return ChatHTTPResponse(body: "{\"threads\":{}}")
+        case "/api/chat/events":
+          sends.withLock { $0.append(chatRequestBody(request)) }
+          return ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
+        case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/connector-selections":
+          return ChatHTTPResponse(body: "{\"selections\":[]}")
+        case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/event-snapshot":
+          return ChatHTTPResponse(
+            status: 404,
+            body:
+              "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
+          )
+        case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/event-rows":
+          return ChatHTTPResponse(
+            body:
+              "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
+        case "/api/chat-threads/\(ModelHTTPFixtures.threadID)":
+          return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+        default:
+          var response = try XCTUnwrap(
+            ModelHTTPFixtures.response(path), "Unhandled request: \(path)")
+          if path == "/api/user-model-preference", changed.withLock({ $0 }) {
+            response.body = response.body.replacingOccurrences(
+              of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"\(nextDefault)\"")
+          }
+          return response
+        }
       }
+      let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+      defer {
+        gate.open()
+        workspace.close()
+      }
+      await workspace.newModelSelection.open()
+      if explicit {
+        await workspace.newModelSelection.choose(model: model)
+        await workspace.newModelSelection.choose(effort: "extra")
+      }
+      workspace.newChatDraft = "Use this selection for the very first message"
+      let sendTask = Task { await workspace.sendNewChat() }
+      await fulfillment(of: [creationStarted], timeout: 3)
+      changed.withLock { $0 = true }
+      await workspace.modelStore.refresh()
+      XCTAssertEqual(workspace.newModelSelection.selection.model, model)
+      gate.open()
+      await sendTask.value
+      XCTAssertTrue(workspace.newChatDraft.isEmpty)
+      XCTAssertEqual(workspace.selectedThreadID, ModelHTTPFixtures.threadID)
+      let creation = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: XCTUnwrap(creations.withLock { $0.first }))
+          as? [String: Any])
+      let send = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: XCTUnwrap(sends.withLock { $0.first })) as? [String: Any]
+      )
+      XCTAssertEqual(creation["model"] as? String, model)
+      XCTAssertEqual(creation["reasoningEffort"] as? String, explicit ? "extra" : nil)
+      XCTAssertEqual(send["model"] as? String, model)
+      XCTAssertEqual(
+        (send["runOptions"] as? [String: String])?["reasoningEffort"], explicit ? "extra" : nil)
+      XCTAssertEqual(workspace.modelStore.configuration?.preference.selectedModel, nextDefault)
+      workspace.startNewChat()
+      XCTAssertEqual(workspace.newModelSelection.selection.model, nextDefault)
     }
-    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { workspace.close() }
-    await workspace.newModelSelection.open()
-    await workspace.newModelSelection.choose(model: "claude-model")
-    await workspace.newModelSelection.choose(effort: "extra")
-    workspace.newChatDraft = "Use this selection for the very first message"
-    await workspace.sendNewChat()
-    XCTAssertTrue(workspace.newChatDraft.isEmpty)
-    XCTAssertEqual(workspace.selectedThreadID, ModelHTTPFixtures.threadID)
-    let creation = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: XCTUnwrap(creations.withLock { $0.first }))
-        as? [String: Any])
-    let send = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: XCTUnwrap(sends.withLock { $0.first })) as? [String: Any])
-    XCTAssertEqual(creation["model"] as? String, "claude-model")
-    XCTAssertEqual(creation["reasoningEffort"] as? String, "extra")
-    XCTAssertEqual(send["model"] as? String, "claude-model")
-    XCTAssertEqual((send["runOptions"] as? [String: String])?["reasoningEffort"], "extra")
-    XCTAssertEqual(workspace.modelStore.configuration?.preference.selectedModel, "codex-model")
   }
 
   func testInFlightAndUncertainSaveBlockSendsUntilAuthoritativeRefresh() async throws {
