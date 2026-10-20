@@ -143,9 +143,7 @@ Test the behavior at a real API, CLI, or runtime entry point:
   exposes;
 - verify the normal unavailable result rather than a 500;
 - verify valid siblings still work where the operation is a collection;
-- verify the missing entity grants no capability or credential;
-- separately test malformed caller input and local invariant failures according
-  to their own contracts.
+- verify the missing entity grants no capability or credential.
 
 #### Relationship to Fallbacks
 

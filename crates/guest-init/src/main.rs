@@ -25,12 +25,11 @@
 //!    Failure is fatal before the Guest services child is forked.
 //! 2. Configure PID 1 signals and block supervised signals
 //! 3. Fork child process
-//! 4. Child (PID 2): restore its inherited signal mask, run private duplex and guest control
+//! 4. Child (PID 2): restore its inherited signal mask and run guest control
 //! 5. Parent (PID 1): wait for child and shutdown events
 
 mod init;
 mod pid1;
-mod private_duplex;
 
 use std::time::Duration;
 
@@ -76,7 +75,7 @@ fn main() {
             }
         }
 
-        let code = match run_guest_services() {
+        let code = match guest_control_server::run(None) {
             Ok(()) => 0,
             Err(e) => {
                 guest_control_server::log("ERROR", &format!("Fatal: {e}"));
@@ -106,13 +105,4 @@ fn main() {
             std::process::exit(1);
         }
     }
-}
-
-/// Compose both private Guest services in PID 2. Start no threads before fork;
-/// failing to start the duplex worker is fatal before entering the control loop.
-fn run_guest_services() -> std::io::Result<()> {
-    let _duplex_worker = std::thread::Builder::new()
-        .name("gdup-connect".into())
-        .spawn(private_duplex::run)?;
-    guest_control_server::run(None)
 }

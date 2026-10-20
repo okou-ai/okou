@@ -3,7 +3,7 @@ import { Command, Option } from "commander";
 import chalk from "chalk";
 import {
   connectBuiltinConnectorManualGrant,
-  listConnectorAccountSummaries,
+  listConnectorAccountConnections,
   getCustomConnector,
   type BuiltinConnectorManualGrantAccountMutation,
 } from "../../lib/api/domains/connectors";
@@ -21,7 +21,6 @@ import {
   resolveManagementConnector,
   type AccountMutationOptions,
 } from "./management";
-import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 
 interface ConnectOptions extends AccountMutationOptions {
   readonly authMethod?: string;
@@ -41,12 +40,18 @@ async function builtinAccountMutation(
   options: ConnectOptions,
 ): Promise<BuiltinConnectorManualGrantAccountMutation> {
   if (options.add || options.reconnect) return accountMutation(options);
-  const summary = (await listConnectorAccountSummaries()).get(
-    connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-  );
-  if (summary?.defaultConnection)
-    return { intent: "reconnect", connectionId: summary.defaultConnection.id };
-  if (summary && summary.accountCount > 0)
+  const accounts = await listConnectorAccountConnections({
+    kind: "builtin",
+    connectorSlug,
+  });
+  if (accounts.state === "unavailable") {
+    throw new Error(
+      "Connector accounts are unavailable; inspect connector status.",
+    );
+  }
+  if (accounts.defaultConnection)
+    return { intent: "reconnect", connectionId: accounts.defaultConnection.id };
+  if (accounts.connections.length > 0)
     throw new Error(
       "Choose a saved account with --reconnect; no default account is selected.",
     );
@@ -184,16 +189,16 @@ Examples:
         values,
       );
       if (
-        connector.slug !== metadata.slug ||
-        (connector.connectionId !== undefined &&
-          connector.connectionId !== connector.id) ||
+        (connector.slug !== undefined && connector.slug !== metadata.slug) ||
+        (connector.authMethod !== undefined &&
+          connector.authMethod !== method.id) ||
         (account.intent === "reconnect" &&
-          connector.id !== account.connectionId)
+          connector.connectionId !== account.connectionId)
       )
         throw new Error("Connector account response identity mismatch.");
       const connectedAccount = await showConnectorAccount({
         target: { kind: "builtin", connectorSlug: metadata.slug },
-        connectionId: connector.connectionId ?? connector.id,
+        connectionId: connector.connectionId,
       });
       if (
         connectedAccount?.connectionStatus !== "connected" ||
@@ -203,12 +208,32 @@ Examples:
           "Connector account setup is incomplete or unavailable; inspect connector account show.",
         );
       if (options.json) {
-        console.log(JSON.stringify(connector, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              id: connectedAccount.id,
+              slug: metadata.slug,
+              authMethod: connectedAccount.authMethod,
+              externalId: connectedAccount.externalId,
+              externalUsername: connectedAccount.externalUsername,
+              externalEmail: connectedAccount.externalEmail,
+              oauthScopes: connectedAccount.oauthScopes,
+              connectionStatus: connectedAccount.connectionStatus,
+              reconnectReason: connectedAccount.reconnectReason,
+              tokenExpiresAt: connectedAccount.tokenExpiresAt,
+              createdAt: connectedAccount.createdAt,
+              updatedAt: connectedAccount.updatedAt,
+              connectionId: connectedAccount.id,
+            },
+            null,
+            2,
+          ),
+        );
         return;
       }
       console.log(chalk.green(`✓ ${metadata.label} connected`));
-      console.log(chalk.dim(`  Slug: ${connector.slug}`));
-      console.log(chalk.dim(`  Auth Method: ${connector.authMethod}`));
-      console.log(chalk.dim(`  Run: okou connector status ${connector.slug}`));
+      console.log(chalk.dim(`  Slug: ${metadata.slug}`));
+      console.log(chalk.dim(`  Auth Method: ${connectedAccount.authMethod}`));
+      console.log(chalk.dim(`  Run: okou connector status ${metadata.slug}`));
     }),
   );

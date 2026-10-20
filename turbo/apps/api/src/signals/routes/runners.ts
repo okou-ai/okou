@@ -579,11 +579,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const runnerHostname =
     auth.type === "official-runner" ? (body.data.runnerHostname ?? null) : null;
   const currentDate = nowDate();
-  // User PAT heartbeats are valid for their existing Runner flows, but cannot
-  // assert a host ingress signal used to authorize WSS ticket issuance.
-  const wssIngressServiceActive =
-    auth.type === "official-runner" &&
-    body.data.wssIngressServiceActive === true;
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
@@ -608,7 +603,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       heldHomeStates,
       activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
-      wssIngressServiceActive,
       lastSeenAt: currentDate,
     })
     .onConflictDoUpdate({
@@ -632,7 +626,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         heldHomeStates: sql`CASE WHEN ${runnerState.heldHomeStates} IS DISTINCT FROM excluded.held_home_states THEN excluded.held_home_states ELSE ${runnerState.heldHomeStates} END`,
         activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
-        wssIngressServiceActive,
         lastSeenAt: currentDate,
       },
       setWhere: or(

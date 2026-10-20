@@ -276,74 +276,6 @@ test("Wrong protocol, operation, product bot, origin and window cannot authorize
   expect(ids).toStrictEqual([99_003]);
 });
 
-test.each([
-  { status: 409 as const, outcome: "conflict" },
-  { status: 400 as const, outcome: "expired" },
-  { status: 403 as const, outcome: "prerequisite" },
-  { status: 404 as const, outcome: "failed" },
-])(
-  "Binding $status reaches the visible callback as $outcome, never linked",
-  async ({ status, outcome }) => {
-    context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
-      return respond(status, {
-        error: { code: "CONFLICT", message: "Cannot connect this account." },
-      });
-    });
-    const bridge = await begin();
-    bridge.send("telegram-auth-bridge-ready");
-    bridge.send("telegram-auth", { data: identity });
-    await expect(
-      screen.findByText("Cannot connect this account."),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect({ value: hasResult(bridge.outgoing, outcome) }).toStrictEqual({
-        value: true,
-      });
-    });
-    expect({ value: hasResult(bridge.outgoing, "linked") }).toStrictEqual({
-      value: false,
-    });
-    bridge.send("telegram-auth-ack", { stage: "result" });
-    await waitFor(() => {
-      expect(bridge.button).toBeEnabled();
-    });
-    expect({ value: bridge.popup.closed }).toStrictEqual({ value: false });
-  },
-);
-
-test("The callback receives interrupted when navigation aborts an in-flight binding, even if it commits", async () => {
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(integrationsTelegramContract.link, async ({ respond }) => {
-    requested.resolve();
-    await release.promise;
-    connected();
-    return respond(200, {
-      botUsername: "support_bot",
-      telegramUserId: identity.id,
-    });
-  });
-  const bridge = await begin();
-  bridge.send("telegram-auth-bridge-ready");
-  bridge.send("telegram-auth", { data: identity });
-  await requested.promise;
-  click(getAction("link", "Agents"));
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeInTheDocument();
-  expect({ value: hasResult(bridge.outgoing, "interrupted") }).toStrictEqual({
-    value: true,
-  });
-  release.resolve();
-  expect({ value: hasResult(bridge.outgoing, "linked") }).toStrictEqual({
-    value: false,
-  });
-  expect({ value: hasResult(bridge.outgoing, "cancelled") }).toStrictEqual({
-    value: false,
-  });
-  expect({ value: bridge.popup.closed }).toStrictEqual({ value: false });
-});
-
 test("Changing the initiating organization stops identity delivery and never binds under the next org", async () => {
   const bridge = await begin();
   bridge.send("telegram-auth-bridge-ready");
@@ -441,19 +373,22 @@ test("An unacknowledged result is repeated on readiness and stops after its corr
 });
 
 test.each(["account", "session"])(
-  "An initiating %s change during POST reports interrupted even when the old server request finishes",
+  "An initiating %s change during POST ignores the old server request result",
   async (change) => {
     const requested = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
+    const responseReturned = context.mocks.deferred<void>();
     context.mocks.api(
       integrationsTelegramContract.link,
       async ({ respond }) => {
         requested.resolve();
         await release.promise;
-        return respond(200, {
+        const response = respond(200, {
           botUsername: "support_bot",
           telegramUserId: identity.id,
         });
+        responseReturned.resolve();
+        return response;
       },
     );
     const bridge = await begin();
@@ -470,13 +405,9 @@ test.each(["account", "session"])(
       );
       context.mocks.clerk().stateChanged();
     });
-    release.resolve();
-    await waitFor(() => {
-      expect({
-        value: hasResult(bridge.outgoing, "interrupted"),
-      }).toStrictEqual({
-        value: true,
-      });
+    await act(async () => {
+      release.resolve();
+      await responseReturned.promise;
     });
     expect({ value: hasResult(bridge.outgoing, "linked") }).toStrictEqual({
       value: false,

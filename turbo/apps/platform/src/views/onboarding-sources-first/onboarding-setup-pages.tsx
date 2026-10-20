@@ -180,16 +180,6 @@ function TeamPoints() {
 function InviteOutcome({ invite }: { readonly invite: SourcesFirstInvite }) {
   const { t } = useTranslation();
 
-  if (invite.status === "pending") {
-    return (
-      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-        {t(($) => {
-          return $.onboarding.sourcesFirst.team.sending;
-        })}
-      </span>
-    );
-  }
   if (invite.status === "invited") {
     return (
       <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -253,10 +243,12 @@ function InviteList({
 function InviteEmailForm({
   malformed,
   sendable,
+  sending,
   onInvite,
 }: {
   readonly malformed: boolean;
   readonly sendable: boolean;
+  readonly sending: boolean;
   readonly onInvite: () => void;
 }) {
   const { t } = useTranslation();
@@ -283,6 +275,7 @@ function InviteEmailForm({
             type="email"
             autoComplete="off"
             value={ui.inviteEmail}
+            disabled={sending}
             placeholder={t(($) => {
               return $.onboarding.sourcesFirst.team.placeholder;
             })}
@@ -314,11 +307,16 @@ function InviteEmailForm({
         <Button
           type="button"
           onClick={onInvite}
-          disabled={!sendable}
+          disabled={!sendable || sending}
           className="max-sm:h-12 max-sm:text-base"
         >
+          {sending && (
+            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+          )}
           {t(($) => {
-            return $.onboarding.sourcesFirst.team.invite;
+            return sending
+              ? $.onboarding.sourcesFirst.team.sending
+              : $.onboarding.sourcesFirst.team.invite;
           })}
         </Button>
       </div>
@@ -331,8 +329,7 @@ export function OnboardingTeamPage() {
   const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
   const flow = useSourcesFirstFlow("team");
   const ui = useGet(sourcesFirstUi$);
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const sendInvite = useSet(sendSourcesFirstInvite$);
+  const [invitation, sendInvite] = useLoadableSet(sendSourcesFirstInvite$);
   const pageSignal = useGet(pageSignal$);
   const address = ui.inviteEmail.trim();
   const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
@@ -347,7 +344,7 @@ export function OnboardingTeamPage() {
   });
 
   const invite = (): void => {
-    if (!sendable) {
+    if (!sendable || invitation.state === "loading") {
       return;
     }
     // A refused address is sent again under its own entry, so only a new one
@@ -355,9 +352,6 @@ export function OnboardingTeamPage() {
     const known = flow.draft.invites.some((entry) => {
       return entry.email === address;
     });
-    // The address moves into the list, so the field is free for the next one
-    // while the API is still answering for this one.
-    updateUi({ inviteEmail: "", inviteEmailLeft: false });
     detach(sendInvite(address, pageSignal), Reason.DomCallback);
     // The funnel counts invitees; the addresses themselves stay in the draft.
     captureInviteAdded(
@@ -398,6 +392,7 @@ export function OnboardingTeamPage() {
         <InviteEmailForm
           malformed={malformed}
           sendable={sendable}
+          sending={invitation.state === "loading"}
           onInvite={invite}
         />
         {flow.draft.invites.length > 0 ? (

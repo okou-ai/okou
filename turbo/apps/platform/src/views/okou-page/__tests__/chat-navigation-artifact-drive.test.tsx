@@ -283,28 +283,6 @@ function installDriveMocks(
     },
   );
   targetContext.mocks.api(
-    connectorAccountsContract.summaries,
-    ({ respond }) => {
-      return respond(200, {
-        summaries:
-          connectionState === "not-connected"
-            ? []
-            : [
-                {
-                  target: {
-                    kind: "builtin",
-                    connectorSlug: "google-drive",
-                  },
-                  accountCount: 1,
-                  attentionCount:
-                    connectionState === "reconnect-required" ? 1 : 0,
-                  defaultConnection: null,
-                },
-              ],
-      });
-    },
-  );
-  targetContext.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
       const knownConnection =

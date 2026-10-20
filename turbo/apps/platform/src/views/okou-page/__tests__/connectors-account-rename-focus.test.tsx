@@ -18,16 +18,13 @@ function mockRenameAccounts({
   accountCount = 3,
   renameResponse,
   refreshResponse,
-  failFirstRefresh = false,
 }: {
   readonly accountCount?: number;
-  readonly renameResponse?: Promise<"success" | "error">;
+  readonly renameResponse?: Promise<void>;
   readonly refreshResponse?: Promise<void>;
-  readonly failFirstRefresh?: boolean;
 } = {}) {
   let accounts = mockGithubAccounts(context, accountCount);
   let renamed = false;
-  let refreshFailed = false;
   let submittedRename: {
     readonly connectionId: string;
     readonly displayName: string | null;
@@ -46,12 +43,6 @@ function mockRenameAccounts({
         await refreshResponse;
         if (!refreshReturned.settled()) {
           refreshReturned.resolve();
-        }
-        if (failFirstRefresh && !refreshFailed) {
-          refreshFailed = true;
-          return respond(400, {
-            error: { code: "UNAVAILABLE", message: "Account list unavailable" },
-          });
         }
       }
       const search = query.search?.toLowerCase();
@@ -79,15 +70,7 @@ function mockRenameAccounts({
       if (!renameStarted.settled()) {
         renameStarted.resolve();
       }
-      const result = await renameResponse;
-      if (result === "error") {
-        if (!renameReturned.settled()) {
-          renameReturned.resolve();
-        }
-        return respond(400, {
-          error: { code: "UNAVAILABLE", message: "Account rename unavailable" },
-        });
-      }
+      await renameResponse;
       const account = accounts.find((candidate) => {
         return candidate.id === params.connectionId;
       });
@@ -278,7 +261,7 @@ test.each(["keyboard", "pointer"] as const)(
 );
 
 test("Restore the renamed account actions only after the refreshed list arrives", async () => {
-  const response = context.mocks.deferred<"success" | "error">();
+  const response = context.mocks.deferred<void>();
   const refresh = context.mocks.deferred<void>();
   const fixture = mockRenameAccounts({
     renameResponse: response.promise,
@@ -298,7 +281,7 @@ test("Restore the renamed account actions only after the refreshed list arrives"
   expect(getConnectorAction("button", "Save", manager)).toBeDisabled();
   expect(input).toHaveFocus();
 
-  response.resolve("success");
+  response.resolve();
   await fixture.refreshStarted;
   expect(input).toHaveFocus();
   expect(
@@ -311,34 +294,6 @@ test("Restore the renamed account actions only after the refreshed list arrives"
   });
   await user.keyboard("{Enter}");
   await screen.findByRole("menu");
-});
-
-test("Keep a failed rename draft and its keyboard focus usable", async () => {
-  const response = context.mocks.deferred<"success" | "error">();
-  const fixture = mockRenameAccounts({ renameResponse: response.promise });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const input = await enterRename(user, manager, "keyboard");
-  await user.keyboard("{End} draft{Enter}");
-  await fixture.renameStarted;
-  expect(getConnectorAction("button", "Save", manager)).toBeDisabled();
-  response.resolve("error");
-
-  await screen.findByText("Account rename unavailable");
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Save", manager)).toBeEnabled();
-  });
-  expect(input).toHaveValue("Work 1 draft");
-  expect(input).toHaveFocus();
-  await user.keyboard("{End} retry");
-  expect(input).toHaveValue("Work 1 draft retry");
-  await user.tab();
-  expect(getConnectorAction("button", "Cancel", manager)).toHaveFocus();
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(accountActions(manager, "Work 1")).toHaveFocus();
-  });
 });
 
 test("Focus account search when the saved name no longer matches its results", async () => {
@@ -387,32 +342,8 @@ test("Focus account search when the saved name no longer matches its results", a
   expect(search).toHaveFocus();
 });
 
-test("Keep the rename form usable when refreshing the saved accounts fails", async () => {
-  mockRenameAccounts({ failFirstRefresh: true });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const input = await enterRename(user, manager, "keyboard");
-  await user.keyboard("{End} draft");
-  await user.keyboard("{Enter}");
-
-  await within(manager).findByText(
-    "Accounts are unavailable for this connector.",
-  );
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Save", manager)).toBeEnabled();
-    expect(input).toHaveFocus();
-  });
-  expect(input).toHaveValue("Work 1 draft");
-  await user.keyboard("{End} retry");
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(accountActions(manager, "Work 1 draft retry")).toHaveFocus();
-  });
-});
-
 test("Keep focus outside a manager closed during a delayed rename", async () => {
-  const response = context.mocks.deferred<"success" | "error">();
+  const response = context.mocks.deferred<void>();
   const fixture = mockRenameAccounts({ renameResponse: response.promise });
   const user = userEvent.setup({ delay: null });
   await setupPage({ context, path: "/connectors?keywords=github" });
@@ -431,7 +362,7 @@ test("Keep focus outside a manager closed during a delayed rename", async () => 
   expect(outsideFocus).not.toBe(document.body);
 
   await act(async () => {
-    response.resolve("success");
+    response.resolve();
     await fixture.renameReturned;
   });
   expect(outsideFocus).toHaveFocus();
@@ -483,7 +414,7 @@ test("A search changed during save determines focus without a later stale handof
 });
 
 test("An old rename response cannot clear or steal focus from a newly opened edit", async () => {
-  const response = context.mocks.deferred<"success" | "error">();
+  const response = context.mocks.deferred<void>();
   const fixture = mockRenameAccounts({ renameResponse: response.promise });
   const user = userEvent.setup({ delay: null });
   await setupPage({ context, path: "/connectors?keywords=github" });
@@ -500,7 +431,7 @@ test("An old rename response cannot clear or steal focus from a newly opened edi
   await user.keyboard("{End} new");
 
   await act(async () => {
-    response.resolve("success");
+    response.resolve();
     await fixture.renameReturned;
   });
   expect(input).toHaveFocus();

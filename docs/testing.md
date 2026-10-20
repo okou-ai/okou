@@ -44,6 +44,28 @@ cover the old/new combinations that can coexist during rollout. Follow
 [deployment compatibility](deployment-compatibility.md); those boundaries
 remain part of the runtime contract.
 
+### Avoid Tombstone Tests and Low-Value Negative Assertions
+
+Prefer positive assertions of the current user-visible behavior. When removing
+behavior, delete its dedicated tests and unused fixtures with the code. Do not
+replace them with tombstone tests asserting that a retired route returns 404,
+a deleted field is absent, an old format is rejected, or an internal path is
+never called. When replacing behavior, update the existing test to exercise the
+new contract instead of retaining assertions about the removed one. See
+[retired behavior](fallback.md#1-do-not-write-negative-tests-against-old-code).
+
+Avoid negative assertions and separate error-case tests that merely duplicate
+positive coverage, re-test a third-party validator, or defend against states
+the owning type, schema, or writer cannot produce. Do not build missing-field,
+invalid-input, or defensive error matrices without an independent product
+contract. Prefer simplifying existing tests over adding more cases.
+
+Keep a negative assertion only when the negative outcome itself is a meaningful
+current contract, such as denied unauthorized access or credentials not leaking.
+Construct it through the owning production boundary and synchronize with an
+observable causal completion point; do not use it solely to prove old code is
+gone or invent private state to preserve it.
+
 ## Dependencies and Ownership
 
 - Mock external services at their boundary. Use MSW for HTTP rather than

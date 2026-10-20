@@ -6,7 +6,7 @@ import {
 import { Command, InvalidArgumentError, Option } from "commander";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
-  listConnectorCatalogStatus,
+  listConnectorCatalog,
   listCustomConnectors,
 } from "../../lib/api/domains/connectors";
 import { connectorDiscoveryItems } from "./discovery";
@@ -78,7 +78,7 @@ export function accountMutation(options: AccountMutationOptions) {
 
 export async function resolveManagementConnector(selector: string) {
   const [{ connectors }, custom] = await Promise.all([
-    listConnectorCatalogStatus(),
+    listConnectorCatalog(),
     listCustomConnectors(),
   ]);
   const connector = findConnectorBySelector(

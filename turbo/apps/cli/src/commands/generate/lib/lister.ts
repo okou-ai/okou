@@ -1,13 +1,9 @@
 import chalk from "chalk";
-import type {
-  ConnectorCatalogItem,
-  ConnectorCatalogStatus,
-} from "../../../lib/api/domains/connectors";
+import type { ConnectorCatalogItem } from "../../../lib/api/domains/connectors";
 import { getAgentUserBuiltinConnectors } from "../../../lib/api/domains/agents";
 import {
   listConnectorCatalog,
-  listConnectorCatalogStatus,
-  listConnectorAccountSummaries,
+  listConnectedConnectors,
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import {
@@ -16,12 +12,6 @@ import {
 } from "../../../lib/command/paid-tools";
 import { getOkouAgentId } from "../../../lib/okou-env";
 import { connectorActionUrl } from "../../connector/action-url";
-import { connectorAccountCliInventoryLabel } from "../../connector/account-label";
-import {
-  memberConnectorFacts,
-  memberConnectorStatusText,
-  type MemberConnectorFacts,
-} from "../../connector/member-status";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountLookups,
@@ -128,8 +118,7 @@ const GENERATION_TYPE_LABELS: Record<GenerationType, string> = {
 type CandidateStatus =
   | "ready"
   | "needs-reconnect"
-  | "needs-scope-update"
-  | "needs-account-review"
+  | "saved-accounts"
   | "not-authorized"
   | "not-connected"
   | "unavailable-for-run";
@@ -174,85 +163,25 @@ function getGenerationConnectors<T extends ConnectorCatalogItem>(
     });
 }
 
-function getCurrentAction(
-  status: CandidateStatus,
-  connectorSlug: string,
-  label: string,
-  platformOrigin: string,
-): { actionLabel?: string; actionUrl?: string } {
-  if (status === "needs-reconnect") {
-    return {
-      actionLabel: `Reconnect ${label}`,
-      actionUrl: `${platformOrigin}/connectors`,
-    };
-  }
-
-  if (status === "needs-account-review") {
-    return {
-      actionLabel: `Manage ${label} accounts`,
-      actionUrl: `${platformOrigin}/connectors`,
-    };
-  }
-
-  if (status === "needs-scope-update") {
-    return {
-      actionLabel: `Update ${label} permissions`,
-      actionUrl: `${platformOrigin}/connectors/${connectorSlug}/connect`,
-    };
-  }
-
-  if (status === "not-connected") {
-    return {
-      actionLabel: `Connect ${label}`,
-      actionUrl: `${platformOrigin}/connectors/${connectorSlug}/connect`,
-    };
-  }
-
-  return {};
-}
-
 function toCurrentCandidate(params: {
-  connector: ConnectorCatalogStatus;
-  facts: MemberConnectorFacts;
+  connector: ConnectorCatalogItem;
+  hasSavedAccounts: boolean;
   platformOrigin: string;
 }): GenerationCandidate {
-  const { connector, facts, platformOrigin } = params;
-  const connectorSlug = connector.slug;
-
-  let status: CandidateStatus;
-  let reason: string;
-
-  if (facts.memberStatus === "reconnect-required") {
-    status = "needs-reconnect";
-    reason = "connected, reconnect required";
-  } else if (facts.memberStatus === "not-connected") {
-    status = "not-connected";
-    reason = "not connected";
-  } else if (facts.memberStatus !== "connected") {
-    status = "needs-account-review";
-    reason = memberConnectorStatusText(facts);
-  } else if (facts.scopeMismatch) {
-    status = "needs-scope-update";
-    reason = "permissions update required";
-  } else {
-    status = "ready";
-    reason = "connected; agent authorization was not checked";
-  }
-
-  const account = facts.accountSummary?.defaultConnection;
+  const { connector, hasSavedAccounts, platformOrigin } = params;
   return {
-    connectorSlug,
+    connectorSlug: connector.slug,
     label: connector.label,
-    status,
-    reason,
-    account: account
-      ? connectorAccountCliInventoryLabel({
-          ...account,
-          connectionId: account.id,
-        })
-      : undefined,
-    authMethod: account?.authMethod,
-    ...getCurrentAction(status, connectorSlug, connector.label, platformOrigin),
+    status: hasSavedAccounts ? "saved-accounts" : "not-connected",
+    reason: hasSavedAccounts
+      ? `saved accounts; inspect with okou connector status ${connector.slug}`
+      : "no saved accounts",
+    actionLabel: hasSavedAccounts
+      ? `Manage ${connector.label} accounts`
+      : `Connect ${connector.label}`,
+    actionUrl: hasSavedAccounts
+      ? `${platformOrigin}/connectors`
+      : `${platformOrigin}/connectors/${connector.slug}/connect`,
   };
 }
 
@@ -440,7 +369,7 @@ function renderText(params: {
     unavailableMessage,
   } = params;
   const label = GENERATION_TYPE_LABELS[generationType];
-  const scope = agentId ? "for current agent" : "(connected connectors)";
+  const scope = runBound ? "for current run" : "(saved-account directory)";
 
   console.log(`${label} generation choices ${scope}`);
   console.log("");
@@ -455,6 +384,13 @@ function renderText(params: {
     console.log("");
   }
 
+  if (!runBound) {
+    console.log(
+      "Saved accounts may need setup, reconnect, or permission updates. Inspect connector status before use; directory membership does not establish runtime availability or agent authorization.",
+    );
+    console.log("");
+  }
+
   const hasBuiltInCommand = getBuiltInCommand(generationType) !== null;
   const showConnectorSummary =
     ready.length > 0 || !hasBuiltInCommand || showAll;
@@ -463,7 +399,11 @@ function renderText(params: {
     if (ready.length > 0) {
       renderRows(ready);
     } else {
-      console.log(`  No ready ${generationType} generation connectors found.`);
+      console.log(
+        runBound
+          ? `  No ready ${generationType} generation connectors found.`
+          : `  No ${generationType} generation connectors with saved accounts found.`,
+      );
     }
   }
 
@@ -492,7 +432,7 @@ type GenerationCatalogSource =
     }
   | {
       readonly kind: "current";
-      readonly connectors: readonly ConnectorCatalogStatus[];
+      readonly connectors: readonly ConnectorCatalogItem[];
     }
   | { readonly kind: "none"; readonly connectors: readonly [] };
 
@@ -503,12 +443,8 @@ async function loadGenerationCatalog(
   if (!connectorGenerationType) {
     return { kind: "none", connectors: [] };
   }
-  if (runBound) {
-    const { connectors } = await listConnectorCatalog();
-    return { kind: "run", connectors };
-  }
-  const { connectors } = await listConnectorCatalogStatus();
-  return { kind: "current", connectors };
+  const { connectors } = await listConnectorCatalog();
+  return { kind: runBound ? "run" : "current", connectors };
 }
 
 export async function runLister(
@@ -560,21 +496,30 @@ export async function runLister(
       connectorGenerationType,
       catalog.connectors,
     );
-    const summaries =
-      connectors.length > 0 ? await listConnectorAccountSummaries() : new Map();
+    const directory =
+      connectors.length > 0 ? await listConnectedConnectors() : null;
+    const savedSlugs = new Set(
+      directory?.builtinConnectors.map((connector) => {
+        return connector.slug;
+      }),
+    );
     candidates = connectors.map((connector) => {
       return toCurrentCandidate({
         connector,
-        facts: memberConnectorFacts(connector, summaries),
+        hasSavedAccounts: savedSlugs.has(connector.slug),
         platformOrigin,
       });
     });
   }
   const ready = candidates.filter((candidate) => {
-    return candidate.status === "ready";
+    return (
+      candidate.status === "ready" || candidate.status === "saved-accounts"
+    );
   });
   const other = candidates.filter((candidate) => {
-    return candidate.status !== "ready";
+    return (
+      candidate.status !== "ready" && candidate.status !== "saved-accounts"
+    );
   });
   renderText({
     generationType,

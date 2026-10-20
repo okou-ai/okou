@@ -284,6 +284,7 @@ jobs:
           # Syntax checks recursively cover the owned directories above.
           # ShellCheck keeps an explicit allowlist, with source-aware checks below.
           shellcheck \
+            .github/scripts/artifacts/build-okou-cli-artifact.sh \
             .github/scripts/artifacts/build-okou-desktop-artifact.sh \
             .github/scripts/cancel-superseded-merge-group-runs.sh \
             .github/scripts/checks/check-release-please-component-releases.sh \
@@ -316,6 +317,7 @@ jobs:
             crates/runner/tests/behavior/runner-behavior-*.sh \
             crates/sandbox-firecracker/tests/native/runner-behavior-*.sh \
             .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
+            .github/scripts/artifacts/smoke-installed-okou-cli.sh \
             .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
             .github/scripts/runner/with-runner-lifecycle-lock.sh \
@@ -350,7 +352,6 @@ jobs:
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \
-            .github/scripts/tests/provision-runner-caddy-test.sh \
             .github/scripts/tests/release-tool-downloads-test.sh \
             .github/scripts/tests/resolve-desktop-version-change-test.sh \
             .github/scripts/tests/runner-attribution-ansible-test.sh \

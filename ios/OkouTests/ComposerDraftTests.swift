@@ -319,6 +319,40 @@ final class ComposerDraftTests: XCTestCase {
     add(attachment)
     XCTAssertNotNil(composer.conflictingRemote)
   }
+
+  func testRecommendedTextPreservesRichDraftAttachmentsAndConflictRecovery() async throws {
+    let server = DraftServer(remote: try richDraft())
+    let composer = server.composer(storage: server.storage())
+    defer { composer.close() }
+    await composer.synchronize()
+    try await eventually { composer.attachments.isReady }
+    let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
+    let attachments = composer.attachments.savedItems
+    let host = UIHostingController(
+      rootView: ChatComposerTextInput(
+        text: Binding(get: { composer.text }, set: { composer.text = $0 }),
+        isFocused: .constant(true), acceptsImages: true, isCurrent: { true }, pasteImages: { _ in },
+        editor: composer.editor))
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 300)
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { unmount(window) }
+    try await eventually { composer.editor.view?.window != nil }
+    composer.editor.selectOrAppendText("Compare the alternatives")
+    try await eventually { composer.text.hasSuffix("\nCompare the alternatives") }
+    XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
+    XCTAssertEqual(composer.attachments.savedItems, attachments)
+    server.state.value.withLock { $0.remote = textDraft("Edited on another device") }
+    await composer.synchronize()
+    XCTAssertNotNil(composer.conflictingRemote)
+    XCTAssertTrue(composer.text.hasSuffix("Compare the alternatives"))
+    composer.keepLocal()
+    await composer.synchronize()
+    XCTAssertNil(composer.conflictingRemote)
+    XCTAssertEqual(server.state.value.withLock { $0.remote }, composer.value)
+  }
 }
 
 private func textDraft(_ text: String) -> ComposerDraft {

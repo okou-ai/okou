@@ -1,7 +1,6 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
-import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import {
   runnersCancellationContract,
@@ -39,11 +38,6 @@ export const rustRouteBindings = [
     route: runnersRunStartupContract.setStartup,
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],
     rustConstName: "SET_STARTUP",
-  },
-  {
-    route: runnerWssTicketsContract.consume,
-    rustModulePath: ["runners", "wss"],
-    rustConstName: "CONSUME",
   },
   ...(["resolve", "check"] as const).map((action) => {
     return {

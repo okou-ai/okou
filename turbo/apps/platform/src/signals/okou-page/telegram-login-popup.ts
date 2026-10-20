@@ -1,5 +1,4 @@
 import { toast } from "@okouai/ui/components/ui/sonner";
-import type { TELEGRAM_AUTH_CALLBACK_OUTCOMES } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { i18n } from "../../i18n/index.ts";
 import { now } from "../../lib/time.ts";
 import { createDeferredPromise, setLoop } from "../utils.ts";
@@ -9,8 +8,7 @@ import {
 } from "./telegram-auth-parser.ts";
 
 const TELEGRAM_OAUTH_BASE_URL = "https://oauth.telegram.org/auth";
-export type TelegramAuthOutcome =
-  (typeof TELEGRAM_AUTH_CALLBACK_OUTCOMES)[number];
+type TelegramAuthOutcome = "linked" | "cancelled";
 
 export function openTelegramLoginTab(): Window {
   const tab = window.open("about:blank", "_blank");
@@ -137,7 +135,7 @@ export function requestTelegramAuth(
   };
   const interrupt = () => {
     // Aborting transport cannot establish whether an in-flight POST committed.
-    if (ready) {
+    if (ready && !callbackIdentity) {
       send("telegram-auth-result", { status: "interrupted" });
     }
     dispose();

@@ -17,7 +17,7 @@ use tracing_test_support::CapturedEvents;
 
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-use runner_provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTier};
+use runner_provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTarget};
 use runner_types::types::ExecutionContext;
 
 fn exact_generation_candidate(
@@ -30,7 +30,7 @@ fn exact_generation_candidate(
         .with_history_generation_run_id(Some(history_generation_run_id))
         .with_runner_preference(ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTier::ExactSandbox,
+            RunnerPreferenceTarget::ExactSandbox,
             std::time::Instant::now() + Duration::from_secs(30),
         ))
 }
@@ -86,14 +86,14 @@ fn reuse_preparation_requests(
 #[tokio::test]
 async fn exact_reuse_restores_guest_while_claim_is_blocked() {
     for tier in [
-        RunnerPreferenceTier::ExactSandbox,
-        RunnerPreferenceTier::HomeCache,
+        RunnerPreferenceTarget::ExactSandbox,
+        RunnerPreferenceTarget::HomeCache,
     ] {
         assert_exact_reuse_claim_progresses_during_status_write(tier).await;
     }
 }
 
-async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPreferenceTier) {
+async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPreferenceTarget) {
     let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let status_write_started = Arc::new(tokio::sync::Notify::new());
     let release_status_write = Arc::new(tokio::sync::Semaphore::new(0));

@@ -12,7 +12,6 @@ import { mockNow } from "../../../__tests__/time.ts";
 import {
   ACME_CONNECTOR_ID,
   FEISHU_CONNECTOR_ID,
-  accountSummary,
   builtinConnector,
   connectorAccount,
   httpConnector,
@@ -89,10 +88,6 @@ test("Saved connectors with unavailable defaults stay visible for account repair
       },
     ],
     customConnectors: [acme()],
-    accountSummaries: [
-      accountSummary(builtinTarget, builtinAccounts),
-      accountSummary(customTarget, customAccounts),
-    ],
     accounts: [...builtinAccounts, ...customAccounts],
   });
   const dialog = await openDirectory();
@@ -122,10 +117,7 @@ test("Healthy saved accounts stay connected while zero-account connectors remain
       builtinConnector({ slug: "notion", label: "Notion", connected: false }),
     ],
     customConnectors: [acme(true)],
-    accountSummaries: [
-      accountSummary(builtinTarget, savedAccounts(builtinTarget)),
-      accountSummary(customTarget, savedAccounts(customTarget)),
-    ],
+    accounts: [...savedAccounts(builtinTarget), ...savedAccounts(customTarget)],
   });
   const dialog = await openDirectory();
   await within(dialog).findByText("Notion");
@@ -176,7 +168,6 @@ async function openExpiringBuiltinDirectory(refreshable: boolean) {
       { ...catalog, authMethodSupportsRefresh: refreshable, tokenExpiresAt },
     ],
     accounts,
-    accountSummaries: [accountSummary(target, accounts)],
   });
   const directory = await openDirectory();
   const search = within(directory).getByPlaceholderText("Find connectors...");
@@ -232,7 +223,7 @@ test("A saved custom account with incomplete setup is visible without claiming i
   } as const;
   installComposerConnectorFixture({
     customConnectors: [acme()],
-    accountSummaries: [accountSummary(target, savedAccounts(target))],
+    accounts: savedAccounts(target),
   });
   const dialog = await openDirectory();
   await openCustom(dialog);
@@ -277,7 +268,7 @@ test("Pending connected membership does not expose an ordinary add action as if 
   const gate = context.mocks.deferred<void>();
   installComposerConnectorFixture({
     customConnectors: [acme()],
-    accountSummaries: [],
+    accounts: [],
   });
   context.mocks.api(connectedConnectorsContract.list, async ({ respond }) => {
     await gate.promise;
@@ -299,7 +290,7 @@ test("Connected inventory failure is retryable and leaves managed Feishu in its 
     kind: "custom",
     customConnectorId: ACME_CONNECTOR_ID,
   } as const;
-  const summary = accountSummary(target, savedAccounts(target));
+  const accounts = savedAccounts(target);
   const fixture = installComposerConnectorFixture({
     customConnectors: [
       acme(),
@@ -312,7 +303,7 @@ test("Connected inventory failure is retryable and leaves managed Feishu in its 
         providerAdapter: "feishu",
       }),
     ],
-    accountSummaries: [summary],
+    accounts,
   });
   context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
     return respond(503, {
@@ -377,7 +368,6 @@ test("A saved builtin target with no default sends the user to account managemen
     catalog: [
       builtinConnector({ slug: "github", label: "GitHub", connected: false }),
     ],
-    accountSummaries: [accountSummary(target, accounts)],
     accounts,
   });
   const dialog = await openDirectory();
@@ -440,7 +430,6 @@ test.each([true, false])(
           },
         },
       ],
-      accountSummaries: [accountSummary(target, accounts)],
       accounts,
     });
     const dialog = await openDirectory();
@@ -466,9 +455,7 @@ test("Saved builtin targets remain manageable when definitions omit account proj
   const builtin = builtinConnector({ slug: "github", label: "GitHub" });
   installComposerConnectorFixture({
     catalog: [builtin],
-    accountSummaries: [
-      accountSummary(builtinTarget, savedAccounts(builtinTarget)),
-    ],
+    accounts: savedAccounts(builtinTarget),
   });
   const {
     connected: _builtinConnected,
@@ -505,7 +492,7 @@ test("A custom definition without account projections does not claim a reconnect
   const connector = acme(true);
   installComposerConnectorFixture({
     customConnectors: [connector],
-    accountSummaries: [accountSummary(target, savedAccounts(target))],
+    accounts: savedAccounts(target),
   });
   const {
     connected: _connected,

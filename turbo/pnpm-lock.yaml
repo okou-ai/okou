@@ -1057,9 +1057,6 @@ importers:
       htmlparser2:
         specifier: ^10.1.0
         version: 10.1.0
-      signal-timers:
-        specifier: ^1.0.5
-        version: 1.0.5
       yaml:
         specifier: ^2.9.0
         version: 2.9.0

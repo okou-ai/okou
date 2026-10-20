@@ -11,8 +11,6 @@ import type {
 import {
   CONNECTOR_ACCOUNT_LIST_MAX_LIMIT,
   connectorAccountsContract,
-  connectorAccountTargetKey,
-  type ConnectorAccountSummary,
   type ConnectorAccountMutationIntent,
   type ConnectorAccountConnection,
   type ConnectorAccountInspectionResult,
@@ -20,10 +18,14 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorManualGrantContract,
+  connectedConnectorsContract,
+  type ConnectedConnectors,
+} from "@okouai/api-contracts/contracts/connected-connectors";
+import {
   builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogPermissionDetail,
@@ -31,7 +33,6 @@ import {
 import {
   connectorCatalogReaderContract as connectorCatalogContract,
   type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-  type PublicConnectorCatalogStatusReaderResponse as PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import {
   CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
@@ -81,14 +82,14 @@ export type ConnectorCatalogItem =
   PublicConnectorCatalogListResponse["connectors"][number];
 export type ConnectorCatalogStatus = PublicConnectorCatalogStatusItem;
 type ConnectorCatalogListResponse = PublicConnectorCatalogListResponse;
-type ConnectorCatalogStatusResponse = PublicConnectorCatalogStatusResponse;
 export type ConnectorCatalogPermissionDetail =
   PublicConnectorCatalogPermissionDetail;
 
-type ConnectorAccountConnectionsResult =
+export type ConnectorAccountConnectionsResult =
   | {
       readonly state: "available";
       readonly connections: readonly ConnectorAccountConnection[];
+      readonly defaultConnection: ConnectorAccountConnection | null;
     }
   | { readonly state: "unavailable" };
 
@@ -97,31 +98,23 @@ export type BuiltinConnectorManualGrantAccountMutation = Extract<
   { intent: "add" | "reconnect" }
 >;
 
-export async function listConnectorAccountSummaries(): Promise<
-  ReadonlyMap<string, ConnectorAccountSummary>
-> {
+export async function listConnectedConnectors(): Promise<ConnectedConnectors> {
   const config = await getClientConfig();
-  const client = initClient(connectorAccountsContract, {
+  const client = initClient(connectedConnectorsContract, {
     ...config,
     validateResponse: true,
   });
-  const result = await client.summaries({
-    headers: {},
-    query: { includeScopeMismatch: "true" },
-  });
+  const result = await client.list({ headers: {} });
   if (result.status !== 200) {
-    handleError(result, "Failed to read connector account summaries");
+    handleError(result, "Failed to read connected connector directory");
   }
-  return new Map(
-    result.body.summaries.map((summary) => {
-      return [connectorAccountTargetKey(summary.target), summary] as const;
-    }),
-  );
+  return result.body;
 }
 
 export async function listConnectorAccountConnections(
   target: ConnectorAccountTarget,
   search?: string,
+  options: { readonly includeScopeMismatch?: boolean } = {},
 ): Promise<ConnectorAccountConnectionsResult> {
   const config = await getClientConfig();
   const client = initClient(connectorAccountsContract, {
@@ -130,6 +123,7 @@ export async function listConnectorAccountConnections(
   });
   const connections: ConnectorAccountConnection[] = [];
   let cursor: string | null = null;
+  let defaultConnection: ConnectorAccountConnection | null = null;
 
   do {
     const paging = {
@@ -143,6 +137,9 @@ export async function listConnectorAccountConnections(
             ...paging,
             kind: "builtin" as const,
             connectorSlug: target.connectorSlug,
+            ...(options.includeScopeMismatch
+              ? { includeScopeMismatch: "true" as const }
+              : {}),
           }
         : {
             ...paging,
@@ -156,11 +153,17 @@ export async function listConnectorAccountConnections(
     if (result.status !== 200) {
       handleError(result, "Failed to list connector accounts");
     }
+    if (result.body.defaultConnection === undefined) {
+      throw new Error(
+        "Connector account response is missing the default account selection.",
+      );
+    }
+    if (cursor === null) defaultConnection = result.body.defaultConnection;
     connections.push(...result.body.connections);
     cursor = result.body.nextCursor;
   } while (cursor);
 
-  return { state: "available", connections };
+  return { state: "available", connections, defaultConnection };
 }
 
 export async function inspectConnectorAccounts(
@@ -211,17 +214,22 @@ export async function listConnectorCatalog(): Promise<ConnectorCatalogListRespon
   handleError(result, "Failed to list connector catalog");
 }
 
-export async function listConnectorCatalogStatus(): Promise<ConnectorCatalogStatusResponse> {
+export async function getConnectorCatalogDetail(
+  connectorSlug: string,
+): Promise<ConnectorCatalogStatus | null> {
   const config = await getClientConfig();
-  const client = initClient(connectorCatalogContract, config);
-
-  const result = await client.status({ headers: {} });
-
-  if (result.status === 200) {
-    return result.body;
+  const client = initClient(connectorCatalogContract, {
+    ...config,
+    validateResponse: true,
+  });
+  const result = await client.get({ params: { connectorSlug } });
+  if (result.status === 404) return null;
+  if (result.status !== 200)
+    handleError(result, "Failed to read connector catalog detail");
+  if (result.body.connector.slug !== connectorSlug) {
+    throw new Error("Connector catalog response identity mismatch.");
   }
-
-  handleError(result, "Failed to list connector catalog status");
+  return result.body.connector;
 }
 
 export async function getConnectorCatalogPermissions(

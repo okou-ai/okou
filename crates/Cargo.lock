@@ -2092,7 +2092,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2110,24 +2110,6 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-quote",
- "tempfile",
- "tokio",
- "tokio-util",
- "uuid",
-]
-
-[[package]]
-name = "guest-channel-server"
-version = "0.5.4"
-dependencies = [
- "api-contracts",
- "base64 0.23.1",
- "futures-util",
- "getrandom 0.4.3",
- "guest-contracts",
- "libc",
- "serde",
- "serde_json",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2228,7 +2210,6 @@ dependencies = [
 name = "guest-init"
 version = "0.20.11"
 dependencies = [
- "guest-channel-server",
  "guest-contracts",
  "guest-control-server",
  "guest-home-mount",
@@ -4118,7 +4099,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.235.2"
+version = "0.235.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4189,7 +4170,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.14.19"
+version = "0.14.20"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4359,7 +4340,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4369,7 +4350,6 @@ dependencies = [
  "chrono",
  "crypto_box",
  "futures-util",
- "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "hex",
@@ -4503,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4520,7 +4500,6 @@ dependencies = [
  "runner-lifecycle",
  "runner-network",
  "runner-provider",
- "runner-remote",
  "runner-storage",
  "runner-types",
  "sandbox",
@@ -4531,12 +4510,10 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
  "tracing-test-support",
- "url",
  "uuid",
  "zstd",
 ]
@@ -4827,7 +4804,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.11"
+version = "0.53.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4845,7 +4822,6 @@ dependencies = [
  "process-launch",
  "proptest",
  "reqwest",
- "runner-remote",
  "runner-rpc-proto",
  "runner-types",
  "rustix",

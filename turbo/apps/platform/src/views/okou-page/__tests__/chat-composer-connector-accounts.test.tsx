@@ -6,7 +6,6 @@ import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  accountSummary,
   builtinConnector,
   connectorAccount,
   DEEPWIKI_CONNECTOR_ID,
@@ -168,7 +167,6 @@ test("Carry a connector account choice into a new chat", async () => {
   const fixture = installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(githubTarget(), accounts)],
     accounts,
   });
 
@@ -249,7 +247,6 @@ test("Choose an account for a custom MCP connector", async () => {
         { customConnectorId: DEEPWIKI_CONNECTOR_ID, permissionNames: [] },
       ],
     },
-    accountSummaries: [accountSummary(deepWikiTarget(), accounts)],
     accounts,
     threadId: SCOUT_THREAD_ID,
   });
@@ -290,7 +287,6 @@ test("Choose which connector account a chat uses", async () => {
   const fixture = installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(githubTarget(), accounts)],
     accounts,
     threadId: SCOUT_THREAD_ID,
   });
