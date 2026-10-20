@@ -39,9 +39,10 @@ export const SVG_RENDERER = String.raw`
     if (node.localName === 'rect') {
       const s=getComputedStyle(node), values=[s.rx,s.ry];
       if(values.some(v=>v.includes('%')))return {unsupported:'Percentage SVG corner radii'};
-      let rx=s.rx==='auto'?null:parseFloat(s.rx), ry=s.ry==='auto'?null:parseFloat(s.ry);
-      rx=Math.min(b.width/2,Math.max(0,rx ?? ry ?? 0));
-      ry=Math.min(b.height/2,Math.max(0,ry ?? rx));
+      const sourceRx=s.rx==='auto'?null:parseFloat(s.rx), sourceRy=s.ry==='auto'?null:parseFloat(s.ry);
+      // Automatic radii inherit the original other axis, before either is clamped.
+      const rx=Math.min(b.width/2,Math.max(0,sourceRx ?? sourceRy ?? 0));
+      const ry=Math.min(b.height/2,Math.max(0,sourceRy ?? sourceRx ?? 0));
       const {x,y,width:w,height:h}=b;
       if (!rx || !ry) return {points:[{x,y,moveTo:true},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h},{close:true}]};
       const k=4*(Math.SQRT2-1)/3;

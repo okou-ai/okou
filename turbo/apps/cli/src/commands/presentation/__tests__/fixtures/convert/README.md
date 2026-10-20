@@ -22,6 +22,10 @@ selector waiting, file URLs, and page/occurrence-scoped native-text checks.
   complete SVG pictures. Independent fill/stroke alpha and fill-only opacity
   stay native. Only the independent-alpha control has a dark inner stroke;
   applying element opacity separately to both paints would incorrectly copy it.
+- S04: a narrow/tall rectangle with only `rx` and a wide/short rectangle with
+  only `ry`, each beside its explicit-radius equivalent. Resolve automatic
+  radii from the original other axis before clamping each to half its own
+  dimension. Each pair must have identical native geometry; all four stay native.
 
 Native conversion is deliberately bounded. Paint servers, filters, masks,
 clipping, composited group or fill/stroke opacity, markers, dashes, even-odd fills, nested
@@ -45,6 +49,7 @@ okou presentation convert --input svg-native.html --selector .slide \
 Inspect S01 for native `p:grpSp`/`p:sp`/`a:custGeom` and text, with no SVG
 picture objects. Inspect S02 for three complete SVG pictures and three explicit
 diagnostics, and S03 for two SVG pictures, two native shapes and two diagnostics.
+Inspect S04 for four native shapes with identical paths within each pair.
 Compare the HTML and PPTX renders, then upload this PPTX to Okou
 and use its **Upload to Google Slides** action. Verify ungrouping, recoloring
 and label editing on S01 in Google Slides; compare positions, curves and stroke

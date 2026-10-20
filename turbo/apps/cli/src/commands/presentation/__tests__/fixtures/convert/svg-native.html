@@ -255,4 +255,42 @@
       alpha overlaps.
     </p>
   </section>
+  <section class="slide">
+    <h1>S04 — automatic corner radii resolve before clamping</h1>
+    <div class="row">
+      <svg id="automatic-ry" width="300" height="300" viewBox="0 0 300 300">
+        <rect x="130" y="40" width="40" height="220" rx="100" fill="#2563eb" />
+      </svg>
+      <svg id="explicit-ry" width="300" height="300" viewBox="0 0 300 300">
+        <rect
+          x="130"
+          y="40"
+          width="40"
+          height="220"
+          rx="20"
+          ry="100"
+          fill="#2563eb"
+        />
+      </svg>
+      <svg id="automatic-rx" width="300" height="300" viewBox="0 0 300 300">
+        <rect x="40" y="130" width="220" height="40" ry="100" fill="#14b8a6" />
+      </svg>
+      <svg id="explicit-rx" width="300" height="300" viewBox="0 0 300 300">
+        <rect
+          x="40"
+          y="130"
+          width="220"
+          height="40"
+          rx="100"
+          ry="20"
+          fill="#14b8a6"
+        />
+      </svg>
+    </div>
+    <p>The two blue shapes must match, and the two teal shapes must match.</p>
+    <p>
+      An omitted radius uses the other axis before each radius is limited to
+      half its own dimension. All four shapes stay native and editable.
+    </p>
+  </section>
 </html>
