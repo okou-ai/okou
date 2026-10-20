@@ -178,6 +178,60 @@ async fn host_eof_does_not_cancel_guest_before_actual_terminal_drain() {
 }
 
 #[tokio::test]
+async fn host_framing_failure_keeps_dispatched_guest_work_until_terminal_drain() {
+    for (partial, expected) in [
+        (vec![0, 0], io::ErrorKind::UnexpectedEof),
+        (
+            vec![0, 0, 0, 9, MSG_PING, 0, 0],
+            io::ErrorKind::UnexpectedEof,
+        ),
+        (0u32.to_be_bytes().to_vec(), io::ErrorKind::InvalidData),
+    ] {
+        let (mut host, mut guest, mut controls, mut exchange, mut connection) = raw_pair().unwrap();
+        controls.arm(RequestKind::Quiesce).unwrap();
+        let request = host.send(MSG_QUIESCE_OPERATIONS, 87, &[]).await.unwrap();
+        bounded(&mut controls.captured).await.unwrap().unwrap();
+        controls.dispatch.send(()).unwrap();
+        assert_eq!(guest.next().await.unwrap().raw, request);
+
+        host.stream.write_all(&partial).await.unwrap();
+        host.stream.shutdown().await.unwrap();
+        let terminal = guest.send(MSG_OPERATIONS_QUIESCED, 87, &[]).await.unwrap();
+        assert_eq!(
+            bounded(&mut controls.response)
+                .await
+                .unwrap()
+                .unwrap()
+                .raw(),
+            terminal
+        );
+        controls
+            .delivery
+            .send(ResponseDisposition::Deliver)
+            .unwrap();
+        assert_eq!(host.next().await.unwrap().raw, terminal);
+        assert_eq!(
+            bounded(exchange.join()).await.unwrap().unwrap_err().kind(),
+            expected
+        );
+        {
+            let mut join = Box::pin(connection.join());
+            pending_once(join.as_mut()).await;
+        }
+        drop(guest);
+        assert_eq!(
+            bounded(connection.join())
+                .await
+                .unwrap()
+                .unwrap_err()
+                .kind(),
+            expected
+        );
+        drop(host);
+    }
+}
+
+#[tokio::test]
 async fn guest_eof_keeps_a_real_held_terminal_until_delivery() {
     let (mut host, mut guest, mut controls, mut exchange, mut connection) = raw_pair().unwrap();
     controls.arm(RequestKind::Quiesce).unwrap();

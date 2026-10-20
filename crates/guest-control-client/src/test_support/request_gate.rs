@@ -192,6 +192,8 @@ impl ConnectionProducer {
 ///
 /// Unrelated frames keep flowing at both holds. Host EOF does not close the
 /// Guest stream: accepted real work is drained until its own terminal/peer end.
+/// A Host framing/read failure before terminal delivery retains that work, while
+/// both producer joins report the transport failure after draining it.
 /// The owner must retain this connection and native capsule if teardown stalls.
 pub fn gate_connection(
     host: UnixStream,

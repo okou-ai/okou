@@ -129,6 +129,10 @@ impl Relay {
     }
 
     fn complete_exchange(&mut self, response: Frame, delivery: io::Result<()>) -> io::Result<()> {
+        let delivery = delivery.and_then(|()| match &self.error {
+            Some(error) => Err(copy_error(error)),
+            None => Ok(()),
+        });
         let selected = self
             .selected
             .as_mut()
@@ -166,7 +170,18 @@ impl Relay {
             }
             tokio::select! {
                 frame = self.host.next(), if !self.host_eof && !self.guest_eof && !self.guest_write_failed && self.guest_write.is_idle() => {
-                    let Some(frame) = frame? else {
+                    let frame = match frame {
+                        Ok(frame) => frame,
+                        Err(error) if self.selected.is_some() => {
+                            // A cancelled Host write can end inside another frame.
+                            // Retain the selected work and report the original fault
+                            // after its real terminal has drained.
+                            self.record_error(error);
+                            None
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    let Some(frame) = frame else {
                         // Do not close the Guest's input and cancel accepted work.
                         self.host_eof = true;
                         continue;
