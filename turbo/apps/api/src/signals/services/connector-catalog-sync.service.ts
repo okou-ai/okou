@@ -9,7 +9,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { command } from "ccstate";
-import { and, eq, ne } from "drizzle-orm";
+import { ne } from "drizzle-orm";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
@@ -62,12 +62,19 @@ import {
   reportConnectorRuntimeWakeupDiscoveryFailure,
   type ConnectorRuntimeWakeupBusinessArgs,
 } from "./connector-runtime-wakeup.service";
-import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
-import { createAcceptedConnectorServerFirewallCatalog } from "./connector-server-firewall-catalog.service";
 import {
   builtinCatalogWakeupReadPlan,
   builtinCatalogWakeupAccountsByOrg,
 } from "./connector-catalog-builtin-wakeup-plan";
+import {
+  customCatalogWakeupConnectorsByRef,
+  customConnectorPermissionBundleFingerprint,
+  customCatalogWakeupReadPlan,
+  catalogWakeupRunColumns,
+  customCatalogWakeup,
+  builtinCatalogWakeup,
+  customCatalogWakeupSummary,
+} from "./connector-catalog-wakeup-plan";
 
 const log = logger("connector-catalog:sync");
 
@@ -78,156 +85,31 @@ class ConnectorCatalogPersistenceError extends Error {
   }
 }
 
-function customConnectorPermissionBundleFingerprint(
-  bundle: Awaited<ReturnType<typeof loadCustomConnectorPermissionBundle>>,
-): string | null {
-  if (!bundle) {
-    return null;
-  }
-  return JSON.stringify({
-    connectorSlug: bundle.connectorSlug,
-    permissions: bundle.permissions,
-    defaultPolicies: Object.entries(bundle.defaultPolicies).sort(
-      ([left], [right]) => {
-        return left.localeCompare(right);
-      },
-    ),
+function reportCatalogWakeupDiscoveryFailure(
+  wakeup: ConnectorRuntimeWakeupBusinessArgs,
+  error: unknown,
+): void {
+  reportConnectorRuntimeWakeupDiscoveryFailure({
+    orgId: wakeup.scope.orgId,
+    scopedToUser: wakeup.scope.userId !== undefined,
+    scopedToAgent: wakeup.scope.agentId !== undefined,
+    targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+    error,
   });
 }
 
-async function publishCatalogPermissionBundleWakeupsInner(args: {
-  readonly db: Db;
-  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
-  readonly currentArtifact: ConnectorCatalogArtifact;
-}): Promise<void> {
-  const currentCatalog = createAcceptedConnectorServerFirewallCatalog({
-    artifact: args.currentArtifact,
-    runtimeMethodsForSlug: () => {
-      return [];
-    },
-  });
-  const rows = await args.db
-    .select({
-      id: orgCustomConnectors.id,
-      orgId: orgCustomConnectors.orgId,
-      slug: orgCustomConnectors.slug,
-      authMode: orgCustomConnectors.authMode,
-      prefixTemplates: orgCustomConnectors.prefixTemplates,
-      permissionBundleRef: orgCustomConnectors.permissionBundleRef,
-      oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-    })
-    .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .where(eq(orgCustomConnectors.enabled, true));
-
-  const connectorIdsByRef = new Map<
-    string,
-    { readonly orgId: string; readonly connectorId: string }[]
-  >();
-  for (const row of rows) {
-    const ref = effectiveCustomConnectorPermissionBundleRef({
-      slug: row.slug,
-      authMode: row.authMode,
-      oauthProviderAdapter: row.oauthProviderAdapter,
-      prefixTemplates: row.prefixTemplates,
-      permissionBundleRef: row.permissionBundleRef,
-    });
-    if (!ref) {
-      continue;
-    }
-    const connectors = connectorIdsByRef.get(ref) ?? [];
-    connectors.push({ orgId: row.orgId, connectorId: row.id });
-    connectorIdsByRef.set(ref, connectors);
-  }
-
-  const affectedByOrg = new Map<string, string[]>();
-  for (const [ref, connectors] of connectorIdsByRef) {
-    const [previousBundle, currentBundle] = await Promise.all([
-      args.previousSnapshot
-        ? loadCustomConnectorPermissionBundle({
-            catalog: args.previousSnapshot.serverFirewallMetadata,
-            ref,
-          })
-        : null,
-      loadCustomConnectorPermissionBundle({
-        catalog: currentCatalog,
-        ref,
-      }),
-    ]);
-    if (
-      customConnectorPermissionBundleFingerprint(previousBundle) ===
-      customConnectorPermissionBundleFingerprint(currentBundle)
-    ) {
-      continue;
-    }
-    for (const connector of connectors) {
-      const connectorIds = affectedByOrg.get(connector.orgId) ?? [];
-      connectorIds.push(connector.connectorId);
-      affectedByOrg.set(connector.orgId, connectorIds);
+function reportCatalogWakeupFailures(
+  results: readonly (
+    { readonly ok: true } | { readonly ok: false; readonly error: unknown }
+  )[],
+): void {
+  for (const result of results) {
+    if (!result.ok) {
+      log.warn("Failed to publish connector catalog runtime wakeups", {
+        error: result.error,
+      });
     }
   }
-
-  await Promise.all(
-    [...affectedByOrg].map(async ([orgId, customConnectorIds]) => {
-      const wakeupDb = args.db;
-      const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
-        scope: { orgId },
-        targets: customConnectorIds.map((customConnectorId) => {
-          return { kind: "custom" as const, customConnectorId };
-        }),
-      };
-      await (async () => {
-        const result = await settle(
-          (async () => {
-            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
-            if (targets.length === 0) {
-              return;
-            }
-
-            const rows = await wakeupDb
-              .select({
-                runId: agentRuns.id,
-                runnerGroup: agentRuns.runnerGroup,
-              })
-              .from(agentRuns)
-
-              .where(connectorRuntimeWakeupCondition(wakeup.scope));
-
-            await publishConnectorRuntimeWakeupRows({
-              scope: wakeup.scope,
-              targets,
-              rows,
-            });
-          })(),
-        );
-        if (!result.ok) {
-          reportConnectorRuntimeWakeupDiscoveryFailure({
-            orgId: wakeup.scope.orgId,
-            scopedToUser: wakeup.scope.userId !== undefined,
-            scopedToAgent: wakeup.scope.agentId !== undefined,
-            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
-            error: result.error,
-          });
-        }
-      })();
-    }),
-  );
-  log.debug("Evaluated Custom connector catalog wakeups", {
-    permissionBundleRefCount: connectorIdsByRef.size,
-    affectedOrgCount: affectedByOrg.size,
-    affectedCustomConnectorCount: [...affectedByOrg.values()].reduce(
-      (count, connectorIds) => {
-        return count + connectorIds.length;
-      },
-      0,
-    ),
-  });
 }
 
 async function publishCatalogRuntimeWakeups(args: {
@@ -236,7 +118,81 @@ async function publishCatalogRuntimeWakeups(args: {
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
   const results = await Promise.all([
-    settle(publishCatalogPermissionBundleWakeupsInner(args)),
+    settle(
+      (async () => {
+        const readPlan = customCatalogWakeupReadPlan(args.currentArtifact);
+        const currentCatalog = readPlan.catalog;
+        const rows = await args.db
+          .select(readPlan.columns)
+          .from(orgCustomConnectors)
+          .leftJoin(orgCustomConnectorOauthConfigs, readPlan.oauthCondition)
+          .where(readPlan.condition);
+
+        const connectorIdsByRef = customCatalogWakeupConnectorsByRef(rows);
+        const affectedByOrg = new Map<string, string[]>();
+        for (const [ref, connectors] of connectorIdsByRef) {
+          const [previousBundle, currentBundle] = await Promise.all([
+            args.previousSnapshot
+              ? loadCustomConnectorPermissionBundle({
+                  catalog: args.previousSnapshot.serverFirewallMetadata,
+                  ref,
+                })
+              : null,
+            loadCustomConnectorPermissionBundle({
+              catalog: currentCatalog,
+              ref,
+            }),
+          ]);
+          if (
+            customConnectorPermissionBundleFingerprint(previousBundle) ===
+            customConnectorPermissionBundleFingerprint(currentBundle)
+          ) {
+            continue;
+          }
+          for (const connector of connectors) {
+            const connectorIds = affectedByOrg.get(connector.orgId) ?? [];
+            connectorIds.push(connector.connectorId);
+            affectedByOrg.set(connector.orgId, connectorIds);
+          }
+        }
+
+        await Promise.all(
+          [...affectedByOrg].map(async ([orgId, customConnectorIds]) => {
+            const wakeupDb = args.db;
+            const wakeup = customCatalogWakeup(orgId, customConnectorIds);
+            await (async () => {
+              const result = await settle(
+                (async () => {
+                  const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+                  if (targets.length === 0) {
+                    return;
+                  }
+
+                  const rows = await wakeupDb
+                    .select(catalogWakeupRunColumns())
+                    .from(agentRuns)
+
+                    .where(connectorRuntimeWakeupCondition(wakeup.scope));
+
+                  await publishConnectorRuntimeWakeupRows({
+                    scope: wakeup.scope,
+                    targets,
+                    rows,
+                  });
+                })(),
+              );
+              if (!result.ok) {
+                reportCatalogWakeupDiscoveryFailure(wakeup, result.error);
+              }
+            })();
+          }),
+        );
+        log.debug(
+          "Evaluated Custom connector catalog wakeups",
+          customCatalogWakeupSummary(connectorIdsByRef.size, affectedByOrg),
+        );
+      })(),
+    ),
     settle(
       (async () => {
         const plan = builtinCatalogWakeupReadPlan({
@@ -255,12 +211,7 @@ async function publishCatalogRuntimeWakeups(args: {
         async function publishOrgWakeups() {
           for (const [orgId, slugs] of pending) {
             const wakeupDb = args.db;
-            const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
-              scope: { orgId },
-              targets: slugs.map((connectorSlug) => {
-                return { kind: "builtin" as const, connectorSlug };
-              }),
-            };
+            const wakeup = builtinCatalogWakeup(orgId, slugs);
             await (async () => {
               const result = await settle(
                 (async () => {
@@ -270,10 +221,7 @@ async function publishCatalogRuntimeWakeups(args: {
                   }
 
                   const rows = await wakeupDb
-                    .select({
-                      runId: agentRuns.id,
-                      runnerGroup: agentRuns.runnerGroup,
-                    })
+                    .select(catalogWakeupRunColumns())
                     .from(agentRuns)
 
                     .where(connectorRuntimeWakeupCondition(wakeup.scope));
@@ -286,14 +234,7 @@ async function publishCatalogRuntimeWakeups(args: {
                 })(),
               );
               if (!result.ok) {
-                reportConnectorRuntimeWakeupDiscoveryFailure({
-                  orgId: wakeup.scope.orgId,
-                  scopedToUser: wakeup.scope.userId !== undefined,
-                  scopedToAgent: wakeup.scope.agentId !== undefined,
-                  targetCount: uniqueConnectorRuntimeTargets(wakeup.targets)
-                    .length,
-                  error: result.error,
-                });
+                reportCatalogWakeupDiscoveryFailure(wakeup, result.error);
               }
             })();
           }
@@ -304,13 +245,7 @@ async function publishCatalogRuntimeWakeups(args: {
       })(),
     ),
   ]);
-  for (const result of results) {
-    if (!result.ok) {
-      log.warn("Failed to publish connector catalog runtime wakeups", {
-        error: result.error,
-      });
-    }
-  }
+  reportCatalogWakeupFailures(results);
 }
 
 function classifySyncFailure(error: unknown): ConnectorCatalogSyncFailureCode {
