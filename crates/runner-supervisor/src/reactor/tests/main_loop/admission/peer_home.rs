@@ -5,14 +5,23 @@ use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 
 const WAIT: Duration = Duration::from_secs(10);
 
-fn peer_candidate(run_id: RunId, key: &str) -> runner_provider::JobCandidate {
-    ranked_candidate(
-        run_id,
-        Some(key),
-        RunnerPreferenceTier::PeerFinalizingPredecessor,
-        TEST_RUNNER_ID,
-        TEST_HEARTBEAT_GENERATION,
-    )
+fn peer_candidate(run_id: RunId, key: &str, source_run_id: RunId) -> runner_provider::JobCandidate {
+    // Exercise the activated API/Ably wire reader before entering the actual
+    // two-reactor claim/publication/locked-checkout lifecycle below.
+    let preference = runner_provider::parse_runner_preference(Some(serde_json::json!({
+        "kind": "preference",
+        "tier": "peerFinalizingPredecessor",
+        "finalizingSourceRunId": source_run_id,
+        "runnerIdentity": {
+            "runnerId": TEST_RUNNER_ID,
+            "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
+        },
+        "expiresAt": (chrono::Utc::now() + chrono::Duration::seconds(30)).to_rfc3339(),
+    })))
+    .unwrap();
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
+        .with_reuse_key(Some(key.into()))
+        .with_parsed_runner_preference_context(preference)
 }
 
 async fn wait_owned_peer(env: &MockRunEnv, run_id: RunId) {
@@ -142,7 +151,7 @@ async fn assert_late_draining_publication(drain_receiver: bool) {
     receiver_env
         .handle
         .discover_tx
-        .send(peer_candidate(successor, key))
+        .send(peer_candidate(successor, key, predecessor))
         .unwrap();
     wait_owned_peer(&receiver_env, successor).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -220,7 +229,7 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key))
+        .send(peer_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     wait_owned_peer(&env, run_id).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -263,7 +272,7 @@ async fn peer_waits_release_rpc_slots_and_cancellation_settles_every_owned_run()
         let key = format!("thread:peer-wait-{i}");
         env.provider
             .set_claim_result(run_id, Some(context_with_reuse_key(run_id, &key)));
-        let candidate = peer_candidate(run_id, &key);
+        let candidate = peer_candidate(run_id, &key, RunId::new_v4());
         env.handle.discover_tx.send(candidate.clone()).unwrap();
         wait_owned_peer(&env, run_id).await;
         env.handle.discover_tx.send(candidate).unwrap();
@@ -328,7 +337,7 @@ async fn peer_activation_panic_recovers_the_claim_and_waiting_capacity() {
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key))
+        .send(peer_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     wait_owned_peer(&env, run_id).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -359,7 +368,11 @@ async fn rejected_peer_claim_releases_its_ordinary_resource_and_never_waits() {
     wait_discover_entered(&env, WAIT).await;
     env.handle
         .discover_tx
-        .send(peer_candidate(rejected, "thread:rejected-peer"))
+        .send(peer_candidate(
+            rejected,
+            "thread:rejected-peer",
+            RunId::new_v4(),
+        ))
         .unwrap();
     assert!(env.handle.wait_run_claim_in_flight(rejected, WAIT).await);
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -402,7 +415,7 @@ async fn unconsumed_peer_claim_result_completes_and_releases_capacity_when_react
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key))
+        .send(peer_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     let mut reactor = Box::pin(run(config));
     tokio::select! {
@@ -439,7 +452,7 @@ async fn hard_stop_cancels_and_joins_a_claimed_peer_wait_before_shutdown() {
     wait_discover_entered(&env, WAIT).await;
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key))
+        .send(peer_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     wait_owned_peer(&env, run_id).await;
     env.trigger_stopping().await;
@@ -481,7 +494,7 @@ async fn peer_preference_cannot_claim_against_another_runs_full_local_capacity()
         .set_claim_result(peer, Some(context_with_reuse_key(peer, key)));
     env.handle
         .discover_tx
-        .send(peer_candidate(peer, key))
+        .send(peer_candidate(peer, key, RunId::new_v4()))
         .unwrap();
     assert!(env.handle.wait_deferred_poll_count(1, WAIT).await);
     assert_eq!(
@@ -528,7 +541,7 @@ async fn peer_consumer_without_a_local_home_backend_claims_and_starts_ordinarily
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key))
+        .send(peer_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     assert_eq!(
         env.handle
@@ -560,7 +573,7 @@ async fn home_published_before_claim_response_is_consumed_without_a_lost_wakeup(
     env.handle.block_claim(run_id);
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key))
+        .send(peer_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     assert!(env.handle.wait_run_claim_in_flight(run_id, WAIT).await);
     seed_home_cache_state(&cache, &paths, key, "vm0/default", 1024 * 1024).await;
@@ -608,7 +621,7 @@ async fn committed_peer_homes_wake_multiple_claimed_waiters() {
             .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
         env.handle
             .discover_tx
-            .send(peer_candidate(run_id, key))
+            .send(peer_candidate(run_id, key, RunId::new_v4()))
             .unwrap();
         wait_owned_peer(&env, run_id).await;
     }
