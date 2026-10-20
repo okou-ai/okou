@@ -39,7 +39,10 @@ async fn ably_duplicate_keeps_first_source_and_expiry_without_native_history() {
     let candidate = pop_direct_candidate(&inbox).await.into_job_candidate();
     assert_eq!(candidate.history_generation_run_id(), None);
     let preference = candidate.runner_preference().unwrap();
-    assert_eq!(preference.finalizing_source_run_id(), Some(source));
+    assert_eq!(
+        preference.target(),
+        crate::provider::RunnerPreferenceTarget::FinalizingPredecessor(source)
+    );
     assert!(preference.remaining() <= Duration::from_secs(30));
     assert_eq!(
         serde_json::to_value(

@@ -45,6 +45,10 @@ case "${1:-}" in
       [ "${MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "968063848aea8cf54acd6f56facdf7cdcbd79051" ]; then
+      [ "${MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
+      [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
       [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
@@ -424,6 +428,8 @@ grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
+grep -Fxq "git merge-base --is-ancestor 968063848aea8cf54acd6f56facdf7cdcbd79051 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "API target must include the independent finalizing source writer"
+grep -Fxq "git merge-base --is-ancestor b610ff61043274157618e3925b13a66dc56ef84b bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "selected Runner tag must independently include the finalizing source reader"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
 
@@ -444,6 +450,22 @@ grep -Fq 'e01702c7d762b5d2a76d557db77ccaf19c4f95c8' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/structured-disk-reader-floor.output" ] || fail "required-pair API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "required-pair API must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the independent finalizing source writer" \
+  run_resolver "${tmp_dir}/finalizing-source-api-floor.output" MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/finalizing-source-api-floor.output" ] || fail "old-source API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "old-source API must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the independent finalizing source reader" \
+  run_resolver "${tmp_dir}/finalizing-source-runner-floor.output" MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/finalizing-source-runner-floor.output" ] || fail "strict old Runner must not publish rollback outputs"
+if grep -Eq '^curl .*releases/tags/|^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "strict old Runner must fail before Runner artifact or host access"
 fi
 
 for storage_reader_commit in "" invalid; do

@@ -11,6 +11,7 @@ const preference = {
   },
   tier: "finalizingPredecessor" as const,
   expiresAt: "2026-10-20T00:00:49.000Z",
+  finalizingSourceRunId: sourceRunId,
 };
 const job = {
   runId: "33333333-3333-4333-8333-333333333333",
@@ -20,34 +21,27 @@ const job = {
   experimentalProfile: "vm0/default",
 };
 
-describe("independent finalizing source reader preparation", () => {
-  it("preserves source identity without manufacturing native history", () => {
-    const runnerPreference = {
-      ...preference,
-      finalizingSourceRunId: sourceRunId,
-    };
-    const parsed = jobSchema.parse({ ...job, runnerPreference });
-    expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
-    expect(parsed.historyGenerationRunId).toBeUndefined();
+describe("independent finalizing source contract", () => {
+  it.each(["finalizingPredecessor", "peerFinalizingPredecessor"] as const)(
+    "preserves %s source identity without manufacturing native history",
+    (tier) => {
+      const runnerPreference = { ...preference, tier };
+      const parsed = jobSchema.parse({ ...job, runnerPreference });
+      expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
+      expect(parsed.historyGenerationRunId).toBeUndefined();
 
-    const telemetry = {
-      runnerPreference,
-      runnerPreferenceClaimState: "active",
-    };
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        telemetry,
-      }).telemetry,
-    ).toStrictEqual(telemetry);
-  });
-
-  it("keeps the old preference shape readable until writer retirement", () => {
-    expect(
-      jobSchema.parse({ ...job, runnerPreference: preference })
-        .runnerPreference,
-    ).toStrictEqual(preference);
-  });
+      const telemetry = {
+        runnerPreference,
+        runnerPreferenceClaimState: "active",
+      };
+      expect(
+        runnersJobClaimContract.claim.body.parse({
+          capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          telemetry,
+        }).telemetry,
+      ).toStrictEqual(telemetry);
+    },
+  );
 
   it("rejects malformed source identity at the discovery boundary", () => {
     for (const finalizingSourceRunId of ["invalid", null]) {
