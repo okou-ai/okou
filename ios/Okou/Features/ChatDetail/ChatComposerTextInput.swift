@@ -11,6 +11,10 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
   var editor: ComposerEditor? = nil
+  var editorOrder = 0
+  var isAppendTarget = true
+  var searchableRanges: (@MainActor () -> [NSRange])? = nil
+  var focusRequested: (@MainActor () -> Void)? = nil
   var placeholder = "Message Okou"
   var identifier = "message-input"
   var expanded = false
@@ -35,7 +39,17 @@ struct ChatComposerTextInput: UIViewRepresentable {
 
   func updateUIView(_ view: ComposerTextView, context: Context) {
     context.coordinator.input = self
-    editor?.view = view
+    editor?.register(
+      view, order: editorOrder, canAppend: isAppendTarget,
+      isCurrent: { [weak coordinator = context.coordinator] in
+        coordinator?.input.isCurrent() == true
+      },
+      searchableRanges: { [weak coordinator = context.coordinator] in
+        coordinator?.input.searchableRanges?()
+      },
+      focusRequested: { [weak coordinator = context.coordinator] in
+        coordinator?.input.focusRequested?()
+      })
     // Reassigning text during composition cancels the system's marked range.
     if view.text != text, view.markedTextRange == nil {
       let selection = view.selectedRange
@@ -70,7 +84,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   }
 
   static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
-    if coordinator.input.editor?.view === view { coordinator.input.editor?.view = nil }
+    coordinator.input.editor?.unregister(view)
     view.delegate = nil
     view.pasteDelegate = nil
     view.pasteImages = { _ in }
@@ -151,7 +165,9 @@ final class ComposerTextView: UITextView {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    scheduleFocus()
+    // UIKit accepts the responder handoff while attaching the view, before the
+    // new window becomes key. Keep that lifecycle event synchronous.
+    reconcileFocus()
   }
 
   private func scheduleFocus() {

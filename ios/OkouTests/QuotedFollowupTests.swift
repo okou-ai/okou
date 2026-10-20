@@ -203,6 +203,136 @@ final class QuotedFollowupTests: XCTestCase {
     XCTAssertFalse(conversation.composer.hasContent)
   }
 
+  func testNativeRecommendationsSelectAcrossNotesAndAppendAtTheDocumentEnd() async throws {
+    let existing = "Existing question"
+    let appended = "Build on this discussion"
+    let longQuote = String(repeating: "Second quoted context with its own note. ", count: 16)
+    let answer = "First quoted context.\n\n" + longQuote
+    func row(_ seq: Int, type: String, content: String? = nil) throws -> String {
+      let data = try JSONSerialization.data(withJSONObject: [
+        "id": ConversationHistoryFixture.id(seq),
+        "chatThreadId": ConversationHistoryFixture.threadID,
+        "runId": "quoted-run", "seqId": seq, "createdAt": "2026-10-20T00:00:00Z",
+        "eventType": type, "payload": content.map { ["content": $0] } ?? [:],
+      ])
+      return String(decoding: data, as: UTF8.self)
+    }
+    let followups = String(
+      decoding: try JSONSerialization.data(withJSONObject: [
+        "version": 1,
+        "followups": [
+          ["prompt": existing, "kind": "talk"], ["prompt": appended, "kind": "talk"],
+        ],
+      ]), as: UTF8.self)
+    let fixture = ConversationHistoryFixture(rows: [
+      try row(1, type: "output.message", content: answer),
+      try row(2, type: "run.completed"), try row(3, type: "output.followups", content: followups),
+    ])
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    let message = try XCTUnwrap(conversation.messages.first)
+    conversation.draft = "Ordinary context 🧭"
+    for quote in ["First quoted context.", longQuote] {
+      conversation.quote(
+        try XCTUnwrap(
+          ChatFeedbackSelection(
+            message: message,
+            range: (message.text as NSString).range(of: quote))))
+    }
+    let notes = conversation.composer.editorBlocks.filter(\.isFeedback)
+    XCTAssertEqual(notes.count, 2)
+    conversation.composer.editBlock(notes[0].id, text: existing)
+    conversation.composer.editBlock(notes[1].id, text: "Keep this note.")
+    let identities = quoteIdentities(conversation.composer.document)
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let window = try await mount(host)
+    defer { unmount(window) }
+    try await eventually {
+      self.recommendationRail(in: host.view)?.subviews.contains { $0 is UIButton } == true
+        && self.textViews(in: host.view).filter {
+          $0.accessibilityLabel == "Ask or comment on this quote"
+        }.count == 2
+    }
+    let rail = try XCTUnwrap(recommendationRail(in: host.view))
+    let buttons = rail.subviews.compactMap { $0 as? UIButton }
+    XCTAssertEqual(buttons.map(\.accessibilityLabel), [existing, appended])
+    let first = try XCTUnwrap(
+      textViews(in: host.view).first {
+        $0.accessibilityIdentifier == "feedback-note-\(notes[0].id)"
+      })
+    let last = try XCTUnwrap(
+      textViews(in: host.view).first {
+        $0.accessibilityIdentifier == "feedback-note-\(notes[1].id)"
+      })
+    buttons[0].sendActions(for: .touchUpInside)
+    try await eventually {
+      first.isFirstResponder
+        && (first.text as NSString).substring(with: first.selectedRange) == existing
+        && self.isVisibleInComposer(first)
+    }
+    last.undoManager?.removeAllActions()
+    buttons[1].sendActions(for: .touchUpInside)
+    try await eventually(
+      message:
+        "focus: \(last.isFirstResponder), visible: \(self.isVisibleInComposer(last)), text: \(last.text ?? ""), frame: \(last.convert(last.bounds, to: window))"
+    ) {
+      last.isFirstResponder && self.isVisibleInComposer(last)
+        && conversation.composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
+          == "Keep this note.\n" + appended
+    }
+    XCTAssertEqual(conversation.draft, "Ordinary context 🧭")
+    XCTAssertEqual(
+      conversation.composer.editorBlocks.first(where: { $0.id == notes[0].id })?.content.text,
+      existing)
+    XCTAssertEqual(quoteIdentities(conversation.composer.document), identities)
+    last.undoManager?.undo()
+    try await eventually {
+      conversation.composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
+        == "Keep this note."
+    }
+    last.selectedRange = NSRange(location: (last.text as NSString).length, length: 0)
+    last.setMarkedText("拼音", selectedRange: NSRange(location: 2, length: 0))
+    try await eventually { last.markedTextRange != nil }
+    buttons[0].sendActions(for: .touchUpInside)
+    try await eventually {
+      first.isFirstResponder && last.markedTextRange == nil
+        && conversation.composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
+          .hasSuffix("拼音") == true
+    }
+    XCTAssertEqual(conversation.draft, "Ordinary context 🧭")
+    XCTAssertTrue(
+      fixture.requests.values.withLock {
+        $0.allSatisfy { !$0.contains("/api/chat/events") && !$0.contains("generat") }
+      })
+    attach(window, name: "Native recommendations with ordered quoted notes")
+  }
+
+  private func quoteIdentities(_ document: ChatDraftDocument) -> [MessageJSON] {
+    document.parts.filter { $0["type"]?.string == "feedback" }.map { part in
+      guard case .object(var fields) = part else { return part }
+      fields.removeValue(forKey: "note")
+      return .object(fields)
+    }
+  }
+
+  private func recommendationRail(in view: UIView) -> RecommendedFollowupRailView? {
+    if let rail = view as? RecommendedFollowupRailView, enclosingCell(rail) != nil { return rail }
+    return view.subviews.lazy.compactMap { self.recommendationRail(in: $0) }.first
+  }
+
+  private func isVisibleInComposer(_ input: UITextView) -> Bool {
+    var parent = input.superview
+    while let view = parent {
+      if let scroll = view as? UIScrollView {
+        let rect = input.convert(input.bounds, to: scroll)
+        return rect.minY >= scroll.bounds.minY - 1 && rect.maxY <= scroll.bounds.maxY + 1
+      }
+      parent = view.superview
+    }
+    return false
+  }
+
   private struct Send: Decodable {
     let clientEventId: String
     let userMessage: ChatDraftDocument

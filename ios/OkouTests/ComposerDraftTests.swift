@@ -371,6 +371,59 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertNotNil(composer.conflictingRemote)
   }
 
+  func testRecommendationsDoNotMatchAcrossReferencesInsideQuotedNotes() async throws {
+    let remote = try JSONDecoder().decode(
+      ComposerDraft.self,
+      from: Data(
+        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"One","note":[{"type":"text","text":"Existing "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"question"}]},{"type":"feedback","quote":"Two","note":[]}]},"draftAttachments":null}"#
+          .utf8))
+    let server = DraftServer(remote: remote)
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    let notes = composer.editorBlocks.filter(\.isFeedback)
+    let firstNote = composer.document.parts[1]
+    let source = ChatRecommendedFollowupSource(
+      eventID: "followups",
+      followups: [
+        ChatRecommendedFollowup(prompt: "Existing question", kind: .talk)
+      ])
+    let host = UIHostingController(
+      rootView: VStack {
+        RecommendedFollowupList(
+          source: source, finishedAt: nil, select: composer.editor.selectOrAppendText)
+        ChatComposerView(
+          draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
+          isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false, error: nil,
+          attachmentURL: server.http.baseURL, attachments: composer.attachments,
+          draftState: composer, submit: {}, refresh: nil)
+      })
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer { unmount(window) }
+    try await eventually { composer.editor.view?.window != nil }
+    func button(in view: UIView) -> UIButton? {
+      if let button = view as? UIButton, button.accessibilityLabel == "Existing question" {
+        return button
+      }
+      return view.subviews.lazy.compactMap { button(in: $0) }.first
+    }
+    let action = try XCTUnwrap(button(in: host.view))
+    action.sendActions(for: .touchUpInside)
+    try await eventually {
+      composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
+        == "Existing question"
+    }
+    XCTAssertEqual(composer.document.parts[1], firstNote)
+    XCTAssertEqual(composer.text, "Before")
+    XCTAssertEqual(
+      composer.editorBlocks.filter(\.isFeedback).map(\.content.text),
+      ["Existing question", "Existing question"])
+  }
+
   func testRecommendedTextPreservesRichDraftAttachmentsAndConflictRecovery() async throws {
     let server = DraftServer(remote: try richDraft())
     let composer = server.composer(storage: server.storage())

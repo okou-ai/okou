@@ -13,10 +13,11 @@ struct ChatFeedbackComposer: View {
   var body: some View {
     let generation = state.editorGeneration
     let blocks = state.editorBlocks
+    let appendID = blocks.last(where: { $0.isFeedback || $0.hasParagraph })?.id ?? blocks.last?.id
     ScrollViewReader { scroll in
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          ForEach(blocks) { block in
+          ForEach(Array(blocks.enumerated()), id: \.element.id) { order, block in
             if block.isFeedback || !block.content.text.isEmpty
               || !block.content.contextLabels.isEmpty || block.id == blocks.last?.id
               || focusedBlock == block.id
@@ -67,6 +68,11 @@ struct ChatFeedbackComposer: View {
                       && state.editorBlocks.contains(where: { $0.id == block.id })
                   },
                   pasteImages: state.attachments.importPastedImages,
+                  editor: state.editor, editorOrder: order, isAppendTarget: block.id == appendID,
+                  searchableRanges: {
+                    state.editorBlocks.first(where: { $0.id == block.id })?.searchableRanges ?? []
+                  },
+                  focusRequested: { state.requestEditorFocus(block.id) },
                   placeholder: block.isFeedback ? "Ask or comment on this quote" : "Message Okou",
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: state.document.hasFeedback

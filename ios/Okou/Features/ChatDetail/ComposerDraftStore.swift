@@ -28,6 +28,31 @@ final class ComposerDraftStore {
     let quote: String?
     let content: ChatDraftDocument
     var isFeedback: Bool { quote != nil }
+    var hasParagraph: Bool {
+      content.parts.contains {
+        ["text", "chat_thread", "agent", "template"].contains($0["type"]?.string ?? "")
+      }
+    }
+    var searchableRanges: [NSRange] {
+      var result: [NSRange] = []
+      var offset = 0
+      var continuesText = false
+      for part in content.parts {
+        guard part["type"]?.string == "text", let text = part["text"]?.string else {
+          continuesText = false
+          continue
+        }
+        let length = text.utf16.count
+        if continuesText {
+          result[result.count - 1].length += length
+        } else {
+          result.append(NSRange(location: offset, length: length))
+        }
+        offset += length
+        continuesText = true
+      }
+      return result
+    }
   }
 
   struct EditorFocusRequest: Equatable {
@@ -73,6 +98,11 @@ final class ComposerDraftStore {
     editorGeneration = UUID()
   }
 
+  func requestEditorFocus(_ id: UUID) {
+    guard !closed, editorBlocks.contains(where: { $0.id == id }) else { return }
+    focusRequest = EditorFocusRequest(blockID: id)
+  }
+
   func consumeFocusRequest(_ request: EditorFocusRequest) {
     if focusRequest == request { focusRequest = nil }
   }
@@ -108,15 +138,9 @@ final class ComposerDraftStore {
       let block = editorBlocks.first(where: { $0.id == id })
     else { return }
     let blocks = editorBlocks
-    func hasParagraph(_ content: ChatDraftDocument) -> Bool {
-      content.parts.contains {
-        ["text", "chat_thread", "agent", "template"].contains($0["type"]?.string ?? "")
-      }
-    }
     // Removing a block between text sections leaves two paragraphs, as on the web.
     let separatesParagraphs =
-      hasParagraph(blocks[ordinal * 2].content)
-      && hasParagraph(blocks[ordinal * 2 + 2].content)
+      blocks[ordinal * 2].hasParagraph && blocks[ordinal * 2 + 2].hasParagraph
     document.parts.replaceSubrange(
       block.indices,
       with: separatesParagraphs
