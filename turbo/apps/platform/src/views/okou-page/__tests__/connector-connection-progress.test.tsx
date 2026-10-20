@@ -207,6 +207,7 @@ test.each([
         : AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 60_000,
       context.signal,
     );
+    context.mocks.sentry();
     if (diagnostics === "unavailable") {
       vi.spyOn(Sentry, "addBreadcrumb").mockImplementation(() => {
         throw new Error("Diagnostic SDK is unavailable");
@@ -383,6 +384,7 @@ test.each(["popup", "cancel", "forbidden"] as const)(
   "Preserve the pending OAuth receipt outcome when %s ends the wait",
   async (finish) => {
     mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 60_000, context.signal);
+    context.mocks.sentry();
     const receiptStarted = context.mocks.deferred<void>();
     const oauthAttemptId = crypto.randomUUID();
     let firstReceiptRead = true;
