@@ -122,6 +122,42 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
   }
 
+  func testNativeQueuedPinChangesContinueAfterEarlierRequestsFail() async throws {
+    let fixture = PinFixture(statuses: [503, 503, 204])
+    defer { fixture.releaseAll() }
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    let host = UIHostingController(rootView: PinSidebarHarness(store: store))
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let button = try XCTUnwrap(pinButton(in: host.view))
+    button.sendActions(for: .touchUpInside)
+    try await eventually { fixture.writes.count == 1 && button.accessibilityValue == "Pinned" }
+    button.sendActions(for: .touchUpInside)
+    try await eventually { button.accessibilityValue == "Not pinned" }
+    XCTAssertEqual(fixture.writes.count, 1)
+
+    fixture.gates[0].open()
+    try await eventually { fixture.writes.count == 2 && store.list.error != nil }
+    XCTAssertEqual(store.list.error, "Pin save unavailable")
+    XCTAssertEqual(button.accessibilityValue, "Not pinned")
+    XCTAssertTrue(button.isEnabled)
+    button.sendActions(for: .touchUpInside)
+    try await eventually { button.accessibilityValue == "Pinned" }
+    XCTAssertEqual(fixture.writes.count, 2)
+    fixture.gates[1].open()
+    try await eventually { fixture.writes.count == 3 }
+    XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin", "pin"])
+    XCTAssertTrue(button.isEnabled)
+    XCTAssertEqual(button.accessibilityValue, "Pinned")
+    fixture.gates[2].open()
+    try await eventually { store.list.updatingThreads.isEmpty }
+    XCTAssertEqual(button.accessibilityValue, "Pinned")
+    XCTAssertEqual(
+      store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.target)
+  }
+
   func testClosingWorkspaceCancelsActiveAndQueuedPinsWithoutLeakingOptimism() async throws {
     let fixture = PinFixture()
     defer { fixture.releaseAll() }
