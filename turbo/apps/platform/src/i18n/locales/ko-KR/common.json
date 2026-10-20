@@ -3945,7 +3945,6 @@
   },
   "documentTemplates": {
     "agreementNote": "계약서 작성을 위한 출발점입니다. 서명 전에 프로젝트와 관할 법률에 맞게 조항을 검토하세요.",
-    "back": "템플릿으로 돌아가기",
     "categories": {
       "all": "전체",
       "business-record": "업무 기록",
@@ -3996,7 +3995,6 @@
     "preview": "{{title}} 미리 보기",
     "previousPage": "이전 샘플 페이지",
     "retry": "다시 시도",
-    "samplePages": "샘플 페이지 수: {{total}}",
     "title": "문서",
     "useNamed": "{{title}} 사용"
   },

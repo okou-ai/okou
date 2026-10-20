@@ -3945,7 +3945,6 @@
   },
   "documentTemplates": {
     "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
-    "back": "返回模板列表",
     "categories": {
       "all": "全部",
       "business-record": "收据与报价",
@@ -3996,7 +3995,6 @@
     "preview": "预览 {{title}}",
     "previousPage": "上一页样张",
     "retry": "重试",
-    "samplePages": "样张页数：{{total}}",
     "title": "文档",
     "useNamed": "使用 {{title}}"
   },

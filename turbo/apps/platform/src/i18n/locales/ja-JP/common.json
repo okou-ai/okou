@@ -3945,7 +3945,6 @@
   },
   "documentTemplates": {
     "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
-    "back": "テンプレートに戻る",
     "categories": {
       "all": "すべて",
       "business-record": "業務記録",
@@ -3996,7 +3995,6 @@
     "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
     "retry": "再試行",
-    "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
   },

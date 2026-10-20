@@ -27,6 +27,7 @@ import {
 } from "../../signals/okou-page/custom-template-library.ts";
 import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
 import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
+import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -190,7 +191,7 @@ function SlashTemplateCover({
       data-slot="slash-template-cover"
       className={cn(
         "group min-w-0 text-left",
-        aspect &&
+        isSlashTemplateNativeAspectCategory(category) &&
           "mb-2.5 block w-full break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
       )}
       aria-label={t(
@@ -203,7 +204,7 @@ function SlashTemplateCover({
     >
       <span
         className={cn(
-          "flex items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-border/60 transition-colors group-hover:bg-state-hover",
+          "relative flex items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-border/60 transition-colors group-hover:bg-state-hover",
           !aspect && "aspect-video",
         )}
         style={
@@ -214,15 +215,21 @@ function SlashTemplateCover({
             : undefined
         }
       >
-        {preview.coverUrl ? (
+        {/* A document is drawn as the picker's card draws it; other custom
+            artwork has no known shape, so it is fitted. */}
+        {preview.coverUrl && preview.documentPage ? (
+          <DocumentTemplateCover
+            coverUrl={preview.coverUrl}
+            hasMorePages={preview.documentPage.hasMorePages}
+          />
+        ) : preview.coverUrl ? (
           <img
             src={preview.coverUrl}
             alt=""
             loading="lazy"
             className={cn(
               "h-full w-full",
-              preview.template.type === "document" ||
-                preview.template.type === "custom"
+              preview.template.type === "custom"
                 ? "object-contain"
                 : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
             )}

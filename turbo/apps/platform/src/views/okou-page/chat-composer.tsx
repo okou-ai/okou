@@ -3615,18 +3615,26 @@ export function TemplateImportCard({
           kind === "illustration"
             ? "aspect-[4/5]"
             : kind === "document"
-              ? compact
-                ? "aspect-[210/297]"
-                : "aspect-[4/3]"
+              ? "aspect-[4/3]"
               : "aspect-video",
-          compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
       >
-        <Plus
-          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
+        {compact ? (
+          // On a shelf the accepted formats sit inside the tile, under the
+          // plus, so the caption below stays one line like every cover's --
+          // and the member still sees what the tile takes before choosing a
+          // file.
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
+            <Plus className="size-8" strokeWidth={1.5} aria-hidden />
+            <span className="max-w-full truncate text-xs">{hints[kind]}</span>
+          </span>
+        ) : (
+          <Plus
+            className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
+            strokeWidth={1.5}
+            aria-hidden
+          />
+        )}
         <input
           type="file"
           className="sr-only"
@@ -3647,34 +3655,42 @@ export function TemplateImportCard({
           }}
         />
       </span>
-      <span
-        className={cn(
-          TEMPLATE_TILE_CAPTION,
-          // On a shelf the import tile is one cover among many, so its caption
-          // takes the shelf's metrics rather than the picker dialog's.
-          compact
-            ? "flex-col items-stretch gap-0 px-0 pb-0 pt-0"
-            : "flex-col items-stretch gap-0.5",
-        )}
-      >
+      {compact ? (
+        // On a shelf the import tile is one cover among many, so its caption
+        // is one line in the shelf's metrics and ink, like every cover beside
+        // it. A second line made this tile 32px taller than its row, and on
+        // the document shelf -- where it shows under Custom only -- switching
+        // filters grew and shrank the shelf, which moved the whole centred
+        // page under the pointer.
         <span
           className={cn(
-            compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
-            (kind === "illustration" || kind === "document") &&
-              "whitespace-normal",
+            RAIL_TILE_CAPTION,
+            "text-muted-foreground transition-colors group-hover/tile:text-foreground",
           )}
         >
           {label}
         </span>
+      ) : (
         <span
           className={cn(
-            "shrink-0 truncate text-muted-foreground",
-            compact ? "text-[12px] leading-4" : "text-xs",
+            TEMPLATE_TILE_CAPTION,
+            "flex-col items-stretch gap-0.5",
           )}
         >
-          {hints[kind]}
+          <span
+            className={cn(
+              TEMPLATE_TILE_NAME,
+              (kind === "illustration" || kind === "document") &&
+                "whitespace-normal",
+            )}
+          >
+            {label}
+          </span>
+          <span className="shrink-0 truncate text-xs text-muted-foreground">
+            {hints[kind]}
+          </span>
         </span>
-      </span>
+      )}
     </label>
   );
 }
@@ -5502,6 +5518,7 @@ function TemplatePickerCategoryContent({
     return (
       <DocumentTemplatePickerPane
         signals={signals}
+        value={value}
         onSelect={onSelectDocument}
         customTemplates={customSection("document")}
       />
