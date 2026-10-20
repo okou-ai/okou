@@ -1,3 +1,4 @@
+import { RemoteServiceInstructions } from "./remote-service-instructions.tsx";
 import { remoteResourceHref } from "../../signals/remote-resource-detail.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { NetworkProviderPicker } from "./remote-network-picker.tsx";
@@ -15,6 +16,9 @@ import {
   ExternalLink,
   Monitor,
   Terminal,
+  Cloud,
+  Network,
+  Link2,
 } from "lucide-react";
 import {
   Button,
@@ -97,7 +101,7 @@ function StepCard({
   readonly children: ReactNode;
 }) {
   return (
-    <Card surface="composer" className="grid gap-6 p-5 sm:p-6">
+    <Card surface="composer" className="grid gap-6 p-5 text-sm sm:p-6">
       <header className="grid gap-1.5">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         {description && (
@@ -264,7 +268,7 @@ function ProtocolChoice({
         return (
           <label
             key={option.value}
-            className="flex min-h-[84px] cursor-pointer items-center gap-3 rounded-xl border border-input bg-background p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+            className="flex min-h-[84px] cursor-pointer items-center gap-3 rounded-xl border border-divider bg-background p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-focus-visible:ring-2 has-focus-visible:ring-ring"
           >
             <span className="flex size-8 shrink-0 items-center justify-center">
               {option.icon}
@@ -553,7 +557,9 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
       >
         <label className="grid gap-2">
           {t(($) => {
-            return $.remoteControlSetup.address;
+            return cloudflare
+              ? $.remoteControlSetup.cfAddressLabel
+              : $.remoteControlSetup.address;
           })}
           <Input
             value={setup.address}
@@ -569,6 +575,32 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
             }
           />
         </label>
+        {cloudflare && (
+          <details className="border-t border-divider pt-4">
+            <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.cfAddressWhere;
+              })}
+            </summary>
+            <div className="grid gap-3 pt-4 text-sm">
+              <ExternalGuide href="https://dash.cloudflare.com/">
+                {t(($) => {
+                  return $.remoteControlSetup.openCloudflare;
+                })}
+              </ExternalGuide>
+              <p>
+                {t(($) => {
+                  return $.remoteControlSetup.cfAddressActions;
+                })}
+              </p>
+              <p className="text-muted-foreground">
+                {t(($) => {
+                  return $.remoteControlSetup.cfAddressMissing;
+                })}
+              </p>
+            </div>
+          </details>
+        )}
         {!cloudflare && (
           <details className="border-t border-divider pt-4">
             <summary className="cursor-pointer text-[13px] text-muted-foreground">
@@ -917,7 +949,7 @@ function OsChoice({ setup }: { readonly setup: RemoteSetup }) {
           return (
             <label
               key={item.value}
-              className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border border-input p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50"
+              className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border border-divider p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50"
             >
               <Laptop size={20} aria-hidden />
               <span className="flex-1 text-sm">{item.label}</span>
@@ -981,21 +1013,7 @@ function ServiceStep({ setup }: { readonly setup: RemoteSetup }) {
       <OsChoice setup={setup} />
       {setup.step !== "os" && (
         <>
-          <p className="text-sm leading-6">
-            {t(($) => {
-              return vnc
-                ? setup.os === "mac"
-                  ? $.remoteControlSetup.macVnc
-                  : setup.os === "windows"
-                    ? $.remoteControlSetup.windowsVnc
-                    : $.remoteControlSetup.linuxVnc
-                : setup.os === "mac"
-                  ? $.remoteControlSetup.macSsh
-                  : setup.os === "windows"
-                    ? $.remoteControlSetup.windowsSsh
-                    : $.remoteControlSetup.linuxSsh;
-            })}
-          </p>
+          <RemoteServiceInstructions os={setup.os} vnc={vnc} />
           {vnc ? (
             <p className="text-sm text-muted-foreground">
               {t(($) => {
@@ -1046,14 +1064,22 @@ function ExistingStep() {
   const setup = useGet(remoteSetup$);
   const [starting, start] = useLoadableSet(beginRemoteGuide$);
   return (
-    <StepCard
-      title={t(($) => {
-        return $.remoteControlSetup.existingTitle;
-      })}
-    >
+    <div className="grid gap-3">
+      <header className="mb-2 grid gap-1.5">
+        <h2 className="text-lg font-semibold tracking-tight">
+          {t(($) => {
+            return $.remoteControlSetup.existingTitle;
+          })}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.existingDescription;
+          })}
+        </p>
+      </header>
       <Button
-        variant="neutral"
-        className="h-auto justify-start gap-4 whitespace-normal p-5 text-left"
+        variant="outline"
+        className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
         disabled={opening.state === "loading"}
         onClick={() => {
           if (setup?.route !== "direct") {
@@ -1062,24 +1088,27 @@ function ExistingStep() {
           detach(open(signal), Reason.DomCallback);
         }}
       >
-        <Terminal size={20} aria-hidden />
-        <span className="grid gap-2">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+          <Link2 size={20} aria-hidden />
+        </span>
+        <span className="grid min-w-0 flex-1 gap-1">
           <strong>
             {t(($) => {
               return $.remoteControlSetup.direct;
             })}
           </strong>
-          <span className="font-normal text-muted-foreground">
+          <span className="text-xs font-normal text-muted-foreground">
             {t(($) => {
               return $.remoteControlSetup.directHelp;
             })}
           </span>
         </span>
+        <ChevronRight size={16} aria-hidden />
       </Button>
       {tailscale && (
         <Button
-          variant="neutral"
-          className="h-auto justify-start whitespace-normal p-5 text-left"
+          variant="outline"
+          className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
           onClick={() => {
             if (setup?.route !== "tailscale") {
               update({ formStarted: false, address: "", networkId: "" });
@@ -1087,23 +1116,27 @@ function ExistingStep() {
             detach(start(signal), Reason.DomCallback);
           }}
         >
-          <span className="grid gap-2">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+            <Network size={20} aria-hidden />
+          </span>
+          <span className="grid min-w-0 flex-1 gap-1">
             <strong>
               {t(($) => {
                 return $.tailscale.title;
               })}
             </strong>
-            <span className="font-normal text-muted-foreground">
+            <span className="text-xs font-normal text-muted-foreground">
               {t(($) => {
                 return $.remoteControlSetup.tailscaleHelp;
               })}
             </span>
           </span>
+          <ChevronRight size={16} aria-hidden />
         </Button>
       )}
       <Button
-        variant="neutral"
-        className="h-auto justify-start whitespace-normal p-5 text-left"
+        variant="outline"
+        className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
         onClick={() => {
           update({
             route: "cloudflare_access",
@@ -1114,23 +1147,39 @@ function ExistingStep() {
           });
         }}
       >
-        <span className="grid gap-2">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+          <Cloud size={20} aria-hidden />
+        </span>
+        <span className="grid min-w-0 flex-1 gap-1">
           <strong>
             {t(($) => {
               return $.cloudflareAccess.title;
             })}
           </strong>
-          <span className="font-normal text-muted-foreground">
+          <span className="text-xs font-normal text-muted-foreground">
             {t(($) => {
               return $.remoteControlSetup.cloudflareHelp;
             })}
           </span>
         </span>
+        <ChevronRight size={16} aria-hidden />
+      </Button>
+      <Button
+        variant="quiet"
+        className="justify-self-start"
+        onClick={() => {
+          update({ step: "entry" });
+        }}
+      >
+        <ArrowLeft size={16} aria-hidden />
+        {t(($) => {
+          return $.remoteControlSetup.firstTimeSetup;
+        })}
       </Button>
       <OperationError
         failed={opening.state === "hasError" || starting.state === "hasError"}
       />
-    </StepCard>
+    </div>
   );
 }
 function CloudflareStep({ setup }: { readonly setup: RemoteSetup }) {

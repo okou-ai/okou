@@ -32,7 +32,7 @@ export function NetworkProviderPicker({
       {tailscale && (
         <Button
           variant="outline"
-          className="h-auto min-h-16 justify-start whitespace-normal p-4 text-left"
+          className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
           disabled={choosing.state === "loading"}
           onClick={(event) => {
             const tags =
@@ -43,7 +43,9 @@ export function NetworkProviderPicker({
             detach(choose("tailscale", tags, signal), Reason.DomCallback);
           }}
         >
-          <Network size={20} aria-hidden />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+            <Network size={20} aria-hidden />
+          </span>
           <span className="grid flex-1 gap-1">
             <span>
               {t(($) => {
@@ -61,13 +63,15 @@ export function NetworkProviderPicker({
       )}
       <Button
         variant="outline"
-        className="h-auto min-h-16 justify-start whitespace-normal p-4 text-left"
+        className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
         disabled={choosing.state === "loading"}
         onClick={() => {
           detach(choose("cloudflare_access", "", signal), Reason.DomCallback);
         }}
       >
-        <Cloud size={20} aria-hidden />
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+          <Cloud size={20} aria-hidden />
+        </span>
         <span className="grid flex-1 gap-1">
           <span>
             {t(($) => {

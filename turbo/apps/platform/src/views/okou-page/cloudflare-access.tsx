@@ -1,3 +1,5 @@
+import { editRemoteCloudflareCredentials$ } from "../../signals/remote-resource-detail.ts";
+import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import type { ReactNode, ClipboardEvent } from "react";
 import {
   RemoteNetworkScopeField,
@@ -269,9 +271,7 @@ function accessCredentialInput(
   name: keyof AccessCredentials,
 ): HTMLInputElement | null {
   const input = form.elements.namedItem(name);
-  return input instanceof HTMLInputElement && input.type === "password"
-    ? input
-    : null;
+  return input instanceof HTMLInputElement ? input : null;
 }
 
 function pasteAccessCredentials(event: ClipboardEvent<HTMLInputElement>) {
@@ -346,46 +346,50 @@ export function AccessFields({
               })}
             </p>
           )}
-          <label className="grid gap-2">
-            {t(($) => {
-              return guided
-                ? $.remoteNetworkGuide.clientId
-                : $.cloudflareAccess.clientId;
-            })}
-            <Input
+          <div className="grid gap-2">
+            <label htmlFor="cloudflare-clientId">
+              {t(($) => {
+                return guided
+                  ? $.remoteNetworkGuide.clientId
+                  : $.cloudflareAccess.clientId;
+              })}
+            </label>
+            <RemoteSecretInput
+              id="cloudflare-clientId"
               name="clientId"
               placeholder={t(($) => {
                 return $.cloudflareAccess.clientIdPlaceholder;
               })}
               required
-              type="password"
               pattern="[!-~]+"
               maxLength={CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}
               autoComplete="new-password"
               spellCheck={false}
               onPaste={pasteAccessCredentials}
             />
-          </label>
-          <label className="grid gap-2">
-            {t(($) => {
-              return guided
-                ? $.remoteNetworkGuide.clientSecret
-                : $.cloudflareAccess.clientSecret;
-            })}
-            <Input
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="cloudflare-clientSecret">
+              {t(($) => {
+                return guided
+                  ? $.remoteNetworkGuide.clientSecret
+                  : $.cloudflareAccess.clientSecret;
+              })}
+            </label>
+            <RemoteSecretInput
+              id="cloudflare-clientSecret"
               name="clientSecret"
               placeholder={t(($) => {
                 return $.cloudflareAccess.clientSecretPlaceholder;
               })}
               required
-              type="password"
               pattern="[!-~]+"
               maxLength={CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}
               autoComplete="new-password"
               spellCheck={false}
               onPaste={pasteAccessCredentials}
             />
-          </label>
+          </div>
           {guided && <RemoteNetworkCredentialHelp provider="cloudflare" />}
         </>
       )}
@@ -1180,6 +1184,7 @@ function CloudflareConfigCard({
   const openConversion = useSet(openCloudflareAccessConversion$);
   const openPromotion = useSet(openCloudflareAccessPromotion$);
   const openDeletion = useSet(openCloudflareAccessDeletion$);
+  const updateCredentials = useSet(editRemoteCloudflareCredentials$);
   const signal = useGet(pageSignal$);
   return (
     <article
@@ -1206,9 +1211,24 @@ function CloudflareConfigCard({
             }}
           >
             {t(($) => {
-              return $.cloudflareAccess.edit;
+              return compact
+                ? $.remoteControlSetup.networkEditSettings
+                : $.cloudflareAccess.edit;
             })}
           </Button>
+          {compact && (
+            <Button
+              type="button"
+              variant="quiet"
+              onClick={() => {
+                detach(updateCredentials(config, signal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return $.remoteControlSetup.networkUpdateCredentials;
+              })}
+            </Button>
+          )}
           {scope === "personal" && canPromote && !compact && (
             <Button
               variant="outline"

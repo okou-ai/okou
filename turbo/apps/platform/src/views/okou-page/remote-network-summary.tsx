@@ -67,7 +67,7 @@ export function RemoteNetworkSummary({
           <>
             <dt className="text-muted-foreground">
               {t(($) => {
-                return $.tailscale.tags;
+                return $.remoteControlSetup.allowedTags;
               })}
             </dt>
             <dd className="break-all">{tags.join(", ")}</dd>
@@ -124,12 +124,7 @@ export function RemoteNetworkFooter({
   const enter = useSet(enterRemoteSetup$);
   const update = useSet(updateRemoteSetup$);
   return (
-    <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-divider pt-5">
-      <p className="text-xs text-muted-foreground">
-        {t(($) => {
-          return $.remoteControlSetup.secretsNotShown;
-        })}
-      </p>
+    <footer className="flex flex-wrap items-center justify-end gap-4 border-t border-divider pt-5">
       <Button
         className={REMOTE_PAGE_ACTION}
         onClick={() => {

@@ -1,3 +1,4 @@
+import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
@@ -1307,11 +1308,10 @@ function VncPasswordInput({
               return $.vnc.credential.usernamePassword;
             })}
       </label>
-      <Input
+      <RemoteSecretInput
         ref={mountSecret}
         id="vnc-password"
         name="password"
-        type="password"
         required={!optional}
         autoComplete="new-password"
         aria-describedby="vnc-password-help"

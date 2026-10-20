@@ -10,6 +10,7 @@ import {
 import {
   remoteSetup$,
   leaveRemoteSetup$,
+  remoteControlGuidedEnabled$,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
 import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
@@ -1261,17 +1262,23 @@ interface ConnectorCatalogHeaderProps {
 
 function ConnectorCatalogHeader(props: ConnectorCatalogHeaderProps) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const scope = useGet(connectorsScope$);
   const description =
-    props.connectorCatalogCount !== null
-      ? t(
-          ($) => {
-            return $.connectors.catalog.descriptionWithCount;
-          },
-          { value: formatLocalizedNumber(props.connectorCatalogCount) },
-        )
-      : t(($) => {
-          return $.connectors.catalog.description;
-        });
+    guided && (scope === "remote-control" || scope === "private-network")
+      ? t(($) => {
+          return $.remoteControlSetup.catalogDescription;
+        })
+      : props.connectorCatalogCount !== null
+        ? t(
+            ($) => {
+              return $.connectors.catalog.descriptionWithCount;
+            },
+            { value: formatLocalizedNumber(props.connectorCatalogCount) },
+          )
+        : t(($) => {
+            return $.connectors.catalog.description;
+          });
   return (
     <header className="shrink-0 bg-transparent px-4 sm:px-6 pt-0 md:pt-10 pb-0">
       <div className="mx-auto w-full max-w-[900px]">

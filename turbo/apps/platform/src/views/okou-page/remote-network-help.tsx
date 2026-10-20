@@ -1,6 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, CircleHelp } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -556,7 +556,7 @@ export function RemoteNetworkCredentialHelp({
       <Button
         type="button"
         variant="quiet"
-        className="h-auto justify-self-start px-0 text-sm"
+        className="h-auto justify-self-start px-0 text-xs text-muted-foreground hover:text-foreground"
         onClick={(event) => {
           const field = event.currentTarget
             .closest("form")
@@ -567,6 +567,7 @@ export function RemoteNetworkCredentialHelp({
           );
         }}
       >
+        <CircleHelp size={14} aria-hidden />
         {t(($) => {
           return $.remoteNetworkGuide.open;
         })}

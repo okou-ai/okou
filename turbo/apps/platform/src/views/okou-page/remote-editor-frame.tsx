@@ -37,7 +37,7 @@ export function RemoteEditorFrame({
 }) {
   if (inline) {
     return (
-      <Card surface="composer" className="grid gap-6 p-5 sm:p-6">
+      <Card surface="composer" className="grid gap-6 p-5 text-sm sm:p-6">
         <header className="grid gap-1.5">
           <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
           {description && (

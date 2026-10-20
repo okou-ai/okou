@@ -20,6 +20,9 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Button, Card, LoadErrorRow } from "@okouai/ui";
+import { buttonVariants } from "@okouai/ui/components/ui/button";
+import { cn } from "@okouai/ui/lib/utils";
+import { Link } from "../router/link.tsx";
 import {
   enterRemoteSetup$,
   remoteSetup$,
@@ -487,6 +490,11 @@ function PrivateNetworkRows({
 }
 export function GuidedPrivateNetworkPanel() {
   const { t } = useTranslation();
+  const params = useGet(searchParams$);
+  const connectionsParams = new URLSearchParams(params);
+  connectionsParams.set("scope", "remote-control");
+  connectionsParams.delete("remoteResource");
+  connectionsParams.delete("setup");
   const tailscale = useLoadable(tailscaleConfigs$);
   const access = useLoadable(cloudflareAccessConfigs$);
   const tailscaleEnabled = useGet(tailscaleSettingsEnabled$);
@@ -572,6 +580,7 @@ export function GuidedPrivateNetworkPanel() {
               open(true);
             }}
           >
+            <Plus size={16} aria-hidden />
             {t(($) => {
               return $.remoteControlSetup.addNetwork;
             })}
@@ -579,6 +588,19 @@ export function GuidedPrivateNetworkPanel() {
         </Card>
       )}
       <PrivateNetworkRows ts={ts} cf={cf} />
+      <Link
+        pathname="/connectors"
+        options={{ searchParams: connectionsParams }}
+        className={cn(
+          buttonVariants({ variant: "quiet", size: "sm" }),
+          "justify-self-start text-muted-foreground",
+        )}
+      >
+        <Monitor size={16} aria-hidden />
+        {t(($) => {
+          return $.remoteControlSetup.manageConnections;
+        })}
+      </Link>
       <TailscaleDialog />
       <CloudflareAccessDialog />
       <CloudflareAccessConversionDialog />

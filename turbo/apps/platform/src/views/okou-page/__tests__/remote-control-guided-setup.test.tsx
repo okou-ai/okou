@@ -171,6 +171,56 @@ test("Remote control opens management before setup, without standalone credentia
     screen.getByText("Operate through the screen, mouse and keyboard."),
   ).toBeInTheDocument();
 });
+test("Private network links to connection management without starting device setup", async () => {
+  await page("/connectors?scope=private-network&setup=ssh");
+  click(
+    await waitFor(() => {
+      return getAction("link", "Manage device connections");
+    }),
+  );
+  await screen.findByRole("heading", { name: "No devices added yet" });
+  expect(
+    screen.queryByRole("heading", { name: "Set up a connection" }),
+  ).toBeNull();
+});
+test.each(["tailscale", "cloudflare"] as const)(
+  "%s credential update opens blank replacement fields without fetching saved secrets",
+  async (provider) => {
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, { configs: [network] });
+    });
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, { configs: [cloudflareNetwork] });
+    });
+    await page(
+      `/connectors?scope=private-network&remoteResource=${provider}:${network.id}`,
+    );
+    click(
+      await waitFor(() => {
+        return getAction("button", "Update credentials");
+      }),
+    );
+    await screen.findByRole("heading", {
+      name:
+        provider === "tailscale" ? "Edit Tailscale" : "Edit Cloudflare Access",
+    });
+    const secret = await screen.findByLabelText("Client Secret");
+    expect(secret).toHaveValue("");
+    expect(secret).toBeRequired();
+    expect(secret).toHaveAttribute("type", "password");
+    const field = secret.parentElement!;
+    await fill(secret, "test-only-replacement");
+    click(getAction("button", "Show entered value", field));
+    expect(secret).toHaveValue("test-only-replacement");
+    expect(secret).toHaveAttribute("type", "text");
+    click(getAction("button", "Back"));
+    await screen.findByRole("heading", { name: network.name });
+    click(getAction("button", "Update credentials"));
+    const reopened = await screen.findByLabelText("Client Secret");
+    expect(reopened).toHaveValue("");
+    expect(reopened).toHaveAttribute("type", "password");
+  },
+);
 test("Direct SSH requires a name, retains input through username help and saves through the contract", async () => {
   const requests: unknown[] = [];
   let savedId = "";
@@ -199,6 +249,11 @@ test("Direct SSH requires a name, retains input through username help and saves 
   await fill(username, "operator");
   expect(screen.queryByLabelText("Credential name")).toBeNull();
   await fill(screen.getByLabelText("Password"), "test-only-password");
+  click(getAction("button", "Show entered value"));
+  expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
+  expect(screen.getByLabelText("Password")).toHaveValue("test-only-password");
+  click(getAction("button", "Hide entered value"));
+  expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
   await fill(name, "Office computer");
   click(getAction("button", "Where can I find my username?"));
   await screen.findByText("whoami");
@@ -928,6 +983,14 @@ async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
 test("Cloudflare four-step guide preserves the draft and resumes after returning", async () => {
   const name = await openNetworkForm("Cloudflare Access");
   await fill(name, "Cloudflare draft");
+  const secret = screen.getByLabelText("Client Secret");
+  await fill(secret, "test-only-draft-secret");
+  click(getAction("button", "Show entered value", secret.parentElement!));
+  expect(secret).toHaveAttribute("type", "text");
+  expect(screen.getByLabelText("Client ID")).toHaveAttribute(
+    "type",
+    "password",
+  );
   click(getAction("button", "Where do I get these details?"));
   await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
   expect(getAction("link", "Open Cloudflare dashboard")).toHaveAttribute(
@@ -938,6 +1001,9 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
   expect(screen.getByText("2 / 4")).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   expect(name).toHaveValue("Cloudflare draft");
+  expect(secret).toHaveValue("test-only-draft-secret");
+  click(getAction("button", "Hide entered value"));
+  expect(secret).toHaveAttribute("type", "password");
   click(getAction("button", "Where do I get these details?"));
   expect(screen.getByText("2 / 4")).toBeInTheDocument();
   click(getAction("button", "Previous"));
@@ -962,11 +1028,8 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
 test("Tailscale guide uses current form tags and keeps secret inputs mounted through close", async () => {
   const name = await openNetworkForm("Tailscale");
   await fill(name, "Tailnet draft");
-  click(screen.getByText("Registration tags", { selector: "summary" }));
-  await fill(
-    screen.getByLabelText("Registration tags"),
-    "tag:office, tag:review",
-  );
+  click(screen.getByText("Allowed tags", { selector: "summary" }));
+  await fill(screen.getByLabelText("Allowed tags"), "tag:office, tag:review");
   const secret = screen.getByLabelText("Client Secret");
   await fill(secret, "test-only-draft-secret");
   click(getAction("button", "Where do I get these details?"));
@@ -1129,7 +1192,7 @@ test("Organization network details let members use the network without managemen
       "You can use this network; organization administrators manage it",
     ),
   ).toBeInTheDocument();
-  expect(queryAction("button", "Edit Cloudflare Access")).toBeNull();
+  expect(queryAction("button", "Edit settings")).toBeNull();
   expect(queryAction("button", "Delete Cloudflare Access")).toBeNull();
 });
 
@@ -1195,7 +1258,7 @@ test("Sharing Tailscale requires confirmation, keeps the draft on cancel, and pr
     "admin",
   );
   await screen.findByRole("heading", { name: network.name });
-  click(getAction("button", "Edit Tailscale"));
+  click(getAction("button", "Edit settings"));
   const name = await screen.findByLabelText("Network name");
   await fill(name, "Shared office draft");
   click(screen.getByText("Organization members", { exact: true }));
@@ -1273,7 +1336,7 @@ test("Restricting Cloudflare requires the current impact acknowledgement and ret
     "admin",
   );
   await screen.findByRole("heading", { name: saved.name });
-  click(getAction("button", "Edit Cloudflare Access"));
+  click(getAction("button", "Edit settings"));
   await screen.findByLabelText("Network name");
   click(screen.getByText("Only me", { exact: true }));
   click(getAction("button", "Save network"));
@@ -1321,7 +1384,7 @@ test("A scope revision conflict keeps the edit draft and prevents another unrevi
     "admin",
   );
   await screen.findByRole("heading", { name: network.name });
-  click(getAction("button", "Edit Tailscale"));
+  click(getAction("button", "Edit settings"));
   const name = await screen.findByLabelText("Network name");
   await fill(name, "Retained after conflict");
   click(screen.getByText("Organization members", { exact: true }));

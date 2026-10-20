@@ -1,3 +1,4 @@
+import { editRemoteTailscaleCredentials$ } from "../../signals/remote-resource-detail.ts";
 import {
   RemoteNetworkScopeField,
   RemoteNetworkScopeConfirmation,
@@ -672,6 +673,7 @@ function TailscaleConfigCard({
 }) {
   const { t } = useTranslation();
   const open = useSet(openTailscaleDialog$);
+  const updateCredentials = useSet(editRemoteTailscaleCredentials$);
   const signal = useGet(pageSignal$);
   return (
     <article
@@ -706,9 +708,24 @@ function TailscaleConfigCard({
             }}
           >
             {t(($) => {
-              return $.tailscale.edit;
+              return compact
+                ? $.remoteControlSetup.networkEditSettings
+                : $.tailscale.edit;
             })}
           </Button>
+          {compact && (
+            <Button
+              type="button"
+              variant="quiet"
+              onClick={() => {
+                detach(updateCredentials(config, signal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return $.remoteControlSetup.networkUpdateCredentials;
+              })}
+            </Button>
+          )}
           {admin && !compact && (
             <Button
               type="button"

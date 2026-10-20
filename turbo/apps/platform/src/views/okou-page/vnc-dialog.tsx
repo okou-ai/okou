@@ -320,9 +320,7 @@ function VncFormActions({
         className={
           inline && !destructive && !hostEditor ? REMOTE_PAGE_ACTION : undefined
         }
-        variant={
-          destructive ? "destructive" : hostEditor ? "outline" : "default"
-        }
+        variant={destructive ? "destructive" : hostEditor ? "quiet" : "default"}
         disabled={saving || conflict || (!uncertain && blocked)}
       >
         <VncSaveLabel

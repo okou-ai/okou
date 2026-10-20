@@ -1,3 +1,4 @@
+import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import type { ReactNode } from "react";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { RemoteNetworkCredentialHelp } from "./remote-network-help.tsx";
@@ -21,36 +22,42 @@ function TailscaleCredentials() {
   const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <fieldset ref={mount} className="grid min-w-0 gap-4">
-      <label className="grid gap-2">
-        {t(($) => {
-          return guided ? $.remoteNetworkGuide.clientId : $.tailscale.clientId;
-        })}
-        <Input
+      <div className="grid gap-2">
+        <label htmlFor="tailscale-tailscaleClientId">
+          {t(($) => {
+            return guided
+              ? $.remoteNetworkGuide.clientId
+              : $.tailscale.clientId;
+          })}
+        </label>
+        <RemoteSecretInput
+          id="tailscale-tailscaleClientId"
           name="tailscaleClientId"
-          type="password"
           required
           maxLength={TAILSCALE_CREDENTIAL_MAX_LENGTH}
           pattern="[!-~]+"
           autoComplete="new-password"
           spellCheck={false}
         />
-      </label>
-      <label className="grid gap-2">
-        {t(($) => {
-          return guided
-            ? $.remoteNetworkGuide.clientSecret
-            : $.tailscale.clientSecret;
-        })}
-        <Input
+      </div>
+      <div className="grid gap-2">
+        <label htmlFor="tailscale-tailscaleClientSecret">
+          {t(($) => {
+            return guided
+              ? $.remoteNetworkGuide.clientSecret
+              : $.tailscale.clientSecret;
+          })}
+        </label>
+        <RemoteSecretInput
+          id="tailscale-tailscaleClientSecret"
           name="tailscaleClientSecret"
-          type="password"
           required
           maxLength={TAILSCALE_CREDENTIAL_MAX_LENGTH}
           pattern="[!-~]+"
           autoComplete="new-password"
           spellCheck={false}
         />
-      </label>
+      </div>
     </fieldset>
   );
 }
@@ -67,7 +74,7 @@ function TailscaleTags({
     <div className="grid gap-2">
       <label className="grid gap-2">
         {t(($) => {
-          return $.tailscale.tags;
+          return guided ? $.remoteControlSetup.allowedTags : $.tailscale.tags;
         })}
         <Input
           name="tailscaleTags"
@@ -81,7 +88,9 @@ function TailscaleTags({
       </label>
       <span id="tailscale-tags-help" className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.tailscale.tagsHelp;
+          return guided
+            ? $.remoteControlSetup.allowedTagsHelp
+            : $.tailscale.tagsHelp;
         })}
       </span>
     </div>
@@ -140,20 +149,21 @@ export function TailscaleFields({
           </label>
         )}
         {(!config || replace) && <TailscaleCredentials />}
-        {guided && (!config || replace) && (
-          <RemoteNetworkCredentialHelp provider="tailscale" />
-        )}
-        {guided && (
-          <details>
-            <summary className="cursor-pointer text-[13px] text-muted-foreground">
+        {guided && config && <TailscaleTags config={config} guided />}
+        {guided && !config && (
+          <details className="border-t border-divider pt-4">
+            <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
               {t(($) => {
-                return $.tailscale.tags;
+                return $.remoteControlSetup.allowedTags;
               })}
             </summary>
             <div className="pt-3">
               <TailscaleTags config={config} guided />
             </div>
           </details>
+        )}
+        {guided && (!config || replace) && (
+          <RemoteNetworkCredentialHelp provider="tailscale" />
         )}
       </div>
     </div>

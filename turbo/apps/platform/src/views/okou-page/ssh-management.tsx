@@ -1,3 +1,4 @@
+import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import {
   RemoteConnectionSummary,
   RemoteConnectionCheckUnavailable,
@@ -445,20 +446,22 @@ function PrivateKeyFields({
           </p>
         )}
       </div>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.passphrase;
-        })}
-        <Input
+      <div className="grid gap-2">
+        <label htmlFor="ssh-passphrase">
+          {t(($) => {
+            return $.ssh.passphrase;
+          })}
+        </label>
+        <RemoteSecretInput
+          id="ssh-passphrase"
           name="passphrase"
           placeholder={t(($) => {
             return $.ssh.placeholders.passphrase;
           })}
-          type="password"
           maxLength={SSH_PASSPHRASE_MAX_LENGTH}
           autoComplete="new-password"
         />
-      </label>
+      </div>
     </>
   );
 }
@@ -505,11 +508,14 @@ function SshAuthenticationFields({
         </SegmentControl>
       </div>
       {editor.method === "password" ? (
-        <label key="password" className="grid gap-2">
-          {t(($) => {
-            return $.ssh.credential.password;
-          })}
-          <Input
+        <div key="password" className="grid gap-2">
+          <label htmlFor="ssh-password">
+            {t(($) => {
+              return $.ssh.credential.password;
+            })}
+          </label>
+          <RemoteSecretInput
+            id="ssh-password"
             name="password"
             placeholder={
               connectionLogin && credential
@@ -520,7 +526,6 @@ function SshAuthenticationFields({
                     return $.ssh.placeholders.password;
                   })
             }
-            type="password"
             required={
               !credential ||
               !connectionLogin ||
@@ -529,7 +534,7 @@ function SshAuthenticationFields({
             maxLength={SSH_PASSWORD_MAX_LENGTH}
             autoComplete="new-password"
           />
-        </label>
+        </div>
       ) : (
         <PrivateKeyFields
           key="private-key"
@@ -1038,8 +1043,33 @@ function SshConflictReview({ dialog }: { readonly dialog: SshDialogState }) {
   );
 }
 
-function useDialogCopy(dialog: SshDialogState | null) {
+function useDialogCopy(dialog: SshDialogState | null, inline: boolean) {
   const { t } = useTranslation();
+  const editor = useGet(sshConnectionModeEditor$);
+  if (inline && dialog?.kind === "edit") {
+    return {
+      title: t(($) => {
+        return $.remoteControlSetup.editConnection;
+      }),
+      description: `${dialog.connection?.displayName ?? ""} · ${t(($) => {
+        return $.ssh.label;
+      })}`,
+    };
+  }
+  if (inline && dialog?.kind === "create") {
+    return {
+      title: t(($) => {
+        return editor.mode === "direct"
+          ? $.remoteControlSetup.directTitle
+          : $.remoteControlSetup.loginTitle;
+      }),
+      description: t(($) => {
+        return editor.mode === "direct"
+          ? $.remoteControlSetup.directDescription
+          : $.remoteControlSetup.loginDescription;
+      }),
+    };
+  }
   switch (dialog?.kind) {
     case "create": {
       return {
@@ -1224,9 +1254,7 @@ function SshFormActions({
           inline && !destructive && !hostEditor ? REMOTE_PAGE_ACTION : undefined
         }
         disabled={isSaving || (!uncertain && blocked)}
-        variant={
-          destructive ? "destructive" : hostEditor ? "outline" : "default"
-        }
+        variant={destructive ? "destructive" : hostEditor ? "quiet" : "default"}
       >
         <SshSaveLabel
           isSaving={isSaving}
@@ -1623,7 +1651,6 @@ export function SshDialog({
   readonly initialHost?: string;
   readonly initialPort?: string;
 } = {}) {
-  const { t } = useTranslation();
   const lastDialog = useLastResolved(sshDialog$);
   const sessionKey = useGet(authenticatedSessionKey$);
   const editor = useGet(sshConnectionModeEditor$);
@@ -1631,7 +1658,7 @@ export function SshDialog({
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveAction);
   const dialog = lastDialog?.sessionKey === sessionKey ? lastDialog : null;
-  const { title, description } = useDialogCopy(dialog);
+  const { title, description } = useDialogCopy(dialog, inline);
   const isSaving = saving.state === "loading";
   if (
     !dialog ||
@@ -1645,20 +1672,8 @@ export function SshDialog({
     <RemoteEditorFrame
       key={dialog.instanceId}
       inline={inline}
-      title={
-        inline && dialog.kind === "edit"
-          ? t(($) => {
-              return $.remoteControlSetup.editConnection;
-            })
-          : title
-      }
-      description={
-        inline && dialog.kind === "edit"
-          ? `${dialog.connection?.displayName ?? ""} · ${t(($) => {
-              return $.ssh.label;
-            })}`
-          : description
-      }
+      title={title}
+      description={description}
       busy={isSaving}
       onClose={onCancel ?? close}
     >

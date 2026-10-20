@@ -1,5 +1,7 @@
 import { closeSshDialog$ } from "./ssh.ts";
 import { closeVncDialog$ } from "./vnc.ts";
+import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
+import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "./external/feature-switch.ts";
@@ -15,6 +17,8 @@ import {
   saveTailscale$,
   tailscaleDialog$,
   tailscaleConfigs$,
+  openTailscaleDialog$,
+  replaceTailscaleCredentials$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
@@ -22,7 +26,36 @@ import {
   cloudflareAccessDialog$,
   cloudflareAccessConfigs$,
   cloudflareAccessSummary$,
+  openCloudflareAccessDialog$,
+  replaceCloudflareAccessToken$,
 } from "./cloudflare-access.ts";
+
+export const editRemoteTailscaleCredentials$ = command(
+  async ({ get, set }, config: TailscaleConfig, signal: AbortSignal) => {
+    await set(openTailscaleDialog$, "edit", config, signal);
+    signal.throwIfAborted();
+    const dialog = await get(tailscaleDialog$);
+    signal.throwIfAborted();
+    if (dialog?.kind === "edit" && dialog.config?.id === config.id) {
+      set(replaceTailscaleCredentials$, true);
+    }
+  },
+);
+export const editRemoteCloudflareCredentials$ = command(
+  async (
+    { get, set },
+    config: ScopedCloudflareAccessConfig,
+    signal: AbortSignal,
+  ) => {
+    await set(openCloudflareAccessDialog$, "edit", config, signal);
+    signal.throwIfAborted();
+    const dialog = await get(cloudflareAccessDialog$);
+    signal.throwIfAborted();
+    if (dialog?.kind === "edit" && dialog.config?.id === config.id) {
+      set(replaceCloudflareAccessToken$, true);
+    }
+  },
+);
 
 export const privateNetworkDirectorySummary$ = computed(async (get) => {
   if (!get(remoteControlGuidedEnabled$)) {

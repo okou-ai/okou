@@ -250,9 +250,10 @@ export const mountTailscaleForm$ = onRef(
           ) {
             set(closeTailscaleDialog$);
           } else {
+            // Ref reattachment must preserve the dialog's replacement choice.
+            // Closing the dialog resets that choice; form cleanup clears inputs.
             set(resetSave$);
             set(attempt$, null);
-            set(replace$, false);
           }
         }
       },
