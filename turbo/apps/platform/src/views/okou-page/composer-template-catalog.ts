@@ -150,8 +150,11 @@ export interface SlashTemplatePreview {
    * Absent when the category uses the shared 16:9 tile.
    */
   readonly aspect?: { readonly width: number; readonly height: number };
-  /** Documents only: whether the sheet stands over the ones behind it. */
-  readonly morePages?: boolean;
+  /**
+   * Present exactly on document covers, which draw the first page as a sheet
+   * (`DocumentTemplateCover`), over the ones behind it when there are more.
+   */
+  readonly documentPage?: { readonly hasMorePages: boolean };
   readonly template: GenerationTemplateRequest;
   readonly attachment: ComposerTemplateAttachment;
 }
@@ -169,7 +172,7 @@ export function customSlashTemplatePreview(
     ...(template.kind === "document"
       ? {
           aspect: SLASH_DOCUMENT_COVER_ASPECT,
-          morePages: template.coverHasMorePages,
+          documentPage: { hasMorePages: template.coverHasMorePages },
         }
       : template.kind === "illustration"
         ? { aspect: { width: 1, height: 1 } }
@@ -256,7 +259,7 @@ function documentPreview(item: DocumentTemplateItem): SlashTemplatePreview {
     title: item.title,
     coverUrl: nativeCoverUrl(item.previewImageUrl),
     aspect: SLASH_DOCUMENT_COVER_ASPECT,
-    morePages: item.previewPages.length > 1,
+    documentPage: { hasMorePages: item.previewPages.length > 1 },
     template: toDocumentGenerationTemplate(item),
     attachment: {
       type: "document",

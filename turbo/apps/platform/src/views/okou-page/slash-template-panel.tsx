@@ -185,9 +185,6 @@ function SlashTemplateCover({
   const { t } = useTranslation();
   const aspect = preview.aspect;
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
-  // A document is drawn as the picker's card draws it; other custom artwork
-  // has no known shape, so it is fitted.
-  const documentPage = category === "document";
   return (
     <button
       type="button"
@@ -218,10 +215,12 @@ function SlashTemplateCover({
             : undefined
         }
       >
-        {preview.coverUrl && documentPage ? (
+        {/* A document is drawn as the picker's card draws it; other custom
+            artwork has no known shape, so it is fitted. */}
+        {preview.coverUrl && preview.documentPage ? (
           <DocumentTemplateCover
             coverUrl={preview.coverUrl}
-            hasMorePages={preview.morePages === true}
+            hasMorePages={preview.documentPage.hasMorePages}
           />
         ) : preview.coverUrl ? (
           <img

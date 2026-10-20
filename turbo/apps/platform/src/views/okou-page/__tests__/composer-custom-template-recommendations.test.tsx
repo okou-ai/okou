@@ -425,6 +425,8 @@ test("Document defaults to Custom when documents exist and separates built-in pu
   expect(
     within(shelf).getByLabelText("Import your own document"),
   ).toHaveAttribute("accept", ".docx,.doc");
+  // The tile names what it takes before a file is chosen.
+  expect(within(shelf).getByText("(.docx, .doc)")).toBeInTheDocument();
   // The shelf draws a document the way the picker and the slash panel do,
   // from the same cover.
   expect(
