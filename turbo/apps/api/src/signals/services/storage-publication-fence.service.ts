@@ -12,6 +12,8 @@ import { eq, sql, type SQL } from "drizzle-orm";
  * slower preparation can no longer publish its Storage HEAD.
  */
 const AGENT_SUBJECT = "@agent";
+// Retained until outgoing instruction bridge publishers drain (#41367).
+export const AGENT_INSTRUCTIONS_PUBLICATION_KEY = "agent-instructions";
 
 export function workflowPublicationKey(workflowId: string): string {
   return `workflow:${workflowId}`;

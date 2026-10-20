@@ -66,6 +66,18 @@ describe("Agent database instructions", () => {
     await expect(fixture.content()).resolves.toBe("");
   });
 
+  it("accepts concurrent edits and remains editable after both commits", async () => {
+    const fixture = await instructionFixture();
+    await Promise.all([
+      fixture.update("First edit"),
+      fixture.update("Second edit"),
+    ]);
+    const current = await fixture.content();
+    expect(["First edit", "Second edit"]).toContain(current);
+    await fixture.update("After both commits");
+    await expect(fixture.content()).resolves.toBe("After both commits");
+  });
+
   it("rejects NUL text and preserves the current body", async () => {
     const fixture = await instructionFixture();
     await fixture.update("Current instructions");
