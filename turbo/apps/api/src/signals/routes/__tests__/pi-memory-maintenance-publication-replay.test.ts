@@ -45,7 +45,7 @@ describe("Genuine Pi maintenance publication results", () => {
         ...completed.body,
         completion: {
           ...completed.body.completion,
-          artifactSnapshots: [
+          storageOutputs: [
             {
               name: run.memory.name,
               mountPath: run.memory.mountPath,

@@ -34,7 +34,7 @@ describe("Pi maintenance recovery", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.runId,
           cliAgentSessionHistoryDisposition: "native_only",
-          artifactSnapshots: [
+          storageOutputs: [
             {
               name: run.memory.name,
               mountPath: run.memory.mountPath,
@@ -156,7 +156,7 @@ describe("Pi maintenance recovery", () => {
           ...recovered.body,
           completion: {
             ...recovered.body.completion,
-            artifactSnapshots: [
+            storageOutputs: [
               {
                 name: run.memory.name,
                 mountPath: run.memory.mountPath,
@@ -168,13 +168,21 @@ describe("Pi maintenance recovery", () => {
         run.headers,
         [400],
       );
-      await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
-        original,
-      );
-      expect(
-        (await observeMemory(run, "New maintenance after recovery.\n")).memory
-          .versionId,
-      ).toBe(latest.versionId);
+      const observations = await Promise.allSettled([
+        expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+          original,
+        ),
+        observeMemory(run, "New maintenance after recovery.\n").then(
+          ({ memory }) => {
+            expect(memory.versionId).toBe(latest.versionId);
+          },
+        ),
+      ]);
+      for (const observation of observations) {
+        if (observation.status === "rejected") {
+          throw observation.reason;
+        }
+      }
     },
   );
 

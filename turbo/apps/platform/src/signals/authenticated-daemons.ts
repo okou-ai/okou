@@ -19,7 +19,7 @@ import {
   installedSharedDatabaseBridge$,
 } from "./shared-database-bridge-state.ts";
 import { subscribeVncObservations$ } from "./vnc.ts";
-import { detach, Reason, waitForOperation } from "./utils.ts";
+import { detach, Reason } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
   async (
@@ -27,7 +27,7 @@ const runAppRealtimeDaemons$ = command(
     initialization: Promise<SharedDatabaseBridge | null>,
     signal: AbortSignal,
   ): Promise<void> => {
-    const bridge = await waitForOperation(initialization, signal);
+    const bridge = await initialization;
     signal.throwIfAborted();
     if (!bridge) {
       return;
@@ -50,10 +50,10 @@ const initializeAuthenticatedRealtime$ = command(
     { get, set },
     signal: AbortSignal,
   ): Promise<SharedDatabaseBridge | null> => {
-    const [, user] = await waitForOperation(
-      Promise.all([set(setupClerk$, signal), get(clerkUser$)]),
-      signal,
-    );
+    const [, user] = await Promise.all([
+      set(setupClerk$, signal),
+      get(clerkUser$),
+    ]);
     signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();

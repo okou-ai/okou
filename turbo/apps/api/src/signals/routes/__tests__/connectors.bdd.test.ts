@@ -176,40 +176,22 @@ async function createBuiltinCredentialConsumer(
   };
 }
 
-function mockAuthoritativeOrganizationMembers(
-  actors: readonly ApiTestUser[],
-): void {
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    {
-      data: actors.map((actor) => {
-        return { publicUserData: { userId: actor.userId } };
-      }),
-    },
-  );
-}
-
 function clearConnectorInvalidationMocks(): void {
   context.mocks.ably.channelGet.mockClear();
   context.mocks.ably.publish.mockClear();
 }
 
-function expectCustomConnectorInvalidations(
-  userIds: readonly string[],
-  agentChange?: { readonly userId: string; readonly agentId: string },
-): void {
+function expectAgentConnectorInvalidation(agentChange: {
+  readonly userId: string;
+  readonly agentId: string;
+}): void {
   expect(
     context.mocks.ably.channelGet.mock.calls
       .map(([channelName]) => {
         return channelName;
       })
       .sort(),
-  ).toStrictEqual(
-    [...userIds, ...(agentChange ? [agentChange.userId] : [])]
-      .map((userId) => {
-        return `user:${userId}`;
-      })
-      .sort(),
-  );
+  ).toStrictEqual([`user:${agentChange.userId}`]);
   expect(
     context.mocks.ably.publish.mock.calls
       .map((call) => {
@@ -217,14 +199,7 @@ function expectCustomConnectorInvalidations(
       })
       .sort(),
   ).toStrictEqual(
-    [
-      ...userIds.map(() => {
-        return ["customConnectorListChanged", null];
-      }),
-      ...(agentChange
-        ? [["composerAgentConnectorsChanged", { agentId: agentChange.agentId }]]
-        : []),
-    ]
+    [["composerAgentConnectorsChanged", { agentId: agentChange.agentId }]]
       .map((call) => {
         return JSON.stringify(call);
       })
@@ -2699,7 +2674,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         state: oauthState,
       });
     });
-    expectCustomConnectorInvalidations([member.userId], {
+    expectAgentConnectorInvalidation({
       userId: member.userId,
       agentId: agent.agentId,
     });
@@ -5978,12 +5953,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
     const admin = bdd.user({ orgRole: "org:admin" });
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     const agent = await bdd.createAgent(admin, {
       displayName: "BDD Proposal Agent",
     });
     const rand = randomUUID().replace(/-/g, "").slice(0, 8);
-    mockAuthoritativeOrganizationMembers([admin, member]);
     clearConnectorInvalidationMocks();
 
     const saved = await connectorsApi.saveCustomConnectorProposal(admin, {
@@ -6025,10 +5998,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       agentId: agent.agentId,
     });
 
-    expectCustomConnectorInvalidations(
-      [admin.userId, member.userId, admin.userId],
-      { userId: admin.userId, agentId: agent.agentId },
-    );
+    expectAgentConnectorInvalidation({
+      userId: admin.userId,
+      agentId: agent.agentId,
+    });
     expect(saved.authorizedAgentId).toBe(agent.agentId);
     expect(saved.connector).toMatchObject({
       displayName: "BDD Proposal API",
@@ -6520,47 +6493,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     }
   });
 
-  it("invalidates every organization member for definitions and only the owner for credentials", async () => {
-    expect.hasAssertions();
-    const bdd = createBddApi(context);
-    const admin = bdd.user({ orgRole: "org:admin" });
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    const slug = uniqueSlug("bdd-invalidation-audience");
-    mockAuthoritativeOrganizationMembers([admin, member]);
-
-    clearConnectorInvalidationMocks();
-    const created = await connectorsApi.createCustomConnector(
-      admin,
-      customConnectorBody(slug),
-    );
-    expectCustomConnectorInvalidations([admin.userId, member.userId]);
-
-    clearConnectorInvalidationMocks();
-    await connectorsApi.setCustomConnectorValues(admin, created.id, [
-      { key: "secret", kind: "secret", value: "values-endpoint-secret" },
-    ]);
-    expectCustomConnectorInvalidations([admin.userId]);
-
-    clearConnectorInvalidationMocks();
-    await connectorsApi.updateCustomConnector(admin, created.id, {
-      displayName: "BDD Invalidation Audience Updated",
-      prefixTemplates: [`https://${slug.slice(1)}.example.test/v2/`],
-      fields: created.fields,
-      headerInjections: created.headerInjections,
-      queryInjections: created.queryInjections,
-      authMode: created.authMode,
-    });
-    expectCustomConnectorInvalidations([admin.userId, member.userId]);
-
-    clearConnectorInvalidationMocks();
-    await connectorsApi.deleteDefaultCustomConnectorAccount(admin, created.id);
-    expectCustomConnectorInvalidations([admin.userId]);
-
-    clearConnectorInvalidationMocks();
-    await connectorsApi.deleteCustomConnector(admin, created.id);
-    expectCustomConnectorInvalidations([admin.userId, member.userId]);
-  });
-
   it("validates and normalises custom connector creation through visible create and list responses", async () => {
     const bdd = createBddApi(context);
     const admin = bdd.user();
@@ -6571,18 +6503,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       connectorsApi.listCustomConnectors(admin),
     ).resolves.toStrictEqual([]);
 
-    mockAuthoritativeOrganizationMembers([admin]);
-
     const autoSlug = await connectorsApi.createCustomConnector(
       admin,
       manualHttpCustomConnectorCreateBody({
         displayName: "BDD Auto Slug",
         prefixTemplates: [`https://api.${host}/v1`],
       }),
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "customConnectorListChanged",
-      null,
     );
     expect(autoSlug.slug).toMatch(
       new RegExp(`^_api-bdd${rand}-example-test-[a-z0-9]{6}$`),
@@ -6925,127 +6851,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await connectorsApi.deleteCustomConnector(admin, root.id);
     await connectorsApi.deleteCustomConnector(admin, query.id);
     await connectorsApi.deleteCustomConnector(admin, http.id);
-  });
-
-  it("keeps a created custom connector when realtime publishing fails", async () => {
-    const bdd = createBddApi(context);
-    const admin = bdd.user();
-    const rand = randomUUID().replace(/-/g, "").slice(0, 8);
-    mockAuthoritativeOrganizationMembers([admin]);
-    clearConnectorInvalidationMocks();
-    context.mocks.ably.publish.mockRejectedValueOnce(
-      new Error("Ably channel rate limit exceeded"),
-    );
-
-    const created = await connectorsApi.createCustomConnector(
-      admin,
-      manualHttpCustomConnectorCreateBody({
-        displayName: "BDD Realtime Failure",
-        prefixTemplates: [`https://realtime-${rand}.example.test/v1/`],
-      }),
-    );
-    expectCustomConnectorInvalidations([admin.userId]);
-
-    await expect(
-      connectorsApi.listCustomConnectors(admin),
-    ).resolves.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: created.id,
-          displayName: "BDD Realtime Failure",
-        }),
-      ]),
-    );
-
-    await connectorsApi.deleteCustomConnector(admin, created.id);
-  });
-
-  it("keeps a created custom connector when organization membership discovery fails", async () => {
-    const admin = createBddApi(context).user();
-    const rand = randomUUID().replace(/-/g, "").slice(0, 8);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
-      new Error("Clerk membership lookup unavailable"),
-    );
-    clearConnectorInvalidationMocks();
-
-    const created = await connectorsApi.createCustomConnector(
-      admin,
-      manualHttpCustomConnectorCreateBody({
-        displayName: "BDD Membership Failure",
-        prefixTemplates: [`https://membership-${rand}.example.test/v1/`],
-      }),
-    );
-
-    expect(context.mocks.ably.channelGet).not.toHaveBeenCalled();
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-    await expect(
-      connectorsApi.listCustomConnectors(admin),
-    ).resolves.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: created.id,
-          displayName: "BDD Membership Failure",
-        }),
-      ]),
-    );
-
-    mockAuthoritativeOrganizationMembers([admin]);
-    await connectorsApi.deleteCustomConnector(admin, created.id);
-  });
-
-  it("attempts invalidation before surfacing a post-commit request abort", async () => {
-    const admin = createBddApi(context).user();
-    const controller = new AbortController();
-    const abortError = new Error("custom connector request cancelled");
-    abortError.name = "AbortError";
-    let committedConnectorId: string | undefined;
-
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-      async () => {
-        const listed = await connectorsApi.listCustomConnectors(admin);
-        const committed = listed.find((connector) => {
-          return connector.displayName === "BDD Post-Commit Abort";
-        });
-        if (!committed) {
-          throw new Error(
-            "Expected the custom connector definition to be committed before membership discovery",
-          );
-        }
-        committedConnectorId = committed.id;
-        controller.abort(abortError);
-        return {
-          data: [{ publicUserData: { userId: admin.userId } }],
-        };
-      },
-    );
-    clearConnectorInvalidationMocks();
-
-    const response = await connectorsApi.requestCreateCustomConnector(
-      admin,
-      manualHttpCustomConnectorCreateBody({
-        displayName: "BDD Post-Commit Abort",
-        prefixTemplates: ["https://post-commit-abort.example.test/v1/"],
-      }),
-      [500],
-      controller.signal,
-    );
-
-    expect(response.status).toBe(500);
-    expectCustomConnectorInvalidations([admin.userId]);
-    expect(committedConnectorId).toBeDefined();
-    await expect(
-      connectorsApi.listCustomConnectors(admin),
-    ).resolves.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: committedConnectorId }),
-      ]),
-    );
-
-    mockAuthoritativeOrganizationMembers([admin]);
-    if (!committedConnectorId) {
-      throw new Error("Expected committed connector id");
-    }
-    await connectorsApi.deleteCustomConnector(admin, committedConnectorId);
   });
 
   it("does not activate a custom connector when skill publication fails", async () => {

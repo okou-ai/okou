@@ -101,7 +101,6 @@ describe("Social data jobs", () => {
     const app = await setupApp({
       context,
       routes: socialDataRoutes,
-      isolatePg: true,
     });
     const actor = createBddApi(context).user();
     const response = await accept(
@@ -121,7 +120,6 @@ describe("Social data jobs", () => {
     const app = await setupApp({
       context,
       routes: socialDataRoutes,
-      isolatePg: true,
     });
     const actor = createBddApi(context).user();
     const response = await accept(
@@ -143,7 +141,6 @@ describe("Social data jobs", () => {
     const app = await setupApp({
       context,
       routes: socialDataRoutes,
-      isolatePg: true,
     });
     const actor = createBddApi(context).user();
     const response = await accept(

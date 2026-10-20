@@ -42,9 +42,8 @@ import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCa
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   BuiltinConnectorBrief,
-  ConnectorDefaultAccountBrief,
   CustomConnectorBrief,
-} from "@okouai/api-contracts/contracts/connector-overview";
+} from "@okouai/api-contracts/contracts/connected-connectors";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   UserTemplateCatalogEntry,
@@ -242,7 +241,6 @@ import {
   bestEffort,
   detach,
   onDomEventFn,
-  tapError,
 } from "../../signals/utils.ts";
 import {
   audioInputAvailable$,
@@ -335,12 +333,6 @@ import {
 const COMPOSER_CONTROL_FOCUS_CLASS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
-function isHappyDomTestEnvironment(): boolean {
-  return (
-    typeof globalThis.window !== "undefined" && "happyDOM" in globalThis.window
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -395,10 +387,7 @@ const PRESENTATION_GALLERY_PREVIEW_BASE_URL =
 const PRESENTATION_GALLERY_SLIDE_COUNT = 15;
 const TEMPLATE_PREWARM_IMAGE_COUNT = 15;
 const IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT = 16;
-const ILLUSTRATION_PREWARM_IMAGE_COUNT = 24;
 const ILLUSTRATION_EAGER_IMAGE_COUNT = 24;
-const ILLUSTRATION_SCROLL_PREWARM_LOOKAHEAD_COUNT = 12;
-const ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT = 24;
 const ILLUSTRATION_CARD_PREVIEW_SIZE = {
   width: 1024,
   quality: 72,
@@ -1271,9 +1260,11 @@ function prewarmTemplatePreviewImage(
 function prewarmTemplatePreviewImages(
   runtime: TemplatePreviewRuntime,
   imageUrls: readonly string[],
-  count = TEMPLATE_PREWARM_IMAGE_COUNT,
 ): void {
-  for (const imageUrl of [...new Set(imageUrls)].slice(0, count)) {
+  for (const imageUrl of [...new Set(imageUrls)].slice(
+    0,
+    TEMPLATE_PREWARM_IMAGE_COUNT,
+  )) {
     prewarmTemplatePreviewImage(runtime, imageUrl);
   }
 }
@@ -1287,23 +1278,6 @@ function presentationPreviewImageUrlsForItems(
       themeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
     );
     return presentationTemplateCardSlideImage(item, 0, theme);
-  });
-}
-
-function illustrationPreviewImageUrlsForItems({
-  items,
-  variantIndexBySlug,
-}: {
-  items: readonly IllustrationTemplateItem[];
-  variantIndexBySlug: Readonly<Record<string, number>>;
-}): string[] {
-  return items.map((item) => {
-    const images = item.previewImages;
-    const activeIndex = Math.max(
-      0,
-      Math.min(variantIndexBySlug[item.slug] ?? 0, images.length - 1),
-    );
-    return illustrationHeroImageUrl(images[activeIndex] ?? item.previewImage);
   });
 }
 
@@ -1328,81 +1302,10 @@ function initialTemplatePreviewImageUrlsForCategory({
       presentationThemeIdBySlug,
     );
   }
-  if (category === "illustration") {
-    return illustrationPreviewImageUrlsForItems({
-      items: ILLUSTRATION_TEMPLATE_ITEMS,
-      variantIndexBySlug: {},
-    });
-  }
   if (category === "website") {
     return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
   }
   return [];
-}
-
-function templatePreviewPrewarmImageCountForCategory(category: string): number {
-  if (category === "illustration") {
-    return ILLUSTRATION_PREWARM_IMAGE_COUNT;
-  }
-  return TEMPLATE_PREWARM_IMAGE_COUNT;
-}
-
-function prewarmIllustrationPreviewImagesNearScroll({
-  items,
-  runtime,
-  scrollContainer,
-  variantIndexBySlug,
-}: {
-  items: readonly IllustrationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
-  scrollContainer: HTMLElement;
-  variantIndexBySlug: Readonly<Record<string, number>>;
-}): void {
-  const scrollableHeight =
-    scrollContainer.scrollHeight - scrollContainer.clientHeight;
-  if (items.length === 0 || scrollableHeight <= 0) {
-    return;
-  }
-
-  const progress = Math.min(
-    1,
-    Math.max(0, scrollContainer.scrollTop / scrollableHeight),
-  );
-  const lookaheadIndex =
-    Math.floor(progress * items.length) +
-    ILLUSTRATION_SCROLL_PREWARM_LOOKAHEAD_COUNT;
-  const bucket = Math.floor(
-    lookaheadIndex / ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-  );
-  const startIndex = Math.min(
-    items.length,
-    Math.max(
-      ILLUSTRATION_PREWARM_IMAGE_COUNT,
-      bucket * ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-    ),
-  );
-  const firstPrewarmItem = items[startIndex];
-  const key = [
-    String(items.length),
-    String(bucket),
-    firstPrewarmItem?.slug ?? "",
-  ].join(":");
-  if (scrollContainer.dataset.illustrationPreviewPrewarmBucket === key) {
-    return;
-  }
-  scrollContainer.dataset.illustrationPreviewPrewarmBucket = key;
-
-  prewarmTemplatePreviewImages(
-    runtime,
-    illustrationPreviewImageUrlsForItems({
-      items: items.slice(
-        startIndex,
-        startIndex + ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-      ),
-      variantIndexBySlug,
-    }),
-    ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-  );
 }
 
 interface PresentationTemplateThemeOption {
@@ -2738,7 +2641,6 @@ function IllustrationTemplateHero({
   priority = false,
   source,
   onVariantChange,
-  runtime,
 }: {
   item: IllustrationTemplateItem;
   images: readonly string[];
@@ -2746,17 +2648,12 @@ function IllustrationTemplateHero({
   priority?: boolean;
   source: string;
   onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
 }) {
   const { t } = useTranslation();
   const heroImage = illustrationHeroImageUrl(source);
   const navigable = images.length > 1;
   const variantAt = (direction: -1 | 1): number => {
     return (activeIndex + direction + images.length) % images.length;
-  };
-  const preloadNeighbors = (): void => {
-    preloadIllustrationVariant(runtime, images, variantAt(1));
-    preloadIllustrationVariant(runtime, images, variantAt(-1));
   };
 
   return (
@@ -2776,7 +2673,7 @@ function IllustrationTemplateHero({
           },
         )}
         className={cn(
-          "absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-150 data-[loaded=true]:opacity-100",
+          "absolute inset-0 h-full w-full object-cover",
           // Same affordance the detail preview uses for slide paging: the
           // cursor points at the half that will be navigated to.
           navigable &&
@@ -2785,7 +2682,6 @@ function IllustrationTemplateHero({
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         fetchPriority={priority ? "high" : "low"}
-        onMouseEnter={navigable ? preloadNeighbors : undefined}
         onMouseMove={
           navigable
             ? (event) => {
@@ -2810,24 +2706,14 @@ function IllustrationTemplateHero({
                 const rect = event.currentTarget.getBoundingClientRect();
                 const direction =
                   event.clientX - rect.left < rect.width / 2 ? -1 : 1;
-                selectIllustrationVariant({
-                  card: event.currentTarget.closest<HTMLElement>(
-                    "[data-illustration-template-card]",
-                  ),
-                  index: variantAt(direction),
-                  item,
-                  onVariantChange,
-                  runtime,
-                });
+                onVariantChange(item.slug, variantAt(direction));
               }
             : undefined
         }
         onLoad={(event) => {
-          const image = event.currentTarget;
-          detach(
-            markIllustrationPreviewImageLoaded(runtime, heroImage, image),
-            Reason.DomCallback,
-          );
+          event.currentTarget.parentElement
+            ?.querySelector<HTMLElement>("[data-illustration-preview-error]")
+            ?.setAttribute("hidden", "");
         }}
         onError={(event) => {
           event.currentTarget.parentElement
@@ -2848,184 +2734,6 @@ function IllustrationTemplateHero({
 
 function illustrationHeroImageUrl(source: string): string {
   return r2ImageTransformUrl(source, ILLUSTRATION_CARD_PREVIEW_SIZE);
-}
-
-function preloadIllustrationPreviewImage(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): HTMLImageElement | undefined {
-  if (typeof Image === "undefined") {
-    return undefined;
-  }
-
-  const cache = runtime.illustration;
-  const cachedImage = cache.preloads.get(url);
-  if (cachedImage !== undefined) {
-    return cachedImage;
-  }
-
-  const image = new Image();
-  image.decoding = "async";
-  image.loading = "eager";
-  image.fetchPriority = "high";
-  image.src = url;
-  cache.preloads.set(url, image);
-  return image;
-}
-
-async function decodeIllustrationPreviewImage(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): Promise<void> {
-  const cache = runtime.illustration;
-  if (cache.decoded.has(url)) {
-    return;
-  }
-
-  if (isHappyDomTestEnvironment()) {
-    cache.decoded.add(url);
-    return;
-  }
-
-  const pendingDecode = cache.pendingDecodes.get(url);
-  if (pendingDecode !== undefined) {
-    await pendingDecode;
-    return;
-  }
-
-  const image = preloadIllustrationPreviewImage(runtime, url);
-  if (image === undefined) {
-    return;
-  }
-
-  if (image.decode === undefined) {
-    if (image.complete && image.naturalWidth > 0) {
-      cache.decoded.add(url);
-    }
-    return;
-  }
-
-  const decode = markIllustrationPreviewImageDecoded(runtime, url, image);
-  cache.pendingDecodes.set(url, decode);
-  await decode;
-}
-
-async function markIllustrationPreviewImageDecoded(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-  image: HTMLImageElement,
-): Promise<void> {
-  const cache = runtime.illustration;
-  await tapError(image.decode(), () => {});
-  if (image.complete && image.naturalWidth > 0) {
-    cache.decoded.add(url);
-  }
-  cache.pendingDecodes.delete(url);
-}
-
-async function markIllustrationPreviewImageLoaded(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-  image: HTMLImageElement,
-): Promise<void> {
-  const cache = runtime.illustration;
-  if (image.decode !== undefined) {
-    await tapError(image.decode(), () => {});
-  }
-  if (image.complete && image.naturalWidth > 0) {
-    cache.decoded.add(url);
-  }
-  image.dataset.loaded = "true";
-  image.parentElement
-    ?.querySelector<HTMLElement>("[data-illustration-preview-error]")
-    ?.setAttribute("hidden", "");
-}
-
-function illustrationPreviewImageDecoded(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): boolean {
-  return runtime.illustration.decoded.has(url);
-}
-
-async function selectDecodedIllustrationVariant({
-  card,
-  imageUrl,
-  index,
-  item,
-  onVariantChange,
-  runtime,
-}: {
-  card: HTMLElement;
-  imageUrl: string;
-  index: number;
-  item: IllustrationTemplateItem;
-  onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
-}): Promise<void> {
-  await decodeIllustrationPreviewImage(runtime, imageUrl);
-  if (
-    card.dataset.targetVariantIndex === String(index) &&
-    illustrationPreviewImageDecoded(runtime, imageUrl)
-  ) {
-    onVariantChange(item.slug, index);
-  }
-}
-
-function selectIllustrationVariant({
-  card,
-  index,
-  item,
-  onVariantChange,
-  runtime,
-}: {
-  card: HTMLElement | null;
-  index: number;
-  item: IllustrationTemplateItem;
-  onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
-}): void {
-  const image = item.previewImages[index];
-  if (image === undefined) {
-    return;
-  }
-
-  const imageUrl = illustrationHeroImageUrl(image);
-  // Swap immediately only when the target hero is already decoded; otherwise
-  // decode it off-screen first so the hero never flashes a blank/loading frame.
-  if (card === null || illustrationPreviewImageDecoded(runtime, imageUrl)) {
-    onVariantChange(item.slug, index);
-    return;
-  }
-
-  card.dataset.targetVariantIndex = String(index);
-  detach(
-    selectDecodedIllustrationVariant({
-      card,
-      imageUrl,
-      index,
-      item,
-      onVariantChange,
-      runtime,
-    }),
-    Reason.DomCallback,
-  );
-}
-
-function preloadIllustrationVariant(
-  runtime: TemplatePreviewRuntime,
-  images: readonly string[],
-  index: number,
-): void {
-  const image = images[index];
-  if (image === undefined) {
-    return;
-  }
-
-  detach(
-    decodeIllustrationPreviewImage(runtime, illustrationHeroImageUrl(image)),
-    Reason.DomCallback,
-  );
 }
 
 type IllustrationThumbnailScrollDirection = -1 | 1;
@@ -3169,7 +2877,6 @@ function IllustrationTemplateCard({
   priority = false,
   onSelect,
   onVariantChange,
-  runtime,
 }: {
   item: IllustrationTemplateItem;
   selected: boolean;
@@ -3177,7 +2884,6 @@ function IllustrationTemplateCard({
   priority?: boolean;
   onSelect: (item: IllustrationTemplateItem) => void;
   onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
 }) {
   const { t } = useTranslation();
   const images = item.previewImages;
@@ -3194,7 +2900,6 @@ function IllustrationTemplateCard({
       )}
     >
       <div
-        data-illustration-template-card=""
         className={cn(
           "group/tile overflow-hidden rounded-xl border border-border bg-card",
           TEMPLATE_CARD_SHADOW,
@@ -3207,7 +2912,6 @@ function IllustrationTemplateCard({
           priority={priority}
           source={heroSource}
           onVariantChange={onVariantChange}
-          runtime={runtime}
         />
         {hasMultipleVariants && (
           <div
@@ -3237,28 +2941,8 @@ function IllustrationTemplateCard({
                     "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     active ? "border-primary" : "border-border",
                   )}
-                  onFocus={() => {
-                    preloadIllustrationPreviewImage(
-                      runtime,
-                      illustrationHeroImageUrl(image),
-                    );
-                  }}
-                  onMouseEnter={() => {
-                    preloadIllustrationPreviewImage(
-                      runtime,
-                      illustrationHeroImageUrl(image),
-                    );
-                  }}
                   onClick={(event) => {
-                    selectIllustrationVariant({
-                      card: event.currentTarget.closest<HTMLElement>(
-                        "[data-illustration-template-card]",
-                      ),
-                      index,
-                      item,
-                      onVariantChange,
-                      runtime,
-                    });
+                    onVariantChange(item.slug, index);
                     const scrollDirection = active
                       ? activeIllustrationThumbnailScrollDirection(
                           event.currentTarget,
@@ -3513,14 +3197,12 @@ function TemplatePickerSearch({
 
 function IllustrationTemplateGrid({
   items,
-  runtime,
   value,
   variantIndexBySlug,
   onSelect,
   onVariantChange,
 }: {
   items: readonly IllustrationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
   value: GenerationTemplateRequest | undefined;
   variantIndexBySlug: Readonly<Record<string, number>>;
   onSelect: (item: IllustrationTemplateItem) => void;
@@ -3540,7 +3222,6 @@ function IllustrationTemplateGrid({
             priority={index < ILLUSTRATION_EAGER_IMAGE_COUNT}
             onSelect={onSelect}
             onVariantChange={onVariantChange}
-            runtime={runtime}
           />
         );
       })}
@@ -4704,8 +4385,8 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const realtime = useLoadable(
-    signals.template.presentationTemplatesRealtimeReady$,
+  const initialization = useLoadable(
+    signals.template.presentationTemplatesInitialized$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
@@ -4715,7 +4396,7 @@ function ImportedPresentationTemplateLibraryStatus({
   }
   let message: string;
   let retry: (() => void) | undefined;
-  if (realtime.state === "hasError") {
+  if (initialization.state === "hasError") {
     message = t(($) => {
       return $.chat.templates.importedUnavailable;
     });
@@ -5196,12 +4877,6 @@ function TemplatePickerDialog({
         cardThemeIdBySlug,
       );
     }
-    if (targetCategory === "illustration") {
-      return illustrationPreviewImageUrlsForItems({
-        items: ILLUSTRATION_TEMPLATE_ITEMS,
-        variantIndexBySlug: illustrationVariantIndex,
-      });
-    }
     if (targetCategory === "website") {
       return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
     }
@@ -5212,7 +4887,6 @@ function TemplatePickerDialog({
     prewarmTemplatePreviewImages(
       runtime,
       previewImageUrlsForCategory(targetCategory),
-      templatePreviewPrewarmImageCountForCategory(targetCategory),
     );
   };
 
@@ -5429,7 +5103,6 @@ function TemplatePickerDialog({
                   onIllustrationVariantChange={setIllustrationVariantIndex}
                   onWorkflowCategoryChange={setWorkflowCategoryFilter}
                   onSelectWorkflow={handleSelectWorkflow}
-                  runtime={runtime}
                 />
               </TabsContent>
             </Tabs>
@@ -5465,7 +5138,6 @@ function TemplatePickerCategoryContent({
   onIllustrationVariantChange,
   onWorkflowCategoryChange,
   onSelectWorkflow,
-  runtime,
 }: {
   signals: ComposerSignals;
   selectedCategory: string;
@@ -5497,7 +5169,6 @@ function TemplatePickerCategoryContent({
   onIllustrationVariantChange: (slug: string, index: number) => void;
   onWorkflowCategoryChange: (category: string) => void;
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
-  runtime: TemplatePreviewRuntime;
 }) {
   const customSection = (kind: UserTemplateKind) => {
     return customTemplatesEnabled ? (
@@ -5568,18 +5239,7 @@ function TemplatePickerCategoryContent({
 
   if (selectedCategory === "illustration") {
     return (
-      <div
-        data-illustration-template-grid-scroll=""
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5"
-        onScroll={(event) => {
-          prewarmIllustrationPreviewImagesNearScroll({
-            items: illustrationItems,
-            runtime,
-            scrollContainer: event.currentTarget,
-            variantIndexBySlug: illustrationVariantIndex,
-          });
-        }}
-      >
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
         {customSection("illustration")}
         {customTemplatesEnabled ? (
           <TemplateSourceSection source="builtIn">
@@ -5589,7 +5249,6 @@ function TemplatePickerCategoryContent({
               variantIndexBySlug={illustrationVariantIndex}
               onSelect={onSelectIllustration}
               onVariantChange={onIllustrationVariantChange}
-              runtime={runtime}
             />
           </TemplateSourceSection>
         ) : (
@@ -5599,7 +5258,6 @@ function TemplatePickerCategoryContent({
             variantIndexBySlug={illustrationVariantIndex}
             onSelect={onSelectIllustration}
             onVariantChange={onIllustrationVariantChange}
-            runtime={runtime}
           />
         )}
       </div>
@@ -5734,7 +5392,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
         category: selectedCategory,
         presentationThemeIdBySlug: cardThemeIdBySlug,
       }),
-      templatePreviewPrewarmImageCountForCategory(selectedCategory),
     );
   };
   const open = () => {
@@ -6231,7 +5888,7 @@ function ComposerConnectorAccountChoices({
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
   readonly selection: ConnectorAccountSelection | undefined;
-  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
   readonly saving: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;

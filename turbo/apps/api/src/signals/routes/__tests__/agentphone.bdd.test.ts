@@ -1319,7 +1319,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
 
-    await runs.grantProEntitlement(actor, { isolatePg: true });
+    await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const issued = await integrations.requestCreateAgentPhoneLinkCode(
       actor,
@@ -2877,10 +2877,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       const first = bdd.user();
       const second = bdd.user();
       const linkedLater = bdd.user();
-      await bdd.readMe(first, { isolatePg: true });
-      const firstPhone = "+12025550101";
-      const secondPhone = "+12025550102";
-      const laterPhone = "+12025550103";
+      await bdd.readMe(first);
+      const firstPhone = uniquePhoneHandle();
+      const secondPhone = uniquePhoneHandle();
+      const laterPhone = uniquePhoneHandle();
       await ap.linkViaWebhookConnectPrompt(first, firstPhone, sends);
       await ap.linkViaWebhookConnectPrompt(second, secondPhone, sends);
 

@@ -99,7 +99,9 @@ public actor ChatCommands {
     let metadata = try await normalizeMobileSettings(threadID: thread.id)
     let body = SendBody(
       agentId: metadata.agentId, threadId: thread.id,
-      prompt: prompt.isEmpty ? "(see attached files)" : prompt,
+      prompt: prompt.isEmpty
+        ? (document?.hasFeedback == true ? "(see quoted passages)" : "(see attached files)")
+        : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
       userMessage: document
         ?? ChatDraftDocument(
@@ -111,7 +113,8 @@ public actor ChatCommands {
                 "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
               ])
             }),
-      hasTextContent: !prompt.isEmpty, modelSelection: modelSelection,
+      hasTextContent: !prompt.isEmpty || document?.hasFeedback == true,
+      modelSelection: modelSelection,
       reasoningEffort: reasoningEffort)
     do {
       let result: ChatSendResponse = try await client.request(

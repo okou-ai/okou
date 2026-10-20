@@ -10,7 +10,7 @@ import {
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { resetSignal, settle, waitForOperation } from "../utils.ts";
+import { resetSignal, settle } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { agentPhoneLinkStatus$ } from "./agentphone.ts";
@@ -350,7 +350,7 @@ export const checkInGetStarted$ = command(
     signal.throwIfAborted();
     set(reloadGetStarted$);
     await Promise.all([
-      waitForOperation(get(getStartedStatus$), signal),
+      get(getStartedStatus$),
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
@@ -360,7 +360,7 @@ export const checkInGetStarted$ = command(
 const refreshGetStartedFromRealtime$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
     set(reloadGetStarted$);
-    const data = await waitForOperation(get(getStartedStatus$), signal);
+    const data = await get(getStartedStatus$);
     signal.throwIfAborted();
     if (!data) {
       return true;

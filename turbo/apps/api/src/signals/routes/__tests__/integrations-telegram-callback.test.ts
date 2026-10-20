@@ -231,7 +231,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       expect(page.messages).toStrictEqual([]);
       expect(page.closed()).toBeFalsy();
       expect(page.navigation).toStrictEqual([]);
-      expect(page.status()).toContain("interrupted");
     },
   );
 
@@ -260,16 +259,7 @@ describe("Telegram callback HTTP/browser protocol", () => {
         target: ORIGIN,
       });
       page.receive(message({ type: "telegram-auth-ack", stage: "identity" }));
-      const count = page.messages.length;
-      page.tick(500);
-      expect(page.messages.slice(count)).toStrictEqual([
-        {
-          message: message({ type: "telegram-auth-bridge-ready" }),
-          target: ORIGIN,
-        },
-      ]);
       expect(page.navigation).toStrictEqual([]);
-      expect(page.status()).toContain("Waiting");
       expect(page.closed()).toBeFalsy();
       page.receive(message({ type: "telegram-auth-result", status: "linked" }));
       expect(page.messages.at(-1)?.message).toStrictEqual(
@@ -358,7 +348,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       message({ type: "telegram-auth", data: PROOF }),
     );
     expect(page.navigation).toStrictEqual([]);
-    expect(page.status()).toContain("Waiting");
     page.pagehide();
   });
 
@@ -410,7 +399,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       page.tick(250);
       expect(page.navigation).toStrictEqual([]);
       expect(page.status()).not.toContain("secret");
-      expect(page.status()).not.toContain("Waiting");
       expect(page.settings()).toBe(SETTINGS);
       expect(page.closed()).toBeFalsy();
       expect(page.listenerCount()).toBe(0);
@@ -440,7 +428,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       expect(page.messages).toStrictEqual([]);
       expect(page.navigation).toStrictEqual([]);
       expect(page.closed()).toBeFalsy();
-      expect(page.status()).toContain("interrupted");
       expect(page.listenerCount()).toBe(0);
     },
   );
@@ -455,7 +442,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     duplicateProof.searchParams.append("hash", "b".repeat(64));
     const interrupted = await browser(duplicateProof);
     expect(interrupted.messages).toStrictEqual([]);
-    expect(interrupted.status()).toContain("interrupted");
   });
 
   it.each(["absent", "closed"] as const)(
@@ -463,7 +449,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     async (state) => {
       const page = await browser(authorizedUrl(), state);
       expect(page.messages).toStrictEqual([]);
-      expect(page.status()).toContain("interrupted");
       expect(page.settings()).toBe(SETTINGS);
       expect(page.navigation).toStrictEqual([]);
       expect(page.timers.size).toBe(0);
@@ -474,7 +459,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     const closed = await browser(authorizedUrl());
     closed.owner.closed = true;
     closed.tick(500);
-    expect(closed.status()).toContain("interrupted");
     expect(closed.timers.size).toBe(0);
     const timedOut = await browser(authorizedUrl());
     timedOut.receive(message());
@@ -483,7 +467,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       message({ type: "telegram-auth-result", status: "linked" }),
     );
     timedOut.tick(500);
-    expect(timedOut.status()).toContain("interrupted");
     expect(timedOut.navigation).toStrictEqual([]);
     expect(timedOut.timers.size).toBe(0);
     expect(timedOut.listenerCount()).toBe(0);
@@ -495,7 +478,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     const reload = await browser(new URL(first.currentUrl()));
     expect(reload.messages).toStrictEqual([]);
     expect(reload.closed()).toBeFalsy();
-    expect(reload.status()).toContain("interrupted");
     expect(reload.settings()).toBe(
       "http://localhost:3002/settings/telegram?bot=official",
     );
@@ -505,7 +487,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     const page = await browser(authorizedUrl());
     page.elapse(120_001);
     page.receive(message({ type: "telegram-auth-result", status: "linked" }));
-    expect(page.status()).toContain("interrupted");
     expect(page.navigation).toStrictEqual([]);
     expect(page.timers.size).toBe(0);
   });
@@ -513,7 +494,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
   it("does not deliver identity if history scrubbing is unavailable", async () => {
     const page = await browser(authorizedUrl(), "open", true);
     expect(page.messages).toStrictEqual([]);
-    expect(page.status()).toContain("interrupted");
     expect(page.timers.size).toBe(0);
   });
 });

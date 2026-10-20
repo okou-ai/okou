@@ -433,9 +433,7 @@ Select cross-version coverage for the changed boundary:
 - rows and payloads written by the preceding release;
 - previous API statement shapes against the migrated schema, including actual
   ORM-generated column lists and writes through compatibility views;
-- new writes against every reachable previous reader;
-- rejection of retired shapes once an enforced floor and completed drain replace
-  their compatibility obligation.
+- new writes against every reachable previous reader.
 
 Name the environment, actual artifact identities, exposure window, and remaining
 acceptance gaps in the owning PR or issue. CI and preview success do not prove

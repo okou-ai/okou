@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.4...guest-contracts-v0.26.5) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
 ## [0.26.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.3...guest-contracts-v0.26.4) (2026-10-20)
 
 

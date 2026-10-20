@@ -51,6 +51,7 @@ import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
@@ -1711,6 +1712,14 @@ const publishEnqueuedNormalSend$ = command(
   ): Promise<void> => {
     const { args, thread, touchedAt, enqueueCommit, context, requestFacts } =
       input;
+    if (
+      thread.kind === "existing" &&
+      thread.computerAccess.computerUseHostId !==
+        thread.current.computerUseHostId
+    ) {
+      await publishDesktopShellAuthorizationChangedSafely(args.userId);
+      signal.throwIfAborted();
+    }
     const picked = await settle(
       set(
         pickEnqueuedChatThread$,

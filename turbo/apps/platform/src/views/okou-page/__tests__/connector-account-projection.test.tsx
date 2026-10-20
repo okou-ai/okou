@@ -13,7 +13,7 @@ import {
   customConnector,
   customConnectorAccount,
   getConnectorAction,
-  mockConnectorOverviewAccountSummaries,
+  mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -47,15 +47,8 @@ test.each(["set-default", "delete-default"] as const)(
         ],
       });
     });
-    mockConnectorOverviewAccountSummaries(context, () => {
-      return [
-        {
-          target: work.target,
-          accountCount: accounts.length,
-          attentionCount: 1,
-          defaultConnection,
-        },
-      ];
+    mockSavedConnectorAccounts(context, () => {
+      return accounts;
     });
     context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
       return respond(200, {

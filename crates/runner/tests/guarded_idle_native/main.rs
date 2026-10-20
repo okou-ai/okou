@@ -31,6 +31,8 @@ mod incoming_work;
 mod later_parking;
 mod logical_progress;
 mod logical_work;
+mod native_pause;
+mod native_transition;
 mod native_unpark;
 mod observer_loss;
 mod optional;
@@ -106,6 +108,7 @@ enum Corpus {
     ClaimLoss,
     SpeculativeFault(bool),
     NativeUnpark(native_unpark::Fault),
+    NativePause(native_pause::Fault),
     DualHistory(bool),
     ClaimUnavailable(claim_peer::Outcome),
     ClaimProducerLost { cancelled: bool, restored: bool },
@@ -1279,6 +1282,8 @@ async fn exercise_selected_factories(
                                 )
                             } else if let Corpus::NativeUnpark(fault) = corpus {
                                 fault.name().into()
+                            } else if let Corpus::NativePause(fault) = corpus {
+                                fault.pause_name().into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1687,6 +1692,7 @@ async fn exercise_retirement(
             | Corpus::ClaimProducerLost { .. }
             | Corpus::RealApiClaimant(_)
             | Corpus::NativeUnpark(_)
+            | Corpus::NativePause(_)
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -2040,6 +2046,7 @@ async fn exercise_retirement(
                 let speculative_injection = match corpus {
                     Corpus::SpeculativeFault(panic) => Some(speculative_fault::Injection::Callback(panic)),
                     Corpus::NativeUnpark(fault) => Some(speculative_fault::Injection::Native(fault)),
+                    Corpus::NativePause(fault) => Some(speculative_fault::Injection::NativePause(fault)),
                     _ => None,
                 };
                 if let Some(injection) = speculative_injection {

@@ -48,7 +48,6 @@ import {
   Reason,
   resetSignal,
   settle,
-  waitForOperation,
   withCleanup,
 } from "./utils.ts";
 
@@ -496,15 +495,12 @@ const initializeSshSelection$ = command(
     if (!dialog || (dialog.kind !== "create" && dialog.kind !== "edit")) {
       return;
     }
-    const result = await settle(
-      waitForOperation<readonly { readonly id: string }[] | null>(
-        resource === "credential"
-          ? get(sshCredentials$)
-          : resource === "tailscale"
-            ? get(tailscaleConfigs$)
-            : get(cloudflareAccessConfigs$),
-        signal,
-      ),
+    const result = await settle<readonly { readonly id: string }[] | null>(
+      resource === "credential"
+        ? get(sshCredentials$)
+        : resource === "tailscale"
+          ? get(tailscaleConfigs$)
+          : get(cloudflareAccessConfigs$),
       signal,
     );
     const identity = await get(sshIdentity$);

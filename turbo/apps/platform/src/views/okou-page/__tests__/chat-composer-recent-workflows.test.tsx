@@ -80,18 +80,8 @@ function workflowNames(): string[] {
     });
 }
 
-function mockHistory(
-  histories: readonly {
-    readonly ids: readonly string[];
-    readonly user?: string;
-    readonly org?: string;
-  }[],
-) {
-  const values = new Map(
-    histories.map(({ ids, user = "test-user-123", org = "org_default" }) => {
-      return [`okou_recent-workflows:${user}:${org}`, JSON.stringify(ids)];
-    }),
-  );
+function mockHistory(ids: readonly string[]) {
+  const values = new Map([["okou_recent-workflows", JSON.stringify(ids)]]);
   vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
     return values.get(key) ?? null;
   });
@@ -178,19 +168,17 @@ test.each([
   "An accepted $name send at $path promotes the workflow from $history",
   async ({ path, history, name, expected }) => {
     const workflows = mockWorkflows();
-    mockHistory([
-      {
-        ids: history.map((token) => {
-          const workflow = workflows.find((workflow) => {
-            return workflow.name === token;
-          });
-          if (!workflow) {
-            throw new Error(`Missing workflow ${token}`);
-          }
-          return workflow.id;
-        }),
-      },
-    ]);
+    mockHistory(
+      history.map((token) => {
+        const workflow = workflows.find((workflow) => {
+          return workflow.name === token;
+        });
+        if (!workflow) {
+          throw new Error(`Missing workflow ${token}`);
+        }
+        return workflow.id;
+      }),
+    );
     mockChatLifecycle(context, { threadId: THREAD_ID });
     let editor = await openComposer(path);
     const names = [name];
@@ -277,14 +265,11 @@ test("An accepted use retains history written by another browser tab", async () 
   if (!zulu || !echo) {
     throw new Error("Expected workflow fixtures");
   }
-  const history = mockHistory([{ ids: [zulu.id] }]);
+  const history = mockHistory([zulu.id]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   const editor = await openComposer();
   // The page has read the first accepted use; another tab writes before the next send.
-  history.set(
-    "okou_recent-workflows:test-user-123:org_default",
-    JSON.stringify([echo.id, zulu.id]),
-  );
+  history.set("okou_recent-workflows", JSON.stringify([echo.id, zulu.id]));
   for (const name of ["delta"]) {
     await fill(editor, `/${name}`);
     await waitFor(() => {
@@ -310,17 +295,13 @@ test("An accepted use retains history written by another browser tab", async () 
   });
 });
 
-test("Persisted recency is isolated by user and workspace and ignores unavailable workflow ids", async () => {
+test("Persisted local recency ignores unavailable workflow ids", async () => {
   const workflows = mockWorkflows();
-  const [zulu, , echo, , alpha] = workflows;
-  if (!zulu || !echo || !alpha) {
+  const echo = workflows[2];
+  if (!echo) {
     throw new Error("Expected workflow fixtures");
   }
-  mockHistory([
-    { ids: ["deleted-workflow", echo.id] },
-    { ids: [zulu.id], user: "another-user" },
-    { ids: [alpha.id], org: "another-org" },
-  ]);
+  mockHistory(["deleted-workflow", echo.id]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   expect(workflowNames()).toStrictEqual([
@@ -333,13 +314,11 @@ test("Persisted recency is isolated by user and workspace and ignores unavailabl
 
 test("Typed search keeps name matches ahead of more recently used description matches", async () => {
   const workflows = mockWorkflows();
-  mockHistory([
-    {
-      ids: workflows.map((workflow) => {
-        return workflow.id;
-      }),
-    },
-  ]);
+  mockHistory(
+    workflows.map((workflow) => {
+      return workflow.id;
+    }),
+  );
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   const user = userEvent.setup();
@@ -375,21 +354,17 @@ test("The pr-a search ranks recently used prefixes above substrings, abbreviatio
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, workflows);
   });
-  mockHistory([
-    {
-      ids: ["report", "team-pr-auto", "pr-auto", "pr-auto-deploy"].map(
-        (name) => {
-          const workflow = workflows.find((workflow) => {
-            return workflow.name === name;
-          });
-          if (!workflow) {
-            throw new Error(`Missing workflow ${name}`);
-          }
-          return workflow.id;
-        },
-      ),
-    },
-  ]);
+  mockHistory(
+    ["report", "team-pr-auto", "pr-auto", "pr-auto-deploy"].map((name) => {
+      const workflow = workflows.find((workflow) => {
+        return workflow.name === name;
+      });
+      if (!workflow) {
+        throw new Error(`Missing workflow ${name}`);
+      }
+      return workflow.id;
+    }),
+  );
   mockChatLifecycle(context, { threadId: THREAD_ID });
   const editor = await openComposer();
   await fill(editor, "/Pr-A");

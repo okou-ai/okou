@@ -34,7 +34,6 @@ import {
   settle,
   waitLoopUntil,
   throwIfAbort,
-  waitForOperation,
   withCleanup,
 } from "./utils.ts";
 import { logger } from "./log.ts";
@@ -167,6 +166,7 @@ interface RealtimeSubscribeOptions {
   readonly onError?: (error: unknown) => void;
   /** Observe a continuity gap in addition to the loop's own recovery. */
   readonly onResync?: () => void;
+  /** Payload baselines run by default; false skips only the initial read. */
   readonly runOnSubscribe?: boolean;
 }
 
@@ -406,8 +406,8 @@ const runWithChannel$ = command(
 );
 
 /**
- * Read the subscription's baseline state. Runs once when the subscription goes
- * live, and again after every continuity gap Ably could not replay. Resolves
+ * Read the subscription's baseline state. Runs when the subscription goes live
+ * unless opted out, and after every continuity gap Ably could not replay. Resolves
  * true when the subscription is finished and its loop should stop.
  */
 const runSubscriptionBaseline$ = command(
@@ -548,6 +548,7 @@ const runWithChannelPayload$ = command(
         run: async () => {
           options?.onSubscribed?.();
           if (
+            options?.runOnSubscribe !== false &&
             initializeCommand$ &&
             (await set(runSubscriptionBaseline$, initializeCommand$, signal))
           ) {
@@ -644,10 +645,7 @@ function createRealtimeSubscriptionChannel(
         // Registering the listener cannot fail on a transport condition;
         // waiting for `attached` is what makes the subscription live.
         async () => {
-          await waitForOperation(
-            subscribeToRealtimeChannel(channel, subscription),
-            subscriptionSignal,
-          );
+          await subscribeToRealtimeChannel(channel, subscription);
           await whenChannelAttached(channel, subscriptionSignal);
         },
         () => {
@@ -715,9 +713,9 @@ function createSessionOutputSubscriptionChannel(
         callback({ name: message.name ?? null, data: message.data });
       };
       entry.callbacks.set(callback, listener);
-      await waitForOperation(Promise.resolve(entry.detaching), signal);
+      await entry.detaching;
       signal.throwIfAborted();
-      await waitForOperation(entry.channel.subscribe(topic, listener), signal);
+      await entry.channel.subscribe(topic, listener);
       await whenChannelAttached(entry.channel, signal);
     },
     async unsubscribe(topic, callback) {
@@ -1027,7 +1025,8 @@ export const setForegroundPresence$ = command(
     if (!initialization) {
       throw new Error("Realtime is not initialized");
     }
-    const session = await waitForOperation(initialization, signal);
+    const session = await initialization;
+    signal.throwIfAborted();
     const identity = await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
     const channel = session.ably.channels.get(
@@ -1058,7 +1057,7 @@ const realtimeChannel$ = command(
 
     const initialization = get(realtimeInitialization$);
     if (initialization) {
-      const session = await waitForOperation(initialization, signal);
+      const session = await initialization;
       signal.throwIfAborted();
       return session.channels[scope];
     }

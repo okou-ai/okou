@@ -916,10 +916,6 @@ test("Saved builtin and unavailable custom connectors stay visible without accou
     connectedCustomConnectorIds: [connector.id],
   });
   const accountReads: string[] = [];
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    accountReads.push("summaries");
-    return respond(200, { summaries: [] });
-  });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     accountReads.push("connections");
     return respond(200, {
@@ -941,7 +937,7 @@ test("Saved builtin and unavailable custom connectors stay visible without accou
 });
 
 test.each(["Feishu", "Lark"])(
-  "Managed %s keeps its existing access lifecycle without ordinary account summaries",
+  "Managed %s keeps its integration-owned access lifecycle",
   async (name) => {
     const connector = acmeConnectorFixture({
       displayName: name,

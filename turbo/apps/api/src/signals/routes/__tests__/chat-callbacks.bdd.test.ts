@@ -637,6 +637,10 @@ describe("CHAT-02: completed chat callback", () => {
         return message.content;
       }),
     ).toStrictEqual(["final answer"]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "desktopShellAuthorizationChanged",
+      null,
+    );
 
     const marker = lifecycleMarkers(after.events, first.runId, "completed")[0];
     if (!marker) {
@@ -2207,6 +2211,10 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
       null,
     );
     await expectCancellationRecoveryPending(actor, run.threadId, false);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "desktopShellAuthorizationChanged",
+      null,
+    );
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadDetailChanged:${run.threadId}`,
       null,

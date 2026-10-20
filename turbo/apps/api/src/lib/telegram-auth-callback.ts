@@ -12,12 +12,12 @@ const CALLBACK_SCRIPT = String.raw`function runTelegramCallback(context, setting
   document.getElementById("settings").href = settingsUrl;
   var owner = window.opener;
   var proof = readIdentity();
-  // Retain only the version so reload renders interrupted guidance, not v1's close.
+  // Retain only the version so reload offers result guidance, not v1's close.
   try {
     window.history.replaceState(null, "", window.location.pathname + "?callbackProtocol=2");
   } catch (_) {
     proof = null;
-    status.textContent = "This connection attempt was interrupted. Restart from the original page.";
+    status.textContent = "This page can no longer confirm the connection result. Return to the original page or check Telegram settings.";
     return;
   }
   var retry;
@@ -57,7 +57,7 @@ const CALLBACK_SCRIPT = String.raw`function runTelegramCallback(context, setting
 
   function interrupt() {
     cleanup();
-    status.textContent = "This connection attempt was interrupted. Restart from the original page or check settings.";
+    status.textContent = "This page can no longer confirm the connection result. Return to the original page or check Telegram settings.";
   }
 
   if (!context || !proof || !owner || owner.closed) {
@@ -94,6 +94,7 @@ const CALLBACK_SCRIPT = String.raw`function runTelegramCallback(context, setting
       deliver();
     } else if (message.type === "telegram-auth-ack" && message.stage === "identity" && ready) {
       proof = null;
+      window.clearInterval(retry);
     } else if (message.type === "telegram-auth-result" && outcomes.indexOf(message.status) !== -1) {
       // The initiating App may finish via Telegram's native message before this
       // bridge delivers identity. Only its correlated binding outcome is authority.
@@ -164,8 +165,7 @@ export function telegramAuthCallbackV2Response(url: URL): Response {
 <html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
 <title>Telegram connection</title></head><body>
 <h1>Telegram connection</h1>
-<p id="status" role="status">Waiting for the original page to finish connecting.</p>
-<p>Keep the original page open. If this attempt is interrupted, restart there or check your current connection in settings.</p>
+<p id="status" role="status">Keep this page open. Return to the original page or check Telegram settings for the connection result.</p>
 <a id="settings" rel="noreferrer">View Telegram settings</a>
 <script>
 ${CALLBACK_SCRIPT}

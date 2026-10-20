@@ -2339,7 +2339,6 @@ mod tests {
                         mount_path: current_storage_path.clone(),
                         vas_storage_name: "current-storage".into(),
                         vas_version_id: "v1".into(),
-                        instructions_target_filename: None,
                         archive_url: "https://example.com/current-storage.tar.gz".into(),
                         archive_size: None,
                     }],
@@ -2411,7 +2410,7 @@ mod tests {
                     );
                 }
 
-                let plan = build_storage_plan(&current_manifest, "/run", Some(previous_storage))
+                let plan = build_storage_plan(&current_manifest, Some(previous_storage))
                     .expect("next storage plan should build from promoted fingerprints");
                 assert_eq!(plan.reused_entries(), 0);
                 let guest_manifest = plan.into_guest_manifest();

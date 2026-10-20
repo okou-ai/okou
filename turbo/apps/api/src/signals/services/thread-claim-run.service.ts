@@ -81,6 +81,7 @@ import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { storageIndexKey } from "./storage-index.service";
 import {
   publishChatThreadMessageCreatedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 
@@ -4245,6 +4246,12 @@ export function createThreadClaimRunObjects(
 
   const activatePendingRun$ = command(
     async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      // Immediate and queued picks have committed their active-run slot here.
+      // Pending shell approvals must re-read chat_busy before the runner starts.
+      await publishDesktopShellAuthorizationChangedSafely(
+        pending.context.head.userId,
+      );
       signal.throwIfAborted();
       recordThreadRunActivationMarkers(
         pending.activation.runnerNotification,

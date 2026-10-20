@@ -29,18 +29,12 @@ pub(super) fn generic_finalizing_candidate(
 ) -> runner_provider::JobCandidate {
     runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(reuse_key.into()))
-        .with_runner_preference(
-            ActiveRunnerPreference::new(
-                RunnerProcessIdentity::new(
-                    TEST_RUNNER_ID.parse().unwrap(),
-                    TEST_HEARTBEAT_GENERATION,
-                )
+        .with_runner_preference(ActiveRunnerPreference::new(
+            RunnerProcessIdentity::new(TEST_RUNNER_ID.parse().unwrap(), TEST_HEARTBEAT_GENERATION)
                 .unwrap(),
-                RunnerPreferenceTier::FinalizingPredecessor,
-                deadline,
-            )
-            .with_finalizing_source_run_id(source),
-        )
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source),
+            deadline,
+        ))
 }
 
 async fn assert_cleanup_reuses_sandbox(

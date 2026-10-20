@@ -2313,10 +2313,9 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       expired.push(id);
       return Promise.resolve({ id, status: "expired" });
     });
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: billingCheckoutRoutes,
-      isolatePg: true,
     });
     const client = app(billingUsagePackCheckoutContract);
     const body = usagePackCheckoutBody(fixture.userId);

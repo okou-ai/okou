@@ -41,7 +41,7 @@ import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
 import { isOrgAdmin$ } from "../org.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import { settle, tapError, withCleanup } from "../utils.ts";
+import { settle, withCleanup } from "../utils.ts";
 import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
 import {
   setUsagePackMigrationPreview$,
@@ -1872,14 +1872,12 @@ export const downloadMonthlyReceipts$ = command(
         return $.billing.toasts.preparingReceiptDownload;
       }),
     );
-    signal.addEventListener(
-      "abort",
-      () => {
-        toast.dismiss(toastId);
-      },
-      { once: true },
-    );
-    const downloaded = await tapError(
+    const dismissLoadingToast = () => {
+      toast.dismiss(toastId);
+    };
+    signal.addEventListener("abort", dismissLoadingToast, { once: true });
+    let downloadUrl: string | undefined;
+    await withCleanup(
       (async () => {
         const createClient = get(apiClient$);
         const client = createClient(billingInvoicesContract);
@@ -1892,35 +1890,29 @@ export const downloadMonthlyReceipts$ = command(
         );
         signal.throwIfAborted();
 
-        const url = URL.createObjectURL(response.body);
+        downloadUrl = URL.createObjectURL(response.body);
         const anchor = document.createElement("a");
-        anchor.href = url;
+        anchor.href = downloadUrl;
         anchor.download =
           range.startMonth === range.endMonth
             ? `receipts-${range.startMonth}.zip`
             : `receipts-${range.startMonth}-to-${range.endMonth}.zip`;
         anchor.click();
-        URL.revokeObjectURL(url);
-        return true;
       })(),
       () => {
-        toast.error(
-          i18n.t(($) => {
-            return $.billing.toasts.receiptDownloadFailed;
-          }),
-          { id: toastId },
-        );
+        signal.removeEventListener("abort", dismissLoadingToast);
+        dismissLoadingToast();
+        if (downloadUrl) {
+          URL.revokeObjectURL(downloadUrl);
+        }
       },
     );
     signal.throwIfAborted();
-    if (downloaded) {
-      toast.success(
-        i18n.t(($) => {
-          return $.billing.toasts.receiptsDownloaded;
-        }),
-        { id: toastId },
-      );
-    }
+    toast.success(
+      i18n.t(($) => {
+        return $.billing.toasts.receiptsDownloaded;
+      }),
+    );
   },
 );
 

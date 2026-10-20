@@ -19,8 +19,6 @@ entry points. The current suite covers:
   deployed preview API, runner, sandbox, and proxy.
 - raw network protocol, DNS, connector diagnostic, browser classification, and
   opt-in body-capture telemetry through the deployed runner and public run API.
-- direct WSS admission and bidirectional sandbox-channel diagnostics, with
-  one-use ticket replay rejection through the existing user API credential.
 
 An E2E test must not call `/api/test/*`, mint a test-only API token, write the
 database directly, or use an internal fixture endpoint to construct or inspect

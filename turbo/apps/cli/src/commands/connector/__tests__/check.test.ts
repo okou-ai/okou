@@ -20,7 +20,7 @@ import {
   writeRunConnectorAccountContext,
 } from "../../__tests__/helpers/run-connector-accounts";
 import { server } from "../../../mocks/server";
-import { stubConnectorAccountSummaries } from "../../__tests__/helpers/connector-accounts";
+import { stubConnectorAccounts } from "../../__tests__/helpers/connector-accounts";
 import {
   catalogItem,
   stubConnectorCatalog,
@@ -601,7 +601,7 @@ describe("okou connector check command", () => {
     });
 
     it("keeps a standalone connection and unscoped policy distinct from a run account", async () => {
-      server.use(stubConnectorAccountSummaries([], API_BASE_URL));
+      server.use(stubConnectorAccounts([], API_BASE_URL));
       vi.stubEnv("OKOU_AGENT_ID", "");
       stubDiagnostic(
         resolvedEnvironment({

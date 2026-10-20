@@ -7,10 +7,6 @@ import {
 } from "../../connector-connection-progress.ts";
 
 import { accept } from "../../../lib/accept.ts";
-import {
-  createConnectorOAuthWaitDiagnostics,
-  type ConnectorOAuthWaitDiagnostic,
-} from "../../../lib/connector-oauth-diagnostics.ts";
 import { now } from "../../../lib/time.ts";
 import type { ConnectorDeviceAuthStartOptions } from "@okouai/connectors/connector-config";
 import { isConnectorAppOauthCallbackEnabled } from "@okouai/connectors/app-oauth-callback";
@@ -21,16 +17,16 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorExternalCodeSessionContract,
-  builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
-  builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
   builtinConnectorAutomaticReaderResponseSchema,
+  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
 } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type {
@@ -59,10 +55,7 @@ import {
 import {
   resetSignal,
   waitLoopUntil,
-  waitForOperation,
-  tapError,
   withCleanup,
-  onRejection,
   settle,
 } from "../../utils.ts";
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
@@ -1011,7 +1004,7 @@ const authorizeConnectorForVisibleAgents$ = command(
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleAgents = await waitForOperation(get(agents$), signal);
+    const visibleAgents = await get(agents$);
     signal.throwIfAborted();
     const client = get(apiClient$)(userBuiltinConnectorsContract);
     await withCleanup(
@@ -1145,7 +1138,10 @@ export const submitBuiltinManualGrant$ = command(
         );
         connectorStateChanged = true;
         signal.throwIfAborted();
-        const connectionId = result.body.connectionId ?? result.body.id;
+        const { connectionId } =
+          builtinConnectorManualGrantContract.connect.responses[200].parse(
+            result.body,
+          );
         if (
           !(await readCompletedBuiltinConnectorAccount(
             createClient,
@@ -1266,7 +1262,10 @@ export const connectBuiltinConnectorNoAuth$ = command(
         );
         connectorStateChanged = true;
         signal.throwIfAborted();
-        const connectionId = result.body.connectionId ?? result.body.id;
+        const { connectionId } =
+          builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
+            result.body,
+          );
         if (
           !(await readCompletedBuiltinConnectorAccount(
             createClient,
@@ -1355,10 +1354,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
     return await withCleanup(
       (async () => {
         signal.throwIfAborted();
-        await waitForOperation(
-          Promise.resolve(onSuccess(connectionId, signal)),
-          signal,
-        );
+        await onSuccess(connectionId, signal);
         signal.throwIfAborted();
       })(),
       () => {
@@ -1591,8 +1587,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           }),
           [200],
         );
-        const pollResult = pollResponse.body;
-        if (pollResult.status === "complete") {
+        if (pollResponse.body.status === "complete") {
           connectorStateChanged = true;
         }
 
@@ -1608,10 +1603,13 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           return { stop: true };
         }
 
+        signal.throwIfAborted();
+        const pollResult =
+          builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
+            pollResponse.body,
+          );
         if (pollResult.status === "complete") {
-          signal.throwIfAborted();
-          const connectionId =
-            pollResult.connectionId ?? pollResult.connector.id;
+          const connectionId = pollResult.connectionId;
           if (
             !(await readCompletedBuiltinConnectorAccount(
               get(apiClient$),
@@ -1803,35 +1801,16 @@ const connectConnectorOAuthDeviceAuth$ = command(
           args.options,
           flowSignal,
         );
-        const startResponse = await tapError(
-          accept(
-            client.create({
-              params: { connectorSlug },
-              body: connectorOAuthDeviceAuthStartBody({ ...args, options }),
-              fetchOptions: { signal: flowSignal },
-            }),
-            [200],
-          ),
+        const startResponse = await accept(
+          client.create({
+            params: { connectorSlug },
+            body: connectorOAuthDeviceAuthStartBody({ ...args, options }),
+            fetchOptions: { signal: flowSignal },
+          }),
+          [200],
         );
         flowSignal.throwIfAborted();
-        const startResult = startResponse?.body ?? null;
-        if (!startResponse) {
-          if (flowSignal.aborted) {
-            return false;
-          }
-          set(internalConnectorOAuthDeviceAuthState$, {
-            status: "error",
-            connectorSlug,
-            authMethod,
-            message: i18n.t(($) => {
-              return $.connectors.connectDialog.errors.failed;
-            }),
-          });
-        }
-        flowSignal.throwIfAborted();
-        if (!startResult) {
-          return false;
-        }
+        const startResult = startResponse.body;
 
         set(internalConnectorOAuthDeviceAuthState$, {
           status: "pending",
@@ -2071,42 +2050,23 @@ const connectConnectorExternalCodeCommand$ = command(
           args,
           flowSignal,
         );
-        const startResponse = await tapError(
-          accept(
-            client.create({
-              params: { connectorSlug },
-              body: {
-                account: options.account,
-                authMethod,
-                ...(shouldAuthorizeAgent(options)
-                  ? { authorizeAgent: true as const }
-                  : {}),
-                ...(args.agentId ? { agentId: args.agentId } : {}),
-              },
-              fetchOptions: { signal: flowSignal },
-            }),
-            [200],
-          ),
+        const startResponse = await accept(
+          client.create({
+            params: { connectorSlug },
+            body: {
+              account: options.account,
+              authMethod,
+              ...(shouldAuthorizeAgent(options)
+                ? { authorizeAgent: true as const }
+                : {}),
+              ...(args.agentId ? { agentId: args.agentId } : {}),
+            },
+            fetchOptions: { signal: flowSignal },
+          }),
+          [200],
         );
         flowSignal.throwIfAborted();
-        const startResult = startResponse?.body ?? null;
-        if (!startResponse) {
-          if (flowSignal.aborted) {
-            return false;
-          }
-          set(internalConnectorExternalCodeState$, {
-            status: "error",
-            connectorSlug,
-            authMethod,
-            message: i18n.t(($) => {
-              return $.connectors.connectDialog.errors.failed;
-            }),
-          });
-        }
-        flowSignal.throwIfAborted();
-        if (!startResult) {
-          return false;
-        }
+        const startResult = startResponse.body;
 
         set(internalConnectorExternalCodeState$, {
           status: "pending",
@@ -2248,8 +2208,10 @@ const completeConnectorExternalCode$ = command(
           return false;
         }
 
-        const connectionId =
-          completeResult.body.connectionId ?? completeResult.body.connector.id;
+        const { connectionId } =
+          builtinConnectorExternalCodeSessionContract.complete.responses[200].parse(
+            completeResult.body,
+          );
         if (
           !(await readCompletedBuiltinConnectorAccount(
             createClient,
@@ -2763,107 +2725,66 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
     });
 
     const waitSignal = set(resetOAuthAuthCodeWaitSignal$, signal);
-    const recordDiagnostic = createConnectorOAuthWaitDiagnostics();
-    const recordWait = (
-      phase: ConnectorOAuthWaitDiagnostic["phase"],
-      detail: Pick<
-        ConnectorOAuthWaitDiagnostic,
-        "branch" | "cleanupOwned" | "accepted" | "error"
-      > = {},
-    ) => {
-      recordDiagnostic(() => {
-        const current = get(internalConnectorOAuthAuthCodeWaitState$);
-        const isCurrent = connectorOAuthAuthCodeWaitIsCurrent(
-          current,
+    const changedPromise = (async () => {
+      await set(
+        waitAblyPayloadLoopUntil$,
+        {
+          topic: "connector:changed",
+          loopCommand$: onActiveConnectorChanged$,
+          initializeCommand$: refreshActiveConnectorOAuthAuthCodeCompletion$,
+        },
+        waitSignal,
+      );
+      return "connectorChanged" as const;
+    })();
+    const waitResult = await withCleanup(
+      oauthStart.authWindow === null
+        ? changedPromise
+        : Promise.race([
+            changedPromise,
+            waitForOAuthAuthCodePopupClosed(oauthStart.authWindow, waitSignal),
+          ]),
+      () => {
+        const cleanupOwned = connectorOAuthAuthCodeWaitIsCurrent(
+          get(internalConnectorOAuthAuthCodeWaitState$),
           flowId,
           oauthStart.oauthAttemptId,
         );
-        return {
-          phase,
-          parentAborted: signal.aborted,
-          waitAborted: waitSignal.aborted,
-          current: isCurrent,
-          completionVerified: isCurrent && current.status === "completed",
-          ...detail,
-        };
-      });
-    };
-    recordWait("started");
-
-    return await onRejection(
-      (async () => {
-        const changedPromise = (async () => {
-          await set(
-            waitAblyPayloadLoopUntil$,
-            {
-              topic: "connector:changed",
-              loopCommand$: onActiveConnectorChanged$,
-              initializeCommand$:
-                refreshActiveConnectorOAuthAuthCodeCompletion$,
-            },
-            waitSignal,
-          );
-          return "connectorChanged" as const;
-        })();
-        const waitResult = await withCleanup(
-          oauthStart.authWindow === null
-            ? changedPromise
-            : Promise.race([
-                changedPromise,
-                waitForOAuthAuthCodePopupClosed(
-                  oauthStart.authWindow,
-                  waitSignal,
-                ),
-              ]),
-          () => {
-            const cleanupOwned = connectorOAuthAuthCodeWaitIsCurrent(
-              get(internalConnectorOAuthAuthCodeWaitState$),
-              flowId,
-              oauthStart.oauthAttemptId,
-            );
-            if (cleanupOwned) {
-              set(resetOAuthAuthCodeWaitSignal$, signal);
-            }
-            recordWait("cleanup", { cleanupOwned });
-          },
-        );
-        recordWait("race-settled", { branch: waitResult });
-        signal.throwIfAborted();
-
-        if (waitResult === "popupClosed") {
-          await set(
-            refreshConnectorOAuthAuthCodeCompletion$,
-            flowId,
-            oauthStart.oauthAttemptId,
-            signal,
-          );
-          signal.throwIfAborted();
+        if (cleanupOwned) {
+          set(resetOAuthAuthCodeWaitSignal$, signal);
         }
-        const completed = get(internalConnectorOAuthAuthCodeWaitState$);
-        const result =
-          connectorOAuthAuthCodeWaitIsCurrent(
-            completed,
-            flowId,
-            oauthStart.oauthAttemptId,
-          ) && completed.status === "completed"
-            ? await set(
-                finishAcceptedConnectorConnection$,
-                {
-                  connectorSlug,
-                  method,
-                  options,
-                  connectionId: completed.connectionId,
-                },
-                signal,
-              )
-            : false;
-        recordWait("finished", { accepted: result !== false });
-        return result;
-      })(),
-      (error) => {
-        recordWait("failed", { error });
       },
     );
+    signal.throwIfAborted();
+
+    if (waitResult === "popupClosed") {
+      await set(
+        refreshConnectorOAuthAuthCodeCompletion$,
+        flowId,
+        oauthStart.oauthAttemptId,
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    const completed = get(internalConnectorOAuthAuthCodeWaitState$);
+    const result =
+      connectorOAuthAuthCodeWaitIsCurrent(
+        completed,
+        flowId,
+        oauthStart.oauthAttemptId,
+      ) && completed.status === "completed"
+        ? await set(
+            finishAcceptedConnectorConnection$,
+            {
+              connectorSlug,
+              method,
+              options,
+              connectionId: completed.connectionId,
+            },
+            signal,
+          )
+        : false;
+    return result;
   },
 );
 

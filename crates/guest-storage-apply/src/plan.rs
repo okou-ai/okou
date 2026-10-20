@@ -1,5 +1,5 @@
 use crate::download::DownloadTask;
-use crate::instructions::{InstructionCleanup, InstructionFilename, InstructionNormalization};
+use crate::instructions::InstructionCleanup;
 use crate::manifest::{ArtifactEntry, Manifest, StorageEntry};
 use std::path::Path;
 
@@ -9,7 +9,6 @@ pub(crate) struct RunPlan {
     pub(crate) preserved_paths: Vec<String>,
     pub(crate) empty_artifacts: Vec<EmptyArtifactPreparation>,
     pub(crate) download_tasks: Vec<DownloadTask>,
-    pub(crate) instruction_files: Vec<InstructionNormalization>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,21 +72,13 @@ impl ManifestEntryKind {
 impl RunPlan {
     pub(crate) fn from_manifest(manifest: &Manifest) -> Self {
         let mut preserved_paths = Vec::new();
-        for entry in manifest.storages.iter().filter(|entry| entry.cached) {
-            if entry.instructions_target_filename.is_some() {
-                // Instructions own only their managed files, not the framework home:
-                // changed or removed skill children still need stale-path cleanup.
-                // Keep both names until normalization can select an alternate source.
-                preserved_paths.extend(InstructionFilename::ALL.map(|filename| {
-                    Path::new(&entry.mount_path)
-                        .join(filename.as_str())
-                        .to_string_lossy()
-                        .into_owned()
-                }));
-            } else {
-                preserved_paths.push(entry.mount_path.clone());
-            }
-        }
+        preserved_paths.extend(
+            manifest
+                .storages
+                .iter()
+                .filter(|entry| entry.cached)
+                .map(|entry| entry.mount_path.clone()),
+        );
         preserved_paths.extend(
             manifest
                 .artifacts
@@ -95,39 +86,6 @@ impl RunPlan {
                 .filter(|a| a.cached)
                 .map(|a| a.mount_path.clone()),
         );
-
-        let instruction_files = manifest
-            .storages
-            .iter()
-            .filter_map(|entry| {
-                entry
-                    .instructions_target_filename
-                    .as_ref()
-                    .map(|target_filename| {
-                        if is_valid_url(&entry.archive_url)
-                            && let Some(extract_path) = entry.extract_path.clone()
-                        {
-                            InstructionNormalization::staged(
-                                extract_path,
-                                entry.mount_path.clone(),
-                                target_filename.clone(),
-                            )
-                        } else {
-                            InstructionNormalization::in_place(
-                                entry.mount_path.clone(),
-                                target_filename.clone(),
-                            )
-                        }
-                    })
-            })
-            .collect();
-        let instruction_cleanups = manifest
-            .instruction_cleanups
-            .iter()
-            .map(|entry| {
-                InstructionCleanup::new(entry.mount_path.clone(), entry.target_filename.clone())
-            })
-            .collect();
 
         // Build unified task list: storages + artifact + memory, all downloaded in parallel.
         let mut download_tasks = Vec::new();
@@ -151,11 +109,16 @@ impl RunPlan {
 
         Self {
             cleanup_paths: manifest.cleanup_paths.clone(),
-            instruction_cleanups,
+            instruction_cleanups: manifest
+                .instruction_cleanups
+                .iter()
+                .map(|entry| {
+                    InstructionCleanup::new(entry.mount_path.clone(), entry.target_filename.clone())
+                })
+                .collect(),
             preserved_paths,
             empty_artifacts,
             download_tasks,
-            instruction_files,
         }
     }
 }
@@ -173,14 +136,6 @@ fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask>, entries: &[Stora
         let Some(url) = entry.archive_url.as_ref() else {
             continue;
         };
-        let download_mount_path = if entry.instructions_target_filename.is_some() {
-            entry
-                .extract_path
-                .as_deref()
-                .unwrap_or(entry.mount_path.as_str())
-        } else {
-            entry.mount_path.as_str()
-        };
         tasks.push(DownloadTask::storage(
             format_entry_label(
                 ManifestEntryKind::Storage,
@@ -188,8 +143,8 @@ fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask>, entries: &[Stora
                 EntryLabel::storage(entry, url),
             ),
             url.clone(),
-            download_mount_path.to_string(),
-            entry.instructions_target_filename.is_some(),
+            entry.mount_path.clone(),
+            false,
         ));
     }
 }
@@ -375,135 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn run_plan_collects_preserved_paths_and_instruction_targets() {
-        let json = r#"{
-            "storageMounts": [
-                {
-                    "mountPath": "/home/user/.codex",
-                    "archiveUrl": null,
-                    "cached": true,
-                    "instructionsTargetFilename": "AGENTS.md"
-                },
-                {
-                    "mountPath": "/home/user/new",
-                    "archiveUrl": null,
-                    "cached": false
-                },
-                {
-                    "mountPath": "/workspace",
-                    "archiveUrl": null,
-                    "cached": true,
-                    "writeback": true
-                }
-            ],
-            "cleanupPaths": ["/home/user/.codex"]
-        }"#;
-        let manifest: Manifest = serde_json::from_str(json).unwrap();
-
-        let plan = RunPlan::from_manifest(&manifest);
-
-        assert_eq!(plan.cleanup_paths, ["/home/user/.codex"]);
-        assert!(plan.instruction_cleanups.is_empty());
-        assert_eq!(
-            plan.preserved_paths,
-            [
-                "/home/user/.codex/CLAUDE.md",
-                "/home/user/.codex/AGENTS.md",
-                "/workspace"
-            ]
-        );
-        assert_eq!(plan.instruction_files.len(), 1);
-        assert_eq!(
-            plan.instruction_files[0],
-            InstructionNormalization::in_place("/home/user/.codex".into(), "AGENTS.md".into())
-        );
-    }
-
-    #[test]
-    fn run_plan_downloads_instruction_archive_to_extract_path() {
-        let json = r#"{
-            "storageMounts": [{
-                "mountPath": "/home/user/.codex",
-                "extractPath": "/home/user/.vm0/guest-agent/runs/run-1/storage-instructions/0",
-                "archiveUrl": "https://s3/instructions.tar.gz",
-                "instructionsTargetFilename": "AGENTS.md"
-            }]
-        }"#;
-        let manifest: Manifest = serde_json::from_str(json).unwrap();
-
-        let plan = RunPlan::from_manifest(&manifest);
-
-        assert_eq!(
-            plan.instruction_files,
-            [InstructionNormalization::staged(
-                "/home/user/.vm0/guest-agent/runs/run-1/storage-instructions/0".into(),
-                "/home/user/.codex".into(),
-                "AGENTS.md".into()
-            )]
-        );
-        assert_eq!(plan.download_tasks.len(), 1);
-        assert_eq!(
-            plan.download_tasks[0],
-            DownloadTask::storage(
-                "storage 1 mountPath=/home/user/.codex vasStorageName=unknown vasVersionId=unknown urlScheme=https cached=false".into(),
-                "https://s3/instructions.tar.gz".into(),
-                "/home/user/.vm0/guest-agent/runs/run-1/storage-instructions/0".into(),
-                true,
-            )
-        );
-    }
-
-    #[test]
-    fn run_plan_ignores_extract_path_for_non_instruction_storage() {
-        let json = r#"{
-            "storageMounts": [{
-                "mountPath": "/data",
-                "extractPath": "/tmp/staged-data",
-                "archiveUrl": "https://s3/data.tar.gz"
-            }]
-        }"#;
-        let manifest: Manifest = serde_json::from_str(json).unwrap();
-
-        let plan = RunPlan::from_manifest(&manifest);
-
-        assert!(plan.instruction_files.is_empty());
-        assert_eq!(plan.download_tasks.len(), 1);
-        assert_eq!(
-            plan.download_tasks[0],
-            DownloadTask::storage(
-                "storage 1 mountPath=/data vasStorageName=unknown vasVersionId=unknown urlScheme=https cached=false".into(),
-                "https://s3/data.tar.gz".into(),
-                "/data".into(),
-                false,
-            )
-        );
-    }
-
-    #[test]
-    fn run_plan_collects_instruction_cleanups() {
-        let json = r#"{
-            "storageMounts": [],
-            "instructionCleanups": [{
-                "mountPath": "/home/user/.codex",
-                "targetFilename": "AGENTS.md"
-            }, {
-                "mountPath": "/home/user/.claude"
-            }]
-        }"#;
-        let manifest: Manifest = serde_json::from_str(json).unwrap();
-
-        let plan = RunPlan::from_manifest(&manifest);
-
-        assert_eq!(
-            plan.instruction_cleanups,
-            [
-                InstructionCleanup::new("/home/user/.codex".into(), Some("AGENTS.md".into())),
-                InstructionCleanup::new("/home/user/.claude".into(), None),
-            ]
-        );
-    }
-
-    #[test]
     fn run_plan_skips_cached_artifact_when_mount_root_exists() {
         let dir = tempfile::tempdir().unwrap();
         let mount = dir.path().join("workspace");
@@ -540,9 +366,7 @@ mod tests {
         let manifest = Manifest {
             storages: vec![StorageEntry {
                 mount_path: mount_path.clone(),
-                extract_path: None,
                 archive_url: Some("https://s3/storage.tar.gz".into()),
-                instructions_target_filename: None,
                 cached: true,
                 vas_storage_name: Some("storage".into()),
                 vas_version_id: Some("storage-v1".into()),

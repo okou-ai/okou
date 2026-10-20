@@ -224,7 +224,6 @@ async fn prepare_finalization_impl(
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
         storage_outputs,
-        artifact_snapshots: None,
         volume_versions_snapshot: None,
     };
     Ok(PreparedFinalizationParts {

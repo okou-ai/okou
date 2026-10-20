@@ -1389,7 +1389,9 @@ afterEach(() => {
 describe("connector catalog cron authentication and initial state", () => {
   it("rejects missing and invalid cron credentials", async () => {
     const response = await accept(
-      (await cronClient()).sync({ headers: cronHeaders("wrong-secret") }),
+      setupApp({ context, routes: cronConnectorCatalogRoutes })(
+        cronConnectorCatalogContract,
+      ).sync({ headers: cronHeaders("wrong-secret") }),
       [401],
     );
     expect(response.body).toStrictEqual({

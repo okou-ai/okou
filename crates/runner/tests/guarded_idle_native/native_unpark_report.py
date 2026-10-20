@@ -25,7 +25,7 @@ PHASES = ("inputs_verified", "resume_captured", "resume_accepted_waiting", "prep
           "producers_joined")
 
 
-def wire(value, response=False):
+def wire(value, response=False, state="Resumed"):
     if not isinstance(value, str) or len(value) > 1024*1024:
         raise ValueError("missing bounded original HTTP bytes")
     raw = value.encode("ascii")
@@ -50,8 +50,8 @@ def wire(value, response=False):
     if response:
         if body:
             raise ValueError("204 response contains a body")
-    elif json.loads(body, object_pairs_hook=pressure.unique_object) != {"state": "Resumed"}:
-        raise ValueError("native resume evidence names another operation")
+    elif json.loads(body, object_pairs_hook=pressure.unique_object) != {"state": state}:
+        raise ValueError("native transition evidence names another operation")
     return hashlib.sha256(raw).hexdigest()
 
 

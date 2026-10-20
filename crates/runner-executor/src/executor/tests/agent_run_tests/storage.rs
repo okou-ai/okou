@@ -50,63 +50,6 @@ fn extracted_archive() -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normalization() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let sandbox = sandbox_mock::MockSandbox::new("test");
-    let mut ctx = minimal_context();
-    let mut storage = api_storage(
-        "instructions",
-        "/home/user/.codex",
-        "v1",
-        "https://example.com/instructions.tar.gz",
-    );
-    storage.instructions_target_filename = Some("AGENTS.md".into());
-    ctx.storage_manifest = Some(StorageManifest {
-        storages: vec![storage],
-        artifacts: vec![],
-    });
-    let prev_storage = StorageFingerprints {
-        storages: HashMap::from([(
-            "/home/user/.codex".into(),
-            StorageFingerprint::new("instructions", "v1"),
-        )]),
-        artifacts: HashMap::new(),
-    };
-    let mut telemetry = test_telemetry(&config, &ctx);
-
-    run_in_sandbox(
-        &sandbox,
-        &ctx,
-        &config,
-        RunStart {
-            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
-            restore_guest_state: false,
-            reuse_result: SandboxReuseResult::Reused,
-            home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
-            prev_storage: Some(&prev_storage),
-        },
-        &mut telemetry,
-        RunControls::new(tokio_util::sync::CancellationToken::new(), None),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(sandbox.storage_manifest_calls().len(), 1);
-    let ops = telemetry.pending_ops_snapshot();
-    assert_successful_action_once(&ops, "runner_storage_manifest_fingerprint_reuse");
-    assert_successful_action_once(&ops, "runner_storage_manifest_has_work");
-    assert_successful_action_once(&ops, "runner_storage_manifest_cache_populate");
-    assert_successful_action_once(&ops, "runner_storage_manifest_guest_storage_apply");
-    assert_successful_action_once(&ops, "runner_storage_manifest_apply");
-    assert!(
-        ops.iter()
-            .all(|(action, _, _)| action != "storage_download"),
-        "runner telemetry should not use the guest-storage-apply per-entry metric name: {ops:?}"
-    );
-}
-
-#[tokio::test]
 async fn run_in_sandbox_applies_decoded_artifact_before_agent_spawn() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
@@ -528,7 +471,7 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
         Ok(ExecResult::new(
             1,
             Vec::new(),
-            b"Required instruction normalization failed".to_vec(),
+            b"Required storage preparation failed".to_vec(),
         )),
     ] {
         let dir = tempfile::tempdir().unwrap();
@@ -537,22 +480,15 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
         overrides.push_storage_manifest_result(guest_result);
         let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
         let mut ctx = minimal_context();
-        let mut storage = api_storage(
-            "instructions",
-            "/home/user/.codex",
-            "v1",
-            "https://example.com/instructions.tar.gz",
-        );
-        storage.instructions_target_filename = Some("AGENTS.md".into());
+        let archive_server = spawn_storage_archive_server(&extracted_archive()).await;
+        let archive_url = format!("{}/archive.tar.gz", archive_server.url());
+        let storage = api_storage("ordinary", "/data", "v1", &archive_url);
         ctx.storage_manifest = Some(StorageManifest {
             storages: vec![storage],
             artifacts: vec![],
         });
         let prev_storage = StorageFingerprints {
-            storages: HashMap::from([(
-                "/home/user/.codex".into(),
-                StorageFingerprint::new("instructions", "v1"),
-            )]),
+            storages: HashMap::from([("/data".into(), StorageFingerprint::new("ordinary", "v0"))]),
             artifacts: HashMap::new(),
         };
         let mut telemetry = test_telemetry(&config, &ctx);
@@ -572,6 +508,8 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
             RunControls::new(tokio_util::sync::CancellationToken::new(), None),
         )
         .await;
+
+        archive_server.cancel_and_reap().await;
 
         assert!(
             result.is_err(),

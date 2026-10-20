@@ -4,11 +4,13 @@ import ChatDomain
 enum ConversationItem: Equatable, Identifiable {
   case message(ChatMessage, isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool)
+  case usage(runID: String)
 
   var id: String {
     switch self {
     case .message(let message, _): message.id
     case .work(let section, _): section.id
+    case .usage(let runID): "usage:\(runID)"
     }
   }
 
@@ -20,7 +22,7 @@ enum ConversationItem: Equatable, Identifiable {
   var role: ChatMessage.Role {
     switch self {
     case .message(let message, _): message.role == .system ? .assistant : message.role
-    case .work: .assistant
+    case .work, .usage: .assistant
     }
   }
 

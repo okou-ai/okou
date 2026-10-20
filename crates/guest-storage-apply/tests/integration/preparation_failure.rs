@@ -10,38 +10,26 @@ use std::os::unix::process::CommandExt;
 
 #[test]
 fn input_permission_failures_exit_nonzero_without_removing_existing_inputs() {
-    for phase in ["stale-cleanup", "cleanup", "normalize", "write"] {
-        let fixture = BinaryLoggingFixture::new("instruction-permission-failure").unwrap();
-        let home = fixture.dir.path().join(".codex");
-        let stage = fixture.dir.path().join("storage-instructions/0");
-        let archive = fixture.dir.path().join("instructions.tar.gz");
+    for phase in ["stale-cleanup", "instruction-cleanup", "write"] {
+        let fixture = BinaryLoggingFixture::new("storage-permission-failure").unwrap();
+        let home = fixture.dir.path().join("data");
+        let archive = fixture.dir.path().join("data.tar.gz");
         fs::set_permissions(fixture.dir.path(), fs::Permissions::from_mode(0o777)).unwrap();
         fs::create_dir_all(&home).unwrap();
         fs::write(home.join("AGENTS.md"), b"existing instructions").unwrap();
         fs::write(home.join("CLAUDE.md"), b"alternate instructions").unwrap();
         fs::write(
             &archive,
-            create_tar_gz(&[("AGENTS.md", b"current instructions")]).unwrap(),
+            create_tar_gz(&[("new-data.txt", b"current data")]).unwrap(),
         )
         .unwrap();
         fs::set_permissions(&home, fs::Permissions::from_mode(0o555)).unwrap();
-        let entry = match phase {
-            "write" => json!({
-                "mountPath": home,
-                "extractPath": stage,
-                "archiveUrl": format!("file://{}", archive.display()),
-                "instructionsTargetFilename": "AGENTS.md"
-            }),
-            _ => {
-                json!({"mountPath": home, "cached": true, "instructionsTargetFilename": "AGENTS.md"})
-            }
-        };
+        let entry =
+            json!({"mountPath": home, "archiveUrl": format!("file://{}", archive.display())});
         let manifest = serde_json::to_vec(&json!({
-            "storageMounts": if phase == "stale-cleanup" { vec![] } else { vec![entry] },
+            "storageMounts": if phase == "write" { vec![entry] } else { vec![] },
             "cleanupPaths": if phase == "stale-cleanup" { vec![home.clone()] } else { vec![] },
-            "instructionCleanups": if phase == "cleanup" {
-                vec![json!({"mountPath": home, "targetFilename": "AGENTS.md"})]
-            } else { vec![] }
+            "instructionCleanups": if phase == "instruction-cleanup" { vec![json!({"mountPath": home})] } else { vec![] }
         }))
         .unwrap();
         let mut command = fixture.command();
@@ -73,108 +61,7 @@ fn input_permission_failures_exit_nonzero_without_removing_existing_inputs() {
             b"alternate instructions",
             "{phase}"
         );
-        assert!(!stage.exists(), "{phase}");
     }
-}
-
-#[test]
-fn staged_instruction_write_failure_exits_nonzero_and_stops_normalization() {
-    let fixture = BinaryLoggingFixture::new("instruction-write-failure").unwrap();
-    let home = fixture.dir.path().join(".codex");
-    let later_home = fixture.dir.path().join("later-home");
-    let stage = fixture.dir.path().join("storage-instructions/0");
-    let archive = fixture.dir.path().join("instructions.tar.gz");
-    fs::create_dir_all(home.join("AGENTS.md")).unwrap();
-    fs::create_dir_all(home.join("sessions")).unwrap();
-    fs::write(home.join("sessions/history.jsonl"), b"native history").unwrap();
-    fs::create_dir_all(&later_home).unwrap();
-    fs::write(later_home.join("CLAUDE.md"), b"later instructions").unwrap();
-    fs::write(
-        &archive,
-        create_tar_gz(&[("AGENTS.md", b"current instructions")]).unwrap(),
-    )
-    .unwrap();
-    let manifest = json!({
-        "storageMounts": [
-            {
-                "mountPath": home,
-                "extractPath": stage,
-                "archiveUrl": format!("file://{}", archive.display()),
-                "instructionsTargetFilename": "AGENTS.md"
-            },
-            {
-                "mountPath": later_home,
-                "cached": true,
-                "instructionsTargetFilename": "AGENTS.md"
-            }
-        ]
-    });
-
-    let output = fixture
-        .run_manifest_stdin(&serde_json::to_vec(&manifest).unwrap())
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(home.join("AGENTS.md").is_dir());
-    assert_eq!(
-        fs::read(home.join("sessions/history.jsonl")).unwrap(),
-        b"native history"
-    );
-    assert!(!stage.exists());
-    assert!(!later_home.join("AGENTS.md").exists());
-    assert_eq!(
-        fs::read(later_home.join("CLAUDE.md")).unwrap(),
-        b"later instructions"
-    );
-}
-
-#[test]
-fn missing_cached_instructions_exit_nonzero() {
-    let fixture = BinaryLoggingFixture::new("cached-instruction-missing").unwrap();
-    let home = fixture.dir.path().join(".codex");
-    fs::create_dir_all(&home).unwrap();
-    let manifest = json!({
-        "storageMounts": [{
-            "mountPath": home,
-            "cached": true,
-            "instructionsTargetFilename": "AGENTS.md"
-        }]
-    });
-
-    let output = fixture
-        .run_manifest_stdin(&serde_json::to_vec(&manifest).unwrap())
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(!home.join("AGENTS.md").exists());
-}
-
-#[test]
-fn instruction_cleanup_failure_stops_before_download() {
-    let fixture = BinaryLoggingFixture::new("instruction-cleanup-failure").unwrap();
-    let home = fixture.dir.path().join(".codex");
-    let target = fixture.dir.path().join("skill");
-    let archive = fixture.dir.path().join("skill.tar.gz");
-    fs::create_dir_all(home.join("AGENTS.md")).unwrap();
-    fs::create_dir_all(&target).unwrap();
-    fs::write(target.join("SKILL.md"), b"old skill").unwrap();
-    fs::write(
-        &archive,
-        create_tar_gz(&[("SKILL.md", b"new skill")]).unwrap(),
-    )
-    .unwrap();
-    let manifest = json!({
-        "storageMounts": [{"mountPath": target, "archiveUrl": format!("file://{}", archive.display())}],
-        "instructionCleanups": [{"mountPath": home, "targetFilename": "AGENTS.md"}]
-    });
-
-    let output = fixture
-        .run_manifest_stdin(&serde_json::to_vec(&manifest).unwrap())
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(home.join("AGENTS.md").is_dir());
-    assert_eq!(fs::read(target.join("SKILL.md")).unwrap(), b"old skill");
 }
 
 #[test]

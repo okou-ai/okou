@@ -37,9 +37,6 @@ export const readAgentInstructionsForClaim$ = command(
         response: notFound("Agent not found"),
       };
     }
-    if (agent.instructions === null) {
-      throw new Error("Agent instructions have not been migrated");
-    }
     return { available: true as const, instructions: agent.instructions };
   },
 );

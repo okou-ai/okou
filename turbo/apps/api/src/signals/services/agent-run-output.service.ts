@@ -1,4 +1,4 @@
-import { runNativeThreadBinding } from "./run-native-session.service";
+import { nativeThreadBindingSql } from "@okouai/db/operations/native-thread-binding";
 
 import { isDeepStrictEqual } from "node:util";
 
@@ -22,7 +22,6 @@ import {
   maintenanceOutputResultVersion,
 } from "./pi-memory-phase2-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import type { PersistedStorageMount } from "@okouai/db/types";
 
@@ -34,10 +33,7 @@ import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
 
-export type AgentRunOutputBody = Omit<
-  z.infer<typeof runCompletionMetadataSchema>,
-  "artifactSnapshots"
-> & {
+export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
 
@@ -58,7 +54,6 @@ interface RunOutputContext {
   readonly storageMounts: typeof agentRuns.$inferSelect.storageMounts;
   readonly id: string;
   readonly agentId: string | null;
-  readonly createdAt: Date;
   readonly userId: string;
   readonly orgId: string;
   readonly framework: string | null;
@@ -109,7 +104,6 @@ function resolvedOutputMounts(args: {
 const outputRunColumns = {
   id: agentRuns.id,
   agentId: agentRuns.agentId,
-  createdAt: agentRuns.createdAt,
   userId: agentRuns.userId,
   orgId: agentRuns.orgId,
   chatThreadId: agentRuns.chatThreadId,
@@ -278,14 +272,14 @@ async function persistAgentRunOutput(
     .where(eq(agentRuns.id, body.runId));
   signal.throwIfAborted();
 
-  const binding = runNativeThreadBinding({
+  const binding = nativeThreadBindingSql({
     run,
     owner: { userId: run.userId, orgId: run.orgId },
     framework: body.cliAgentType,
     sessionId: body.cliAgentSessionId,
   });
   if (binding) {
-    await tx.update(chatThreads).set(binding.values).where(binding.condition);
+    await tx.execute(binding);
   }
   const result = buildRunResult(run, body, storageMounts);
 

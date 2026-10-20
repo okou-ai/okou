@@ -80,7 +80,6 @@ async function setup() {
   const api = await setupApp({
     context,
     routes: computerUseRoutes,
-    isolatePg: true,
   });
   const actor = authenticate();
   signTokenRequests();

@@ -168,15 +168,6 @@ export const connectorAccountListQuerySchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-export const connectorAccountSummarySchema = z
-  .object({
-    target: connectorAccountTargetSchema,
-    accountCount: z.number().int().nonnegative(),
-    attentionCount: z.number().int().nonnegative(),
-    defaultConnection: connectorAccountConnectionSchema.nullable(),
-  })
-  .strict();
-
 const connectorAccountPathParamsSchema = z.object({
   connectionId: z.uuid(),
 });
@@ -224,21 +215,6 @@ export const connectorAccountsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Inspect exact connector accounts",
-  },
-  summaries: {
-    method: "GET",
-    path: "/api/connector-accounts",
-    headers: authHeadersSchema,
-    query: z
-      .object({ includeScopeMismatch: z.literal("true").optional() })
-      .optional(),
-    responses: {
-      200: z.object({ summaries: z.array(connectorAccountSummarySchema) }),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "List connector account summaries",
   },
   connections: {
     method: "GET",
@@ -410,7 +386,4 @@ export type ConnectorAccountInspectionResult = z.infer<
 >;
 export type ConnectorAccountMutationIntent = z.infer<
   typeof connectorAccountMutationIntentSchema
->;
-export type ConnectorAccountSummary = z.infer<
-  typeof connectorAccountSummarySchema
 >;

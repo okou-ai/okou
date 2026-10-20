@@ -15,8 +15,8 @@ import { brandName$, type BrandName } from "../../branding.ts";
 import {
   bestEffort,
   resetSignal,
-  tapError,
   waitLoopUntil,
+  withCleanup,
 } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
@@ -303,55 +303,53 @@ function createCodexRunFlow$(
       const requestId = createRequestId(ctx.scope);
       set(ctx.internalFlowState$, { status: "starting", requestId });
 
-      const dialog = get(ctx.internalDialogState$);
-      const startArgs: {
-        readonly scope: CodexDeviceAuthScope;
-        readonly mode?: CodexDeviceAuthMode;
-        readonly modelProviderId?: string;
-      } = {
-        scope: "personal",
-        mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-        ...(dialog.modelProviderId
-          ? { modelProviderId: dialog.modelProviderId }
-          : {}),
-      };
+      return await withCleanup(
+        (async () => {
+          const dialog = get(ctx.internalDialogState$);
+          const startArgs: {
+            readonly scope: CodexDeviceAuthScope;
+            readonly mode?: CodexDeviceAuthMode;
+            readonly modelProviderId?: string;
+          } = {
+            scope: "personal",
+            mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+            ...(dialog.modelProviderId
+              ? { modelProviderId: dialog.modelProviderId }
+              : {}),
+          };
 
-      const started = await tapError(
-        set(startCodexDeviceAuth$, startArgs, signal),
+          const started = await set(startCodexDeviceAuth$, startArgs, signal);
+          signal.throwIfAborted();
+
+          if (!isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
+            return false;
+          }
+
+          const expiresAtMs = now() + secondsToMilliseconds(started.expiresIn);
+          const pollIntervalMs = Math.max(
+            secondsToMilliseconds(started.interval),
+            CODEX_DEVICE_AUTH_MIN_POLL_MS,
+          );
+
+          set(ctx.internalFlowState$, {
+            status: "pending",
+            requestId,
+            sessionToken: started.sessionToken,
+            browserUrl: started.browserUrl,
+            verificationCode: started.verificationCode,
+            expiresAtMs,
+            pollIntervalMs,
+            errorMessage: null,
+          });
+
+          return await set(pollFlow$, requestId, signal);
+        })(),
+        () => {
+          if (isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
+            set(ctx.internalFlowState$, createIdleFlowState());
+          }
+        },
       );
-      signal.throwIfAborted();
-
-      if (!isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
-        return false;
-      }
-      if (!started) {
-        set(ctx.internalFlowState$, {
-          status: "error",
-          message: i18n.t(($) => {
-            return $.settings.models.deviceAuth.codex.error;
-          }),
-        });
-        return false;
-      }
-
-      const expiresAtMs = now() + secondsToMilliseconds(started.expiresIn);
-      const pollIntervalMs = Math.max(
-        secondsToMilliseconds(started.interval),
-        CODEX_DEVICE_AUTH_MIN_POLL_MS,
-      );
-
-      set(ctx.internalFlowState$, {
-        status: "pending",
-        requestId,
-        sessionToken: started.sessionToken,
-        browserUrl: started.browserUrl,
-        verificationCode: started.verificationCode,
-        expiresAtMs,
-        pollIntervalMs,
-        errorMessage: null,
-      });
-
-      return await set(pollFlow$, requestId, signal);
     },
   );
 }

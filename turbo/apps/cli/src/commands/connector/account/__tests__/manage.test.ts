@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../../mocks/server";
 import {
   catalogStatusItem,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
@@ -52,9 +52,7 @@ describe("connector account exact management", () => {
         command.setOptionValue(key, undefined);
     }
     server.use(
-      stubConnectorCatalogStatus([
-        catalogStatusItem({ connectorSlug: "github" }),
-      ]),
+      stubConnectorCatalog([catalogStatusItem({ connectorSlug: "github" })]),
       stubCustomConnectors([customConnector()]),
     );
   });

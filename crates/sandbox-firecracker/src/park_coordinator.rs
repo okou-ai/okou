@@ -277,7 +277,7 @@ impl DirtyReason {
         }
     }
 
-    pub(crate) fn abandoned_unpark(
+    pub(crate) fn abandoned_native_transition(
         message: impl Into<String>,
         attempt: Option<uuid::Uuid>,
     ) -> Self {

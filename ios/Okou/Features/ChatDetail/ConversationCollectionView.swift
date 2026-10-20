@@ -9,6 +9,8 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState, hasMessages: Bool)
+  case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
+  case usage(runID: String, state: ConversationRunUsageState)
 
   var id: String {
     switch self {
@@ -16,6 +18,8 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .message(let message, _, _, _, _, _): message.id
     case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
+    case .followups: "conversation-followups"
+    case .usage(let runID, _): "usage:\(runID)"
     }
   }
 
@@ -157,7 +161,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    collection.topEdgeEffect.style = .soft
+    // The header owns its translucent material; a second edge effect obscures the history.
+    collection.topEdgeEffect.isHidden = true
     collection.bottomEdgeEffect.style = .soft
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled

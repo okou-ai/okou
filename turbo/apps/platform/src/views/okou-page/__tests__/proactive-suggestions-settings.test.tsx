@@ -151,3 +151,45 @@ test("retries a failed opt-out without enabling proactive suggestions", async ()
     within(card).getByRole("switch", { name: "Proactive Suggestions" }),
   ).not.toBeChecked();
 });
+
+test("keeps suggestions opted in during platform recovery without asking the user to restart them", async () => {
+  let preference: ProactiveSuggestionsPreference = {
+    enabled: true,
+    status: "error",
+    unavailableReason: null,
+  };
+  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+    return respond(200, preference);
+  });
+  context.mocks.api(
+    proactiveSuggestionsContract.update,
+    ({ body, respond }) => {
+      preference = { ...preference, enabled: body.enabled, status: "paused" };
+      return respond(200, preference);
+    },
+  );
+  await setupPage({
+    context,
+    path: "/agents?settings=preference",
+    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
+  });
+  const card = await screen.findByTestId("proactive-suggestions-preference");
+  await expect(
+    within(card).findByText(
+      "Temporarily unavailable. Okou will retry automatically.",
+    ),
+  ).resolves.toBeInTheDocument();
+  const toggle = within(card).getByRole("switch", {
+    name: "Proactive Suggestions",
+  });
+  expect(toggle).toBeChecked();
+  expect(
+    queryAllByRoleFast("button", card).find((button) => {
+      return button.textContent?.trim() === "Retry";
+    }),
+  ).toBeUndefined();
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).not.toBeChecked();
+  });
+});

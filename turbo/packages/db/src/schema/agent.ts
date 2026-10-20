@@ -29,8 +29,7 @@ export const agents = pgTable(
       .default("public"),
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),
-    // NULL remains unverified until the instruction Storage backfill completes.
-    instructions: text("instructions"),
+    instructions: text("instructions").notNull().default(""),
     sound: varchar("sound", { length: 64 }),
     avatarUrl: varchar("avatar_url", { length: 1024 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),

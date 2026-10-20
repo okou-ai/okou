@@ -81,6 +81,8 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let runId: String?
     public let workflowId: String?
     public let automationBrief: String?
+    public let eventId: String?
+    public let range: FeedbackRange?
     public let quote: String?
     public let note: [Part]?
     public let source: FeedbackSource?
@@ -96,6 +98,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       threadId: String? = nil, agentId: String? = nil, runId: String? = nil,
       workflowId: String? = nil, automationBrief: String? = nil,
       quote: String? = nil, note: [Part]? = nil, source: FeedbackSource? = nil,
+      eventId: String? = nil, range: FeedbackRange? = nil,
       selectedModel: String? = nil, serviceTier: String? = nil, annotatedFileId: String? = nil
     ) {
       self.type = type
@@ -114,6 +117,8 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       self.runId = runId
       self.workflowId = workflowId
       self.automationBrief = automationBrief
+      self.eventId = eventId
+      self.range = range
       self.quote = quote
       self.note = note
       self.source = source
@@ -144,7 +149,11 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       case "automation":
         valid = present(workflowName) && (workflowId == nil || identity(workflowId))
       case "feedback":
-        valid = present(quote) && note != nil
+        valid =
+          present(quote) && note != nil
+          && ((eventId == nil) == (range == nil))
+          && (eventId == nil || present(eventId))
+          && (range.map { $0.start >= 0 && $0.end > $0.start } ?? true)
         for part in note ?? [] { try part.validate() }
         if let source, source.type != "mail" || !["draft", "sent"].contains(source.status) {
           throw ChatError.invalidContract("Invalid quoted feedback source.")
@@ -166,6 +175,11 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
         throw ChatError.invalidContract("Invalid structured user message part: \(type).")
       }
     }
+  }
+
+  public struct FeedbackRange: Decodable, Equatable, Sendable {
+    public let start: Int
+    public let end: Int
   }
 
   public struct FeedbackSource: Decodable, Equatable, Sendable {

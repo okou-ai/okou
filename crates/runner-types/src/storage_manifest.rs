@@ -17,7 +17,6 @@ pub struct StorageEntry {
     pub mount_path: String,
     pub vas_storage_name: String,
     pub vas_version_id: String,
-    pub instructions_target_filename: Option<String>,
     pub archive_url: String,
     pub archive_size: Option<u64>,
 }
@@ -61,12 +60,6 @@ fn normalize_storage_mounts(
     for mount in storage_mounts {
         let writeback = mount.writeback.unwrap_or(false);
         if writeback {
-            if mount.instructions_target_filename.is_some() {
-                return Err(
-                    "storage manifest writeback mount cannot contain instructionsTargetFilename"
-                        .to_string(),
-                );
-            }
             if mount.empty != Some(true) && mount.archive_url.is_none() {
                 return Err(
                     "storage manifest writeback mount requires archiveUrl unless empty is true"
@@ -102,7 +95,6 @@ fn normalize_storage_mounts(
             mount_path: mount.mount_path,
             vas_storage_name: mount.name,
             vas_version_id: mount.version_id,
-            instructions_target_filename: mount.instructions_target_filename,
             archive_url,
             archive_size: mount.archive_size,
         });

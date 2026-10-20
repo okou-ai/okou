@@ -7,7 +7,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { piMemoryPhase2Jobs as outgoingJobs } from "./fixtures/checkpoint-retirement-outgoing";
 import { storages } from "../src/schema/storage";
 import { piMemoryPhase2InputRevisionSql } from "../../../apps/api/src/signals/services/pi-memory-phase2-input-revision";
@@ -100,7 +100,7 @@ try {
     contraction,
     "Checkpoint contraction must be present in this release",
   );
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when,
   });
   const retained = await seedStorage();
@@ -111,7 +111,7 @@ try {
 
   // The actual outgoing ORM emits DEFAULT for its obsolete mapped column.
   // This demonstrates the preparation release is necessary before contraction.
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
   await assert.rejects(

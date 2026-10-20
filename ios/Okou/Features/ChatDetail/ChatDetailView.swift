@@ -10,6 +10,11 @@ struct ChatDetailView: View {
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
+  @State private var messageToSelect: ChatMessage?
+  @State private var usageDetails: UsageDetails?
+  @State private var selectionToQuote: ChatFeedbackSelection?
+
+  private struct UsageDetails: Identifiable { let id: String }
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0
@@ -45,7 +50,12 @@ struct ChatDetailView: View {
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory)
         )
+      case .usage(let runID):
+        result.append(.usage(runID: runID, state: conversation.runUsage.states[runID] ?? .loading))
       }
+    }
+    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
     result.append(.footer(history.executionState, hasMessages: !items.isEmpty))
     return result
@@ -90,6 +100,8 @@ struct ChatDetailView: View {
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
     .onDisappear {
+      selectionToQuote = nil
+      messageToSelect = nil
       scrolling.deactivate()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
@@ -101,7 +113,32 @@ struct ChatDetailView: View {
     ) {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
+    .sheet(
+      item: $messageToSelect,
+      onDismiss: {
+        if let selection = selectionToQuote { conversation.quote(selection) }
+        selectionToQuote = nil
+      }
+    ) { message in
+      MessageTextSelectionSheet(
+        text: message.copyText, message: message,
+        quote: message.role == .assistant
+          ? { selection in
+            selectionToQuote = selection
+            messageToSelect = nil
+          } : nil)
+    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
+    .sheet(item: $usageDetails) { selection in
+      ConversationRunUsageDetails(
+        state: conversation.runUsage.states[selection.id] ?? .loading,
+        catalog: conversation.modelSelection?.models.usageCatalog,
+        retry: { conversation.runUsage.retry(selection.id) }
+      )
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
+      .task { await conversation.modelSelection?.models.loadUsageCatalog() }
+    }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
         draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
@@ -137,6 +174,12 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .followups(let source, let finishedAt):
+      RecommendedFollowupList(
+        source: source, finishedAt: finishedAt,
+        select: conversation.composer.editor.selectOrAppendText
+      )
+      .padding(EdgeInsets(top: 24, leading: 26, bottom: 0, trailing: 20))
     case .earlier(let isLoading):
       Button {
         scrolling.loadEarlierMessages()
@@ -193,6 +236,15 @@ struct ChatDetailView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
+    case .usage(let runID, let state):
+      ConversationRunUsageView(
+        runID: runID, state: state, showDetails: { usageDetails = UsageDetails(id: runID) }
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: "usage:\(runID)", anchor: anchor) }
+      }
+      .padding(.horizontal, 26)
     }
   }
 
@@ -230,6 +282,7 @@ struct ChatDetailView: View {
     .contextMenu {
       if !message.copyText.isEmpty {
         Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
+        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
       }
     }
   }

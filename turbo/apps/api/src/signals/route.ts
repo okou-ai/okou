@@ -49,7 +49,7 @@ import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { connectorOverviewRoutes } from "./routes/connector-overview";
+import { agentConnectorAccessRoutes } from "./routes/agent-connector-access";
 import { connectedConnectorsRoutes } from "./routes/connected-connectors";
 import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
@@ -180,7 +180,6 @@ import { runModelsRoutes } from "./routes/run-models";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { runnerVncRoutes } from "./routes/runner-vnc";
-import { runnerWssTicketRoutes } from "./routes/runner-wss-tickets";
 import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
 import { runsCancelRoutes } from "./routes/runs-cancel";
@@ -339,7 +338,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
-  ...connectorOverviewRoutes,
+  ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,
   ...remotesRoutes,
   ...connectorCheckRoutes,
@@ -376,7 +375,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
   ...runnerVncRoutes,
-  ...runnerWssTicketRoutes,
   ...cloudflareAccessRoutes,
   ...tailscaleRoutes,
   ...sshAccessRoutes,

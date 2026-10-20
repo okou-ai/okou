@@ -26,14 +26,13 @@ const mocks = createRouteMocks(context);
 
 describe("chat-thread connector account ownership", () => {
   it("rejects foreign owners and mismatched authorized targets without replacing selections", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: [
         ...chatThreadCreateRoutes,
         ...chatThreadConnectorSelectionRoutes,
         ...connectorAccountRoutes,
       ],
-      isolatePg: true,
     });
     const threads = app(chatThreadsContract);
     const selections = app(chatThreadConnectorSelectionContract);

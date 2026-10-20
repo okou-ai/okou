@@ -9,6 +9,44 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.759.3](https://github.com/okou-ai/okou/compare/api-v1.759.2...api-v1.759.3) (2026-10-20)
+
+
+### Refactoring
+
+* **app:** rely on shared async error handling ([#41838](https://github.com/okou-ai/okou/issues/41838)) ([23116d9](https://github.com/okou-ai/okou/commit/23116d989c109a46f398346802b3981a01b690d4))
+* retire global connector account summaries ([#41847](https://github.com/okou-ai/okou/issues/41847)) ([2f6fdb8](https://github.com/okou-ai/okou/commit/2f6fdb830bf8d476e8a1c935b76896080dc15527))
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+    * @okouai/core bumped to 8.774.4
+    * @okouai/db bumped to 1.352.3
+    * @okouai/pi-agent-runtime bumped to 1.50.34
+
+## [1.759.2](https://github.com/okou-ai/okou/compare/api-v1.759.1...api-v1.759.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** prefer same-host runners for draining predecessor homes ([#41799](https://github.com/okou-ai/okou/issues/41799)) ([ca63626](https://github.com/okou-ai/okou/commit/ca6362664686066960a89b36b4c99c2beee508d0))
+* **api:** preserve text layout and weights in google slides imports ([#41818](https://github.com/okou-ai/okou/issues/41818)) ([da32537](https://github.com/okou-ai/okou/commit/da32537d3f8aecb5a8c3cde90ecd6aa69d76ef23))
+* recover existing morning brief schedules from preferences ([#41806](https://github.com/okou-ai/okou/issues/41806)) ([f0f3ad2](https://github.com/okou-ai/okou/commit/f0f3ad29bc70943f5865b225e288e6d061cc217f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+    * @okouai/core bumped to 8.774.3
+    * @okouai/db bumped to 1.352.2
+    * @okouai/pi-agent-runtime bumped to 1.50.33
+
 ## [1.759.1](https://github.com/okou-ai/okou/compare/api-v1.759.0...api-v1.759.1) (2026-10-20)
 
 

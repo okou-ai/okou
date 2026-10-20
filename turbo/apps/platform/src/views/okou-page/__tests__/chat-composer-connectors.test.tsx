@@ -1,6 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -13,7 +13,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   ACME_CONNECTOR_ID,
-  accountSummary,
   builtinConnector,
   connectorAccount,
   DEEPWIKI_CONNECTOR_ID,
@@ -270,9 +269,6 @@ test("Reconnect the expired custom default from the composer with healthy siblin
       }),
     ],
     accounts: [expired, sibling],
-    accountSummaries: [
-      { ...accountSummary(target, [expired, sibling]), attentionCount: 1 },
-    ],
   });
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   await loadComposer();
@@ -341,10 +337,6 @@ test("Show only the connector actions that are useful in chat", async () => {
     builtinAuthorizations: {
       [SCOUT_AGENT_ID]: [AXIOM_SLUG, GITHUB_SLUG],
     },
-    accountSummaries: [
-      accountSummary(axiomTarget, axiomAccounts),
-      accountSummary(githubTarget, [githubAccount]),
-    ],
     accounts: [...axiomAccounts, githubAccount],
   });
 
@@ -464,7 +456,7 @@ test.each([null, "Close"] as const)(
     const authorizationStarted = context.mocks.deferred<void>();
     const authorization = context.mocks.deferred<void>();
     let connected = false;
-    context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
+    context.mocks.api(agentConnectorAccessContract.agent, ({ respond }) => {
       return respond(200, {
         enabledConnectorSlugs: connected ? [GOOGLE_ANALYTICS_SLUG] : [],
         customConnectorIds: [],
@@ -592,7 +584,6 @@ test("Respect integration-managed connector availability in chat", async () => {
         { customConnectorId: FEISHU_CONNECTOR_ID, permissionNames: [] },
       ],
     },
-    accountSummaries: [accountSummary(target, accounts)],
     accounts,
   });
 

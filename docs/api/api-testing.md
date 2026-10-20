@@ -315,40 +315,22 @@ parallel; cases within each file execute serially. Database choice belongs to
 the case, not to its filename, a Vitest project, tags, or metadata.
 
 Ordinary cases use native PostgreSQL. `setupApp({ context, routes })` stays
-synchronous and returns the contract-client factory. When a public lifecycle
-needs case-owned database isolation, initialize an isolated PGlite through
-`setupApp`. Isolation changes the database lifetime, not the construction
-standard: business state still comes from the public API. For example, the
-agent create/list lifecycle above can use an isolated database like this:
+synchronous and returns the contract-client factory. Give each case unique
+`userId`, `orgId`, and provider-owned identities; rows scoped to those owners do
+not require `isolatePg`, even when the case writes billing state, sends concurrent
+webhooks, or leaves its business rows in the shared test database.
 
-```typescript
-const context = testContext();
+Reserve `setupApp({ context, routes, isolatePg: true })` for genuinely global
+database state: mutating the shared Connector catalog or model prices, changing
+global configuration, or exercising an operator that scans or modifies state
+across tenants. Reading the fixed catalog or pricing baseline does not require
+isolation. A fixed fixture identity is a reason to make that identity unique,
+not a reason to allocate an isolated database. Identify the concrete global
+dependency when choosing isolation.
 
-it("lists an agent created in this case", async () => {
-  createRouteMocks(context).clerk.session(
-    "user_isolated_agent",
-    "org_isolated_agent",
-  );
-  context.mocks.s3.send.mockResolvedValue({});
-  const app = await setupApp({
-    context,
-    routes: agentsRoutes,
-    isolatePg: true,
-  });
-  const client = app(agentsMainContract);
-  const created = await accept(
-    client.create({
-      headers: authHeaders(),
-      body: { displayName: "Isolated Agent" },
-    }),
-    [201],
-  );
-  const listed = await accept(client.list({ headers: authHeaders() }), [200]);
-  expect(listed.body).toContainEqual(
-    expect.objectContaining({ agentId: created.body.agentId }),
-  );
-});
-```
+Isolation changes the database lifetime, not the construction standard: business
+state still comes from the public API. The agent create/list lifecycle above
+should use unique identities and ordinary `setupApp`, not an isolated engine.
 
 Call and await isolated setup before any request or fixture accesses
 the database. Switching after shared PostgreSQL was accessed throws. Repeated
@@ -366,7 +348,8 @@ An isolated database is discarded after the case. Do not enumerate and delete
 its rows in teardown, clear catalogs before starting, or republish an obsolete
 catalog just to delete its accounts. Keep business deletion assertions and
 cleanup that stops background work, releases external resources, or restores
-external mocks. Shared PostgreSQL fixtures still own and clean up their rows.
+external mocks. Shared PostgreSQL fixtures must uniquely own their rows; business
+row teardown is not required to establish isolation.
 
 `src/__tests__/global-setup.ts` applies the fixed SQL files listed in
 `src/test-fixtures/database-seeds.ts` to shared PostgreSQL once per run, using

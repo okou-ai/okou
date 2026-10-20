@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -35,7 +35,7 @@ assert.ok(migration);
 await admin.query(`CREATE DATABASE "${databaseName}"`);
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
 try {
-  await applyPendingMigrations(sql, { beforeMillis: migration.folderMillis });
+  await applyFixtureMigrations(sql, { beforeMillis: migration.folderMillis });
   const agentId = randomUUID();
   const sessionId = randomUUID();
   const runId = randomUUID();
@@ -59,7 +59,7 @@ try {
   const blobsBefore =
     await sql`SELECT to_jsonb(b) AS row FROM blobs b WHERE hash = ${historyHash}`;
 
-  await applyPendingMigrations(sql, {
+  await applyFixtureMigrations(sql, {
     beforeMillis: migration.folderMillis + 1,
   });
   const after =
@@ -117,7 +117,7 @@ try {
     sql`UPDATE agent_runs SET session_id = ${randomUUID()} WHERE id = ${runId}`,
     /agent_runs_session_id_agent_sessions_id_fk/,
   );
-  await applyPendingMigrations(sql, {
+  await applyFixtureMigrations(sql, {
     beforeMillis: migration.folderMillis + 1,
   });
   await sql`DELETE FROM agent_sessions WHERE id = ${sessionId}`;

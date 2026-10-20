@@ -15,8 +15,7 @@ import { server } from "../../../mocks/server";
 import { connectCommand } from "../connect";
 import {
   connectorAccount,
-  connectorAccountSummary,
-  stubConnectorAccountSummaries,
+  stubConnectorAccounts,
   stubConnectorAccountDetails,
 } from "../../__tests__/helpers/connector-accounts";
 import {
@@ -26,7 +25,7 @@ import {
 import {
   catalogStatusItem,
   manualAuthMethod,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 
 const DEFAULT_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
@@ -73,8 +72,8 @@ describe("okou connector connect command", () => {
     connectCommand.setOptionValue("input", undefined);
     server.use(stubCustomConnectors([]));
     server.use(
-      stubConnectorAccountSummaries([]),
-      stubConnectorAccountDetails(),
+      stubConnectorAccounts([]),
+      stubConnectorAccountDetails({ authMethod: "api-token" }),
     );
   });
 
@@ -175,17 +174,32 @@ describe("okou connector connect command", () => {
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
-  it("preserves reconnect syntax and resolves the current default exactly", async () => {
+  it("preserves reconnect syntax using the independent default from another page", async () => {
     let receivedBody: unknown;
     server.use(
-      stubConnectorAccountSummaries([
-        connectorAccountSummary({ kind: "builtin", connectorSlug: "openai" }, [
-          connectorAccount(
-            { kind: "builtin", connectorSlug: "openai" },
-            { id: DEFAULT_CONNECTION_ID },
-          ),
-        ]),
-      ]),
+      http.get(
+        "http://localhost:3000/api/connector-accounts/connections",
+        ({ request }) => {
+          const target = { kind: "builtin", connectorSlug: "openai" } as const;
+          const selected = connectorAccount(target, {
+            id: DEFAULT_CONNECTION_ID,
+            connectionStatus: "reconnect-required",
+          });
+          const cursor = new URL(request.url).searchParams.get("cursor");
+          return HttpResponse.json({
+            connections: cursor
+              ? [selected]
+              : [
+                  connectorAccount(target, {
+                    id: SIBLING_CONNECTION_ID,
+                    isDefault: false,
+                  }),
+                ],
+            defaultConnection: selected,
+            nextCursor: cursor ? null : "page-2",
+          });
+        },
+      ),
       http.get(
         "http://localhost:3000/api/connectors/:connectorSlug",
         ({ params }) => {
@@ -229,6 +243,62 @@ describe("okou connector connect command", () => {
       authMethod: "api-token",
       values: { apiKey: "sk-updated" },
     });
+  });
+
+  it("requires an explicit account when saved accounts have no default", async () => {
+    server.use(
+      stubConnectorAccounts([
+        connectorAccount(
+          { kind: "builtin", connectorSlug: "openai" },
+          { id: SIBLING_CONNECTION_ID, isDefault: false },
+        ),
+      ]),
+    );
+    await expect(
+      connectCommand.parseAsync([
+        "node",
+        "okou",
+        "openai",
+        "--value",
+        "apiKey=updated",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Choose a saved account with --reconnect; no default account is selected.",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
+  });
+
+  it("reports unavailable account inventory instead of adding an account", async () => {
+    server.use(
+      http.get(
+        "http://localhost:3000/api/connector-accounts/connections",
+        () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "NOT_FOUND",
+                message: "Account target unavailable",
+              },
+            },
+            { status: 404 },
+          );
+        },
+      ),
+    );
+    await expect(
+      connectCommand.parseAsync([
+        "node",
+        "okou",
+        "openai",
+        "--value",
+        "apiKey=updated",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Connector accounts are unavailable",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
   it("reconnects one explicitly selected sibling without resolving the default", async () => {
@@ -313,7 +383,7 @@ describe("okou connector connect command", () => {
     let receivedType: string | undefined;
     let receivedBody: unknown;
     server.use(
-      stubConnectorCatalogStatus([
+      stubConnectorCatalog([
         catalogStatusItem({
           connectorSlug,
           label: "Partner Connector",
@@ -350,7 +420,7 @@ describe("okou connector connect command", () => {
   });
 
   it.each([undefined, DEFAULT_CONNECTION_ID])(
-    "prints JSON with optional builtin operation identity %s",
+    "normalizes builtin operation identity %s and strips credentials",
     async (connectionId) => {
       server.use(
         http.post(
@@ -384,8 +454,104 @@ describe("okou connector connect command", () => {
         slug: "openai",
         authMethod: "api-token",
       });
-      expect(JSON.parse(output).connectionId).toBe(connectionId);
+      expect(JSON.parse(output).connectionId).toBe(DEFAULT_CONNECTION_ID);
       expect(output).not.toContain("secret-must-not-appear");
+    },
+  );
+
+  it("renders canonical builtin completion from its exact verified account", async () => {
+    const account = connectorAccount(
+      { kind: "builtin", connectorSlug: "openai" },
+      {
+        id: SIBLING_CONNECTION_ID,
+        authMethod: "api-token",
+        externalUsername: "operated-account",
+        isDefault: false,
+      },
+    );
+    const accountRequests: string[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/connectors/openai/manual-grant",
+        () => {
+          return HttpResponse.json({
+            connectionId: SIBLING_CONNECTION_ID,
+            accessToken: "secret-must-not-appear",
+          });
+        },
+      ),
+      http.get(
+        "http://localhost:3000/api/connector-accounts/:connectionId",
+        ({ params }) => {
+          accountRequests.push(String(params.connectionId));
+          return HttpResponse.json(account);
+        },
+      ),
+    );
+    await connectCommand.parseAsync([
+      "node",
+      "cli",
+      "openai",
+      "--add",
+      "--value",
+      "apiKey=secret-input",
+      "--json",
+    ]);
+    expect(accountRequests).toStrictEqual([SIBLING_CONNECTION_ID]);
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
+      id: SIBLING_CONNECTION_ID,
+      connectionId: SIBLING_CONNECTION_ID,
+      slug: "openai",
+      authMethod: "api-token",
+      externalUsername: "operated-account",
+    });
+    expect(output).not.toContain("secret");
+    expect(JSON.parse(output)).not.toHaveProperty("target");
+    expect(JSON.parse(output)).not.toHaveProperty("isDefault");
+  });
+
+  it.each([
+    {},
+    { connectionId: "secret-invalid-id" },
+    { connectionId: DEFAULT_CONNECTION_ID, id: SIBLING_CONNECTION_ID },
+    { connectionId: DEFAULT_CONNECTION_ID, slug: "stripe" },
+    { connectionId: DEFAULT_CONNECTION_ID, authMethod: "oauth" },
+  ])(
+    "rejects invalid builtin operation receipt %j before account lookup",
+    async (receipt) => {
+      let accountRequests = 0;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/connectors/openai/manual-grant",
+          () => {
+            return HttpResponse.json(receipt);
+          },
+        ),
+        http.get(
+          "http://localhost:3000/api/connector-accounts/:connectionId",
+          () => {
+            accountRequests++;
+            return HttpResponse.json({});
+          },
+        ),
+      );
+      await expect(
+        connectCommand.parseAsync([
+          "node",
+          "cli",
+          "openai",
+          "--add",
+          "--value",
+          "apiKey=secret-input",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(accountRequests).toBe(0);
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+      expect(mockConsoleError.mock.calls.flat().join("\n")).not.toContain(
+        "secret",
+      );
     },
   );
 

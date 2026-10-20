@@ -182,16 +182,10 @@ export function createPublicBillingZeroFixture(
     captureExternalState() {
       accepted = options.retainExternalState?.();
     },
-    async initialize(
-      requestOptions: { readonly isolatePg?: true } = {},
-    ): Promise<void> {
+    async initialize(): Promise<void> {
       await run(async () => {
         const completed = await run(() => {
-          return createBddApi(context).completeOnboarding(
-            actor,
-            undefined,
-            requestOptions,
-          );
+          return createBddApi(context).completeOnboarding(actor);
         });
         expect(completed.status).toBe(200);
         expect((await readStatus()).body).toMatchObject({

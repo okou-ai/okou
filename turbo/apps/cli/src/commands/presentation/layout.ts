@@ -183,7 +183,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     }
     const segments = Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(node.nodeValue));
     const result = [];
-    let current = null;
+    let current = null, line = -1, lineTop;
     for (const segment of segments) {
       const end = segment.index + segment.segment.length;
       const range = document.createRange();
@@ -192,12 +192,13 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       const rect = Array.from(range.getClientRects()).find(rect => rect.width > 0 && rect.height > 0);
       if (!rect) { if(preserve || !/\s/.test(segment.segment)) current = null; continue; }
       if (preserve && /[\n\r]/.test(segment.segment)) { current=null;continue; }
+      if (lineTop === undefined || Math.abs(rect.top-lineTop)>1) { line += 1; lineTop = rect.top; }
       if(rect.top>=clip.bottom-.5||rect.bottom<=clip.top+.5||rect.left<clip.left-.5||rect.right>clip.right+.5){result.clipped=true;continue;}
       let value = preserve ? segment.segment : segment.segment.replace(/[\n\r\t]/g,' ');
       if(style.textTransform==='uppercase')value=value.toUpperCase();else if(style.textTransform==='lowercase')value=value.toLowerCase();else if(style.textTransform==='capitalize'&&(segment.index===0||/\s/.test(node.nodeValue[segment.index-1])))value=value.toUpperCase();
       if(splitWords&&/[ \t\u00a0]/.test(value)&&result.length){const previous=result.at(-1);previous.text+=value;previous.right=Math.max(previous.right,rect.right);current=null;continue;}
       if (!current || Math.abs(rect.top - current.top) > 1 || (splitWords && /[ \t\u00a0]/.test(value))) {
-        current = {text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style,source:node.parentElement,paintRect:(()=>{const r=node.parentElement.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})(),href:node.parentElement.closest('a[href]')?.href || ''};
+        current = {node,line,text:value,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,style,source:node.parentElement,paintRect:(()=>{const r=node.parentElement.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})(),href:node.parentElement.closest('a[href]')?.href || ''};
         result.push(current);
       } else {
         current.text += value;
@@ -259,6 +260,13 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     if (align !== 'left' && parseFloat(part.style.wordSpacing) > 0 && /\s$/.test(part.text)) return measured;
     for (const other of parts) {
       if (other === part || other.bottom <= part.top || other.top >= part.bottom) continue;
+      // Range rectangles include font ascenders/descenders, not line boxes.
+      // Tight leading can overlap separate wraps of the same text node.
+      // Across nodes, only compare tops for the same baseline/font context;
+      // superscripts, mixed sizes and independent inline boxes stay conservative.
+      if (other.node === part.node && other.line !== part.line) continue;
+      if (other.breakIndex !== part.breakIndex) continue;
+      if (other.lineContext === part.lineContext && other.lineContext && Math.abs(other.top-part.top)>1) continue;
       // Share measured whitespace so adjacent frames cannot both claim it.
       if (other.right <= part.left) left = Math.max(left,(other.right+part.left)/2);
       else if (other.left >= part.right) right = Math.min(right,(part.right+other.left)/2);
@@ -367,24 +375,80 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
   };
   let fragmented = 0;
   const prepared = [];
+  const plans = [];
   for (const candidate of candidates) {
     const {owner,nodes} = candidate;
     if (candidates.some(other => other !== candidate && other.owner.contains(owner))) continue;
     const root = owner.getBoundingClientRect();
     const sourceStyle = snapshotStyle(owner);
-    const parts = nodes.flatMap(node => fragment(node,parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue)).map(part => ({...part,opacity:relativeOpacity(node.parentElement,owner)})));
+    const breaks = new Map();
+    let breakIndex = 0;
+    const walker = document.createTreeWalker(owner, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    for (let node=walker.nextNode(); node; node=walker.nextNode()) {
+      if (node.nodeName === 'BR') {
+        let sharedFlow=true;
+        for(let ancestor=node.parentElement;ancestor!==owner;ancestor=ancestor.parentElement)if(!['inline','contents'].includes(getComputedStyle(ancestor).display))sharedFlow=false;
+        if(sharedFlow)breakIndex += 1;
+      }
+      if (node.nodeType === Node.TEXT_NODE) breaks.set(node,breakIndex);
+    }
+    const parts = nodes.flatMap(node => fragment(node,parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue)).map(part => {
+      let container=part.source;
+      while(container!==owner&&['inline','contents'].includes(getComputedStyle(container).display))container=container.parentElement;
+      let simple = container===owner && part.style.verticalAlign==='baseline' && part.style.direction==='ltr' && !part.source.closest('sup,sub');
+      for(let inline=part.source;inline!==owner;inline=inline.parentElement){
+        const s=getComputedStyle(inline);
+        if(s.verticalAlign!=='baseline'||s.position!=='static'||['marginLeft','marginRight','paddingLeft','paddingRight','borderLeftWidth','borderRightWidth'].some(key=>parseFloat(s[key])!==0))simple=false;
+      }
+      return {...part,breakIndex:breaks.get(node),lineContext:simple ? [part.style.fontFamily,part.style.fontSize,part.style.fontWeight,part.style.fontStyle].join('|') : '',opacity:relativeOpacity(node.parentElement,owner)};
+    }));
     if (!parts.length) continue;
     const decorations = Array.from(owner.querySelectorAll('*')).filter(child => hasBoxPaint(getComputedStyle(child)))
       .map(child => ({source:child,style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
     const frames = parts.map(part => textFrame(part,owner,parts,decorations));
+    plans.push({owner,root,sourceStyle,parts,decorations,frames});
+  }
+  // Measure every owner and neighbor before the first mutation. Removing text
+  // changes automatic flex minimums and intrinsic grid tracks even when width
+  // and height were assigned. Freeze the browser's used slots simultaneously.
+  const slots = new Map();
+  for (const {owner} of plans) {
+    for (let element=owner; element && !slides.includes(element); element=element.parentElement) {
+      if (element!==owner && !['flex','inline-flex','grid','inline-grid'].includes(getComputedStyle(element.parentElement).display)) continue;
+      if (!slots.has(element)) slots.set(element,{rect:element.getBoundingClientRect(),style:snapshotStyle(element)});
+      if (['flex','inline-flex','grid','inline-grid'].includes(getComputedStyle(element.parentElement).display)) {
+        for (const sibling of element.parentElement.children) if(!slots.has(sibling))slots.set(sibling,{rect:sibling.getBoundingClientRect(),style:snapshotStyle(sibling)});
+      }
+    }
+  }
+  for (const [element,{rect,style}] of slots) {
+    if (style.display==='none' || style.display==='contents') continue;
+    save(element);
+    // Keep exact layout-unit border boxes; computed CSS sizes can round down
+    // by a layout unit. A transformed sibling's paint rectangle is not its
+    // flex basis, so retain its used CSS size and original box sizing instead.
+    const transformed=style.transform!=='none'||Number(style.zoom)!==1;
+    const width=transformed?style.width:rect.width+'px',height=transformed?style.height:rect.height+'px';
+    for(const [property,value] of Object.entries({'box-sizing':transformed?style.boxSizing:'border-box',width,height,'min-width':width,'max-width':width,'min-height':height,'max-height':height}))element.style.setProperty(property,value,'important');
+    const parent=getComputedStyle(element.parentElement);
+    if (['flex','inline-flex'].includes(parent.display)) {
+      const horizontal=parent.flexDirection.startsWith('row') === parent.writingMode.startsWith('horizontal');
+      element.style.setProperty('flex','0 0 '+(horizontal?width:height),'important');
+    }
+  }
+  const checkSlots = () => {
+    for (const [element,{rect}] of slots) {
+      const actual=element.getBoundingClientRect();
+      if (['x','y','width','height'].some(key=>Math.abs(actual[key]-rect[key])>.5)) throw new Error('Text materialization changed the measured layout near '+element.tagName);
+    }
+  };
+  checkSlots();
+  for (const [planIndex,plan] of plans.entries()) {
+    const {owner,root,sourceStyle,parts,decorations,frames}=plan;
     const originalChildren = Array.from(owner.childNodes);
-    save(owner);
     undo.push(() => owner.replaceChildren(...originalChildren));
     owner.replaceChildren();
     if (sourceStyle.position === 'static') owner.style.setProperty('position','relative','important');
-    owner.style.setProperty('box-sizing','border-box','important');
-    owner.style.setProperty('width',root.width+'px','important');
-    owner.style.setProperty('height',root.height+'px','important');
     // Absolute child coordinates are relative to the padding box, not the border box.
     const originX = root.left + parseFloat(sourceStyle.borderLeftWidth);
     const originY = root.top + parseFloat(sourceStyle.borderTopWidth);
@@ -406,6 +470,9 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       Object.assign(span.style,{position:'absolute',display:'block',left:(frame.left-originX)+'px',top:(part.top-originY)+'px',width:(frame.right-frame.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',textAlign:frame.align,textIndent:'0',background:'transparent'});
       span.style.opacity = String(part.opacity);
       span.textContent = part.text;
+      // Equal ids prove a shared source line; uncertain inline contexts never
+      // share an id, even when their rectangles happen to touch.
+      span.__okouLineId = 'owner-'+planIndex+'-break-'+part.breakIndex+'-'+(part.lineContext ? [part.style.fontFamily,part.style.fontSize,part.style.fontStyle].join('|')+'-top-'+part.top : 'fragment-'+index);
       if(window.__okouNative){
         const meta=window.__okouNative.nodes.get(part.source)||window.__okouNative.nodes.get(owner);
         if(meta)window.__okouNative.nodes.set(span,{...meta,generated:[]});
@@ -416,6 +483,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     }
     fragmented += 1;
   }
+  checkSlots();
   const pages = slides.map((slide,index) => {
     const rect = slide.getBoundingClientRect();
     const box = element => {

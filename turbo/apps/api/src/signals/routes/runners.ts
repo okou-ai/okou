@@ -579,11 +579,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const runnerHostname =
     auth.type === "official-runner" ? (body.data.runnerHostname ?? null) : null;
   const currentDate = nowDate();
-  // User PAT heartbeats are valid for their existing Runner flows, but cannot
-  // assert a host ingress signal used to authorize WSS ticket issuance.
-  const wssIngressServiceActive =
-    auth.type === "official-runner" &&
-    body.data.wssIngressServiceActive === true;
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
@@ -608,7 +603,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       heldHomeStates,
       activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
-      wssIngressServiceActive,
       lastSeenAt: currentDate,
     })
     .onConflictDoUpdate({
@@ -632,7 +626,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         heldHomeStates: sql`CASE WHEN ${runnerState.heldHomeStates} IS DISTINCT FROM excluded.held_home_states THEN excluded.held_home_states ELSE ${runnerState.heldHomeStates} END`,
         activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
-        wssIngressServiceActive,
         lastSeenAt: currentDate,
       },
       setWhere: or(
@@ -2054,6 +2047,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly db: Db;
     readonly runId: string;
     readonly orgId: string;
+    readonly agentId: string | null;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
     readonly nativeContinuationSupported: boolean;
@@ -2088,7 +2082,7 @@ async function resolveStoredExecutionContextForClaim(
   }
   // Release #41438 shipped the prepared inline reader in Runner 0.234.18.
   if (
-    storedContextResult.data.agentInstructionsSource === "agent" &&
+    args.agentId !== null &&
     (args.runnerVersion === undefined ||
       (compareAppVersions(args.runnerVersion, "0.234.18") ?? -1) < 0)
   ) {
@@ -2160,6 +2154,7 @@ const claimAuthorizedJob$ = command(
         db,
         runId,
         orgId: run.orgId,
+        agentId: run.agentId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         nativeContinuationSupported: args.nativeContinuationSupported,
@@ -2188,7 +2183,7 @@ const claimAuthorizedJob$ = command(
     );
     signal.throwIfAborted();
 
-    if (storedContext.agentInstructionsSource === "agent") {
+    if (run.agentId !== null) {
       const instructions = await set(
         readAgentInstructionsForClaim$,
         {

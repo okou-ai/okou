@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/ios-v0.13.0...ios-v0.14.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add native message text selection ([#41848](https://github.com/okou-ai/okou/issues/41848)) ([a77dd33](https://github.com/okou-ai/okou/commit/a77dd33a57f584d60ed24610fa588ce4a5240275))
+* **ios:** add native recommended follow-up suggestions ([#41852](https://github.com/okou-ai/okou/issues/41852)) ([e46045a](https://github.com/okou-ai/okou/commit/e46045a1ec7a30435dc9890774c13b389e8b4b64))
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/ios-v0.12.1...ios-v0.13.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** render structured user messages ([#41810](https://github.com/okou-ai/okou/issues/41810)) ([8ec30fd](https://github.com/okou-ai/okou/commit/8ec30fd1b5c5b197c824dc353a68744d77c657a4))
+
 ## [0.12.1](https://github.com/okou-ai/okou/compare/ios-v0.12.0...ios-v0.12.1) (2026-10-20)
 
 

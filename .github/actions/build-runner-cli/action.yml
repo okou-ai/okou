@@ -7,27 +7,40 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+    - name: Check CLI source revision
+      shell: bash
+      env:
+        SOURCE_SHA: ${{ inputs.source-sha }}
+      run: |
+        set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
     - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       env:
         npm_config_audit: "false"
       with:
         version: 10.33.4
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+    - name: Cache CLI dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        node-version: 22
-        cache: pnpm
-        cache-dependency-path: turbo/pnpm-lock.yaml
-    - name: Build and check CLI input
+        path: ${{ runner.temp }}/runner-cli-pnpm-store
+        key: runner-cli-pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('turbo/pnpm-lock.yaml') }}
+    - name: Build CLI package
       shell: bash
       env:
         SOURCE_SHA: ${{ inputs.source-sha }}
         npm_config_audit: "false"
       run: |
         set -euo pipefail
-        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-        git config --global --add safe.directory "$GITHUB_WORKSPACE"
-        test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-        (cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli...)
+        (cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli... --store-dir "$RUNNER_TEMP/runner-cli-pnpm-store")
         (cd turbo && pnpm --filter @okouai/cli build)
         bash .github/scripts/artifacts/build-okou-cli-artifact.sh "$SOURCE_SHA" runner-cli-intermediate
+    - name: Smoke CLI input
+      shell: bash
+      run: |
+        set -euo pipefail
         bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh runner-cli-intermediate/package.tgz

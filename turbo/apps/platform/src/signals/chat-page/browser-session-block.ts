@@ -371,6 +371,7 @@ function createBrowserSessionSubscriptionSignals(
         topic: "browserSessionChanged",
         loopCommand$: onBrowserSessionChanged$,
         initializeCommand$: reloadBrowserSession$,
+        options: { runOnSubscribe: false },
       },
       signal,
     );

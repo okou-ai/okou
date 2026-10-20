@@ -5,7 +5,7 @@ import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -41,7 +41,7 @@ const thread = randomUUID();
 const route = randomUUID();
 try {
   await client.connect();
-  await applyPendingMigrations(sql, { beforeMillis: migration.when });
+  await applyFixtureMigrations(sql, { beforeMillis: migration.when });
   await client.query(
     `INSERT INTO discord_org_grants
     (id, org_id, initiated_by_user_id, verified_guild_id, verified_bot_user_id, approved_at, expires_at)
@@ -84,7 +84,7 @@ try {
     [sender, connection, user],
   );
 
-  await applyPendingMigrations(sql);
+  await applyFixtureMigrations(sql);
   assert.deepEqual(
     (
       await client.query(

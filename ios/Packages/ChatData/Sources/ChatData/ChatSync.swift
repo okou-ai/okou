@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 
 public actor ChatSync {
-  private let client: APIClient
+  let client: APIClient
   private let chatEventSchemaVersion = 8
   private let threadEventRebaseThreshold = 100
   private let cache: ChatCache?

@@ -29,9 +29,6 @@ export const readUserExportAgentInstructions$ = command(
     if (!agent) {
       throw new Error("Agent became unavailable during export");
     }
-    if (agent.instructions === null) {
-      throw new Error("Agent instructions have not been migrated");
-    }
     return agentInstructionsContent(agent.instructions);
   },
 );

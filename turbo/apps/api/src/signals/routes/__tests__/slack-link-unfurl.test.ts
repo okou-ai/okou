@@ -77,7 +77,6 @@ async function fixture(
   }
   const actor = { ...user, orgId: user.orgId };
   const { teamId } = await integrations.installSlackWorkspace(actor, {
-    isolatePg: true,
     botScopes: options.scopes ?? `${previousBotScopes},links:read,links:write`,
     installerSlackUserId: authorSlackUserId,
   });

@@ -20,10 +20,9 @@ test("grants a paid credit invoice once across distinct webhook events", async (
   const webhooks = createWebhookCallbackApi(context);
   webhooks.configureStripeBillingEnv();
 
-  const app = await setupApp({
+  const app = setupApp({
     context,
     routes: onboardingCompleteRoutes,
-    isolatePg: true,
   });
   const onboarding = await accept(
     app(onboardingCompleteContract).complete({

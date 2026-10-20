@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // Exercise the shipped psql interface on a newly migrated, disposable database.
 // No historical business rows are fabricated: empty populations test the receipt
@@ -131,7 +131,7 @@ try {
     onnotice: () => {},
   });
   try {
-    await applyPendingMigrations(migration);
+    await applyFixtureMigrations(migration);
   } finally {
     await migration.end();
   }

@@ -9,6 +9,21 @@ import XCTest
 
 @MainActor
 final class ChatModelStoreTests: XCTestCase {
+  func testUsageLoadsSharedCatalogWithoutActivatingModelSelectionOrQuotaReads() async throws {
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.url?.path, "/api/model-catalog")
+      return modelCatalogResponse()
+    }
+    let models = ChatModelStore(client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    defer { models.close() }
+    await models.loadUsageCatalog()
+    XCTAssertFalse(models.active)
+    XCTAssertNil(models.configuration)
+    XCTAssertEqual(models.usageCatalog?.name("claude-opus-4-8"), "Claude Opus 4.8")
+    await models.loadUsageCatalog()
+    XCTAssertEqual(models.usageCatalog?.name("claude-opus-4-8"), "Claude Opus 4.8")
+  }
+
   func testNewChatKeepsEachModelsEffortAndSavesDefaultOnlyOnExplicitAction() async throws {
     let writes = Mutex<[URLRequest]>([])
     let savedPreference = Mutex<String?>(nil)

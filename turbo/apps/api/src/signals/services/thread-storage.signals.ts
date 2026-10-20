@@ -442,12 +442,6 @@ function createStorageObjectSignals(
           : {
               ...identity,
               mode: "readonly",
-              ...(mount.instructionsTargetFilename === undefined
-                ? {}
-                : {
-                    instructionsTargetFilename:
-                      mount.instructionsTargetFilename,
-                  }),
             };
       },
     );

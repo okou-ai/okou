@@ -1,6 +1,6 @@
 {
   "name": "@okouai/core",
-  "version": "8.774.2",
+  "version": "8.774.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -39,7 +39,6 @@
     "entities": "7.0.1",
     "fractional-indexing": "^3.4.0",
     "htmlparser2": "^10.1.0",
-    "signal-timers": "^1.0.5",
     "yaml": "^2.9.0",
     "zod": "^4.3.6"
   }

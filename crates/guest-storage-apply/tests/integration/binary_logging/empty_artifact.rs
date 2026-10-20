@@ -5,31 +5,15 @@ use serde_json::json;
 #[test]
 fn binary_empty_artifact_preparation_failure_preserves_prior_work() {
     let fixture = BinaryLoggingFixture::new("empty-artifact-prepare-failure").unwrap();
-    let staged_source = fixture
-        .dir
-        .path()
-        .join("runtime")
-        .join("storage-instructions")
-        .join("0");
-    let staged_parent = staged_source.parent().unwrap().to_path_buf();
-    let staged_archive = fixture.dir.path().join("staged-secret-token.tar.gz");
     let prepared_empty_artifact = fixture.dir.path().join("prepared-empty-artifact");
     let blocker = fixture.dir.path().join("artifact-blocker");
     let blocked_empty_artifact = blocker.join("blocked-empty-artifact");
     std::fs::write(&blocker, "not a directory").unwrap();
-    assert!(!staged_archive.exists());
 
-    let staged_archive_url = format!("file://{}", staged_archive.display());
     let earlier_archive_url = "https://storage.invalid/empty?token=earlier-secret-token";
     let blocked_archive_url = "https://storage.invalid/empty?token=blocked-secret-token";
     let manifest = json!({
         "storageMounts": [
-            {
-                "mountPath": fixture.dir.path().join(".codex"),
-                "extractPath": staged_source,
-                "archiveUrl": staged_archive_url,
-                "instructionsTargetFilename": "AGENTS.md"
-            },
             {
                 "mountPath": prepared_empty_artifact,
                 "archiveUrl": earlier_archive_url,
@@ -54,8 +38,6 @@ fn binary_empty_artifact_preparation_failure_preserves_prior_work() {
         .unwrap();
 
     assert!(!output.status.success());
-    assert!(!staged_source.exists());
-    assert!(!staged_parent.exists());
     assert!(prepared_empty_artifact.is_dir());
     assert!(!blocked_empty_artifact.exists());
 
@@ -63,10 +45,8 @@ fn binary_empty_artifact_preparation_failure_preserves_prior_work() {
     let ops_log = fixture.read_ops_log().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     let forbidden = [
-        staged_archive_url.as_str(),
         earlier_archive_url,
         blocked_archive_url,
-        "staged-secret-token",
         "earlier-secret-token",
         "blocked-secret-token",
     ];
@@ -89,7 +69,7 @@ fn binary_empty_artifact_preparation_failure_preserves_prior_work() {
         .expect("missing failed artifact_empty_prepare operation");
     assert!(
         target_prepare_index < failed_artifact_index,
-        "staged instruction target should be prepared before the artifact failure: {ops:?}"
+        "download target preparation should precede the artifact failure: {ops:?}"
     );
     let mut empty_artifact_ops = ops
         .iter()

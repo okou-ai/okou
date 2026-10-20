@@ -184,10 +184,6 @@ function observeResourceLists(): string[] {
       vncHosts: [],
     });
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    requested.push("account summaries");
-    return respond(200, { summaries: [] });
-  });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     requested.push("target accounts");
     return respond(200, {

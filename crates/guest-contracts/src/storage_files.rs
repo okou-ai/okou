@@ -31,53 +31,13 @@ pub const MAX_INPUT_BYTES: usize = 16 + MAX_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
 
 /// Whether another manifest entry owns paths needed by a decoded mount.
 ///
-/// Ordinary storage and artifacts own their whole mount. Instructions downloaded
-/// into separate staging (or normalized in place without an archive) only manage
-/// the instruction filenames and copy temporaries at their logical home. Their
-/// unrelated children can therefore use decoded delivery. Callers must exclude
-/// only the decoded entry itself, not other entries with the same mount path.
-pub fn decoded_mount_conflicts(
-    target: &Path,
-    mount: &Path,
-    instructions_target_filename: Option<&str>,
-    extract_path: Option<&Path>,
-    has_archive: bool,
-) -> bool {
-    if !absolute_mount(target) || !absolute_mount(mount) {
-        return true;
-    }
-    let overlaps = |other: &Path| target.starts_with(other) || other.starts_with(target);
-    if instructions_target_filename.is_some()
-        && has_archive
-        && let Some(staging) = extract_path
-        && (!absolute_mount(staging) || overlaps(staging))
-    {
-        // Staging is extracted and later removed, even when logical homes differ.
-        return true;
-    }
-    if !overlaps(mount) {
-        return false;
-    }
-    if !matches!(
-        instructions_target_filename,
-        Some("CLAUDE.md" | "AGENTS.md")
-    ) || (has_archive && extract_path.is_none())
-    {
-        return true;
-    }
-    let Ok(relative) = target.strip_prefix(mount) else {
-        return true;
-    };
-    let Some(Component::Normal(child)) = relative.components().next() else {
-        // A decoded mount at or above the instruction home still conflicts.
-        return true;
-    };
-    let Some(child) = child.to_str() else {
-        return true;
-    };
-    matches!(child, "CLAUDE.md" | "AGENTS.md")
-        || child.starts_with(".CLAUDE.md.vm0-copy-")
-        || child.starts_with(".AGENTS.md.vm0-copy-")
+/// Storage and artifacts own their whole mount. Callers exclude only the decoded
+/// entry itself, retaining conflicts with other entries at the same path.
+pub fn decoded_mount_conflicts(target: &Path, mount: &Path) -> bool {
+    !absolute_mount(target)
+        || !absolute_mount(mount)
+        || target.starts_with(mount)
+        || mount.starts_with(target)
 }
 
 /// Validate decoded ownership against the complete manifest before transport splitting.
@@ -118,11 +78,7 @@ pub fn validate_bindings<'a>(
             .find(|(_, entry)| entry.mount_path == mount);
         let binding = match (storage, artifact) {
             (Some((index, entry)), None) => {
-                if entry.cached
-                    || entry.extract_path.is_some()
-                    || entry.instructions_target_filename.is_some()
-                    || !valid_archive_url(entry.archive_url.as_deref())
-                {
+                if entry.cached || !valid_archive_url(entry.archive_url.as_deref()) {
                     return Err(io::Error::other(
                         "decoded storage source is not an ordinary download",
                     ));
@@ -153,16 +109,7 @@ pub fn validate_bindings<'a>(
             if matches!(binding, DecodedBinding::Storage(index) if index == other_index) {
                 continue;
             }
-            if decoded_mount_conflicts(
-                target,
-                Path::new(&other.mount_path),
-                other.instructions_target_filename.as_deref(),
-                other.extract_path.as_deref().map(Path::new),
-                other
-                    .archive_url
-                    .as_deref()
-                    .is_some_and(|url| url != "null"),
-            ) {
+            if decoded_mount_conflicts(target, Path::new(&other.mount_path)) {
                 return Err(io::Error::other("decoded mount overlaps another mount"));
             }
         }
@@ -170,7 +117,7 @@ pub fn validate_bindings<'a>(
             if matches!(binding, DecodedBinding::Artifact(index) if index == other_index) {
                 continue;
             }
-            if decoded_mount_conflicts(target, Path::new(&other.mount_path), None, None, true) {
+            if decoded_mount_conflicts(target, Path::new(&other.mount_path)) {
                 return Err(io::Error::other("decoded mount overlaps another mount"));
             }
         }
@@ -458,9 +405,7 @@ mod tests {
     fn storage_entry(mount_path: &str) -> StorageEntry {
         StorageEntry {
             mount_path: mount_path.into(),
-            extract_path: None,
             archive_url: Some("file:///storage.tar.gz".into()),
-            instructions_target_filename: None,
             cached: false,
             vas_storage_name: Some("storage".into()),
             vas_version_id: Some("v1".into()),

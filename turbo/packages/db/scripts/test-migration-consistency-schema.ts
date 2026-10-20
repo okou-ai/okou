@@ -61,6 +61,7 @@ import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
+import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2831,6 +2832,7 @@ async function main(): Promise<void> {
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
     await validatePermanentStorageLineage(dbUrl1);
+    await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentPiMemoryJobs(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
@@ -2873,6 +2875,7 @@ async function main(): Promise<void> {
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
     await validatePermanentStorageLineage(dbUrl2);
+    await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);
     await validatePermanentArtifactThreadCatalog(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);

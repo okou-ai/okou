@@ -1,24 +1,12 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  and,
-  eq,
-  exists,
-  gte,
-  isNotNull,
-  isNull,
-  ne,
-  notExists,
-  or,
-} from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { nativeThreadBindingSql } from "@okouai/db/operations/native-thread-binding";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { command } from "ccstate";
 import { nativeContinuationSchema } from "@okouai/api-contracts/contracts/runners";
 import type { EventConsumerPayload } from "../../lib/event-consumer/verify";
 import { writeDb$ } from "../external/db";
 
 const nativeSessionId = nativeContinuationSchema.shape.sessionId.unwrap();
-const laterRun = alias(agentRuns, "later_native_run");
 
 /** Bind actual Framework initialization, including runs that later fail/cancel. */
 export const captureRunNativeSession$ = command(
@@ -41,7 +29,6 @@ export const captureRunNativeSession$ = command(
         chatThreadId: agentRuns.chatThreadId,
         launchSnapshot: agentRuns.launchSnapshot,
         officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
-        createdAt: agentRuns.createdAt,
       })
       .from(agentRuns)
       .where(
@@ -111,71 +98,14 @@ export const captureRunNativeSession$ = command(
     if (!captured) {
       throw new Error("Run native session identity changed");
     }
-    const binding = runNativeThreadBinding({
+    const binding = nativeThreadBindingSql({
       run,
       owner: payload.context,
       framework,
       sessionId,
     });
     if (binding) {
-      await db.update(chatThreads).set(binding.values).where(binding.condition);
+      await db.execute(binding);
     }
   },
 );
-
-/** Completion also supplies this identity if its initialization receipt was lost. */
-export function runNativeThreadBinding(args: {
-  readonly run: Pick<
-    typeof agentRuns.$inferSelect,
-    "id" | "agentId" | "chatThreadId" | "createdAt"
-  >;
-  readonly owner: { readonly userId: string; readonly orgId: string };
-  readonly framework: string;
-  readonly sessionId: string;
-}) {
-  const { run, owner, framework, sessionId } = args;
-  if (!run.chatThreadId || !run.agentId) {
-    return;
-  }
-  const builder = new QueryBuilder();
-  return {
-    values: {
-      framework,
-      frameworkSessionId: sessionId,
-      frameworkSessionRunId: run.id,
-    },
-    condition: and(
-      eq(chatThreads.id, run.chatThreadId),
-      eq(chatThreads.userId, owner.userId),
-      eq(chatThreads.agentId, run.agentId),
-      exists(
-        builder
-          .select({ id: agentRuns.id })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.id, run.id),
-              eq(agentRuns.agentId, chatThreads.agentId),
-              eq(agentRuns.userId, owner.userId),
-              eq(agentRuns.orgId, owner.orgId),
-              eq(agentRuns.framework, framework),
-              eq(agentRuns.frameworkSessionId, sessionId),
-            ),
-          ),
-      ),
-      notExists(
-        builder
-          .select({ id: laterRun.id })
-          .from(laterRun)
-          .where(
-            and(
-              eq(laterRun.chatThreadId, chatThreads.id),
-              ne(laterRun.id, run.id),
-              gte(laterRun.createdAt, run.createdAt),
-              isNotNull(laterRun.frameworkSessionId),
-            ),
-          ),
-      ),
-    ),
-  };
-}

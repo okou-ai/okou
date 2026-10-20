@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // The production caller is the migration runner. These historical ledger shapes
 // predate the current API writers and are tested at that native SQL boundary.
@@ -163,7 +163,7 @@ async function allState() {
 }
 
 try {
-  await applyPendingMigrations(sql, { beforeMillis: target.when });
+  await applyFixtureMigrations(sql, { beforeMillis: target.when });
   await client.connect();
   await client.query(
     `INSERT INTO agents (id, org_id, owner, name)
@@ -353,7 +353,7 @@ try {
     UNION ALL SELECT to_jsonb(u)::text FROM usage_event u WHERE id BETWEEN ${conflictPredicate}
     UNION ALL SELECT to_jsonb(h)::text FROM usage_event_hourly_rollup h WHERE id BETWEEN ${conflictPredicate} ORDER BY fact`;
   const conflictsBefore = await state(conflictQuery);
-  await applyPendingMigrations(sql, { beforeMillis: target.when + 1 });
+  await applyFixtureMigrations(sql, { beforeMillis: target.when + 1 });
   assert.deepEqual(
     await financialState(),
     financialBefore,
@@ -452,7 +452,7 @@ try {
     "DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1",
     [target.when],
   );
-  await applyPendingMigrations(sql, { beforeMillis: target.when + 1 });
+  await applyFixtureMigrations(sql, { beforeMillis: target.when + 1 });
   assert.deepEqual(
     await allState(),
     firstPass,

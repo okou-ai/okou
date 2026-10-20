@@ -1,7 +1,7 @@
 //! Storage materialization planning between canonical runner manifests and guest execution.
 //!
-//! [`build_storage_plan`] combines a canonical storage manifest, the guest runtime directory, and
-//! optional fingerprints from a prior filesystem into an explicit [`StoragePlan`]. The plan is
+//! [`build_storage_plan`] combines a canonical storage manifest and optional fingerprints from a
+//! prior filesystem into an explicit [`StoragePlan`]. The plan is
 //! crate-private and is not serialized: it preserves semantic actions while the runner decides
 //! whether guest work is required and resolves eligible archive sources. Only then does
 //! [`StoragePlan::into_guest_manifest`] consume it into the shared runner-to-guest wire format.
@@ -16,16 +16,13 @@
 //! | Entry | Matching fingerprint | Fresh or non-matching fingerprint |
 //! | --- | --- | --- |
 //! | Ordinary storage | `ReuseExisting`: keep the mount with no guest work | `Download`: extract an archive |
-//! | Instruction storage | `NormalizeInPlace`: normalize the cached instruction files in place | `DownloadAndNormalize`: stage an archive, then promote its target file |
 //! | Non-empty artifact | `ReuseOrRepair`: preserve an existing root or use the retained archive source to repair a missing root | `Download`: materialize the archive |
 //! | Empty artifact | `PrepareEmpty { cached: true }` | `PrepareEmpty { cached: false }` |
 //!
-//! On a reused filesystem, a changed ordinary storage or artifact receives broad mount-path
-//! cleanup, while a changed instruction storage receives targeted instruction cleanup. Removed
-//! entries are also cleaned. A removed instruction storage at the exact Codex or Claude framework
-//! home uses targeted cleanup only when its fingerprint is tainted or identifies an
-//! `agent-instructions@` storage. This avoids deleting the whole framework home, which can contain
-//! independently cached children, without treating arbitrary data at that path as instructions.
+//! On a reused filesystem, changed and removed storage or artifact mounts are cleaned
+//! before materializing their replacements. Restored home images can still carry retired
+//! instruction mount fingerprints; those own only the managed instruction files,
+//! so their removal never erases the surrounding native framework home.
 //!
 //! ## Cache and guest boundary
 //!
@@ -39,15 +36,19 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use api_contracts::generated::{
-    constants::runners::paths::{CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR},
+    constants::runners::paths::{
+        CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR, PI_AGENT_DIR,
+    },
     types::runners::storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::storage_manifest as wire;
 
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
+
 use runner_types::storage_manifest::StorageManifest;
 
+// Persisted home-cache fingerprints outlive the retired instruction mount producer.
 const AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX: &str = "agent-instructions@";
 
 /// The semantic actions required to apply one canonical storage manifest.
@@ -72,8 +73,6 @@ pub struct StoragePlan {
 #[derive(Debug, Clone)]
 struct StoragePlanEntry {
     mount_path: String,
-    extract_path: Option<String>,
-    instructions_target_filename: Option<String>,
     vas_storage_name: String,
     vas_version_id: String,
     archive_size: Option<u64>,
@@ -83,16 +82,12 @@ struct StoragePlanEntry {
 impl StoragePlanEntry {
     fn into_guest_entry(self) -> wire::StorageEntry {
         let (archive_url, cached) = match self.action {
-            StorageAction::Download { source } | StorageAction::DownloadAndNormalize { source } => {
-                (Some(source.wire_url()), false)
-            }
-            StorageAction::ReuseExisting | StorageAction::NormalizeInPlace => (None, true),
+            StorageAction::Download { source } => (Some(source.wire_url()), false),
+            StorageAction::ReuseExisting => (None, true),
         };
         wire::StorageEntry {
             mount_path: self.mount_path,
-            extract_path: self.extract_path,
             archive_url,
-            instructions_target_filename: self.instructions_target_filename,
             cached,
             vas_storage_name: Some(self.vas_storage_name),
             vas_version_id: Some(self.vas_version_id),
@@ -104,8 +99,6 @@ impl StoragePlanEntry {
 enum StorageAction {
     Download { source: ArchiveSource },
     ReuseExisting,
-    DownloadAndNormalize { source: ArchiveSource },
-    NormalizeInPlace,
 }
 
 #[derive(Debug, Clone)]
@@ -238,7 +231,7 @@ pub(crate) struct CacheArchiveCandidate {
 
 /// Build the semantic plan for applying `manifest` to a guest filesystem.
 ///
-/// `runtime_dir` supplies run-scoped staging paths for instruction normalization. `previous=None`
+/// `previous=None`
 /// describes a fresh filesystem and schedules no replacement or removal cleanup.
 /// `previous=Some(...)` describes a reused filesystem, so entries without matching fingerprints
 /// and entries absent from the current manifest are cleaned before the planned actions run. This
@@ -249,7 +242,6 @@ pub(crate) struct CacheArchiveCandidate {
 /// Returns an internal error when a non-empty artifact has no archive source.
 pub fn build_storage_plan(
     manifest: &StorageManifest,
-    runtime_dir: &str,
     previous: Option<&StorageFingerprints>,
 ) -> RunnerResult<StoragePlan> {
     let mut cleanup_paths = Vec::new();
@@ -259,8 +251,7 @@ pub fn build_storage_plan(
     let storages = manifest
         .storages
         .iter()
-        .enumerate()
-        .map(|(index, storage)| {
+        .map(|storage| {
             let unchanged = previous.is_some_and(|fingerprints| {
                 fingerprints
                     .storages
@@ -272,32 +263,18 @@ pub fn build_storage_plan(
             if unchanged {
                 reused_entries += 1;
             } else if previous.is_some() {
-                if storage.instructions_target_filename.is_some() {
-                    instruction_cleanups.push(InstructionCleanup {
-                        mount_path: storage.mount_path.clone(),
-                        target_filename: storage.instructions_target_filename.clone(),
-                    });
-                } else {
-                    cleanup_paths.push(storage.mount_path.clone());
-                }
+                cleanup_paths.push(storage.mount_path.clone());
             }
-
-            let is_instructions = storage.instructions_target_filename.is_some();
-            let action = match (unchanged, is_instructions) {
-                (true, false) => StorageAction::ReuseExisting,
-                (true, true) => StorageAction::NormalizeInPlace,
-                (false, false) => StorageAction::Download {
+            let action = if unchanged {
+                StorageAction::ReuseExisting
+            } else {
+                StorageAction::Download {
                     source: ArchiveSource::Remote(storage.archive_url.clone()),
-                },
-                (false, true) => StorageAction::DownloadAndNormalize {
-                    source: ArchiveSource::Remote(storage.archive_url.clone()),
-                },
+                }
             };
 
             StoragePlanEntry {
                 mount_path: storage.mount_path.clone(),
-                extract_path: is_instructions.then(|| instruction_extract_path(runtime_dir, index)),
-                instructions_target_filename: storage.instructions_target_filename.clone(),
                 vas_storage_name: storage.vas_storage_name.clone(),
                 vas_version_id: storage.vas_version_id.clone(),
                 archive_size: storage.archive_size.filter(|size| *size > 0),
@@ -501,12 +478,6 @@ impl StoragePlan {
             if guest_contracts::storage_files::decoded_mount_conflicts(
                 &target,
                 std::path::Path::new(&other.mount_path),
-                other.instructions_target_filename.as_deref(),
-                other.extract_path.as_deref().map(std::path::Path::new),
-                matches!(
-                    other.action,
-                    StorageAction::Download { .. } | StorageAction::DownloadAndNormalize { .. }
-                ),
             ) {
                 return None;
             }
@@ -518,9 +489,6 @@ impl StoragePlan {
             if guest_contracts::storage_files::decoded_mount_conflicts(
                 &target,
                 std::path::Path::new(&other.mount_path),
-                None,
-                None,
-                true,
             ) {
                 return None;
             }
@@ -582,8 +550,8 @@ impl StoragePlan {
     /// Return whether applying this plan requires guest execution.
     ///
     /// The result is `false` only when there is no cleanup, every storage is
-    /// `ReuseExisting`, and there are no artifacts. Instruction normalization and every artifact
-    /// action require the guest even when their fingerprints match.
+    /// `ReuseExisting`, and there are no artifacts. Artifact actions require the
+    /// guest even when their fingerprints match.
     pub fn requires_guest_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
@@ -612,8 +580,8 @@ impl StoragePlan {
 
     /// Return remote archives eligible for runner-side delivery.
     ///
-    /// Candidates are limited to storage `Download` and `DownloadAndNormalize` actions and
-    /// artifact `Download` actions. Reuse, repair, normalize-in-place, empty preparation, and
+    /// Candidates are limited to storage `Download` actions and
+    /// artifact `Download` actions. Reuse, repair, empty preparation, and
     /// sources that are already guest-staged are intentionally excluded.
     pub(crate) fn cache_candidates(&self) -> Vec<CacheArchiveCandidate> {
         let storage_candidates = self
@@ -622,9 +590,8 @@ impl StoragePlan {
             .enumerate()
             .filter_map(|(index, entry)| {
                 let source = match &entry.action {
-                    StorageAction::Download { source }
-                    | StorageAction::DownloadAndNormalize { source } => source,
-                    StorageAction::ReuseExisting | StorageAction::NormalizeInPlace => return None,
+                    StorageAction::Download { source } => source,
+                    StorageAction::ReuseExisting => return None,
                 };
                 Some(CacheArchiveCandidate {
                     handle: ArchiveHandle {
@@ -678,9 +645,8 @@ impl StoragePlan {
                     return false;
                 };
                 let source = match &mut entry.action {
-                    StorageAction::Download { source }
-                    | StorageAction::DownloadAndNormalize { source } => source,
-                    StorageAction::ReuseExisting | StorageAction::NormalizeInPlace => return false,
+                    StorageAction::Download { source } => source,
+                    StorageAction::ReuseExisting => return false,
                 };
                 (&entry.vas_storage_name, &entry.vas_version_id, source)
             }
@@ -707,7 +673,7 @@ impl StoragePlan {
     /// Consume the resolved plan into the shared guest execution manifest.
     ///
     /// This conversion encodes the explicit actions as the wire format's archive URL, cached,
-    /// empty, instruction, and cleanup fields. The normal lifecycle calls it after guest-work
+    /// empty and cleanup fields. The normal lifecycle calls it after guest-work
     /// detection and cache source resolution; the wire value is transport state, not a second
     /// planning representation.
     pub fn into_guest_manifest(self) -> wire::Manifest {
@@ -740,9 +706,8 @@ impl StoragePlan {
             ArchiveKind::Storage => {
                 let entry = self.storages.get(handle.index)?;
                 match &entry.action {
-                    StorageAction::Download { source }
-                    | StorageAction::DownloadAndNormalize { source } => source,
-                    StorageAction::ReuseExisting | StorageAction::NormalizeInPlace => return None,
+                    StorageAction::Download { source } => source,
+                    StorageAction::ReuseExisting => return None,
                 }
             }
             ArchiveKind::Artifact => {
@@ -796,22 +761,17 @@ fn record_removed_artifacts<'a>(
 }
 
 fn is_framework_home_path(path: &str) -> bool {
-    matches!(path, CANONICAL_CLAUDE_CONFIG_DIR | CANONICAL_CODEX_HOME_DIR)
+    matches!(
+        path,
+        CANONICAL_CLAUDE_CONFIG_DIR | CANONICAL_CODEX_HOME_DIR | PI_AGENT_DIR
+    )
 }
-
 fn is_removed_framework_home_instruction(path: &str, fingerprint: &StorageFingerprint) -> bool {
     is_framework_home_path(path)
         && (fingerprint.is_tainted()
             || fingerprint
                 .vas_storage_name()
                 .is_some_and(|name| name.starts_with(AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX)))
-}
-
-fn instruction_extract_path(runtime_dir: &str, index: usize) -> String {
-    let mut path = PathBuf::from(runtime_dir);
-    path.push("storage-instructions");
-    path.push(index.to_string());
-    path.to_string_lossy().into_owned()
 }
 
 fn missing_root_policy_wire_value(policy: ArtifactEntryMissingRootPolicy) -> String {

@@ -32,7 +32,7 @@ import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
 } from "./feishu-config";
-import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
+import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
 import {
   DiscordQueuedLaunchUnavailableError,
   loadDiscordQueuedLaunchMaterial$,
@@ -227,7 +227,7 @@ const loadIntegrationPromptMaterial$ = command(
     };
     switch (event.contextType) {
       case "slack": {
-        return await loadSlackQueuedLaunchMaterial(db, loaderArgs);
+        return await set(loadSlackQueuedLaunchMaterial$, loaderArgs);
       }
       case "feishu": {
         return await (async () => {
@@ -276,12 +276,7 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadWechatQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "discord": {
-        return await set(
-          loadDiscordQueuedLaunchMaterial$,
-          db,
-          loaderArgs,
-          signal,
-        );
+        return await set(loadDiscordQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "teams": {
         return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);

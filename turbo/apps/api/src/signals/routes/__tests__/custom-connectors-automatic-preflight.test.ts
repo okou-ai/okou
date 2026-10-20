@@ -49,9 +49,9 @@ async function fixture(
     queryInjections: [],
     authMode: "automatic" as const,
   };
-  const client = (
-    await setupApp({ context, routes: customConnectorsRoutes, isolatePg: true })
-  )(customConnectorsContract);
+  const client = setupApp({ context, routes: customConnectorsRoutes })(
+    customConnectorsContract,
+  );
   const created = await accept(
     client.create({
       headers: { authorization: "Bearer clerk-session" },

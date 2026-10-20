@@ -3,6 +3,27 @@ import Foundation
 import XCTest
 
 final class ChatWorkProjectionTests: XCTestCase {
+  func testUsageOnlyFollowsEligibleServerOutputAndDoesNotMoveToAnEmptySteerPhase() throws {
+    for terminal in [ChatEventType.runFailed, .runCancelled] {
+      let placeholder = try project([
+        input("ask", at: 0), event("finish", terminal, at: 1),
+        event("usage", .usageRecorded, at: 2),
+      ])
+      XCTAssertTrue(placeholder.runUsageAnchors.isEmpty)
+      XCTAssertEqual(placeholder.usageEventIDs, ["run": "usage"])
+      let error = try project([
+        input("ask", at: 0), event("finish", terminal, at: 1, error: "Server outcome"),
+        event("usage", .usageRecorded, at: 2),
+      ])
+      XCTAssertEqual(error.runUsageAnchors, ["run": "finish"])
+      let steer = try project([
+        input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
+        event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4),
+      ])
+      XCTAssertEqual(steer.runUsageAnchors, ["run": "answer"])
+    }
+  }
+
   func testUserInputsSplitOneRunIntoIndependentWorkPhases() throws {
     let history = try project([
       input("ask", at: 0), output("work", at: 10), output("answer", at: 30),
@@ -43,6 +64,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(history.workSections.map(\.anchorMessageID), ["first", "other", "late"])
     XCTAssertTrue(history.workSections.allSatisfy { $0.hiddenMessageIDs.isEmpty })
     XCTAssertTrue(history.messages.contains { $0.id == "delivery" })
+    XCTAssertEqual(history.runUsageAnchors, ["run": "late", "other-run": "other"])
   }
 
   func testFailureOutcomeIsShownOnceAndRetiredByTheNextInput() throws {

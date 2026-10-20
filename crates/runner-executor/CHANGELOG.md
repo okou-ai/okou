@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.20...runner-executor-v0.14.21) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+## [0.14.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.19...runner-executor-v0.14.20) (2026-10-20)
+
 ## [0.14.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.18...runner-executor-v0.14.19) (2026-10-20)
 
 ## [0.14.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.17...runner-executor-v0.14.18) (2026-10-20)

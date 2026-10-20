@@ -16,13 +16,8 @@ const bdd = createBddApi(context);
 const agentsApi = createAuthOrgAgentsBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 
-async function createIsolatedAgent(actor: ApiTestUser, body: AgentRequest) {
-  // The first real request owns the case database even if response validation fails.
-  const app = await setupApp({
-    context,
-    routes: agentsRoutes,
-    isolatePg: true,
-  });
+async function createOwnedAgent(actor: ApiTestUser, body: AgentRequest) {
+  const app = setupApp({ context, routes: agentsRoutes });
   const response = await accept(
     app(agentsMainContract).create({
       headers: agentsApi.authenticate(actor),
@@ -44,7 +39,7 @@ describe("Connector authorization-target validation", () => {
     const owner = bdd.user();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
     const foreignOwner = bdd.user();
-    const privateAgent = await createIsolatedAgent(owner, {
+    const privateAgent = await createOwnedAgent(owner, {
       displayName: "Private Authorization Target",
       visibility: "private",
     });
@@ -111,7 +106,7 @@ describe("Connector authorization-target validation", () => {
   it("authorizes an owned private target and another member's public target without substituting agents", async () => {
     const owner = bdd.user();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-    const privateAgent = await createIsolatedAgent(owner, {
+    const privateAgent = await createOwnedAgent(owner, {
       displayName: "Owned Private Authorization Target",
       visibility: "private",
     });
@@ -168,7 +163,7 @@ describe("Connector authorization-target validation", () => {
 
   it("allows an absent target but never falls back from an explicit deleted target", async () => {
     const actor = bdd.user();
-    const deletedAgent = await createIsolatedAgent(actor, {
+    const deletedAgent = await createOwnedAgent(actor, {
       displayName: "Removed Explicit Authorization Target",
     });
     await bdd.deleteAgent(actor, deletedAgent.agentId);

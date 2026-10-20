@@ -147,12 +147,75 @@ async fn complete_result_failure_removes_duplicate_jobs_before_claim() {
 }
 
 #[tokio::test]
+async fn complete_result_success_cleans_state_when_job_scan_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = default_provider(dir.path(), CancellationToken::new(), empty_cancel_tokens());
+    let run_id = RunId::new_v4();
+    write_job(dir.path(), run_id, "pending");
+    let queue = local_queue::LocalQueue::new(dir.path().to_path_buf());
+    queue
+        .write_active_input_sync(&local_queue::ActiveInputEntry {
+            run_id,
+            sequence: 1,
+            text: "pending input".to_owned(),
+        })
+        .unwrap();
+    let input_dir = local_queue::run_inputs_dir(dir.path(), run_id);
+    std::fs::rename(
+        local_queue::jobs_dir(dir.path()),
+        dir.path().join("retained-jobs"),
+    )
+    .unwrap();
+    std::fs::write(local_queue::jobs_dir(dir.path()), b"not a directory").unwrap();
+    let cancel_path = local_queue::cancel_path(dir.path(), run_id);
+    let claim_path = local_queue::claim_path(dir.path(), run_id);
+    std::fs::create_dir_all(cancel_path.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(claim_path.parent().unwrap()).unwrap();
+    std::fs::write(&cancel_path, b"").unwrap();
+    std::fs::write(&claim_path, b"").unwrap();
+
+    provider
+        .complete(
+            complete_request(run_id, 23, Some("execution failed")),
+            CompletionAuth::local(),
+        )
+        .await;
+
+    let response: JobResponse = serde_json::from_slice(
+        &std::fs::read(local_queue::result_path(dir.path(), run_id)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(response.run_id, run_id);
+    assert_eq!(response.exit_code, 23);
+    assert_eq!(response.error.as_deref(), Some("execution failed"));
+    assert!(!cancel_path.exists());
+    assert!(!claim_path.exists());
+    assert!(!input_dir.exists());
+}
+
+#[tokio::test]
 async fn complete_result_failure_keeps_state_when_job_scan_fails() {
     let dir = tempfile::tempdir().unwrap();
     let cancel = CancellationToken::new();
     let provider = default_provider(dir.path(), cancel, empty_cancel_tokens());
 
     let run_id = RunId::new_v4();
+    write_job(dir.path(), run_id, "pending");
+    let queue = local_queue::LocalQueue::new(dir.path().to_path_buf());
+    queue
+        .write_active_input_sync(&local_queue::ActiveInputEntry {
+            run_id,
+            sequence: 1,
+            text: "pending input".to_owned(),
+        })
+        .unwrap();
+    let input_path = local_queue::active_input_path(dir.path(), run_id, 1);
+    let input_bytes = std::fs::read(&input_path).unwrap();
+    std::fs::rename(
+        local_queue::jobs_dir(dir.path()),
+        dir.path().join("retained-jobs"),
+    )
+    .unwrap();
     let claim_path = local_queue::claim_path(dir.path(), run_id);
     let cancel_path = local_queue::cancel_path(dir.path(), run_id);
     let result_dir = local_queue::results_dir(dir.path());
@@ -176,4 +239,5 @@ async fn complete_result_failure_keeps_state_when_job_scan_fails() {
         cancel_path.exists(),
         "cancel file should stay when job-file cleanup cannot verify retry state"
     );
+    assert_eq!(std::fs::read(input_path).unwrap(), input_bytes);
 }
