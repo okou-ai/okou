@@ -10,6 +10,7 @@ struct ChatDetailView: View {
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
+  @State private var messageToSelect: ChatMessage?
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0
@@ -100,6 +101,9 @@ struct ChatDetailView: View {
       )
     ) {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
+    }
+    .sheet(item: $messageToSelect) { message in
+      MessageTextSelectionSheet(text: message.copyText)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .safeAreaBar(edge: .bottom, spacing: 0) {
@@ -230,6 +234,7 @@ struct ChatDetailView: View {
     .contextMenu {
       if !message.copyText.isEmpty {
         Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
+        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
       }
     }
   }
