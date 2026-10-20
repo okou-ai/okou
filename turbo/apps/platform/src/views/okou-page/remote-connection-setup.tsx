@@ -786,48 +786,16 @@ function TagStep() {
     </StepCard>
   );
 }
-function RulePortSetting({ setup }: { readonly setup: RemoteSetup }) {
-  const { t } = useTranslation();
-  const update = useSet(updateRemoteSetup$);
-  return (
-    <details className="border-t border-divider pt-4">
-      <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
-        {t(($) => {
-          return $.remoteControlSetup.customPort;
-        })}
-      </summary>
-      <label className="mt-3 grid gap-2">
-        {t(($) => {
-          return $.remoteControlSetup.port;
-        })}
-        <Input
-          type="number"
-          min={1}
-          max={65_535}
-          required
-          value={setup.port}
-          onChange={(event) => {
-            update({ port: event.target.value });
-          }}
-        />
-      </label>
-    </details>
-  );
-}
 function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   const tags = useGet(remoteSetupTailscaleTags$);
   const [opening, open] = useLoadableSet(openRemoteNetwork$);
   const signal = useGet(pageSignal$);
-  const validPort =
-    /^\d+$/u.test(setup.port) &&
-    Number(setup.port) >= 1 &&
-    Number(setup.port) <= 65_535;
   const grant = JSON.stringify(
     {
       src: tags,
       dst: [setup.address],
-      ip: [`tcp:${setup.port}`],
+      ip: ["tcp:*"],
     },
     null,
     2,
@@ -883,7 +851,7 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
             label={t(($) => {
               return $.remoteControlSetup.protocolPort;
             })}
-            value={`tcp:${setup.port}`}
+            value="tcp:*"
           />
         </dl>
         <p className="text-[13px] text-muted-foreground">
@@ -892,7 +860,6 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
           })}
         </p>
       </InstructionStep>
-      <RulePortSetting setup={setup} />
       <details>
         <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
           {t(($) => {
@@ -903,7 +870,6 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
           <pre className="overflow-auto text-xs">{grant}</pre>
           <CopyButton
             text={grant}
-            disabled={!validPort}
             aria-label={t(($) => {
               return $.remoteControlSetup.copy;
             })}
@@ -917,7 +883,7 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
       </p>
       <OperationError failed={opening.state === "hasError"} />
       <ContinueButton
-        disabled={!validPort || opening.state === "loading"}
+        disabled={opening.state === "loading"}
         onClick={() => {
           detach(open("tailscale", signal), Reason.DomCallback);
         }}

@@ -451,12 +451,11 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   await screen.findByRole("heading", {
     name: "Allow Okou to reach this computer",
   });
-  click(screen.getByText("Use a custom port"));
-  await fill(screen.getByLabelText("Port"), "2222");
+  expect(screen.queryByLabelText("Port")).toBeNull();
   click(screen.getByText("Show grant to add"));
-  expect(screen.getByText(/"tcp:2222"/u)).toBeInTheDocument();
+  expect(screen.getByText(/"tcp:\*"/u)).toBeInTheDocument();
   expect(
-    screen.getByText(/does not restrict any broader rules/u),
+    screen.getByText(/broader rules already in your policy remain effective/u),
   ).toBeInTheDocument();
   click(getAction("button", "Rule saved, continue"));
   await screen.findByRole("heading", {
@@ -468,7 +467,7 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
     "password",
   );
   expect(getAction("button", "Save and continue")).toBeInTheDocument();
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
   for (let index = 0; index < 3; index++) {
     click(getAction("button", "Next"));
@@ -498,12 +497,10 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
     ),
   ).toBeVisible();
   click(screen.getByText("Show grant to add"));
-  expect(
-    JSON.parse(screen.getByText(/"tcp:2222"/u).textContent!),
-  ).toStrictEqual({
+  expect(JSON.parse(screen.getByText(/"tcp:\*"/u).textContent!)).toStrictEqual({
     src: ["tag:office-review", "tag:remote-review"],
     dst: ["100.64.0.20"],
-    ip: ["tcp:2222"],
+    ip: ["tcp:*"],
   });
   click(getAction("button", "Back"));
   await screen.findByRole("heading", {
@@ -522,7 +519,7 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   expect(screen.getByLabelText("Client Secret")).toHaveValue(
     "test-only-client-secret",
   );
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   click(getAction("button", "Next"));
   click(getAction("button", "Next"));
   expect(
@@ -1200,7 +1197,7 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
     "type",
     "password",
   );
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   await screen.findByRole("dialog", { name: "Cloudflare connection setup" });
   expect(getAction("link", "Open Cloudflare dashboard")).toHaveAttribute(
     "target",
@@ -1213,7 +1210,7 @@ test("Cloudflare four-step guide preserves the draft and resumes after returning
   expect(secret).toHaveValue("test-only-draft-secret");
   click(getAction("button", "Hide entered value"));
   expect(secret).toHaveAttribute("type", "password");
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   expect(screen.getByText("2 / 4")).toBeInTheDocument();
   click(getAction("button", "Previous"));
   expect(screen.getByText("1 / 4")).toBeInTheDocument();
@@ -1241,7 +1238,7 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   await fill(screen.getByLabelText("Allowed tags"), "tag:office, tag:review");
   const secret = screen.getByLabelText("Client Secret");
   await fill(secret, "test-only-draft-secret");
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   await screen.findByRole("dialog", { name: "Tailscale connection setup" });
   click(getAction("button", "Next"));
   click(getAction("button", "Next"));
@@ -1258,7 +1255,7 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   await userEvent.keyboard("{Escape}");
   expect(name).toHaveValue("Tailnet draft");
   expect(secret).toHaveValue("test-only-draft-secret");
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   expect(screen.getByText("3 / 4")).toBeInTheDocument();
   click(getAction("button", "Next"));
   expect(
@@ -1266,7 +1263,7 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
   ).toBeInTheDocument();
   click(getAction("button", "Return to form"));
   expect(getAction("button", "Save network")).toBeInTheDocument();
-  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Get Client ID and Client Secret"));
   click(getAction("button", "Return to selection"));
   await screen.findByRole("heading", { name: "Add a private network" });
   click(screen.getByText("Tailscale", { exact: true }));

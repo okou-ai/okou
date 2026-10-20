@@ -553,25 +553,34 @@ export function RemoteNetworkCredentialHelp({
   const step = steps[index];
   return (
     <>
-      <Button
-        type="button"
-        variant="quiet"
-        className="h-auto justify-self-start px-0 text-xs text-muted-foreground hover:text-foreground"
-        onClick={(event) => {
-          const field = event.currentTarget
-            .closest("form")
-            ?.elements.namedItem("tailscaleTags");
-          open(
-            provider,
-            field instanceof HTMLInputElement ? field.value.trim() : "",
-          );
-        }}
-      >
-        <CircleHelp size={14} aria-hidden />
-        {t(($) => {
-          return $.remoteNetworkGuide.open;
-        })}
-      </Button>
+      <div className="grid gap-2">
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return provider === "tailscale"
+              ? $.remoteNetworkGuide.tailscaleCredentialSource
+              : $.remoteNetworkGuide.cloudflareCredentialSource;
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-auto justify-self-start whitespace-normal text-left"
+          onClick={(event) => {
+            const field = event.currentTarget
+              .closest("form")
+              ?.elements.namedItem("tailscaleTags");
+            open(
+              provider,
+              field instanceof HTMLInputElement ? field.value.trim() : "",
+            );
+          }}
+        >
+          <CircleHelp size={14} aria-hidden />
+          {t(($) => {
+            return $.remoteNetworkGuide.open;
+          })}
+        </Button>
+      </div>
       <Dialog
         open={current?.provider === provider && current.open}
         onOpenChange={(value) => {

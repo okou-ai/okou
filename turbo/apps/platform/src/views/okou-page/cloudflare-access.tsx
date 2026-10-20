@@ -305,23 +305,38 @@ export function AccessFields({
   const setReplace = useSet(replaceCloudflareAccessToken$);
   return (
     <>
-      <label className="grid gap-2">
-        {t(($) => {
-          return guided
-            ? $.remoteNetworkScope.networkName
-            : $.cloudflareAccess.name;
-        })}
-        <Input
-          name="accessName"
-          placeholder={t(($) => {
-            return $.cloudflareAccess.namePlaceholder;
+      <div className="grid gap-2">
+        <label className="grid gap-2">
+          {t(($) => {
+            return guided
+              ? $.remoteNetworkScope.networkName
+              : $.cloudflareAccess.name;
           })}
-          required
-          pattern=".*\S.*"
-          maxLength={128}
-          defaultValue={config?.name}
-        />
-      </label>
+          <Input
+            name="accessName"
+            placeholder={t(($) => {
+              return guided
+                ? $.remoteNetworkScope.networkNamePlaceholder
+                : $.cloudflareAccess.namePlaceholder;
+            })}
+            aria-describedby={guided ? "cloudflare-name-help" : undefined}
+            required
+            pattern=".*\S.*"
+            maxLength={128}
+            defaultValue={config?.name}
+          />
+        </label>
+        {guided && (
+          <p
+            id="cloudflare-name-help"
+            className="text-sm text-muted-foreground"
+          >
+            {t(($) => {
+              return $.remoteNetworkScope.networkNameHelp;
+            })}
+          </p>
+        )}
+      </div>
       {scopeField}
       {config && (
         <label className="flex items-center gap-2 text-sm">
@@ -339,6 +354,7 @@ export function AccessFields({
       )}
       {(!config || replace) && (
         <>
+          {guided && <RemoteNetworkCredentialHelp provider="cloudflare" />}
           {!guided && (
             <p className="text-sm text-muted-foreground">
               {t(($) => {
@@ -390,7 +406,6 @@ export function AccessFields({
               onPaste={pasteAccessCredentials}
             />
           </div>
-          {guided && <RemoteNetworkCredentialHelp provider="cloudflare" />}
         </>
       )}
     </>

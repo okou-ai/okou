@@ -26,6 +26,7 @@ function TailscaleCredentials() {
   const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <fieldset ref={mount} className="grid min-w-0 gap-4">
+      {guided && <RemoteNetworkCredentialHelp provider="tailscale" />}
       <div className="grid gap-2">
         <label htmlFor="tailscale-tailscaleClientId">
           {t(($) => {
@@ -132,23 +133,38 @@ export function TailscaleFields({
   return (
     <div className="grid min-w-0 gap-4">
       <div className="contents">
-        <label className="grid gap-2">
-          {t(($) => {
-            return guided
-              ? $.remoteNetworkScope.networkName
-              : $.cloudflareAccess.name;
-          })}
-          <Input
-            name="tailscaleName"
-            placeholder={t(($) => {
-              return $.cloudflareAccess.namePlaceholder;
+        <div className="grid gap-2">
+          <label className="grid gap-2">
+            {t(($) => {
+              return guided
+                ? $.remoteNetworkScope.networkName
+                : $.cloudflareAccess.name;
             })}
-            required
-            pattern=".*\S.*"
-            maxLength={128}
-            defaultValue={config?.name}
-          />
-        </label>
+            <Input
+              name="tailscaleName"
+              placeholder={t(($) => {
+                return guided
+                  ? $.remoteNetworkScope.networkNamePlaceholder
+                  : $.cloudflareAccess.namePlaceholder;
+              })}
+              aria-describedby={guided ? "tailscale-name-help" : undefined}
+              required
+              pattern=".*\S.*"
+              maxLength={128}
+              defaultValue={config?.name}
+            />
+          </label>
+          {guided && (
+            <p
+              id="tailscale-name-help"
+              className="text-sm text-muted-foreground"
+            >
+              {t(($) => {
+                return $.remoteNetworkScope.networkNameHelp;
+              })}
+            </p>
+          )}
+        </div>
         {scopeField}
         {config === null && !guided && <TailscaleSetupGuide />}
 
@@ -180,9 +196,6 @@ export function TailscaleFields({
               <TailscaleTags config={config} guided />
             </div>
           </details>
-        )}
-        {guided && (!config || replace) && (
-          <RemoteNetworkCredentialHelp provider="tailscale" />
         )}
       </div>
     </div>
