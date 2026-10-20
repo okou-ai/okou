@@ -727,6 +727,9 @@ keys, late policy overrides, incomplete JSON, non-finite numbers and framing
 mismatches reject before managed credential resolution or upstream request bytes.
 Depth (128), document work (262,144 units), object keys (4,096 raw bytes) and
 numeric tokens (4,300 bytes) remain parser resource bounds.
+Opaque escaped keys keep their existing JSON acceptance and decoded duplicate
+identity. Usage-specific path normalization runs after policy key observation;
+raw UTF-8 validation and policy allowlists still apply.
 
 The exact-version compatibility bridge intercepts only marked requests in
 `HttpStream.state_consume_request_body`. It delegates framing, the terminal

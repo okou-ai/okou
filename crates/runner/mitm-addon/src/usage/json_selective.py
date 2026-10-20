@@ -45,6 +45,7 @@ class JsonSyntaxObserver(Protocol):
     ``start`` may request bounded string capture by returning a byte limit.
     Every object key and numeric token is bounded and decoded in observer mode;
     unrequested value strings are still validated without being retained.
+    Keys are observed before normalization used only for selective extraction.
     The observer belongs to one document and receives no partial success result.
     """
 
@@ -1016,8 +1017,6 @@ class JsonSelectiveExtractor:
             self._error = "invalid string"
             return
         if state.role == "key":
-            if _contains_surrogate(value):
-                value = _UNKNOWN_KEY
             if not self._stack or self._stack[-1].kind != "object":
                 self._error = "object key outside object"
                 return
@@ -1027,6 +1026,10 @@ class JsonSelectiveExtractor:
                     self._error = "invalid object key"
                     return
                 self._observer.member(frame.path, value)
+            # Usage extraction ignores surrogate-bearing keys. Policy still
+            # needs their decoded identity for content and duplicate checks.
+            if _contains_surrogate(value):
+                value = _UNKNOWN_KEY
             frame.pending_key = value
             frame.state = "colon"
             return
