@@ -46,6 +46,13 @@ pub(super) enum Scenario {
     RuntimeTurnFailedResponseTooManyFailedAttempts,
     RuntimeTurnFailedUnauthorized,
     RuntimeTurnFailedUnknown,
+    RuntimeTurnFailedRequestSend,
+    RuntimeRequestSendError,
+    RuntimeTurnFailedRemoteCompactionRequestSend,
+    RuntimeTurnFailedHttpConnection,
+    RuntimeTurnFailedHttpConnectionStderr,
+    RuntimeTurnFailedMalformedHttpStatus,
+    RuntimeTurnFailedRequestSendUnauthorized,
     RuntimeTurnFailedContentPolicyRejection,
     RuntimeTurnFailedBiologicalRiskRejection,
     RuntimeTurnFailedBiologicalRiskInternalServerError,
@@ -179,6 +186,21 @@ impl Scenario {
                 }
                 "runtime-turn-failed-unauthorized" => Ok(Self::RuntimeTurnFailedUnauthorized),
                 "runtime-turn-failed-unknown" => Ok(Self::RuntimeTurnFailedUnknown),
+                "runtime-turn-failed-request-send" => Ok(Self::RuntimeTurnFailedRequestSend),
+                "runtime-request-send-error" => Ok(Self::RuntimeRequestSendError),
+                "runtime-turn-failed-remote-compaction-request-send" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionRequestSend)
+                }
+                "runtime-turn-failed-http-connection" => Ok(Self::RuntimeTurnFailedHttpConnection),
+                "runtime-turn-failed-http-connection-stderr" => {
+                    Ok(Self::RuntimeTurnFailedHttpConnectionStderr)
+                }
+                "runtime-turn-failed-malformed-http-status" => {
+                    Ok(Self::RuntimeTurnFailedMalformedHttpStatus)
+                }
+                "runtime-turn-failed-request-send-unauthorized" => {
+                    Ok(Self::RuntimeTurnFailedRequestSendUnauthorized)
+                }
                 "runtime-turn-failed-content-policy-rejection" => {
                     Ok(Self::RuntimeTurnFailedContentPolicyRejection)
                 }
@@ -298,6 +320,18 @@ impl Scenario {
             }
             Self::RuntimeTurnFailedUnauthorized => Some(TurnFailure::Unauthorized),
             Self::RuntimeTurnFailedUnknown => Some(TurnFailure::Unknown),
+            Self::RuntimeTurnFailedRequestSend | Self::RuntimeRequestSendError => {
+                Some(TurnFailure::RequestSend)
+            }
+            Self::RuntimeTurnFailedRemoteCompactionRequestSend => {
+                Some(TurnFailure::RemoteCompactionRequestSend)
+            }
+            Self::RuntimeTurnFailedHttpConnection => Some(TurnFailure::HttpConnection),
+            Self::RuntimeTurnFailedHttpConnectionStderr => Some(TurnFailure::HttpConnectionStderr),
+            Self::RuntimeTurnFailedMalformedHttpStatus => Some(TurnFailure::MalformedHttpStatus),
+            Self::RuntimeTurnFailedRequestSendUnauthorized => {
+                Some(TurnFailure::RequestSendUnauthorized)
+            }
             Self::RuntimeTurnFailedContentPolicyRejection => {
                 Some(TurnFailure::ContentPolicyRejection)
             }
@@ -341,6 +375,12 @@ pub(super) enum TurnFailure {
     ResponseTooManyFailedAttempts,
     Unauthorized,
     Unknown,
+    RequestSend,
+    RemoteCompactionRequestSend,
+    HttpConnection,
+    HttpConnectionStderr,
+    MalformedHttpStatus,
+    RequestSendUnauthorized,
     /// Upstream content-safety rejection passed through as a raw provider
     /// envelope, with no structured `codexErrorInfo` to classify from.
     ContentPolicyRejection,

@@ -1890,6 +1890,7 @@ mod tests {
                     "selected model is at capacity. please try a different model. (retry later)"
                         .to_string(),
                 failure_reason: Some(FailureReason::ProviderOverloaded),
+                evidence: None,
             })
         );
     }
@@ -1917,6 +1918,7 @@ mod tests {
                 event_type: "turn.completed",
                 message: "Rate limit exceeded.".to_string(),
                 failure_reason: Some(FailureReason::ProviderRateLimited),
+                evidence: None,
             })
         );
     }
@@ -1949,6 +1951,7 @@ mod tests {
                 message: "This request has been flagged for possible cybersecurity risk."
                     .to_string(),
                 failure_reason: Some(FailureReason::SafetyPolicyRefusal),
+                evidence: None,
             })
         );
     }
@@ -1977,6 +1980,7 @@ mod tests {
                 event_type: "turn.completed",
                 message: ENVELOPE.to_string(),
                 failure_reason: Some(FailureReason::SafetyPolicyRefusal),
+                evidence: None,
             })
         );
     }
@@ -2005,6 +2009,7 @@ mod tests {
                 event_type: "turn.completed",
                 message: ENVELOPE.to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -2052,6 +2057,7 @@ mod tests {
                 event_type: "turn.completed",
                 message: "This request violates the provider's alignment policy.".to_string(),
                 failure_reason: Some(FailureReason::SafetyPolicyRefusal),
+                evidence: None,
             })
         );
     }
@@ -2612,6 +2618,7 @@ mod tests {
                 event_type: "error",
                 message: "usage limit exceeded (upgrade required)".to_string(),
                 failure_reason: Some(FailureReason::UsageLimit),
+                evidence: None,
             })
         );
     }

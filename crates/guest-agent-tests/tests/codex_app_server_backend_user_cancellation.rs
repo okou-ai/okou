@@ -74,6 +74,13 @@ async fn codex_app_server_user_cancellation_interrupts_hung_turn_start()
         cli_termination.reason,
         CliTerminationReason::UserCancellation
     );
+    let diagnostic = guest_agent::failure_diagnostics::cli_control_failure_for_config(
+        &runtime.config,
+        None,
+        &result,
+    );
+    assert_eq!(diagnostic.codex_failure, None);
+    assert_eq!(diagnostic.failure_reason, None);
 
     Ok(())
 }

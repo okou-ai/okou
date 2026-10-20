@@ -134,7 +134,14 @@ pub fn cli_nonzero_failure_for_config(
     let diagnostic =
         with_cli_observed_exit(diagnostic, cli_result.cli_observed_exit.as_ref().cloned());
     let diagnostic = with_cli_termination(diagnostic, cli_result.cli_termination);
-    let diagnostic = with_cli_failure_reason(diagnostic, &failure_message);
+    let mut diagnostic = with_cli_failure_reason(diagnostic, &failure_message);
+    if config.framework == env::Framework::Codex {
+        diagnostic.codex_failure = cli_result
+            .failure_diagnostic
+            .as_ref()
+            .filter(|diagnostic| diagnostic.source == FailureDetailSource::CodexJsonl)
+            .and_then(|diagnostic| diagnostic.codex_failure);
+    }
 
     CliNonzeroFailure {
         message: failure_message.message,

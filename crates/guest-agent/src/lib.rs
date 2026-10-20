@@ -200,6 +200,7 @@ pub mod active_input;
 mod artifact;
 pub mod cli;
 mod codex_auth;
+mod codex_failure;
 pub mod codex_session_cleanup;
 pub mod complete;
 mod constants;
