@@ -1551,7 +1551,7 @@ function SshHostForm({
   const mountForm = useSet(mountSshForm$);
   const signal = useGet(pageSignal$);
   const blocked = useSshHostSaveBlocked(dialog, isSaving);
-  const { title } = useDialogCopy(dialog);
+  const { title } = useDialogCopy(dialog, inline);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
   const destructive = ["delete", "reset", "delete-credential"].includes(
     dialog.kind,
