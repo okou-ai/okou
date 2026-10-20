@@ -23,6 +23,96 @@ const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 describe("Billing model reporting", () => {
+  it.each(["failed", "cancelled"] as const)(
+    "returns settled usage and the captured completion time after a %s Run",
+    async (status) => {
+      await setupApp({ context, routes: usageRecordRoutes, isolatePg: true });
+      const at = Date.UTC(2026, 2, 1, 12, 15);
+      mockNow(at);
+      const {
+        actor,
+        agentId,
+        runnerGroup,
+        run: own,
+        sendChatRun,
+        claimChatRun,
+      } = await publicChatActor(context, { clockTime: at });
+      await own(async () => {
+        const run = await sendChatRun(actor, {
+          agentId,
+          prompt: "Report usage before unsuccessful completion",
+          model: "auto",
+        });
+        const claim = await claimChatRun(runnerGroup, run.runId);
+        const chatUsage = () => {
+          createRouteMocks(context).clerk.session(
+            actor.userId,
+            actor.orgId,
+            actor.orgRole,
+          );
+          return accept(
+            setupApp({ context, routes: chatThreadRoutes })(
+              chatThreadUsageContract,
+            ).read({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { id: run.threadId },
+              body: { runIds: [run.runId] },
+            }),
+            [200],
+          );
+        };
+        await fixture.webhooks.requestAgentUsageEvent(
+          {
+            runId: run.runId,
+            events: [
+              {
+                idempotencyKey: randomUUID(),
+                kind: "model",
+                provider: "gpt-6-astra",
+                category: "tokens.output",
+                quantity: 10_000,
+              },
+            ],
+          },
+          claim.sandboxHeaders,
+          [200],
+        );
+        await flushWaitUntilForTest();
+        expect((await chatUsage()).body.runs).toStrictEqual([]);
+
+        const completedAt = at + 60_000;
+        mockNow(completedAt);
+        if (status === "failed") {
+          await fixture.failChatRun(
+            run.runId,
+            claim.sandboxHeaders,
+            "Expected unsuccessful completion",
+          );
+        } else {
+          await fixture.cancelChatRun(actor, run.runId, claim.sandboxHeaders);
+        }
+        await fixture.waitForRunStatus(actor, run.runId, status);
+        expect((await chatUsage()).body.runs).toStrictEqual([
+          {
+            runId: run.runId,
+            usage: {
+              version: 1,
+              totalCredits: 10,
+              settledAt: new Date(completedAt).toISOString(),
+              breakdown: [
+                {
+                  kind: "model",
+                  credits: 10,
+                  providers: [{ provider: "@preset/okou-1-0", credits: 10 }],
+                },
+              ],
+            },
+          },
+        ]);
+      });
+    },
+  );
+
   it("retains captured providers and settled totals across compaction, Thread deletion and Run deletion", async () => {
     await setupApp({ context, routes: usageRecordRoutes, isolatePg: true });
     const at = Date.UTC(2026, 2, 1, 12, 15);
