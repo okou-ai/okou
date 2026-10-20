@@ -217,7 +217,7 @@ test("Okou auth intent survives Clerk moving the redirect into the hash", async 
   expect(okouBrandLink()).toHaveAttribute("href", "/");
 });
 
-test("An untrusted redirect URL does not control the auth brand", async () => {
+test("An untrusted redirect URL returns to the default app", async () => {
   context.mocks.browser.matchMedia(false);
   const redirectUrl = "https://app.okou.ai.evil.example/sign-in";
   await setupSignedOutPage(
@@ -227,11 +227,6 @@ test("An untrusted redirect URL does not control the auth brand", async () => {
   expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
     "data-clerk-force-redirect-url",
     "https://app.okou.ai",
-  );
-  expect(document.title).toBe("Sign in | Okou");
-  expect(screen.getByAltText("Okou")).toHaveAttribute(
-    "src",
-    platformOkouWordmarkDarkImg,
   );
 });
 

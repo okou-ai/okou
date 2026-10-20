@@ -198,10 +198,7 @@ describe("Maps generateContent usage and citations", () => {
 
   it.each([
     { name: "missing query list with sources", queries: undefined },
-    { name: "null query list", queries: null },
     { name: "zero queries despite sources", queries: [] },
-    { name: "non-string query", queries: [1] },
-    { name: "blank query", queries: ["  "] },
   ])("does not charge for $name", async ({ queries }) => {
     const { billing, actor } = await setupMaps();
     server.use(

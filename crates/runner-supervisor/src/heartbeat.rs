@@ -70,6 +70,7 @@ pub struct HeartbeatContext {
 struct BaseHeartbeatContext {
     idle_pool: Arc<tokio::sync::Mutex<IdlePool>>,
     runner_identity: RunnerProcessIdentity,
+    runner_hostname: Option<String>,
     group: Arc<str>,
     profiles: Arc<BTreeMap<String, HeartbeatProfile>>,
     budget: Arc<ResourceBudget>,
@@ -79,6 +80,7 @@ struct BaseHeartbeatContext {
 pub struct HeartbeatContextInit<'a> {
     pub idle_pool: &'a Arc<tokio::sync::Mutex<IdlePool>>,
     pub runner_identity: RunnerProcessIdentity,
+    pub runner_hostname: Option<&'a str>,
     pub group: &'a str,
     pub profiles: &'a BTreeMap<String, HeartbeatProfile>,
     pub budget: &'a Arc<ResourceBudget>,
@@ -95,6 +97,7 @@ impl HeartbeatContext {
             base: BaseHeartbeatContext {
                 idle_pool: Arc::clone(init.idle_pool),
                 runner_identity: init.runner_identity,
+                runner_hostname: init.runner_hostname.map(str::to_owned),
                 group: Arc::from(init.group),
                 profiles: Arc::new(init.profiles.clone()),
                 budget: Arc::clone(init.budget),
@@ -111,7 +114,7 @@ impl HeartbeatContext {
 impl BaseHeartbeatContext {
     async fn collect_state(&self, mode: RunnerMode, snapshot_sequence: u64) -> HeartbeatState {
         let pool = self.idle_pool.lock().await;
-        let state = collect_heartbeat_state(
+        let mut state = collect_heartbeat_state(
             HeartbeatSnapshotMetadata {
                 runner_identity: self.runner_identity,
                 group: &self.group,
@@ -123,6 +126,7 @@ impl BaseHeartbeatContext {
             mode,
         );
         drop(pool);
+        state.runner_hostname = self.runner_hostname.clone();
         state
     }
 }
@@ -558,6 +562,7 @@ pub fn collect_heartbeat_state(
     let admittable_profiles = admittable_profiles_for_heartbeat(profiles, budget, idle_pool, mode);
     HeartbeatState {
         runner_id: snapshot.runner_identity.runner_id().to_string(),
+        runner_hostname: None,
         group: snapshot.group.to_string(),
         snapshot_generation: snapshot.runner_identity.heartbeat_generation(),
         snapshot_sequence: snapshot.sequence,
@@ -704,6 +709,7 @@ mod tests {
         let snapshot = HomeCacheStateSnapshot::new();
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            runner_hostname: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
             profiles: &profiles,
@@ -1115,6 +1121,7 @@ mod tests {
         let active_runs = test_active_runs();
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            runner_hostname: None,
             sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
@@ -1166,6 +1173,7 @@ mod tests {
         refresh_initial_home_cache_snapshot(&home_cache_snapshot, Some(&cache), &profiles).await;
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            runner_hostname: None,
             sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
@@ -1274,6 +1282,7 @@ mod tests {
             let provider = Arc::new(RecordingProvider::default());
             let hb = HeartbeatContext::new(HeartbeatContextInit {
                 idle_pool: &idle_pool,
+                runner_hostname: None,
                 sandbox_op_reporter: None,
                 runner_identity: test_runner_identity(),
                 group: "vm0/test",
@@ -1355,6 +1364,7 @@ mod tests {
         tokio::fs::remove_file(metadata).await.unwrap();
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            runner_hostname: None,
             sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
@@ -1487,6 +1497,7 @@ mod tests {
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            runner_hostname: None,
             sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",

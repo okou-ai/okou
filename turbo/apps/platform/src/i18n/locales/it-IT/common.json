@@ -2182,16 +2182,11 @@
       "skipAutomationEvent": "Salta evento di automazione"
     },
     "relations": {
-      "communications": "Messaggi",
-      "idle": "Inattiva",
+      "chats": "Chat",
       "loadFailed": "Caricamento non riuscito",
-      "messageUnavailable": "Messaggio non disponibile",
       "origin": "Da",
       "queued": "In coda",
-      "received": "Ricevuto",
       "running": "In esecuzione",
-      "sent": "Inviato",
-      "toggleMessages": "Messaggi con {{title}}",
       "unavailable": "Non disponibile",
       "untitled": "Senza titolo"
     },
@@ -2215,11 +2210,10 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "emptyLinks": "Non ci sono ancora link in questa chat",
+      "empty": "Artefatti e chat correlate di questa chat compaiono qui.",
       "expand": "Espandi",
-      "links": "Link",
       "loadFailed": "Impossibile caricare le risorse",
-      "loadingLinks": "Caricamento dei link",
+      "loading": "Caricamento risorse",
       "retry": "Riprova",
       "title": "Risorse della chat"
     },
@@ -4012,7 +4006,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
-    "back": "Torna ai modelli",
     "categories": {
       "all": "Tutti",
       "business-record": "Documenti commerciali",
@@ -4063,7 +4056,6 @@
     "preview": "Anteprima di {{title}}",
     "previousPage": "Pagina di esempio precedente",
     "retry": "Riprova",
-    "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
     "useNamed": "Usa {{title}}"
   },
@@ -5137,6 +5129,10 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
+        "resources": {
+          "description": "Mostra artefatti e chat correlate accanto alla conversazione quando c’è spazio.",
+          "title": "Apri risorse automaticamente"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5228,7 +5224,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief non è temporaneamente disponibile perché lo stato dell'installazione non è coerente. Riprova al termine della riconciliazione.",
-        "description": "Priorità quotidiane alle 7:00 nel tuo fuso orario.",
+        "description": "Priorità quotidiane entro le 7:00 nel tuo fuso orario.",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
         "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",

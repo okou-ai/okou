@@ -685,11 +685,7 @@ export function ConnectorAccountManagerDialog({
   const nextCursor = connectorAccountNextCursor(accountsLoadable);
   const defaultConnection =
     accountsLoadable.state === "hasData" && accountsLoadable.data.available
-      ? accountsLoadable.data.defaultConnection !== undefined
-        ? accountsLoadable.data.defaultConnection
-        : (accountsLoadable.data.connections.find((account) => {
-            return account.isDefault;
-          }) ?? null)
+      ? accountsLoadable.data.defaultConnection
       : null;
   const showSearch = connectorAccountSearchIsVisible(search, accountsLoadable);
   const leave = (next: () => void) => {

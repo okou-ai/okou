@@ -1058,7 +1058,6 @@ test("A connected member disconnects from the overflow menu on Works", async () 
   ).toBeInTheDocument();
   expect(queryAction("button", "Disconnect Discord")).toBeNull();
   click(getAction("button", "More options", card));
-  expect(queryAction("button", "Remove Discord")).toBeNull();
   click(getAction("button", "Disconnect Discord"));
 
   await waitFor(() => {
@@ -1121,7 +1120,6 @@ test("A connected admin can open and dismiss their account menu with the keyboar
   await user.click(more);
   expect(getAction("button", "Join new server")).toBeEnabled();
   expect(getAction("button", "Disconnect Discord")).toBeEnabled();
-  expect(queryAction("button", "Remove Discord")).toBeNull();
   expect(queryAction("button", "Uninstall")).toBeNull();
   expect(queryAction("button", "Install to Discord", card)).toBeNull();
   await user.keyboard("{Escape}");
@@ -1299,11 +1297,6 @@ test.each([false, true])(
       : getAction("button", "Connect", card);
     expect(connection).toBeInTheDocument();
     expect(connection).not.toBeDisabled();
-    expect(
-      within(card).queryByText(
-        "Ask an organization admin to install Okou to your Discord server.",
-      ),
-    ).not.toBeInTheDocument();
 
     refreshReady.resolve();
     await expect(
@@ -1342,11 +1335,6 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
     ),
   ).toBeInTheDocument();
   expect(queryAllByRoleFast("button", discordCard)).toHaveLength(0);
-  expect(
-    within(discordCard).queryByText(
-      "Ask an organization admin to install Okou to your Discord server.",
-    ),
-  ).not.toBeInTheDocument();
   const skeleton = bootstrapSkeleton();
   expect(skeleton).not.toHaveAttribute("aria-hidden", "true");
   expect(document.getElementById("root")).toHaveAttribute("inert");
@@ -1356,11 +1344,6 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
   await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   expect(skeleton).toHaveAttribute("aria-hidden", "true");
   expect(document.getElementById("root")).not.toHaveAttribute("inert");
-  expect(
-    within(getIntegrationCard("Discord")).queryByText(
-      "Ask an organization admin to install Okou to your Discord server.",
-    ),
-  ).not.toBeInTheDocument();
 });
 
 test("A status error hides stale controls and recovers when returning to Works", async () => {
@@ -1651,11 +1634,7 @@ test.each([
     if (menu) {
       click(menu);
     }
-    for (const action of [
-      "Disconnect Discord",
-      "Remove Discord",
-      "Join new server",
-    ]) {
+    for (const action of ["Disconnect Discord", "Join new server"]) {
       expect(queryAction("button", action) !== null).toBe(
         actions.includes(action),
       );

@@ -428,15 +428,11 @@ test("Start connector setup from chat", async () => {
   });
   expect(browserOpen.calls).toHaveLength(1);
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(screen.queryByRole("dialog", { name: "Google Analytics" })).toBeNull();
   expect(connect).toHaveAttribute("aria-busy", "true");
   expect(connect).toBeDisabled();
   expect(
     within(catalog).getByPlaceholderText("Find connectors..."),
   ).toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Connecting your account" }),
-  ).toBeNull();
   authWindow.close();
   await waitFor(() => {
     expect(
@@ -670,7 +666,6 @@ test("Search beyond featured connectors from chat", async () => {
   await user.click(await findFastControl("button", "Connect Axiom", catalog));
   const dialog = await screen.findByRole("dialog", { name: "Axiom" });
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(catalog).not.toBeInTheDocument();
   expect(
     within(dialog).getByText("API Token", { selector: "label" }),
   ).toBeVisible();

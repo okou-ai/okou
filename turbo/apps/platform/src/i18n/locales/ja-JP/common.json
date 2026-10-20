@@ -2137,16 +2137,11 @@
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
     "relations": {
-      "communications": "メッセージ",
-      "idle": "待機",
+      "chats": "チャット",
       "loadFailed": "読み込み失敗",
-      "messageUnavailable": "メッセージ取得不可",
       "origin": "開始元",
       "queued": "待機中",
-      "received": "受信",
       "running": "実行中",
-      "sent": "送信",
-      "toggleMessages": "{{title}} とのメッセージ",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
@@ -2168,11 +2163,10 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "emptyLinks": "このチャットにはまだリンクがありません",
+      "empty": "このチャットの成果物と関連チャットがここに表示されます。",
       "expand": "展開",
-      "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
-      "loadingLinks": "リンクを読み込み中",
+      "loading": "リソースを読み込み中",
       "retry": "再試行",
       "title": "チャットのリソース"
     },
@@ -3943,7 +3937,6 @@
   },
   "documentTemplates": {
     "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
-    "back": "テンプレートに戻る",
     "categories": {
       "all": "すべて",
       "business-record": "業務記録",
@@ -3994,7 +3987,6 @@
     "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
     "retry": "再試行",
-    "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
   },
@@ -5059,6 +5051,10 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "resources": {
+          "description": "余白があるときは、チャットの成果物と関連チャットを会話の横に表示します。",
+          "title": "リソースを自動で開く"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {
@@ -5149,7 +5145,7 @@
       },
       "morningBrief": {
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
-        "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
+        "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",

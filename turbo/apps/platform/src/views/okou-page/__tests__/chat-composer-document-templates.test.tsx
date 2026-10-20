@@ -83,7 +83,6 @@ test("Document category and scroll survive preview", async () => {
     "Workflow",
   ]);
   click(control(dialog, "tab", "Document"));
-  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
   click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
@@ -179,9 +178,6 @@ test("Document purposes are directly selectable without losing the draft or sele
   expect(
     within(shelf).queryByLabelText("Import your own document"),
   ).not.toBeInTheDocument();
-  expect(within(categories).queryByText("All")).not.toBeInTheDocument();
-  expect(within(categories).queryByText("More")).not.toBeInTheDocument();
-  expect(within(categories).queryByRole("combobox")).not.toBeInTheDocument();
   click(control(categories, "button", "Invoice"));
   expect(control(categories, "button", "Invoice")).toHaveAttribute(
     "aria-pressed",
@@ -295,7 +291,7 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
   click(control(dialog, "button", "Preview Mutual NDA"));
-  expect(control(dialog, "button", "Back to templates")).toHaveFocus();
+  expect(control(dialog, "button", "Document")).toHaveFocus();
   expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
   const firstPage = within(dialog).getByAltText("Page 1");
   const firstUrl = firstPage.getAttribute("src");
@@ -304,7 +300,6 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  expect(firstPage).not.toBeInTheDocument();
   const secondUrl = within(dialog).getByAltText("Page 2").getAttribute("src");
   expect(secondUrl).not.toBe(firstUrl);
   expect(control(dialog, "button", "Next sample page")).toBeDisabled();
@@ -318,17 +313,19 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Document"));
   click(control(dialog, "button", "Preview Mutual NDA"));
   expect(within(dialog).getByAltText("Page 1")).toHaveAttribute(
     "src",
     firstUrl,
   );
-  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Document"));
   click(control(dialog, "button", "Preview Simple invoice"));
-  expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
-  expect(control(dialog, "button", "Next sample page")).toBeDisabled();
-  click(control(dialog, "button", "Use"));
+  // A single sample page has nowhere to page to, so it shows no arrows.
+  expect(
+    within(dialog).queryByLabelText("Next sample page"),
+  ).not.toBeInTheDocument();
+  click(control(dialog, "button", "Use this template"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

@@ -131,7 +131,7 @@ function firstLevelNames(): string[] {
 }
 
 test("The bare slash leads with chat actions, then Workflows and Templates with their counts", async () => {
-  const { menu } = await openSlashActions();
+  await openSlashActions();
   await waitFor(() => {
     expect(firstLevelNames()).toHaveLength(6);
   });
@@ -143,14 +143,6 @@ test("The bare slash leads with chat actions, then Workflows and Templates with 
   ).toStrictEqual(["Model", "Effort", "Connect", "Schedule"]);
   expect(names[4]).toBe("Workflows 3");
   expect(names[5]).toMatch(/^Templates \d+$/u);
-  // A new chat has nothing to rename, pin, archive or share yet.
-  expect(
-    names.find((name) => {
-      return name.startsWith("Rename");
-    }),
-  ).toBeUndefined();
-  // The rows name themselves; no section labels.
-  expect(within(menu).queryByText("Make")).not.toBeInTheDocument();
 });
 
 test("A chat adds the actions on the chat itself", async () => {

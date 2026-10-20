@@ -5,10 +5,8 @@ import { useConnectorConnectionDialogClose } from "../components/connector-conne
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   Dialog,
   DialogContent,
@@ -305,7 +303,7 @@ function CustomConnectorDirectoryCard({
       {!isIntegrationManagedCustomConnector(connector) && (
         <span className="flex flex-col gap-1 border-t border-border/50 px-4 py-2.5 text-xs">
           <ConnectorMembershipText connected={hasAccounts} status="ready" />
-          {hasAccounts && !connector.connected && (
+          {hasAccounts && connector.connected === false && (
             <span className="text-amber-600 dark:text-amber-400">
               {t(($) => {
                 return $.connectors.accounts.reconnectRequired;

@@ -306,9 +306,6 @@ test.each(SHELVES)(
     if (kind === "presentation") {
       await within(shelf).findByText(legacy.title);
     }
-    expect(
-      within(shelf).queryByText(template(kind).title),
-    ).not.toBeInTheDocument();
   },
 );
 
@@ -425,9 +422,13 @@ test("Document defaults to Custom when documents exist and separates built-in pu
   expect(
     within(shelf).getByLabelText("Import your own document"),
   ).toHaveAttribute("accept", ".docx,.doc");
+  // The tile names what it takes before a file is chosen.
+  expect(within(shelf).getByText("(.docx, .doc)")).toBeInTheDocument();
+  // The shelf draws a document the way the picker and the slash panel do,
+  // from the same cover.
   expect(
     button(`Use template ${own.title}`, shelf).querySelector("img"),
-  ).toHaveAttribute("src", own.previewAssets[0]!.url);
+  ).toHaveAttribute("src", own.coverUrl);
 
   click(button(`Use template ${own.title}`, shelf));
   click(button("Reports", categories));
@@ -492,6 +493,9 @@ test("A late document catalog and later refresh preserve an explicit category ch
   // reached the UI before checking that it did not overwrite Reports.
   click(button("More templates", shelf));
   const dialog = await screen.findByRole("dialog");
+  // The picker opens at the shelf's Reports filter; its own Custom filter
+  // lists the member's documents.
+  click(button("Custom", dialog));
   await within(dialog).findByText("Initial document");
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
   expect(button("Reports", shelf)).toHaveAttribute("aria-pressed", "true");

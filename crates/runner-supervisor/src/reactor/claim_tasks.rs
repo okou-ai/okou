@@ -20,6 +20,7 @@ use super::job_discovery::{
     recover_unconsumed_finalizing_claim,
 };
 use super::job_spawn::JobResult;
+use super::peer_home_claim::{PeerHomeClaim, PeerHomeClaimRequest};
 use crate::SharedFactory;
 use crate::pre_claim_admission::{
     AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, SandboxAdmittedResource,
@@ -159,6 +160,10 @@ impl ClaimTasks {
                 spawn_finalizing_claim(request, &self.context.spawn_ctx, jobs);
                 Ok(DiscoveredJobResult::completed(false))
             }
+            ClaimTaskOutcome::PeerHome(claim) => {
+                jobs.spawn((*claim).run(self.context.spawn_ctx.clone()));
+                Ok(DiscoveredJobResult::completed(false))
+            }
             ClaimTaskOutcome::Pending(candidate) => Ok(DiscoveredJobResult::pending(*candidate)),
             ClaimTaskOutcome::Deferred => Ok(DiscoveredJobResult::completed(false)),
             ClaimTaskOutcome::Failed(error) => Err(ClaimConsumptionError::Ownership(error)),
@@ -194,6 +199,7 @@ pub(super) struct ClaimTaskResult {
 enum ClaimTaskOutcome {
     Prepared(Box<DiscoveredJobResult>),
     Finalizing(Box<UnconsumedFinalizingClaim>),
+    PeerHome(Box<PeerHomeClaim>),
     Pending(Box<JobCandidate>),
     Deferred,
     Failed(ReactorError),
@@ -213,6 +219,20 @@ async fn prepare_claimed(
         blank_pool_selection,
     } = admission;
     let resource = match resource {
+        AdmittedResource::PeerFinalizing { lease, deadline } => {
+            return ClaimTaskOutcome::PeerHome(Box::new(PeerHomeClaim::new(
+                PeerHomeClaimRequest {
+                    claimed,
+                    cancellation,
+                    lease,
+                    deadline,
+                    claim_returned_at,
+                    blank_pool_selection,
+                    profile,
+                },
+                &context.spawn_ctx,
+            )));
+        }
         AdmittedResource::Finalizing(admission) => {
             let DiscoveredJobProfile {
                 profile_name,

@@ -135,11 +135,19 @@ async function setupRelationships({
     path: `/chats/${parent.id}?sidebar=${child.id}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  const origin = within(panel).getByRole("region", { name: "From" });
-  const messages = await within(panel).findByRole("region", {
-    name: "Messages",
+  // Both panes open their resources; the child's lists the parent with From.
+  const panel = await waitFor(() => {
+    const found = screen
+      .getAllByRole("region", { name: "Resources" })
+      .find((candidate) => {
+        return within(candidate).queryByText("From", { exact: true }) !== null;
+      });
+    if (!found) {
+      throw new Error("Expected the resource panel listing the parent chat");
+    }
+    return found;
   });
+  const chats = within(panel).getByRole("region", { name: "Chats" });
   const parentPane = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${parent.id}"]`,
   );
@@ -148,8 +156,8 @@ async function setupRelationships({
   }
   return {
     parent,
-    origin,
-    messages,
+    panel,
+    chats,
     parentPane,
     saveResponse,
     relationshipResponse,
@@ -169,39 +177,34 @@ async function setupRelationships({
   };
 }
 
-function expectRelationshipTitle(
-  origin: HTMLElement,
-  messages: HTMLElement,
-  title: string,
-) {
-  const link = within(origin).getByText(title).closest("a");
+// The parent is both the origin and a related chat, so it is listed once and
+// carries the From tag.
+function expectRelationshipTitle(chats: HTMLElement, title: string) {
+  const titles = within(chats).getAllByText(title);
+  expect(titles).toHaveLength(1);
+  const link = titles[0]!.closest("a");
   expect(link).toHaveTextContent(title);
+  expect(link).toHaveTextContent("From");
   expect(link).not.toHaveAttribute("title");
-  expect(within(messages).getByText(title)).toBeVisible();
-  expect(
-    within(messages).getByLabelText(`Messages with ${title}`),
-  ).toBeInTheDocument();
+  expect(titles[0]).toBeVisible();
 }
 
 test("Show the current parent title when loading historical sources", async () => {
-  const { parent, origin, messages } = await setupRelationships({
+  const { parent, panel, chats } = await setupRelationships({
     title: RENAMED_TITLE,
   });
-  expectRelationshipTitle(origin, messages, RENAMED_TITLE);
-  expect(queryAllByRoleFast("link", origin)[0]).toHaveAttribute(
-    "href",
-    `/chats/${parent.id}#run-${SOURCE_RUN}`,
-  );
-  expect(queryAllByRoleFast("link", messages)[0]).toHaveAttribute(
-    "href",
-    `/chats/${parent.id}`,
-  );
+  expectRelationshipTitle(chats, RENAMED_TITLE);
+  const links = queryAllByRoleFast("link", chats);
+  expect(links).toHaveLength(1);
+  expect(links[0]).toHaveAttribute("href", `/chats/${parent.id}`);
+  expect(
+    within(panel).queryByRole("region", { name: "From" }),
+  ).not.toBeInTheDocument();
 });
 
 test("Update relationship titles immediately and synchronize the saved browser title without a realtime notification", async () => {
   const {
-    origin,
-    messages,
+    chats,
     parentPane,
     saveResponse,
     relationshipResponse,
@@ -216,40 +219,37 @@ test("Update relationship titles immediately and synchronize the saved browser t
   delayRelationshipResponses();
   await user.keyboard("{Enter}");
   await waitFor(() => {
-    expectRelationshipTitle(origin, messages, RENAMED_TITLE);
+    expectRelationshipTitle(chats, RENAMED_TITLE);
   });
   saveResponse.resolve();
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
     expect(document.title).toContain(RENAMED_TITLE);
   });
-  expectRelationshipTitle(origin, messages, RENAMED_TITLE);
+  expectRelationshipTitle(chats, RENAMED_TITLE);
   relationshipResponse.resolve();
 });
 
-test("Update From and Messages when another tab renames the parent", async () => {
+test("Update the parent chat row when another tab renames the parent", async () => {
   const {
-    origin,
-    messages,
+    chats,
     renameFromAnotherTab,
     relationshipResponse,
     delayRelationshipResponses,
   } = await setupRelationships();
-  expectRelationshipTitle(origin, messages, ORIGINAL_TITLE);
+  expectRelationshipTitle(chats, ORIGINAL_TITLE);
   delayRelationshipResponses();
   act(renameFromAnotherTab);
   await expect(
-    within(origin).findByText(RENAMED_TITLE),
+    within(chats).findByText(RENAMED_TITLE),
   ).resolves.toBeInTheDocument();
-  expectRelationshipTitle(origin, messages, RENAMED_TITLE);
+  expectRelationshipTitle(chats, RENAMED_TITLE);
   relationshipResponse.resolve();
 });
 
 test("Keep unavailable relationships unlinked even when parent metadata is cached", async () => {
-  const { messages } = await setupRelationships({ unavailable: true });
-  expect(within(messages).getByText("Unavailable")).toBeInTheDocument();
-  expect(queryAllByRoleFast("link", messages)).toHaveLength(0);
-  expect(
-    within(messages).getByLabelText("Messages with Unavailable"),
-  ).toBeInTheDocument();
+  const { chats } = await setupRelationships({ unavailable: true });
+  const row = within(chats).getByText("Unavailable").closest("li");
+  expect(row).toHaveTextContent("From");
+  expect(queryAllByRoleFast("link", chats)).toHaveLength(0);
 });

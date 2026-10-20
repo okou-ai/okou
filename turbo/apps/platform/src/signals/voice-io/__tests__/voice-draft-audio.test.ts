@@ -10,7 +10,6 @@ describe("voice draft PCM WAV", () => {
     const decoded = decodeVoiceDraftPcmWav(await encoded.arrayBuffer());
 
     expect(encoded.type).toBe("audio/wav");
-    expect(decoded).not.toBeNull();
     expect(Array.from(decoded ?? [])).toStrictEqual([
       expect.closeTo(-1, 4),
       expect.closeTo(-0.25, 4),

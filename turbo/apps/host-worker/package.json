@@ -1,6 +1,6 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.6.64",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,7 +21,9 @@
     "wrangler": "^4.129.0"
   },
   "dependencies": {
+    "@clerk/backend": "3.13.1",
     "@okouai/api-contracts": "workspace:*",
-    "@okouai/core": "workspace:*"
+    "@okouai/core": "workspace:*",
+    "zod": "^4.5.4"
   }
 }

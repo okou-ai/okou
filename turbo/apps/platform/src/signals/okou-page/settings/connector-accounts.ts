@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { onRef } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
+import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -15,6 +16,7 @@ import type { CustomConnectorAccountMutationIntent } from "./connector-account-d
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
+  requireConnectorAccountDefault,
 } from "../connector-accounts.ts";
 
 /** Read one target only when an account surface or mutation needs its facts. */
@@ -22,16 +24,23 @@ export async function readConnectorAccountPage(
   createClient: ApiClientFactory,
   target: ConnectorAccountTarget,
   signal: AbortSignal,
+  options: { readonly includeBuiltinScopeMismatch?: boolean } = {},
 ) {
   const result = await accept(
     createClient(connectorAccountsContract).connections({
-      query: { ...target, limit: 50 },
+      query: {
+        ...target,
+        limit: 50,
+        ...(target.kind === "builtin" && options.includeBuiltinScopeMismatch
+          ? { includeScopeMismatch: "true" as const }
+          : {}),
+      },
       fetchOptions: { signal },
     }),
     [200],
     signal,
   );
-  return result.body;
+  return requireConnectorAccountDefault(result.body);
 }
 
 export async function readConnectorAccountCount(
@@ -41,6 +50,28 @@ export async function readConnectorAccountCount(
 ): Promise<number> {
   const page = await readConnectorAccountPage(createClient, target, signal);
   return page.connections.length;
+}
+
+/** Check the current default when the user explicitly grants account access. */
+export async function requireCustomConnectorAccountReady(
+  createClient: ApiClientFactory,
+  customConnectorId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const page = await readConnectorAccountPage(
+    createClient,
+    { kind: "custom", customConnectorId },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (
+    page.defaultConnection?.connectionStatus !== "connected" ||
+    page.defaultConnection.setupStatus !== "complete"
+  ) {
+    throw new Error(
+      "This connector needs a connected, fully configured default account. Review its accounts in Connectors settings and try again.",
+    );
+  }
 }
 
 /** Completion requires facts for the operated account, including on old API responses. */
@@ -204,6 +235,7 @@ export const setDefaultConnectorAccount$ = command(
     );
     signal.throwIfAborted();
     set(invalidateConnectorAccounts$, signal);
+    set(invalidateConnectorAccountProjection$, args.target);
   },
 );
 
@@ -248,6 +280,7 @@ export const deleteConnectorAccount$ = command(
     );
     signal.throwIfAborted();
     set(invalidateConnectorAccounts$, signal);
+    set(invalidateConnectorAccountProjection$, args.target);
     set(reloadUserConnectedConnectors$);
     return result.body;
   },

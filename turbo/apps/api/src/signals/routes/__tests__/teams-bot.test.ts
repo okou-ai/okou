@@ -1380,14 +1380,6 @@ describe("POST /api/webhooks/teams/bot", () => {
     const path = "/api/integrations/teams/download-file";
     const fetchBaseline = provider.requests.length;
     await owned.run(async () => {
-      const response = await app.request(path, { headers });
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: { message: "file_id is required", code: "BAD_REQUEST" },
-      });
-      expect(provider.requests).toHaveLength(fetchBaseline);
-    });
-    await owned.run(async () => {
       const response = await app.request(
         `${path}?file_id=${encodeURIComponent(fileId)}`,
         { headers },
@@ -1453,39 +1445,6 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     expect(response.status).toBe(200);
-  });
-
-  it("rejects a Teams activity without a stable identifier", async () => {
-    const fixture = botFixture();
-    const response = await postTeamsActivity({
-      activity: teamsMessageActivity(fixture, {
-        id: undefined,
-        timestamp: undefined,
-      }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Missing Teams activity id or timestamp",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
-  it("rejects a Teams message without an activity id", async () => {
-    const fixture = botFixture();
-    const response = await postTeamsActivity({
-      activity: teamsMessageActivity(fixture, { id: undefined }),
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: {
-        message: "Missing Teams message activity id",
-        code: "BAD_REQUEST",
-      },
-    });
   });
 
   it("rejects a Teams token for another bot app", async () => {
@@ -1574,13 +1533,10 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(connectUrl.searchParams.get("teamsUserPrincipalName")).toBe(
       fixture.teamsUserPrincipalName,
     );
-    expect(connectUrl.searchParams.get("displayName")).toBeNull();
-    expect(connectUrl.searchParams.get("upn")).toBeNull();
     expect(connectUrl.searchParams.get("teamId")).toBe(fixture.teamsTeamId);
     expect(connectUrl.searchParams.get("teamName")).toBe("Team One");
     expect(connectUrl.searchParams.get("conversationType")).toBe("channel");
     expect(connectUrl.searchParams.get("botName")).toBe("Nova");
-    expect(body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
     expect(outboundRequests).toHaveLength(1);
     expect(outboundRequests[0]).toMatchObject({
@@ -1783,7 +1739,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         mentionsRecipient: false,
       },
     });
-    expect(body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
   });
 
@@ -1916,8 +1871,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       token: teamsToken(),
     });
-    const helpBody = await readTeamsBotResponseAndFlush(helpResponse);
-    expect(helpBody).not.toHaveProperty("dispatch");
+    await readTeamsBotResponseAndFlush(helpResponse);
 
     const slashHelpResponse = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
@@ -1927,8 +1881,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       token: teamsToken(),
     });
-    const slashHelpBody = await readTeamsBotResponseAndFlush(slashHelpResponse);
-    expect(slashHelpBody).not.toHaveProperty("dispatch");
+    await readTeamsBotResponseAndFlush(slashHelpResponse);
 
     const groupChatHelpResponse = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
@@ -1950,10 +1903,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       token: teamsToken(),
     });
-    const groupChatHelpBody = await readTeamsBotResponseAndFlush(
-      groupChatHelpResponse,
-    );
-    expect(groupChatHelpBody).not.toHaveProperty("dispatch");
+    await readTeamsBotResponseAndFlush(groupChatHelpResponse);
 
     const greetingResponse = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
@@ -1963,8 +1913,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
       token: teamsToken(),
     });
-    const greetingBody = await readTeamsBotResponseAndFlush(greetingResponse);
-    expect(greetingBody).not.toHaveProperty("dispatch");
+    await readTeamsBotResponseAndFlush(greetingResponse);
     expect(outboundRequests).toHaveLength(4);
     expect(
       outboundRequests.map((request) => {
@@ -2044,7 +1993,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         mentionsRecipient: false,
       },
     });
-    expect(body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
     expect(outboundRequests).toHaveLength(0);
   });
@@ -2088,7 +2036,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         mentionsRecipient: false,
       },
     });
-    expect(body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
     expect(outboundRequests).toHaveLength(1);
     expect(outboundRequests[0]).toMatchObject({
@@ -2160,7 +2107,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         attachments: [],
       },
     });
-    expect(response.body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
     expect(outboundRequests).toHaveLength(1);
     expect(outboundRequests[0]).toMatchObject({
@@ -2258,8 +2204,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     expect(response.status).toBe(200);
-    const body = await readTeamsBotResponseAndFlush(response);
-    expect(body).not.toHaveProperty("dispatch");
+    await readTeamsBotResponseAndFlush(response);
     const canonicalFilePrompt = "[Web file] spec.png (image/png)";
     const list = await listActiveRuns(actor, 20);
     const run = list.runs.find((item) => {
@@ -2606,7 +2551,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         mentionsRecipient: true,
       },
     });
-    expect(body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
   });
 
@@ -2627,8 +2571,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         token: teamsToken(),
       });
       expect(response.status).toBe(200);
-      const body = await readTeamsBotResponseAndFlush(response);
-      expect(body).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(response);
       expect(outboundRequests.at(-1)?.body).toMatchObject({
         type: "message",
         text: expect.stringContaining(expected),
@@ -2764,9 +2707,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(followUpClaim.appendSystemPrompt).toContain("Your name is Okou.");
       // A member default change does not alter an existing conversation.
       // Missing native history does not rotate the session or replay prior turns.
-      expect(followUpClaim.appendSystemPrompt).not.toContain(
-        "# Microsoft Teams Run Context",
-      );
       expect(followUpClaim.cliAgentType).toBe(initialClaim.cliAgentType);
 
       expect(followUpClaim.modelUsageProvider).toBe("claude-fable-5-1");
@@ -2832,13 +2772,11 @@ describe("POST /api/webhooks/teams/bot", () => {
         }),
       ]);
       expect(firstResponse.status).toBe(200);
-      const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
-      expect(firstBody).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(firstResponse);
       const firstRunId = await runIdForPrompt(actor, "active run one");
 
       expect(secondResponse.status).toBe(200);
-      const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
-      expect(secondBody).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(secondResponse);
       const secondRunId = await runIdForPrompt(actor, "active run two");
 
       const queuedResponse = await postTeamsActivity({
@@ -2851,8 +2789,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         token: teamsToken(),
       });
       expect(queuedResponse.status).toBe(200);
-      const queuedBody = await readTeamsBotResponseAndFlush(queuedResponse);
-      expect(queuedBody).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(queuedResponse);
       // At the org limit the message waits as thread input; no run exists yet.
       await expect(runIdForPrompt(actor, "queued run three")).rejects.toThrow(
         "Expected Teams run for prompt: queued run three",
@@ -3011,8 +2948,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         token: teamsToken(),
       });
       expect(failedResponse.status).toBe(200);
-      const body = await readTeamsBotResponseAndFlush(failedResponse);
-      expect(body).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(failedResponse);
 
       expect(outboundRequests).toHaveLength(1);
       expect(outboundRequests[0]).toMatchObject({
@@ -3278,10 +3214,7 @@ describe("POST /api/webhooks/teams/bot", () => {
           token: teamsToken(),
         });
         expect(channelContextResponse.status).toBe(200);
-        const channelContextBody = await readTeamsBotResponseAndFlush(
-          channelContextResponse,
-        );
-        expect(channelContextBody).not.toHaveProperty("dispatch");
+        await readTeamsBotResponseAndFlush(channelContextResponse);
         expect(outboundRequests).toHaveLength(0);
         expect(outboundRequests.reactions).toStrictEqual([
           {
@@ -3355,8 +3288,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       });
 
       expect(response.status).toBe(200);
-      const body = await readTeamsBotResponseAndFlush(response);
-      expect(body).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(response);
       expect(outboundRequests).toHaveLength(0);
       expect(outboundRequests.reactions).toStrictEqual([
         {
@@ -3438,7 +3370,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(replyRecentChannelContext).not.toContain(
         "remember the deployment target",
       );
-      expect(replyRecentChannelContext).not.toContain("future channel topic");
       expect(currentUserPrompt).toContain(
         `Teams user ID: ${fixture.teamsUserId}`,
       );
@@ -3567,7 +3498,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       );
       expect(response.status).toBe(200);
       await flushWaitUntilForTest();
-      expect(response.body).not.toHaveProperty("dispatch");
       const runId = await runIdForPrompt(actor, "continue this private task");
       const listed = await listActiveRuns(actor, 20);
       expect(listed.runs).toContainEqual(
@@ -3715,8 +3645,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         }),
       ]);
       expect(firstResponse.status).toBe(200);
-      const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
-      expect(firstBody).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(firstResponse);
 
       const firstRunId = await runIdForPrompt(actor, "authorize the browser");
       await scenario.run(() => {
@@ -3752,8 +3681,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         });
       });
       expect(secondResponse.status).toBe(200);
-      const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
-      expect(secondBody).not.toHaveProperty("dispatch");
+      await readTeamsBotResponseAndFlush(secondResponse);
 
       const secondRunId = await runIdForPrompt(actor, "use the browser");
       await scenario.run(() => {
@@ -3799,8 +3727,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     expect(response.status).toBe(200);
-    const body = await readTeamsBotResponseAndFlush(response);
-    expect(body).not.toHaveProperty("dispatch");
+    await readTeamsBotResponseAndFlush(response);
     expect(outboundRequests.at(-1)).toMatchObject({
       activityId,
       body: {

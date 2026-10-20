@@ -1,0 +1,1 @@
+ALTER TABLE "runner_state" ADD COLUMN "runner_hostname" varchar(255);

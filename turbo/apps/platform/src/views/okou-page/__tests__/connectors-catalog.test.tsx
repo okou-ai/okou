@@ -2,6 +2,8 @@ import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/cli
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -34,6 +36,49 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
+
+test("Show saved membership without loading accounts when catalog projections have been retired", async () => {
+  const [account] = mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "octocat" },
+  ]);
+  if (!account) {
+    throw new Error("Expected the saved GitHub account");
+  }
+  const {
+    connected: _connected,
+    connection: _connection,
+    ...metadata
+  } = publicStatusItem({
+    connectorSlug: "github",
+    label: "GitHub",
+    authMethods: [oauthMethod()],
+    connectionStatus: "connected",
+  });
+  context.mocks.api(connectorCatalogReaderContract.discovery, ({ respond }) => {
+    return respond(200, { connectors: [metadata], totalConnectorCount: 1 });
+  });
+  context.mocks.api(connectorCatalogReaderContract.status, ({ respond }) => {
+    return respond(200, { connectors: [metadata] });
+  });
+  context.mocks.api(connectorAccountsContract.connections, () => {
+    throw new Error("The directory must not load account lists");
+  });
+  context.mocks.api(connectorAccountsContract.summaries, () => {
+    throw new Error("The directory must not load account summaries");
+  });
+
+  await setupPage({ context, path: "/connectors?scope=connected" });
+
+  const card = await waitFor(() => {
+    return getConnectorCard("GitHub");
+  });
+  expect(within(card).getByText("Connected")).toBeInTheDocument();
+  expect(within(card).queryByText("octocat")).not.toBeInTheDocument();
+  expect(
+    getConnectorAction("button", "Manage GitHub access", card),
+  ).toBeEnabled();
+  expect(queryConnectorAction("button", "Connect GitHub", card)).toBeNull();
+});
 
 test("Authorize one agent without changing another agent", async () => {
   const researchId = "c0000000-0000-4000-a000-000000000010";

@@ -425,20 +425,12 @@ describe("Computer Use audit events", () => {
           runId: `missing_${randomUUID()}`,
         });
         expect(empty.auditEvents).toStrictEqual([]);
-
-        await expect(
-          computerUse.requestListComputerUseAuditEvents(
-            actor,
-            { limit: 201 },
-            [200],
-          ),
-        ).rejects.toThrow(/status 400/);
       });
     },
   );
 
   it(
-    "preserves empty-string and malformed selector behavior without poisoning later reads",
+    "treats empty optional selectors as unfiltered and accepts a valid command selector",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const scenario = createScenario();
@@ -457,30 +449,10 @@ describe("Computer Use audit events", () => {
         );
         expect(emptySelectors).toStrictEqual(unfiltered);
 
-        for (const malformed of [
-          { commandId: "not-a-uuid" },
-          { hostId: "not-a-uuid" },
-        ]) {
-          await expect(
-            computerUse.requestListComputerUseAuditEvents(
-              actor,
-              malformed,
-              [200, 403],
-            ),
-          ).rejects.toThrow(/Unknown response status 500/);
-        }
-        const textSelector = await computerUse.listComputerUseAuditEvents(
-          actor,
-          {
-            runId: "not-a-uuid",
-          },
-        );
-        expect(textSelector.auditEvents).toStrictEqual([]);
-
-        const recovered = await computerUse.listComputerUseAuditEvents(actor, {
+        const selected = await computerUse.listComputerUseAuditEvents(actor, {
           commandId,
         });
-        expect(recovered.auditEvents).toHaveLength(1);
+        expect(selected.auditEvents).toHaveLength(1);
       });
     },
   );

@@ -1211,6 +1211,8 @@ mod tests {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
 
+    mod finalizing_source;
+
     fn make_message(name: Option<&str>, data: serde_json::Value) -> ably_subscriber::Message {
         ably_subscriber::Message {
             name: name.map(String::from),

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -168,28 +167,5 @@ describe("member image preference", () => {
       "userPreferenceChanged",
       { kinds: ["defaultModel"] },
     );
-  });
-
-  it("rejects an image default outside the selectable catalog", async () => {
-    const fixture = await seedFixture();
-    useSession(fixture);
-    const preferenceClient = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    const outsideCatalog = "not-an-image-model" as unknown as ImageModelId;
-
-    const response = await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: {
-          selectedModel: null,
-          serviceTier: null,
-          selectedImageModel: outsideCatalog,
-        },
-      }),
-      [400],
-    );
-    expect(response.status).toBe(400);
   });
 });

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.9.0...runner-provider-v0.9.1) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-provider:** own ordinary runtime registration retirement ([#41732](https://github.com/okou-ai/okou/issues/41732)) ([fd843da](https://github.com/okou-ai/okou/commit/fd843dad1317261c35419c425cd3f1d9d578e94a))
+
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.21...runner-provider-v0.9.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare independent finalizing source admission ([#41683](https://github.com/okou-ai/okou/issues/41683)) ([b610ff6](https://github.com/okou-ai/okou/commit/b610ff61043274157618e3925b13a66dc56ef84b))
+
+
+### Bug Fixes
+
+* **runner-provider:** include heartbeat http 520 in degradation episodes ([#41629](https://github.com/okou-ai/okou/issues/41629)) ([680226d](https://github.com/okou-ai/okou/commit/680226dfdb07c29b2d97ba450850d9d631f76710))
+* **runner-provider:** retain unsuccessful claim request attribution ([#41649](https://github.com/okou-ai/okou/issues/41649)) ([fa80470](https://github.com/okou-ai/okou/commit/fa804702a095129e6c0bae79cc037180b530f1a5))
+* **runner:** report initial cache inventory before running ([#41556](https://github.com/okou-ai/okou/issues/41556)) ([2b4d023](https://github.com/okou-ai/okou/commit/2b4d023eb3b6d97269d2bbe71a5d8395ae5c2763))
+
 ## [0.8.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.20...runner-provider-v0.8.21) (2026-10-19)
 
 

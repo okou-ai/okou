@@ -404,23 +404,6 @@ async function expectReadingPosition(
   });
 }
 
-async function expectLatestActivity(
-  geometry: ChatScrollGeometry,
-  latestText: string,
-): Promise<void> {
-  await waitFor(() => {
-    const latestOffset = geometry.viewportOffsetFor(latestText);
-    expect(geometry.atBottom()).toBeTruthy();
-    expect(latestOffset).toBeGreaterThanOrEqual(0);
-    expect(latestOffset).toBeLessThan(geometry.viewportHeight());
-    expect(
-      queryAllByRoleFast("button").find((candidate) => {
-        return candidate.getAttribute("aria-label") === "Scroll to bottom";
-      }),
-    ).toBeUndefined();
-  });
-}
-
 async function expectAtLatestActivity(
   geometry: ChatScrollGeometry,
 ): Promise<void> {
@@ -714,10 +697,17 @@ test("Open a conversation safely when a linked message is unavailable", async ()
   );
   fireEvent.resize(window);
 
-  await expectLatestActivity(geometry, latestText);
-  expect(
-    screen.queryByText("Send a message to start the conversation"),
-  ).toBeNull();
+  await waitFor(() => {
+    const latestOffset = geometry.viewportOffsetFor(latestText);
+    expect(geometry.atBottom()).toBeTruthy();
+    expect(latestOffset).toBeGreaterThanOrEqual(0);
+    expect(latestOffset).toBeLessThan(geometry.viewportHeight());
+    expect(
+      queryAllByRoleFast("button").find((candidate) => {
+        return candidate.getAttribute("aria-label") === "Scroll to bottom";
+      }),
+    ).toBeUndefined();
+  });
 });
 
 test("Return to the latest message after sending from history", async () => {

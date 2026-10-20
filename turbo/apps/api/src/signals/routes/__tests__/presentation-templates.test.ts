@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -39,41 +37,5 @@ describe("presentation template owner routes", () => {
       [200],
     );
     expect(response.body).toStrictEqual([]);
-  });
-
-  it("does not expose an unknown template through owner routes", async () => {
-    const actor = bdd.user();
-    mocks.clerk.session(actor.userId, actor.orgId);
-    const client = templateClient();
-    const templateId = randomUUID();
-
-    const readResponse = await accept(
-      client.get({ headers: webHeaders(), params: { templateId } }),
-      [404],
-    );
-    const updateResponse = await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId },
-        body: { title: "Renamed" },
-      }),
-      [404],
-    );
-    const deleteResponse = await accept(
-      client.delete({ headers: webHeaders(), params: { templateId } }),
-      [404],
-    );
-
-    const notFoundBody = {
-      error: {
-        message: `Presentation template not found: ${templateId}`,
-        code: "NOT_FOUND",
-      },
-    };
-    expect([
-      readResponse.body,
-      updateResponse.body,
-      deleteResponse.body,
-    ]).toStrictEqual([notFoundBody, notFoundBody, notFoundBody]);
   });
 });

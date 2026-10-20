@@ -406,8 +406,8 @@ pub mod runners {
     /// Generated decode-path schemas under `runners::poll`.
     pub mod poll {
         const NODES: &[crate::decode_path::DecodePathNode] = &[
-            crate::decode_path::DecodePathNode::Object(16, 1),
-            crate::decode_path::DecodePathNode::Object(7, 9),
+            crate::decode_path::DecodePathNode::Object(17, 1),
+            crate::decode_path::DecodePathNode::Object(8, 9),
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
@@ -415,7 +415,8 @@ pub mod runners {
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
-            crate::decode_path::DecodePathNode::Object(2, 5),
+            crate::decode_path::DecodePathNode::Object(2, 6),
+            crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
@@ -423,18 +424,19 @@ pub mod runners {
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
             crate::decode_path::DecodePathNode::Leaf,
-            crate::decode_path::DecodePathNode::DynamicMap(18),
+            crate::decode_path::DecodePathNode::DynamicMap(19),
             crate::decode_path::DecodePathNode::Leaf,
         ];
 
         const FIELDS: &[crate::decode_path::DecodePathField] = &[
-            crate::decode_path::DecodePathField::new("heartbeatGeneration", 14),
-            crate::decode_path::DecodePathField::new("runnerId", 15),
+            crate::decode_path::DecodePathField::new("heartbeatGeneration", 15),
+            crate::decode_path::DecodePathField::new("runnerId", 16),
             crate::decode_path::DecodePathField::new("expiresAt", 10),
-            crate::decode_path::DecodePathField::new("kind", 11),
-            crate::decode_path::DecodePathField::new("reason", 12),
-            crate::decode_path::DecodePathField::new("runnerIdentity", 13),
-            crate::decode_path::DecodePathField::new("tier", 16),
+            crate::decode_path::DecodePathField::new("finalizingSourceRunId", 11),
+            crate::decode_path::DecodePathField::new("kind", 12),
+            crate::decode_path::DecodePathField::new("reason", 13),
+            crate::decode_path::DecodePathField::new("runnerIdentity", 14),
+            crate::decode_path::DecodePathField::new("tier", 17),
             crate::decode_path::DecodePathField::new("appendSystemPrompt", 2),
             crate::decode_path::DecodePathField::new("cliAgentSessionId", 3),
             crate::decode_path::DecodePathField::new("experimentalProfile", 4),
@@ -443,7 +445,7 @@ pub mod runners {
             crate::decode_path::DecodePathField::new("reuseKey", 7),
             crate::decode_path::DecodePathField::new("runId", 8),
             crate::decode_path::DecodePathField::new("runnerPreference", 9),
-            crate::decode_path::DecodePathField::new("vars", 17),
+            crate::decode_path::DecodePathField::new("vars", 18),
             crate::decode_path::DecodePathField::new("job", 1),
         ];
 

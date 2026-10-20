@@ -145,10 +145,18 @@ impl ActiveRunConnectorRuntimeState {
             .for_generation_mut(target.generation)
     }
 
-    fn take_sync_tasks(&mut self) -> impl Iterator<Item = ScheduledSyncTask> + '_ {
+    fn take_sync_tasks(&mut self) -> impl Iterator<Item = tokio::task::JoinHandle<()>> + '_ {
         self.connectors
             .values_mut()
             .filter_map(|connector| connector.scheduled_sync.take())
+            .map(|task| task.handle)
+    }
+
+    fn cancel_and_take_sync_tasks(
+        &mut self,
+    ) -> impl Iterator<Item = tokio::task::JoinHandle<()>> + '_ {
+        self.cancel.cancel();
+        self.take_sync_tasks()
     }
 }
 
@@ -495,8 +503,7 @@ impl ConnectorRuntimeSyncCore {
         self.inner.cancel.cancel();
         let old_runs = std::mem::take(&mut *self.inner.active_runs.lock().await);
         for mut old in old_runs.into_values() {
-            old.cancel.cancel();
-            abort_tasks(old.take_sync_tasks().map(|task| task.handle));
+            abort_tasks(old.cancel_and_take_sync_tasks());
         }
     }
 
@@ -517,8 +524,7 @@ impl ConnectorRuntimeSyncCore {
                 return;
             }
             if let Some(mut old) = active_runs.remove(&registration.run_id) {
-                old.cancel.cancel();
-                old_tasks.extend(old.take_sync_tasks().map(|task| task.handle));
+                old_tasks.extend(old.cancel_and_take_sync_tasks());
             }
 
             let connectors = runtime_targets
@@ -611,8 +617,7 @@ impl ConnectorRuntimeSyncCore {
 
     async fn take_active_run(&self, run_id: RunId) -> Option<ActiveRunConnectorRuntimeState> {
         let mut old = self.inner.active_runs.lock().await.remove(&run_id)?;
-        old.cancel.cancel();
-        abort_tasks(old.take_sync_tasks().map(|task| task.handle));
+        abort_tasks(old.cancel_and_take_sync_tasks());
         Some(old)
     }
 
@@ -630,7 +635,7 @@ impl ConnectorRuntimeSyncCore {
                 .and_then(|active| active.for_registration(registration_cancel))?;
             active_runs.remove(&run_id)?
         };
-        abort_tasks(old.take_sync_tasks().map(|task| task.handle));
+        abort_tasks(old.take_sync_tasks());
         Some(old)
     }
 

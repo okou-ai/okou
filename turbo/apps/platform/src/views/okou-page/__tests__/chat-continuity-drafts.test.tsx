@@ -362,9 +362,6 @@ test("Clear a saved typed draft without restoring it on the next visit", async (
   await waitFor(() => {
     expect(currentMessageComposer().textContent).toBe("");
   });
-  expect(currentMessageComposer()).not.toHaveTextContent(
-    "Unsent launch checklist",
-  );
 });
 
 test("Send the current version of a restored draft and clear it", async () => {

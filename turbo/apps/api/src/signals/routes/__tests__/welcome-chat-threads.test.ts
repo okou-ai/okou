@@ -317,7 +317,6 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).toBeDefined();
       expect(content).toContain("Okou");
       expect(content).not.toContain("{{");
-      expect(content).not.toContain("okou://welcome-diagram");
       expect(content).not.toContain("Editable agent name");
       // Artifacts use image syntax so the app frames them as previews.
       expect(content).toContain(
@@ -329,7 +328,6 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).toContain(
         "![coastal-hotel-example](<https://coastal-hotel-example.okou.app>)",
       );
-      expect(content).not.toContain("```mermaid");
       for (const filename of [
         "slack-scene.png",
         "telegram-scene.png",
@@ -347,8 +345,6 @@ describe("POST /api/welcome-chat-threads", () => {
       // carries no hand-made screenshots of them.
       // The alt text is localized, so assert the artifact reference itself.
       expect(content).toContain("](<https://4nnp6iwpss.okou.app>)");
-      expect(content).not.toContain("quick-start/cover.png");
-      expect(content).not.toContain("?prompt=");
       expect(content).toContain(
         "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
       );

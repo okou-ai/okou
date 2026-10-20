@@ -644,6 +644,7 @@ function authMethodSummaryForCatalog(
     label: method.label,
     description: method.description,
     grantKind: method.grant.kind,
+    supportsRefresh: method.access.kind === "refresh-token",
   };
 }
 

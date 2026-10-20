@@ -126,7 +126,6 @@ async function postActivity(
   );
   await flushWaitUntilForTest();
   expect(response.body.ok).toBeTruthy();
-  expect(response.body.dispatch).toBeUndefined();
   return response.body;
 }
 

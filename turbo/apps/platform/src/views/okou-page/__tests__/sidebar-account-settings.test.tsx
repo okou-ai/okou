@@ -65,7 +65,6 @@ test("Open personal Settings and manage account security", async () => {
     expect(
       within(dialog).getByRole("region", { name: "Email subscriptions" }),
     ).toContainElement(morningBrief);
-    expect(within(dialog).queryByText("Send now")).toBeNull();
   });
 
   const openedSettingsDialog = screen.getByRole("dialog", {

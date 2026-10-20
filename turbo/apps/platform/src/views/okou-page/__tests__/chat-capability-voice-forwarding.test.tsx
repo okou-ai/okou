@@ -9,7 +9,6 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
 import { expect, vi, describe, beforeEach, it, test } from "vitest";
 
@@ -38,20 +37,6 @@ import {
 
 const refreshedContext = testContext();
 const FORWARD_TARGET_NAME = "Okou";
-
-interface RecordingDatabase extends DBSchema {
-  drafts: {
-    key: string;
-    value: { id: string; sampleCount: number; chunkCount: number };
-  };
-}
-
-async function recordings() {
-  const db = await openDB<RecordingDatabase>("okou-voice-drafts");
-  const saved = await db.getAll("drafts");
-  db.close();
-  return saved;
-}
 
 function releasePageDom() {
   cleanup();
@@ -213,10 +198,8 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
     await findEnabledButton("Retry");
-    const saved = await recordings();
     return {
       resetInitialPage$,
-      saved,
       get successful() {
         return successful;
       },
@@ -256,10 +239,9 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
     return { dialog, originalComposer };
   }
   it("recovers the restored audio into the forward dialog without changing the original composer", async () => {
-    const { saved, uploads } = preparedRecording;
+    const { uploads } = preparedRecording;
     const { dialog, originalComposer } = await openRestoredRecording();
     expect(queryButton("Voice input", dialog)).toBeNull();
-    await expect(recordings()).resolves.toStrictEqual(saved);
     preparedRecording.successful = true;
     click(await findEnabledButton("Retry", dialog));
     await findEnabledButton("Voice input", dialog);
@@ -269,6 +251,5 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
     expect(originalComposer).toHaveTextContent("Keep the existing notes.");
     expect(uploads).toHaveLength(2);
     expect(uploads[1]).toStrictEqual(uploads[0]);
-    await expect(recordings()).resolves.toStrictEqual([]);
   });
 });

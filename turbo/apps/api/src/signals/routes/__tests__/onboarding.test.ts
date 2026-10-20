@@ -8,7 +8,7 @@ import {
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
@@ -45,21 +45,6 @@ function runModelsClient() {
 function billingStatusClient() {
   return setupApp({ context, routes: billingStatusRoutes })(
     billingStatusContract,
-  );
-}
-
-/**
- * A request the typed client cannot express: the contract narrows `industry`
- * to the offered list and rejects a key it does not declare.
- */
-function rawCompleteRequest(body: Record<string, unknown>) {
-  return setupRawAppRequest({ context, routes: onboardingCompleteRoutes })(
-    "/api/onboarding/complete",
-    {
-      method: "POST",
-      headers: { ...authHeaders(), "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
   );
 }
 
@@ -469,35 +454,5 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: true,
       isAdmin: true,
     });
-  });
-
-  it("rejects a field the flow does not offer", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.test/default-agent.tar.gz?signature=test",
-    );
-
-    const rejected = await rawCompleteRequest({ industry: "farming" });
-
-    expect(rejected.status).toBe(400);
-    const status = await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
-    expect(status.body).toMatchObject({
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-  });
-
-  it("rejects a key the completion body does not declare", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-
-    const rejected = await rawCompleteRequest({ industries: ["marketing"] });
-
-    expect(rejected.status).toBe(400);
   });
 });

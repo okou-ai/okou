@@ -90,6 +90,7 @@ readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
 readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-only
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
+readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
@@ -683,6 +684,22 @@ if ! git merge-base --is-ancestor "$run_storage_output_reader_commit" origin/mai
 fi
 if ! git merge-base --is-ancestor "$run_storage_output_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Run Storage-output log reader: ${run_storage_output_reader_commit}."
+fi
+
+# #41656 prepared the API for Guest completion.storageOutputs before its writer
+# switched. Draining Guests can outlive a Runner rollback, so the API target must
+# retain that reader independently of the selected Runner artifact.
+if ! guest_storage_output_completion_reader_commit=$(git show "origin/main:${GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH}"); then
+  fail "Cannot read the Guest Storage-output completion reader rollback floor from main."
+fi
+if [[ ! "$guest_storage_output_completion_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Guest Storage-output completion reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$guest_storage_output_completion_reader_commit" origin/main; then
+  fail "Guest Storage-output completion reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$guest_storage_output_completion_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Guest Storage-output completion reader: ${guest_storage_output_completion_reader_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

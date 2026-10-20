@@ -21,7 +21,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorAutomaticContract,
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOpenIdStartContract,
@@ -29,6 +28,10 @@ import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
+  builtinConnectorAutomaticReaderResponseSchema,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type {
   InitClientArgs,
@@ -43,6 +46,7 @@ import type {
 import {
   connectorCatalogItemForSlug,
   relatedConnectorCatalog,
+  withConnectorCompletion,
   reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
 import { replaceSearchParams$, searchParams$ } from "../../route.ts";
@@ -392,12 +396,22 @@ function connectorTokenExpiresAtMs(
 export function builtinConnectorCurrentConnectionStatus(
   connector: PlatformConnectorCatalogConnectItem,
   nowMs = now(),
-): PublicConnectorCatalogConnectionStatus {
+): PublicConnectorCatalogConnectionStatus | "unavailable" {
+  if (connector.connectionStatus === undefined) {
+    return "unavailable";
+  }
   if (connector.connectionStatus === "not-connected") {
     return "not-connected";
   }
-  if (!connector.authMethodSupportsRefresh) {
-    const tokenExpiresAtMs = connectorTokenExpiresAtMs(connector);
+  const tokenExpiresAtMs = connectorTokenExpiresAtMs(connector);
+  if (
+    connector.connectionStatus !== "reconnect-required" &&
+    tokenExpiresAtMs !== null &&
+    connector.authMethodSupportsRefresh === undefined
+  ) {
+    return "unavailable";
+  }
+  if (connector.authMethodSupportsRefresh === false) {
     if (tokenExpiresAtMs !== null && tokenExpiresAtMs <= nowMs) {
       return "reconnect-required";
     }
@@ -411,7 +425,7 @@ export function builtinConnectorExpiryCountdownText(
 ): string | null {
   if (
     builtinConnectorCurrentConnectionStatus(connector, nowMs) !== "connected" ||
-    connector.authMethodSupportsRefresh
+    connector.authMethodSupportsRefresh !== false
   ) {
     return null;
   }
@@ -557,7 +571,7 @@ export const connectorCatalogDiscovery$ = relatedConnectorCatalog(
 
 export const relatedCatalogItems$ = computed(async (get) => {
   const { connectors } = await get(connectorCatalogDiscovery$);
-  const items = [...connectors];
+  const items = connectors.map(withConnectorCompletion);
   const read = await settle(get(connectedConnectorTargetKeys$));
   // An unavailable status read leaves metadata browsable in provider order.
   if (!read.ok) {
@@ -2506,7 +2520,7 @@ const startConnectorBrowserAuthorization$ = command(
       body,
     };
     if (args.method.grantKind === "automatic") {
-      return await accept(
+      const result = await accept(
         get(apiClient$)(builtinConnectorAutomaticContract, {
           apiBase: "api",
         }).start({
@@ -2515,6 +2529,11 @@ const startConnectorBrowserAuthorization$ = command(
         }),
         [200],
       );
+      signal.throwIfAborted();
+      return {
+        ...result,
+        body: builtinConnectorAutomaticReaderResponseSchema.parse(result.body),
+      };
     }
     if (args.method.grantKind === "openid-auth") {
       return await accept(
@@ -2628,9 +2647,7 @@ const openConnectorOAuthAuthCodeWindow$ = command(
           return {
             kind: "connected" as const,
             options,
-            connectionId:
-              startResult.body.connectionId ??
-              startResult.body.connectedAccountId,
+            connectionId: startResult.body.connectionId,
           };
         }
 

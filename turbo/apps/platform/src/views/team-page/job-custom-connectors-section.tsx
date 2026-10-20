@@ -9,10 +9,11 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   customConnectors$,
@@ -23,6 +24,7 @@ import { reloadUserConnectedConnectors$ } from "../../signals/okou-page/connecto
 import {
   agentCustomConnectorGrants$,
   agentAddedCustomConnectors$,
+  prepareJobCustomConnectorAccess$,
   toggleAgentCustomConnector$,
 } from "../../signals/okou-page/job-detail/custom-connectors.ts";
 import {
@@ -41,7 +43,12 @@ import { customConnectorTarget } from "../okou-page/components/settings/custom-c
 import { Link } from "../router/link.tsx";
 
 function canAddAgentAccess(connector: CustomConnectorResponse): boolean {
-  return connector.connected;
+  if (isIntegrationManagedCustomConnector(connector)) {
+    return customConnectorManagedStatusSchema.parse(connector).connected;
+  }
+  // Canonical definitions omit readiness; the explicit action checks the
+  // current default before granting access or opening its permissions.
+  return connector.connected !== false;
 }
 
 function CustomConnectorAccountStatus({
@@ -91,6 +98,15 @@ function CustomConnectorReconnectLink({
   );
 }
 
+interface JobCustomConnectorRowProps {
+  readonly connector: CustomConnectorResponse;
+  readonly enabled: boolean;
+  readonly agentId: string | undefined;
+  readonly grants: readonly AgentCustomConnectorGrant[] | null;
+  readonly grantsLoading: boolean;
+  readonly isLast: boolean;
+}
+
 function JobCustomConnectorRow({
   connector,
   enabled,
@@ -98,18 +114,15 @@ function JobCustomConnectorRow({
   grants,
   grantsLoading,
   isLast,
-}: {
-  readonly connector: CustomConnectorResponse;
-  readonly enabled: boolean;
-  readonly agentId: string | undefined;
-  readonly grants: readonly AgentCustomConnectorGrant[] | null;
-  readonly grantsLoading: boolean;
-  readonly isLast: boolean;
-}) {
+}: JobCustomConnectorRowProps) {
   const { t } = useTranslation("agents");
   const signal = useGet(pageSignal$);
   const [toggleLoadable, toggle] = useLoadableSet(toggleAgentCustomConnector$);
-  const saving = toggleLoadable.state === "loading";
+  const [prepareLoadable, prepare] = useLoadableSet(
+    prepareJobCustomConnectorAccess$,
+  );
+  const saving =
+    toggleLoadable.state === "loading" || prepareLoadable.state === "loading";
   const readyForAccess = canAddAgentAccess(connector);
   const openPermissions = useSet(openCustomConnectorPermissions$);
   const hasPermissionBundle =
@@ -119,9 +132,13 @@ function JobCustomConnectorRow({
       return grant.customConnectorId === connector.id;
     })?.permissionNames ?? [];
 
-  const openPermissionDrawer = (initiallyAuthorized: boolean) => {
-    if (!agentId || !readyForAccess) {
+  const openPermissionDrawer = async (initiallyAuthorized: boolean) => {
+    if (!agentId || (!initiallyAuthorized && !readyForAccess)) {
       return;
+    }
+    if (!initiallyAuthorized) {
+      await prepare(connector, signal);
+      signal.throwIfAborted();
     }
     openPermissions(
       {
@@ -136,72 +153,84 @@ function JobCustomConnectorRow({
   };
 
   return (
-    <ConnectorPermissionRow
-      icon={
-        <CustomConnectorIcon
-          id={connector.id}
-          displayName={connector.displayName}
-          size={20}
-        />
-      }
-      label={connector.displayName}
-      labelSuffix={
-        !readyForAccess && agentId ? (
-          <CustomConnectorReconnectLink
-            connector={connector}
-            agentId={agentId}
+    <>
+      <ConnectorPermissionRow
+        icon={
+          <CustomConnectorIcon
+            id={connector.id}
+            displayName={connector.displayName}
+            size={20}
           />
-        ) : undefined
-      }
-      description={
-        <CustomConnectorAccountStatus
-          connector={connector}
-          readyForAccess={readyForAccess}
-        />
-      }
-      enabled={enabled}
-      loading={saving || (hasPermissionBundle && grantsLoading)}
-      disabled={
-        (!enabled && !readyForAccess) ||
-        (hasPermissionBundle && grants === null)
-      }
-      showManage={
-        readyForAccess &&
-        enabled &&
-        hasPermissionBundle &&
-        grants !== null &&
-        agentId !== undefined
-      }
-      isLast={isLast}
-      onToggle={(checked) => {
-        if (checked && !readyForAccess) {
-          return;
         }
-        if (checked && hasPermissionBundle) {
-          if (grants !== null && agentId) {
-            openPermissionDrawer(false);
+        label={connector.displayName}
+        labelSuffix={
+          !readyForAccess && agentId ? (
+            <CustomConnectorReconnectLink
+              connector={connector}
+              agentId={agentId}
+            />
+          ) : undefined
+        }
+        description={
+          <CustomConnectorAccountStatus
+            connector={connector}
+            readyForAccess={readyForAccess}
+          />
+        }
+        enabled={enabled}
+        loading={saving || (hasPermissionBundle && grantsLoading)}
+        disabled={
+          (!enabled && !readyForAccess) ||
+          (hasPermissionBundle && grants === null)
+        }
+        showManage={
+          enabled &&
+          hasPermissionBundle &&
+          grants !== null &&
+          agentId !== undefined
+        }
+        isLast={isLast}
+        onToggle={(checked) => {
+          if (checked && !readyForAccess) {
+            return;
           }
-          return;
-        }
-        if (saving) {
-          return;
-        }
-        detach(
-          (async () => {
-            await toggle(connector.id, checked, signal);
-            toast.success(
-              t(($) => {
-                return $.authorization.customConnectors.saved;
-              }),
-            );
-          })(),
-          Reason.DomCallback,
-        );
-      }}
-      onManage={() => {
-        openPermissionDrawer(enabled);
-      }}
-    />
+          if (checked && hasPermissionBundle) {
+            if (grants !== null && agentId) {
+              detach(openPermissionDrawer(false), Reason.DomCallback);
+            }
+            return;
+          }
+          if (saving) {
+            return;
+          }
+          detach(
+            (async () => {
+              if (checked) {
+                await prepare(connector, signal);
+                signal.throwIfAborted();
+              }
+              await toggle(connector.id, checked, signal);
+              toast.success(
+                t(($) => {
+                  return $.authorization.customConnectors.saved;
+                }),
+              );
+            })(),
+            Reason.DomCallback,
+          );
+        }}
+        onManage={() => {
+          if (!saving) {
+            detach(openPermissionDrawer(enabled), Reason.DomCallback);
+          }
+        }}
+      />
+      {prepareLoadable.state === "hasError" && (
+        <p role="alert" className="px-5 pb-3 text-sm text-destructive">
+          {String(prepareLoadable.error)}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -241,7 +270,7 @@ export function JobCustomConnectorsSection() {
   }
   const connectedConnectors = connectors.data.filter((connector) => {
     return isIntegrationManagedCustomConnector(connector)
-      ? connector.connected
+      ? customConnectorManagedStatusSchema.parse(connector).connected
       : connectedTargets.data.has(`custom:${connector.id}`);
   });
 
@@ -284,7 +313,8 @@ function ConnectedJobCustomConnectorsSection({
   const permissionTarget =
     activePermissionDraft &&
     permissionTargetConnector &&
-    canAddAgentAccess(permissionTargetConnector)
+    (activePermissionDraft.initiallyAuthorized ||
+      canAddAgentAccess(permissionTargetConnector))
       ? {
           connector: permissionTargetConnector,
           draft: activePermissionDraft,

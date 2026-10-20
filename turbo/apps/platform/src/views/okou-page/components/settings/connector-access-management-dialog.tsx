@@ -19,10 +19,8 @@ import {
   cn,
 } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  CustomConnectorResponse,
-  CustomConnectorPermissionBundleResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorPermissionBundleResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,

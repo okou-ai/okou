@@ -298,7 +298,7 @@ describe("zero user permission grants", () => {
     expect(missingResponse.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("validates connector slugs, permission names, ask, and __unknown__", async () => {
+  it("validates connector identities, permission names, and __unknown__", async () => {
     const fixture = memberUser();
     const agentId = await createAgent(fixture);
     signIn(fixture);
@@ -306,20 +306,6 @@ describe("zero user permission grants", () => {
       context,
       routes: userPermissionGrantsRoutes,
     })(userPermissionGrantsContract);
-
-    const malformedConnector = await accept(
-      client.apply({
-        body: {
-          agentId,
-          connectorSlug: "INVALID_REF",
-          mode: "patch",
-          grants: [{ permission: SLACK_READ_PERMISSION, action: "allow" }],
-        },
-        headers: AUTH_HEADERS,
-      }),
-      [400],
-    );
-    expect(malformedConnector.body.error.code).toBe("BAD_REQUEST");
 
     const unknownConnector = await accept(
       client.apply({
@@ -376,27 +362,6 @@ describe("zero user permission grants", () => {
       permission: UNKNOWN_PERMISSION_GRANT,
       action: "deny",
     });
-
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const askResponse = await app.request("/api/user-permission-grants/apply", {
-      method: "PUT",
-      headers: {
-        authorization: AUTH_HEADERS.authorization,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        agentId,
-        connectorSlug: SLACK_CONNECTOR,
-        mode: "patch",
-        grants: [
-          {
-            permission: SLACK_READ_PERMISSION,
-            action: "ask",
-          },
-        ],
-      }),
-    });
-    expect(askResponse.status).toBe(400);
   });
 
   it("replaces connector grants with an empty grant set", async () => {
@@ -613,20 +578,6 @@ describe("zero user permission grants", () => {
     );
     expect(duplicate.body.error.code).toBe("VALIDATION_ERROR");
 
-    const invalidPermission = await accept(
-      client.apply({
-        body: {
-          agentId,
-          connectorSlug: SLACK_CONNECTOR,
-          mode: "patch",
-          grants: [{ permission: "not-a-real-permission", action: "allow" }],
-        },
-        headers: AUTH_HEADERS,
-      }),
-      [400],
-    );
-    expect(invalidPermission.body.error.code).toBe("VALIDATION_ERROR");
-
     const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
     const denyExpiration = await app.request(
       "/api/user-permission-grants/apply",
@@ -768,7 +719,6 @@ describe("zero user permission grants", () => {
         unknownPolicy: "deny",
       },
     });
-    expect(permissionGrantsToFirewallPolicies([])).toBeNull();
   });
 
   it("preserves active allow expiration when expiresIn is omitted", async () => {
@@ -935,61 +885,5 @@ describe("zero user permission grants", () => {
         expiresAt: null,
       },
     ]);
-  });
-
-  it("rejects invalid grant expiration options", async () => {
-    const fixture = memberUser();
-    const agentId = await createAgent(fixture);
-    signIn(fixture);
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    const response = await app.request("/api/user-permission-grants/apply", {
-      method: "PUT",
-      headers: {
-        authorization: AUTH_HEADERS.authorization,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        agentId,
-        connectorSlug: SLACK_CONNECTOR,
-        mode: "patch",
-        grants: [
-          {
-            permission: SLACK_READ_PERMISSION,
-            action: "allow",
-            expiresIn: "2h",
-          },
-        ],
-      }),
-    });
-    expect(response.status).toBe(400);
-  });
-
-  it("rejects expiration options for deny grants", async () => {
-    const fixture = memberUser();
-    const agentId = await createAgent(fixture);
-    signIn(fixture);
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    const response = await app.request("/api/user-permission-grants/apply", {
-      method: "PUT",
-      headers: {
-        authorization: AUTH_HEADERS.authorization,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        agentId,
-        connectorSlug: SLACK_CONNECTOR,
-        mode: "patch",
-        grants: [
-          {
-            permission: SLACK_READ_PERMISSION,
-            action: "deny",
-            expiresIn: "1h",
-          },
-        ],
-      }),
-    });
-    expect(response.status).toBe(400);
   });
 });

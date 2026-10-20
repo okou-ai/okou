@@ -14,7 +14,6 @@ const context = testContext();
 const {
   api,
   chat,
-  chatCallbacks,
   entitledNativeChatActor,
   sendChatRun,
   expectNoThreadModelUpdateEvent,
@@ -28,7 +27,6 @@ const {
 describe("CHAT-02: queueing and recalling messages", () => {
   it("steers rich inputs one at a time and settles concurrent declarations once", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
       agentId,
@@ -192,7 +190,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
   it("steers a message into the running sandbox run by its source event id", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
       agentId,
@@ -259,7 +256,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
   it("releases unconfirmed prompts before draining in FIFO order", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
       agentId,
@@ -341,7 +337,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
   it("applies the control payload limit without consuming an oversized prompt", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const active = await sendChatRun(actor, {
       agentId,
@@ -433,7 +428,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
   it("queues, retries, and recalls messages behind an active run", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -574,7 +568,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
   it("keeps a queued message when recall targets another owned thread", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,

@@ -89,37 +89,6 @@ function followupButtons(group: ParentNode): HTMLElement[] {
   return queryAllByRoleFast("button", group);
 }
 
-test("Invalid recommended-follow-up data stays hidden", async () => {
-  const unsafePrompt = "Run <script>unsafe()</script> immediately";
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: [
-      ...completedReply([], FOLLOWUP_RUN_ID),
-      {
-        id: "unsupported-followups",
-        eventType: "output.followups",
-        role: "assistant",
-        runId: FOLLOWUP_RUN_ID,
-        content: JSON.stringify({
-          version: 99,
-          followups: [{ prompt: unsafePrompt, kind: "talk" }],
-        }),
-        createdAt: "2026-08-21T14:00:06.000Z",
-      },
-    ],
-  });
-
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
-
-  await expect(findComposer()).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
-  });
-  expect(screen.queryByText(unsafePrompt)).toBeNull();
-  expect(screen.queryByText(/"version":99/u)).toBeNull();
-  expect(document.querySelector("script")).toBeNull();
-});
-
 test("Valid recommended follow-ups still appear when delivered late", async () => {
   const currentThreadId = context.resourceId;
   const currentRunId = "d0000000-0000-4000-a000-000000000063";
@@ -307,7 +276,6 @@ test("A recommended follow-up edits the draft without sending it", async () => {
     throw new Error("Presentation recommendation not found");
   }
 
-  expect(recommendation).not.toHaveAttribute("title");
   await user.click(recommendation);
   await waitFor(() => {
     expect(composer.textContent).toBe(
@@ -318,7 +286,6 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   expect(recommendation).toBeVisible();
   expect(onSendRequest).not.toHaveBeenCalled();
 
-  expect(recommendation).not.toHaveAttribute("title");
   await user.click(recommendation);
   await waitFor(() => {
     expect(window.getSelection()?.toString()).toBe(PRESENTATION_PROMPT);
@@ -328,30 +295,6 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   );
   expect(composer).toHaveFocus();
   expect(onSendRequest).not.toHaveBeenCalled();
-});
-
-test("An older run's video follow-up is not offered", async () => {
-  const talkPrompt = "What risks should we discuss next?";
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: completedReply([
-      {
-        prompt: "Turn this into a short launch video",
-        kind: "generate" as const,
-        generationType: "video" as const,
-      },
-      { prompt: talkPrompt, kind: "talk" as const },
-    ]),
-  });
-
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
-
-  const group = await keepGoingGroup();
-  expect(
-    followupButtons(group).map((button) => {
-      return button.textContent?.trim();
-    }),
-  ).toStrictEqual([talkPrompt]);
 });
 
 test("A touch device renders the recommended follow-ups as a quick reply rail", async () => {

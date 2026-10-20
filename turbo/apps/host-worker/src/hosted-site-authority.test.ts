@@ -109,7 +109,12 @@ function environment(
   return {
     HOST_DOMAIN: "sites.vm0.io",
     OKOU_HOST_DOMAIN: "okou.app",
-    ...(configured ? { HOSTED_SITE_API_ORIGIN: "https://authority.test" } : {}),
+    ...(configured
+      ? {
+          HOSTED_SITE_API_ORIGIN: "https://authority.test",
+          HOSTED_SITE_ACCESS_ENABLED: "true",
+        }
+      : {}),
     HOSTED_SITES_BUCKET: {
       head: async () => {
         return null;
@@ -131,6 +136,119 @@ function environment(
   };
 }
 
+it.each([true, false])(
+  "preserves the old API's allow=%s decision before activation",
+  async (allowed) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed });
+      }),
+    );
+    const env = {
+      ...environment(),
+      HOSTED_SITE_ACCESS_ENABLED: undefined,
+    };
+    for (const alias of ["demo", `dpl-${deploymentId}`]) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetchWorker(
+          new Request(`https://${alias}.okou.app/`, { method }),
+          env,
+        );
+        expect(response.status).toBe(allowed ? 200 : 404);
+        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      }
+    }
+  },
+);
+
+it("fails closed on an old API response once access enforcement is activated", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: true });
+    }),
+  );
+  expect(
+    (await fetchWorker(new Request("https://demo.okou.app/"), environment()))
+      .status,
+  ).toBe(503);
+});
+
+it.each(["true", "invalid"])(
+  "does not serve storage-only content with activation=%s",
+  async (activation) => {
+    expect(
+      (
+        await fetchWorker(new Request("https://demo.okou.app/"), {
+          ...environment(false),
+          HOSTED_SITE_ACCESS_ENABLED: activation,
+        })
+      ).status,
+    ).toBe(503);
+  },
+);
+
+it.each(["/", "/style-12345678.css"])(
+  "never reads restricted content without configured Clerk: %s",
+  async (path) => {
+    let reads = 0;
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed: false, decision: "authenticate" });
+      }),
+    );
+    const response = await fetchWorker(
+      new Request(`https://demo.okou.app${path}`),
+      environment(true, async () => {
+        reads++;
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(reads).toBe(0);
+  },
+);
+
+it("checks a controlled download grant on every GET and HEAD, without caching the bytes", async () => {
+  let allowed = true;
+  let reads = 0;
+  const token = "a".repeat(48);
+  server.use(
+    http.get(
+      "https://authority.test/api/host/downloads/:token",
+      ({ request, params }) => {
+        expect(params.token).toBe(token);
+        expect(new URL(request.url).searchParams.get("deploymentId")).toBe(
+          deploymentId,
+        );
+        expect(new URL(request.url).searchParams.get("path")).toBe(
+          "/index.html",
+        );
+        return HttpResponse.json({
+          file: allowed
+            ? { key: `${prefix}/index.html`, contentType: "text/html", size: 9 }
+            : null,
+        });
+      },
+    ),
+  );
+  const env = environment(true, async () => {
+    reads++;
+  });
+  const url = `https://dpl-${deploymentId}.okou.app/.okou/download/${token}?path=%2Findex.html`;
+  const first = await fetchWorker(new Request(url), env);
+  expect(first.status).toBe(200);
+  expect(await first.text()).toBe("<p>ok</p>");
+  expect(first.headers.get("Content-Disposition")).toBe(
+    "attachment; filename*=UTF-8''index.html",
+  );
+  expect(first.headers.get("Cache-Control")).toBe("private, no-store");
+  const head = await fetchWorker(new Request(url, { method: "HEAD" }), env);
+  expect(head.status).toBe(200);
+  expect(await head.text()).toBe("");
+  allowed = false;
+  expect((await fetchWorker(new Request(url), env)).status).toBe(404);
+  expect(reads).toBe(2);
+});
+
 it.each([
   { segment: "okou" as const, domain: "okou.app", registered: false },
   { segment: "okou" as const, domain: "okou.app", registered: true },
@@ -145,7 +263,10 @@ it.each([
         expect(new URL(request.url).searchParams.get("publicBrand")).toBe(
           segment,
         );
-        return HttpResponse.json({ allowed });
+        return HttpResponse.json({
+          allowed,
+          decision: allowed ? "allow" : "deny",
+        });
       }),
     );
     const env = environment(true, undefined, segment, registered);
@@ -195,6 +316,10 @@ it("serves a renamed alias through the current binding without changing immutabl
       const alias = new URL(request.url).searchParams.get("alias");
       return HttpResponse.json({
         allowed: alias === "renamed" || alias === `dpl-${deploymentId}`,
+        decision:
+          alias === "renamed" || alias === `dpl-${deploymentId}`
+            ? "allow"
+            : "deny",
       });
     }),
   );
@@ -237,7 +362,7 @@ it("requires current authority even when an alias resolver returns a pointer", a
       });
     }),
     http.get(endpoint, () => {
-      return HttpResponse.json({ allowed: false });
+      return HttpResponse.json({ allowed: false, decision: "deny" });
     }),
   );
   const response = await fetchWorker(
@@ -262,7 +387,7 @@ it.each(["demo", `dpl-${deploymentId}`])(
         expect(query.get("prefix")).toBe(prefix);
         expect(query.get("manifestKey")).toBe(`${prefix}/manifest.json`);
         return HttpResponse.json(
-          { allowed },
+          { allowed, decision: allowed ? "allow" : "deny" },
           { headers: { "Cache-Control": "private, no-store" } },
         );
       }),
@@ -282,7 +407,7 @@ it.each(["demo", `dpl-${deploymentId}`])(
 it("keeps protected assets out of HTTP caches while the old reader keeps its cache policy", async () => {
   server.use(
     http.get(endpoint, () => {
-      return HttpResponse.json({ allowed: true });
+      return HttpResponse.json({ allowed: true, decision: "allow" });
     }),
   );
   const url = "https://demo.okou.app/style-12345678.css";
@@ -299,7 +424,10 @@ it("rejects new requests after revocation but lets an already admitted read fini
   let allowed = true;
   server.use(
     http.get(endpoint, () => {
-      return HttpResponse.json({ allowed });
+      return HttpResponse.json({
+        allowed,
+        decision: allowed ? "allow" : "deny",
+      });
     }),
   );
   const entered = Promise.withResolvers<void>();
@@ -331,7 +459,7 @@ it("cancels a pending authority request with the incoming request", async () => 
     http.get(endpoint, async () => {
       entered.resolve();
       await release.promise;
-      return HttpResponse.json({ allowed: true });
+      return HttpResponse.json({ allowed: true, decision: "allow" });
     }),
   );
   const controller = new AbortController();
@@ -381,7 +509,7 @@ it("treats a malformed authority response as unavailable", async () => {
 it("serves version-bound OG in the initial HTML while preserving authored metadata", async () => {
   server.use(
     http.get(endpoint, () => {
-      return HttpResponse.json({ allowed: true });
+      return HttpResponse.json({ allowed: true, decision: "allow" });
     }),
     http.get(
       "https://authority.test/api/artifact-og/metadata",
@@ -431,7 +559,7 @@ it.each(["demo", `dpl-${deploymentId}`])(
   async (alias) => {
     server.use(
       http.get(endpoint, () => {
-        return HttpResponse.json({ allowed: true });
+        return HttpResponse.json({ allowed: true, decision: "allow" });
       }),
       http.get("https://authority.test/api/artifact-og/metadata", () => {
         return HttpResponse.json({
@@ -479,7 +607,7 @@ it.each(["disabled", "unavailable"])(
   async (state) => {
     server.use(
       http.get(endpoint, () => {
-        return HttpResponse.json({ allowed: true });
+        return HttpResponse.json({ allowed: true, decision: "allow" });
       }),
       http.get("https://authority.test/api/artifact-og/metadata", () => {
         return state === "disabled"

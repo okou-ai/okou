@@ -150,17 +150,21 @@ function DirectoryConnectorStatusLine({
         ? t(($) => {
             return $.chat.connectors.directory.askAdmin;
           })
-        : status === "scope-mismatch"
+        : status === "unavailable"
           ? t(($) => {
-              return $.connectors.card.updatePermissions;
+              return $.connectors.accounts.setupUnavailable;
             })
-          : status === "reconnect-required"
+          : status === "scope-mismatch"
             ? t(($) => {
-                return $.connectors.card.connectionExpired;
+                return $.connectors.card.updatePermissions;
               })
-            : t(($) => {
-                return $.connectors.card.connected;
-              })}
+            : status === "reconnect-required"
+              ? t(($) => {
+                  return $.connectors.card.connectionExpired;
+                })
+              : t(($) => {
+                  return $.connectors.card.connected;
+                })}
     </span>
   );
 }
@@ -180,7 +184,11 @@ function DirectoryConnectorCard({
     if (!interactive) {
       return;
     }
-    if (connected || connector.connection !== null) {
+    if (
+      connected ||
+      connector.accountProjectionConflict === true ||
+      (connector.connection !== null && connector.connection !== undefined)
+    ) {
       onOpenDetail?.();
       return;
     }

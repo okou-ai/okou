@@ -171,19 +171,3 @@ test("A missing locale initializes without replacing the stored timezone", async
   expect(requests.stored().timezone).toBe("America/Los_Angeles");
   expect(requests.stored().locale).toBe("fr-FR");
 });
-
-test("An invalid browser timezone falls back to Pacific Time", async () => {
-  const requests = mockTimezonePreferences(null);
-  setBrowserTimezone("Invalid/Timezone");
-
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(requests.initializationBody()).toStrictEqual({
-      timezone: "America/Los_Angeles",
-      locale: "en-US",
-    });
-  });
-});

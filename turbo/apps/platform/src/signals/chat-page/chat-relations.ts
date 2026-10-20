@@ -1,7 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
 import {
   chatRelationsContract,
-  type ChatRelationMessage,
   type ChatCommunication,
   type CreatedChatRelation,
   type RelatedChat,
@@ -16,25 +15,6 @@ import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 
 export interface ChatRelationList<T> {
   readonly data$: Computed<Promise<{ readonly items: readonly T[] }>>;
-}
-
-function createMessages(
-  threadId: string,
-  peerId: string,
-  revision$: Computed<unknown>,
-): ChatRelationList<ChatRelationMessage> {
-  const data$ = computed(async (get) => {
-    get(revision$);
-    return (
-      await accept(
-        get(apiClient$)(chatRelationsContract).messages({
-          params: { id: threadId, peerId },
-        }),
-        [200],
-      )
-    ).body;
-  });
-  return { data$ };
 }
 
 type SourcePart = Extract<UserMessagePart, { type: "source" }>;
@@ -109,65 +89,6 @@ function createResourceChats(
   return { data$ };
 }
 
-function createPeerMessages(threadId: string, revision$: Computed<unknown>) {
-  const selectedPeer$ = state<string | null>(null);
-  const emptyPeers$ = state<{
-    readonly revision: unknown;
-    readonly ids: readonly string[];
-  } | null>(null);
-  const confirmedEmptyPeers$ = computed((get) => {
-    const empty = get(emptyPeers$);
-    return empty && empty.revision === get(revision$) ? empty.ids : [];
-  });
-  const messages$ = computed((get) => {
-    const peerId = get(selectedPeer$);
-    return peerId ? createMessages(threadId, peerId, revision$) : null;
-  });
-  return {
-    selectedPeer$: computed((get) => {
-      return get(selectedPeer$);
-    }),
-    messages$,
-    closeMessages$: command(({ set }) => {
-      set(selectedPeer$, null);
-    }),
-    confirmedEmptyPeers$,
-    togglePeer$: command(
-      async (
-        { get, set },
-        peerId: string,
-        trigger: HTMLElement,
-        signal: AbortSignal,
-      ) => {
-        if (get(selectedPeer$) === peerId) {
-          set(selectedPeer$, null);
-          return;
-        }
-        set(selectedPeer$, peerId);
-        const revision = get(revision$);
-        const list = get(messages$);
-        if (!list) {
-          return;
-        }
-        const page = await get(list.data$);
-        signal.throwIfAborted();
-        if (revision === get(revision$) && page.items.length === 0) {
-          if (document.activeElement === trigger) {
-            // The confirmed-empty toggle disappears; keep keyboard focus on its chat.
-            trigger.parentElement
-              ?.querySelector<HTMLElement>("a")
-              ?.focus({ preventScroll: true });
-          }
-          set(emptyPeers$, {
-            revision,
-            ids: [...get(confirmedEmptyPeers$), peerId],
-          });
-        }
-      },
-    ),
-  };
-}
-
 export function createChatRelationSignals(
   threadId: string,
   {
@@ -238,7 +159,6 @@ export function createChatRelationSignals(
   return {
     origin$,
     chats: createResourceChats(children, communications),
-    ...createPeerMessages(threadId, revision$),
     retry$: command(({ set }) => {
       set(retryRevision$, (value) => {
         return value + 1;

@@ -146,7 +146,18 @@ const inspectInner$ = computed(async (get) => {
   };
 });
 
-const accountSummaries$ = connectorAccountSummaries(organizationAuthContext$);
+const accountSummaryScope$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(queryOf(connectorAccountsContract.summaries));
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    ...(query?.includeScopeMismatch === "true"
+      ? { includeScopeMismatch: true as const }
+      : {}),
+  };
+});
+const accountSummaries$ = connectorAccountSummaries(accountSummaryScope$);
 
 const summariesInner$ = computed(async (get) => {
   const summaries = await get(accountSummaries$);

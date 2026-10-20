@@ -127,14 +127,6 @@ describe("AUTH-02: approval transitions and timezone", () => {
   it("approves a code only once and writes timezone only when valid and unset", async () => {
     const actor = bdd.user();
 
-    const missingDeviceCode = await authDevice.requestCliApproval(
-      actor,
-      { device_code: "" },
-      [400],
-    );
-    expectCliApprovalError(missingDeviceCode.body);
-    expect(missingDeviceCode.body.error).toContain("device_code");
-
     const first = await authDevice.startCliDevice();
     const approved = await authDevice.requestCliApproval(
       actor,

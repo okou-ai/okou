@@ -1,15 +1,17 @@
-import type { McpConnector } from "@okouai/api-contracts/contracts/mcp-connectors";
-
 import { listRunMcpConnectors as listRunMcpConnectorsApi } from "../../lib/api/domains/connectors";
 import { findConnectorBySelector } from "../connector/connector-selector";
 
-export function listRunMcpConnectors(): Promise<McpConnector[]> {
+type RunMcpConnector = Awaited<
+  ReturnType<typeof listRunMcpConnectorsApi>
+>[number];
+
+export function listRunMcpConnectors(): Promise<RunMcpConnector[]> {
   return listRunMcpConnectorsApi();
 }
 
 export async function resolveRunMcpConnector(
   connectorSlug: string,
-): Promise<McpConnector> {
+): Promise<RunMcpConnector> {
   const connectors = await listRunMcpConnectors();
   const connector = findConnectorBySelector(
     connectors,

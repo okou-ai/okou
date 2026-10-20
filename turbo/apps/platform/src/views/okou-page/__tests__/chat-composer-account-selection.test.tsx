@@ -119,16 +119,19 @@ test.each(["pagination", "remote search"] as const)(
           return respond(200, {
             connections: [connections[3]!],
             nextCursor: null,
+            defaultConnection: connections[0]!,
           });
         }
         return query.cursor
           ? respond(200, {
               connections: [connections[1]!, connections[2]!],
               nextCursor: null,
+              defaultConnection: connections[0]!,
             })
           : respond(200, {
               connections: [connections[0]!, connections[1]!],
               nextCursor: "next-accounts",
+              defaultConnection: connections[0]!,
             });
       },
     );

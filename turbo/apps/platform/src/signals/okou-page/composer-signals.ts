@@ -118,7 +118,6 @@ type ComposerSuggestionSignals = Pick<
   | "slashMenuSide$"
   | "measureSlashMenuSide$"
   | "closeSuggestionMenu$"
-  | "setSuggestionMenuRef$"
   | "setSlashHintMenuRef$"
   | "setMentionHintMenuRef$"
   | "clearSlashRange$"
@@ -393,7 +392,6 @@ function composerSuggestionSignals(
     slashMenuSide$: composer.slashMenuSide$,
     measureSlashMenuSide$: composer.measureSlashMenuSide$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
-    setSuggestionMenuRef$: composer.setSuggestionMenuRef$,
     setSlashHintMenuRef$: composer.setSlashHintMenuRef$,
     setMentionHintMenuRef$: composer.setMentionHintMenuRef$,
     clearSlashRange$: composer.clearSlashRange$,

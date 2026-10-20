@@ -2784,24 +2784,6 @@ export function createConnectorBddApi(context: TestContext) {
       );
     },
 
-    async requestCreateCustomConnectorRaw(
-      actor: ApiTestUser | null,
-      body: unknown,
-    ): Promise<Response> {
-      const app = createApp({
-        signal: context.signal,
-        routes: customConnectorsRoutes,
-      });
-      return await app.request("/api/custom-connectors", {
-        method: "POST",
-        headers: {
-          ...authenticate(actor),
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-    },
-
     async createCustomConnector(
       actor: ApiTestUser,
       body: CreateCustomConnectorBody,
@@ -3259,25 +3241,6 @@ export function createConnectorBddApi(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    async requestUpdateAgentCustomConnectorsRaw(
-      actor: ApiTestUser | null,
-      agentId: string,
-      body: unknown,
-    ): Promise<Response> {
-      const app = createApp({
-        signal: context.signal,
-        routes: agentsRoutes,
-      });
-      return await app.request(`/api/agents/${agentId}/custom-connectors`, {
-        method: "PUT",
-        headers: {
-          ...authenticate(actor),
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
     },
 
     async updateAgentCustomConnectors(

@@ -177,13 +177,13 @@ struct PreparedFinalizationParts {
 
 fn completion_missing_root_policy(
     policy: ArtifactEntryMissingRootPolicy,
-) -> complete::RequestCompletionArtifactSnapshotMissingRootPolicy {
+) -> complete::RequestCompletionStorageOutputMissingRootPolicy {
     match policy {
         ArtifactEntryMissingRootPolicy::Fail => {
-            complete::RequestCompletionArtifactSnapshotMissingRootPolicy::Fail
+            complete::RequestCompletionStorageOutputMissingRootPolicy::Fail
         }
         ArtifactEntryMissingRootPolicy::PreserveParentVersion => {
-            complete::RequestCompletionArtifactSnapshotMissingRootPolicy::PreserveParentVersion
+            complete::RequestCompletionStorageOutputMissingRootPolicy::PreserveParentVersion
         }
     }
 }
@@ -201,7 +201,7 @@ async fn prepare_finalization_impl(
     // artifact path performs blocking file preparation before VAS work. Wait
     // for both results even after one fails so a started blocking operation is
     // not detached from the finalization future.
-    let (artifact_snapshots, finalization_history) = tokio::join!(
+    let (storage_outputs, finalization_history) = tokio::join!(
         artifact::snapshot_artifact_entries(
             http,
             inputs.run_id,
@@ -213,7 +213,7 @@ async fn prepare_finalization_impl(
         session_history::prepare_retained_session_history(inputs.session_metadata),
     );
     let finalization_history = finalization_history?;
-    let artifact_snapshots = artifact_snapshots?;
+    let storage_outputs = storage_outputs?;
 
     let cli_agent_type = inputs.framework.agent_type();
     let cli_agent_session_id = inputs.session_metadata.cli_agent_session_id().to_string();
@@ -223,9 +223,8 @@ async fn prepare_finalization_impl(
         cli_agent_session_id,
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
-        // Keep the current wire format until the new API reader is deployed.
-        storage_outputs: None,
-        artifact_snapshots,
+        storage_outputs,
+        artifact_snapshots: None,
         volume_versions_snapshot: None,
     };
     Ok(PreparedFinalizationParts {
@@ -562,7 +561,7 @@ printf late > "$1/memory_summary.md""#,
             .unwrap();
         let snapshots = prepared
             .request()
-            .artifact_snapshots
+            .storage_outputs
             .as_ref()
             .expect("maintenance recovery should preserve its memory mount");
 

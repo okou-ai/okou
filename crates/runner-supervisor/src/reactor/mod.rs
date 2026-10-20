@@ -82,6 +82,7 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod maintenance;
+mod peer_home_claim;
 mod pending_candidate;
 mod prune_idle;
 mod runner_wss;
@@ -1007,6 +1008,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
+        runner_hostname: exec_config.runner_hostname.as_deref(),
         runner_identity: runner.identity,
         group: &runner.group,
         profiles: &projected_heartbeat_profiles,

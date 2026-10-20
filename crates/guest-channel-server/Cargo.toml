@@ -1,6 +1,6 @@
 [package]
 name = "guest-channel-server"
-version = "0.5.3"
+version = "0.5.4"
 edition.workspace = true
 description = "Bounded native peer for the admitted sandbox application channel"
 

@@ -12,8 +12,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { Search, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -914,6 +914,7 @@ interface ConnectorsBrowseModel {
  */
 function buildConnectorsBrowseModel({
   catalogItems,
+  connectedTargets,
   categoryMetadata,
   categoryCounts,
   otherCategoryLabel,
@@ -923,6 +924,7 @@ function buildConnectorsBrowseModel({
   ready,
 }: {
   readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
+  readonly connectedTargets: ReadonlySet<string> | undefined;
   readonly categoryMetadata: ConnectorCategoryLabels;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly otherCategoryLabel: string;
@@ -974,7 +976,7 @@ function buildConnectorsBrowseModel({
         : null,
     layout,
     connected: catalogItems.filter((connector) => {
-      return connector.connected;
+      return connectedTargets?.has(`builtin:${connector.slug}`) === true;
     }),
     // Chips come from the whole catalog, not the filtered view: a chip row
     // that empties itself when you pick a chip cannot be used to pick another.
@@ -1519,6 +1521,10 @@ export function ConnectorsPage() {
   });
   const browse = buildConnectorsBrowseModel({
     catalogItems: filteredConnectors,
+    connectedTargets:
+      connectedTargetsLoadable.state === "hasData"
+        ? connectedTargetsLoadable.data
+        : undefined,
     categoryMetadata,
     categoryCounts: discoveryCategoryCounts(catalogStatusLoadable),
     otherCategoryLabel,

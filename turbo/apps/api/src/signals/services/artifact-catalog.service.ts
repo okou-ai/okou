@@ -15,7 +15,6 @@ import {
   notExists,
   lt,
   lte,
-  min,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -33,7 +32,6 @@ import {
   type ArtifactKind,
   type ArtifactThumbnail,
 } from "@okouai/db/schema/artifact";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   hostedDeployments,
@@ -61,7 +59,6 @@ import {
 import { db$, writeDb$ } from "../external/db";
 import { safeUrlParse, settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
-import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 
 const ARTIFACT_CATALOG_DEFAULT_LIMIT = 60;
 const ARTIFACT_CATALOG_WORKER_BATCH_SIZE = 100;
@@ -229,9 +226,9 @@ function fileThumbnail(row: CatalogFileRow): ArtifactThumbnail | null {
 }
 
 /**
- * The owning Okou user for an artifact. Chat-backed runs are owned by the thread
- * user, so an artifact produced from a Slack or Feishu message is filed under
- * the Okou account behind that thread rather than the external sender.
+ * Resolve the artifact author from the file's persisted thread, so integration
+ * files are filed under the thread's Okou account rather than the external
+ * sender.
  */
 const resolveArtifactOwnership$ = command(
   async (
@@ -264,35 +261,19 @@ const resolveArtifactOwnership$ = command(
       }
     }
 
-    let authorThreadId = row.chatThreadId;
-    let threadId = row.chatThreadId;
-    if (!threadId && row.runId) {
-      const eventThreads = await db
-        .select({ chatThreadId: chatEvents.chatThreadId })
-        .from(chatEvents)
-        .where(runOwnedChatEventForRunCondition({ runId: row.runId }))
-        .groupBy(chatEvents.chatThreadId)
-        .orderBy(asc(min(chatEvents.seqId)))
-        .limit(2);
-      signal.throwIfAborted();
-      // Preserve the previous author resolver's earliest-event semantics, but
-      // do not invent an association when the run has ambiguous thread origins.
-      authorThreadId = eventThreads[0]?.chatThreadId ?? null;
-      threadId = eventThreads.length === 1 ? authorThreadId : null;
-    }
-    if (!authorThreadId) {
+    if (!row.chatThreadId) {
       return { authorUserId: row.userId, chatThreadId: null };
     }
 
     const [thread] = await db
       .select({ userId: chatThreads.userId })
       .from(chatThreads)
-      .where(eq(chatThreads.id, authorThreadId))
+      .where(eq(chatThreads.id, row.chatThreadId))
       .limit(1);
     signal.throwIfAborted();
     return {
       authorUserId: thread?.userId ?? row.userId,
-      chatThreadId: thread ? threadId : null,
+      chatThreadId: thread ? row.chatThreadId : null,
     };
   },
 );
@@ -330,9 +311,9 @@ const readCatalogFileRow$ = command(
 
 /**
  * SQL-only handoff, executed by the command that owns the file mutation.
- * An optional mutation must return id, org_id, user_id, chat_thread_id, run_id
- * and url. Its RETURNING rows supply the handoff's current file values because
- * a sibling CTE cannot see the mutation by rereading the base table.
+ * An optional mutation must return id, org_id, user_id, chat_thread_id and url.
+ * Its RETURNING rows supply the handoff's current file values because a sibling
+ * CTE cannot see the mutation by rereading the base table.
  * `if-mutated` also gates ineligible cleanup on a returned row; the default
  * retains cleanup for a missing file, including an empty mutation result.
  */
@@ -403,7 +384,6 @@ function artifactCatalogFileHandoffSql(
         orgId: sql`mutated_file.org_id`,
         userId: sql`mutated_file.user_id`,
         chatThreadId: sql`mutated_file.chat_thread_id`,
-        runId: sql`mutated_file.run_id`,
         url: sql`mutated_file.url`,
       }
     : runUploadedFiles;
@@ -428,16 +408,7 @@ function artifactCatalogFileHandoffSql(
              COALESCE((
                SELECT ${chatThreads.userId}
                FROM ${chatThreads}
-               WHERE ${eq(
-                 chatThreads.id,
-                 sql`COALESCE(
-                 ${file.chatThreadId},
-                 (SELECT ${chatEvents.chatThreadId}
-                  FROM ${chatEvents}
-                  WHERE ${runOwnedChatEventForRunCondition({ runId: file.runId })}
-                  ORDER BY ${asc(chatEvents.seqId)} LIMIT 1)
-               )`,
-               )}
+               WHERE ${eq(chatThreads.id, file.chatThreadId)}
                LIMIT 1
              ), ${file.userId}) AS author_user_id
       FROM ${source}
@@ -737,80 +708,6 @@ const syncHostedArtifact$ = command(
   },
 );
 
-const runHasHostedProjection$ = command(
-  async (
-    { get },
-    runId: string | null,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const db = get(db$);
-
-    if (!runId) {
-      return false;
-    }
-    const [hosted] = await db
-      .select({ id: runUploadedFiles.id })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.runId, runId),
-          inArray(
-            sql`${runUploadedFiles.metadata} ->> 'artifactKind'`,
-            sql`('hosted-site', 'presentation-html')`,
-          ),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return Boolean(hosted);
-  },
-);
-
-const removeHostedRunShadowArtifacts$ = command(
-  async (
-    { set },
-    args: {
-      readonly row: CatalogFileRow;
-      readonly orgId: string;
-      readonly authorUserId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-
-    if (!args.row.runId) {
-      return;
-    }
-    const shadowRows = await db
-      .select({ id: runUploadedFiles.id })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.runId, args.row.runId),
-          sql`${runUploadedFiles.metadata} ->> 'artifactKind' IS DISTINCT FROM 'hosted-site'`,
-          sql`${runUploadedFiles.metadata} ->> 'artifactKind' IS DISTINCT FROM 'presentation-html'`,
-        ),
-      );
-    signal.throwIfAborted();
-    const shadowIds = shadowRows.map((shadow) => {
-      return shadow.id;
-    });
-    if (shadowIds.length === 0) {
-      return;
-    }
-    await db
-      .delete(artifacts)
-      .where(
-        and(
-          eq(artifacts.orgId, args.orgId),
-          eq(artifacts.authorUserId, args.authorUserId),
-          inArray(artifacts.projectionFileId, shadowIds),
-        ),
-      );
-    signal.throwIfAborted();
-  },
-);
-
 const finishPendingArtifactFile$ = command(
   async (
     { set },
@@ -968,15 +865,6 @@ export const syncArtifactCatalogForFile$ = command(
     );
     const hostedKind = hostedArtifactKind(row);
     if (hostedKind) {
-      await set(
-        removeHostedRunShadowArtifacts$,
-        {
-          row,
-          orgId: row.orgId,
-          authorUserId,
-        },
-        signal,
-      );
       const complete = await set(
         syncHostedArtifact$,
         {
@@ -992,23 +880,6 @@ export const syncArtifactCatalogForFile$ = command(
         signal.throwIfAborted();
         return;
       }
-      await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
-      signal.throwIfAborted();
-      return;
-    }
-
-    if (await set(runHasHostedProjection$, row.runId, signal)) {
-      await db
-        .delete(artifacts)
-        .where(
-          and(
-            eq(artifacts.orgId, row.orgId),
-            eq(artifacts.authorUserId, authorUserId),
-            eq(artifacts.logicalKey, logicalKey),
-            eq(artifacts.projectionFileId, row.id),
-          ),
-        );
-      signal.throwIfAborted();
       await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
       signal.throwIfAborted();
       return;

@@ -45,6 +45,7 @@ struct ThreadProjection: Codable, Sendable {
   let pinOrder: String?
   let archived: Bool?
   let hidden: Bool?
+  let muted: Bool?
   let renamedAt: Date?
   let modelSettings: [String: ThreadModelSetting]?
   let serviceTier: String?
@@ -58,7 +59,8 @@ struct ThreadProjection: Codable, Sendable {
       pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
       modelSettings: modelSettings ?? [:], serviceTier: serviceTier,
       computerUseHostId: computerUseHostId, cloudBrowserEnabled: cloudBrowserEnabled ?? false,
-      isArchived: archived ?? false, isHidden: hidden ?? false, indicator: nil)
+      isArchived: archived ?? false, isHidden: hidden ?? false, indicator: nil,
+      isMuted: muted ?? false)
   }
 }
 
@@ -78,6 +80,7 @@ struct ThreadEvent: Codable, Sendable {
   let selectedModel: String?
   let pinOrder: String?
   let hidden: Bool?
+  let muted: Bool?
   let modelSettings: [String: ThreadModelSetting]?
   let modelSettingsPatch: ThreadModelSettingsPatch?
   let serviceTier: String?
@@ -88,7 +91,7 @@ struct ThreadEvent: Codable, Sendable {
     ChatThreadChange(
       kind: kind, chatThreadId: chatThreadId, agentId: agentId,
       reassignedAgentId: reassignedAgentId, title: title, selectedModel: selectedModel,
-      pinOrder: pinOrder, hidden: hidden, modelSettings: modelSettings,
+      pinOrder: pinOrder, hidden: hidden, muted: muted, modelSettings: modelSettings,
       modelSettingsPatch: modelSettingsPatch,
       serviceTier: serviceTier, computerUseHostId: computerUseHostId,
       cloudBrowserEnabled: cloudBrowserEnabled, createdAt: createdAt)
@@ -103,6 +106,8 @@ struct ThreadMetadata: Decodable, Sendable {
   let selectedModel: String?
   let computerUseHostId: String?
   let cloudBrowserEnabled: Bool
+  let modelSettings: [String: ThreadModelSetting]?
+  let serviceTier: String?
 }
 
 struct ThreadDetail: Decodable, Sendable {
@@ -110,7 +115,13 @@ struct ThreadDetail: Decodable, Sendable {
 }
 
 public struct Indicators: Decodable, Sendable {
+  public let agents: [String: ChatIndicator]
   public let threads: [String: ChatIndicator]
+  public let unreadAt: [String: Date]
+}
+
+struct ThreadReadState: Decodable, Sendable {
+  let lastReadAt: Date?
 }
 
 struct EventCursor: Decodable, Equatable, Sendable {
@@ -168,65 +179,6 @@ public struct SidebarPreferences: Decodable, Sendable {
 
 public struct SidebarFeatureSwitches: Decodable, Sendable {
   public let effectiveSwitches: [String: Bool]
-}
-
-struct ModelPreference: Decodable, Sendable {
-  let selectedModel: String?
-  let serviceTier: String?
-  let modelSettings: [String: ModelSetting]?
-
-  struct ModelSetting: Decodable, Sendable {
-    let effort: String?
-  }
-}
-
-struct AvailableRunModels: Decodable, Sendable {
-  let models: [Model]
-  struct Model: Decodable, Sendable {
-    /// Nil is Auto; any other value is a selectable subscription model.
-    let model: String?
-    let memberEffective: MemberRoute
-    /// Present on personal-subscription rows only.
-    let subscriptionOptions: SubscriptionOptions?
-
-    struct MemberRoute: Decodable, Sendable {
-      let availability: String
-    }
-
-    struct SubscriptionOptions: Decodable, Sendable {
-      let serviceTier: String?
-    }
-
-    /// A member's connected subscription remains selectable when reconnecting.
-    /// Admission still validates the captured personal account before execution.
-    func hasUsableRoute() -> Bool {
-      switch memberEffective.availability {
-      case "available", "reconnect_required", "plan_restricted": return true
-      default: return false
-      }
-    }
-
-    /// Only subscription rows offer a service tier; Fast is `priority`.
-    func supportsServiceTier(_ tier: String) -> Bool {
-      tier == "priority" && subscriptionOptions?.serviceTier == "priority"
-    }
-  }
-}
-
-/// Personal-subscription metadata and replacement identities.
-struct ModelCatalog: Decodable, Sendable {
-  let models: [Model]
-
-  struct Model: Decodable, Sendable {
-    let model: String
-    /// The active model a stored selection of this model resolves to.
-    let resolvedModel: String
-  }
-
-  /// Maps a stored selection to its active model; unknown models are unavailable.
-  func resolve(_ model: String) -> String? {
-    models.first(where: { $0.model == model })?.resolvedModel
-  }
 }
 
 struct CreatedThread: Decodable, Sendable {

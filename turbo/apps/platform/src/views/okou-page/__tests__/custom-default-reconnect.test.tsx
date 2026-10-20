@@ -23,6 +23,7 @@ import {
   customConnectorAccount,
   getConnectorAction,
   mockOAuthCompletions,
+  queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -240,15 +241,18 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   });
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
+  let preflight = false;
   context.mocks.api(
     connectorAccountsContract.connections,
     async ({ query, respond }) => {
       expect(query).toMatchObject(account.target);
-      requested.resolve();
-      if (state === "pending") {
+      if (preflight && !requested.settled()) {
+        requested.resolve();
+      }
+      if (preflight && state === "pending") {
         await release.promise;
       }
-      if (state === "failed") {
+      if (preflight && state === "failed") {
         return respond(403, {
           error: { code: "FORBIDDEN", message: "Account access unavailable" },
         });
@@ -333,12 +337,52 @@ function installOAuthFlow(state: PreflightState, complete = false) {
     mutations,
     grants,
     authWindow,
+    startPreflight: () => {
+      preflight = true;
+    },
   };
 }
 
+async function openOAuthConnection(
+  flow: ReturnType<typeof installOAuthFlow>,
+): Promise<HTMLElement> {
+  const dialog = await openConnection(flow.connector());
+  flow.startPreflight();
+  return dialog;
+}
+
+test("Wait for the initial account inventory before offering a custom connection", async () => {
+  const flow = installOAuthFlow("pending");
+  flow.startPreflight();
+  await setupPage({
+    context,
+    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+  });
+  await flow.requested.promise;
+  expect(queryConnectorAction("button", "Connect")).toBeNull();
+  flow.release.resolve();
+  await screen.findByText("Okou needs Acme Search to proceed");
+  expect(getConnectorAction("button", "Connect")).toBeEnabled();
+  expect(flow.mutations).toStrictEqual([]);
+});
+
+test("Keep a failed initial account inventory from offering a custom connection", async () => {
+  const flow = installOAuthFlow("failed");
+  flow.startPreflight();
+  await setupPage({
+    context,
+    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+  });
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Account access unavailable",
+  );
+  expect(getConnectorAction("button", "Connect")).toBeDisabled();
+  expect(flow.mutations).toStrictEqual([]);
+});
+
 test("Add the first custom OAuth account after confirming zero accounts", async () => {
   const flow = installOAuthFlow("zero");
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await waitFor(() => {
     expect(flow.authWindow.location.href).toBe(
@@ -354,7 +398,7 @@ test("Add the first custom OAuth account after confirming zero accounts", async 
 
 test("Cancel a pending default lookup before starting provider authorization", async () => {
   const flow = installOAuthFlow("pending");
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await flow.requested.promise;
   expect(flow.authWindow.location.href).toBe("about:blank");
@@ -379,7 +423,7 @@ test.each([
   "Keep a $state default lookup from creating another account",
   async ({ state, error }) => {
     const flow = installOAuthFlow(state);
-    const dialog = await openConnection(flow.connector());
+    const dialog = await openOAuthConnection(flow);
     click(getConnectorAction("button", "Continue", dialog));
     await within(dialog).findByText(error);
     expect(flow.authWindow.closed).toBeTruthy();
@@ -390,7 +434,7 @@ test.each([
 
 test("Authorize an expired OAuth default only after ready completion", async () => {
   const flow = installOAuthFlow("expired", true);
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await waitFor(() => {
     expect(flow.authWindow.location.href).toBe(
@@ -414,7 +458,7 @@ test("Authorize an expired OAuth default only after ready completion", async () 
 
 test("Keep an incomplete OAuth reconnect unauthorized", async () => {
   const flow = installOAuthFlow("expired");
-  const dialog = await openConnection(flow.connector());
+  const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
   await waitFor(() => {
     expect(flow.authWindow.location.href).toBe(

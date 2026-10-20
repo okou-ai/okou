@@ -2305,6 +2305,7 @@ mod tests {
     const TEST_HEARTBEAT_GENERATION: u64 = 7;
 
     mod claim_observation;
+    mod finalizing_source;
     mod parallel_claim;
 
     fn api_client_for_url(api_url: String) -> ApiClient {
@@ -2844,6 +2845,7 @@ mod tests {
     fn heartbeat_state_for_test() -> HeartbeatState {
         HeartbeatState {
             runner_id: "runner-heartbeat-test".to_string(),
+            runner_hostname: None,
             group: "vm0/test".to_string(),
             snapshot_generation: 7,
             snapshot_sequence: 42,

@@ -52,3 +52,12 @@ export const TEMPLATE_TILE_USE =
 export const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
 export const TEMPLATE_TILE_NAME =
   "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
+
+/**
+ * The three-column wall the member's own cards share with the built-in
+ * document cards. Under All the two render as consecutive grids, so they take
+ * one class list: two different gaps left their columns 282 and 277px wide and
+ * the right edges 4px apart.
+ */
+export const TEMPLATE_CARD_GRID =
+  "grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3";

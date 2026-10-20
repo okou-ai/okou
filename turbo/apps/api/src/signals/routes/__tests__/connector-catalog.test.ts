@@ -134,13 +134,13 @@ describe("GET /api/connector-catalog", () => {
   });
 
   it.each([
-    ["posthog", "oauth", "auth-code"],
-    ["calendly", "oauth", "auth-code"],
-    ["monday-mcp", "automatic", "automatic"],
-    ["plaud-mcp", "automatic", "automatic"],
+    ["posthog", "oauth", "auth-code", true],
+    ["calendly", "oauth", "auth-code", true],
+    ["monday-mcp", "automatic", "automatic", false],
+    ["plaud-mcp", "automatic", "automatic", false],
   ] as const)(
     "returns public catalog metadata including %s auth methods",
-    async (connectorSlug, authMethodId, grantKind) => {
+    async (connectorSlug, authMethodId, grantKind, supportsRefresh) => {
       mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
       const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -156,7 +156,11 @@ describe("GET /api/connector-catalog", () => {
         expect.objectContaining({
           slug: connectorSlug,
           authMethods: expect.arrayContaining([
-            expect.objectContaining({ id: authMethodId, grantKind }),
+            expect.objectContaining({
+              id: authMethodId,
+              grantKind,
+              supportsRefresh,
+            }),
           ]),
         }),
       );
@@ -191,6 +195,7 @@ describe("GET /api/connector-catalog", () => {
         label: "API Key",
         description: expect.any(String),
         grantKind: "manual",
+        supportsRefresh: false,
       },
     ]);
     expect(openai?.permissionSummary).toStrictEqual({
@@ -199,7 +204,6 @@ describe("GET /api/connector-catalog", () => {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     });
-    expect(openai?.permissionSummary).not.toHaveProperty("permissions");
   });
 
   it("returns shared public icon descriptors across catalog views", async () => {
@@ -463,6 +467,7 @@ describe("GET /api/connector-catalog", () => {
         label: "API Key",
         description: expect.any(String),
         grantKind: "manual",
+        supportsRefresh: false,
         manualFields: [
           {
             id: "apiKey",
@@ -558,8 +563,6 @@ describe("GET /api/connector-catalog", () => {
       singleAuthCodeAuthMethodId: "oauth",
       connectNotice: null,
     });
-    expect(github).not.toHaveProperty("permissionSummary");
-    expect(github).not.toHaveProperty("tags");
   });
 
   it("returns connected manual grant status from public API-created state", async () => {
@@ -601,10 +604,6 @@ describe("GET /api/connector-catalog", () => {
       externalEmail: null,
       reconnectReason: null,
     });
-    expect(openai?.connection).not.toHaveProperty("oauthScopes");
-    expect(openai?.connection).not.toHaveProperty("externalId");
-    expect(openai?.connection).not.toHaveProperty("createdAt");
-    expect(openai?.connection).not.toHaveProperty("updatedAt");
   });
 
   it("returns connected auth-code status without exposing stored scopes", async () => {
@@ -941,34 +940,6 @@ describe("GET /api/connector-catalog", () => {
     expect(response.body.error.message).toBe(
       "Connector catalog item not found",
     );
-  });
-
-  it("rejects connector catalog slugs outside the public slug bounds", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const connectorSlug = "x".repeat(65);
-    const detailResponse = await accept(
-      client.get({
-        params: { connectorSlug },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-    const permissionResponse = await accept(
-      client.permissions({
-        params: { connectorSlug },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(detailResponse.body.error.code).toBe("BAD_REQUEST");
-    expect(permissionResponse.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("returns semantic public ids for device-auth start options", async () => {

@@ -44,18 +44,23 @@ interface ConnectorAccountPage {
   readonly connections: readonly ConnectorAccountConnection[];
   readonly nextCursor: string | null;
   readonly available: boolean;
-  readonly defaultConnection?: ConnectorAccountConnection | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
 }
 
 function emptyConnectorAccountPage(): ConnectorAccountPage {
-  return { connections: [], nextCursor: null, available: false };
+  return {
+    connections: [],
+    nextCursor: null,
+    available: false,
+    defaultConnection: null,
+  };
 }
 
 export interface ConnectorAccountList {
   readonly connections: readonly ConnectorAccountConnection[];
   readonly nextCursor: string | null;
   readonly available: boolean;
-  readonly defaultConnection?: ConnectorAccountConnection | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
   readonly hasMultiplePages?: boolean;
 }
 
@@ -77,9 +82,7 @@ function mergeConnectorAccountPages(
     hasMultiplePages:
       firstPage.hasMultiplePages === true || firstPage.nextCursor !== null,
     available: firstPage.available,
-    ...(firstPage.defaultConnection !== undefined
-      ? { defaultConnection: firstPage.defaultConnection }
-      : {}),
+    defaultConnection: firstPage.defaultConnection,
   };
 }
 
@@ -131,9 +134,24 @@ async function fetchConnectorAccountPage(
     }),
     [200, 404],
   );
-  return result.status === 404
-    ? emptyConnectorAccountPage()
-    : { ...result.body, available: true };
+  if (result.status === 404) {
+    return emptyConnectorAccountPage();
+  }
+  return { ...requireConnectorAccountDefault(result.body), available: true };
+}
+
+/** This App ships after the API that supplies the target's canonical default. */
+export function requireConnectorAccountDefault<
+  T extends { readonly defaultConnection?: ConnectorAccountConnection | null },
+>(
+  page: T,
+): T & { readonly defaultConnection: ConnectorAccountConnection | null } {
+  if (page.defaultConnection === undefined) {
+    throw new Error(
+      "Connector account default information is unavailable. Refresh and try again.",
+    );
+  }
+  return { ...page, defaultConnection: page.defaultConnection };
 }
 
 interface ConnectorAccountQuery {

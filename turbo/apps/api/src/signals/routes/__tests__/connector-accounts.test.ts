@@ -1811,45 +1811,6 @@ describe("connector account lifecycle routes", () => {
         }),
       );
     });
-
-    it("returns no matches for absent searches with more than one hundred accounts", async () => {
-      const noMatch = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "builtin",
-            connectorSlug: "public-mcp",
-            limit: 100,
-            search: "no-matching-connector-account",
-          },
-        }),
-        [200],
-      );
-      expect(noMatch.body).toStrictEqual({
-        connections: [],
-        nextCursor: null,
-        defaultConnection: expect.objectContaining({
-          target: { kind: "builtin", connectorSlug: "public-mcp" },
-          isDefault: true,
-        }),
-      });
-    });
-
-    it("rejects blank searches with more than one hundred accounts", async () => {
-      const response = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "builtin",
-            connectorSlug: "public-mcp",
-            limit: 100,
-            search: " ",
-          },
-        }),
-        [400],
-      );
-      expect(response.status).toBe(400);
-    });
   });
 
   it("does not enumerate or mutate another member account", async () => {

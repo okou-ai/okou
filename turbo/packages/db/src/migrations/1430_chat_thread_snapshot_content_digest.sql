@@ -1,0 +1,1 @@
+ALTER TABLE "chat_thread_snapshots" ADD COLUMN "content_digest" text;

@@ -42,6 +42,7 @@ pub trait AblySideMessageHandler: Send + Sync {
 pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
+    PeerFinalizingPredecessor,
     ReusableSandbox,
     HomeCache,
 }
@@ -51,7 +52,7 @@ impl RunnerPreferenceTier {
         match self {
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
-            Self::FinalizingPredecessor => 3,
+            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 3,
             Self::ExactSandbox => 4,
         }
     }
@@ -90,9 +91,25 @@ pub enum RunnerPreference {
         tier: RunnerPreferenceTier,
         #[serde(rename = "expiresAt")]
         expires_at: DateTime<FixedOffset>,
+        #[serde(
+            rename = "finalizingSourceRunId",
+            default,
+            deserialize_with = "deserialize_finalizing_source_run_id",
+            skip_serializing_if = "Option::is_none"
+        )]
+        finalizing_source_run_id: Option<RunId>,
     },
     #[serde(rename = "noPreference")]
     NoPreference { reason: RunnerNoPreferenceReason },
+}
+
+// Missing is the old API shape; explicit null is not a valid source hint.
+// Remove this optional-field adapter with the old writer shape in #41657.
+fn deserialize_finalizing_source_run_id<'de, D>(deserializer: D) -> Result<Option<RunId>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    RunId::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +117,7 @@ pub struct ActiveRunnerPreference {
     runner_identity: RunnerProcessIdentity,
     tier: RunnerPreferenceTier,
     deadline: Instant,
+    finalizing_source_run_id: Option<RunId>,
 }
 
 impl ActiveRunnerPreference {
@@ -109,6 +127,15 @@ impl ActiveRunnerPreference {
 
     pub fn deadline(&self) -> Instant {
         self.deadline
+    }
+
+    pub fn finalizing_source_run_id(&self) -> Option<RunId> {
+        self.finalizing_source_run_id
+    }
+
+    pub fn with_finalizing_source_run_id(mut self, run_id: RunId) -> Self {
+        self.finalizing_source_run_id = Some(run_id);
+        self
     }
 
     pub fn remaining(&self) -> Duration {
@@ -132,6 +159,7 @@ impl ActiveRunnerPreference {
             runner_identity,
             tier,
             deadline,
+            finalizing_source_run_id: None,
         }
     }
 }
@@ -148,10 +176,12 @@ pub fn parse_runner_preference(
             runner_identity,
             tier,
             expires_at,
+            finalizing_source_run_id,
         } => Some(ActiveRunnerPreference {
             runner_identity: *runner_identity,
             tier: *tier,
             deadline: preference_deadline(*expires_at)?,
+            finalizing_source_run_id: *finalizing_source_run_id,
         }),
         RunnerPreference::NoPreference { .. } => None,
     };
@@ -212,6 +242,7 @@ impl RunnerPreferenceContext {
                 runner_identity,
                 tier,
                 expires_at,
+                finalizing_source_run_id: preference.finalizing_source_run_id,
             },
             active_preference: Some(preference),
             removal_reason: None,
@@ -877,6 +908,8 @@ pub trait JobProvider: Send + Sync {
 mod tests {
     use super::*;
     use crate::test_fixtures::execution_context::execution_context_for_test;
+
+    mod finalizing_source;
 
     fn minimal_context(run_id: RunId) -> ExecutionContext {
         let mut ctx = execution_context_for_test(run_id);

@@ -4,7 +4,6 @@ import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -40,12 +39,6 @@ test("Read connected inventory without fetching the connector directory or old a
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Directory unavailable" },
     });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, { grants: [] });
   });
 
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });

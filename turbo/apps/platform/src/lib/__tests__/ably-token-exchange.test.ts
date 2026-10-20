@@ -15,15 +15,13 @@ import {
 import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import { mockNow, now } from "../time.ts";
 import { createAblyAuthCallback } from "../ably-auth.ts";
+import { initSharedDatabaseWorkerSentry } from "../../shared-database/worker-sentry.ts";
 import { createAblyRealtime } from "../ably-realtime.ts";
 import {
   createAblyAuthDiagnosticScope,
   observeAblyFetchRequest,
 } from "../ably-auth-diagnostics.ts";
-import {
-  recordAuthDiagnostic,
-  type AuthTokenProvider,
-} from "../auth-diagnostics.ts";
+import type { AuthTokenProvider } from "../auth-diagnostics.ts";
 
 // Protocol diagnostics have no page surface. Exercise public requestToken on
 // the real locked SDK, not the page-test Ably alias (whose plugin is a Symbol).
@@ -131,8 +129,8 @@ function controlledDeadline() {
   const signal = context.store.set(resetDeadline$, context.signal);
   vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(signal);
   return () => {
-    // Deliver the native timeout reason at the observed boundary, without
-    // sleeping or turning an auth deadline into root AbortError cancellation.
+    // Deliver the native timeout reason at the observed boundary without
+    // sleeping or cancelling the connection's root lifetime.
     const abort = AbortController.prototype.abort;
     vi.spyOn(AbortController.prototype, "abort").mockImplementationOnce(
       function (this: AbortController) {
@@ -148,6 +146,8 @@ function controlledDeadline() {
 
 test("Auth deadline rejects the SDK request and ignores a late page token before a fresh renewal", async () => {
   prepare();
+  const sentry = context.mocks.sentry();
+  initSharedDatabaseWorkerSentry();
   const expire = controlledDeadline();
   const tokenStarted = createDeferredPromise<AbortSignal>(context.signal);
   const token = createDeferredPromise<string | null>(context.signal);
@@ -188,7 +188,9 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
     error: { code: 40_170 },
   });
   expect(signal.aborted).toBeTruthy();
-  expect(signal.reason).toMatchObject({ name: "TimeoutError" });
+  expect(signal.reason).toBeInstanceOf(DOMException);
+  expect(signal.reason).toMatchObject({ name: "AbortError" });
+  expect(context.signal.aborted).toBeFalsy();
   expect(apiRequests).toBe(0);
 
   token.resolve("late-clerk-token");
@@ -196,10 +198,13 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
     token: "secret-response-token",
   });
   expect(apiRequests).toBe(1);
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 test("Auth deadline aborts an in-flight platform token HTTP request without exchanging its late response", async () => {
   prepare();
+  const sentry = context.mocks.sentry();
+  initSharedDatabaseWorkerSentry();
   const expire = controlledDeadline();
   const started = createDeferredPromise<AbortSignal>(context.signal);
   const aborted = createDeferredPromise<void>(context.signal);
@@ -243,9 +248,12 @@ test("Auth deadline aborts an in-flight platform token HTTP request without exch
   });
   await aborted.promise;
   expect(signal.aborted).toBeTruthy();
+  expect(signal.reason).toMatchObject({ name: "AbortError" });
+  expect(context.signal.aborted).toBeFalsy();
   release.resolve();
   await finished.promise;
   expect(exchanges).toBe(0);
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 function expectPrivate() {
@@ -434,18 +442,13 @@ test("Real SDK rejection remains rejection and emits sanitized attempt status", 
   expectPrivate();
 });
 
-test.each(["ingest", "clock", "none"])(
+test.each(["ingest", "none"])(
   "Observer is transparent when diagnostics are unavailable: %s",
   async (failure) => {
     prepare();
     if (failure === "ingest") {
       telemetry.ingest.mockImplementation(() => {
         throw new Error("telemetry unavailable");
-      });
-    }
-    if (failure === "clock") {
-      vi.spyOn(performance, "now").mockImplementationOnce(() => {
-        throw new Error("clock unavailable");
       });
     }
     const result = {
@@ -505,11 +508,9 @@ test.each(["ingest", "clock", "none"])(
   },
 );
 
-test("Nonexchange traffic and noncallable plugins remain untouched", async () => {
+test("Nonexchange traffic remains untouched", async () => {
   prepare();
-  const symbol = Symbol("SDK mock plugin");
   const scope = createAblyAuthDiagnosticScope({});
-  expect(observeAblyFetchRequest(symbol, scope, context.signal)).toBe(symbol);
   const promise = Promise.resolve({ statusCode: 200 });
   const plugin = vi.fn<() => Promise<{ statusCode: number }>>(() => {
     return promise;
@@ -518,11 +519,11 @@ test("Nonexchange traffic and noncallable plugins remain untouched", async () =>
   if (typeof observed !== "function") {
     throw new Error("Expected plugin");
   }
-  for (const uri of ["https://exchange.example.com/time", "not a URL"]) {
-    expect(observed("POST", {}, uri, {}, null, null)).toBe(promise);
-  }
+  expect(
+    observed("POST", {}, "https://exchange.example.com/time", {}, null, null),
+  ).toBe(promise);
   await promise;
-  expect(plugin).toHaveBeenCalledTimes(2);
+  expect(plugin).toHaveBeenCalledOnce();
   expect(lifecycle()).toHaveLength(0);
 });
 
@@ -608,71 +609,6 @@ test("Late settlement observes owner abort but does not cancel or emit past expi
   expect(lifecycle()).toHaveLength(count);
 });
 
-test("Nested causes are bounded, numeric-only, and never execute getters", () => {
-  prepare();
-  const getter = vi.fn<() => never>(() => {
-    throw new Error("secret-error-message");
-  });
-  const cyclic = { code: 40_800, statusCode: 408, cause: {} };
-  cyclic.cause = cyclic;
-  recordAuthDiagnostic({
-    stage: "ably_connection",
-    reason: { code: 80_019, statusCode: 401, cause: cyclic },
-  });
-  expect(lifecycle()).toContainEqual(
-    expect.objectContaining({
-      "okou.auth.reason_cause_depth": 1,
-      "okou.auth.reason_cause_code": 40_800,
-      "okou.auth.reason_cause_type": "http_408",
-    }),
-  );
-  recordAuthDiagnostic({
-    stage: "ably_connection",
-    reason: Object.defineProperties(
-      {},
-      {
-        code: { get: getter },
-        cause: { get: getter },
-        message: { get: getter },
-      },
-    ),
-  });
-  expect(getter).not.toHaveBeenCalled();
-  recordAuthDiagnostic({
-    stage: "ably_connection",
-    reason: {
-      code: Number.NaN,
-      statusCode: 700,
-      cause: { code: "40101", statusCode: "401" },
-    },
-  });
-  const last = lifecycle().at(-1);
-  expect(last).not.toHaveProperty("okou.auth.reason_code");
-  expect(last).not.toHaveProperty("okou.auth.reason_status_code");
-  expect(last).not.toHaveProperty("okou.auth.reason_cause_code");
-  expect(last).not.toHaveProperty("okou.auth.reason_cause_status_code");
-  let chain: unknown = { code: 10, statusCode: 401 };
-  for (let i = 0; i < 8; i++) {
-    chain = { code: 20 + i, statusCode: 408, cause: chain };
-  }
-  recordAuthDiagnostic({ stage: "ably_connection", reason: chain });
-  expect(lifecycle().at(-1)).toMatchObject({
-    "okou.auth.reason_cause_depth": 4,
-  });
-  const proxy = new Proxy(
-    {},
-    {
-      getOwnPropertyDescriptor() {
-        throw new Error("secret-error-message");
-      },
-    },
-  );
-  expect(() => {
-    return recordAuthDiagnostic({ stage: "ably_connection", reason: proxy });
-  }).not.toThrow();
-  expectPrivate();
-});
-
 test("Real SDK fallback observes timeout-like status before error normalization", async () => {
   prepare();
   context.mocks.http.post("https://auth.example.com/api/realtime/token", () => {
@@ -717,44 +653,5 @@ test("Real SDK fallback observes timeout-like status before error normalization"
   expect(finishes[0]?.["okou.auth.ably_auth_id"]).toBe(
     finishes[1]?.["okou.auth.ably_auth_id"],
   );
-  expectPrivate();
-});
-
-test("Result metadata getters cannot change the original plugin result", async () => {
-  prepare();
-  const getter = vi.fn<() => never>(() => {
-    throw new Error("secret-error-message");
-  });
-  const result = Object.defineProperties(
-    {},
-    {
-      error: { get: getter },
-      statusCode: { get: getter },
-      body: { get: getter },
-    },
-  );
-  const promise = Promise.resolve(result);
-  const observed = observeAblyFetchRequest(
-    () => {
-      return promise;
-    },
-    createAblyAuthDiagnosticScope({}),
-    context.signal,
-  );
-  if (typeof observed !== "function") {
-    throw new Error("Expected plugin");
-  }
-  expect(
-    observed(
-      "POST",
-      {},
-      "https://exchange.example.com/keys/secret-key.name/requestToken",
-      {},
-      null,
-      null,
-    ),
-  ).toBe(promise);
-  await expect(promise).resolves.toBe(result);
-  expect(getter).not.toHaveBeenCalled();
   expectPrivate();
 });

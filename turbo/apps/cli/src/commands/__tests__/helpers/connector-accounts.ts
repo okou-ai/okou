@@ -25,6 +25,7 @@ export function connectorAccount(
     externalUsername: "member",
     externalEmail: null,
     oauthScopes: [],
+    ...(target.kind === "builtin" ? { scopeMismatch: false } : {}),
     connectionStatus: "connected",
     setupStatus: "complete",
     missingRequiredFields: [],
@@ -103,6 +104,7 @@ export function catalogAccountSummaries(
               ? "reconnect-required"
               : "connected",
           reconnectReason: connector.connection.reconnectReason,
+          scopeMismatch: connector.scopeMismatch,
           tokenExpiresAt: connector.tokenExpiresAt,
         }),
       ]),

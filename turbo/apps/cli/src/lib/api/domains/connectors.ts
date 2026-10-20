@@ -1,4 +1,9 @@
-import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import {
+  initClient,
+  initContract,
+} from "@okouai/api-contracts/contracts/trpc-contract";
+import { connectorReaderRouteSpec } from "@okouai/api-contracts/contracts/connector-reader-contract";
+import { z } from "zod";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -20,12 +25,14 @@ import {
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
-  connectorCatalogContract,
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogPermissionDetail,
-  type PublicConnectorCatalogStatusItem,
-  type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+  type PublicConnectorCatalogStatusReaderResponse as PublicConnectorCatalogStatusResponse,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import {
   CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
   CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
@@ -37,20 +44,22 @@ import {
   type ConnectorCheckTargetAwareDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
 import {
-  customConnectorByIdContract,
-  customConnectorsContract,
-  customConnectorListResponseSchema,
   customConnectorPermissionBundleSchema,
-  customConnectorResponseSchema,
   type CreateCustomConnectorBody,
   type CustomConnectorPermissionBundleResponse,
-  type CustomConnectorResponse,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
+  customConnectorByIdReaderContract as customConnectorByIdContract,
+  customConnectorsReaderContract as customConnectorsContract,
+  customConnectorReaderListResponseSchema as customConnectorListResponseSchema,
+  customConnectorReaderResponseSchema as customConnectorResponseSchema,
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
+import {
   mcpConnectorOAuthReauthorizationResponseSchema,
   type McpConnectorOAuthReauthorizationResponse,
-  mcpConnectorListResponseSchema,
+  mcpConnectorSchema,
   mcpConnectorsContract,
   type McpConnector,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
@@ -96,7 +105,10 @@ export async function listConnectorAccountSummaries(): Promise<
     ...config,
     validateResponse: true,
   });
-  const result = await client.summaries({ headers: {} });
+  const result = await client.summaries({
+    headers: {},
+    query: { includeScopeMismatch: "true" },
+  });
   if (result.status !== 200) {
     handleError(result, "Failed to read connector account summaries");
   }
@@ -405,13 +417,44 @@ export async function listCustomConnectors(): Promise<
   handleManagementError(result, "Failed to list custom connectors");
 }
 
-export async function listRunMcpConnectors(): Promise<McpConnector[]> {
+// Older serving APIs supply only connected. #41699 removes this bridge
+// after runtimeAvailable's API/CLI/Runner release and old-owner drain.
+const runMcpConnectorReaderSchema = mcpConnectorSchema
+  .partial({ connected: true })
+  .transform((connector, context) => {
+    const runtimeAvailable = connector.runtimeAvailable ?? connector.connected;
+    if (runtimeAvailable === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Run MCP runtime availability is unavailable",
+      });
+      return z.NEVER;
+    }
+    return { ...connector, runtimeAvailable, connected: runtimeAvailable };
+  });
+const runMcpConnectorListReaderSchema = z.object({
+  connectors: z.array(runMcpConnectorReaderSchema),
+});
+const mcpConnectorsReaderContract = initContract().router({
+  ...mcpConnectorsContract,
+  list: {
+    ...connectorReaderRouteSpec(mcpConnectorsContract.list),
+    responses: {
+      ...mcpConnectorsContract.list.responses,
+      200: runMcpConnectorListReaderSchema,
+    },
+  },
+});
+
+export async function listRunMcpConnectors(): Promise<
+  (McpConnector & { readonly runtimeAvailable: boolean })[]
+> {
   const config = await getClientConfig();
-  const client = initClient(mcpConnectorsContract, config);
+  const client = initClient(mcpConnectorsReaderContract, config);
 
   const result = await client.list({ headers: {} });
   if (result.status === 200) {
-    return mcpConnectorListResponseSchema.parse(result.body).connectors;
+    return runMcpConnectorListReaderSchema.parse(result.body).connectors;
   }
 
   handleError(result, "Failed to list MCP connectors for this run");

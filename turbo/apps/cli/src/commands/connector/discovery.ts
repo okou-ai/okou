@@ -3,7 +3,7 @@ import type {
   ConnectorAccountSummary,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   ConnectorCatalogItem,
   ConnectorCatalogStatus,

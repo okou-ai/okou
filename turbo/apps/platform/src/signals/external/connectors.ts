@@ -1,11 +1,16 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogDiscoveryResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse,
+  type PublicConnectorCatalogStatusReaderItem,
+  readBuiltinConnectorAccountFacts,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { PublicConnectorCatalogConnectionStatus } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { reloadUserConnectedConnectors$ } from "../okou-page/connector-overview.ts";
+import { builtinConnectorAccountProjectionVersion$ } from "../okou-page/connector-account-projection.ts";
 import { apiClient$ } from "../api-client";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "./feature-switch.ts";
@@ -21,7 +26,8 @@ export function withConnectorCompletion<
   return {
     ...item,
     connected:
-      item.connected &&
+      item.connected === true &&
+      item.connectionStatus !== undefined &&
       item.connectionStatus !== "reconnect-required" &&
       item.setupStatus === "complete",
   };
@@ -33,8 +39,103 @@ export function withConnectorCompletion<
  */
 const internalReloadBuiltinConnectors$ = state(0);
 
+function memberAccountConnectionStatus(
+  account: ConnectorAccountConnection | null | undefined,
+  scopeMismatch: boolean | undefined,
+): PublicConnectorCatalogConnectionStatus | undefined {
+  if (!account) {
+    return "not-connected";
+  }
+  if (account.connectionStatus === "reconnect-required") {
+    return "reconnect-required";
+  }
+  if (scopeMismatch === undefined) {
+    return undefined;
+  }
+  return scopeMismatch ? "scope-mismatch" : "connected";
+}
+
+// Keep cross-request snapshot conflicts as management-only context. #41699
+// removes this old-projection comparison after catalog/client exclusion.
+function memberAccountProjectionConflict(
+  item: PlatformConnectorCatalogConnectItem,
+  account: ConnectorAccountConnection | null | undefined,
+) {
+  if (item.accountProjectionConflict === true) {
+    return true;
+  }
+  if (item.connection === undefined) {
+    return false;
+  }
+  if ((item.connection?.id ?? null) !== (account?.id ?? null)) {
+    return true;
+  }
+  if (item.connection === null) {
+    return false;
+  }
+  return (
+    item.connection.authMethod !== account?.authMethod ||
+    (item.connectionStatus !== undefined &&
+      (item.connectionStatus === "reconnect-required") !==
+        (account?.connectionStatus === "reconnect-required"))
+  );
+}
+
+/** Project a known canonical default for UI; unknown setup never claims readiness. */
+export function withMemberAccount<
+  T extends PlatformConnectorCatalogConnectItem,
+>(item: T, account: ConnectorAccountConnection | null | undefined) {
+  const facts = account
+    ? readBuiltinConnectorAccountFacts(item, account)
+    : undefined;
+  const connectionStatus = memberAccountConnectionStatus(
+    account,
+    facts?.scopeMismatch,
+  );
+  const accountProjectionConflict = memberAccountProjectionConflict(
+    item,
+    account,
+  );
+  const {
+    connected: _connected,
+    connection: _connection,
+    connectionStatus: _connectionStatus,
+    setupStatus: _setupStatus,
+    scopeMismatch: _scopeMismatch,
+    authMethodSupportsRefresh: _authMethodSupportsRefresh,
+    tokenExpiresAt: _tokenExpiresAt,
+    ...metadata
+  } = item;
+  return {
+    ...metadata,
+    accountProjectionConflict,
+    connected:
+      account?.connectionStatus === "connected" &&
+      account.setupStatus === "complete" &&
+      connectionStatus !== undefined &&
+      (account.tokenExpiresAt === null || facts?.supportsRefresh !== undefined),
+    connectionStatus,
+    setupStatus: account ? account.setupStatus : null,
+    scopeMismatch: account ? facts?.scopeMismatch : false,
+    authMethodSupportsRefresh: account ? facts?.supportsRefresh : false,
+    tokenExpiresAt: account?.tokenExpiresAt ?? null,
+    connection: account
+      ? {
+          id: account.id,
+          authMethod: account.authMethod,
+          externalUsername: account.externalUsername,
+          externalEmail: account.externalEmail,
+          reconnectReason: account.reconnectReason,
+        }
+      : null,
+  };
+}
+
 export const builtinConnectorsReloadVersion$ = computed((get) => {
-  return get(internalReloadBuiltinConnectors$);
+  return (
+    get(internalReloadBuiltinConnectors$) +
+    get(builtinConnectorAccountProjectionVersion$)
+  );
 });
 
 /**
@@ -194,7 +295,7 @@ export const loadConnectorCatalogItem$ = command(
     { get },
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
-  ): Promise<PlatformConnectorCatalogStatusItem | null> => {
+  ): Promise<PublicConnectorCatalogStatusReaderItem | null> => {
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
     const result = await accept(

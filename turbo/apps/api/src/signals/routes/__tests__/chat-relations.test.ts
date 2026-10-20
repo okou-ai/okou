@@ -299,7 +299,18 @@ describe("chat relationships", () => {
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
-  it("returns complete communication lists and message histories", async () => {
+  it.each([
+    {
+      name: "returns all six communicating chats",
+      peerCount: 6,
+      firstPeerMessageCount: 1,
+    },
+    {
+      name: "returns all 21 messages in order",
+      peerCount: 1,
+      firstPeerMessageCount: 21,
+    },
+  ])("$name", async ({ peerCount, firstPeerMessageCount }) => {
     const {
       actor,
       agentId,
@@ -310,11 +321,11 @@ describe("chat relationships", () => {
     } = await sourceFixture({ isolatePg: true });
     const peerIds: string[] = [];
     const messageIds: string[] = [];
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < peerCount; index++) {
       const peer = await chat.createThread(actor, { agentId });
       peerIds.push(peer.id);
-      const messageCount = index === 0 ? 21 : 1;
-      for (let messageIndex = 0; messageIndex < messageCount; messageIndex++) {
+      const messageCount = index === 0 ? firstPeerMessageCount : 1;
+      const sendMessage = async (messageIndex: number) => {
         const clientEventId = randomUUID();
         await requestSendEventWithBearer(
           token,
@@ -327,9 +338,25 @@ describe("chat relationships", () => {
           },
           [201],
         );
-        if (index === 0) {
-          messageIds.push(clientEventId);
-        }
+        return clientEventId;
+      };
+      const sentMessageIds: string[] = [];
+      const batchSize = 4;
+      for (let offset = 0; offset < messageCount - 1; offset += batchSize) {
+        const batch = await Promise.all(
+          Array.from(
+            { length: Math.min(batchSize, messageCount - 1 - offset) },
+            (_, messageIndex) => {
+              return sendMessage(offset + messageIndex);
+            },
+          ),
+        );
+        sentMessageIds.push(...batch);
+      }
+      // Keep a later accepted message so timestamp ordering remains meaningful.
+      sentMessageIds.push(await sendMessage(messageCount - 1));
+      if (index === 0) {
+        messageIds.push(...sentMessageIds);
       }
     }
     const communications = await accept(
@@ -376,6 +403,15 @@ describe("chat relationships", () => {
         .sort()
         .reverse(),
     );
+    if (firstPeerMessageCount > 1) {
+      expect(
+        new Set(
+          messages.body.items.map((item) => {
+            return item.createdAt;
+          }),
+        ).size,
+      ).toBeGreaterThan(1);
+    }
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 

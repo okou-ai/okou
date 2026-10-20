@@ -2266,6 +2266,15 @@ function validateDecodedHostPercentCharacters(
         ),
       );
     }
+    if (char === "%") {
+      throw new Error(
+        errMsg(
+          base,
+          serviceName,
+          "host must not contain percent-encoded percent",
+        ),
+      );
+    }
     if (char === "{" || char === "}") {
       throw new Error(
         errMsg(

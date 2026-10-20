@@ -1,6 +1,8 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -458,3 +460,67 @@ test.each([true, false])(
     expect(fixture.oauthConnectionRequests).toStrictEqual([]);
   },
 );
+
+test("Saved builtin targets remain manageable when definitions omit account projections", async () => {
+  const builtinTarget = { kind: "builtin", connectorSlug: "github" } as const;
+  const builtin = builtinConnector({ slug: "github", label: "GitHub" });
+  installComposerConnectorFixture({
+    catalog: [builtin],
+    accountSummaries: [
+      accountSummary(builtinTarget, savedAccounts(builtinTarget)),
+    ],
+  });
+  const {
+    connected: _builtinConnected,
+    connection: _connection,
+    connectionStatus: _connectionStatus,
+    scopeMismatch: _scopeMismatch,
+    authMethodSupportsRefresh: _authMethodSupportsRefresh,
+    tokenExpiresAt: _tokenExpiresAt,
+    ...builtinDefinition
+  } = builtin;
+  context.mocks.api(connectorCatalogReaderContract.discovery, ({ respond }) => {
+    return respond(200, {
+      connectors: [builtinDefinition],
+      totalConnectorCount: 1,
+    });
+  });
+  const directory = await openDirectory();
+  await fill(
+    within(directory).getByPlaceholderText("Find connectors..."),
+    "github",
+  );
+  expect(within(directory).queryByText("Needs attention")).toBeNull();
+  click(await findFastControl("button", "Open GitHub details", directory));
+  await expect(
+    findFastControl("link", "Manage GitHub accounts", directory),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A custom definition without account projections does not claim a reconnect is required", async () => {
+  const target = {
+    kind: "custom",
+    customConnectorId: ACME_CONNECTOR_ID,
+  } as const;
+  const connector = acme(true);
+  installComposerConnectorFixture({
+    customConnectors: [connector],
+    accountSummaries: [accountSummary(target, savedAccounts(target))],
+  });
+  const {
+    connected: _connected,
+    connectedAccountId: _connectedAccountId,
+    connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+    missingRequiredFields: _missingRequiredFields,
+    configuredFieldKeys: _configuredFieldKeys,
+    ...definition
+  } = connector;
+  context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+    return respond(200, { connectors: [definition] });
+  });
+  const directory = await openDirectory();
+  await openCustom(directory);
+  await findFastControl("button", "Connect Acme Search", directory);
+  expect(within(directory).queryByText("Needs attention")).toBeNull();
+  expect(within(directory).queryByText("Reconnect required")).toBeNull();
+});

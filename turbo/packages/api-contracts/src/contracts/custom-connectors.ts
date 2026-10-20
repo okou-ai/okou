@@ -233,7 +233,7 @@ const customConnectorAutomaticResponseSchema = z
     return { authMode: value.authMode };
   });
 
-const customConnectorHttpAuthResponseSchema = z.union([
+export const customConnectorHttpAuthResponseSchema = z.union([
   customConnectorNoAuthResponseSchema,
   customConnectorManualAuthResponseSchema,
   customConnectorCustomOAuthResponseSchema,
@@ -260,14 +260,15 @@ export const customConnectorMcpResponseCoreSchema =
     prefixTemplates: z.tuple([]),
     permissionBundleRef: z.null().optional(),
   });
+export const customConnectorMcpAuthResponseSchema = z.union([
+  customConnectorNoAuthResponseSchema,
+  customConnectorManualAuthResponseSchema,
+  customConnectorCustomOAuthResponseSchema,
+  customConnectorAutomaticResponseSchema,
+]);
 export const customConnectorMcpResponseSchema = z.intersection(
   customConnectorMcpResponseCoreSchema,
-  z.union([
-    customConnectorNoAuthResponseSchema,
-    customConnectorManualAuthResponseSchema,
-    customConnectorCustomOAuthResponseSchema,
-    customConnectorAutomaticResponseSchema,
-  ]),
+  customConnectorMcpAuthResponseSchema,
 );
 export type CustomConnectorMcpResponse = z.infer<
   typeof customConnectorMcpResponseSchema

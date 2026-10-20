@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.7.0](https://github.com/okou-ai/okou/compare/host-worker-v1.6.65...host-worker-v1.7.0) (2026-10-20)
+
+
+### Features
+
+* **host:** enforce hosted site visibility in the delivery worker ([#41707](https://github.com/okou-ai/okou/issues/41707)) ([15308b6](https://github.com/okou-ai/okou/commit/15308b61db8a86f607f1400363c24449a3d233c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/core bumped to 8.773.0
+
+## [1.6.65](https://github.com/okou-ai/okou/compare/host-worker-v1.6.64...host-worker-v1.6.65) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.578.0
+    * @okouai/core bumped to 8.772.0
+
 ## [1.6.64](https://github.com/okou-ai/okou/compare/host-worker-v1.6.63...host-worker-v1.6.64) (2026-10-19)
 
 

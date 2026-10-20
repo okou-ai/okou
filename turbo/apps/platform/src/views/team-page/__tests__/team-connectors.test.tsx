@@ -12,6 +12,8 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { customConnectorAccount } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { expect, test } from "vitest";
 
@@ -122,6 +124,29 @@ function mockConnectorSurface(
       connectors: [...(options.customConnectors ?? [])],
     });
   });
+  testContextValue.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      const connector = (options.customConnectors ?? []).find((candidate) => {
+        return (
+          query.kind === "custom" && candidate.id === query.customConnectorId
+        );
+      });
+      const account = connector?.connected
+        ? customConnectorAccount(connector.id, {
+            ...(connector.connectedAccountId
+              ? { id: connector.connectedAccountId }
+              : {}),
+            configuredFieldKeys: connector.configuredFieldKeys,
+          })
+        : null;
+      return respond(200, {
+        connections: account ? [account] : [],
+        defaultConnection: account,
+        nextCursor: null,
+      });
+    },
+  );
   testContextValue.mocks.api(
     userPermissionGrantsContract.list,
     ({ respond }) => {
@@ -555,6 +580,69 @@ test("An agent can grant access through a healthy configured default", async () 
   ]);
 });
 
+test.each(["connected", "reconnect-required", "incomplete"] as const)(
+  "Check a canonical custom default only when granting access (%s)",
+  async (status) => {
+    const connector = acmeConnectorFixture();
+    const saves: unknown[] = [];
+    mockConnectorSurface(context, {
+      customConnectors: [connector],
+      onCustomSave: (args) => {
+        saves.push(args);
+      },
+    });
+    const {
+      connected: _connected,
+      connectedAccountId: _connectedAccountId,
+      connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+      missingRequiredFields: _missingRequiredFields,
+      configuredFieldKeys: _configuredFieldKeys,
+      ...definition
+    } = connector;
+    context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+      return respond(200, { connectors: [definition] });
+    });
+    let accountReads = 0;
+    context.mocks.api(
+      connectorAccountsContract.connections,
+      ({ query, respond }) => {
+        accountReads += 1;
+        expect(query).toMatchObject({
+          kind: "custom",
+          customConnectorId: connector.id,
+        });
+        const account = customConnectorAccount(connector.id, {
+          connectionStatus:
+            status === "reconnect-required" ? status : "connected",
+          setupStatus: status === "incomplete" ? status : "complete",
+        });
+        return respond(200, {
+          connections: [account],
+          defaultConnection: account,
+          nextCursor: null,
+        });
+      },
+    );
+    await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+    await screen.findByText("Acme Search");
+    expect(screen.queryByText(/Reconnect required/)).toBeNull();
+    expect(accountReads).toBe(0);
+    const grant = connectorAccessSwitch("Grant Acme Search access");
+    expect(grant).not.toHaveAttribute("aria-disabled", "true");
+    click(grant);
+    await screen.findByText(
+      status === "connected"
+        ? "Custom connectors saved"
+        : /fully configured default account/,
+    );
+    expect(saves).toHaveLength(status === "connected" ? 1 : 0);
+    expect(screen.queryAllByRole("alert")).toHaveLength(
+      status === "connected" ? 0 : 1,
+    );
+    expect(accountReads).toBe(1);
+  },
+);
+
 test("An open permission drawer preserves edits when the server rejects a changed permission", async () => {
   const connector = acmeConnectorFixture({
     permissionBundleRef: "builtin:acme-search@1",
@@ -627,6 +715,98 @@ test("An open permission drawer preserves edits when the server rejects a change
     connectorAccessSwitch("Revoke Acme Search access"),
   ).not.toHaveAttribute("aria-disabled", "true");
 });
+
+test.each(["reduce", "expand"] as const)(
+  "An expired custom default permits reductions but checks access expansion (%s)",
+  async (change) => {
+    const connector = acmeConnectorFixture({
+      connected: false,
+      permissionBundleRef: "builtin:acme-search@1",
+    });
+    const saves: unknown[] = [];
+    mockConnectorSurface(context, {
+      customConnectors: [connector],
+      connectedCustomConnectorIds: [connector.id],
+      initialCustomByAgent: {
+        [RESEARCH_AGENT_ID]: [
+          {
+            customConnectorId: connector.id,
+            permissionNames:
+              change === "reduce"
+                ? ["search:run", "report:read"]
+                : ["report:read"],
+          },
+        ],
+      },
+      onCustomSave: (args) => {
+        saves.push(args);
+      },
+    });
+    let accountReads = 0;
+    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+      accountReads += 1;
+      const account = customConnectorAccount(connector.id, {
+        connectionStatus: "reconnect-required",
+      });
+      return respond(200, {
+        connections: [account],
+        defaultConnection: account,
+        nextCursor: null,
+      });
+    });
+    context.mocks.api(
+      customConnectorByIdContract.permissions,
+      ({ respond }) => {
+        return respond(200, {
+          ref: "builtin:acme-search@1",
+          permissions: [
+            { name: "search:run", description: "Run a search" },
+            { name: "report:read", description: "Read reports" },
+          ],
+          defaultPolicies: { "search:run": "deny", "report:read": "deny" },
+        });
+      },
+    );
+    await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+    await screen.findByText("Acme Search");
+    click(await screen.findByLabelText("Manage Acme Search permissions"));
+    await screen.findByRole("heading", { name: /Acme Search permissions/i });
+    const permission = await screen.findByText("search:run");
+    const row = permission.closest("div.flex.items-center.gap-3");
+    expect(row).not.toBeNull();
+    click(
+      within(row as HTMLElement).getByText(
+        change === "reduce" ? "Deny" : "Allow",
+      ),
+    );
+    click(exactButton("Apply"));
+    await screen.findByText(
+      change === "reduce"
+        ? "Permissions updated"
+        : /fully configured default account/,
+    );
+    expect(saves).toStrictEqual(
+      change === "reduce"
+        ? [
+            {
+              agentId: RESEARCH_AGENT_ID,
+              grants: [
+                {
+                  customConnectorId: connector.id,
+                  permissionNames: ["report:read"],
+                },
+              ],
+              operation: "add",
+            },
+          ]
+        : [],
+    );
+    expect(accountReads).toBe(change === "reduce" ? 0 : 1);
+    expect(
+      screen.queryAllByRole("heading", { name: /Acme Search permissions/i }),
+    ).toHaveLength(change === "reduce" ? 0 : 1);
+  },
+);
 
 test("An unavailable custom default keeps its existing agent grant revocable", async () => {
   const connector = acmeConnectorFixture({

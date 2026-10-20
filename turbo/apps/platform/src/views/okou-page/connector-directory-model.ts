@@ -1,8 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
@@ -80,7 +78,7 @@ function customConnectorGroups(
     return (
       !isIntegrationManagedCustomConnector(connector) &&
       connectedTargets?.has(`custom:${connector.id}`) === true &&
-      !connector.connected
+      connector.connected === false
     );
   });
   const attentionIds = new Set(

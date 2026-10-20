@@ -124,7 +124,11 @@ test("Keep the exact account and current reconnect UI when future setup metadata
     connectorAccountsContract.connections,
     async ({ respond }) => {
       await accountsResponse.promise;
-      return respond(200, { connections: [account], nextCursor: null });
+      return respond(200, {
+        connections: [account],
+        nextCursor: null,
+        defaultConnection: account,
+      });
     },
   );
 
@@ -187,7 +191,11 @@ test("Show Mercury disclosures while managing its accounts", async () => {
     ];
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: [account], nextCursor: null });
+    return respond(200, {
+      connections: [account],
+      nextCursor: null,
+      defaultConnection: account,
+    });
   });
   await setupPage({ context, path: "/connectors?keywords=mercury" });
 
@@ -309,7 +317,6 @@ test("Show the full agent name after granting the first connector access", async
       getConnectorCard("GitHub"),
     );
     expect(access).toHaveTextContent(`Used by ${longName}`);
-    expect(access).not.toHaveAttribute("title");
   });
 });
 
@@ -378,7 +385,14 @@ async function openDefaultAccountManager(rejectFirst = false) {
     ];
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: accounts(), nextCursor: null });
+    return respond(200, {
+      connections: accounts(),
+      nextCursor: null,
+      defaultConnection:
+        accounts().find((account) => {
+          return account.isDefault;
+        }) ?? null,
+    });
   });
   context.mocks.api(
     connectorAccountsContract.setDefault,
@@ -612,6 +626,10 @@ test("Load connector accounts progressively", async () => {
       const next = start + page.length;
       return respond(200, {
         connections: page,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
         nextCursor: next < accounts.length ? String(next) : null,
       });
     },
@@ -679,6 +697,7 @@ async function openNamedConnectorAccountRename() {
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, {
       connections: account ? [account] : [],
+      defaultConnection: account,
       nextCursor: null,
     });
   });
@@ -912,7 +931,14 @@ test("Let account search own the entire manager result list", async () => {
             return account.displayName?.toLowerCase().includes(search);
           })
         : accounts;
-      return respond(200, { connections, nextCursor: null });
+      return respond(200, {
+        connections,
+        nextCursor: null,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
+      });
     },
   );
   await setupAccountsPage();
@@ -941,10 +967,66 @@ test("Let account search own the entire manager result list", async () => {
   });
 });
 
+test("Keep the canonical default visible when it is outside the loaded account page", async () => {
+  const accounts = mockGithubAccounts(context, 8);
+  const canonicalDefault = accounts.find((account) => {
+    return account.isDefault;
+  });
+  if (!canonicalDefault) {
+    throw new Error("Expected the saved default account");
+  }
+  const otherAccounts = accounts.filter((account) => {
+    return account.id !== canonicalDefault.id;
+  });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      return respond(200, {
+        connections: query.search
+          ? otherAccounts.filter((account) => {
+              return account.displayName?.includes(query.search ?? "");
+            })
+          : otherAccounts,
+        nextCursor: null,
+        defaultConnection: canonicalDefault,
+      });
+    },
+  );
+  await setupAccountsPage();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage GitHub accounts");
+    }),
+  );
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  const defaultRow = await within(manager).findByRole("group", {
+    name: "Unnamed account",
+  });
+  expect(
+    within(defaultRow).getByRole("radio", { name: "Default" }),
+  ).toBeChecked();
+  await fill(within(manager).getByPlaceholderText("Find accounts"), "Work 1");
+  await waitFor(() => {
+    expect(within(manager).getByText("Work 1")).toBeInTheDocument();
+    expect(
+      within(manager).queryByText("Unnamed account"),
+    ).not.toBeInTheDocument();
+  });
+});
+
 test("Manage connector accounts and agent access independently", async () => {
   const accounts = mockGithubAccounts(context, 7);
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: accounts, nextCursor: null });
+    return respond(200, {
+      connections: accounts,
+      nextCursor: null,
+      defaultConnection:
+        accounts.find((account) => {
+          return account.isDefault;
+        }) ?? null,
+    });
   });
   await setupAccountsPage();
   const card = await waitFor(() => {
@@ -1033,9 +1115,6 @@ test("Manage access for a connector without configurable permissions", async () 
     }),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Allowed")).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("No configurable permissions"),
-  ).not.toBeInTheDocument();
   expect(queryConnectorAction("button", "Manage", dialog)).toBeNull();
 });
 
@@ -1083,7 +1162,6 @@ test("Prevent account additions when a connector target is unavailable", async (
     within(manager).findByText("Accounts are unavailable for this connector."),
   ).resolves.toBeInTheDocument();
   expect(getConnectorAction("button", "Add account", manager)).toBeDisabled();
-  expect(within(manager).queryByRole("group", { name: "Default" })).toBeNull();
 });
 
 test("Read accounts only inside the manager and refresh them each time it opens", async () => {

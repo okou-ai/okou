@@ -2143,16 +2143,11 @@
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
     "relations": {
-      "communications": "Nachrichten",
-      "idle": "Inaktiv",
+      "chats": "Chats",
       "loadFailed": "Laden fehlgeschlagen",
-      "messageUnavailable": "Nachricht nicht verfügbar",
       "origin": "Von",
       "queued": "In Warteschlange",
-      "received": "Empfangen",
       "running": "Läuft",
-      "sent": "Gesendet",
-      "toggleMessages": "Nachrichten mit {{title}}",
       "unavailable": "Nicht verfügbar",
       "untitled": "Unbenannt"
     },
@@ -2175,11 +2170,10 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "emptyLinks": "Noch keine Links in diesem Chat",
+      "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
       "expand": "Ausklappen",
-      "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
-      "loadingLinks": "Links werden geladen",
+      "loading": "Ressourcen werden geladen",
       "retry": "Erneut versuchen",
       "title": "Chat-Ressourcen"
     },
@@ -3957,7 +3951,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
-    "back": "Zurück zu Vorlagen",
     "categories": {
       "all": "Alle",
       "business-record": "Geschäftsunterlagen",
@@ -4008,7 +4001,6 @@
     "preview": "Vorschau: {{title}}",
     "previousPage": "Vorherige Beispielseite",
     "retry": "Erneut versuchen",
-    "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
     "useNamed": "{{title}} verwenden"
   },
@@ -5075,6 +5067,10 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
+        "resources": {
+          "description": "Zeigt Artefakte und verwandte Chats neben dem Gespräch an, wenn Platz ist.",
+          "title": "Ressourcen automatisch öffnen"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5165,7 +5161,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
-        "description": "Tägliche Prioritäten um 7 Uhr in deiner Zeitzone.",
+        "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",

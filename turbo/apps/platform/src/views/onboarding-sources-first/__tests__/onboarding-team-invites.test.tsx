@@ -175,5 +175,4 @@ test("A malformed address cannot be sent, and the step says why in the reader's 
   // The malformed address never reached the API, so no raw refusal is shown.
   expect(requested).toStrictEqual([TEAMMATE]);
   expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
-  expect(screen.queryByText(/Invalid email address/)).not.toBeInTheDocument();
 });

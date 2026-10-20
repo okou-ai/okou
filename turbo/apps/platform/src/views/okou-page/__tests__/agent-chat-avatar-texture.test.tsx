@@ -191,7 +191,6 @@ test("Keep every other avatar surface untextured", async () => {
   expect(elsewhere.length).toBeGreaterThan(0);
   for (const artwork of elsewhere) {
     const container = artwork.parentElement;
-    expect(container).not.toBeNull();
     expect(textureImage(container!)).toBeNull();
     // Still centered, not anchored.
     expect(artworkBottom(artworkTransform(container!))).toBeLessThan(100);

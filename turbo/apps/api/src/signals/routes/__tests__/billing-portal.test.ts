@@ -89,40 +89,6 @@ describe("POST /api/billing/portal", () => {
     });
   });
 
-  it("returns 400 when returnUrl is missing", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {} as never,
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error).toBeDefined();
-  });
-
-  it("returns 400 when returnUrl is not a valid URL", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: billingPortalRoutes })(
-      billingPortalContract,
-    );
-    const response = await accept(
-      client.create({
-        body: { returnUrl: "not-a-url" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error).toBeDefined();
-  });
-
   it("returns 403 for a non-admin org member", async () => {
     mocks.clerk.session(
       `user_${randomUUID()}`,

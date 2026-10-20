@@ -4,9 +4,8 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  IosChatActivitySummary = "iosChatActivitySummary",
-  IosChatAttachments = "iosChatAttachments",
   JsonTreePreview = "jsonTreePreview",
+  HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
   TailscaleAccess = "tailscaleAccess",
@@ -71,5 +70,4 @@ export enum FeatureSwitchKey {
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
-  ComposerMentionHint = "composerMentionHint",
 }

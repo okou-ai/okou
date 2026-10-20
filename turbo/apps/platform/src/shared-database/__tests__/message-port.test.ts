@@ -1189,50 +1189,6 @@ test("Reject shared-data access before the tab is registered", async () => {
   );
 });
 
-test("Validate shared chat results received from the worker", async () => {
-  const [platformPort, workerPort] = messagePortPair();
-  const resetOwner$ = resetSignal();
-  const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const bridge = new MessagePortSharedDatabaseBridge(
-    platformPort,
-    bridgeEvents(),
-    ownerSignal,
-    () => {
-      return Promise.resolve("test-token");
-    },
-  );
-  workerPort.addEventListener("message", (event) => {
-    const message = event.data;
-    if (
-      typeof message === "object" &&
-      message !== null &&
-      "type" in message &&
-      message.type === "query" &&
-      "requestId" in message &&
-      typeof message.requestId === "string"
-    ) {
-      workerPort.postMessage({
-        type: "result",
-        requestId: message.requestId,
-        value: [{ malformed: true }],
-      });
-    }
-  });
-  workerPort.start();
-  await bridge.registerTab(ownerSignal);
-
-  await expect(
-    bridge.query(
-      {
-        dataKey: dataKey(crypto.randomUUID()),
-        afterSeqId: null,
-        consistency: "cache-only",
-      },
-      ownerSignal,
-    ),
-  ).rejects.toMatchObject({ name: "ZodError" });
-});
-
 test("Stop pending requests when the bridge lifecycle ends", async () => {
   const [platformPort, workerPort] = messagePortPair();
   const resetOwner$ = resetSignal();

@@ -589,12 +589,18 @@ where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
     let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
-    authentication::phase(
-        AuthenticationStage::RsaAesAuthentication,
-        deadline,
-        rsa_aes::authenticate(stream, security, credentials, pin, deadline),
-    )
-    .await
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let authenticated = rsa_aes::authenticate(stream, security, credentials, pin, deadline).await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RsaAesAuthentication,
+        });
+    }
+    Ok(authenticated)
 }
 
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.

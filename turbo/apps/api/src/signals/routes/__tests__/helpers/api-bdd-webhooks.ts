@@ -461,22 +461,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentEventsUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 500 | 503)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentEventsRoutes })(
-          webhookEventsContract,
-        ).send({
-          headers,
-          body: body as AgentEventsBody,
-        }),
-        statuses,
-      );
-    },
-
     async requestAgentComplete(
       body: AgentCompleteBody,
       headers: SandboxWebhookHeaders,
@@ -526,20 +510,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentRunOutputsUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 500)[],
-    ) {
-      const parsed = body as AgentRunOutputsBody;
-      const { runId, ...completion } = parsed;
-      return await this.requestAgentCompleteUnchecked(
-        { runId, exitCode: 0, completion },
-        headers,
-        statuses,
-      );
-    },
-
     async requestAgentHeartbeat(
       body: AgentHeartbeatBody,
       headers: SandboxWebhookHeaders,
@@ -551,22 +521,6 @@ export function createWebhookCallbackApi(context: TestContext) {
         ).send({
           headers,
           body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestAgentHeartbeatUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookHeartbeatContract,
-        ).send({
-          headers,
-          body: body as AgentHeartbeatBody,
         }),
         statuses,
       );
@@ -618,22 +572,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentUsageEventUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookUsageEventContract,
-        ).send({
-          headers,
-          body: body as AgentUsageEventBody,
-        }),
-        statuses,
-      );
-    },
-
     async requestAgentStoragePrepare(
       body: AgentStoragePrepareBody,
       headers: SandboxWebhookHeaders,
@@ -650,22 +588,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
 
-    async requestAgentStoragePrepareUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 413 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentStorageRoutes })(
-          webhookStoragesPrepareContract,
-        ).prepare({
-          headers,
-          body: body as AgentStoragePrepareBody,
-        }),
-        statuses,
-      );
-    },
-
     async requestAgentStorageCommit(
       body: AgentStorageCommitBody,
       headers: SandboxWebhookHeaders,
@@ -677,22 +599,6 @@ export function createWebhookCallbackApi(context: TestContext) {
         ).commit({
           headers,
           body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestAgentStorageCommitUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 413 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentStorageRoutes })(
-          webhookStoragesCommitContract,
-        ).commit({
-          headers,
-          body: body as AgentStorageCommitBody,
         }),
         statuses,
       );

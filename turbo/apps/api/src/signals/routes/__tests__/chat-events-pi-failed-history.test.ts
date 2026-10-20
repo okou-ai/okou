@@ -109,7 +109,6 @@ describe("Pi failed native continuation", () => {
         error: "Codex request failed",
         result: { framework: "pi", frameworkSessionId: first.threadId },
       });
-      expect(retained.result).not.toHaveProperty("conversationId");
       await own(() => {
         return webhooks.requestAgentComplete(
           completion,

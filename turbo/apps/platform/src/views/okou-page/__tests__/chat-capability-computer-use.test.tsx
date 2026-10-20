@@ -190,7 +190,11 @@ function observeResourceLists(): string[] {
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     requested.push("target accounts");
-    return respond(200, { connections: [], nextCursor: null });
+    return respond(200, {
+      connections: [],
+      nextCursor: null,
+      defaultConnection: null,
+    });
   });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     requested.push("computer hosts");

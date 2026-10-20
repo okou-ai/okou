@@ -44,28 +44,19 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IosChatActivitySummary]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS chat activity summaries",
-    description:
-      "Show public activity summaries in the native iOS chat detail.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.IosChatAttachments]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS chat attachments",
-    description:
-      "Choose photos, videos and files in the native iOS chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.JsonTreePreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "JSON tree previews",
     description: "Explore JSON nodes in file and artifact previews.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  // Keep disabled until the live session and rollout gates in #41704 pass.
+  [FeatureSwitchKey.HostedSiteVisibility]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Website visibility",
+    description: "Control who can visit a published website.",
+    enabled: false,
   },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
@@ -120,13 +111,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ComposerMentionHint]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Mention search hint",
-    description: "Show a search hint after typing @ in the chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",

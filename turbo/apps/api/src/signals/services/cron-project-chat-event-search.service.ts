@@ -3,14 +3,18 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   exists,
   gt,
   gte,
   inArray,
+  lte,
   notExists,
   sql,
+  type SQL,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "@okouai/db/schema/agent";
 import {
@@ -541,6 +545,89 @@ const cleanupOrphanedSearchProjection$ = command(
   },
 );
 
+function searchProjectionCandidateSource(batchSize: number): SQL {
+  const query = new QueryBuilder();
+  // Probe source IDs, not filtered candidates. The tail keeps this window
+  // from becoming a business cutoff when pending threads are sparse.
+  const sourceKeys = query
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .orderBy(asc(chatThreads.id))
+    .limit(4 * batchSize)
+    .as("source_keys");
+  const bounds = query
+    .select({ upperId: sourceKeys.id })
+    .from(sourceKeys)
+    .orderBy(desc(sourceKeys.id))
+    .limit(1);
+  const upperId = sql`(SELECT upper_id FROM bounds)`;
+  const lagging = gt(
+    chatEventSequences.lastSeqId,
+    sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
+  );
+  const selection = {
+    chatThreadId: chatThreads.id,
+    userId: chatThreads.userId,
+    orgId: agents.orgId,
+    agentId: agents.id,
+  };
+  const head = query
+    .select(selection)
+    .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
+    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
+    .leftJoin(
+      chatEventSearchMessageWatermarks,
+      eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
+    )
+    .where(and(lagging, lte(chatThreads.id, upperId)))
+    .orderBy(asc(chatThreads.id))
+    .limit(batchSize);
+  // Only narrow sequence/watermark metadata is scanned for tail membership;
+  // thread and Agent rows are fetched after pending IDs have been found.
+  const tailIds = query
+    .select({ chatThreadId: chatEventSequences.chatThreadId })
+    .from(chatEventSequences)
+    .leftJoin(
+      chatEventSearchMessageWatermarks,
+      eq(
+        chatEventSearchMessageWatermarks.chatThreadId,
+        chatEventSequences.chatThreadId,
+      ),
+    )
+    .where(and(gt(chatEventSequences.chatThreadId, upperId), lagging));
+  const tail = query
+    .select(selection)
+    .from(chatThreads)
+    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
+    .where(
+      and(
+        gt(chatThreads.id, upperId),
+        sql`${chatThreads.id} = ANY(ARRAY(${tailIds}))`,
+      ),
+    )
+    .orderBy(asc(chatThreads.id));
+  // MATERIALIZED head and a runtime LIMIT keep the expensive tail (including
+  // its ARRAY initplan) unexecuted when the head already fills the batch.
+  // Both halves share one statement snapshot and disjoint ID ranges.
+  return sql`(
+    WITH bounds(upper_id) AS MATERIALIZED (${bounds}),
+    head(thread_id, user_id, org_id, agent_id) AS MATERIALIZED (${head}),
+    tail(thread_id, user_id, org_id, agent_id) AS MATERIALIZED (
+      ${tail}
+      LIMIT GREATEST(${batchSize} - (SELECT ${count()} FROM head), 0)
+    )
+    SELECT * FROM head
+    UNION ALL
+    SELECT * FROM tail
+    ORDER BY thread_id ASC
+    LIMIT ${batchSize}
+  ) candidates`;
+}
+
 export const projectChatEventSearch$ = command(
   async (
     { set },
@@ -549,37 +636,15 @@ export const projectChatEventSearch$ = command(
     const db = set(writeDb$);
     const orphanedThreads = await set(cleanupOrphanedSearchProjection$);
     signal.throwIfAborted();
-    const candidateThreads = await (async (): Promise<
-      readonly CandidateThread[]
-    > => {
-      return await db
-        .select({
-          chatThreadId: chatThreads.id,
-          userId: chatThreads.userId,
-          orgId: agents.orgId,
-          agentId: agents.id,
-        })
-        .from(chatThreads)
-        .leftJoin(
-          chatEventSequences,
-          eq(chatEventSequences.chatThreadId, chatThreads.id),
-        )
-        .innerJoin(agents, eq(chatThreads.agentId, agents.id))
-        .leftJoin(
-          chatEventSearchMessageWatermarks,
-          eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
-        )
-        .where(
-          and(
-            gt(
-              chatEventSequences.lastSeqId,
-              sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
-            ),
-          ),
-        )
-        .orderBy(asc(chatThreads.id))
-        .limit(chatEventSearchThreadBatchSize());
-    })();
+    const candidateThreads = await db
+      .select({
+        chatThreadId: sql`candidates.thread_id`.mapWith(chatThreads.id),
+        userId: sql`candidates.user_id`.mapWith(chatThreads.userId),
+        orgId: sql`candidates.org_id`.mapWith(agents.orgId),
+        agentId: sql`candidates.agent_id`.mapWith(agents.id),
+      })
+      .from(searchProjectionCandidateSource(chatEventSearchThreadBatchSize()))
+      .orderBy(asc(sql`candidates.thread_id`));
     signal.throwIfAborted();
 
     let threads = 0;

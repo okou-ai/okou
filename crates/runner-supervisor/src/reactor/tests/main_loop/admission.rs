@@ -18,6 +18,8 @@ use runner_provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
 
+mod independent_source;
+mod peer_home;
 mod terminal_reuse;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;

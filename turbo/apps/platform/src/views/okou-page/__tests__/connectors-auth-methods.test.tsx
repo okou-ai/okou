@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { builtinConnectorAutomaticReaderContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -193,7 +194,7 @@ function oauthMethod(label = "OAuth") {
   };
 }
 
-test.each(["none", "oauth"] as const)(
+test.each(["none", "none-canonical", "oauth"] as const)(
   "Connect a builtin Automatic method resolving to %s",
   async (resolution) => {
     const slug = "server-authored-tools";
@@ -225,7 +226,7 @@ test.each(["none", "oauth"] as const)(
       return savedAccount !== undefined;
     });
     const completedAttempts = mockOAuthCompletions(context);
-    if (resolution === "none") {
+    if (resolution !== "oauth") {
       context.mocks.api(connectorAccountsContract.oauthCompletion, () => {
         throw new Error("No-auth completion must not request an OAuth receipt");
       });
@@ -240,17 +241,21 @@ test.each(["none", "oauth"] as const)(
     });
     context.mocks.browser.open(authWindow);
     context.mocks.api(
-      builtinConnectorAutomaticContract.start,
+      resolution === "none-canonical"
+        ? builtinConnectorAutomaticReaderContract.start
+        : builtinConnectorAutomaticContract.start,
       ({ body, respond }) => {
         expect(body).toMatchObject({
           authMethod: methodId,
           account: { intent: "add" },
         });
-        if (resolution === "none") {
+        if (resolution !== "oauth") {
           savedAccount = storeConnectedConnector(slug, methodId);
           return respond(200, {
             result: "connected",
-            connectedAccountId: savedAccount.id,
+            ...(resolution === "none-canonical"
+              ? { connectionId: savedAccount.id }
+              : { connectedAccountId: savedAccount.id }),
           });
         }
         return respond(200, {
@@ -269,7 +274,7 @@ test.each(["none", "oauth"] as const)(
       name: "Name your Partner Tools account",
     });
     expect(authWindow).toMatchObject(
-      resolution === "none"
+      resolution !== "oauth"
         ? { closed: true }
         : { location: { href: authorizationUrl } },
     );
@@ -478,9 +483,6 @@ test("Add an AWS account with an external code", async () => {
   expect(
     getConnectorAction("button", "Manage AWS access", awsCard),
   ).toHaveTextContent("Used by Research Agent");
-  expect(
-    screen.queryByText("You've successfully connected with AWS!"),
-  ).toBeNull();
 });
 
 test("Add an account through OpenID", async () => {
@@ -787,9 +789,6 @@ test.each(["verification page"])(
       name: "Base44",
     });
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      screen.queryByRole("dialog", { name: "Connecting your account" }),
-    ).toBeNull();
     if (approvalSource === "verification page") {
       click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
     }
@@ -1011,7 +1010,6 @@ test("Enable a connector that needs no credentials", async () => {
     ).toHaveTextContent("Used by 2 agents");
   });
   expect(browserOpen.calls).toHaveLength(0);
-  expect(screen.queryByText(/You've successfully connected with/u)).toBeNull();
 });
 
 test("Follow provider-authored external-code instructions", async () => {

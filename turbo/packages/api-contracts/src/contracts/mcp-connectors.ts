@@ -18,6 +18,8 @@ export const mcpConnectorSchema = z.object({
   displayName: z.string().min(1),
   transport: z.literal("streamable-http"),
   endpoint: z.string().min(1),
+  // Reader-first rollout; #41699 requires this after the prepared API/CLI/Runner release.
+  runtimeAvailable: z.boolean().optional(),
   connected: z.boolean(),
   connectionStatus: connectorResponseConnectionStatusSchema.optional(),
 });

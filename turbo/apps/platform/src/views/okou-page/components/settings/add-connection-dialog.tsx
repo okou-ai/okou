@@ -87,6 +87,11 @@ function connectedStatusText(
   account: ConnectorAccountConnection | null | undefined,
 ): string {
   const connectionStatus = builtinConnectorCurrentConnectionStatus(item);
+  if (connectionStatus === "unavailable") {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupUnavailable;
+    });
+  }
   if (
     item.connection?.reconnectReason ||
     connectionStatus === "reconnect-required"

@@ -77,12 +77,15 @@ pub enum ClaimedActivationError {
     StatusNotPublished,
     #[error("persist active runner ownership: {0}")]
     StatusPersistence(#[from] StatusPersistenceError),
+    #[error("committed home observation closed during claimed startup: {0}")]
+    HomeObservationClosed(#[from] tokio::sync::watch::error::RecvError),
 }
 
 impl ClaimedActivationError {
     pub fn recovery_reason(&self) -> &'static str {
         match self {
             Self::StatusPersistence(_) => "active_status_persistence_failed",
+            Self::HomeObservationClosed(_) => "home_observation_closed",
             Self::SetupAlreadyTransferred
             | Self::StatusAlreadyPublished
             | Self::StatusNotPublished => "activation_ownership_failed",
@@ -168,16 +171,33 @@ impl ClaimedActivationGuard {
     }
 
     pub async fn recover(
-        mut self,
+        self,
         reason: &'static str,
         error: String,
+    ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
+        self.recover_failure(reason, ExecutionFailure::from_error(error))
+            .await
+    }
+
+    /// Settle cancellation before executor ownership without relabeling it a failure.
+    pub async fn recover_cancelled(
+        self,
+    ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
+        self.recover_failure("activation_cancelled", ExecutionFailure::cancelled())
+            .await
+    }
+
+    async fn recover_failure(
+        mut self,
+        reason: &'static str,
+        failure: ExecutionFailure,
     ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
         let setup = self.take_setup()?;
         Ok(recover_claimed_activation_failure(
             setup,
             self.sandbox_id,
             reason,
-            error,
+            failure,
             &self.recovery,
         )
         .await)
@@ -204,7 +224,9 @@ impl Drop for ClaimedActivationGuard {
                     setup,
                     sandbox_id,
                     "activation_task_dropped",
-                    "claimed activation task dropped before executor ownership transfer".to_owned(),
+                    ExecutionFailure::from_error(
+                        "claimed activation task dropped before executor ownership transfer",
+                    ),
                     &recovery,
                 )
                 .await
@@ -260,7 +282,7 @@ async fn recover_claimed_activation_failure(
     setup: ClaimedJobSetup,
     sandbox_id: SandboxId,
     reason: &'static str,
-    error: String,
+    execution_failure: ExecutionFailure,
     ctx: &ClaimedActivationResources,
 ) -> ClaimedActivationRecovery {
     let ClaimedJobSetup {
@@ -295,13 +317,12 @@ async fn recover_claimed_activation_failure(
     warn!(
         run_id = %run_id,
         sandbox_id = %sandbox_id,
-        error,
+        error = %execution_failure.error,
         recovery_reason = reason,
         activation_phase = "before_executor_handoff",
         recovery_outcome = "destroy_or_release",
         "recovering claimed activation before executor handoff"
     );
-    let execution_failure = ExecutionFailure::from_error(error);
     ctx.provider
         .complete(
             CompleteRequest {

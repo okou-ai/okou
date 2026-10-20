@@ -40,6 +40,12 @@ public actor ChatSync {
   }
 
   public func threads() async throws -> [ChatThread] {
+    try await threadsWithIndicators().threads
+  }
+
+  public func threadsWithIndicators() async throws -> (
+    threads: [ChatThread], indicators: Indicators?
+  ) {
     let cached = await readCachedThreadList()
     var state: ThreadListState
     if let cached {
@@ -90,11 +96,14 @@ public actor ChatSync {
     } catch {
       indicators = nil
     }
-    return current.map { thread in
+    let threads = current.map { thread in
       var updated = thread
       updated.indicator = indicators?.threads[thread.id]
+      updated.unreadAt = indicators?.unreadAt[thread.id]
+      if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
       return updated
     }
+    return (threads, indicators)
   }
 
   public func indicators() async throws -> Indicators {
@@ -547,5 +556,14 @@ public actor ChatSync {
     var cursor: EventCursor
     var replaced: Bool
     var cursorFromServerSnapshot: Bool
+  }
+}
+
+extension ChatSync {
+  public func searchMessages(keyword: String) async throws -> [ChatSearchResult] {
+    struct Response: Decodable { let results: [ChatSearchResult] }
+    let response: Response = try await client.request(
+      "/api/chat/search", query: [URLQueryItem(name: "keyword", value: keyword)])
+    return response.results
   }
 }

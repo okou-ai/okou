@@ -340,7 +340,6 @@ describe("CHAT-02: model-first routing", () => {
     for (const runId of [fast.runId, returned.runId]) {
       const run = await api.readRun(actor, runId);
       const appendSystemPrompt = run.appendSystemPrompt ?? "";
-      expect(appendSystemPrompt).not.toContain("# Web Chat Run Context");
       for (const turn of [...prompts, ...answers]) {
         expect(appendSystemPrompt).not.toContain(turn);
       }

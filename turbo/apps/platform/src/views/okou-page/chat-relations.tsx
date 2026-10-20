@@ -1,367 +1,235 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, CircleSlash } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import { CircleSlash, MessageCircle, Plug } from "lucide-react";
+import { Button, cn, RunningIndicator } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type {
-  ChatRelationMessage,
-  RelatedChat,
-} from "@okouai/api-contracts/contracts/chat-relations";
+import type { RelatedChat } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  formatChatTimestamp,
-  formatCompactChatTimestamp,
-} from "../../i18n/format.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import type {
-  ChatRelationList,
-  ChatRelationSignals,
-  ResourceChat,
-} from "../../signals/chat-page/chat-relations.ts";
+import type { ResourceChat } from "../../signals/chat-page/chat-relations.ts";
 import { chatThreadMetaMap$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { detach, Reason } from "../../signals/utils.ts";
-import { messageDocumentToDisplayText } from "../../signals/okou-page/user-message-document-codec.ts";
 import { Link } from "../router/link.tsx";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
+  RESOURCE_GLYPH_CLASS,
   RESOURCE_PREVIEW_LIMIT,
+  RESOURCE_ROW_CLASS,
+  RESOURCE_SECTION_CLASS,
 } from "./chat-resource-section.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 
+type AgentSourcePart = Extract<
+  UserMessagePart,
+  { type: "source"; kind: "agent" }
+>;
+
+function useAgentOrigin(thread: ChatPanelSignals): AgentSourcePart | null {
+  const origin = useGet(thread.relations.origin$);
+  return origin?.kind === "source" && origin.part.kind === "agent"
+    ? origin.part
+    : null;
+}
+
+// An agent origin is a chat, so it is listed with the other chats. Only
+// sources outside Okou keep a section of their own.
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  return enabled ? <Origin signals={thread.relations} /> : null;
-}
-
-function AgentOriginLink({
-  part,
-}: {
-  readonly part: Extract<UserMessagePart, { type: "source"; kind: "agent" }>;
-}) {
-  const { t } = useTranslation();
-  const thread = useGet(chatThreadMetaMap$).get(part.threadId);
-  const title =
-    (thread ? thread.title : part.titleSnapshot) ??
-    t(($) => {
-      return $.chat.relations.untitled;
-    });
-  return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{
-        pathParams: { threadId: part.threadId },
-        hash: `run-${part.runId}`,
-      }}
-      className="min-w-0 truncate rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground transition-colors hover:bg-gray-50 hover:text-foreground focus-visible:bg-gray-50"
-    >
-      {title}
-    </Link>
-  );
-}
-
-function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
-  const { t } = useTranslation();
-  const origin = useGet(signals.origin$);
-  if (origin?.kind !== "source") {
+  const origin = useGet(thread.relations.origin$);
+  if (!enabled || origin?.kind !== "source" || origin.part.kind === "agent") {
     return null;
   }
   const part = origin.part;
   return (
     <section
+      className={RESOURCE_SECTION_CLASS}
       aria-label={t(($) => {
         return $.chat.relations.origin;
       })}
-      className="flex min-h-10.5 shrink-0 items-center gap-1.5 border-divider px-4 py-1.5 has-[+div:not(:empty)]:border-b"
     >
-      <h4 className="shrink-0 text-xs leading-4.5 text-muted-foreground">
-        {t(($) => {
+      <ChatResourceSectionHeading
+        title={t(($) => {
           return $.chat.relations.origin;
         })}
-      </h4>
-      {part.kind === "agent" ? (
-        <AgentOriginLink part={part} />
-      ) : part.kind === "mcp" ? (
-        <p className="min-w-0 truncate px-1.5 py-1 text-xs leading-4.5 text-muted-foreground">
-          {part.clientName ??
-            t(($) => {
-              return $.chat.origins.mcp;
-            })}
+      />
+      {part.kind === "mcp" ? (
+        <p className={cn(RESOURCE_ROW_CLASS, "hover:bg-transparent")}>
+          <span className={RESOURCE_GLYPH_CLASS}>
+            <Plug size={16} />
+          </span>
+          <span className="min-w-0 truncate">
+            {part.clientName ??
+              t(($) => {
+                return $.chat.origins.mcp;
+              })}
+          </span>
         </p>
       ) : (
         <ExternalSourceMessageAnnotation
           part={part}
           compact
-          className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground"
+          // The 15px source mark sits centred in the 20px glyph slot.
+          className="flex h-8.5 min-w-0 items-center gap-[10.5px] rounded-lg pr-2 pl-[22.5px] text-[13px] leading-5 text-foreground transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
         />
       )}
     </section>
   );
 }
 
-function RelatedChatLink({
-  chat,
-  title,
-}: {
-  readonly chat: RelatedChat;
-  readonly title: string;
-}) {
+function OriginTag() {
   const { t } = useTranslation();
-  if (chat.status === "unavailable") {
-    return (
-      <span className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1.75 text-[13px] leading-5 text-muted-foreground">
-        <CircleSlash size={16} className="shrink-0" />
-        <span className="truncate">
-          {t(($) => {
-            return $.chat.relations.unavailable;
-          })}
-        </span>
-      </span>
-    );
+  return (
+    <span className="shrink-0 rounded-[5px] border border-border px-1.5 text-[11px] leading-4 text-muted-foreground">
+      {t(($) => {
+        return $.chat.relations.origin;
+      })}
+    </span>
+  );
+}
+
+function ChatStatus({ status }: { readonly status: RelatedChat["status"] }) {
+  const { t } = useTranslation();
+  if (status !== "running" && status !== "queued") {
+    return null;
   }
-  const status = t(($) => {
-    return chat.status === "running"
-      ? $.chat.relations.running
-      : chat.status === "queued"
-        ? $.chat.relations.queued
-        : $.chat.relations.idle;
-  });
   return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{ pathParams: { threadId: chat.threadId } }}
-      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.75 text-[13px] leading-5 transition-colors hover:bg-gray-50 focus-visible:bg-gray-50"
-    >
-      <HoverScrollTitle title={title} />
-      <span
-        role="img"
-        aria-label={status}
-        className={cn(
-          "shrink-0 rounded-full",
-          chat.status === "idle"
-            ? "sr-only"
-            : chat.status === "running"
-              ? "size-1.5 bg-emerald-500"
-              : "size-1.5 border border-amber-500",
-        )}
-      />
-    </Link>
+    <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {status === "running" && <RunningIndicator />}
+      {t(($) => {
+        return status === "running"
+          ? $.chat.relations.running
+          : $.chat.relations.queued;
+      })}
+    </span>
   );
 }
 
-function MessageTime({ value }: { readonly value: string }) {
-  return (
-    <time
-      dateTime={value}
-      aria-label={formatChatTimestamp(value)}
-      className="shrink-0 text-xs tabular-nums text-muted-foreground"
-    >
-      {formatCompactChatTimestamp(value)}
-    </time>
-  );
-}
-
-function MessageRow({
-  message,
-  unavailable,
+function ChatTitle({
+  threadId,
+  fallback,
 }: {
-  readonly message: ChatRelationMessage;
-  readonly unavailable: boolean;
+  readonly threadId: string;
+  readonly fallback: string | null;
 }) {
   const { t } = useTranslation();
-  const text = message.userMessage
-    ? messageDocumentToDisplayText(message.userMessage)
-    : null;
-  const preview =
-    text ||
+  const thread = useGet(chatThreadMetaMap$).get(threadId);
+  const title =
+    (thread ? thread.title : fallback) ??
     t(($) => {
-      return $.chat.relations.messageUnavailable;
+      return $.chat.relations.untitled;
     });
-  const content = (
-    <>
-      <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span className="font-medium">
-          {t(($) => {
-            return message.direction === "sent"
-              ? $.chat.relations.sent
-              : $.chat.relations.received;
-          })}
-        </span>
-        <MessageTime value={message.createdAt} />
-      </span>
-      <span className="block whitespace-pre-wrap break-words text-[13px] leading-5.25">
-        {preview}
-      </span>
-    </>
-  );
-  return (
-    <li>
-      {unavailable && message.direction === "sent" ? (
-        <div className="block min-w-0 space-y-1.5 px-2 py-3 text-muted-foreground">
-          {content}
-        </div>
-      ) : (
-        <Link
-          pathname={ROUTES.chat}
-          options={{
-            pathParams: { threadId: message.targetChatThreadId },
-            hash: message.targetRunId
-              ? `run-${message.targetRunId}`
-              : undefined,
-          }}
-          className="block min-w-0 space-y-1.5 rounded-lg px-2 py-3 transition-colors hover:bg-state-hover"
-        >
-          {content}
-        </Link>
-      )}
-    </li>
-  );
+  return <HoverScrollTitle title={title} />;
 }
 
 function ResourceChatRow({
   chat,
-  signals,
+  origin,
 }: {
   readonly chat: ResourceChat;
-  readonly signals: ChatRelationSignals;
+  readonly origin: boolean;
 }) {
   const { t } = useTranslation();
-  const thread = useGet(chatThreadMetaMap$).get(chat.threadId);
-  const title =
-    chat.status === "unavailable"
-      ? t(($) => {
-          return $.chat.relations.unavailable;
-        })
-      : ((thread ? thread.title : chat.title) ??
-        t(($) => {
-          return $.chat.relations.untitled;
-        }));
-  const retry = useSet(signals.retry$);
-  const toggle = useSet(signals.togglePeer$);
-  const selectedPeer = useGet(signals.selectedPeer$);
-  const messages = useGet(signals.messages$);
-  const emptyPeers = useGet(signals.confirmedEmptyPeers$);
-  const signal = useGet(pageSignal$);
-  const expanded = selectedPeer === chat.threadId;
+  if (chat.status === "unavailable") {
+    return (
+      <li>
+        <span
+          className={cn(
+            RESOURCE_ROW_CLASS,
+            "text-muted-foreground hover:bg-transparent",
+          )}
+        >
+          <span className={RESOURCE_GLYPH_CLASS}>
+            <CircleSlash size={16} />
+          </span>
+          <span className="min-w-0 flex-1 truncate">
+            {t(($) => {
+              return $.chat.relations.unavailable;
+            })}
+          </span>
+          {origin && <OriginTag />}
+        </span>
+      </li>
+    );
+  }
   return (
     <li>
-      <div className="flex min-w-0 items-center gap-1">
-        <RelatedChatLink chat={chat} title={title} />
-        {!emptyPeers.includes(chat.threadId) && (
-          <Button
-            variant="quiet"
-            size="icon-xs"
-            className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [&_svg]:size-3"
-            aria-expanded={expanded}
-            aria-label={t(
-              ($) => {
-                return $.chat.relations.toggleMessages;
-              },
-              { title },
-            )}
-            onClick={(event) => {
-              detach(
-                toggle(chat.threadId, event.currentTarget, signal),
-                Reason.DomCallback,
-              );
-            }}
-          >
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </Button>
-        )}
-      </div>
-      {expanded && messages && (
-        <Messages
-          list={messages}
-          retry={retry}
-          unavailable={chat.status === "unavailable"}
-        />
-      )}
+      <Link
+        pathname={ROUTES.chat}
+        options={{ pathParams: { threadId: chat.threadId } }}
+        className={RESOURCE_ROW_CLASS}
+      >
+        <span className={RESOURCE_GLYPH_CLASS}>
+          <MessageCircle size={16} />
+        </span>
+        <ChatTitle threadId={chat.threadId} fallback={chat.title} />
+        {origin && <OriginTag />}
+        <ChatStatus status={chat.status} />
+      </Link>
     </li>
   );
 }
 
-function Messages({
-  list,
-  retry,
-  unavailable,
-}: {
-  readonly list: ChatRelationList<ChatRelationMessage>;
-  readonly retry: () => void;
-  readonly unavailable: boolean;
-}) {
-  const { t } = useTranslation();
-  const data = useLastLoadable(list.data$);
-  if (
-    data.state === "loading" ||
-    (data.state === "hasData" && data.data.items.length === 0)
-  ) {
-    return null;
-  }
+// The parent is not always among the chats this one exchanged messages with.
+function UnlistedOriginRow({ part }: { readonly part: AgentSourcePart }) {
   return (
-    <div className="mb-2 mt-1 max-h-80 overflow-y-auto overscroll-contain rounded-lg bg-gray-50 p-1">
-      {data.state === "hasError" ? (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
-        >
-          <p>
-            {t(($) => {
-              return $.chat.relations.loadFailed;
-            })}
-          </p>
-          <Button variant="quiet" size="xs" onClick={retry}>
-            {t(($) => {
-              return $.chat.resources.retry;
-            })}
-          </Button>
-        </div>
-      ) : (
-        <ul className="m-0 list-none divide-y divide-border-on-fill p-0">
-          {data.data.items.map((message) => {
-            return (
-              <MessageRow
-                key={message.id}
-                message={message}
-                unavailable={unavailable}
-              />
-            );
-          })}
-        </ul>
-      )}
-    </div>
+    <li>
+      <Link
+        pathname={ROUTES.chat}
+        options={{
+          pathParams: { threadId: part.threadId },
+          hash: `run-${part.runId}`,
+        }}
+        className={RESOURCE_ROW_CLASS}
+      >
+        <span className={RESOURCE_GLYPH_CLASS}>
+          <MessageCircle size={16} />
+        </span>
+        <ChatTitle threadId={part.threadId} fallback={part.titleSnapshot} />
+        <OriginTag />
+      </Link>
+    </li>
   );
 }
 
 function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
-  const chatsId = `${thread.threadId}-resource-messages`;
+  const chatsId = `${thread.threadId}-resource-chats`;
   const { t } = useTranslation();
   const signals = thread.relations;
   const retry = useSet(signals.retry$);
   const chats = useLastLoadable(signals.chats.data$);
-  const expanded = useGet(thread.resources.expandedSections$).messages;
+  const origin = useAgentOrigin(thread);
+  const expanded = useGet(thread.resources.expandedSections$).chats;
   const toggleSection = useSet(thread.resources.toggleSection$);
   if (chats.state === "loading") {
     return null;
   }
   const data = chats.state === "hasData" ? chats.data : null;
-  if (data && data.items.length === 0 && !data.failed) {
+  const items = data?.items ?? [];
+  if (data && items.length === 0 && !data.failed && origin === null) {
     return null;
   }
+  // The origin always leads the list, so the preview never hides it.
+  const listedOrigin = items.find((chat) => {
+    return chat.threadId === origin?.threadId;
+  });
+  const others = items.filter((chat) => {
+    return chat !== listedOrigin;
+  });
+  const originRows = origin ? 1 : 0;
   return (
     <section
-      className="py-3"
+      className={RESOURCE_SECTION_CLASS}
       aria-label={t(($) => {
-        return $.chat.relations.communications;
+        return $.chat.relations.chats;
       })}
     >
       <ChatResourceSectionHeading
         title={t(($) => {
-          return $.chat.relations.communications;
+          return $.chat.relations.chats;
         })}
       />
       {(!data || data.failed) && (
@@ -381,31 +249,28 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
           </Button>
         </div>
       )}
-      {data && (
-        <>
-          <ul id={chatsId} className="m-0 list-none p-0">
-            {data.items
-              .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT)
-              .map((chat) => {
-                return (
-                  <ResourceChatRow
-                    key={chat.threadId}
-                    chat={chat}
-                    signals={signals}
-                  />
-                );
-              })}
-          </ul>
-          {data.items.length > RESOURCE_PREVIEW_LIMIT && (
-            <ChatResourceSectionToggle
-              expanded={expanded}
-              controls={chatsId}
-              onToggle={(trigger) => {
-                toggleSection("messages", trigger);
-              }}
-            />
-          )}
-        </>
+      <ul id={chatsId} className="m-0 list-none p-0">
+        {listedOrigin ? (
+          <ResourceChatRow chat={listedOrigin} origin />
+        ) : (
+          origin && <UnlistedOriginRow part={origin} />
+        )}
+        {others
+          .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT - originRows)
+          .map((chat) => {
+            return (
+              <ResourceChatRow key={chat.threadId} chat={chat} origin={false} />
+            );
+          })}
+      </ul>
+      {others.length + originRows > RESOURCE_PREVIEW_LIMIT && (
+        <ChatResourceSectionToggle
+          expanded={expanded}
+          controls={chatsId}
+          onToggle={(trigger) => {
+            toggleSection("chats", trigger);
+          }}
+        />
       )}
     </section>
   );

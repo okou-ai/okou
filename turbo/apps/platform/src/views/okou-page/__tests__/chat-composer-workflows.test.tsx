@@ -362,7 +362,6 @@ test("Send a template while the current run is active", async () => {
       selector: "[data-structured-template-reference] span",
     });
     expect(reference).toBeVisible();
-    expect(reference.parentElement).not.toHaveAttribute("title");
   });
   expect((await findComposerEditor()).textContent).toBe("");
 });

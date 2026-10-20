@@ -102,9 +102,6 @@ test("Dismissing the sidebar upgrade flow returns to the chat screen", async () 
     name: "Choose a plan",
   });
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
-  expect(
-    screen.queryByRole("dialog", { name: "Settings" }),
-  ).not.toBeInTheDocument();
   await dismissPlansDialog();
 
   await waitFor(() => {

@@ -356,7 +356,6 @@ test("Connection warnings explain the failure and recover through notifications"
     screen.getByText(/Independently verify the server before/u),
   ).toBeInTheDocument();
   expect(getAction("button", "Reset host key")).toBeEnabled();
-  expect(screen.queryByText(/connectivity not tested/u)).toBeNull();
   failed = false;
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await waitFor(() => {

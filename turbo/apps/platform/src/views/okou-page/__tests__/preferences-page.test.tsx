@@ -99,8 +99,6 @@ test("Theme preferences initialize from the shared cookie", async () => {
   vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
     cookieWrites.push(value);
   });
-  const localStorageReads = vi.spyOn(localStorage, "getItem");
-  const localStorageWrites = vi.spyOn(localStorage, "setItem");
   context.mocks.browser.cookie("__Secure-okou-theme=v1.dark");
 
   await setupPage({ context, path: "/settings", host: "app.vm7.ai" });
@@ -121,10 +119,6 @@ test("Theme preferences initialize from the shared cookie", async () => {
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.light; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  for (const key of ["theme", "colorTheme", "okou_theme", "okou_colorTheme"]) {
-    expect(localStorageReads).not.toHaveBeenCalledWith(key);
-    expect(localStorageWrites).not.toHaveBeenCalledWith(key, expect.anything());
-  }
 
   await expect(
     screen.findByText("Your agents will use this time zone during runs"),

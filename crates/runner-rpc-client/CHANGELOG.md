@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-rpc-client-v0.5.0...runner-rpc-client-v0.5.1) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-rpc-client:** share request dispatch ownership ([#41571](https://github.com/okou-ai/okou/issues/41571)) ([629cc33](https://github.com/okou-ai/okou/commit/629cc3360c0a315797fced5e3cba42e2c7ca0962))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/runner-rpc-client-v0.4.0...runner-rpc-client-v0.5.0) (2026-10-16)
 
 

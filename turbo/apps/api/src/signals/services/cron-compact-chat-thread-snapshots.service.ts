@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
 import {
@@ -15,6 +16,7 @@ import {
   gt,
   gte,
   inArray,
+  isNull,
   lt,
   lte,
   or,
@@ -25,7 +27,10 @@ import {
   chatThreadEventSequences,
   chatThreadEvents,
 } from "@okouai/db/schema/chat-thread-event";
-import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
+import {
+  chatThreadSnapshotGcState,
+  chatThreadSnapshots,
+} from "@okouai/db/schema/chat-thread-snapshot";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
@@ -35,23 +40,36 @@ import {
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   deleteS3Objects,
   listS3ObjectsPage,
   putImmutableS3Object,
   type S3Object,
 } from "../external/s3";
+import { isAbortError, settleIncludingAbort } from "../utils";
 import { chatThreadSnapshotObjectKey } from "./chat-thread-snapshot-object";
 
 interface SnapshotCompactionStats {
   readonly scopes: number;
   readonly eventsApplied: number;
   readonly eventsPruned: number;
+  readonly gc: SnapshotGcStats;
 }
 
+interface SnapshotGcStats {
+  readonly pagesScanned: number;
+  readonly objectsScanned: number;
+  readonly deleteAttempts: number;
+  readonly objectsDeleted: number;
+  readonly deferred: boolean;
+  readonly failed: boolean;
+}
+
+const log = logger("api:cron:compact-chat-thread-snapshots");
 type SnapshotRootDb = Pick<
   Db,
   "select" | "selectDistinct" | "update" | "insert" | "delete"
@@ -94,18 +112,15 @@ function chatThreadEventPruneBatchSize(): number {
 
 interface SnapshotStorage {
   readonly upload: (objectKey: string, body: Buffer) => Promise<void>;
-  readonly list: (prefix: string) => Promise<{
-    readonly objects: readonly S3Object[];
-    readonly isTruncated: boolean;
-  }>;
-  readonly delete: (objectKeys: readonly string[]) => Promise<void>;
 }
 
 const SNAPSHOT_GC_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const SNAPSHOT_GC_SHARDS_PER_RUN = 16;
 const SNAPSHOT_GC_PAGE_SIZE = 1000;
 const SNAPSHOT_GC_DELETE_QUOTA = 100;
-const HEX_DIGITS = "0123456789abcdef";
+const SNAPSHOT_GC_WORK_BUDGET_MS = 30_000;
+const SNAPSHOT_GC_SHARD_COUNT = 256;
+const SNAPSHOT_GC_SLOT_MS = 60 * 60 * 1000;
 
 interface ScopeKey {
   readonly userId: string;
@@ -116,6 +131,7 @@ interface SnapshotHead {
   readonly latestEventId: string | null;
   readonly latestEventSeqId: number | null;
   readonly objectKey: string | null;
+  readonly contentDigest: string | null;
   readonly updatedAt: Date;
 }
 
@@ -144,6 +160,7 @@ async function loadSnapshotHeads(
       latestEventId: chatThreadSnapshots.latestEventId,
       latestEventSeqId: chatThreadSnapshots.latestEventSeqId,
       objectKey: chatThreadSnapshots.objectKey,
+      contentDigest: chatThreadSnapshots.contentDigest,
       updatedAt: chatThreadSnapshots.updatedAt,
     })
     .from(chatThreadSnapshots)
@@ -397,11 +414,6 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
   ];
 }
 
-/** The sha256 part of an immutable snapshot object key. */
-function objectKeyDigest(objectKey: string | null): string | null {
-  return objectKey?.match(/-([0-9a-f]{64})\.json\.gz$/u)?.[1] ?? null;
-}
-
 /**
  * Publishes one scope's snapshot head with a single-row compare-and-set on the
  * head the candidate was read from. A lost race is left for the next run.
@@ -410,6 +422,7 @@ async function publishChatThreadSnapshot(
   db: SnapshotRootDb,
   candidate: SnapshotCandidate,
   objectKey: string,
+  contentDigest: string,
 ): Promise<boolean> {
   const updatedAt = nowDate();
   if (candidate.previous === null) {
@@ -421,6 +434,7 @@ async function publishChatThreadSnapshot(
         latestEventId: candidate.latestEventId,
         latestEventSeqId: candidate.latestSeqId,
         objectKey,
+        contentDigest,
         createdAt: updatedAt,
         updatedAt,
       })
@@ -435,6 +449,7 @@ async function publishChatThreadSnapshot(
       latestEventId: candidate.latestEventId,
       latestEventSeqId: candidate.latestSeqId,
       objectKey,
+      contentDigest,
       updatedAt,
     })
     .where(
@@ -464,18 +479,18 @@ async function compactCandidate(
   const compressed = await gzipAsync(
     Buffer.from(JSON.stringify({ chatThreads })),
   );
-  const objectKey = chatThreadSnapshotObjectKey({
-    userId: candidate.userId,
-    orgId: candidate.orgId,
-    latestSeqId: candidate.latestSeqId,
-    body: compressed,
-  });
+  const contentDigest = createHash("sha256").update(compressed).digest("hex");
   const previousKey = candidate.previous?.objectKey ?? null;
   // Only the sequence moved and the projection is byte-identical: keep the
   // existing immutable object and advance the head without another upload.
   const unchanged =
-    previousKey !== null &&
-    objectKeyDigest(previousKey) === objectKeyDigest(objectKey);
+    previousKey !== null && candidate.previous?.contentDigest === contentDigest;
+  const objectKey = unchanged
+    ? previousKey
+    : chatThreadSnapshotObjectKey({
+        userId: candidate.userId,
+        orgId: candidate.orgId,
+      });
   if (!unchanged) {
     await storage.upload(objectKey, compressed);
     signal?.throwIfAborted();
@@ -483,83 +498,200 @@ async function compactCandidate(
   return await publishChatThreadSnapshot(
     db,
     candidate,
-    unchanged && previousKey !== null ? previousKey : objectKey,
+    objectKey,
+    contentDigest,
   );
 }
 
-async function collectChatThreadSnapshotGarbage(
-  db: SnapshotRootDb,
-  storage: SnapshotStorage,
-  signal?: AbortSignal,
-): Promise<void> {
-  const now = nowDate();
-  const olderThan = new Date(now.getTime() - SNAPSHOT_GC_GRACE_MS);
+function chatThreadSnapshotGcPrefixes(now: Date): readonly string[] {
+  const slot = Math.floor(now.getTime() / SNAPSHOT_GC_SLOT_MS);
   const firstShard =
-    (Math.floor(now.getTime() / (60 * 60 * 1000)) *
-      SNAPSHOT_GC_SHARDS_PER_RUN) %
-    256;
-  let remaining = SNAPSHOT_GC_DELETE_QUOTA;
-  for (let offset = 0; offset < SNAPSHOT_GC_SHARDS_PER_RUN; offset += 1) {
-    signal?.throwIfAborted();
-    const shard = (firstShard + offset) % 256;
-    const prefix = `chat-thread-snapshots/v1/${shard.toString(16).padStart(2, "0")}`;
-    const firstPage = await storage.list(prefix);
-    const pages = firstPage.isTruncated
-      ? await Promise.all(
-          [...HEX_DIGITS].map(async (suffix) => {
-            const page = await storage.list(`${prefix}${suffix}`);
-            if (page.isTruncated) {
-              throw new Error("Chat thread snapshot GC partition is too large");
-            }
-            return page.objects;
-          }),
-        )
-      : [firstPage.objects];
-    for (const objects of pages) {
-      signal?.throwIfAborted();
-      const oldObjects = objects.filter((object) => {
+    (slot * SNAPSHOT_GC_SHARDS_PER_RUN) % SNAPSHOT_GC_SHARD_COUNT;
+  // Rotate within the hourly window and on each revisit of that window so
+  // dense or failing partitions cannot permanently consume a sibling's quota.
+  const startOffset =
+    (Math.floor(slot / (SNAPSHOT_GC_SHARD_COUNT / SNAPSHOT_GC_SHARDS_PER_RUN)) +
+      Math.floor((now.getTime() % SNAPSHOT_GC_SLOT_MS) / (10 * 60 * 1000))) %
+    SNAPSHOT_GC_SHARDS_PER_RUN;
+  return Array.from({ length: SNAPSHOT_GC_SHARDS_PER_RUN }, (_, offset) => {
+    const shard =
+      firstShard + ((startOffset + offset) % SNAPSHOT_GC_SHARDS_PER_RUN);
+    return `chat-thread-snapshots/v1/${shard.toString(16).padStart(2, "0")}`;
+  });
+}
+
+const findChatThreadSnapshotGarbage$ = command(
+  async (
+    { get },
+    objects: readonly S3Object[],
+    olderThan: Date,
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
+    signal.throwIfAborted();
+    const keys = objects
+      .filter((object) => {
         return object.lastModified < olderThan;
-      });
-      if (oldObjects.length === 0) {
-        continue;
-      }
-      const keys = oldObjects.map((object) => {
+      })
+      .map((object) => {
         return object.key;
       });
-      const [snapshotReferences, exportReferences] = await Promise.all([
-        db
-          .select({ objectKey: chatThreadSnapshots.objectKey })
-          .from(chatThreadSnapshots)
-          .where(inArray(chatThreadSnapshots.objectKey, keys)),
-        db
-          .selectDistinct({ objectKey: userExportEntries.sourceKey })
-          .from(userExportEntries)
-          .where(inArray(userExportEntries.sourceKey, keys)),
-      ]);
-      const referenced = new Set(
-        [...snapshotReferences, ...exportReferences].map((row) => {
-          return row.objectKey;
-        }),
-      );
-      const garbage = oldObjects
-        .filter((object) => {
-          return !referenced.has(object.key);
-        })
-        .slice(0, remaining);
-      if (garbage.length > 0) {
-        await storage.delete(
-          garbage.map((object) => {
-            return object.key;
-          }),
-        );
-        remaining -= garbage.length;
+    if (keys.length === 0) {
+      return [];
+    }
+    const db = get(db$);
+    const [snapshotReferences, exportReferences] = await Promise.all([
+      db
+        .select({ objectKey: chatThreadSnapshots.objectKey })
+        .from(chatThreadSnapshots)
+        .where(inArray(chatThreadSnapshots.objectKey, keys)),
+      db
+        .selectDistinct({ objectKey: userExportEntries.sourceKey })
+        .from(userExportEntries)
+        .where(inArray(userExportEntries.sourceKey, keys)),
+    ]);
+    signal.throwIfAborted();
+    const referenced = new Set(
+      [...snapshotReferences, ...exportReferences].map((row) => {
+        return row.objectKey;
+      }),
+    );
+    return keys.filter((key) => {
+      return !referenced.has(key);
+    });
+  },
+);
+
+const collectChatThreadSnapshotGarbage$ = command(
+  async (
+    { get, set },
+    bucket: string,
+    signal: AbortSignal,
+  ): Promise<SnapshotGcStats> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const now = nowDate();
+    const olderThan = new Date(now.getTime() - SNAPSHOT_GC_GRACE_MS);
+    const stats = {
+      pagesScanned: 0,
+      objectsScanned: 0,
+      deleteAttempts: 0,
+      objectsDeleted: 0,
+      deferred: false,
+      failed: false,
+    };
+    const workSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(SNAPSHOT_GC_WORK_BUDGET_MS),
+    ]);
+    for (const prefix of chatThreadSnapshotGcPrefixes(now)) {
+      signal.throwIfAborted();
+      const remaining = SNAPSHOT_GC_DELETE_QUOTA - stats.deleteAttempts;
+      if (remaining === 0 || workSignal.aborted) {
+        stats.deferred = true;
+        break;
       }
-      if (remaining === 0) {
-        return;
+      const attempt = await settleIncludingAbort(async () => {
+        workSignal.throwIfAborted();
+        await db
+          .insert(chatThreadSnapshotGcState)
+          .values({ bucket, prefix })
+          .onConflictDoNothing();
+        workSignal.throwIfAborted();
+        const [state] = await db
+          .select({
+            cursorObjectKey: chatThreadSnapshotGcState.cursorObjectKey,
+            cycleId: chatThreadSnapshotGcState.cycleId,
+          })
+          .from(chatThreadSnapshotGcState)
+          .where(
+            and(
+              eq(chatThreadSnapshotGcState.bucket, bucket),
+              eq(chatThreadSnapshotGcState.prefix, prefix),
+            ),
+          );
+        workSignal.throwIfAborted();
+        if (!state) {
+          throw new Error("Chat thread snapshot GC progress is missing");
+        }
+        const page = await get(
+          listS3ObjectsPage(
+            bucket,
+            prefix,
+            Math.min(SNAPSHOT_GC_PAGE_SIZE, remaining),
+            state.cursorObjectKey ?? undefined,
+            workSignal,
+          ),
+        );
+        workSignal.throwIfAborted();
+        stats.pagesScanned++;
+        stats.objectsScanned += page.objects.length;
+        const garbage = await set(
+          findChatThreadSnapshotGarbage$,
+          page.objects,
+          olderThan,
+          workSignal,
+        );
+        workSignal.throwIfAborted();
+        if (garbage.length > 0) {
+          // Failed and uncertain deletes still consume this run's allowance.
+          stats.deleteAttempts += garbage.length;
+          await get(deleteS3Objects(bucket, garbage, workSignal));
+          workSignal.throwIfAborted();
+          stats.objectsDeleted += garbage.length;
+        }
+        const nextCursor = page.isTruncated ? page.objects.at(-1)?.key : null;
+        if (nextCursor === undefined) {
+          throw new Error(
+            "Chat thread snapshot GC page has no resume position",
+          );
+        }
+        // Publish only a fully handled page. The cycle id fences a stale
+        // invocation even if a newer scan has already wrapped to the same key.
+        const [advanced] = await db
+          .update(chatThreadSnapshotGcState)
+          .set({
+            cursorObjectKey: nextCursor,
+            cycleId: page.isTruncated ? state.cycleId : randomUUID(),
+          })
+          .where(
+            and(
+              eq(chatThreadSnapshotGcState.bucket, bucket),
+              eq(chatThreadSnapshotGcState.prefix, prefix),
+              eq(chatThreadSnapshotGcState.cycleId, state.cycleId),
+              state.cursorObjectKey === null
+                ? isNull(chatThreadSnapshotGcState.cursorObjectKey)
+                : eq(
+                    chatThreadSnapshotGcState.cursorObjectKey,
+                    state.cursorObjectKey,
+                  ),
+            ),
+          )
+          .returning({ bucket: chatThreadSnapshotGcState.bucket });
+        workSignal.throwIfAborted();
+        if (!advanced || page.isTruncated) {
+          stats.deferred = true;
+        }
+      });
+      signal.throwIfAborted();
+      if (!attempt.ok) {
+        stats.deferred = true;
+        const deadlineCancellation =
+          workSignal.aborted &&
+          (attempt.error === workSignal.reason || isAbortError(attempt.error));
+        if (!deadlineCancellation) {
+          log.error("Failed chat thread snapshot garbage collection", {
+            type: "chat_thread_snapshot_gc_failed",
+            prefix,
+            error: attempt.error,
+          });
+          stats.failed = true;
+        }
       }
     }
-  }
-}
+    signal.throwIfAborted();
+    return stats;
+  },
+);
 
 /**
  * Deletes compacted events past retention. One bounded read picks the oldest
@@ -642,17 +774,9 @@ export const compactChatThreadSnapshots$ = command(
           }),
         );
       },
-      list: async (prefix) => {
-        return await get(
-          listS3ObjectsPage(bucket, prefix, SNAPSHOT_GC_PAGE_SIZE),
-        );
-      },
-      delete: async (objectKeys) => {
-        await get(deleteS3Objects(bucket, objectKeys, signal));
-      },
     };
     return await (async (
-      signal?: AbortSignal,
+      signal: AbortSignal,
     ): Promise<SnapshotCompactionStats> => {
       const candidates = await findSnapshotCandidates(
         db,
@@ -688,9 +812,9 @@ export const compactChatThreadSnapshots$ = command(
         chatThreadEventPruneBatchSize(),
       );
 
-      await collectChatThreadSnapshotGarbage(db, storage, signal);
+      const gc = await set(collectChatThreadSnapshotGarbage$, bucket, signal);
 
-      return { scopes, eventsApplied, eventsPruned };
+      return { scopes, eventsApplied, eventsPruned, gc };
     })(signal);
   },
 );

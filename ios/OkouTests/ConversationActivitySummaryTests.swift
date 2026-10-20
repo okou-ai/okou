@@ -82,11 +82,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await eventually {
       scenario.state.requests.withLock { $0 } == 2 && conversation.activitySummary.text != nil
     }
-    conversation.setActivitySummaryEnabled(false)
-    XCTAssertNil(conversation.activitySummary.text)
-    try await waitForNoSleep(clock)
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
-    conversation.setActivitySummaryEnabled(true)
     XCTAssertNil(conversation.activitySummary.text)
     try await waitForNoSleep(clock)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
@@ -144,7 +140,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     defer { conversation.close() }
     await conversation.refresh()
     let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation, supportsActivitySummary: true))
+      rootView: ChatDetailView(conversation: conversation))
     let window = try await mountConversationHost(host)
     defer { unmount(window) }
     try await eventually { conversation.activitySummary.text != nil }
@@ -174,13 +170,11 @@ final class ConversationActivitySummaryTests: XCTestCase {
     defer { workspace.close() }
     await workspace.refreshNavigation()
     await workspace.refresh()
-    XCTAssertTrue(workspace.list.canShowActivitySummaries)
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 0)
     workspace.setForeground(true)
     workspace.selectedThreadID = ActivityScenario.thread
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     await conversation.refresh()
-    conversation.setActivitySummaryEnabled(workspace.list.canShowActivitySummaries)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     try await eventually { conversation.activitySummary.text != nil }
     workspace.setForeground(false)
@@ -221,7 +215,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       defer { conversation.close() }
       await conversation.refresh()
       let host = UIHostingController(
-        rootView: ChatDetailView(conversation: conversation, supportsActivitySummary: true)
+        rootView: ChatDetailView(conversation: conversation)
           .environment(\.colorScheme, scheme).environment(\.dynamicTypeSize, type)
       )
       host.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
@@ -304,7 +298,7 @@ private final class ActivityScenario: Sendable {
       case "/api/agents": return ChatHTTPResponse(body: "[]")
       case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
       case "/api/feature-switches":
-        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"iosChatActivitySummary\":true}}")
+        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: """
@@ -312,7 +306,8 @@ private final class ActivityScenario: Sendable {
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
       case path + "/activity-summary":
         state.requests.withLock { $0 += 1 }
         if let wait = state.hold.withLock({ $0 }) { await wait() }
@@ -375,9 +370,8 @@ private final class ActivityScenario: Sendable {
       sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
       webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: visible,
-      didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {},
+      didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       activitySleep: { try await clock.sleep($0) })
-    conversation.setActivitySummaryEnabled(true)
     return conversation
   }
 

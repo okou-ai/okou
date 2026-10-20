@@ -201,10 +201,14 @@ export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
       tier: z.enum([
         "exactSandbox",
         "finalizingPredecessor",
+        "peerFinalizingPredecessor",
         "reusableSandbox",
         "homeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
+      // Reader preparation only; API discovery writers enable this separately.
+      // Require it for finalizing preferences after the rollout gates in #41657.
+      finalizingSourceRunId: z.uuid().optional(),
     })
     .strict(),
   z
@@ -1496,6 +1500,8 @@ export const runnersBuiltinFirewallsResolveContract = c.router({
 export const heartbeatBodySchema = z
   .object({
     runnerId: z.uuid(),
+    // Advisory locality, using the same configured identity as winning claims.
+    runnerHostname: runnerHostnameSchema.optional(),
     group: runnerGroupSchema,
     snapshotGeneration: runnerHeartbeatGenerationSchema,
     snapshotSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),

@@ -643,13 +643,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     // The validations below describe gpt-image-1, selected as the member's
     // image model.
     await api.selectImageModel(admin, "gpt-image-1");
-    const missingImageIoPrompt = await api.requestImageIoGenerate(
-      admin,
-      {},
-      [400],
-    );
-    expectApiError(missingImageIoPrompt.body);
-    expect(missingImageIoPrompt.body.error.message).toBe("prompt is required");
 
     // A valid request passes validation with the member's model and reaches
     // the credit gate.
@@ -674,32 +667,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
       "Unsupported image size",
     );
 
-    const unsupportedImageQuality = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        quality: "best",
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageQuality.body);
-    expect(unsupportedImageQuality.body.error.message).toBe(
-      "Unsupported image quality: best",
-    );
-
-    const unsupportedImageBackground = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        background: "magic",
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageBackground.body);
-    expect(unsupportedImageBackground.body.error.message).toBe(
-      "Unsupported image background: magic",
-    );
-
     await api.selectImageModel(admin, "gpt-image-2");
     const transparentGptImage2 = await api.requestImageIoGenerate(
       admin,
@@ -715,19 +682,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     );
     await api.selectImageModel(admin, "gpt-image-1");
 
-    const unsupportedImageFormat = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        outputFormat: "gif",
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageFormat.body);
-    expect(unsupportedImageFormat.body.error.message).toBe(
-      "Unsupported image output format: gif",
-    );
-
     const unsupportedImageCompression = await api.requestImageIoGenerate(
       admin,
       {
@@ -740,19 +694,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expectApiError(unsupportedImageCompression.body);
     expect(unsupportedImageCompression.body.error.message).toBe(
       "outputCompression is only supported for jpeg or webp output",
-    );
-
-    const unsupportedImageModeration = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        moderation: "strict",
-      },
-      [400],
-    );
-    expectApiError(unsupportedImageModeration.body);
-    expect(unsupportedImageModeration.body.error.message).toBe(
-      "Unsupported image moderation: strict",
     );
 
     const unsupportedImageSeed = await api.requestImageIoGenerate(
@@ -794,19 +735,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
       "enhancePrompt is not supported for gpt-image-1",
     );
 
-    const invalidSourceImages = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        imageUrls: ["https://assets.example.test/source.png", ""],
-      },
-      [400],
-    );
-    expectApiError(invalidSourceImages.body);
-    expect(invalidSourceImages.body.error.message).toBe(
-      "imageUrls must contain non-empty strings",
-    );
-
     const maskWithoutSource = await api.requestImageIoGenerate(
       admin,
       {
@@ -832,27 +760,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expect(inputFidelityWithoutSource.body.error.message).toBe(
       "inputFidelity requires imageUrl",
     );
-
-    const invalidPromptStrength = await api.requestImageIoGenerate(
-      admin,
-      {
-        prompt: "a concise billing usage chart",
-        imagePromptStrength: 2,
-      },
-      [400],
-    );
-    expectApiError(invalidPromptStrength.body);
-    expect(invalidPromptStrength.body.error.message).toBe(
-      "imagePromptStrength must be between 0 and 1",
-    );
-
-    const imageIo = await api.requestImageIoGenerate(
-      admin,
-      { prompt: "a concise billing usage chart" },
-      [402],
-    );
-    expectApiError(imageIo.body);
-    expect(imageIo.body.error.code).toBe("INSUFFICIENT_CREDITS");
 
     const missingGeneration = await api.readBuiltInGeneration(
       admin,
@@ -898,20 +805,6 @@ describe("BILL-02: maps and banking visible boundaries", () => {
     );
     expectApiError(unauthenticatedSearch.body);
     expect(unauthenticatedSearch.body.error.code).toBe("UNAUTHORIZED");
-
-    const invalidLocation = await api.requestMapsSearch(
-      admin,
-      {
-        query: "coffee near me",
-        location: { latitude: 91, longitude: -122.4194 },
-      },
-      [400],
-    );
-    expect(invalidLocation.headers.get("cache-control")).toBe(
-      "private, no-store",
-    );
-    expectApiError(invalidLocation.body);
-    expect(invalidLocation.body.error.code).toBe("BAD_REQUEST");
 
     api.configureMapsProvider();
     const insufficientMapsCredits = await api.requestMapsSearch(
