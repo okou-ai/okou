@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -6,7 +7,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import {
   telegramDeliveryTargetSchema,
@@ -77,69 +78,72 @@ function requiredTelegramLaunchContext(
   };
 }
 
-async function loadTelegramLaunchContext(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
+const loadTelegramLaunchContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly eventId: string;
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ) => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        chatId: chatTelegramContext.chatId,
+        messageId: chatTelegramContext.messageId,
+        messageThreadId: chatTelegramContext.messageThreadId,
+        messageText: chatTelegramContext.messageText,
+        threadContext: chatTelegramContext.threadContext,
+        rootMessageId: chatTelegramContext.rootMessageId,
+        thinkingMessageId: chatTelegramContext.thinkingMessageId,
+        userLinkId: chatTelegramContext.userLinkId,
+        userLinkKind: chatTelegramContext.userLinkKind,
+        chatType: chatTelegramContext.chatType,
+        senderUserId: chatTelegramContext.senderUserId,
+        senderDisplayName: chatTelegramContext.senderDisplayName,
+        senderUsername: chatTelegramContext.senderUsername,
+        senderLanguage: chatTelegramContext.senderLanguage,
+        agentId: agents.id,
+        officialUserLinkId: telegramOfficialUserLinks.id,
+      })
+      .from(chatEvents)
+      .innerJoin(
+        chatTelegramContext,
+        and(
+          eq(chatTelegramContext.id, chatEvents.contextId),
+          eq(chatTelegramContext.chatThreadId, chatEvents.chatThreadId),
+        ),
+      )
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .leftJoin(
+        telegramOfficialUserLinks,
+        and(
+          eq(chatTelegramContext.userLinkKind, "official"),
+          eq(telegramOfficialUserLinks.id, chatTelegramContext.userLinkId),
+          eq(telegramOfficialUserLinks.userId, args.userId),
+          eq(telegramOfficialUserLinks.orgId, args.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatEvents.id, args.eventId),
+          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.contextType, "telegram"),
+        ),
+      )
+      .limit(1);
+    return requiredTelegramLaunchContext(row);
   },
-) {
-  const [row] = await db
-    .select({
-      chatId: chatTelegramContext.chatId,
-      messageId: chatTelegramContext.messageId,
-      messageThreadId: chatTelegramContext.messageThreadId,
-      messageText: chatTelegramContext.messageText,
-      threadContext: chatTelegramContext.threadContext,
-      rootMessageId: chatTelegramContext.rootMessageId,
-      thinkingMessageId: chatTelegramContext.thinkingMessageId,
-      userLinkId: chatTelegramContext.userLinkId,
-      userLinkKind: chatTelegramContext.userLinkKind,
-      chatType: chatTelegramContext.chatType,
-      senderUserId: chatTelegramContext.senderUserId,
-      senderDisplayName: chatTelegramContext.senderDisplayName,
-      senderUsername: chatTelegramContext.senderUsername,
-      senderLanguage: chatTelegramContext.senderLanguage,
-      agentId: agents.id,
-      officialUserLinkId: telegramOfficialUserLinks.id,
-    })
-    .from(chatEvents)
-    .innerJoin(
-      chatTelegramContext,
-      and(
-        eq(chatTelegramContext.id, chatEvents.contextId),
-        eq(chatTelegramContext.chatThreadId, chatEvents.chatThreadId),
-      ),
-    )
-    .innerJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, chatEvents.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .leftJoin(
-      telegramOfficialUserLinks,
-      and(
-        eq(chatTelegramContext.userLinkKind, "official"),
-        eq(telegramOfficialUserLinks.id, chatTelegramContext.userLinkId),
-        eq(telegramOfficialUserLinks.userId, args.userId),
-        eq(telegramOfficialUserLinks.orgId, args.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "telegram"),
-      ),
-    )
-    .limit(1);
-  return requiredTelegramLaunchContext(row);
-}
+);
 
 function telegramUserInfoExtras(
   context: NonNullable<ReturnType<typeof requiredTelegramLaunchContext>>,
@@ -160,60 +164,62 @@ function telegramUserInfoExtras(
   };
 }
 
-export async function loadTelegramQueuedLaunchMaterial(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-): Promise<TelegramQueuedLaunchMaterial | null> {
-  const context = await loadTelegramLaunchContext(db, args);
-  if (!context) {
-    return null;
-  }
-  const officialBotConfig = getOfficialTelegramBotConfig();
-  const providerBotId = officialBotConfig.botId;
-  if (providerBotId === null) {
-    return null;
-  }
-  const botUsername = officialBotConfig.botUsername;
-  return {
-    prompt: context.messageText,
-    appendSystemPrompt: buildTelegramPrompt(
-      {
-        botId: providerBotId,
-        botUsername,
+export const loadTelegramQueuedLaunchMaterial$ = command(
+  async (
+    { set },
+    args: {
+      readonly eventId: string;
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+  ): Promise<TelegramQueuedLaunchMaterial | null> => {
+    const context = await set(loadTelegramLaunchContext$, args);
+    if (!context) {
+      return null;
+    }
+    const officialBotConfig = getOfficialTelegramBotConfig();
+    const providerBotId = officialBotConfig.botId;
+    if (providerBotId === null) {
+      return null;
+    }
+    const botUsername = officialBotConfig.botUsername;
+    return {
+      prompt: context.messageText,
+      appendSystemPrompt: buildTelegramPrompt(
+        {
+          botId: providerBotId,
+          botUsername,
+          chatId: context.chatId,
+          chatType: context.chatType,
+          messageId: context.messageId,
+          rootMessageId: context.rootMessageId,
+          messageThreadId: context.messageThreadId,
+        },
+        resolveIntegrationNotePrompt({
+          triggerSource: "telegram",
+          featureSwitchContext: args.featureSwitchContext,
+        }),
+        context.threadContext,
+      ),
+      telegramDelivery: telegramDeliveryTargetSchema.parse({
+        installationId: OFFICIAL_TELEGRAM_BOT_ID,
         chatId: context.chatId,
-        chatType: context.chatType,
         messageId: context.messageId,
         rootMessageId: context.rootMessageId,
-        messageThreadId: context.messageThreadId,
-      },
-      resolveIntegrationNotePrompt({
-        triggerSource: "telegram",
-        featureSwitchContext: args.featureSwitchContext,
+        userLinkId: context.userLinkId,
+        userLinkKind: context.userLinkKind,
+        agentId: context.agentId,
+        isDM: context.chatType === "private",
+        ...(context.messageThreadId !== null
+          ? { messageThreadId: context.messageThreadId }
+          : {}),
+        ...(context.thinkingMessageId !== null
+          ? { thinkingMessageId: context.thinkingMessageId }
+          : {}),
       }),
-      context.threadContext,
-    ),
-    telegramDelivery: telegramDeliveryTargetSchema.parse({
-      installationId: OFFICIAL_TELEGRAM_BOT_ID,
-      chatId: context.chatId,
-      messageId: context.messageId,
-      rootMessageId: context.rootMessageId,
-      userLinkId: context.userLinkId,
-      userLinkKind: context.userLinkKind,
-      agentId: context.agentId,
-      isDM: context.chatType === "private",
-      ...(context.messageThreadId !== null
-        ? { messageThreadId: context.messageThreadId }
-        : {}),
-      ...(context.thinkingMessageId !== null
-        ? { thinkingMessageId: context.thinkingMessageId }
-        : {}),
-    }),
-    userInfoExtras: telegramUserInfoExtras(context),
-  };
-}
+      userInfoExtras: telegramUserInfoExtras(context),
+    };
+  },
+);

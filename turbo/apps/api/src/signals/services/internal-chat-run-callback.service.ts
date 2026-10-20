@@ -163,7 +163,7 @@ import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
-import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
+import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 
 const log = logger("callback:chat");
 type ChatCallbackPreCreateTimingSpanKind = "top_level" | "nested";
@@ -3690,7 +3690,7 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "telegram": {
-        const material = await loadTelegramQueuedLaunchMaterial(db, source);
+        const material = await set(loadTelegramQueuedLaunchMaterial$, source);
         signal.throwIfAborted();
         return material
           ? { ...delivery, kind: "Telegram", target: material.telegramDelivery }
