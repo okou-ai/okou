@@ -189,12 +189,12 @@ describe("Connector authorization-target validation", () => {
       { apiKey: "absent-target-token" },
       { statuses: [200] },
     );
-    expect(connected.body).toMatchObject({
+    const account = await connectorsApi.readConnectorBySlug(actor, "openai");
+    expect(connected.body).toStrictEqual({ connectionId: account.id });
+    expect(account).toMatchObject({
       slug: "openai",
       connectionStatus: "connected",
     });
-    const account = await connectorsApi.readConnectorBySlug(actor, "openai");
-    expect(connected.body).toMatchObject({ id: account.id });
     expect(JSON.stringify(connected.body)).not.toContain("absent-target-token");
   });
 });

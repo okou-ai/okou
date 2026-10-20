@@ -55,7 +55,7 @@ assert_no_connector_refresh_raw_secrets() {
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \
-        '.id | select(type == "string" and length > 0)' \
+        '.connectionId | select(type == "string" and length > 0)' \
         <<<"$output")
     public_surfaces+="$output"$'\n'
 

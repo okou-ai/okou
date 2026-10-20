@@ -92,7 +92,7 @@ runner_e2e_connect_manual_connector() {
         return "$grant_status"
     fi
     returned_connection_id=$(jq -er \
-        '.id | select(type == "string" and length > 0)' \
+        '.connectionId | select(type == "string" and length > 0)' \
         <<<"$response") || return
 
     if [[ -n "$existing_connection_id" ]]; then
