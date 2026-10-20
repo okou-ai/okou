@@ -283,6 +283,7 @@ import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import {
   ChatThreadLinkChip,
+  STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS,
   STRUCTURED_INLINE_REFERENCE_CLASS,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
@@ -6922,13 +6923,15 @@ function UserMessageTemplateReference({
   const typeLabel = generationTemplateTypeLabel(part.template);
   const label = `${typeLabel ?? part.template.type} · ${part.titleSnapshot}`;
   return (
-    <span
-      data-structured-template-reference=""
-      aria-description={label}
-      className={STRUCTURED_INLINE_REFERENCE_CLASS}
-    >
-      <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
-      <span className="min-w-0 truncate">{part.titleSnapshot}</span>
+    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
+      <span
+        data-structured-template-reference=""
+        aria-description={label}
+        className={STRUCTURED_INLINE_REFERENCE_CLASS}
+      >
+        <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
+        <span className="min-w-0 truncate">{part.titleSnapshot}</span>
+      </span>
     </span>
   );
 }
@@ -7036,25 +7039,27 @@ function UserMessageAgentReference({
   const { t } = useTranslation();
   const agent = useLastResolved(signals.agent$);
   return (
-    <Link
-      pathname={ROUTES.agentChat}
-      options={{ pathParams: { agentId } }}
-      aria-label={t(
-        ($) => {
-          return $.chat.thread.openNamedAgent;
-        },
-        { name },
-      )}
-      className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-    >
-      <AvatarFromUrl
-        avatarUrl={agent?.avatarUrl}
-        alt=""
-        className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
-        size={16}
-      />
-      <span className="min-w-0 truncate">{name}</span>
-    </Link>
+    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
+      <Link
+        pathname={ROUTES.agentChat}
+        options={{ pathParams: { agentId } }}
+        aria-label={t(
+          ($) => {
+            return $.chat.thread.openNamedAgent;
+          },
+          { name },
+        )}
+        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
+      >
+        <AvatarFromUrl
+          avatarUrl={agent?.avatarUrl}
+          alt=""
+          className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
+          size={16}
+        />
+        <span className="min-w-0 truncate">{name}</span>
+      </Link>
+    </span>
   );
 }
 
