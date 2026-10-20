@@ -16,10 +16,11 @@ final class ConversationStore {
     var message: ChatMessage {
       ChatMessage(
         id: id, role: .user,
-        text: ([text].filter { !$0.isEmpty }
-          + attachments.map {
-            "Attachment: \($0.filename) (open this chat on the website to view)"
-          }).joined(separator: "\n"), createdAt: createdAt,
+        text: text,
+        attachments: attachments.map {
+          ChatMessageAttachment(
+            id: $0.id, filename: $0.filename, contentType: $0.contentType, size: $0.size)
+        }, createdAt: createdAt,
         runID: nil, isQueued: false, isError: false)
     }
   }
@@ -27,6 +28,8 @@ final class ConversationStore {
   var thread: ChatThread
   var draft = ""
   @ObservationIgnored lazy var attachmentDraft = AttachmentDraftStore(
+    commands: commands, didFail: didFail)
+  @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, didFail: didFail)
   private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
   private(set) var pending: [PendingMessage] = []
@@ -236,6 +239,7 @@ final class ConversationStore {
       // A previous view can disappear after its replacement has already appeared.
       guard detailOwner == owner else { return }
       detailOwner = nil
+      attachmentViewer.deactivate()
     }
     reconcileActivitySummary()
   }
@@ -256,6 +260,7 @@ final class ConversationStore {
     expansionTask?.cancel()
     measurements.clear()
     attachmentDraft.close()
+    attachmentViewer.close()
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {

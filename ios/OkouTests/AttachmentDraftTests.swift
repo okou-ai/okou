@@ -45,7 +45,9 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertTrue(
       messages.allSatisfy { $0.userMessage.parts.first?.fileId == AttachmentFlowFixture.fileID })
     XCTAssertTrue(conversation.pending.isEmpty)
-    XCTAssertTrue(conversation.messages.first?.text.contains("notes.txt") == true)
+    XCTAssertEqual(conversation.messages.first?.text, "")
+    XCTAssertEqual(conversation.messages.first?.attachments.first?.filename, "notes.txt")
+    XCTAssertEqual(conversation.messages.first?.attachments.first?.id, AttachmentFlowFixture.fileID)
     XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
   }
 

@@ -35,6 +35,7 @@ public enum ChatEventProjection {
     var messages: [ChatMessage] = []
     for row in rows where !revoked.contains(row.id) {
       let text: String
+      var attachments: [ChatMessageAttachment] = []
       let role: ChatMessage.Role
       let isError: Bool
       switch row.eventType {
@@ -43,16 +44,19 @@ public enum ChatEventProjection {
         guard let document = row.payload?.userMessage, document.version == 1 else {
           throw ChatError.invalidContract("Unsupported user message document.")
         }
+        attachments = try document.parts.filter { $0.type == "file" }.map { part in
+          guard let id = part.fileId, !id.isEmpty,
+            let filename = part.filenameSnapshot, !filename.isEmpty,
+            let contentType = part.contentType, !contentType.isEmpty
+          else { throw ChatError.invalidContract("Attachment identity or metadata is missing.") }
+          return ChatMessageAttachment(id: id, filename: filename, contentType: contentType)
+        }
         let body = document.parts.compactMap { part -> String? in
           switch part.type {
           case "text": part.text
           case "chat_thread", "source": part.titleSnapshot
           case "agent": part.nameSnapshot
           case "automation": part.workflowName
-          case "file":
-            part.filenameSnapshot.map {
-              "Attachment: \($0) (open this chat on the website to view)"
-            }
           default: nil
           }
         }.joined(separator: "\n")
@@ -77,10 +81,12 @@ public enum ChatEventProjection {
         isError = false
       default: continue
       }
-      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty {
+        continue
+      }
       messages.append(
         ChatMessage(
-          id: row.id, role: role, text: text, createdAt: row.createdAt,
+          id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
           runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError))
     }
 

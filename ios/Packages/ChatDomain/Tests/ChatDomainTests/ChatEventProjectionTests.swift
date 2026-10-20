@@ -80,6 +80,49 @@ final class ChatEventProjectionTests: XCTestCase {
     XCTAssertNil(try ChatEventProjection.history(rows: finished, recovering: false).activityRunID)
   }
 
+  func testFileOnlyMixedAndRejectedMessagesKeepCanonicalAttachments() throws {
+    let files = [
+      ChatEvent.UserMessage.Part(
+        type: "file", fileId: "image-id", contentType: "image/png", filenameSnapshot: "image.png"),
+      ChatEvent.UserMessage.Part(
+        type: "file", fileId: "pdf-id", contentType: "application/pdf",
+        filenameSnapshot: "report.pdf"),
+    ]
+    let rows = [
+      ChatEvent(
+        id: eventID(1), createdAt: .now, eventType: .inputPrompt,
+        payload: .init(userMessage: .init(version: 1, parts: files))),
+      ChatEvent(
+        id: eventID(2), createdAt: .now, eventType: .inputRejected,
+        payload: .init(
+          error: "Please try again",
+          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Review")] + files))),
+    ]
+    let history = try ChatEventProjection.history(rows: rows, recovering: false)
+    XCTAssertEqual(history.messages.count, 2)
+    XCTAssertEqual(history.messages[0].text, "")
+    XCTAssertEqual(history.messages[0].attachments.map(\.id), ["image-id", "pdf-id"])
+    XCTAssertEqual(history.messages[0].attachments.map(\.filename), ["image.png", "report.pdf"])
+    XCTAssertEqual(history.messages[1].text, "Review\n\nPlease try again")
+    XCTAssertEqual(history.messages[1].attachments, history.messages[0].attachments)
+    XCTAssertTrue(history.messages[1].isError)
+  }
+
+  func testMissingFileIdentityFailsClosedInsteadOfDroppingTheAttachment() {
+    XCTAssertThrowsError(
+      try ChatEventProjection.history(
+        rows: [
+          ChatEvent(
+            id: eventID(1), createdAt: .now, eventType: .inputPrompt,
+            payload: .init(
+              userMessage: .init(
+                version: 1,
+                parts: [
+                  .init(type: "file", contentType: "text/plain", filenameSnapshot: "notes.txt")
+                ])))
+        ], recovering: false))
+  }
+
   private func eventID(_ id: Int) -> String {
     String(format: "10000000-0000-4000-8000-%012d", id)
   }

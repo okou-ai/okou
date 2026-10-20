@@ -304,8 +304,9 @@ final class ChatClientTests: XCTestCase {
     }
     let fixture = ChatHTTPFixture(clientVersion: "4.5.6", handler: handler)
     let otherFixture = ChatHTTPFixture(clientVersion: "4.5.6", handler: handler)
-    try await fixture.client.data("/api/indicators")
-    try await fixture.client.data("/api/chat-threads/\(fixtureThread)/pin", method: "POST")
+    let client = fixture.client
+    try await client.data("/api/indicators")
+    try await client.data("/api/chat-threads/\(fixtureThread)/pin", method: "POST")
     try await otherFixture.client.data("/api/indicators")
 
     let headers = observed.withLock { $0 }
@@ -798,10 +799,16 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(
       history.messages.map(\.text),
       [
-        "Ask\nRelease Scout\nRelease chat\nEarlier run\nNightly review\nAttachment: plan.md (open this chat on the website to view)",
+        "Ask\nRelease Scout\nRelease chat\nEarlier run\nNightly review",
         "Planner",
       ])
     XCTAssertEqual(history.messages.map(\.role), [.user, .user])
+    XCTAssertEqual(
+      history.messages.first?.attachments,
+      [
+        ChatMessageAttachment(
+          id: "historical-file", filename: "plan.md", contentType: "text/markdown")
+      ])
   }
 
   func testSendResetsSharedOverridesAndUsesOriginalAgentWithoutModelOverride() async throws {

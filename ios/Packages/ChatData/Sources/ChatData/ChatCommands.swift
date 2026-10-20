@@ -52,6 +52,12 @@ public actor ChatCommands {
       file: file, filename: filename, contentType: contentType, progress: progress)
   }
 
+  public func downloadAttachment(
+    _ attachment: ChatMessageAttachment, thumbnail: Bool = false
+  ) async throws -> ChatAttachmentFile? {
+    try await ChatAttachmentDownload(client: client).download(attachment, thumbnail: thumbnail)
+  }
+
   public func send(
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
     clientEventID: String = UUID().uuidString

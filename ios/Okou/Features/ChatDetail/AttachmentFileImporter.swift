@@ -76,13 +76,13 @@ actor AttachmentFileImporter {
     }
   }
 
-  private func thumbnail(_ url: URL) -> Data? {
+  func thumbnail(_ url: URL, maximumPixelSize: Int = 160) -> Data? {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
       let image = CGImageSourceCreateThumbnailAtIndex(
         source, 0,
         [
           kCGImageSourceCreateThumbnailFromImageAlways: true,
-          kCGImageSourceThumbnailMaxPixelSize: 160,
+          kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
           kCGImageSourceCreateThumbnailWithTransform: true,
           kCGImageSourceShouldCacheImmediately: true,
         ] as CFDictionary)
