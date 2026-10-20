@@ -2323,37 +2323,6 @@ async function resolveAutomaticCustomConnectorOAuth2AccessToken(
   return currentAfterLostPublication(current);
 }
 
-async function loadLiveCustomConnector(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly customConnectorId: string;
-}): Promise<CustomConnectorRow | null> {
-  const [row] = await args.db
-    .select({
-      connector: customConnectorDefinitionSelection(),
-      oauthConfig: orgCustomConnectorOauthConfigs,
-    })
-    .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(orgCustomConnectors.id, args.customConnectorId),
-        eq(orgCustomConnectors.orgId, args.orgId),
-        eq(orgCustomConnectors.enabled, true),
-      ),
-    )
-    .limit(1);
-  return row
-    ? normaliseCustomConnectorRow(row.connector, row.oauthConfig)
-    : null;
-}
-
 export async function resolveCurrentCustomConnectorOAuth2AccessToken(
   args: {
     readonly db: Db;
@@ -2366,7 +2335,35 @@ export async function resolveCurrentCustomConnectorOAuth2AccessToken(
   },
   signal: AbortSignal,
 ): Promise<CustomConnectorOAuth2AccessTokenResolution> {
-  const connector = await loadLiveCustomConnector(args);
+  const connector = await (async (): Promise<CustomConnectorRow | null> => {
+    const [row] = await args.db
+      .select({
+        connector: customConnectorDefinitionSelection(),
+        oauthConfig: orgCustomConnectorOauthConfigs,
+      })
+      .from(orgCustomConnectors)
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.customConnectorId),
+          eq(orgCustomConnectors.orgId, args.orgId),
+          eq(orgCustomConnectors.enabled, true),
+        ),
+      )
+      .limit(1);
+    return row
+      ? normaliseCustomConnectorRow(row.connector, row.oauthConfig)
+      : null;
+  })();
   signal.throwIfAborted();
   if (
     !connector ||
