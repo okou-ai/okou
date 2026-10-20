@@ -31,11 +31,6 @@ describe("Runner claim-time Agent instructions", () => {
         queued.runId,
       );
       expect(claim.agentInstructions).toBe(current);
-      expect(
-        claim.storageManifest?.storageMounts.every((mount) => {
-          return mount.instructionsTargetFilename === undefined;
-        }),
-      ).toBeTruthy();
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,

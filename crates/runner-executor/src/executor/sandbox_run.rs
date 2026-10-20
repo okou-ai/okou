@@ -456,8 +456,7 @@ pub(super) async fn prepare_storage(
     };
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
-        let runtime_dir = super::guest_runtime_dir(context.run_id)?;
-        let mut plan = build_storage_plan(manifest, runtime_dir.as_str(), previous_storage)?;
+        let mut plan = build_storage_plan(manifest, previous_storage)?;
         let delivery = crate::storage_cache::prepare_fresh_archive_delivery(
             &mut plan,
             &config.home,

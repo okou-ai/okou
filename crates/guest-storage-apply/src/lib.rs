@@ -1,4 +1,4 @@
-//! Apply guest storage/artifact manifests, including cleanup and normalization.
+//! Apply guest storage/artifact manifests and replace claim-time Agent instructions.
 //!
 //! Features:
 //! - Parallel downloads using std::thread (max 4 concurrent)
@@ -7,8 +7,8 @@
 //! ## Manifest application and failure semantics
 //!
 //! [`run`] and [`run_manifest_bytes`] apply valid manifests directly to the
-//! filesystem without a transaction. Manifest-requested stale-path and
-//! instruction-file cleanups must succeed before target preparation and
+//! filesystem without a transaction. Manifest-requested stale-path and instruction-file
+//! cleanups must succeed before target preparation and
 //! downloads. A failure stops later phases; a later failure does not restore
 //! completed filesystem changes.
 //!
@@ -17,21 +17,14 @@
 //! successfully materialized by other tasks. Archives extract in place, so a
 //! failed task may also leave changes written by an earlier entry.
 //!
-//! On cleanup, preparation, download, or normalization failure, the crate
-//! attempts to remove staged sources used to normalize instruction storage. That targeted cleanup
-//! does not roll back ordinary storage or artifact targets, empty artifact
-//! directories already prepared, or earlier cleanup effects. Required stale-input
-//! cleanup and instruction normalization failures return `false`, preventing a
-//! caller from launching the CLI with incomplete inputs. Missing stale paths
-//! count as already cleaned. Protected mountpoint filesystem metadata and
-//! best-effort temporary-source cleanup are not managed Run inputs.
+//! Required cleanup, target preparation, or download failure returns `false`,
+//! preventing launch with incomplete inputs. Earlier filesystem effects are not
+//! rolled back. Missing stale paths count as already cleaned.
 //!
-//! Cached ordinary storages and artifacts preserve their entire mount roots.
-//! Empty artifacts retain existing root identity and ownership while clearing
-//! stale contents, including when a containing directory is also cleaned.
-//! Cached instructions preserve only the managed instruction filenames needed
-//! for normalization, allowing changed or removed skills beneath the same
-//! framework home to be cleaned independently.
+//! Cached storages and artifacts preserve their mount roots. Empty artifacts
+//! retain root identity and ownership while clearing stale contents, including
+//! when a containing directory is also cleaned. Claim-time Agent instructions
+//! are applied separately after Storage reconciliation through `apply_agent_instructions`.
 //!
 //! ## Archive metadata limits
 //!
@@ -85,7 +78,7 @@ const LOG_TAG: &str = "sandbox:guest-storage-apply";
 /// Apply the manifest read from `manifest_path`.
 ///
 /// Returns `true` when the manifest can be read and parsed and all required
-/// cleanups, target preparations, downloads, and instruction normalization
+/// cleanups, target preparations, and downloads
 /// succeed. Returns `false` otherwise. A read or parse failure occurs before
 /// manifest application; once application
 /// starts, `false` does not roll back completed filesystem changes. See the
@@ -109,7 +102,7 @@ pub fn run(manifest_path: &str) -> bool {
 /// Apply a manifest supplied as JSON bytes.
 ///
 /// Returns `true` when the manifest parses and all required cleanups, target
-/// preparations, downloads, and instruction normalization succeed. Returns
+/// preparations and downloads succeed. Returns
 /// `false` otherwise. A parse failure occurs
 /// before manifest application; once application starts, `false` does not roll
 /// back completed filesystem changes. See the manifest application section in
@@ -198,7 +191,6 @@ fn run_manifest_with_files(
         preserved_paths,
         empty_artifacts,
         download_tasks,
-        instruction_files,
     } = plan;
 
     // Clean stale files from changed/removed storages before downloading.
@@ -222,7 +214,6 @@ fn run_manifest_with_files(
     );
     if !cleanup_success {
         log_error!(LOG_TAG, "Required storage cleanup failed");
-        instructions::cleanup_staged_instruction_sources(&instruction_files);
         return false;
     }
 
@@ -247,12 +238,10 @@ fn run_manifest_with_files(
                 None,
             );
             log_error!(LOG_TAG, "{e}");
-            instructions::cleanup_staged_instruction_sources(&instruction_files);
             return false;
         }
     };
     if !prepare_empty_artifacts(&empty_artifacts) {
-        instructions::cleanup_staged_instruction_sources(&instruction_files);
         return false;
     }
 
@@ -265,20 +254,7 @@ fn run_manifest_with_files(
         None,
     );
     if !success {
-        instructions::cleanup_staged_instruction_sources(&instruction_files);
         return false;
-    }
-    let normalize_start = Instant::now();
-    let success = instructions::normalize_instruction_files(&instruction_files);
-    record_sandbox_op(
-        "guest_storage_apply_instruction_normalize",
-        normalize_start.elapsed(),
-        success,
-        None,
-    );
-    if !success {
-        log_error!(LOG_TAG, "Required instruction normalization failed");
-        instructions::cleanup_staged_instruction_sources(&instruction_files);
     }
     success
 }
@@ -347,32 +323,6 @@ mod tests {
     }
 
     #[test]
-    fn run_manifest_removes_staged_instruction_source_when_download_fails() {
-        let dir = tempfile::tempdir().unwrap();
-        let extract_path = dir
-            .path()
-            .join("runtime")
-            .join("storage-instructions")
-            .join("0");
-        let extract_parent = extract_path.parent().unwrap().to_path_buf();
-        let missing_archive = dir.path().join("missing.tar.gz");
-        let manifest = json!({
-            "storageMounts": [{
-                "mountPath": dir.path().join(".codex"),
-                "extractPath": extract_path,
-                "archiveUrl": format!("file://{}", missing_archive.display()),
-                "instructionsTargetFilename": "AGENTS.md"
-            }]
-        });
-
-        let success = super::run_manifest_bytes(&serde_json::to_vec(&manifest).unwrap());
-
-        assert!(!success);
-        assert!(!extract_path.exists());
-        assert!(!extract_parent.exists());
-    }
-
-    #[test]
     fn run_manifest_prepares_explicit_empty_artifact_without_opening_archive() {
         let dir = tempfile::tempdir().unwrap();
         let mount = dir.path().join("memory");
@@ -412,42 +362,5 @@ mod tests {
 
         assert!(success);
         assert!(mount.is_dir());
-    }
-
-    #[test]
-    fn run_manifest_removes_created_staged_instruction_sources_when_precreate_fails() {
-        let dir = tempfile::tempdir().unwrap();
-        let first_extract_path = dir
-            .path()
-            .join("runtime")
-            .join("storage-instructions")
-            .join("0");
-        let first_extract_parent = first_extract_path.parent().unwrap().to_path_buf();
-        let blocker = dir.path().join("blocker");
-        let blocked_extract_path = blocker.join("storage-instructions").join("1");
-        std::fs::write(&blocker, "not a directory").unwrap();
-        let archive = dir.path().join("archive.tar.gz");
-        let manifest = json!({
-            "storageMounts": [
-                {
-                    "mountPath": dir.path().join(".codex"),
-                    "extractPath": first_extract_path,
-                    "archiveUrl": format!("file://{}", archive.display()),
-                    "instructionsTargetFilename": "AGENTS.md"
-                },
-                {
-                    "mountPath": dir.path().join(".claude"),
-                    "extractPath": blocked_extract_path,
-                    "archiveUrl": format!("file://{}", archive.display()),
-                    "instructionsTargetFilename": "CLAUDE.md"
-                }
-            ]
-        });
-
-        let success = super::run_manifest_bytes(&serde_json::to_vec(&manifest).unwrap());
-
-        assert!(!success);
-        assert!(!first_extract_path.exists());
-        assert!(!first_extract_parent.exists());
     }
 }

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // The migration runner is the production caller for historical SQL shapes.
 // Retain until the backfill ships and the receipt reader cutover is accepted (#37796).
@@ -107,7 +107,7 @@ async function lifecycle(id: number) {
 }
 
 try {
-  await applyPendingMigrations(migrationClient, { beforeMillis: target.when });
+  await applyFixtureMigrations(migrationClient, { beforeMillis: target.when });
   await client.connect();
   // Two complete no-op batches must advance to later eligible records.
   await client.query(
@@ -159,7 +159,7 @@ try {
     `SELECT to_jsonb(a)::text AS fact FROM billing_run_attribution a WHERE run_id >= '${uuid(2001)}' ORDER BY run_id`,
   );
   await assert.rejects(
-    applyPendingMigrations(migrationClient, { beforeMillis: target.when + 1 }),
+    applyFixtureMigrations(migrationClient, { beforeMillis: target.when + 1 }),
     (error: unknown) => {
       return (
         error instanceof Error &&
@@ -269,7 +269,7 @@ try {
   const ledgersBefore =
     await facts(`SELECT to_jsonb(u)::text AS fact FROM usage_event u
     UNION ALL SELECT to_jsonb(h)::text FROM usage_event_hourly_rollup h ORDER BY fact`);
-  await applyPendingMigrations(migrationClient, {
+  await applyFixtureMigrations(migrationClient, {
     beforeMillis: target.when + 1,
   });
   assert.deepEqual(await facts(immutableQuery), immutableBefore);
@@ -346,7 +346,7 @@ try {
     "DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1",
     [target.when],
   );
-  await applyPendingMigrations(migrationClient, {
+  await applyFixtureMigrations(migrationClient, {
     beforeMillis: target.when + 1,
   });
   assert.deepEqual(await facts(allFacts), firstPass);

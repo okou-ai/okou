@@ -14,7 +14,7 @@ import postgres from "postgres";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // Exercise PostgreSQL three-valued CHECK semantics against the real journal,
 // including the outgoing writer captured by 1078_baseline before the repair.
@@ -64,7 +64,7 @@ async function applyThrough(tag: string) {
   // Use the production runner, real migration bytes and its transaction/timeout
   // policy. Only the on-disk journal frontier changes to seed the old DB state.
   process.chdir(fixtureDirectory);
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
 }
 
 async function seed(shape: "pending" | "legacy" | "sandbox" | "expired") {

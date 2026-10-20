@@ -550,7 +550,6 @@ export const storageMountEntrySchema = z
     archiveUrl: z.string().optional(),
     archiveSize: archiveSizeSchema.optional(),
     empty: z.boolean().optional(),
-    instructionsTargetFilename: z.string().optional(),
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
     writeback: z.boolean().optional(),
   })
@@ -572,13 +571,6 @@ export const storageMountEntrySchema = z
         code: z.ZodIssueCode.custom,
         path: ["empty"],
         message: "empty is only valid for writeback mounts",
-      });
-    }
-    if (writeback && mount.instructionsTargetFilename !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["instructionsTargetFilename"],
-        message: "instructionsTargetFilename is not valid for writeback mounts",
       });
     }
     if (!writeback && mount.missingRootPolicy !== undefined) {
@@ -1069,8 +1061,8 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
-  // Absent on retained contexts that captured an instruction Storage mount.
-  // API-only protocol metadata; the body is read from the Agent at claim time.
+  // Keep emitting this marker for supported DB-reader API rollback artifacts.
+  // Current claims select instructions through the Run's Agent association.
   agentInstructionsSource: z.literal("agent").optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
@@ -1179,7 +1171,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
-  // Claim-only current Agent body; absence retains the captured Storage protocol.
+  // Claim-only current Agent body; absent for jobs without an Agent.
   agentInstructions: z.string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: z.boolean().optional(),

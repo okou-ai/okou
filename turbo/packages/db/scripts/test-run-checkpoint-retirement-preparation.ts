@@ -6,7 +6,7 @@ import { z } from "zod";
 import postgres from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -35,7 +35,7 @@ assert.ok(migration);
 await admin.query(`CREATE DATABASE "${databaseName}"`);
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
 try {
-  await applyPendingMigrations(sql, { beforeMillis: migration.folderMillis });
+  await applyFixtureMigrations(sql, { beforeMillis: migration.folderMillis });
   const storageId = randomUUID();
   const oldCheckpointId = randomUUID();
   await sql`INSERT INTO storages (id, org_id, user_id, name, s3_prefix) VALUES (${storageId}, 'migration-org', 'migration-user', 'memory', ${storageId})`;
@@ -48,7 +48,7 @@ try {
     failWithoutTouchingLegacyId(),
     /pi_memory_phase2_jobs_maintenance_history_check/,
   );
-  await applyPendingMigrations(sql, {
+  await applyFixtureMigrations(sql, {
     beforeMillis: migration.folderMillis + 1,
   });
   const preserved =
@@ -72,7 +72,7 @@ try {
     sql`UPDATE pi_memory_phase2_jobs SET last_maintenance_revision = 0 WHERE memory_storage_id = ${storageId}`,
     /pi_memory_phase2_jobs_maintenance_history_check/,
   );
-  await applyPendingMigrations(sql, {
+  await applyFixtureMigrations(sql, {
     beforeMillis: migration.folderMillis + 1,
   });
   console.log(

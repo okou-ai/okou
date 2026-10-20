@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { z } from "zod";
 
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const journal = z
   .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
@@ -109,7 +109,7 @@ async function assertOutgoingNameReads() {
 
 try {
   await client.connect();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: preparation.when,
   });
   await client.query(
@@ -120,7 +120,7 @@ try {
   await insertWorkflow("ordinary-first");
   await insertWorkflow("official-first", "installing");
   await assertOutgoingNameReads();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when,
   });
   await assertOutgoingNameReads();
@@ -140,7 +140,7 @@ try {
   );
 
   // Apply the generated contraction only after outgoing readers are excluded.
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
   await insertWorkflow("ordinary-first", "installing");
   await insertWorkflow("official-first");
   await insertWorkflow("ordinary-first", null, "public");

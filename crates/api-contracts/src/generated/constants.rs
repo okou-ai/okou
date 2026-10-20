@@ -226,6 +226,9 @@ pub mod runners {
         /// Canonical working directory path expected inside runner guests.
         /// Rust and TypeScript components use this shared contract value when building runner commands and paths.
         pub const CANONICAL_WORKING_DIR: &str = "/home/user/workspace";
+
+        /// Canonical Pi agent directory containing instructions, skills and native state.
+        pub const PI_AGENT_DIR: &str = "/home/user/.pi/agent";
     }
 }
 

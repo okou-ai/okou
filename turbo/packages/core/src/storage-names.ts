@@ -1,5 +1,5 @@
 /**
- * Storage name generation functions for agent instructions and skills.
+ * Storage name generation functions for skills and shared packages.
  * These functions create standardized storage names used across CLI and Web packages.
  */
 
@@ -16,17 +16,6 @@ export const VOLUME_ORG_USER_ID = "__org__";
  * Used for official skills that are cached globally, not per-org.
  */
 export const SYSTEM_ORG_ID = "__system__";
-
-/**
- * Generate the storage name for agent instructions.
- * Format: agent-instructions@{agentName}
- *
- * @param agentName - Name of the agent (compose name)
- * @returns Storage name for the instructions
- */
-export function getInstructionsStorageName(agentName: string): string {
-  return `agent-instructions@${agentName}`;
-}
 
 /**
  * Generate the storage name for an agent skill.

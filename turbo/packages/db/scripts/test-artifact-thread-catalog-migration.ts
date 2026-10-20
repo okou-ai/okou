@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -40,7 +40,7 @@ try {
     return item.tag.endsWith("_artifact_thread_catalog");
   });
   assert.ok(entry);
-  await applyPendingMigrations(migrationClient, { beforeMillis: entry.when });
+  await applyFixtureMigrations(migrationClient, { beforeMillis: entry.when });
   await client.connect();
   await client.query(`
     INSERT INTO chat_threads (id, user_id, title) VALUES
@@ -124,7 +124,7 @@ try {
     `ALTER TABLE drizzle.__drizzle_migrations ADD CONSTRAINT artifact_test_journal_failure CHECK (created_at <> ${entry.when}) NOT VALID`,
   );
   await assert.rejects(
-    applyPendingMigrations(migrationClient, { beforeMillis: entry.when + 1 }),
+    applyFixtureMigrations(migrationClient, { beforeMillis: entry.when + 1 }),
     { code: "23514" },
   );
   assert.equal(
@@ -142,7 +142,7 @@ try {
   await client.query(
     "ALTER TABLE drizzle.__drizzle_migrations DROP CONSTRAINT artifact_test_journal_failure",
   );
-  await applyPendingMigrations(migrationClient, {
+  await applyFixtureMigrations(migrationClient, {
     beforeMillis: entry.when + 1,
   });
   const afterRetry = await client.query("SELECT * FROM artifacts ORDER BY id");
@@ -256,7 +256,7 @@ try {
     ).rows[0]?.count,
     0,
   );
-  await applyPendingMigrations(migrationClient, {
+  await applyFixtureMigrations(migrationClient, {
     beforeMillis: entry.when + 1,
   });
   assert.deepEqual(

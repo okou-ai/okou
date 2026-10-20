@@ -265,7 +265,7 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       .mapWith(nullableDriverValueDecoder(agents.description))
       .as("description"),
     instructions: sql`${sql.param(values.instructions, agents.instructions)}`
-      .mapWith(nullableDriverValueDecoder(agents.instructions))
+      .mapWith(agents.instructions)
       .as("instructions"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.sound))

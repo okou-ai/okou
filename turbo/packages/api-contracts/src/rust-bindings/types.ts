@@ -637,9 +637,6 @@ export const rustTypeBindings = [
           ],
           archiveSize: ["Optional exact encoded archive size in bytes."],
           empty: ["Whether the resolved Storage version is explicitly empty."],
-          instructionsTargetFilename: [
-            "Optional filename used when Storage instructions are normalized.",
-          ],
           missingRootPolicy: [
             "Optional behavior when a writeback mount root is missing.",
           ],

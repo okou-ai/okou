@@ -77,9 +77,7 @@ fn storage_manifest() -> Manifest {
     Manifest {
         storages: vec![StorageEntry {
             mount_path: "/data".into(),
-            extract_path: None,
             archive_url: Some("https://s3/archive.tar.gz".into()),
-            instructions_target_filename: None,
             cached: false,
             vas_storage_name: Some("data".into()),
             vas_version_id: Some("v1".into()),

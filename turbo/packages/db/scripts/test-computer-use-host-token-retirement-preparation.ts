@@ -12,7 +12,7 @@ import { schema } from "../src/index";
 import { computerUseHosts } from "../src/runtime/computer-use-host";
 import { chatThreads } from "./fixtures/chat-thread-pre-native";
 import { computerUseCommandAuditEvents } from "../src/schema/computer-use-host";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import {
   outgoingHosts,
   outgoingCommands as computerUseCommands,
@@ -57,7 +57,7 @@ const db = drizzle(client, { schema });
 
 try {
   await client.connect();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: preparation.when,
   });
   const legacyId = randomUUID();
@@ -147,7 +147,7 @@ try {
   const auditsBefore = await db.select().from(computerUseCommandAuditEvents);
   const threadsBefore = await db.select().from(chatThreads);
 
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: preparation.when + 1,
   });
   for (const before of historical) {
@@ -176,13 +176,13 @@ try {
     "The preparation must retain the physical index",
   );
   // Migration reruns do not change devices, bindings, commands or generations.
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: preparation.when + 1,
   });
 
   for (const shape of ["retained", "contracted"] as const) {
     if (shape === "contracted") {
-      await applyPendingMigrations(migrationSql, {
+      await applyFixtureMigrations(migrationSql, {
         beforeMillis: contraction.when,
       });
       const hostsBefore = await db
@@ -220,7 +220,7 @@ try {
       ]) {
         await client.query(dependency.create);
         await assert.rejects(
-          applyPendingMigrations(migrationSql, {
+          applyFixtureMigrations(migrationSql, {
             beforeMillis: contraction.when + 1,
           }),
           (error: unknown) => {
@@ -262,7 +262,7 @@ try {
         [legacyId],
       );
       await assert.rejects(
-        applyPendingMigrations(migrationSql, {
+        applyFixtureMigrations(migrationSql, {
           beforeMillis: contraction.when + 1,
         }),
         /Host token hashes remain after retirement preparation/,
@@ -279,7 +279,7 @@ try {
         "UPDATE computer_use_hosts SET token_hash = NULL WHERE id = $1",
         [legacyId],
       );
-      await applyPendingMigrations(migrationSql, {
+      await applyFixtureMigrations(migrationSql, {
         beforeMillis: contraction.when + 1,
       });
       assert.deepEqual(
@@ -295,7 +295,7 @@ try {
         ).rows[0]?.name,
         null,
       );
-      await applyPendingMigrations(migrationSql, {
+      await applyFixtureMigrations(migrationSql, {
         beforeMillis: contraction.when + 1,
       });
     }

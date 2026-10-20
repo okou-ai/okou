@@ -1261,8 +1261,7 @@ async fn prepare_guest_storage(
                 download_result.map(|_| deferred)
             }
         } else {
-            let runtime_dir = guest_runtime_dir(context.run_id)?;
-            let mut plan = build_storage_plan(manifest, runtime_dir.as_str(), start.prev_storage)?;
+            let mut plan = build_storage_plan(manifest, start.prev_storage)?;
             record_storage_plan_state(
                 &plan,
                 start.prev_storage.is_some(),

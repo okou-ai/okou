@@ -10,7 +10,7 @@ import { z } from "zod";
 import { schema } from "../src/index";
 import { piMemoryPhase2Jobs } from "../src/runtime/pi-memory-phase2-job";
 import { outgoingPiMemoryJobs } from "./fixtures/pi-memory-storage-outgoing";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { validatePermanentPiMemoryJobs } from "./test-pi-memory-job-permanent";
 
 // Retain through independent production contraction acceptance under #39171.
@@ -88,7 +88,7 @@ async function retainedState() {
 
 try {
   await client.connect();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: preparation.when,
   });
   const agentId = randomUUID();
@@ -164,7 +164,7 @@ try {
     [runId, storageId, randomUUID(), baseVersionId, selectionDigest, versionId],
   );
 
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when,
   });
   // Stale compatibility output is neither a current result nor a live lease.
@@ -237,7 +237,7 @@ try {
   ]) {
     await client.query(dependency.create);
     await assert.rejects(
-      applyPendingMigrations(migrationSql, {
+      applyFixtureMigrations(migrationSql, {
         beforeMillis: contraction.when + 1,
       }),
       (error: unknown) => {
@@ -275,7 +275,7 @@ try {
     "CREATE TRIGGER memory_unexpected_trigger BEFORE INSERT ON pi_memory_phase2_checkpoints FOR EACH ROW EXECUTE FUNCTION memory_unexpected_trigger()",
   );
   await assert.rejects(
-    applyPendingMigrations(migrationSql, {
+    applyFixtureMigrations(migrationSql, {
       beforeMillis: contraction.when + 1,
     }),
     /Unexpected Pi memory storage dependencies/,
@@ -304,7 +304,7 @@ try {
     .where(eq(outgoingPiMemoryJobs.memoryStorageId, storageId));
   const leased = await retainedState();
   await assert.rejects(
-    applyPendingMigrations(migrationSql, {
+    applyFixtureMigrations(migrationSql, {
       beforeMillis: contraction.when + 1,
     }),
     /Pi memory compatibility leases remain/,
@@ -321,7 +321,7 @@ try {
     .where(eq(outgoingPiMemoryJobs.memoryStorageId, storageId));
   const expiredLegacy = await retainedState();
   await assert.rejects(
-    applyPendingMigrations(migrationSql, {
+    applyFixtureMigrations(migrationSql, {
       beforeMillis: contraction.when + 1,
     }),
     /Pi memory compatibility leases remain/,
@@ -337,7 +337,7 @@ try {
     })
     .where(eq(piMemoryPhase2Jobs.memoryStorageId, storageId));
   const ready = await retainedState();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
   const after = await retainedState();
@@ -362,7 +362,7 @@ try {
     0,
   );
   await validatePermanentPiMemoryJobs(ownedUrl.toString());
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
   assert.deepEqual(
