@@ -1955,9 +1955,9 @@ async def responseinspection(flow: http.HTTPFlow) -> None:
 
 
 def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
-    if response_streaming.has_pending_response_inspection(flow):
-        return _complete_response(flow, _handle_response_after_inspection(flow))
     try:
+        if response_streaming.has_pending_response_inspection(flow):
+            return _complete_response(flow, _handle_response_after_inspection(flow))
         continuation = _handle_response(flow)
     except BaseException:
         _release_terminal_flow_state(
@@ -2024,9 +2024,20 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
     connector_diagnostics.maybe_replace_response(flow, original_url=original_url)
     validation = codex_model_catalog_cache.finalize_response(flow)
     if validation is not None:
-        return _finish_response_after_catalog_validation(
+        return _finish_response_after_terminal_work(
             flow,
             validation,
+            run_id=run_id,
+            latency_ms=latency_ms,
+            original_url=original_url,
+            firewall_action=firewall_action,
+        )
+    # Preserve network latency's sampling point before newly deferred parsing.
+    response_streaming.start_buffered_response_inspection(flow)
+    if response_streaming.has_pending_response_inspection(flow):
+        return _finish_response_after_terminal_work(
+            flow,
+            responseinspection(flow),
             run_id=run_id,
             latency_ms=latency_ms,
             original_url=original_url,
@@ -2042,16 +2053,16 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
     return None
 
 
-async def _finish_response_after_catalog_validation(
+async def _finish_response_after_terminal_work(
     flow: http.HTTPFlow,
-    validation: Awaitable[None],
+    pending_work: Awaitable[None],
     *,
     run_id: str,
     latency_ms: int,
     original_url: str,
     firewall_action: str,
 ) -> None:
-    await validation
+    await pending_work
     _finish_response_handling(
         flow,
         run_id=run_id,

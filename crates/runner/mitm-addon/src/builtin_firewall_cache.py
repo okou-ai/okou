@@ -1,5 +1,6 @@
 """Runner-written builtin firewall catalog cache reader."""
 
+import codecs
 import json
 import os
 import re
@@ -7,6 +8,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple
+from urllib.parse import unquote_to_bytes
 
 from mitmproxy import ctx
 
@@ -32,6 +34,8 @@ _BASE_URL_TEMPLATE_HOST_PLACEHOLDER = "x.y"
 _BASE_URL_TEMPLATE_PORT_PLACEHOLDER = "1"
 _BASE_URL_TEMPLATE_PATH_PLACEHOLDER = "x"
 _BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS = re.compile(r"([.:/?#@\[\]\u3002\uff0e\uff61])")
+_BASE_URL_TEMPLATE_OPEN_HOST_ESCAPE = re.compile(r"%[0-9a-fA-F]?$")
+_BASE_URL_TEMPLATE_PERCENT_ESCAPE_LENGTH = 3
 _BASE_URL_TEMPLATE_ENCODED_HOST_STRUCTURE = frozenset(r".:/?#@[]\%{}*")
 _BASE_URL_TEMPLATE_PLACEHOLDERS: dict[
     builtin_base_url_template.BaseUrlTemplateComponentKind, str
@@ -514,6 +518,18 @@ def _base_url_template_syntax_target(firewall_name: str, raw_base: str) -> str |
 
 
 def _base_url_template_hostname_literal_syntax_target(literal: str, *, trailing: bool) -> str:
+    if trailing and (escape := _BASE_URL_TEMPLATE_OPEN_HOST_ESCAPE.search(literal)) is not None:
+        prefix = literal[: escape.start()]
+        try:
+            prefix_bytes = unquote_to_bytes(prefix)
+            _, consumed = codecs.utf_8_decode(prefix_bytes, "strict", False)
+        except UnicodeError:
+            return literal
+        # A variable can finish a UTF-8 character as well as its final octet.
+        # Retain every complete character, including encoded URL structure, and
+        # project only the unfinished character. Final resolution checks it all.
+        pending = len(prefix_bytes) - consumed
+        literal = prefix[: len(prefix) - pending * _BASE_URL_TEMPLATE_PERCENT_ESCAPE_LENGTH] + "x"
     parts = _BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS.split(literal)
     index = -1 if trailing else 0
     decoded = percent_decode_host(
