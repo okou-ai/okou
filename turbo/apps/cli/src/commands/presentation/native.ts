@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SVG_PICTURE, SVG_RENDERER } from "./svg";
+
 const colorSchema = z.object({
   color: z.string().regex(/^[\dA-F]{6}$/u),
   alpha: z.number().min(0).max(1),
@@ -26,6 +28,15 @@ const paintSchema = z.object({
   cells: z.array(z.array(fillSchema.nullable())).optional(),
   mathGroup: z.number().int().nonnegative().optional(),
   shadowGroup: z.number().int().nonnegative().optional(),
+  svgGroup: z.number().int().nonnegative().optional(),
+  svgStroke: colorSchema
+    .extend({
+      width: z.number().positive(),
+      cap: z.enum(["butt", "round", "square"]),
+      join: z.enum(["miter", "round", "bevel"]),
+      miterLimit: z.number().positive(),
+    })
+    .optional(),
 });
 export const nativePaintSchema = z.record(
   z.string(),
@@ -188,6 +199,18 @@ function replaceFill(
     .join("");
 }
 
+function svgStrokeXml(
+  stroke: NonNullable<z.infer<typeof paintSchema>["svgStroke"]>,
+  scale: number,
+): string {
+  const cap = { butt: "flat", round: "rnd", square: "sq" }[stroke.cap];
+  const join =
+    stroke.join === "miter"
+      ? `<a:miter lim="${Math.round(stroke.miterLimit * 100_000)}"/>`
+      : `<a:${stroke.join}/>`;
+  return `<a:ln w="${Math.round(stroke.width * scale)}" cap="${cap}"><a:solidFill>${colorXml(stroke)}</a:solidFill><a:prstDash val="solid"/>${join}</a:ln>`;
+}
+
 /** Semantic paint keyed by the renderer's object identity, not approximate x/y. */
 export function applyNativePaint(
   xml: string,
@@ -243,6 +266,15 @@ export function applyNativePaint(
           },
         );
       }
+      if (paint.svgStroke) {
+        const line = svgStrokeXml(paint.svgStroke, scale);
+        result = result.replace(
+          /<p:spPr\b([^>]*)>([\s\S]*?)<\/p:spPr>/u,
+          (_match: string, attributes: string, children: string) => {
+            return `<p:spPr${attributes}>${children.replace(/<a:ln\b[^>]*(?:\/>|>[\s\S]*?<\/a:ln>)/u, line)}</p:spPr>`;
+          },
+        );
+      }
       if (paint.grayscale || paint.crop)
         result = result.replace(/<a:blip\b([^>]*?)\/>/u, "<a:blip$1></a:blip>");
       if (paint.grayscale)
@@ -273,9 +305,14 @@ export function applyNativePaint(
           });
         });
       }
-      const groupId = paint.mathGroup ?? paint.shadowGroup;
+      const groupId = paint.mathGroup ?? paint.shadowGroup ?? paint.svgGroup;
       if (groupId !== undefined) {
-        const kind = paint.mathGroup !== undefined ? "equation" : "shadow";
+        const kind =
+          paint.mathGroup !== undefined
+            ? "equation"
+            : paint.shadowGroup !== undefined
+              ? "shadow"
+              : "svg";
         const key = `${kind}:${groupId.toString()}`;
         const group = groups.get(key);
         if (group) {
@@ -296,7 +333,7 @@ export function applyNativePaint(
       }),
     ) + 1;
   return output.replace(
-    /<!--okou-native-group:(equation|shadow):(\d+)-->/gu,
+    /<!--okou-native-group:(equation|shadow|svg):(\d+)-->/gu,
     (_match: string, kind: string, key: string) => {
       const parts = groups.get(`${kind}:${key}`);
       if (!parts?.length) throw new Error("Native paint group has no shapes");
@@ -330,7 +367,13 @@ export function applyNativePaint(
             return Number(f[2]) + Number(f[4]);
           }),
         ) - y;
-      return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="okou-${kind}-${key}" descr="${kind === "equation" ? "Editable MathML glyphs and rules" : "Editable CSS box shadow"}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/><a:chOff x="${x}" y="${y}"/><a:chExt cx="${w}" cy="${h}"/></a:xfrm></p:grpSpPr>${shapes}</p:grpSp>`;
+      const description =
+        kind === "equation"
+          ? "Editable MathML glyphs and rules"
+          : kind === "shadow"
+            ? "Editable CSS box shadow"
+            : "Editable SVG shapes and text";
+      return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="okou-${kind}-${key}" descr="${description}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/><a:chOff x="${x}" y="${y}"/><a:chExt cx="${w}" cy="${h}"/></a:xfrm></p:grpSpPr>${shapes}</p:grpSp>`;
     },
   );
 }
@@ -1217,6 +1260,8 @@ export const INSTALL_NATIVE = String.raw`
     }
     return items;
   };
+  const svg = (${SVG_RENDERER})({state,roots,color,font,diagnostic});
+  const svgPicture = (${SVG_PICTURE});
   window.__okouNativeRender = (node, result, config, pptx, options) => {
     const element = node.nodeType === 1 ? node : node.parentElement;
     if (!element) return result;
@@ -1256,6 +1301,19 @@ export const INSTALL_NATIVE = String.raw`
     };
     const alpha = Number(s.opacity) * (options._inheritedOpacity ?? 1);
     if (s.display === 'none' || s.visibility !== 'visible' || alpha === 0) return result;
+    if (node.localName === 'svg') {
+      const shapes=svg(node,config,options._inheritedOpacity ?? 1);
+      if (shapes!==null) {
+        annotate(shapes);
+        // Preserve SVG's child paint order, including text between paths.
+        for(const item of shapes)item._paintKey=meta.paintKey;
+        return {items:shapes,stopRecursion:true};
+      }
+      if(result?.items?.length!==1||result.items[0].type!=='image')
+        throw new Error('Unsupported source SVG picture adapter');
+      const picture=result.items[0];
+      result={...result,job:async()=>{picture.options.data=svgPicture(node);}};
+    }
     for (const [property, feature] of [
       ['backdropFilter', 'backdrop-filter'],
       ['mixBlendMode', 'mix-blend-mode'],
@@ -1783,7 +1841,7 @@ export const INSTALL_NATIVE = String.raw`
           Object.assign(item.options,{x:config.offX+(g.x-config.rootX)*unit,y:config.offY+(g.y-config.rootY)*unit,w:g.w*g.sx*unit,h:g.h*g.sy*unit,rotate:g.rotation,flipV:g.reflected});
         }else diagnostic(node,'affine-image','Skewed source images require native picture shear support');
       }
-      if (item.type === 'image' && s.filter !== 'none') {
+      if (item.type === 'image' && node.localName !== 'svg' && s.filter !== 'none') {
         const unhandled = s.filter
           .replace(/grayscale\((?:1|100%)\)/g, '')
           .replace(/opacity\([\d.%]+\)/g, '')

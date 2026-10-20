@@ -333,6 +333,10 @@ public actor ChatSync {
     }
   }
 
+  public func activitySummary(threadID: String, runID: String) async throws -> ChatActivitySummary {
+    try await client.activitySummary(threadID: threadID, runID: runID)
+  }
+
   public func history(threadID: String) async throws -> ChatHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.

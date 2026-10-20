@@ -102,26 +102,32 @@ test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
   },
 );
 
-test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
-  "Show the hint immediately after a bare slash before existing text at %s",
-  async (path) => {
+test.each([
+  { path: `/agents/${AGENT_ID}/chat`, suffix: " 131" },
+  { path: `/chats/${THREAD_ID}`, suffix: " 131" },
+  { path: `/agents/${AGENT_ID}/chat`, suffix: "1231" },
+  { path: `/chats/${THREAD_ID}`, suffix: "1231" },
+])(
+  "Show the hint immediately after a slash before '$suffix' at $path",
+  async ({ path, suffix }) => {
     const user = userEvent.setup({ delay: null });
     const editor = await openComposer(path);
-    await fill(editor, "/ 131");
-    selectText(editor, 1);
+    await fill(editor, suffix);
+    selectText(editor, 0);
+    await user.keyboard("/");
     await waitFor(() => {
       expect(slashHint(editor)).toBeInTheDocument();
     });
-    expect(slashHint(editor)?.nextSibling?.textContent).toBe(" 131");
-    expect(editor.textContent).toBe("/ 131");
+    expect(slashHint(editor)?.nextSibling?.textContent).toBe(suffix);
+    expect(editor.textContent).toBe(`/${suffix}`);
     expect(editor).toHaveFocus();
 
     await user.keyboard("weekly");
-    expect(editor.textContent).toBe("/weekly 131");
+    expect(editor.textContent).toBe(`/weekly${suffix}`);
     expect(slashHint(editor)).toBeNull();
     await user.keyboard("{Enter}");
     await waitFor(() => {
-      expect(editor.textContent).toBe("/weekly-recap 131");
+      expect(editor.textContent).toBe(`/weekly-recap ${suffix.trimStart()}`);
     });
   },
 );
@@ -129,6 +135,7 @@ test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
 test.each([
   ["Draft /", 7],
   ["/ 131", 1],
+  ["/1231", 1],
 ])(
   "Keep the hint out of copied and sent %s and hide it for a selection",
   async (draft, caret) => {
@@ -163,6 +170,7 @@ test.each([
 test.each([
   ["Draft /", 7],
   ["/ 131", 1],
+  ["/1231", 1],
 ])(
   "Preserve IME confirmation while the slash hint is present in %s",
   async (draft, caret) => {
@@ -197,13 +205,13 @@ test.each([
   },
 );
 
-test("Follow a slash on a new line without treating a URL or token suffix as an empty query", async () => {
+test("Follow a slash on a new line without treating a URL or a partial query as an empty query", async () => {
   const user = userEvent.setup({ delay: null });
   const editor = await openComposer();
   await fill(editor, "https://example.com/");
   expect(slashHint(editor)).toBeNull();
   await fill(editor, "/weekly");
-  selectText(editor, 1);
+  selectText(editor, 2);
   await screen.findByTestId("slash-workflow-menu");
   expect(slashHint(editor)).toBeNull();
 

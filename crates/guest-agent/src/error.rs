@@ -28,6 +28,14 @@ pub enum AgentError {
     #[error("execution: {0}")]
     Execution(String),
 
+    /// A CLI child exited naturally before its pending operation completed.
+    /// Preserve the observed status independently from the surviving wrapper.
+    #[error("execution: {message}")]
+    CliProcessExited {
+        message: String,
+        status: std::process::ExitStatus,
+    },
+
     /// Codex rejected an app-server turn because its text input exceeded the
     /// authoritative character limit reported in the structured RPC response.
     #[error(

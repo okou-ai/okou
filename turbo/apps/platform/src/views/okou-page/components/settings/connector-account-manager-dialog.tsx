@@ -84,7 +84,8 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
   const { t } = useTranslation();
   const needsReconnect = account.connectionStatus === "reconnect-required";
   const needsScopeReview = account.scopeMismatch === true;
-  const needsAttention = needsReconnect || needsScopeReview;
+  const needsSetup = account.setupStatus !== "complete";
+  const needsAttention = needsReconnect || needsScopeReview || needsSetup;
   return (
     <span className="flex min-w-0 items-center gap-2">
       <span
@@ -109,9 +110,15 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
             ? t(($) => {
                 return $.connectors.card.updatePermissions;
               })
-            : t(($) => {
-                return $.connectors.accounts.connected;
-              })}
+            : needsSetup
+              ? t(($) => {
+                  return account.setupStatus === undefined
+                    ? $.connectors.accounts.setupUnavailable
+                    : $.connectors.accounts.setupIncomplete;
+                })
+              : t(($) => {
+                  return $.connectors.accounts.connected;
+                })}
       </span>
     </span>
   );

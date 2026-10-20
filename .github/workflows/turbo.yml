@@ -1284,6 +1284,19 @@ jobs:
             exit 1
           fi
 
+          # Main maintains the test project's default parent before previews fork
+          # from it. This job has no production environment, so the parent remains
+          # in the test project. PRs and merge-group runs only migrate their child.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "main push: pre-migrating test project default (parent) branch"
+            PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)
+            WORKFLOW_COMMAND_DATA="${PARENT_DATABASE_URL//%/%25}"
+            WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+            WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+            printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
+            (cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
+          fi
+
           DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/${{ needs.prepare.outputs.job-ref }}")
           WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
@@ -1291,10 +1304,7 @@ jobs:
           printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
 
           cd turbo
-          # Recreate this disposable preview branch so parent data cannot retain
-          # ciphertext encrypted with the retired test KMS key. This job has no
-          # production environment; NEON_PROJECT_ID is the test project.
-          DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:reset
+          DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
           ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
 
           echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"

@@ -2185,7 +2185,7 @@
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
     "relations": {
-      "chats": "Chats",
+      "chats": "Discussions",
       "loadFailed": "Échec du chargement",
       "origin": "Depuis",
       "queued": "En attente",
@@ -3144,6 +3144,8 @@
       "noAccountsFound": "Aucun compte trouvé",
       "reconnectRequired": "Reconnexion requise",
       "rename": "Renommer",
+      "setupIncomplete": "Configuration incomplète",
+      "setupUnavailable": "Statut du compte indisponible",
       "skipName": "Ignorer",
       "summaryMany": "{{value}} comptes",
       "summaryMany_one": "",
@@ -5243,7 +5245,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
-        "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
+        "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",

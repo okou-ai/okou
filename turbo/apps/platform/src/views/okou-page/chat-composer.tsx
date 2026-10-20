@@ -38,14 +38,14 @@ import type {
   ConnectorAccountSelection,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   BuiltinConnectorBrief,
   ConnectorDefaultAccountBrief,
   CustomConnectorBrief,
 } from "@okouai/api-contracts/contracts/connector-overview";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   UserTemplateCatalogEntry,
   UserTemplateKind,
@@ -222,7 +222,7 @@ import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
   type DefaultConnectorAccountMutationOptions,
-  type DefaultCustomConnectorAccountMutationOptions,
+  type CustomConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import {
   matchesConnectorSearch,
@@ -8467,7 +8467,7 @@ function ComposerConnectorConnectDialogs({
   readonly selectedConnector: PlatformConnectorCatalogStatusItem | undefined;
   readonly selectedConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
-  readonly selectedCustomConnectorAccountOptions: DefaultCustomConnectorAccountMutationOptions | null;
+  readonly selectedCustomConnectorAccountOptions: CustomConnectorAccountMutationOptions | null;
   readonly agentId: string;
   readonly onBuiltinClose: () => void;
   readonly onBuiltinSuccess: ConnectorConnectSuccess;

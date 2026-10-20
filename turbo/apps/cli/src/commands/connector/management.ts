@@ -4,7 +4,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Command, InvalidArgumentError, Option } from "commander";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   listConnectorCatalogStatus,
   listCustomConnectors,

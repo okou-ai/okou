@@ -30,9 +30,11 @@ class ConnectorResponseParser(NamedTuple):
     Encodings that cannot be safely decoded under the bounded incremental
     contract (currently ``zstd`` and unsupported values) do not receive
     incremental parser input. A connector flow using one of those encodings may
-    still use a separate bounded terminal JSON fallback when response streaming
-    and the connector's inspection policy allow it; this fallback is not part of
-    the ``feed`` delivery contract. Implementations must treat ``b""`` as a
+    still use bounded terminal JSON inspection when response streaming and the
+    connector's inspection policy allow it. That path strictly decodes the
+    complete capture before delivering decoded bytes through ``feed_steps``;
+    the native response hook owns and joins the cooperative continuation.
+    Implementations must treat ``b""`` as a
     no-op: incremental decompressors may produce no output for a source chunk,
     and decompression failures intentionally suppress later parser input.
 

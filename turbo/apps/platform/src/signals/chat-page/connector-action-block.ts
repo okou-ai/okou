@@ -13,9 +13,13 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   customConnectorSlugSchema,
-  type CustomConnectorResponse,
+  isIntegrationManagedCustomConnector,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {
   connectorCatalogItemBySlug,
@@ -38,6 +42,10 @@ import { resolvePlatformOriginForTarget } from "../api-base.ts";
 import { authorizeConnector$ as authorizeDirectedConnector$ } from "../connectors-page/directed-authorize-slug.ts";
 import { isAgentConnectorAuthorized } from "../okou-page/agent-connector-authorizations.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../okou-page/settings/connector-account-dialogs.ts";
+import {
+  connectorAccountSummaryByTarget$,
+  connectorAccountTargetKey,
+} from "../okou-page/connector-accounts.ts";
 import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
@@ -505,7 +513,29 @@ function createCustomConnectorSignals(
   });
 
   const connected$ = computed(async (get): Promise<boolean> => {
-    return (await get(connector$))?.connected ?? false;
+    const connector = await get(connector$);
+    if (!connector) {
+      return false;
+    }
+    if (isIntegrationManagedCustomConnector(connector)) {
+      return customConnectorManagedStatusSchema.parse(connector).connected;
+    }
+    const summaries = await get(connectorAccountSummaryByTarget$);
+    const account = summaries.get(
+      connectorAccountTargetKey({
+        kind: "custom",
+        customConnectorId: connector.id,
+      }),
+    )?.defaultConnection;
+    if (account && account.setupStatus === undefined) {
+      throw new Error(
+        "Connector account setup information is unavailable. Refresh and try again.",
+      );
+    }
+    return (
+      account?.connectionStatus === "connected" &&
+      account.setupStatus === "complete"
+    );
   });
 
   const authorized$ = computed(async (get): Promise<boolean> => {
@@ -541,7 +571,9 @@ function createCustomConnectorSignals(
     if (!connector) {
       return;
     }
-    if (connector.connected) {
+    const connected = await get(connected$);
+    signal.throwIfAborted();
+    if (connected) {
       const alreadyAuthorized = await get(authorized$);
       signal.throwIfAborted();
       const authorized =

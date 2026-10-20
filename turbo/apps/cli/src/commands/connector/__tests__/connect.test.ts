@@ -14,6 +14,12 @@ import chalk from "chalk";
 import { server } from "../../../mocks/server";
 import { connectCommand } from "../connect";
 import {
+  connectorAccount,
+  connectorAccountSummary,
+  stubConnectorAccountSummaries,
+  stubConnectorAccountDetails,
+} from "../../__tests__/helpers/connector-accounts";
+import {
   customConnector,
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
@@ -66,6 +72,10 @@ describe("okou connector connect command", () => {
     connectCommand.setOptionValueWithSource("value", [], "default");
     connectCommand.setOptionValue("input", undefined);
     server.use(stubCustomConnectors([]));
+    server.use(
+      stubConnectorAccountSummaries([]),
+      stubConnectorAccountDetails(),
+    );
   });
 
   afterEach(() => {
@@ -168,6 +178,14 @@ describe("okou connector connect command", () => {
   it("preserves reconnect syntax and resolves the current default exactly", async () => {
     let receivedBody: unknown;
     server.use(
+      stubConnectorAccountSummaries([
+        connectorAccountSummary({ kind: "builtin", connectorSlug: "openai" }, [
+          connectorAccount(
+            { kind: "builtin", connectorSlug: "openai" },
+            { id: DEFAULT_CONNECTION_ID },
+          ),
+        ]),
+      ]),
       http.get(
         "http://localhost:3000/api/connectors/:connectorSlug",
         ({ params }) => {
@@ -372,7 +390,7 @@ describe("okou connector connect command", () => {
   );
 
   it.each([undefined, DEFAULT_CONNECTION_ID])(
-    "preserves optional custom operation identity %s and strips credentials",
+    "normalizes custom operation identity %s and strips credentials",
     async (connectionId) => {
       const connector = customConnector();
       server.use(
@@ -413,11 +431,124 @@ describe("okou connector connect command", () => {
         connected: true,
         connectedAccountId: DEFAULT_CONNECTION_ID,
       });
-      expect(JSON.parse(output).connectionId).toBe(connectionId);
+      expect(JSON.parse(output).connectionId).toBe(DEFAULT_CONNECTION_ID);
       expect(output).not.toContain("secret-must-not-appear");
       expect(output).not.toContain("secret-input");
     },
   );
+
+  it("uses a canonical-only custom operation receipt", async () => {
+    const connector = customConnector();
+    server.use(
+      stubCustomConnectors([connector]),
+      http.get(
+        `http://localhost:3000/api/custom-connectors/${connector.id}`,
+        () => {
+          return HttpResponse.json(connector);
+        },
+      ),
+      http.put(
+        `http://localhost:3000/api/custom-connectors/${connector.id}/values`,
+        () => {
+          return HttpResponse.json({
+            id: connector.id,
+            slug: connector.slug,
+            kind: connector.kind,
+            displayName: connector.displayName,
+            authMode: connector.authMode,
+            connectionId: DEFAULT_CONNECTION_ID,
+            accessToken: "secret-must-not-appear",
+          });
+        },
+      ),
+    );
+
+    await connectCommand.parseAsync([
+      "node",
+      "okou",
+      `custom:${connector.id}`,
+      "--reconnect",
+      DEFAULT_CONNECTION_ID,
+      "--value",
+      "apiKey=secret-input",
+      "--json",
+    ]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
+      id: connector.id,
+      connectionId: DEFAULT_CONNECTION_ID,
+    });
+    expect(output).not.toContain("secret-must-not-appear");
+    expect(output).not.toContain("secret-input");
+  });
+
+  it.each([
+    { label: "missing identity", receipt: {} },
+    {
+      label: "conflicting aliases",
+      receipt: {
+        connectionId: DEFAULT_CONNECTION_ID,
+        connectedAccountId: SIBLING_CONNECTION_ID,
+      },
+    },
+    {
+      label: "another operated account",
+      receipt: { connectionId: SIBLING_CONNECTION_ID },
+    },
+    {
+      label: "malformed canonical identity",
+      receipt: {
+        connectionId: "secret-invalid-id",
+        connectedAccountId: DEFAULT_CONNECTION_ID,
+      },
+    },
+  ])("rejects a custom operation receipt with $label", async ({ receipt }) => {
+    const connector = customConnector();
+    server.use(
+      stubCustomConnectors([connector]),
+      http.get(
+        `http://localhost:3000/api/custom-connectors/${connector.id}`,
+        () => {
+          return HttpResponse.json(connector);
+        },
+      ),
+      http.put(
+        `http://localhost:3000/api/custom-connectors/${connector.id}/values`,
+        () => {
+          return HttpResponse.json({
+            id: connector.id,
+            slug: connector.slug,
+            kind: connector.kind,
+            displayName: connector.displayName,
+            authMode: connector.authMode,
+            ...receipt,
+            accessToken: "secret-must-not-appear",
+          });
+        },
+      ),
+    );
+
+    await expect(
+      connectCommand.parseAsync([
+        "node",
+        "okou",
+        `custom:${connector.id}`,
+        "--reconnect",
+        DEFAULT_CONNECTION_ID,
+        "--value",
+        "apiKey=secret-input",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleLog).not.toHaveBeenCalled();
+    expect(mockExit).toHaveBeenCalledWith(1);
+    const errors = mockConsoleError.mock.calls.flat().join("\n");
+    expect(errors).not.toContain("secret-must-not-appear");
+    expect(errors).not.toContain("secret-invalid-id");
+    expect(errors).not.toContain("secret-input");
+  });
 
   it("fails with usage guidance when no values are provided", async () => {
     await expect(

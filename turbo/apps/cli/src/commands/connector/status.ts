@@ -43,8 +43,8 @@ function printConnectorDetails(
   console.log(
     `${"Status:".padEnd(LABEL_WIDTH)}${
       facts.memberStatus === "connected"
-        ? chalk.green(memberConnectorStatusText(connector, facts))
-        : chalk.yellow(memberConnectorStatusText(connector, facts))
+        ? chalk.green(memberConnectorStatusText(facts))
+        : chalk.yellow(memberConnectorStatusText(facts))
     }`,
   );
   console.log(

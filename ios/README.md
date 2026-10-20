@@ -8,13 +8,19 @@ require XcodeGen, CocoaPods, or a pnpm workspace wrapper.
 
 The app uses existing production APIs for native authentication, workspace
 selection, chat lists, conversation history, creating chats, sending text,
-retrying uncertain sends, and stopping work. The `iosChatAttachments` switch
-enables native photo, video and file selection in new and existing chats, with
+retrying uncertain sends, and stopping work. The composer supports system image
+paste in new and existing chats alongside native photo, video and file selection, with
 local previews, upload progress, removal and retry. Uploads use the existing
 direct-to-storage API and its 1 GB limit; files of 5 MB or more use multipart
 uploads. A message can contain files with or without text. Selected files and
-uploads belong to their workspace and draft, and are cleaned up when removed,
-sent or closed. Its home screen follows the mobile
+uploads belong to their workspace and draft. Draft text, canonical message context
+and completed-upload metadata persist per API origin, user, workspace and
+Agent/thread, and synchronize through the existing draft APIs. New-chat drafts
+belong to their Agent without creating a thread. Local file copies are removed
+when removed from a draft or sent; closing retains recovery metadata. File bytes
+remain temporary: interrupted uploads require explicit retry through the existing
+uploader, and purged copies require reselection. Restored uploads are checked
+against the file authority before sending. Its home screen follows the mobile
 web agent-chat structure with an agent avatar, greeting, and composer; focusing
 the compact composer animates it into a multiline field. The ChatGPT-style
 sliding sidebar contains pinned agents and recent chats scoped to the selected
@@ -23,16 +29,16 @@ settings menu provides account actions. Native list actions support pinning,
 archiving, and renaming chats; archive controls follow the existing
 `chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
-agent and the existing saved model preference. Workspace setup and account
-management remain on the web.
+agent and the existing saved model preference. A native model sheet supports
+chat-specific choices and personal subscription account management.
+Workspace setup and Okou account management remain on the web.
 
 Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output and tool cards are not rendered. Sharing, Cloud Browser,
-Computer Use, artifact controls, model selection, and connector
-selection are outside this local UI. The composer uses a combined send/stop
+Computer Use, artifact controls, and connector selection are outside this local UI. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft
 control can stop active work.
 

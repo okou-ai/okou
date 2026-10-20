@@ -3,7 +3,11 @@ import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboa
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../connector-domain.ts";
-import { builtinConnectorsReloadVersion$ } from "../external/connectors.ts";
+import {
+  builtinConnectorsReloadVersion$,
+  withMemberAccountStatus,
+} from "../external/connectors.ts";
+import { connectorAccountSummaryByTarget$ } from "../okou-page/connector-accounts.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { waitForOperation } from "../utils.ts";
 
@@ -17,7 +21,10 @@ export const onboardingSourceConnectors$ = computed(
     get(featureSwitch$);
     const client = get(apiClient$)(onboardingSourcesContract);
     const result = await accept(client.list(), [200]);
-    return result.body.connectors;
+    const summaries = await get(connectorAccountSummaryByTarget$);
+    return result.body.connectors.map((item) => {
+      return withMemberAccountStatus(item, summaries);
+    });
   },
 );
 

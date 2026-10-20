@@ -135,8 +135,19 @@ async function setupRelationships({
     path: `/chats/${parent.id}?sidebar=${child.id}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  const chats = await within(panel).findByRole("region", { name: "Chats" });
+  // Both panes open their resources; the child's lists the parent with From.
+  const panel = await waitFor(() => {
+    const found = screen
+      .getAllByRole("region", { name: "Resources" })
+      .find((candidate) => {
+        return within(candidate).queryByText("From", { exact: true }) !== null;
+      });
+    if (!found) {
+      throw new Error("Expected the resource panel listing the parent chat");
+    }
+    return found;
+  });
+  const chats = within(panel).getByRole("region", { name: "Chats" });
   const parentPane = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${parent.id}"]`,
   );

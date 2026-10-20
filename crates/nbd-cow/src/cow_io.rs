@@ -66,6 +66,16 @@ impl CowIo {
 
     /// Write `data` at `offset`, flushing buffered data when the threshold is reached.
     ///
+    /// An already-full buffer must be flushed before admitting this write. If
+    /// that flush fails, incoming bytes are not applied and earlier buffered
+    /// data remains available for reads and retry. The check and write share
+    /// the device's operation slot across all clones of this handle.
+    ///
+    /// Starting with an empty layer, retained payload is bounded by a
+    /// sub-threshold buffer plus the full blocks touched by one write,
+    /// including partial edge blocks. One write can exceed the threshold;
+    /// callers must bound request size separately from the flush threshold.
+    ///
     /// # Cancellation
     ///
     /// Cancellation is not a rollback. Once submitted, this write and any
@@ -73,6 +83,9 @@ impl CowIo {
     /// dropped. See [`CowIo`] for the shared cancellation boundary.
     pub async fn write(&self, offset: u64, data: Vec<u8>) -> Result<Vec<u8>> {
         self.run("write", move |cow| {
+            if cow.needs_flush() {
+                cow.flush()?;
+            }
             let needs_flush = cow.write(offset, &data)?;
             if needs_flush {
                 cow.flush()?;

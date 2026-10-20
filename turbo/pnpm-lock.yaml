@@ -468,6 +468,9 @@ importers:
       saxes:
         specifier: 6.0.0
         version: 6.0.0
+      svgpath:
+        specifier: 2.6.0
+        version: 2.6.0
       tar:
         specifier: '>=7.5.21'
         version: 7.5.22
@@ -8753,6 +8756,9 @@ packages:
   supports-preserve-symlinks-flag@1.0.0:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
+
+  svgpath@2.6.0:
+    resolution: {integrity: sha512-OIWR6bKzXvdXYyO4DK/UWa1VA1JeKq8E+0ug2DG98Y/vOmMpfZNj+TIG988HjfYSqtcy/hFOtZq/n/j5GSESNg==}
 
   svix@2.8.0:
     resolution: {integrity: sha512-3bvu4FoVP9szUn5WBXUXUs97lLVC+Jyr0+jm+Q+DVcPMLXmeoZepbmbCzJVqGDNf9i00P7WLAH6m0q9HrzH1+g==}
@@ -17378,6 +17384,8 @@ snapshots:
       has-flag: 4.0.0
 
   supports-preserve-symlinks-flag@1.0.0: {}
+
+  svgpath@2.6.0: {}
 
   svix@2.8.0:
     dependencies:

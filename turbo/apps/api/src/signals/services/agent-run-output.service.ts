@@ -34,7 +34,10 @@ import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
 
-export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
+export type AgentRunOutputBody = Omit<
+  z.infer<typeof runCompletionMetadataSchema>,
+  "artifactSnapshots"
+> & {
   readonly runId: string;
 };
 
@@ -65,13 +68,13 @@ interface RunOutputContext {
 
 function resolvedOutputMounts(args: {
   readonly runStorageMounts: readonly PersistedStorageMount[] | null;
-  readonly artifactSnapshots: AgentRunOutputBody["artifactSnapshots"];
+  readonly storageOutputs: AgentRunOutputBody["storageOutputs"];
 }): PersistedStorageMount[] {
   if (args.runStorageMounts === null) {
     throw new Error("Agent run is missing canonical Storage mounts");
   }
   const snapshotsByIdentity = new Map(
-    (args.artifactSnapshots ?? []).map((snapshot) => {
+    (args.storageOutputs ?? []).map((snapshot) => {
       return [
         JSON.stringify([snapshot.name, snapshot.mountPath]),
         snapshot,
@@ -325,7 +328,7 @@ function finalizedMaintenanceOutput(
 ): { memoryStorageId: string; versionId: string } | string {
   const outputError = runStorageOutputError(
     run.storageMounts,
-    body.artifactSnapshots,
+    body.storageOutputs,
   );
   if (outputError) {
     return outputError;
@@ -334,7 +337,7 @@ function finalizedMaintenanceOutput(
   const mount = run.storageMounts?.find((entry) => {
     return entry.storageId === binding.memoryStorageId && entry.writeback;
   });
-  const snapshot = body.artifactSnapshots?.find((entry) => {
+  const snapshot = body.storageOutputs?.find((entry) => {
     return entry.name === mount?.name && entry.mountPath === mount.mountPath;
   });
   const committed = existing?.result?.storageOutputs?.find((entry) => {
@@ -355,7 +358,7 @@ function finalizedMaintenanceOutput(
       storageOutputs(
         resolvedOutputMounts({
           runStorageMounts: run.storageMounts,
-          artifactSnapshots: body.artifactSnapshots,
+          storageOutputs: body.storageOutputs,
         }).map((entry) => {
           // Fresh completion already normalizes the launch base recovery output
           // to the publication result. Retain that same normalization on replay.
@@ -401,7 +404,7 @@ function privateMaintenanceSnapshotOutput(
   const mount = run.storageMounts?.find((entry) => {
     return entry.storageId === binding.memoryStorageId && entry.writeback;
   });
-  const snapshot = body.artifactSnapshots?.find((entry) => {
+  const snapshot = body.storageOutputs?.find((entry) => {
     return entry.name === mount?.name && entry.mountPath === mount.mountPath;
   });
   if (
@@ -488,7 +491,7 @@ async function privateMaintenanceOutput(
 
 function runStorageOutputError(
   mounts: readonly PersistedStorageMount[] | null,
-  outputs: AgentRunOutputBody["artifactSnapshots"],
+  outputs: AgentRunOutputBody["storageOutputs"],
 ): string | null {
   const identities = new Set<string>();
   for (const output of outputs ?? []) {
@@ -603,14 +606,14 @@ export async function persistAgentRunOutputsInTransaction(
   }
   const outputError = runStorageOutputError(
     run.storageMounts,
-    input.body.artifactSnapshots,
+    input.body.storageOutputs,
   );
   if (outputError) {
     return badRequestMessage(outputError);
   }
   const storageMounts = resolvedOutputMounts({
     runStorageMounts: run.storageMounts,
-    artifactSnapshots: input.body.artifactSnapshots,
+    storageOutputs: input.body.storageOutputs,
   }).map((mount) => {
     return maintenance?.memoryStorageId === mount.storageId
       ? { ...mount, version: maintenance.versionId }

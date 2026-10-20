@@ -189,11 +189,15 @@ function runOutputInputForCompletion(
   if (!completion) {
     return null;
   }
+  const { artifactSnapshots, ...metadata } = completion;
   return {
     auth: input.auth,
     recovery: input.body.exitCode !== 0,
     body: {
-      ...completion,
+      ...metadata,
+      // Remove the old Runner field adapter with #41332 after old owners finish
+      // execution/finalization and exit, with compatible rollback artifacts.
+      storageOutputs: metadata.storageOutputs ?? artifactSnapshots,
       runId: input.body.runId,
     },
   };

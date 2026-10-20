@@ -3144,6 +3144,8 @@
       "noAccountsFound": "Nessun account trovato",
       "reconnectRequired": "Riconnessione necessaria",
       "rename": "Rinomina",
+      "setupIncomplete": "Configurazione incompleta",
+      "setupUnavailable": "Stato dell'account non disponibile",
       "skipName": "Salta",
       "summaryMany": "{{value}} account",
       "summaryMany_one": "",
@@ -5243,7 +5245,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief non è temporaneamente disponibile perché lo stato dell'installazione non è coerente. Riprova al termine della riconciliazione.",
-        "description": "Priorità quotidiane alle 7:00 nel tuo fuso orario.",
+        "description": "Priorità quotidiane entro le 7:00 nel tuo fuso orario.",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
         "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",

@@ -1,4 +1,5 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -28,7 +29,7 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Keep the resource trigger in a chat without resources and explain the empty panel", async () => {
+test("Keep the resource trigger in a chat without resources and open its empty panel by default", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   mockArtifactConversation(context, {
@@ -43,11 +44,8 @@ test("Keep the resource trigger in a chat without resources and explain the empt
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  await waitFor(() => {
-    expect(resourceButton()).toBeInTheDocument();
-  });
-  expect(resourcePanel()).not.toBeInTheDocument();
-  click(resourceButton());
+  await screen.findByTestId("chat-thread-header-title");
+  expect(resourceButton()).toBeEnabled();
   const panel = await screen.findByRole("region", { name: "Resources" });
   await expect(
     within(panel).findByText(
@@ -56,11 +54,21 @@ test("Keep the resource trigger in a chat without resources and explain the empt
   ).resolves.toBeInTheDocument();
 });
 
-test("Show the resource trigger before content loads and fill the open panel when it arrives", async () => {
+test("Keep chat usable before opening pending artifacts and related chats", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
-  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  mockArtifactConversation(context, {
+    catalog: [],
+    chatEvents: [
+      {
+        id: "resources-pending-user",
+        role: "user",
+        content: "Keep chatting while resources load",
+        createdAt: "2026-09-01T10:00:00Z",
+      },
+    ],
+  });
   const response = createDeferredPromise<void>(context.signal);
   context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
     await response.promise;
@@ -69,22 +77,51 @@ test("Show the resource trigger before content loads and fill the open panel whe
       nextCursor: null,
     });
   });
+  context.mocks.api(chatRelationsContract.children, async ({ respond }) => {
+    await response.promise;
+    return respond(200, {
+      items: [
+        {
+          id: "d0000000-0000-4000-a000-000000000105",
+          threadId: "d0000000-0000-4000-a000-000000000102",
+          title: "Research child",
+          status: "idle",
+          sourceRunId: "d0000000-0000-4000-a000-000000000103",
+          createdAt: "2026-09-01T10:00:00.000Z",
+        },
+      ],
+    });
+  });
+  context.mocks.api(
+    chatRelationsContract.communications,
+    async ({ respond }) => {
+      await response.promise;
+      return respond(200, { items: [] });
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  await waitFor(() => {
-    expect(resourceButton()).toBeInTheDocument();
-  });
+  await screen.findByText("Keep chatting while resources load");
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
+  expect(resourceButton()).toBeEnabled();
+  expect(resourcePanel()).not.toBeInTheDocument();
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await within(panel).findByText("Loading resources");
+  await expect(within(panel).findByRole("status")).resolves.toHaveTextContent(
+    "Loading",
+  );
+  expect(
+    within(panel).queryByText(
+      "Artifacts, links, and related chats from this chat appear here.",
+    ),
+  ).not.toBeInTheDocument();
   response.resolve();
   await within(panel).findByText("report.pdf");
-  expect(
-    within(panel).queryByText("Loading resources"),
-  ).not.toBeInTheDocument();
+  await within(panel).findByText("Research child");
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
 test("Retry a resource loading error without showing an empty state", async () => {

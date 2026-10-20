@@ -15,19 +15,11 @@ import {
   userMessages,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const {
-  bdd,
-  api,
-  chat,
-  entitledNativeChatActor,
-  sendChatRun,
-  claimChatRun,
-  cancelChatRun,
-  requestSendEventWithBearer,
-} = createChatEventsFixture(context);
+const { bdd, api, chat, cancelChatRun } = createChatEventsFixture(context);
 const relations = setupApp({ context, routes: chatRelationsRoutes })(
   chatRelationsContract,
 );
@@ -52,15 +44,23 @@ async function enable(actor: ApiTestUser, enabled = true) {
     { [FeatureSwitchKey.ChatResourcePanel]: enabled },
   );
 }
-async function sourceFixture() {
-  const fixture = await entitledNativeChatActor();
-  await enable(fixture.actor);
-  const source = await sendChatRun(fixture.actor, {
+async function sourceFixture(options: { isolatePg?: true } = {}) {
+  const fixture = await publicChatActor(context, options);
+  await fixture.run(() => {
+    return api.ensurePersonalSubscriptionModel(fixture.actor, {
+      model: "claude-fable-5-1",
+    });
+  });
+  fixture.ownsFeatureSwitches();
+  await fixture.run(() => {
+    return enable(fixture.actor);
+  });
+  const source = await fixture.sendChatRun(fixture.actor, {
     agentId: fixture.agentId,
     model: "claude-fable-5-1",
     prompt: "Coordinate related chats",
   });
-  const claimed = await claimChatRun(fixture.runnerGroup, source.runId);
+  const claimed = await fixture.claimChatRun(fixture.runnerGroup, source.runId);
   return {
     ...fixture,
     source,
@@ -125,8 +125,16 @@ describe("chat relationships", () => {
   });
 
   it("records both directions between existing chats and attributes only consumed messages", async () => {
-    const { actor, agentId, source, claimed, token, runnerGroup } =
-      await sourceFixture();
+    const {
+      actor,
+      agentId,
+      source,
+      claimed,
+      token,
+      runnerGroup,
+      claimChatRun,
+      requestSendEventWithBearer,
+    } = await sourceFixture();
     const peer = await chat.createThread(actor, { agentId });
     const eventId = randomUUID();
     const send = {
@@ -291,15 +299,33 @@ describe("chat relationships", () => {
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
-  it("returns complete communication lists and message histories", async () => {
-    const { actor, agentId, source, claimed, token } = await sourceFixture();
+  it.each([
+    {
+      name: "returns all six communicating chats",
+      peerCount: 6,
+      firstPeerMessageCount: 1,
+    },
+    {
+      name: "returns all 21 messages in order",
+      peerCount: 1,
+      firstPeerMessageCount: 21,
+    },
+  ])("$name", async ({ peerCount, firstPeerMessageCount }) => {
+    const {
+      actor,
+      agentId,
+      source,
+      claimed,
+      token,
+      requestSendEventWithBearer,
+    } = await sourceFixture({ isolatePg: true });
     const peerIds: string[] = [];
     const messageIds: string[] = [];
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < peerCount; index++) {
       const peer = await chat.createThread(actor, { agentId });
       peerIds.push(peer.id);
-      const messageCount = index === 0 ? 21 : 1;
-      for (let messageIndex = 0; messageIndex < messageCount; messageIndex++) {
+      const messageCount = index === 0 ? firstPeerMessageCount : 1;
+      const sendMessage = async (messageIndex: number) => {
         const clientEventId = randomUUID();
         await requestSendEventWithBearer(
           token,
@@ -312,9 +338,17 @@ describe("chat relationships", () => {
           },
           [201],
         );
-        if (index === 0) {
-          messageIds.push(clientEventId);
-        }
+        return clientEventId;
+      };
+      const sentMessageIds = await Promise.all(
+        Array.from({ length: messageCount - 1 }, (_, messageIndex) => {
+          return sendMessage(messageIndex);
+        }),
+      );
+      // Keep a later accepted message so timestamp ordering remains meaningful.
+      sentMessageIds.push(await sendMessage(messageCount - 1));
+      if (index === 0) {
+        messageIds.push(...sentMessageIds);
       }
     }
     const communications = await accept(
@@ -361,11 +395,27 @@ describe("chat relationships", () => {
         .sort()
         .reverse(),
     );
+    if (firstPeerMessageCount > 1) {
+      expect(
+        new Set(
+          messages.body.items.map((item) => {
+            return item.createdAt;
+          }),
+        ).size,
+      ).toBeGreaterThan(1);
+    }
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
   it("records implicit creation and enforces the feature, user and organization boundaries", async () => {
-    const { actor, agentId, source, claimed, token } = await sourceFixture();
+    const {
+      actor,
+      agentId,
+      source,
+      claimed,
+      token,
+      requestSendEventWithBearer,
+    } = await sourceFixture();
     const send = {
       agentId,
       clientThreadId: randomUUID(),

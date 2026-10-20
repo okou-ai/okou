@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { withConnectorConnectionProgress } from "../../connector-connection-progress.ts";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -41,6 +39,7 @@ export type ConnectorAccountConnectMode =
       readonly kind: "reconnect";
       readonly connectionId: string;
       readonly authMethod?: ConnectorAuthMethodId;
+      readonly account?: ConnectorAccountConnection;
     };
 
 export interface ConnectorAccountMutationOptions {
@@ -56,14 +55,9 @@ export interface DefaultConnectorAccountMutationOptions {
 export type CustomConnectorAccountMutationIntent =
   PlatformConnectorAccountMutationIntent | { readonly intent: "default" };
 
-export interface DefaultCustomConnectorAccountMutationOptions {
+export interface CustomConnectorAccountMutationOptions {
   readonly account: CustomConnectorAccountMutationIntent;
-  readonly useDefaultConnectorProjection: true;
 }
-
-export type CustomConnectorAccountMutationOptions =
-  | ConnectorAccountMutationOptions
-  | DefaultCustomConnectorAccountMutationOptions;
 
 export function defaultBuiltinConnectorAccountOptions(
   connector: PlatformConnectorCatalogConnectItem | undefined,
@@ -90,7 +84,7 @@ export function defaultBuiltinConnectorAccountOptions(
 
 export function defaultCustomConnectorAccountOptions(
   connector: CustomConnectorResponse | undefined,
-): DefaultCustomConnectorAccountMutationOptions | null {
+): CustomConnectorAccountMutationOptions | null {
   if (!connector) {
     return null;
   }
@@ -99,13 +93,11 @@ export function defaultCustomConnectorAccountOptions(
     // mutation or provider authorization. Readiness does not identify it.
     return {
       account: { intent: "default" },
-      useDefaultConnectorProjection: true,
     };
   }
   if (!connector.connected) {
     return {
       account: { intent: "add" },
-      useDefaultConnectorProjection: true,
     };
   }
   return connector.connectedAccountId
@@ -114,7 +106,6 @@ export function defaultCustomConnectorAccountOptions(
           intent: "reconnect",
           connectionId: connector.connectedAccountId,
         },
-        useDefaultConnectorProjection: true,
       }
     : null;
 }

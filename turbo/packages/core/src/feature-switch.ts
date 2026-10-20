@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosChatActivitySummary]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "iOS chat activity summaries",
+    description:
+      "Show public activity summaries in the native iOS chat detail.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.IosChatAttachments]: {
     maintainer: "lancy@okou.ai",
     displayName: "iOS chat attachments",
@@ -73,14 +81,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Desktop Shell",
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.RemoteControlCliManagement]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Remote control CLI management",
-    description:
-      "Manage owned SSH, VNC and private-network configuration through the CLI.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -120,13 +120,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ComposerMentionHint]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Mention search hint",
-    description: "Show a search hint after typing @ in the chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
@@ -383,7 +376,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     displayName: "Codex execution (test only)",
     description:
-      "Test-only override to use Codex instead of Pi for Auto and supported ChatGPT subscription runs.",
+      "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
   [FeatureSwitchKey.PiMemory]: {

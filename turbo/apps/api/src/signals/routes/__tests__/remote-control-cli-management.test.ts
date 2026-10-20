@@ -63,15 +63,6 @@ function authenticate(actor: Owner) {
   });
 }
 
-async function management(actor: Owner, enabled: boolean) {
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgRole: "org:member" },
-    { [FeatureSwitchKey.RemoteControlCliManagement]: enabled },
-  );
-  authenticate(actor);
-}
-
 async function personalHeaders(actor: Owner) {
   authenticate(actor);
   const app = setupApp({ context, routes: cliAuthRoutes });
@@ -149,7 +140,7 @@ describe("remote control CLI management authorization", () => {
     useSecretKmsProbe();
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
     const actor = owner();
-    await management(actor, true);
+    authenticate(actor);
     const run = await claimed.runtime(actor);
     const headers = run.guestHeaders;
     const created = await accept(
@@ -213,17 +204,12 @@ describe("remote control CLI management authorization", () => {
     for (const response of [created, host, updated, listed]) {
       expectSafeMetadata(response.body);
     }
-    await management(actor, false);
-    await accept(credentials().list({ headers }), [403]);
   });
 
-  it("accepts a device-approved PAT only while management is enabled, without bypassing VNC availability", async () => {
+  it("accepts a device-approved PAT without bypassing VNC availability", async () => {
     useSecretKmsProbe();
     const actor = owner();
-    await management(actor, false);
     const headers = await personalHeaders(actor);
-    await accept(credentials().list({ headers }), [403]);
-    await management(actor, true);
     const created = await accept(
       credentials().create({ headers, body: credentialBody() }),
       [201],
@@ -248,18 +234,6 @@ describe("remote control CLI management authorization", () => {
     expect(
       (await accept(vncConnections().list({ headers }), [200])).body,
     ).toStrictEqual({ connections: [] });
-    await management(actor, false);
-    await accept(
-      credentials().update({
-        headers,
-        params: { credentialId: created.body.id },
-        body: {
-          expectedRevision: created.body.revision,
-          name: "Denied PAT update",
-        },
-      }),
-      [403],
-    );
     const sessionListed = await accept(
       credentials().list({ headers: sessionHeaders }),
       [200],
@@ -267,10 +241,9 @@ describe("remote control CLI management authorization", () => {
     expect(sessionListed.body.credentials).toStrictEqual([created.body]);
   });
 
-  it("requires a device-approved PAT to supply the reviewed SSH host generation after feature admission", async () => {
+  it("requires a device-approved PAT to supply the reviewed SSH host generation", async () => {
     useSecretKmsProbe();
     const actor = owner();
-    await management(actor, true);
     const headers = await personalHeaders(actor);
     const credential = await accept(
       credentials().create({ headers, body: credentialBody() }),
@@ -303,15 +276,6 @@ describe("remote control CLI management authorization", () => {
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([host.body]);
 
-    await management(actor, false);
-    const denied = await request(path, { method: "DELETE", headers });
-    expect(denied.status).toBe(403);
-    expect(
-      (await accept(connections().list({ headers: sessionHeaders }), [200]))
-        .body.connections,
-    ).toStrictEqual([host.body]);
-
-    await management(actor, true);
     await accept(
       connections().delete({
         headers,
@@ -328,14 +292,12 @@ describe("remote control CLI management authorization", () => {
   it("keeps another organization member from accessing or modifying owned credentials", async () => {
     useSecretKmsProbe();
     const first = owner();
-    await management(first, true);
     const ownHeaders = await personalHeaders(first);
     const created = await accept(
       credentials().create({ headers: ownHeaders, body: credentialBody() }),
       [201],
     );
     const other = owner({ orgId: first.orgId });
-    await management(other, true);
     const headers = await personalHeaders(other);
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,

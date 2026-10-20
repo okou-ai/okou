@@ -3077,6 +3077,8 @@
       "noAccountsFound": "アカウントが見つかりません",
       "reconnectRequired": "再接続が必要です",
       "rename": "名前を変更",
+      "setupIncomplete": "設定が未完了",
+      "setupUnavailable": "アカウントの状態を取得できません",
       "skipName": "スキップ",
       "summaryMany": "{{value}} 件のアカウント",
       "summaryMany_other": "",
@@ -5156,7 +5158,7 @@
       },
       "morningBrief": {
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
-        "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
+        "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",

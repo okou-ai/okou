@@ -225,6 +225,19 @@ export async function withCleanup<T>(
   }
 }
 
+/** Add a deadline that cancels with AbortError, preserving the owner's reason. */
+export function abortAfter(ms: number, parentSignal: AbortSignal): AbortSignal {
+  const controller = new AbortController();
+  AbortSignal.timeout(ms).addEventListener(
+    "abort",
+    () => {
+      controller.abort(new DOMException("Operation timed out", "AbortError"));
+    },
+    { once: true, signal: parentSignal },
+  );
+  return AbortSignal.any([parentSignal, controller.signal]);
+}
+
 /** Stop waiting for a shared operation without cancelling its other owners. */
 export function waitForOperation<T>(
   operation: Promise<T>,

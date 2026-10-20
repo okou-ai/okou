@@ -5,10 +5,8 @@ import { useConnectorConnectionDialogClose } from "../components/connector-conne
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   Dialog,
@@ -63,6 +61,7 @@ import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import {
   buildConnectorDirectoryModel,
   currentDirectoryAccountSummaries,
+  directoryConnectorAccountProjections,
   type ConnectorDirectoryModel,
 } from "./connector-directory-model.ts";
 
@@ -312,7 +311,8 @@ function CustomConnectorDirectoryCard({
           {summary &&
             summary.accountCount > 0 &&
             summary.attentionCount === 0 &&
-            !connector.connected && (
+            (summary.defaultConnection?.connectionStatus !== "connected" ||
+              summary.defaultConnection.setupStatus !== "complete") && (
               <span className="text-amber-600 dark:text-amber-400">
                 {t(($) => {
                   return $.connectors.accounts.reconnectRequired;
@@ -1180,13 +1180,26 @@ interface ConnectorDirectoryDialogProps {
   readonly onClose: () => void;
 }
 
+function useDirectoryAccountData(
+  catalog: readonly PlatformConnectorCatalogStatusItem[],
+) {
+  const accounts = useLoadable(connectorAccountSummaryByTarget$);
+  const summaries = accounts.state === "hasData" ? accounts.data : undefined;
+  const connectors = directoryConnectorAccountProjections(catalog, summaries);
+  return {
+    state: accounts.state,
+    connectors,
+    summaries: currentDirectoryAccountSummaries(connectors, summaries),
+  };
+}
+
 export function ConnectorDirectoryDialog({
   state,
   onUpdateState,
   categoryCounts,
   loading,
   chipCatalog,
-  connectors,
+  connectors: catalogConnectors,
   customConnectors,
   customConnectorState,
   connecting,
@@ -1197,17 +1210,17 @@ export function ConnectorDirectoryDialog({
   onClose,
 }: ConnectorDirectoryDialogProps) {
   const { t } = useTranslation();
-  const accountsLoadable = useLoadable(connectorAccountSummaryByTarget$);
+  const {
+    state: accountState,
+    connectors,
+    summaries: accountSummaries,
+  } = useDirectoryAccountData(catalogConnectors);
   const retryAccounts = useSet(reloadConnectorAccountSummaries$);
   const retryCustom = useSet(retryCustomConnectors$);
-  const accountSummaries = currentDirectoryAccountSummaries(
-    connectors,
-    accountsLoadable.state === "hasData" ? accountsLoadable.data : undefined,
-  );
   const accountStatus =
-    accountsLoadable.state === "hasData" ? null : (
+    accountState === "hasData" ? null : (
       <DirectorySourceStatus
-        state={accountsLoadable.state}
+        state={accountState}
         message={t(($) => {
           return $.connectors.accounts.accountsUnavailable;
         })}

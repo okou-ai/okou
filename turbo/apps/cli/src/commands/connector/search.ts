@@ -94,11 +94,7 @@ function renderCurrentAvailabilityCell(
   >,
 ): string {
   if (facts.memberStatus !== "connected") {
-    const definition =
-      connector.kind === "catalog"
-        ? connector.catalogConnector
-        : connector.customConnector;
-    return chalk.yellow(`no (${memberConnectorStatusText(definition, facts)})`);
+    return chalk.yellow(`no (${memberConnectorStatusText(facts)})`);
   }
 
   if (

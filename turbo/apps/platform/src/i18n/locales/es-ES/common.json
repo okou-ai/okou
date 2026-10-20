@@ -3144,6 +3144,8 @@
       "noAccountsFound": "No se encontraron cuentas",
       "reconnectRequired": "Se requiere volver a conectar",
       "rename": "Cambiar nombre",
+      "setupIncomplete": "Configuración incompleta",
+      "setupUnavailable": "Estado de la cuenta no disponible",
       "skipName": "Omitir",
       "summaryMany": "{{value}} cuentas",
       "summaryMany_one": "",
@@ -5243,7 +5245,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
-        "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
+        "description": "Prioridades diarias antes de las 7:00 en tu zona horaria.",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
         "preparationFailed": "La configuración se reintentará automáticamente. También puedes reintentar ahora.",

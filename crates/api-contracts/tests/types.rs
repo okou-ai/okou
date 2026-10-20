@@ -275,6 +275,7 @@ fn generated_completion_metadata_omits_absent_snapshots() {
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
+        storage_outputs: None,
         artifact_snapshots: None,
         volume_versions_snapshot: None,
     };
@@ -299,6 +300,7 @@ fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
+        storage_outputs: None,
         artifact_snapshots: Some(vec![complete::RequestCompletionArtifactSnapshot {
             name: "memory".to_string(),
             version: "version-1".to_string(),

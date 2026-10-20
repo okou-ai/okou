@@ -10,16 +10,19 @@ import {
   type ConnectorAccountSelection,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
+import { type SetCustomConnectorValuesBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  customConnectorValuesContract,
-  customConnectorOAuth2Contract,
-  type SetCustomConnectorValuesBody,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   builtinConnectorOauthStartContract,
   builtinConnectorOpenIdStartContract,
-  builtinConnectorAutomaticContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
+  connectorCompletedOperationReaderSchema,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import type {
   ConnectorSlug,
   ConnectorAuthMethodId,
@@ -176,17 +179,16 @@ export async function deleteConnectorAccount(
   return deleted;
 }
 
-// Receipt IDs stay optional for current/rollback APIs until #41309's API/client/Runner gates.
-const memberConnectionSchema = z.object({
-  id: z.uuid(),
-  slug: z.string(),
-  kind: z.enum(["http", "mcp"]),
-  displayName: z.string(),
-  authMode: z.enum(["manual", "none", "oauth", "automatic"]),
-  connected: z.boolean(),
-  connectedAccountId: z.uuid().optional(),
-  connectionId: z.uuid().optional(),
-});
+const memberConnectionSchema = z
+  .object({
+    id: z.uuid(),
+    slug: z.string(),
+    kind: z.enum(["http", "mcp"]),
+    displayName: z.string(),
+    authMode: z.enum(["manual", "none", "oauth", "automatic"]),
+    connected: z.boolean().optional(),
+  })
+  .and(connectorCompletedOperationReaderSchema);
 
 export async function connectCustomConnectorMember(
   id: string,
@@ -206,7 +208,7 @@ export async function connectCustomConnectorMember(
   if (
     connector.id !== id ||
     (body.account.intent === "reconnect" &&
-      connector.connectedAccountId !== body.account.connectionId)
+      connector.connectionId !== body.account.connectionId)
   )
     throw new Error("Custom connector account response identity mismatch.");
   return connector;
@@ -232,14 +234,11 @@ const authorizationSchema = z.object({
   oauthAttemptId: z.uuid(),
   connectionId: z.uuid().optional(),
 });
-// Receipt IDs stay optional for current/rollback APIs until #41309's API/client/Runner gates.
-const automaticSchema = z.discriminatedUnion("result", [
+const automaticSchema = z.union([
   authorizationSchema.extend({ result: z.literal("authorization") }),
-  z.object({
-    result: z.literal("connected"),
-    connectedAccountId: z.uuid(),
-    connectionId: z.uuid().optional(),
-  }),
+  z
+    .object({ result: z.literal("connected") })
+    .and(connectorCompletedOperationReaderSchema),
 ]);
 
 function verifyAuthorizationAccount<T extends z.output<typeof automaticSchema>>(
@@ -247,10 +246,7 @@ function verifyAuthorizationAccount<T extends z.output<typeof automaticSchema>>(
   account: ConnectorAccountMutationIntent,
 ): T {
   if (account.intent === "reconnect") {
-    const connectionId =
-      result.result === "connected"
-        ? result.connectedAccountId
-        : result.connectionId;
+    const connectionId = result.connectionId;
     if (connectionId !== undefined && connectionId !== account.connectionId) {
       throw new Error(
         "Connector authorization response account identity mismatch.",

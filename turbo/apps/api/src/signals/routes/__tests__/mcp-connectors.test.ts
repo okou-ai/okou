@@ -197,7 +197,12 @@ describe("GET /api/mcp-connectors", () => {
           displayName: "Selected MCP",
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
+          runtimeAvailable: true,
           connected: true,
+          connectionStatus: "connected",
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: ["secret"],
         },
       ]);
 
@@ -255,7 +260,12 @@ describe("GET /api/mcp-connectors", () => {
             displayName: "Selected MCP",
             transport: "streamable-http",
             endpoint: "https://selected-mcp.example.test/server",
+            runtimeAvailable: false,
             connected: false,
+            connectionStatus: "reconnect-required",
+            setupStatus: "invalid",
+            missingRequiredFields: ["secret"],
+            configuredFieldKeys: [],
           },
         ],
       });
@@ -288,7 +298,12 @@ describe("GET /api/mcp-connectors", () => {
           displayName: "Selected MCP",
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
+          runtimeAvailable: true,
           connected: true,
+          connectionStatus: "connected",
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: ["secret"],
         },
       ]);
     });
@@ -340,7 +355,12 @@ describe("GET /api/mcp-connectors", () => {
           displayName: body.displayName,
           transport: body.transport,
           endpoint: body.endpoint,
+          runtimeAvailable: true,
           connected: true,
+          connectionStatus: "reconnect-required",
+          setupStatus: "invalid",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
         },
       ]);
     });
@@ -396,6 +416,7 @@ describe("GET /api/mcp-connectors", () => {
       expect(deleted.body.connectors).toStrictEqual([
         expect.objectContaining({
           target: { kind: "custom", customConnectorId: selected.id },
+          runtimeAvailable: false,
           connected: false,
         }),
       ]);
@@ -735,6 +756,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     expect(discovery.body.connectors).toStrictEqual([
       expect.objectContaining({
         target: { kind: "custom", customConnectorId: connector.id },
+        runtimeAvailable: true,
         connected: true,
       }),
     ]);

@@ -70,23 +70,6 @@ export function ChatResourcesButton({
   ) : null;
 }
 
-// Whether this chat has anything to list, or a failure to explain.
-function useHasResources(thread: ChatPanelSignals) {
-  const content = useLastLoadable(thread.resources.content$);
-  const data = useLastResolved(thread.resources.content$);
-  const origin = useGet(thread.relations.origin$);
-  const chats = useLastLoadable(thread.relations.chats.data$);
-  return (
-    origin?.kind === "source" ||
-    chats.state === "hasError" ||
-    (chats.state === "hasData" &&
-      (chats.data.items.length > 0 || chats.data.failed)) ||
-    content.state === "hasError" ||
-    Boolean(data?.artifacts.length) ||
-    Boolean(data?.links.length)
-  );
-}
-
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
@@ -99,19 +82,19 @@ function ChatResourcesButtonInner({
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
   const automatic = useLastResolved(resources.automatic$) ?? false;
-  const hasResources = useHasResources(thread);
-  // Only a chat with something to show opens on its own.
-  const open = chosen ?? (automatic && hasResources);
+  // Resources load only while the panel shows, so the default cannot wait for them.
+  const open = chosen ?? automatic;
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
+  const visible = open && boundary !== null;
 
   return (
     <Popover
-      open={open && boundary !== null}
+      open={visible}
       modal={false}
       onOpenChange={(nextOpen, details) => {
         const outside =
@@ -159,7 +142,7 @@ function ChatResourcesButtonInner({
             "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody thread={thread} />
+        {visible ? <ChatResourcesBody thread={thread} /> : null}
       </PopoverContent>
     </Popover>
   );
@@ -265,19 +248,79 @@ function ResourceOutputRow({
   );
 }
 
-function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
-  const artifactsId = `${thread.threadId}-resource-artifacts`;
+function ChatResourcesStatus({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
   const { t } = useTranslation();
   const content = useLastLoadable(thread.resources.content$);
   const data = useLastResolved(thread.resources.content$);
   const reload = useSet(thread.resources.catalog.reload$);
+  const origin = useGet(thread.relations.origin$);
+  const chats = useLastLoadable(thread.relations.chats.data$);
+  if (content.state === "hasError") {
+    return (
+      <div
+        role="alert"
+        className="flex items-center justify-between gap-2 px-2 pt-3 text-xs text-muted-foreground"
+      >
+        <p>
+          {t(($) => {
+            return $.chat.resources.loadFailed;
+          })}
+        </p>
+        <Button variant="quiet" size="xs" onClick={reload}>
+          {t(($) => {
+            return $.chat.resources.retry;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  const hasContent =
+    origin?.kind === "source" ||
+    Boolean(data?.artifacts.length || data?.links.length) ||
+    (chats.state === "hasData" && chats.data.items.length > 0);
+  if (hasContent) {
+    return null;
+  }
+  if (
+    data === null ||
+    content.state === "loading" ||
+    chats.state === "loading"
+  ) {
+    return (
+      <p
+        role="status"
+        className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground"
+      >
+        {t(($) => {
+          return $.chat.resources.loading;
+        })}
+      </p>
+    );
+  }
+  if (data === undefined || chats.state !== "hasData" || chats.data.failed) {
+    return null;
+  }
+  return (
+    <p className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground">
+      {t(($) => {
+        return $.chat.resources.empty;
+      })}
+    </p>
+  );
+}
+
+function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
+  const artifactsId = `${thread.threadId}-resource-artifacts`;
+  const { t } = useTranslation();
+  const data = useLastResolved(thread.resources.content$);
   const [paging, loadMore] = useLoadableSet(thread.resources.catalog.loadMore$);
   const pageSignal = useGet(pageSignal$);
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
-  const hasResources = useHasResources(thread);
-  const chatsLoading =
-    useLastLoadable(thread.relations.chats.data$).state === "loading";
   return (
     <div
       data-resource-scroll
@@ -348,34 +391,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
           },
         }}
       />
-      {content.state === "hasError" && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-2 px-2 pt-3 text-xs text-muted-foreground"
-        >
-          <p>
-            {t(($) => {
-              return $.chat.resources.loadFailed;
-            })}
-          </p>
-          <Button variant="quiet" size="xs" onClick={reload}>
-            {t(($) => {
-              return $.chat.resources.retry;
-            })}
-          </Button>
-        </div>
-      )}
-      {!hasResources && (
-        <p className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground">
-          {data && !chatsLoading
-            ? t(($) => {
-                return $.chat.resources.empty;
-              })
-            : t(($) => {
-                return $.chat.resources.loading;
-              })}
-        </p>
-      )}
+      <ChatResourcesStatus thread={thread} />
     </div>
   );
 }

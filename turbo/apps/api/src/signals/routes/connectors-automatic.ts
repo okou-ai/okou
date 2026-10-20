@@ -161,6 +161,10 @@ const startBuiltinAutomaticInner$ = command(
           result: "authorization" as const,
           authorizationUrl: result.authorizationUrl,
           oauthAttemptId: result.oauthAttemptId,
+          connectionId:
+            body.data.account.intent === "reconnect"
+              ? body.data.account.connectionId
+              : undefined,
         },
       };
     }
@@ -188,6 +192,7 @@ const startBuiltinAutomaticInner$ = command(
       body: {
         result: "connected" as const,
         connectedAccountId: result.connectionId,
+        connectionId: result.connectionId,
       },
     };
   },

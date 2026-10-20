@@ -157,6 +157,28 @@ describe("okou connector list command", () => {
   });
 
   describe("without agent context", () => {
+    it("reads catalog metadata without legacy default projections", async () => {
+      const current = statusItemFromConnector(connectedGithub);
+      const {
+        connected: _connected,
+        connection: _connection,
+        ...metadata
+      } = current;
+      server.use(
+        stubConnectorAccountSummaries(catalogAccountSummaries([current])),
+        http.get("http://localhost:3000/api/connector-catalog/status", () => {
+          return HttpResponse.json({ connectors: [metadata] });
+        }),
+      );
+
+      await listCommand.parseAsync(["node", "cli"]);
+
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(output).toContain("github");
+      expect(output).toContain("@octocat");
+      expect(output).not.toContain("not connected");
+    });
+
     it("renders SLUG and CONNECTED AS columns for a connected connector", async () => {
       server.use(stubConnectors([connectedGithub]));
 
@@ -227,7 +249,8 @@ describe("okou connector list command", () => {
       });
       expect(connectedRow).toContain("Account #55555555");
       expect(connectedRow).not.toContain("not connected");
-      expect(missingRow).toContain("missing apiKey");
+      expect(missingRow).toContain("not connected");
+      expect(missingRow).not.toContain("missing apiKey");
     });
 
     it("emits parseable current-context JSON without ANSI", async () => {

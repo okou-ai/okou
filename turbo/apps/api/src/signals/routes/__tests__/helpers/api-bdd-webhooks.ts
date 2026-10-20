@@ -338,11 +338,17 @@ export function createWebhookCallbackApi(context: TestContext) {
       body: string,
       headers: Record<string, string>,
       statuses: readonly (200 | 401 | 503)[],
+      options: { readonly isolatePg?: true } = {},
     ) {
+      const app = options.isolatePg
+        ? await setupApp({
+            context,
+            routes: webhooksClerkRoutes,
+            isolatePg: true,
+          })
+        : setupApp({ context, routes: webhooksClerkRoutes });
       return await accept(
-        setupApp({ context, routes: webhooksClerkRoutes })(
-          webhookClerkContract,
-        ).post({
+        app(webhookClerkContract).post({
           body,
           extraHeaders: headers,
         }),

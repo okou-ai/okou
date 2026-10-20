@@ -19,6 +19,27 @@ export const atomSubscriptionGrantSchema = z.object({
 });
 
 export const atomSubscriptionGrantsContract = initContract().router({
+  cancel: {
+    method: "POST",
+    path: "/api/internal/atom/subscription-grants/:grantId/cancel",
+    headers: authHeadersSchema,
+    pathParams: z.object({ grantId: z.uuid() }),
+    body: z.object({
+      orgId: z.string().min(1).max(255),
+      userId: z.string().min(1).max(255),
+      provider: z.enum(["claude-code", "codex"]),
+    }),
+    responses: {
+      200: z.object({ grantId: z.uuid(), status: z.literal("cancelled") }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      409: apiErrorSchema,
+      503: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Cancel an Atom grant and disconnect its personal subscription account",
+  },
   deliver: {
     method: "POST",
     path: "/api/internal/atom/subscription-grants",

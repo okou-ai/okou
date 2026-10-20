@@ -1,5 +1,27 @@
 # Changelog
 
+## [9.404.1](https://github.com/okou-ai/okou/compare/cli-v9.404.0...cli-v9.404.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **cli:** preserve editable svg geometry in presentation exports ([#41480](https://github.com/okou-ai/okou/issues/41480)) ([cbc7606](https://github.com/okou-ai/okou/commit/cbc7606984691e00ad8ba92e673d3b69c533162b))
+
+
+### Refactoring
+
+* activate account-scoped connector setup status ([#41531](https://github.com/okou-ai/okou/issues/41531)) ([ae50917](https://github.com/okou-ai/okou/commit/ae50917fdaa73697ac66badac03ca8b2abd6c2e8))
+* remove expired teams install redirect and wallet spend compatibility ([#41583](https://github.com/okou-ai/okou/issues/41583)) ([bad6179](https://github.com/okou-ai/okou/commit/bad61790761ccd91d8dc1224f4ca43ad87ab1ba5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.578.0
+    * @okouai/core bumped to 8.772.0
+    * @okouai/pi-agent-runtime bumped to 1.50.28
+
 ## [9.404.0](https://github.com/okou-ai/okou/compare/cli-v9.403.0...cli-v9.404.0) (2026-10-19)
 
 

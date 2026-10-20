@@ -2,9 +2,11 @@
 
 use std::{
     collections::HashMap,
-    convert::Infallible,
     net::Ipv4Addr,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use api_contracts::generated::types::webhooks::agent::storages;
@@ -37,6 +39,8 @@ enum Reply {
     Json(Value),
     Empty,
     Unavailable,
+    MalformedClaim,
+    ClaimDisconnect,
 }
 
 pub struct Api {
@@ -55,6 +59,15 @@ impl Api {
         run: super::RunId,
         runner: runner_host::runner_process_identity::RunnerProcessIdentity,
     ) -> TestResult<Arc<super::claim_peer::Gate>> {
+        self.hold_claim_with_outcome(run, runner, super::claim_peer::Outcome::Unavailable)
+    }
+
+    pub fn hold_claim_with_outcome(
+        &self,
+        run: super::RunId,
+        runner: runner_host::runner_process_identity::RunnerProcessIdentity,
+        outcome: super::claim_peer::Outcome,
+    ) -> TestResult<Arc<super::claim_peer::Gate>> {
         let mut ledger = self
             .ledger
             .lock()
@@ -62,7 +75,7 @@ impl Api {
         if ledger.claim.is_some() {
             return Err(io::Error::other("native API claim already armed").into());
         }
-        let claim = super::claim_peer::Gate::new(run, runner);
+        let claim = super::claim_peer::Gate::with_outcome(run, runner, outcome);
         ledger.claim = Some(claim.clone());
         Ok(claim)
     }
@@ -100,12 +113,16 @@ impl Api {
                 let base = base.clone();
                 tasks.spawn(async move {
                     let record = state.clone();
-                    let service =
-                        service_fn(move |request| respond(request, state.clone(), base.clone()));
+                    let disconnected = Arc::new(AtomicBool::new(false));
+                    let expected_disconnect = disconnected.clone();
+                    let service = service_fn(move |request| {
+                        respond(request, state.clone(), base.clone(), disconnected.clone())
+                    });
                     if let Err(error) = hyper::server::conn::http1::Builder::new()
                         .keep_alive(false)
                         .serve_connection(TokioIo::new(stream), service)
                         .await
+                        && !expected_disconnect.load(Ordering::SeqCst)
                         && let Ok(mut ledger) = record.lock()
                     {
                         ledger.errors.push(error.to_string());
@@ -178,7 +195,8 @@ async fn respond(
     request: Request<Incoming>,
     ledger: Arc<Mutex<Ledger>>,
     base: String,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+    disconnected: Arc<AtomicBool>,
+) -> Result<Response<Full<Bytes>>, io::Error> {
     let (parts, body) = request.into_parts();
     let result: TestResult<Reply> = async {
         let bytes = Limited::new(body, MAX_HISTORY as usize).collect().await?.to_bytes();
@@ -186,8 +204,11 @@ async fn respond(
         if path.starts_with("/api/runners/jobs/") && path.ends_with("/claim") {
             let claim = ledger.lock().map_err(|_| io::Error::other("native API ledger poisoned"))?
                 .claim.clone().ok_or_else(|| io::Error::other("unexpected native provider claim"))?;
-            claim.reject(&parts, &bytes).await?;
-            return Ok(Reply::Unavailable);
+            return Ok(match claim.respond(&parts, &bytes).await? {
+                super::claim_peer::Outcome::Unavailable => Reply::Unavailable,
+                super::claim_peer::Outcome::Decode => Reply::MalformedClaim,
+                super::claim_peer::Outcome::Disconnect => Reply::ClaimDisconnect,
+            });
         }
         let mut state = ledger.lock().map_err(|_| io::Error::other("native API ledger poisoned"))?;
         if parts.method == Method::PUT && let Some(key) = path.strip_prefix("/storage-upload/") {
@@ -255,6 +276,13 @@ async fn respond(
         }
     }.await;
     let encoded = match result {
+        Ok(Reply::ClaimDisconnect) => {
+            // This flag belongs to this one validated connection. Other peer
+            // errors still fail; no response or remote rejection is invented.
+            disconnected.store(true, Ordering::SeqCst);
+            return Err(io::Error::other("owned claim response disconnected"));
+        }
+        Ok(Reply::MalformedClaim) => Ok((StatusCode::OK, vec![b'{'])),
         Ok(Reply::Unavailable) => Ok((StatusCode::NOT_FOUND, Vec::new())),
         Ok(Reply::Empty) => Ok((StatusCode::NO_CONTENT, Vec::new())),
         Ok(Reply::Json(value)) => serde_json::to_vec(&value)

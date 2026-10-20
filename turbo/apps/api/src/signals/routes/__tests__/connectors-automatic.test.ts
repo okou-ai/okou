@@ -131,6 +131,7 @@ describe("builtin MCP automatic authentication", () => {
     expect(connected.body).toStrictEqual({
       result: "connected",
       connectedAccountId: connectionId,
+      connectionId,
     });
     const account = await accept(
       accounts().connection({

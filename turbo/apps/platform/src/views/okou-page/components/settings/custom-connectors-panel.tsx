@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   closeCustomConnectorDialog$,
   connectCustomConnectorAuthorizationWithDialog$,
@@ -597,6 +597,7 @@ function CustomAccountDialogs() {
             openAccountConnect(managedAccounts, {
               kind: "reconnect",
               connectionId: account.id,
+              account,
             });
           }}
         />

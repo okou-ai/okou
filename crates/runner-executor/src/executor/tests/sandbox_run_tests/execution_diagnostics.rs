@@ -1513,6 +1513,13 @@ async fn execute_inner_nonzero_records_agent_execute_error() {
 
 #[tokio::test]
 async fn execute_inner_reports_a_broken_oom_evidence_envelope_without_leaking_it() {
+    let diagnostic = FailureDiagnostic::new(
+        FailureClass::CliExecutionError,
+        AgentFramework::Codex,
+        PromptMetadata::from_prompt("continue"),
+    )
+    .with_cli_exit_code(EXIT_SIGKILL)
+    .with_cli_observed_exit(CliObservedExitDiagnostic::from_signal(libc::SIGKILL));
     for payload in [
         "not json".to_string(),
         "x".repeat(guest_contracts::oom_evidence::MAX_EVIDENCE_BYTES + 1),
@@ -1526,6 +1533,7 @@ async fn execute_inner_reports_a_broken_oom_evidence_envelope_without_leaking_it
             guest_contracts::oom_evidence::EVIDENCE_PREFIX
         );
         overrides.push_wait_process_exit(exit);
+        overrides.push_read_file_result(Ok(Some(serde_json::to_vec(&diagnostic).unwrap())));
         let factory = sandbox_mock::MockSandboxFactory::with_overrides(overrides);
         let ctx = minimal_context();
         let evidence_path = config.log_paths.oom_evidence_log(ctx.run_id);
@@ -1542,6 +1550,12 @@ async fn execute_inner_reports_a_broken_oom_evidence_envelope_without_leaking_it
         // A broken envelope is still metadata: it is dropped from the
         // diagnostic, never retained, and never shown to the user.
         assert_eq!(outcome.exit_code(), 1);
+        let failure = outcome.failure.as_ref().unwrap();
+        assert_eq!(failure.diagnostic.as_ref(), Some(&diagnostic));
+        assert_ne!(
+            failure.resource_diagnostics.and_then(|d| d.failure_kind),
+            Some(ResourceFailureKind::GuestMemoryOomKilled)
+        );
         assert!(!tokio::fs::try_exists(&evidence_path).await.unwrap());
         assert!(
             !outcome
@@ -1637,6 +1651,315 @@ async fn execute_inner_retains_trusted_oom_evidence_and_attributes_agent_domain_
                 outcome.failure.as_ref().unwrap().kind,
                 ExecutionFailureKind::RunnerJobTimeout { .. }
             ));
+        }
+    }
+}
+
+#[tokio::test]
+async fn execute_inner_attributes_nested_codex_sigkill_only_with_main_domain_oom() {
+    use guest_contracts::diagnostics::{
+        CliTerminationDiagnostic, CliTerminationReason, FailureReason,
+        GUEST_MEMORY_OOM_KILLED_ERROR,
+    };
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+
+    let kernel: OomEvidence = serde_json::from_str(include_str!(
+        "../../../../../guest-contracts/tests/fixtures/oom-evidence-v1.json"
+    ))
+    .unwrap();
+    let runtime: OomEvidence = serde_json::from_str(include_str!(
+        "../../../../../guest-contracts/tests/fixtures/runtime-counter-oom.json"
+    ))
+    .unwrap();
+    let tools: OomEvidence = serde_json::from_str(include_str!(
+        "../../../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+    ))
+    .unwrap();
+    let mut unproven = runtime.clone();
+    unproven.groups[1].local_baseline.oom_kill = None;
+    for incident in &mut unproven.incidents {
+        incident.groups[1].local_baseline.oom_kill = None;
+    }
+    let native = FailureDiagnostic::new(
+        FailureClass::CliExecutionError,
+        AgentFramework::Codex,
+        PromptMetadata::from_prompt("continue"),
+    )
+    .with_cli_exit_code(EXIT_SIGKILL)
+    .with_cli_observed_exit(CliObservedExitDiagnostic::from_signal(libc::SIGKILL));
+    let mut normal_exit = native.clone();
+    normal_exit.cli_observed_exit = Some(CliObservedExitDiagnostic::from_exit_code(137));
+    let mut inconsistent = native.clone();
+    inconsistent
+        .cli_observed_exit
+        .as_mut()
+        .unwrap()
+        .mapped_exit_code = 1;
+    let mut mixed_exit = native.clone();
+    mixed_exit.cli_observed_exit.as_mut().unwrap().exit_code = Some(137);
+    let mut missing_raw = native.clone();
+    missing_raw.cli_observed_exit = None;
+    let mut other_framework = native.clone();
+    other_framework.framework = AgentFramework::ClaudeCode;
+    let mut other_class = native.clone();
+    other_class.failure_class = FailureClass::CliNonzero;
+    let mut conflicting_cli_code = native.clone();
+    conflicting_cli_code.cli_exit_code = Some(1);
+    let secondary_delivery = native.clone().with_event_delivery(EventDeliveryDiagnostic {
+        total_events: 1,
+        total_batches: 1,
+        failed_batches: 1,
+        last_acknowledged_sequence: None,
+        first_failed_batch: Some(EventDeliveryFailedBatchDiagnostic {
+            first_sequence: 0,
+            last_sequence: 0,
+            event_count: 1,
+            conservative_bytes: 128,
+            outcome: EventDeliveryAcceptanceOutcome::ConfirmedRejection,
+            attempts: vec![HttpCompletedAttemptDiagnostic {
+                attempt: 1,
+                client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
+                elapsed_ms: 1,
+                failure_kind: HttpAttemptFailureKind::HttpStatus,
+                http_status: Some(400),
+                timeout_observed: None,
+                connect_observed: None,
+            }],
+        }),
+        drain_timeout: None,
+    });
+    let wrapper_exit = ExecTermination::Exited { exit_code: 1 };
+    let mut cases = vec![
+        (
+            "kernel",
+            Some(&kernel),
+            Some(native.clone()),
+            wrapper_exit,
+            true,
+        ),
+        (
+            "runtime counters",
+            Some(&runtime),
+            Some(native.clone()),
+            wrapper_exit,
+            true,
+        ),
+        (
+            "secondary delivery failure",
+            Some(&kernel),
+            Some(secondary_delivery),
+            wrapper_exit,
+            true,
+        ),
+        (
+            "tools",
+            Some(&tools),
+            Some(native.clone()),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "unproven",
+            Some(&unproven),
+            Some(native.clone()),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "missing evidence",
+            None,
+            Some(native.clone()),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "missing diagnostic",
+            Some(&kernel),
+            None,
+            wrapper_exit,
+            false,
+        ),
+        (
+            "normal 137",
+            Some(&kernel),
+            Some(normal_exit),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "inconsistent mapping",
+            Some(&kernel),
+            Some(inconsistent),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "mixed signal and exit",
+            Some(&kernel),
+            Some(mixed_exit),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "missing raw exit",
+            Some(&kernel),
+            Some(missing_raw),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "other framework",
+            Some(&kernel),
+            Some(other_framework),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "other class",
+            Some(&kernel),
+            Some(other_class),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "conflicting CLI code",
+            Some(&kernel),
+            Some(conflicting_cli_code),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "provider failure",
+            Some(&kernel),
+            Some(
+                native
+                    .clone()
+                    .with_failure_reason(FailureReason::ProviderOverloaded),
+            ),
+            wrapper_exit,
+            false,
+        ),
+        (
+            "timeout",
+            Some(&kernel),
+            Some(native.clone()),
+            ExecTermination::TimedOut,
+            false,
+        ),
+        (
+            "cancelled",
+            Some(&kernel),
+            Some(native.clone()),
+            ExecTermination::Cancelled,
+            false,
+        ),
+        (
+            "success",
+            Some(&kernel),
+            Some(native.clone()),
+            ExecTermination::Exited { exit_code: 0 },
+            false,
+        ),
+        (
+            "other wrapper exit",
+            Some(&kernel),
+            Some(native.clone()),
+            ExecTermination::Exited { exit_code: 2 },
+            false,
+        ),
+    ];
+    for reason in [
+        CliTerminationReason::ExecutionTimeout,
+        CliTerminationReason::UserCancellation,
+        CliTerminationReason::HeartbeatError,
+        CliTerminationReason::StdoutIngestion,
+    ] {
+        cases.push((
+            "Guest termination",
+            Some(&kernel),
+            Some(
+                native
+                    .clone()
+                    .with_cli_termination(CliTerminationDiagnostic::new(reason)),
+            ),
+            wrapper_exit,
+            false,
+        ));
+    }
+    for (case, evidence, diagnostic, termination, expected_oom) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let mut exit = ProcessExit::new(1, 1, Vec::new(), Vec::new());
+        exit.termination = termination;
+        if let Some(evidence) = evidence {
+            exit.diagnostic = format!(
+                "{EVIDENCE_PREFIX}{}",
+                serde_json::to_string(evidence).unwrap()
+            );
+        }
+        overrides.push_wait_process_exit(exit);
+        overrides.push_read_file_result(Ok(diagnostic
+            .as_ref()
+            .map(|d| serde_json::to_vec(d).unwrap())));
+        let original = "execution: codex app-server child exited while waiting for turn notification: signal: 9 (SIGKILL)";
+        overrides.push_read_file_result(Ok(Some(original.as_bytes().to_vec())));
+        let factory = sandbox_mock::MockSandboxFactory::with_overrides(overrides);
+        let ctx = minimal_context();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_new_sandbox_outcome(&factory, &ctx, &config, &default_params()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let retained_path = config.log_paths.oom_evidence_log(ctx.run_id);
+        if let Some(evidence) = evidence {
+            let retained: OomEvidence =
+                serde_json::from_slice(&tokio::fs::read(retained_path).await.unwrap()).unwrap();
+            assert_eq!(&retained, evidence, "{case}");
+        } else {
+            assert!(
+                !tokio::fs::try_exists(retained_path).await.unwrap(),
+                "{case}"
+            );
+        }
+        if termination == (ExecTermination::Exited { exit_code: 0 }) {
+            assert!(outcome.failure.is_none(), "{case}");
+            continue;
+        }
+        let failure = outcome.failure.as_ref().unwrap();
+        let is_oom = failure.resource_diagnostics.and_then(|d| d.failure_kind)
+            == Some(ResourceFailureKind::GuestMemoryOomKilled);
+        assert_eq!(is_oom, expected_oom, "{case}");
+        if termination == wrapper_exit {
+            assert_eq!(outcome.exit_code(), 1, "{case}");
+            assert_eq!(failure.diagnostic, diagnostic, "{case}");
+            assert_eq!(
+                failure.error,
+                if expected_oom {
+                    GUEST_MEMORY_OOM_KILLED_ERROR
+                } else {
+                    original
+                },
+                "{case}"
+            );
+            if expected_oom {
+                assert_eq!(
+                    outcome.sandbox_reuse_disposition,
+                    SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ResourceFailure),
+                    "{case}"
+                );
+            } else if diagnostic
+                .as_ref()
+                .is_none_or(|d| d.cli_termination.is_none())
+            {
+                assert_eq!(
+                    outcome.sandbox_reuse_disposition,
+                    SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit),
+                    "{case}"
+                );
+            }
         }
     }
 }

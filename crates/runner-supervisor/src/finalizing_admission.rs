@@ -48,12 +48,14 @@ pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(
     api_contracts::generated::constants::runners::RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
 );
 
-/// Exact-predecessor proof carried across the provider claim boundary.
+/// Local source proof carried across the provider claim boundary.
 pub struct FinalizingAdmission {
     pub predecessor: ActiveRunReuseProof,
     pub deadline: Instant,
     pub reuse_key: String,
-    pub history_generation_run_id: RunId,
+    pub source_run_id: RunId,
+    /// Present only when the selected source is the actual native generation.
+    pub history_generation_run_id: Option<RunId>,
 }
 
 impl FinalizingAdmission {
@@ -138,7 +140,7 @@ impl FinalizingWaitOutcome {
 
 enum FallbackIdleLookup {
     Hit(ReservedIdleActivation),
-    Miss(ExactIdleReservationMiss),
+    Miss(Option<ExactIdleReservationMiss>),
 }
 
 struct FinalizingWait<'a> {
@@ -154,7 +156,7 @@ struct FinalizingFallback<'a> {
     run_id: RunId,
     cancellation: &'a RunCancellationRegistration,
     reuse_key: &'a str,
-    history_generation_run_id: RunId,
+    history_generation_run_id: Option<RunId>,
     profile_name: &'a str,
     vcpu: u32,
     memory_mb: u32,
@@ -304,6 +306,9 @@ async fn wait_for_finalizing_resource(
     request: FinalizingWait<'_>,
     reserved_exact: &mut Option<ReservedIdleActivation>,
 ) -> FinalizingWaitOutcome {
+    let Some(history_generation_run_id) = request.admission.history_generation_run_id else {
+        return wait_for_generic_finalizing_resource(request).await;
+    };
     let FinalizingWait {
         run_id,
         cancellation,
@@ -327,7 +332,7 @@ async fn wait_for_finalizing_resource(
                 return receive_finalizing_handoff(
                     request,
                     run_id,
-                    admission.history_generation_run_id,
+                    history_generation_run_id,
                     cancellation,
                 )
                 .await;
@@ -359,7 +364,7 @@ async fn wait_for_finalizing_resource(
                 &admission.reuse_key,
                 profile_name,
                 device_rate_limits,
-                admission.history_generation_run_id,
+                history_generation_run_id,
             )
             .await;
             let exact_lookup_miss = match exact_lookup {
@@ -386,7 +391,7 @@ async fn wait_for_finalizing_resource(
             if let Some(reservation) = reserved_exact.take() {
                 info!(
                     run_id = %run_id,
-                    predecessor_run_id = %admission.history_generation_run_id,
+                    predecessor_run_id = %admission.source_run_id,
                     "finalizing successor reserved exact published sandbox"
                 );
                 return FinalizingWaitOutcome::Exact(reservation);
@@ -420,7 +425,7 @@ async fn wait_for_finalizing_resource(
                         return receive_finalizing_handoff(
                             request,
                             run_id,
-                            admission.history_generation_run_id,
+                            history_generation_run_id,
                             cancellation,
                         )
                         .await;
@@ -439,7 +444,7 @@ async fn wait_for_finalizing_resource(
                         return receive_finalizing_handoff(
                             request,
                             run_id,
-                            admission.history_generation_run_id,
+                            history_generation_run_id,
                             cancellation,
                         )
                         .await;
@@ -492,6 +497,54 @@ async fn wait_for_finalizing_resource(
                         | ActiveRunReuseState::Released => continue,
                     };
                 }
+            }
+        }
+    }
+}
+
+/// Generic resources do not authorize native handoff or renew discovery expiry.
+async fn wait_for_generic_finalizing_resource(
+    request: FinalizingWait<'_>,
+) -> FinalizingWaitOutcome {
+    let cancellation = request.cancellation.token();
+    let admission = request.admission;
+    let deadline = tokio::time::Instant::from_std(admission.deadline);
+    loop {
+        if cancellation.is_cancelled() {
+            return FinalizingWaitOutcome::cancelled(None);
+        }
+        let state = admission.predecessor.state();
+        let reason = match state {
+            ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => None,
+            ActiveRunReuseState::ExactSandboxPublished => {
+                Some(FinalizingHandoffReason::PublishedExactUnavailable)
+            }
+            ActiveRunReuseState::ExactSandboxHandedOff => {
+                Some(FinalizingHandoffReason::ExactHandoffUnavailable)
+            }
+            ActiveRunReuseState::NoExactSandbox => {
+                Some(FinalizingHandoffReason::PredecessorNoExact)
+            }
+            ActiveRunReuseState::Released => {
+                Some(FinalizingHandoffReason::PredecessorReleasedWithoutExact)
+            }
+        };
+        if let Some(reason) = reason {
+            return FinalizingWaitOutcome::no_exact(reason);
+        }
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => return FinalizingWaitOutcome::cancelled(None),
+            _ = admission.predecessor.changed() => {}
+            _ = tokio::time::sleep_until(deadline) => {
+                if admission.predecessor.state() != state {
+                    continue;
+                }
+                return FinalizingWaitOutcome::Fallback {
+                    reason: FinalizingHandoffReason::PreFinalizationDeadline,
+                    exact_lookup_miss: None,
+                    handoff_outcome: FinalizingHandoffOutcome::PreFinalizationDeadline,
+                };
             }
         }
     }
@@ -637,8 +690,10 @@ async fn acquire_fallback_resource(
             ))
         }
         FallbackIdleLookup::Miss(miss) => {
-            pre_spawn_timing
-                .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(miss));
+            if let Some(miss) = miss {
+                pre_spawn_timing
+                    .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(miss));
+            }
             Ok(FinalizingResource::Fresh(lease))
         }
     }
@@ -646,18 +701,19 @@ async fn acquire_fallback_resource(
 
 fn fallback_idle_resource(
     reservation: ReservedIdleActivation,
-    history_generation_run_id: RunId,
+    history_generation_run_id: Option<RunId>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,
 ) -> FinalizingResource {
-    if reservation.history_generation_run_id() == Some(history_generation_run_id) {
-        pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
-        FinalizingResource::Exact(reservation)
-    } else {
+    if let Some(history_generation_run_id) = history_generation_run_id {
+        if reservation.history_generation_run_id() == Some(history_generation_run_id) {
+            pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
+            return FinalizingResource::Exact(reservation);
+        }
         pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(
             ExactIdleReservationMiss::HistoryGenerationMismatch,
         ));
-        FinalizingResource::Reusable(reservation)
     }
+    FinalizingResource::Reusable(reservation)
 }
 
 async fn reserve_fallback_idle(
@@ -665,33 +721,39 @@ async fn reserve_fallback_idle(
     reuse_key: &str,
     profile_name: &str,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
-    history_generation_run_id: RunId,
+    history_generation_run_id: Option<RunId>,
     ctx: FinalizingSelectionResources<'_>,
 ) -> Result<FallbackIdleLookup, Box<ExecutionFailure>> {
-    let reservation = match reserve_exact_idle_for_spawn(
+    let miss = if let Some(generation) = history_generation_run_id {
+        match reserve_exact_idle_for_spawn(
+            ctx.idle_pool,
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            generation,
+        )
+        .await
+        {
+            Ok(reservation) => {
+                return accept_fallback_idle(cancellation, reservation, ctx)
+                    .await
+                    .map(FallbackIdleLookup::Hit);
+            }
+            Err(miss) => Some(miss),
+        }
+    } else {
+        None
+    };
+    let Some(reservation) = reserve_reusable_idle_for_spawn(
         ctx.idle_pool,
         reuse_key,
         profile_name,
         device_rate_limits,
-        history_generation_run_id,
+        None,
     )
     .await
-    {
-        Ok(reservation) => reservation,
-        Err(miss) => {
-            match reserve_reusable_idle_for_spawn(
-                ctx.idle_pool,
-                reuse_key,
-                profile_name,
-                device_rate_limits,
-                None,
-            )
-            .await
-            {
-                Some(reservation) => reservation,
-                None => return Ok(FallbackIdleLookup::Miss(miss)),
-            }
-        }
+    else {
+        return Ok(FallbackIdleLookup::Miss(miss));
     };
     accept_fallback_idle(cancellation, reservation, ctx)
         .await
@@ -788,7 +850,8 @@ mod tests {
             predecessor,
             deadline: Instant::now(),
             reuse_key: "thread:finalizing-owner".into(),
-            history_generation_run_id: predecessor_run_id,
+            source_run_id: predecessor_run_id,
+            history_generation_run_id: Some(predecessor_run_id),
         };
         assert_eq!(
             admission.fresh_fallback_home_prepare_lock_policy(),
@@ -842,7 +905,8 @@ mod tests {
             predecessor,
             deadline: Instant::now(),
             reuse_key: "thread:finalizing-owner".into(),
-            history_generation_run_id: predecessor_run_id,
+            source_run_id: predecessor_run_id,
+            history_generation_run_id: Some(predecessor_run_id),
         }
     }
 
@@ -918,7 +982,8 @@ mod tests {
             predecessor,
             deadline: Instant::now() - Duration::from_secs(1),
             reuse_key: "thread:finalizing-owner".into(),
-            history_generation_run_id: predecessor_run_id,
+            source_run_id: predecessor_run_id,
+            history_generation_run_id: Some(predecessor_run_id),
         };
         let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
             IdlePoolConfig::default(),
@@ -989,7 +1054,8 @@ mod tests {
             predecessor,
             deadline: Instant::now() + Duration::from_secs(60),
             reuse_key: "thread:finalizing-owner".into(),
-            history_generation_run_id: predecessor_run_id,
+            source_run_id: predecessor_run_id,
+            history_generation_run_id: Some(predecessor_run_id),
         };
         let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
             IdlePoolConfig::default(),
@@ -1118,16 +1184,24 @@ mod tests {
 
     #[tokio::test]
     async fn fallback_budget_wakeup_reuses_exact_published_while_waiting() {
-        assert_fallback_budget_wakeup_reuses_published(true).await;
+        assert_fallback_budget_wakeup_reuses_published(true, true).await;
     }
 
     #[tokio::test]
     async fn fallback_budget_wakeup_reuses_generic_published_while_waiting() {
-        assert_fallback_budget_wakeup_reuses_published(false).await;
+        assert_fallback_budget_wakeup_reuses_published(false, true).await;
     }
 
-    async fn assert_fallback_budget_wakeup_reuses_published(exact: bool) {
+    #[tokio::test]
+    async fn history_free_budget_wakeup_keeps_generationless_publication_generic() {
+        assert_fallback_budget_wakeup_reuses_published(false, false).await;
+    }
+
+    async fn assert_fallback_budget_wakeup_reuses_published(exact: bool, native_history: bool) {
         let mut admission = released_admission();
+        if !native_history {
+            admission.history_generation_run_id = None;
+        }
         let budget = Arc::new(ResourceBudget::new(5, 4096, 1.0, 0));
         let held = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
         let exact_lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
@@ -1136,7 +1210,7 @@ mod tests {
             .with_sandbox_id(exact_id);
         let candidate = if exact {
             builder
-                .with_history_generation_run_id(admission.history_generation_run_id)
+                .with_history_generation_run_id(admission.source_run_id)
                 .build()
         } else {
             builder.build()

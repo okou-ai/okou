@@ -105,8 +105,12 @@ impl<'a> ProcessGroupFileGuard<'a> {
 
     pub(crate) fn read_pid(&mut self) -> u32 {
         let pid = read_pid_file(self.pid_path);
-        self.pid = Some(pid);
+        self.observe_pid(pid);
         pid
+    }
+
+    pub(crate) fn observe_pid(&mut self, pid: u32) {
+        self.pid = Some(pid);
     }
 
     pub(crate) fn disarm(&mut self) {

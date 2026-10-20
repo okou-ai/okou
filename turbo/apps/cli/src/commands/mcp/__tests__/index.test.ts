@@ -280,6 +280,7 @@ describe("okou mcp command", () => {
       connectors: [
         expect.objectContaining({
           ...setup,
+          runtimeAvailable: true,
           connected: true,
           connectionId: "77777777-7777-4777-8777-777777777777",
         }),
@@ -314,6 +315,7 @@ describe("okou mcp command", () => {
             displayName: "Alpha MCP",
             transport: "streamable-http",
             endpoint: "https://alpha-mcp.example.test/server",
+            runtimeAvailable: false,
             connected: false,
           },
           {
@@ -323,6 +325,7 @@ describe("okou mcp command", () => {
             displayName: "Acme MCP",
             transport: "streamable-http",
             endpoint: MCP_ENDPOINT,
+            runtimeAvailable: true,
             connected: true,
           },
         ],
@@ -331,6 +334,93 @@ describe("okou mcp command", () => {
     const output = outputText(consoleLog);
     expect(output).not.toContain("Authorization");
     expect(output).not.toContain("secrets.secret");
+  });
+
+  it.each([
+    {
+      label: "canonical unavailability despite connected management facts",
+      runtimeAvailable: false,
+      connected: true,
+      connectionStatus: "connected" as const,
+      setupStatus: "complete" as const,
+    },
+    {
+      label: "canonical availability despite invalid management setup",
+      runtimeAvailable: true,
+      connected: false,
+      connectionStatus: "reconnect-required" as const,
+      setupStatus: "invalid" as const,
+    },
+    {
+      label: "canonical availability without the legacy runtime field",
+      runtimeAvailable: true,
+      connected: undefined,
+      connectionStatus: "reconnect-required" as const,
+      setupStatus: "invalid" as const,
+    },
+  ])("reports $label for the exact admitted account", async (facts) => {
+    const metadata = Object.fromEntries(
+      Object.entries(runMcpConnector()).filter(([key]) => {
+        return key !== "connected";
+      }),
+    );
+    server.use(
+      http.get("http://localhost:3000/api/mcp-connectors", () => {
+        return HttpResponse.json({
+          connectors: [
+            {
+              ...metadata,
+              runtimeAvailable: facts.runtimeAvailable,
+              ...(facts.connected === undefined
+                ? {}
+                : { connected: facts.connected }),
+              connectionStatus: facts.connectionStatus,
+              setupStatus: facts.setupStatus,
+              missingRequiredFields: [],
+              configuredFieldKeys: [],
+            },
+          ],
+        });
+      }),
+    );
+
+    await mcpCommand.parseAsync(["node", "okou", "list", "--json"]);
+
+    const json: unknown = JSON.parse(outputText(consoleLog));
+    expect(json).toMatchObject({
+      connectors: [
+        {
+          connectionId: "77777777-7777-4777-8777-777777777777",
+          target: { kind: "custom", customConnectorId: CONNECTOR_ID },
+          runtimeAvailable: facts.runtimeAvailable,
+          connected: facts.runtimeAvailable,
+          connectionStatus: facts.connectionStatus,
+          setupStatus: facts.setupStatus,
+        },
+      ],
+    });
+  });
+
+  it.each([
+    {},
+    { runtimeAvailable: "private-invalid-value", connected: true },
+    { runtimeAvailable: null, connected: true },
+  ])("rejects unavailable or malformed runtime facts: %j", async (facts) => {
+    const metadata = Object.fromEntries(
+      Object.entries(runMcpConnector()).filter(([key]) => {
+        return key !== "connected";
+      }),
+    );
+    server.use(
+      http.get("http://localhost:3000/api/mcp-connectors", () => {
+        return HttpResponse.json({ connectors: [{ ...metadata, ...facts }] });
+      }),
+    );
+    await expect(
+      mcpCommand.parseAsync(["node", "okou", "list", "--json"]),
+    ).rejects.toThrow("process.exit called");
+    expect(consoleLog).not.toHaveBeenCalled();
+    expect(outputText(consoleError)).not.toContain("private-invalid-value");
   });
 
   it("rejects a shared admitted MCP name before opening either server", async () => {

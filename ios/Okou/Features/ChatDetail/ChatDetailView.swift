@@ -5,17 +5,21 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let supportsAttachments: Bool
+  let supportsActivitySummary: Bool
   let topContentInset: CGFloat
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
+  @State private var activityOwner = UUID()
 
   init(
-    conversation: ConversationStore, supportsAttachments: Bool = false, topContentInset: CGFloat = 0
+    conversation: ConversationStore, supportsAttachments: Bool = false,
+    supportsActivitySummary: Bool = false, topContentInset: CGFloat = 0
   ) {
     self.conversation = conversation
     self.supportsAttachments = supportsAttachments
+    self.supportsActivitySummary = supportsActivitySummary
     self.topContentInset = topContentInset
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
@@ -62,7 +66,14 @@ struct ChatDetailView: View {
       refresh: { await conversation.refresh() }, content: rowContent
     )
     .ignoresSafeArea(.container, edges: .vertical)
-    .onAppear { scrolling.activate(reduceMotion: reduceMotion) }
+    .onAppear {
+      scrolling.activate(reduceMotion: reduceMotion)
+      conversation.setActivitySummaryEnabled(supportsActivitySummary)
+      conversation.setDetailVisible(true, owner: activityOwner)
+    }
+    .onChange(of: supportsActivitySummary) { _, enabled in
+      conversation.setActivitySummaryEnabled(enabled)
+    }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
       if scrolling.showsBottomButton {
@@ -84,7 +95,18 @@ struct ChatDetailView: View {
     .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
-    .onDisappear { scrolling.deactivate() }
+    .onDisappear {
+      scrolling.deactivate()
+      conversation.setDetailVisible(false, owner: activityOwner)
+    }
+    .sheet(
+      isPresented: Binding(
+        get: { conversation.attachmentViewer.preview != nil },
+        set: { if !$0 { conversation.attachmentViewer.dismiss() } }
+      )
+    ) {
+      MessageAttachmentPreview(viewer: conversation.attachmentViewer)
+    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
@@ -93,16 +115,14 @@ struct ChatDetailView: View {
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
         attachments: conversation.attachmentDraft, supportsAttachments: supportsAttachments,
+        draftState: conversation.composer,
         submit: {
-          if history.canStop
-            && conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !conversation.attachmentDraft.hasAttachments
-          {
+          if history.canStop && !conversation.composer.hasContent {
             await conversation.stop()
           } else {
             await conversation.send()
           }
-        }, refresh: { await conversation.refresh() }
+        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -156,7 +176,7 @@ struct ChatDetailView: View {
       let isWorkHistory):
       messageRow(
         message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending,
-        isWorkHistory: isWorkHistory
+        isWorkHistory: isWorkHistory, loadsAttachments: anchor != nil
       )
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
@@ -165,10 +185,8 @@ struct ChatDetailView: View {
     case .footer(let executionState, let hasMessages):
       VStack(alignment: .leading, spacing: 24) {
         if executionState.isActive {
-          HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            Text(executionState.label).font(.subheadline).foregroundStyle(.secondary)
-          }.accessibilityIdentifier("execution-status")
+          ConversationActivityLabel(
+            summary: conversation.activitySummary, state: executionState)
         }
         if hasMessages {
           Link(
@@ -186,13 +204,14 @@ struct ChatDetailView: View {
 
   private func messageRow(
     _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool,
-    isWorkHistory: Bool
+    isWorkHistory: Bool, loadsAttachments: Bool
   ) -> some View {
     Group {
       if message.role == .user {
         UserMessageBubbleLayout {
           messageContent(
-            message, showsAvatar: false, pendingRetry: pendingRetry, isSending: isSending
+            message, showsAvatar: false, pendingRetry: pendingRetry, isSending: isSending,
+            loadsAttachments: loadsAttachments
           )
           .padding(14)
           .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
@@ -200,7 +219,7 @@ struct ChatDetailView: View {
       } else {
         messageContent(
           message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending,
-          isWorkHistory: isWorkHistory
+          isWorkHistory: isWorkHistory, loadsAttachments: loadsAttachments
         )
         .textual.fontScale(isWorkHistory ? 0.9 : 1)
         .foregroundStyle(isWorkHistory ? Color.secondary : Color.primary)
@@ -214,7 +233,9 @@ struct ChatDetailView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .contextMenu {
-      Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+      if !message.text.isEmpty {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+      }
     }
   }
 
@@ -228,7 +249,7 @@ struct ChatDetailView: View {
 
   private func messageContent(
     _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool,
-    isWorkHistory: Bool = false
+    isWorkHistory: Bool = false, loadsAttachments: Bool = false
   ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       if message.role == .assistant && showsAvatar { assistantAvatar }
@@ -238,7 +259,7 @@ struct ChatDetailView: View {
           .foregroundStyle(message.isError ? Color.red : Color.secondary)
           .textSelection(.enabled)
           .padding(.leading, 6)
-      } else {
+      } else if !message.text.isEmpty {
         MessageBodyView(
           text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
         )
@@ -247,6 +268,11 @@ struct ChatDetailView: View {
           message.isError ? Color.red : (isWorkHistory ? Color.secondary : Color.primary)
         )
         .padding(.leading, message.role == .assistant ? 6 : 0)
+      }
+      ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, attachment in
+        MessageAttachmentView(
+          attachment: attachment, viewer: conversation.attachmentViewer,
+          loadsThumbnail: loadsAttachments)
       }
       if let pendingRetry {
         HStack {

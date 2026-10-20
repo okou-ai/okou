@@ -175,7 +175,7 @@ describe("current-member connector status", () => {
     },
   );
 
-  it("preserves future setup facts without changing current builtin or custom decisions", async () => {
+  it("uses canonical invalid setup for both builtin and custom accounts", async () => {
     const setup = {
       setupStatus: "invalid" as const,
       missingRequiredFields: [],
@@ -194,14 +194,46 @@ describe("current-member connector status", () => {
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       connectors: [
         {
-          memberStatus: "connected",
+          memberStatus: "setup-required",
           connectionId: BUILTIN_ID,
           accountSummary: { defaultConnection: { ...setup, id: BUILTIN_ID } },
         },
         {
-          memberStatus: "connected",
+          memberStatus: "setup-required",
           connectionId: CUSTOM_ID,
           accountSummary: { defaultConnection: { ...setup, id: CUSTOM_ID } },
+        },
+      ],
+    });
+  });
+
+  it("keeps an old API's missing setup facts visibly unknown despite connected legacy projections", async () => {
+    const summaries = installMemberFixture(false).map((summary) => {
+      return {
+        ...summary,
+        defaultConnection: summary.defaultConnection
+          ? {
+              ...summary.defaultConnection,
+              setupStatus: undefined,
+              missingRequiredFields: undefined,
+              configuredFieldKeys: undefined,
+            }
+          : null,
+      };
+    });
+    server.use(stubConnectorAccountSummaries(summaries));
+    await listCommand.parseAsync(["node", "okou", "--json"]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      connectors: [
+        {
+          memberStatus: "account-review-required",
+          connectionId: BUILTIN_ID,
+          accountSummary: { accountCount: 2 },
+        },
+        {
+          memberStatus: "account-review-required",
+          connectionId: CUSTOM_ID,
+          accountSummary: { accountCount: 2 },
         },
       ],
     });
@@ -255,6 +287,21 @@ describe("current-member connector status", () => {
       stubCustomConnectors([
         { ...custom, connected: false, missingRequiredFields: ["apiKey"] },
       ]),
+      stubConnectorAccountSummaries(
+        summaries.map((summary) => {
+          return {
+            ...summary,
+            defaultConnection:
+              summary.target.kind === "custom" && summary.defaultConnection
+                ? {
+                    ...summary.defaultConnection,
+                    setupStatus: "incomplete",
+                    missingRequiredFields: ["apiKey"],
+                  }
+                : summary.defaultConnection,
+          };
+        }),
+      ),
     );
     await listCommand.parseAsync(["node", "okou", "--json"]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
@@ -266,12 +313,13 @@ describe("current-member connector status", () => {
     log.mockClear();
     server.use(
       stubCustomConnectors([{ ...custom, connectedAccountId: STALE_ID }]),
+      stubConnectorAccountSummaries(summaries),
     );
     await listCommand.parseAsync(["node", "okou", "--json"]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       connectors: [
         { memberStatus: "connected" },
-        { memberStatus: "account-review-required", connectionId: CUSTOM_ID },
+        { memberStatus: "connected", connectionId: CUSTOM_ID },
       ],
     });
   });

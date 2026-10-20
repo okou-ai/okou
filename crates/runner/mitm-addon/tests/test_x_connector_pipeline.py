@@ -133,7 +133,11 @@ class TestXConnectorResponsePipeline:
         assert metadata_keys.STREAM_BUFFER in flow.metadata
         assert metadata_keys.STREAM_BUFFER_STATE in flow.metadata
 
-        payloads = self._call_and_get_billing(flow)
+        with self._usage_webhook_api() as webhook:
+            assert mitm_addon.response(flow) is None
+            usage.flush_usage_events(trigger="test")
+
+        payloads = webhook.usage_events()
 
         by_category = {event["category"]: event["quantity"] for event in payloads}
         assert len(payloads) == len(by_category)
@@ -141,7 +145,7 @@ class TestXConnectorResponsePipeline:
         assert "connector_response_finish" not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
 
-    def test_full_response_pipeline_bounds_buffered_x_json_fallback_work(
+    async def test_full_response_pipeline_bounds_buffered_x_json_fallback_work(
         self, tmp_path, real_flow, mitm_ctx
     ):
         encoding_case = "zstd"
@@ -162,7 +166,9 @@ class TestXConnectorResponsePipeline:
         assert response_stream(flow)(compressed) == compressed
 
         with self._usage_webhook_api() as webhook:
-            mitm_addon.response(flow)
+            completion = mitm_addon.response(flow)
+            assert completion is not None
+            await completion
             usage.flush_usage_events(trigger="test")
 
         assert webhook.request_count == 0

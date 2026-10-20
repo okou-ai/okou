@@ -53,11 +53,11 @@ def request(value, run, begin, end):
     return runner
 
 
-def validate(directory):
+def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_json", outcomes=None):
     directory = pathlib.Path(directory)
-    result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
-    policy = supplied_policy(collector, result, "native_claim_loss_policy_json")
-    witnesses = {case: [] for case in CASES}
+    result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
+    policy = supplied_policy(collector, result, policy_key)
+    witnesses = {case: [] for case in cases}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):
             continue
@@ -65,7 +65,7 @@ def validate(directory):
         if (not isinstance(event, dict) or set(event) != {"version", "case", "phase", "monotonic_ns",
                 "unix_ns", "sandbox_id", "backing_generation", "evidence"}
                 or type(event["version"]) is not int or event["version"] != 1
-                or event.get("case") not in CASES or not isinstance(event["evidence"], dict)
+                or event.get("case") not in cases or not isinstance(event["evidence"], dict)
                 or not report.positive_integer(event["monotonic_ns"])
                 or not report.positive_integer(event["unix_ns"])):
             raise ValueError("invalid native claim rejection witness")
@@ -138,7 +138,9 @@ def validate(directory):
         if not isinstance(receipt, dict):
             raise ValueError("actual returned404 receipt missing")
         returned = batch.clock(receipt.get("response_released_ns"), released, events[3]["monotonic_ns"])
-        exact(receipt, waiting["request"] | {"response_released_ns": returned, "status": 404}, "claim did not return exact original404")
+        expected_outcome = {"status": 404} if outcomes is None else outcomes[case]
+        exact(receipt, waiting["request"] | {"response_released_ns": returned} | expected_outcome,
+              "claim did not return its exact original external outcome")
         prepared = batch.clock(rejected.get("preparation_joined_ns"), returned, events[3]["monotonic_ns"])
         exact(rejected, {"response_release_requested_ns": released, "preparation_joined_ns": prepared,
             "receipt": receipt, "claim_unavailable": True, "commit_refused": True, "guest_preparation_completed": True,
@@ -194,7 +196,7 @@ def validate(directory):
             "remaining_activation_owners": 0, "remaining_finalizing_owners": 0,
             "allocated": [0,0,0], "accounting": joined["accounting"]}, "claim producers remain owned")
     return {**result, "format": "native-claim-loss-report-v1", "native_provider_404_rollback_complete": True,
-            "api_claim_404_rejection_proven": True, "actual_api_claim_loss_proven": False,
+            "api_claim_404_rejection_proven": outcomes is None, "actual_api_claim_loss_proven": False,
             "api_claim_arbitration_proven": False, "cancelled_guest_preparation_proven": False}
 
 

@@ -79,22 +79,24 @@ def test_completed_compressed_row_survives_tail_failure_without_terminal_rebilli
 def test_resource_rows_crossing_midnight_are_sent_in_separate_date_batches(
     real_flow, tmp_path, usage_webhook_api, monkeypatch
 ):
-    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight = datetime(2026, 9, 18, tzinfo=UTC)
 
     class Clock(datetime):
-        value = today - timedelta(milliseconds=1)
+        value = midnight - timedelta(milliseconds=1)
 
         @classmethod
         def now(cls, tz=None):
             return cls.value
 
+    # Observation and expiry checks must share the synthetic UTC timeline.
     monkeypatch.setattr(x_resources, "datetime", Clock)
+    monkeypatch.setattr(usage.webhook, "datetime", Clock)
     flow = _stream_flow(real_flow, tmp_path)
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         stream = response_stream(flow)
         stream(b'{"data":{"id":"1"}}\n')
-        Clock.value = today
+        Clock.value = midnight
         stream(b'{"data":{"id":"1"}}\n')
         stream(b"")
         mitm_addon.response(flow)
@@ -105,10 +107,10 @@ def test_resource_rows_crossing_midnight_are_sent_in_separate_date_batches(
     assert all(len(body["events"]) == 1 for body in bodies)
     events = webhook.usage_events()
     assert [event["observedAt"] for event in events] == [
-        (today - timedelta(milliseconds=1))
+        (midnight - timedelta(milliseconds=1))
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
-        today.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        midnight.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
     ]
     assert len({event["idempotencyKey"] for event in events}) == 2
     assert all(event["protocol"] == "x-resource-v1" for event in events)

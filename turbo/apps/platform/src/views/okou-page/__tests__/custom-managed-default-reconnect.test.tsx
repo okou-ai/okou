@@ -60,6 +60,14 @@ test.each(["feishu", "lark"] as const)(
       });
     });
     const mutations: ConnectorAccountMutationIntent[] = [];
+    context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
+      return respond(404, {
+        error: {
+          code: "NOT_FOUND",
+          message: "Managed accounts are not ordinary accounts",
+        },
+      });
+    });
     context.mocks.api(
       customConnectorOAuth2Contract.start,
       ({ body, respond }) => {
@@ -90,6 +98,10 @@ test.each(["feishu", "lark"] as const)(
     });
     expect(mutations).toStrictEqual([{ intent: "reconnect", connectionId }]);
     expect(authWindow.closed).toBeTruthy();
+    expect(screen.getByText("Managed workspace connected")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Managed accounts are not ordinary accounts/u),
+    ).toBeNull();
     expect(
       screen.queryByText(/Ordinary account summaries unavailable/u),
     ).toBeNull();

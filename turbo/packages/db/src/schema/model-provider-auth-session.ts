@@ -41,6 +41,8 @@ export const modelProviderAuthSessions = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
     completedAt: timestamp("completed_at"),
     cancelledAt: timestamp("cancelled_at"),
+    // Delivery receipt survives disconnection and physical account cleanup.
+    modelProviderAccountId: uuid("model_provider_account_id"),
   },
   (table) => {
     return [

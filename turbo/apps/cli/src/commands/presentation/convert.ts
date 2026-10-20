@@ -36,6 +36,11 @@ import { nativeRenderer } from "./renderer";
 import { INSTALL_NATIVE, nativePaintSchema } from "./native";
 import { captureBrowserLayout } from "./snapshot";
 import { INSTALL_FONTS } from "./fonts";
+import {
+  CAPTURE_SVG_PATHS,
+  nativeSvgPath,
+  svgPathInputsSchema,
+} from "./svg-path";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
@@ -302,6 +307,26 @@ function render(options: Options): Rendered {
         `${PREPARE_LAYOUT}(${JSON.stringify(selector)},${activated.toString()})`,
       ),
     );
+    const svgPaths = svgPathInputsSchema.parse(
+      page.evaluate(CAPTURE_SVG_PATHS),
+    );
+    const normalizedSvg = JSON.stringify(
+      Object.fromEntries(
+        svgPaths.map(({ id, path }) => {
+          return [id, nativeSvgPath(path)];
+        }),
+      ),
+    );
+    page.evaluate("window.__okouNative.svgPathTransfer = ''; 1");
+    // Keep a complex icon from exceeding the browser CLI's argument limit.
+    for (let index = 0; index < normalizedSvg.length; index += 32_000) {
+      page.evaluate(
+        `window.__okouNative.svgPathTransfer += ${JSON.stringify(normalizedSvg.slice(index, index + 32_000))}; 1`,
+      );
+    }
+    page.evaluate(
+      "window.__okouNative.svgPaths = JSON.parse(window.__okouNative.svgPathTransfer); delete window.__okouNative.svgPathTransfer; 1",
+    );
 
     // Network pages and remote borrowed browsers cannot load local scripts.
     const local = !borrowed && deckUrl.startsWith("file://");
@@ -343,6 +368,7 @@ function render(options: Options): Rendered {
         width: ${options.width.toString()},
         height: ${options.height.toString()},
         includePseudoElements: false,
+        svgAsVector: true,
         skipDownload: true,
         onUnsupported: item => unsupported.push(item),
       });

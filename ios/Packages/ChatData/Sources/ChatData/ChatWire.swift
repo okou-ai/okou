@@ -103,6 +103,8 @@ struct ThreadMetadata: Decodable, Sendable {
   let selectedModel: String?
   let computerUseHostId: String?
   let cloudBrowserEnabled: Bool
+  let modelSettings: [String: ThreadModelSetting]?
+  let serviceTier: String?
 }
 
 struct ThreadDetail: Decodable, Sendable {
@@ -168,65 +170,6 @@ public struct SidebarPreferences: Decodable, Sendable {
 
 public struct SidebarFeatureSwitches: Decodable, Sendable {
   public let effectiveSwitches: [String: Bool]
-}
-
-struct ModelPreference: Decodable, Sendable {
-  let selectedModel: String?
-  let serviceTier: String?
-  let modelSettings: [String: ModelSetting]?
-
-  struct ModelSetting: Decodable, Sendable {
-    let effort: String?
-  }
-}
-
-struct AvailableRunModels: Decodable, Sendable {
-  let models: [Model]
-  struct Model: Decodable, Sendable {
-    /// Nil is Auto; any other value is a selectable subscription model.
-    let model: String?
-    let memberEffective: MemberRoute
-    /// Present on personal-subscription rows only.
-    let subscriptionOptions: SubscriptionOptions?
-
-    struct MemberRoute: Decodable, Sendable {
-      let availability: String
-    }
-
-    struct SubscriptionOptions: Decodable, Sendable {
-      let serviceTier: String?
-    }
-
-    /// A member's connected subscription remains selectable when reconnecting.
-    /// Admission still validates the captured personal account before execution.
-    func hasUsableRoute() -> Bool {
-      switch memberEffective.availability {
-      case "available", "reconnect_required", "plan_restricted": return true
-      default: return false
-      }
-    }
-
-    /// Only subscription rows offer a service tier; Fast is `priority`.
-    func supportsServiceTier(_ tier: String) -> Bool {
-      tier == "priority" && subscriptionOptions?.serviceTier == "priority"
-    }
-  }
-}
-
-/// Personal-subscription metadata and replacement identities.
-struct ModelCatalog: Decodable, Sendable {
-  let models: [Model]
-
-  struct Model: Decodable, Sendable {
-    let model: String
-    /// The active model a stored selection of this model resolves to.
-    let resolvedModel: String
-  }
-
-  /// Maps a stored selection to its active model; unknown models are unavailable.
-  func resolve(_ model: String) -> String? {
-    models.first(where: { $0.model == model })?.resolvedModel
-  }
 }
 
 struct CreatedThread: Decodable, Sendable {

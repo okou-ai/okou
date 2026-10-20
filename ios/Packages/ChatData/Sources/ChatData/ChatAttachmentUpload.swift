@@ -1,18 +1,20 @@
 import ChatDomain
 import Foundation
 
-public struct ChatAttachment: Equatable, Sendable {
+public struct ChatAttachment: Codable, Equatable, Sendable {
   public static let maximumSize = 1024 * 1024 * 1024
   public let id: String
   public let filename: String
   public let contentType: String
   public let size: Int
+  public let url: String?
 
-  public init(id: String, filename: String, contentType: String, size: Int) {
+  public init(id: String, filename: String, contentType: String, size: Int, url: String? = nil) {
     self.id = id
     self.filename = filename
     self.contentType = contentType
     self.size = size
+    self.url = url
   }
 }
 
@@ -65,7 +67,7 @@ struct ChatAttachmentUpload {
               uploadId: multipart.uploadId, partCount: multipart.parts.count)))
         return ChatAttachment(
           id: completed.id, filename: prepared.filename,
-          contentType: prepared.contentType, size: size)
+          contentType: prepared.contentType, size: size, url: completed.url)
       } catch {
         // Cancellation must not prevent cleanup of an allocated multipart upload.
         let body = try JSONEncoder().encode(
@@ -92,7 +94,7 @@ struct ChatAttachmentUpload {
       body: JSONEncoder().encode(["id": prepared.id]))
     return ChatAttachment(
       id: completed.id, filename: completed.filename,
-      contentType: completed.contentType, size: completed.size)
+      contentType: completed.contentType, size: completed.size, url: completed.url)
   }
 
   private struct PrepareBody: Encodable {
@@ -123,8 +125,12 @@ struct ChatAttachmentUpload {
     let filename: String
     let contentType: String
     let size: Int
+    let url: String
   }
-  private struct CompletedMultipart: Decodable, Sendable { let id: String }
+  private struct CompletedMultipart: Decodable, Sendable {
+    let id: String
+    let url: String
+  }
   private struct CompleteMultipart: Encodable {
     let id: String
     let filename: String

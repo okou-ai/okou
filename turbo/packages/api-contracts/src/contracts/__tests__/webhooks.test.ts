@@ -479,6 +479,48 @@ describe("Run completion metadata", () => {
       ).toStrictEqual({ ...body, ...metadata });
     }
   });
+  it.each(["storageOutputs", "artifactSnapshots"])(
+    "accepts authorized writeback metadata through %s",
+    (field) => {
+      for (const outputs of [
+        [],
+        [
+          {
+            name: "memory",
+            version: manifestHash,
+            mountPath: "/memory",
+            missingRootPolicy: "preserveParentVersion",
+          },
+        ],
+      ]) {
+        const request = {
+          ...body,
+          completion: { ...completion, [field]: outputs },
+        };
+        expect(
+          webhookCompleteContract.complete.body.parse(request),
+        ).toStrictEqual(request);
+      }
+    },
+  );
+  it("rejects simultaneous output fields instead of selecting an authority", () => {
+    const output = {
+      name: "memory",
+      version: manifestHash,
+      mountPath: "/memory",
+    };
+    for (const artifactSnapshots of [[], [output]]) {
+      const parsed = webhookCompleteContract.complete.body.safeParse({
+        ...body,
+        completion: {
+          ...completion,
+          storageOutputs: [output],
+          artifactSnapshots,
+        },
+      });
+      expect(parsed.success).toBe(false);
+    }
+  });
   it("requires complete native identity metadata", () => {
     for (const invalid of [
       { ...completion, cliAgentSessionId: "" },

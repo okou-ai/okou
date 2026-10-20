@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.6...nbd-cow-v0.5.7) (2026-10-20)
+
+
+### Bug Fixes
+
+* **nbd-cow:** bound retained writes after flush failures ([#41687](https://github.com/okou-ai/okou/issues/41687)) ([2c2b026](https://github.com/okou-ai/okou/commit/2c2b02629f09ba3c61c1494b2b96ce0b1286b5b0))
+
 ## [0.5.6](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.5...nbd-cow-v0.5.6) (2026-10-13)
 
 

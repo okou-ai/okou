@@ -11,6 +11,16 @@ public enum ChatEventProjection {
           && !revoked.contains($0.id)
       }.compactMap(\.runId)
     ).subtracting(terminated)
+    // Match PWA liveRunIdsFromChatEvents: first occurrence in authoritative event
+    // order, not UUID sorting or the most recent event from an older run.
+    var seenRuns = Set<String>()
+    let orderedRuns = rows.compactMap { row -> String? in
+      guard let runID = row.runId, activeRuns.contains(runID),
+        !revoked.contains(row.id), row.eventType != .usageRecorded,
+        seenRuns.insert(runID).inserted
+      else { return nil }
+      return runID
+    }
     let queuedInputs = rows.filter {
       ($0.eventType == .inputPrompt || $0.eventType == .inputAutomation)
         && $0.runId == nil && !revoked.contains($0.id)
@@ -25,6 +35,7 @@ public enum ChatEventProjection {
     var messages: [ChatMessage] = []
     for row in rows where !revoked.contains(row.id) {
       let text: String
+      var attachments: [ChatMessageAttachment] = []
       let role: ChatMessage.Role
       let isError: Bool
       switch row.eventType {
@@ -33,16 +44,19 @@ public enum ChatEventProjection {
         guard let document = row.payload?.userMessage, document.version == 1 else {
           throw ChatError.invalidContract("Unsupported user message document.")
         }
+        attachments = try document.parts.filter { $0.type == "file" }.map { part in
+          guard let id = part.fileId, !id.isEmpty,
+            let filename = part.filenameSnapshot, !filename.isEmpty,
+            let contentType = part.contentType, !contentType.isEmpty
+          else { throw ChatError.invalidContract("Attachment identity or metadata is missing.") }
+          return ChatMessageAttachment(id: id, filename: filename, contentType: contentType)
+        }
         let body = document.parts.compactMap { part -> String? in
           switch part.type {
           case "text": part.text
           case "chat_thread", "source": part.titleSnapshot
           case "agent": part.nameSnapshot
           case "automation": part.workflowName
-          case "file":
-            part.filenameSnapshot.map {
-              "Attachment: \($0) (open this chat on the website to view)"
-            }
           default: nil
           }
         }.joined(separator: "\n")
@@ -67,10 +81,12 @@ public enum ChatEventProjection {
         isError = false
       default: continue
       }
-      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty {
+        continue
+      }
       messages.append(
         ChatMessage(
-          id: row.id, role: role, text: text, createdAt: row.createdAt,
+          id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
           runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError))
     }
 
@@ -94,7 +110,8 @@ public enum ChatEventProjection {
     let work = ChatWorkProjection.build(rows: rows, messages: messages)
     return ChatHistory(
       messages: work.messages, executionState: state,
-      activeRunIDs: activeRuns.subtracting(interrupted).sorted(), queuedEventIDs: queuedInputs,
+      activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
+      activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
       persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections)
   }
 

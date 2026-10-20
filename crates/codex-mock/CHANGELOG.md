@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.11](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.10...codex-mock-v0.12.11) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** align codex stdio framing with upstream ([#41530](https://github.com/okou-ai/okou/issues/41530)) ([a514057](https://github.com/okou-ai/okou/commit/a5140578b5b1829b4bbcfebf583486299c8fdeb9))
+* **runner:** retain native codex failure evidence ([#41632](https://github.com/okou-ai/okou/issues/41632)) ([4688a72](https://github.com/okou-ai/okou/commit/4688a72a87552541b43c80769a926907f5e74921))
+
 ## [0.12.10](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.9...codex-mock-v0.12.10) (2026-10-19)
 
 ## [0.12.9](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.8...codex-mock-v0.12.9) (2026-10-19)

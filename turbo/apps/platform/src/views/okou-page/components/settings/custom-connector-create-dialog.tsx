@@ -3,9 +3,9 @@ import type { FormEvent, ReactNode } from "react";
 import { ChevronRight, Plus, Trash } from "lucide-react";
 import type {
   CreateCustomConnectorBody,
-  CustomConnectorResponse,
   UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   Button,
   CopyButton,

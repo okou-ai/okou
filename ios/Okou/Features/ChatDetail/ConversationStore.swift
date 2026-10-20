@@ -6,30 +6,44 @@ import Observation
 /// Presentation and local delivery state for one conversation in one workspace.
 @MainActor @Observable
 final class ConversationStore {
-  struct PendingMessage: Identifiable {
+  struct PendingMessage: Codable, Identifiable {
     let id: String
     let text: String
     let createdAt: Date
     let attachments: [ChatAttachment]
+    var document: ChatDraftDocument? = nil
+    var modelSelection: ChatModelSelection? = nil
+    var reasoningEffort: String? = nil
     var needsRetry = false
 
     var message: ChatMessage {
       ChatMessage(
         id: id, role: .user,
-        text: ([text].filter { !$0.isEmpty }
-          + attachments.map {
-            "Attachment: \($0.filename) (open this chat on the website to view)"
-          }).joined(separator: "\n"), createdAt: createdAt,
+        text: text,
+        attachments: attachments.map {
+          ChatMessageAttachment(
+            id: $0.id, filename: $0.filename, contentType: $0.contentType, size: $0.size)
+        }, createdAt: createdAt,
         runID: nil, isQueued: false, isError: false)
     }
   }
 
+  let modelSelection: ChatModelSelectionStore?
   var thread: ChatThread
-  var draft = ""
-  @ObservationIgnored lazy var attachmentDraft = AttachmentDraftStore(
+  var draft: String {
+    get { composer.text }
+    set { composer.text = newValue }
+  }
+  let composer: ComposerDraftStore
+  var attachmentDraft: AttachmentDraftStore { composer.attachments }
+  private let draftStorage: ChatDraftStorage?
+  private let draftTarget: ChatDraftTarget
+  @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, didFail: didFail)
-  private(set) var history: ChatHistory?
-  private(set) var pending: [PendingMessage] = []
+  private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
+  private(set) var pending: [PendingMessage] = [] {
+    didSet { persistPending() }
+  }
   private(set) var messages: [ChatMessage] = []
   private(set) var visibleItems: [ConversationItem] = []
   var visibleMessages: [ChatMessage] { visibleItems.compactMap(\.message) }
@@ -38,12 +52,15 @@ final class ConversationStore {
   private(set) var readingPosition: ConversationReadingPosition?
   private(set) var isLoading = false
   private(set) var isSending = false
-  private(set) var isStopping = false
+  private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   let measurements = ConversationMeasurementCache()
+  let activitySummary: ConversationActivitySummary
+  private var detailOwner: UUID?
+  private var activitySummaryEnabled = false
 
   private let sync: ChatSync
   private let commands: ChatCommands
@@ -69,9 +86,22 @@ final class ConversationStore {
     didMarkRead: @escaping @MainActor () -> Void,
     didSend: @escaping @MainActor () -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
-    didSettle: @escaping @MainActor () -> Void
+    didSettle: @escaping @MainActor () -> Void,
+    modelSelection: ChatModelSelectionStore? = nil,
+    activitySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    },
+    draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil
   ) {
+    self.modelSelection = modelSelection
+    self.activitySummary = ConversationActivitySummary(
+      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
+    self.draftStorage = draftStorage
+    draftTarget = .thread(thread.id)
+    composer = ComposerDraftStore(
+      target: draftTarget, commands: commands,
+      repository: draftRepository, storage: draftStorage, didFail: didFail)
     self.sync = sync
     self.commands = commands
     self.webURL = webURL
@@ -81,16 +111,29 @@ final class ConversationStore {
     self.didSend = didSend
     self.didFail = didFail
     self.didSettle = didSettle
+    do {
+      pending =
+        try draftStorage?.load(draftTarget.key + "/pending", as: [PendingMessage].self) ?? []
+      for index in pending.indices { pending[index].needsRetry = true }
+      if pending.contains(where: { $0.document == composer.value.draftUserMessage }),
+        !pending.isEmpty
+      {
+        composer.clear()
+      }
+      rebuildMessages()
+    } catch { show(error) }
   }
 
   var canRelease: Bool {
-    draft.isEmpty && !attachmentDraft.hasAttachments && pending.isEmpty
+    (!composer.hasContent || composer.isDurable) && pending.isEmpty
+      && modelSelection?.isBusy != true
       && !isLoading && !isSending && !isStopping && !isLoadingEarlier
       && history?.executionState.isActive != true
   }
 
   func refresh() async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    composer.requestSync()
     if refreshTask != nil {
       refreshAgain = true
       return
@@ -137,18 +180,29 @@ final class ConversationStore {
     await task.value
   }
 
-  func send() async {
+  /// A first send carries the selection acknowledged by thread creation. It must not
+  /// wait for the new detail view's independent metadata read to become sendable.
+  func send(initialSelection: ChatModelSelection? = nil) async {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || attachmentDraft.hasAttachments, attachmentDraft.isReady,
+    guard composer.hasContent, composer.canSend, attachmentDraft.isReady,
       !isSending, !closed, !needsUpgrade, !Task.isCancelled
     else { return }
-    let message = PendingMessage(
+    guard initialSelection != nil || modelSelection?.canSend != false else { return }
+    var message = PendingMessage(
       id: UUID().uuidString.lowercased(), text: text, createdAt: Date(),
-      attachments: attachmentDraft.uploaded)
+      attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
+    if let initialSelection {
+      message.modelSelection = initialSelection
+      message.reasoningEffort = modelSelection?.models.configuration?.requestedEffort(
+        for: initialSelection)
+    } else if modelSelection?.models.configuration != nil {
+      message.modelSelection = modelSelection?.selection
+      message.reasoningEffort = modelSelection?.requestedEffort
+    }
     pending.append(message)
     rebuildMessages()
-    draft = ""
-    attachmentDraft.reset()
+    composer.clear()
+    composer.requestSync()
     await submit(message)
   }
 
@@ -163,17 +217,21 @@ final class ConversationStore {
   private func submit(_ message: PendingMessage) async {
     guard !isSending, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isSending = true
+    modelSelection?.isSending = true
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
         isSending = false
+        modelSelection?.isSending = false
         sendTask = nil
         didSettle()
       }
       do {
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,
-          clientEventID: message.id)
+          document: message.document,
+          clientEventID: message.id, modelSelection: message.modelSelection,
+          reasoningEffort: message.reasoningEffort)
         try Task.checkCancellation()
         guard !closed else { return }
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
@@ -216,14 +274,41 @@ final class ConversationStore {
     await task.value
   }
 
+  func setActivitySummaryEnabled(_ enabled: Bool) {
+    activitySummaryEnabled = enabled
+    reconcileActivitySummary()
+  }
+
+  func setDetailVisible(_ visible: Bool, owner: UUID) {
+    if visible {
+      detailOwner = owner
+    } else {
+      // A previous view can disappear after its replacement has already appeared.
+      guard detailOwner == owner else { return }
+      detailOwner = nil
+      attachmentViewer.deactivate()
+    }
+    reconcileActivitySummary()
+  }
+
+  func reconcileActivitySummary() {
+    activitySummary.demand(
+      !closed && !needsUpgrade && activitySummaryEnabled && detailOwner != nil && isVisible()
+        && !isStopping
+        && history?.executionState == .running ? history?.activityRunID : nil)
+  }
+
   func close() {
     closed = true
+    activitySummary.stop()
+    modelSelection?.close()
     refreshTask?.cancel()
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
     measurements.clear()
-    attachmentDraft.close()
+    composer.close()
+    attachmentViewer.close()
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {
@@ -328,6 +413,10 @@ final class ConversationStore {
     let next = Array(items[renderWindow.range])
     if visibleItems != next { visibleItems = next }
     hasEarlierMessages = renderWindow.hasEarlierMessages
+  }
+
+  private func persistPending() {
+    do { try draftStorage?.save(pending, key: draftTarget.key + "/pending") } catch { show(error) }
   }
 
   private func show(_ failure: Error) {

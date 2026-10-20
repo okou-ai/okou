@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   getAgent,
@@ -244,7 +244,7 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         console.log(`${"Kind:".padEnd(LABEL_WIDTH)}${connector.kind}`);
         const facts = memberConnectorFacts(connector, summaries);
         console.log(
-          `${"Status:".padEnd(LABEL_WIDTH)}${memberConnectorStatusText(connector, facts)}`,
+          `${"Status:".padEnd(LABEL_WIDTH)}${memberConnectorStatusText(facts)}`,
         );
         console.log(
           `${"Account:".padEnd(LABEL_WIDTH)}${memberConnectorAccountText(connector, facts)}`,

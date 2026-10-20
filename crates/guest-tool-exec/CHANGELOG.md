@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.3.19](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.18...guest-tool-exec-v0.3.19) (2026-10-20)
+
 ## [0.3.18](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.17...guest-tool-exec-v0.3.18) (2026-10-19)
 
 ## [0.3.17](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.16...guest-tool-exec-v0.3.17) (2026-10-19)

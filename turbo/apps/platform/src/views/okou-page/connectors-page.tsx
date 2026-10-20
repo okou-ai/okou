@@ -12,8 +12,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { Search, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";

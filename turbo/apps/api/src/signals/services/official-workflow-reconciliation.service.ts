@@ -119,6 +119,8 @@ import {
   type OfficialAutomationRow,
   type ResolvedBlueprint,
 } from "./official-workflow-installation.service";
+import { withMorningBriefCronBinding } from "./official-workflow-owner-schedule";
+import { calculateNextRun } from "./time-automation";
 import {
   createWorkflowAutomation$,
   enableWorkflowAutomation$,
@@ -162,6 +164,39 @@ function reconciledScheduleAnchor(
     return nextRunAt;
   }
   return sql`CASE WHEN (SELECT settlement FROM morning_brief_schedule_claims WHERE automation_id = ${automation.id}::uuid ORDER BY claim_sequence DESC LIMIT 1) = 'unsettled' THEN NULL ELSE ${nextRunAt}::timestamp END`;
+}
+
+/**
+ * Moving the Morning Brief start earlier must not skip a day: when the new time
+ * already passed since the last run, keep the pending occurrence once. Its
+ * completion callback then advances on the new schedule.
+ */
+function keepSkippedMorningBriefOccurrence(
+  current: OfficialAutomationRow,
+  refreshed: OfficialAutomationPatch,
+  currentTime: Date,
+): Date | null {
+  const pending = current.nextRunAt;
+  const next = refreshed.nextRunAt;
+  if (
+    current.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    pending === null ||
+    next === null ||
+    refreshed.cronExpression === null ||
+    current.timezone !== refreshed.timezone ||
+    pending.getTime() <= currentTime.getTime() ||
+    pending.getTime() >= next.getTime()
+  ) {
+    return next;
+  }
+  const skipped = calculateNextRun(
+    refreshed.cronExpression,
+    refreshed.timezone,
+    current.lastRunAt ?? current.createdAt,
+  );
+  return skipped !== null && skipped.getTime() <= currentTime.getTime()
+    ? pending
+    : next;
 }
 
 function isMorningBriefReconciliation(args: {
@@ -581,7 +616,10 @@ const persistReconfigurationPatch$ = command(
         .update(workflowAutomations)
         .set({
           ...refreshed,
-          nextRunAt: reconciledScheduleAnchor(current, refreshed.nextRunAt),
+          nextRunAt: reconciledScheduleAnchor(
+            current,
+            keepSkippedMorningBriefOccurrence(current, refreshed, currentTime),
+          ),
         })
         .where(eq(workflowAutomations.id, current.id))
         .returning(workflowAutomationColumns());
@@ -1169,7 +1207,12 @@ const prepareExistingAutomationReconfiguration$ = command(
   ): Promise<PreparedExistingAutomationReconfiguration> => {
     const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
       args.blueprint,
-      args.automation.officialParameterBindings ?? [],
+      withMorningBriefCronBinding({
+        definitionName: args.definitionName,
+        blueprint: args.blueprint,
+        owner: { orgId: args.orgId, userId: args.member.userId },
+        bindings: args.automation.officialParameterBindings ?? [],
+      }),
       args.userTimezone,
     );
     if (!resolution.ok) {
@@ -3390,7 +3433,12 @@ const reconcileDormantBlueprint$ = command(
   ): Promise<OfficialWorkflowReconciliationResult> => {
     const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
       args.blueprint,
-      args.identity?.retainedParameterBindings ?? [],
+      withMorningBriefCronBinding({
+        definitionName: args.definitionName,
+        blueprint: args.blueprint,
+        owner: { orgId: args.orgId, userId: args.member.userId },
+        bindings: args.identity?.retainedParameterBindings ?? [],
+      }),
       args.userTimezone,
     );
     if (!resolution.ok) {

@@ -947,34 +947,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
     expect(sortTouches).toHaveLength(2);
   }, 90_000);
-  it("keeps thread detail independent from thread model projection state", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "Thread detail model pin agent",
-    );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "pin the first run model",
-      model: "claude-fable-5-1",
-    });
-
-    let detail = await chat.readThread(actor, run.threadId);
-    expect(detail).not.toHaveProperty("selectedModel");
-    await expect(chat.listActiveChatThreadIds(actor)).resolves.toContain(
-      run.threadId,
-    );
-
-    await chat.updateThreadModelSelection(actor, run.threadId, null);
-    detail = await chat.readThread(actor, run.threadId);
-    expect(detail).not.toHaveProperty("selectedModel");
-
-    await cancelChatRun(actor, run.runId);
-    await expect(chat.listActiveChatThreadIds(actor)).resolves.not.toContain(
-      run.threadId,
-    );
-  }, 90_000);
-
   it("rejects explicit thread models without the member's subscription", async () => {
     const { actor, agentId } = await entitledChatActor(
       "Unavailable explicit thread model agent",
@@ -3313,7 +3285,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       format === "docx"
         ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         : picturePptxMime;
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { isolatePg: true });
     const { actor, agentId } = owned;
     owned.ownsFeatureSwitches();
     await owned.run(() => {

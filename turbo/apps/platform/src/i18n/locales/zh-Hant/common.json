@@ -2138,7 +2138,7 @@
       "skipAutomationEvent": "跳過自動化事件"
     },
     "relations": {
-      "chats": "對話",
+      "chats": "聊天",
       "loadFailed": "載入失敗",
       "origin": "發起自",
       "queued": "排隊中",
@@ -3077,6 +3077,8 @@
       "noAccountsFound": "沒有找到帳號",
       "reconnectRequired": "需要重新連線",
       "rename": "重新命名",
+      "setupIncomplete": "設定尚未完成",
+      "setupUnavailable": "帳號狀態暫時無法取得",
       "skipName": "跳過",
       "summaryMany": "{{value}} 個帳號",
       "summaryMany_other": "",
@@ -5156,7 +5158,7 @@
       },
       "morningBrief": {
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
-        "description": "每天早上 7:00（按你的時區）接收當日重點。",
+        "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
