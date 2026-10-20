@@ -1763,6 +1763,9 @@ pub struct ActiveReuseProducer {
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatState {
     pub runner_id: String,
+    /// Configured advisory host identity, independent of cache contents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_hostname: Option<String>,
     pub group: String,
     pub snapshot_generation: u64,
     pub snapshot_sequence: u64,
@@ -2657,6 +2660,7 @@ mod tests {
     fn heartbeat_state_serializes_camel_case() {
         let state = HeartbeatState {
             runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+            runner_hostname: Some("prod-wire.example.test".into()),
             group: "vm0/production".into(),
             snapshot_generation: 7,
             snapshot_sequence: 42,
@@ -2698,6 +2702,7 @@ mod tests {
             json,
             json!({
                 "runnerId": "550e8400-e29b-41d4-a716-446655440000",
+                "runnerHostname": "prod-wire.example.test",
                 "group": "vm0/production",
                 "snapshotGeneration": 7,
                 "snapshotSequence": 42,
@@ -2758,6 +2763,7 @@ mod tests {
     fn heartbeat_state_serializes_empty_held_state_arrays() {
         let state = HeartbeatState {
             runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+            runner_hostname: None,
             group: "vm0/production".into(),
             snapshot_generation: 7,
             snapshot_sequence: 42,
@@ -2776,6 +2782,7 @@ mod tests {
         };
 
         let serialized = serde_json::to_value(state).unwrap();
+        assert!(serialized.get("runnerHostname").is_none());
         assert_eq!(serialized["heldSandboxStates"], json!([]));
         assert_eq!(serialized["heldHomeStates"], json!([]));
         assert_eq!(serialized["activeReuseProducers"], json!([]));

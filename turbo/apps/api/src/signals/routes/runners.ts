@@ -572,6 +572,10 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       ? canonicalizeHeldHomeStates(body.data.heldHomeStates)
       : [];
   const admittableProfiles = body.data.admittableProfiles;
+  // Every accepted writer replaces locality. An omitted or PAT hostname cannot
+  // retain an earlier official observation; stale messages retain the whole row.
+  const runnerHostname =
+    auth.type === "official-runner" ? (body.data.runnerHostname ?? null) : null;
   const currentDate = nowDate();
   // User PAT heartbeats are valid for their existing Runner flows, but cannot
   // assert a host ingress signal used to authorize WSS ticket issuance.
@@ -587,6 +591,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .insert(runnerState)
     .values({
       runnerId: body.data.runnerId,
+      runnerHostname,
       runnerGroup: body.data.group,
       heartbeatGeneration: snapshotOrder.generation,
       heartbeatSequence: snapshotOrder.sequence,
@@ -607,6 +612,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .onConflictDoUpdate({
       target: runnerState.runnerId,
       set: {
+        runnerHostname,
         runnerGroup: body.data.group,
         heartbeatGeneration: snapshotOrder.generation,
         heartbeatSequence: snapshotOrder.sequence,

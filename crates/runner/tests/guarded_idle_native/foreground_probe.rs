@@ -131,6 +131,7 @@ impl Probe {
         let controller = HeartbeatController::new(HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: pool,
             runner_identity: runner,
+            runner_hostname: None,
             group: "native-foreground",
             profiles: &profiles,
             budget,

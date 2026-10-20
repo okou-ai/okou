@@ -322,6 +322,7 @@ type NoRunnerPreference = Extract<RunnerPreference, { kind: "noPreference" }>;
 const preferenceResolutionByTier = {
   exactSandbox: "exact_history_generation",
   finalizingPredecessor: "finalizing_predecessor",
+  peerFinalizingPredecessor: "peer_finalizing_predecessor",
   reusableSandbox: "matching_reusable_sandbox",
   homeCache: "matching_home_cache",
 } as const satisfies Record<PositiveRunnerPreference["tier"], string>;

@@ -79,6 +79,11 @@ enum LocalAdmissionResource {
 /// One owned resource transferred with a successful claim to Runner activation.
 pub enum AdmittedResource {
     Fresh(BudgetLease),
+    /// This Runner's ordinary capacity retained through the peer publication wait.
+    PeerFinalizing {
+        lease: BudgetLease,
+        deadline: Instant,
+    },
     Reusable(ReservedIdleActivation),
     ExactSpeculation(ExactSpeculation),
     Finalizing(FinalizingAdmission),
@@ -221,6 +226,7 @@ impl PendingFinalizingCandidate {
 }
 
 struct PreparedCandidate {
+    peer_home_deadline: Option<Instant>,
     candidate: JobCandidate,
     resource: Option<LocalAdmissionResource>,
     blank_pool_selection: Option<BlankPoolSelection>,
@@ -335,6 +341,7 @@ async fn claim_with_local_admission(
         device_rate_limits,
     } = request;
     let PreparedCandidate {
+        peer_home_deadline,
         mut candidate,
         resource,
         mut blank_pool_selection,
@@ -515,6 +522,12 @@ async fn claim_with_local_admission(
         return None;
     }
 
+    let admitted_resource = match (admitted_resource, peer_home_deadline) {
+        (AdmittedResource::Fresh(lease), Some(deadline)) => {
+            AdmittedResource::PeerFinalizing { lease, deadline }
+        }
+        (resource, _) => resource,
+    };
     Some(AdmittedClaim {
         claimed,
         resource: admitted_resource,
@@ -668,6 +681,8 @@ async fn prepare_ranked_preference_candidate(
 
     let selected_finalizing =
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
+    let selected_peer =
+        advertised_tier == RunnerPreferenceTier::PeerFinalizingPredecessor && selected;
     // Old API writers still identify finalizing sources through native history.
     // Remove this bridge in #41657 after old writers, retained discovery payloads
     // and incompatible API/Runner rollback artifacts are no longer reachable.
@@ -694,6 +709,7 @@ async fn prepare_ranked_preference_candidate(
     // admission. Consume its ready resource through ordinary guarded activation.
 
     if (selected_finalizing
+        || selected_peer
         || ranked_preference_allows(
             advertised_tier,
             RunnerPreferenceTier::ReusableSandbox,
@@ -709,6 +725,36 @@ async fn prepare_ranked_preference_candidate(
         .await
     {
         return reusable_preparation(candidate, reservation);
+    }
+
+    if selected_peer {
+        if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+            &candidate,
+            profile_name,
+            job_vcpu,
+            job_memory,
+            device_rate_limits,
+            !ctx.has_home_cache,
+            ctx,
+        )
+        .await
+        {
+            return PreferencePreparation::Ready(PreparedCandidate {
+                peer_home_deadline: Some(preference.deadline()),
+                candidate,
+                resource: Some(resource),
+                blank_pool_selection,
+            });
+        }
+        return defer_preference_candidate(
+            candidate,
+            preference,
+            reuse_key,
+            ctx,
+            true,
+            "capacity_exhausted",
+        )
+        .await;
     }
 
     let reason = if (selected_finalizing
@@ -729,6 +775,7 @@ async fn prepare_ranked_preference_candidate(
             return PreferencePreparation::Ready(PreparedCandidate {
                 candidate,
                 resource: Some(resource),
+                peer_home_deadline: None,
                 blank_pool_selection,
             });
         }
@@ -774,6 +821,7 @@ fn has_compatible_home(reuse_key: &str, profile_name: &str, ctx: &PreClaimResour
 
 fn ordinary_preparation(candidate: JobCandidate) -> PreferencePreparation {
     PreferencePreparation::Ready(PreparedCandidate {
+        peer_home_deadline: None,
         candidate,
         resource: None,
         blank_pool_selection: None,
@@ -787,6 +835,7 @@ fn reusable_preparation(
     PreferencePreparation::Ready(PreparedCandidate {
         candidate,
         resource: Some(LocalAdmissionResource::Reusable(reservation)),
+        peer_home_deadline: None,
         blank_pool_selection: None,
     })
 }
@@ -806,6 +855,7 @@ fn exact_speculative_preparation(
                 idle_snapshot,
             },
         )),
+        peer_home_deadline: None,
         blank_pool_selection: None,
     })
 }
@@ -827,6 +877,7 @@ fn finalizing_preparation(
             source_run_id,
             history_generation_run_id,
         })),
+        peer_home_deadline: None,
         blank_pool_selection: None,
     })
 }
@@ -994,7 +1045,9 @@ async fn rollback_admitted_resource(
     ctx: &PreClaimResources<'_>,
 ) {
     let resource = match resource {
-        AdmittedResource::Fresh(lease) => SandboxAdmittedResource::Fresh(lease),
+        AdmittedResource::Fresh(lease) | AdmittedResource::PeerFinalizing { lease, .. } => {
+            SandboxAdmittedResource::Fresh(lease)
+        }
         AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
         AdmittedResource::ExactSpeculation(speculation) => {
             SandboxAdmittedResource::ExactSpeculation(speculation)

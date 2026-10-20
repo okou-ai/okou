@@ -2845,6 +2845,7 @@ mod tests {
     fn heartbeat_state_for_test() -> HeartbeatState {
         HeartbeatState {
             runner_id: "runner-heartbeat-test".to_string(),
+            runner_hostname: None,
             group: "vm0/test".to_string(),
             snapshot_generation: 7,
             snapshot_sequence: 42,

@@ -26,7 +26,7 @@ pub struct ConfigArgs {
     #[arg(long, required = true)]
     snapshot_hash: Vec<String>,
 
-    /// Canonical physical hostname used for diagnostic attribution
+    /// Configured hostname for diagnostic attribution and advisory locality
     #[arg(long)]
     hostname: Option<String>,
     /// Runner group in `vm0/<name>` format (e.g. "vm0/production")

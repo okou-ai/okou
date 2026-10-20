@@ -42,6 +42,7 @@ pub trait AblySideMessageHandler: Send + Sync {
 pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
+    PeerFinalizingPredecessor,
     ReusableSandbox,
     HomeCache,
 }
@@ -51,7 +52,7 @@ impl RunnerPreferenceTier {
         match self {
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
-            Self::FinalizingPredecessor => 3,
+            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 3,
             Self::ExactSandbox => 4,
         }
     }

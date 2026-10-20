@@ -74,3 +74,32 @@ fn malformed_source_does_not_become_an_active_preference() {
         assert!(parse_runner_preference(Some(wire)).is_err());
     }
 }
+
+#[test]
+fn peer_preference_round_trips_recipient_and_claim_telemetry_without_source_proof() {
+    let mut wire = preference();
+    wire["tier"] = serde_json::json!("peerFinalizingPredecessor");
+    let context = parse_runner_preference(Some(wire.clone())).unwrap();
+    let candidate = JobCandidate::new(RunId::new_v4(), "vm0/default".into())
+        .with_parsed_runner_preference_context(context);
+    let active = candidate.runner_preference().unwrap();
+    assert_eq!(
+        active.tier(),
+        RunnerPreferenceTier::PeerFinalizingPredecessor
+    );
+    assert_eq!(active.finalizing_source_run_id(), None);
+    assert_eq!(
+        active.tier().rank(),
+        RunnerPreferenceTier::FinalizingPredecessor.rank()
+    );
+    assert_eq!(
+        serde_json::to_value(
+            candidate
+                .runner_preference_claim_telemetry()
+                .unwrap()
+                .runner_preference
+        )
+        .unwrap(),
+        wire
+    );
+}
