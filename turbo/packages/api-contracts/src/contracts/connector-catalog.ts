@@ -116,7 +116,7 @@ const publicConnectorCatalogConnectionSchema = z.object({
   reconnectReason: connectorReconnectReasonSchema.nullable(),
 });
 
-const publicConnectorCatalogStatusItemSchema =
+export const publicConnectorCatalogStatusItemSchema =
   publicConnectorCatalogDetailSchema.extend({
     connection: publicConnectorCatalogConnectionSchema.nullable(),
     connected: z.boolean(),

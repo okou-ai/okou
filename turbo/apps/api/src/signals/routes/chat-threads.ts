@@ -112,7 +112,6 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
       snapshot.objectKey,
       auth.userId,
       auth.orgId,
-      snapshot.latestSeqId,
     )
   ) {
     throw new Error("Invalid chat thread snapshot object key");

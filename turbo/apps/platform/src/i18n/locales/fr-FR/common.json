@@ -2185,7 +2185,7 @@
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
     "relations": {
-      "communications": "Messages",
+      "communications": "Discussions",
       "idle": "Inactive",
       "loadFailed": "Échec du chargement",
       "messageUnavailable": "Message indisponible",
@@ -5241,7 +5241,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
-        "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
+        "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",

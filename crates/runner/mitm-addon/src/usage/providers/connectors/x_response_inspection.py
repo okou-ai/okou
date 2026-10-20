@@ -9,7 +9,9 @@ from typing import TypedDict
 
 from mitmproxy import http
 
+import body_decoding
 import flow_metadata_keys as metadata_keys
+import stream_capture
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT
 from runtime_url_parsing import runtime_url_path
 
@@ -463,6 +465,7 @@ def create_response_parser(
         return None
 
     extractor = _XJsonResponseExtractor()
+    buffered_response = not body_decoding.can_stream_decode_usage(flow.response.headers)
 
     def finish_json_state() -> None:
         state, error = extractor.finish()
@@ -471,9 +474,10 @@ def create_response_parser(
         flow.metadata[metadata_keys.X_JSON_STATE] = state
 
     def finish_json_decode_error(error: str) -> None:
+        captured = stream_capture.captured_response_stream_body(flow) if buffered_response else None
         flow.metadata[metadata_keys.X_JSON_STATE] = {
             "body_parsed": False,
-            "body_truncated": False,
+            "body_truncated": captured.truncated if captured is not None else False,
             "parse_error": error,
         }
 

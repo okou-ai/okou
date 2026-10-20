@@ -170,6 +170,11 @@ def _validate_cases(directory, cases, phases):
                 "calibrated", "native_vm_exit_confirmed",
             ))):
         raise ValueError("P1 collector did not positively complete its own bounded workload")
+    return _validate_receipts(directory, cases, phases, collector)
+
+
+def _load_measurement_inputs(directory, collector):
+    """Check original artifact/snapshot/sample inputs without rewriting outcomes."""
     expected = collector["metadata"]["native_terminal_artifacts"]
     if not isinstance(expected, dict) or set(expected) != {
             "source_sha", "test_binary_sha256", "firecracker_sha256", "kernel_sha256",
@@ -227,6 +232,11 @@ def _validate_cases(directory, cases, phases):
                 if exited < sample["monotonic_ns"]:
                     raise ValueError("first residency exit observation escaped its sample window")
                 exits[pid] = exited
+    return expected, samples
+
+
+def _validate_receipts(directory, cases, phases, collector):
+    expected, samples = _load_measurement_inputs(directory, collector)
     receipts = {case: [] for case in cases}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):

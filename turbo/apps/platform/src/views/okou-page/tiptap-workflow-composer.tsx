@@ -947,15 +947,10 @@ function ComposerSuggestionMenu({
       '[data-slot="chat-composer-card"]',
     );
   };
-  const setSuggestionMenuRef = useSet(
-    composer.suggestion.setSuggestionMenuRef$,
-  );
   const setSlashHintMenuRef = useSet(composer.suggestion.setSlashHintMenuRef$);
   const setMentionHintMenuRef = useSet(
     composer.suggestion.setMentionHintMenuRef$,
   );
-  const features = useGet(featureSwitch$);
-  const mentionHintEnabled = features[FeatureSwitchKey.ComposerMentionHint];
 
   return (
     <Popover
@@ -1032,9 +1027,7 @@ function ComposerSuggestionMenu({
       )}
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu
-          menuRef={
-            mentionHintEnabled ? setMentionHintMenuRef : setSuggestionMenuRef
-          }
+          menuRef={setMentionHintMenuRef}
           anchor={suggestionAnchor}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}

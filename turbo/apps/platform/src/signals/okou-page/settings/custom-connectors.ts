@@ -6,19 +6,23 @@ import {
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
-  customConnectorByIdContract,
-  customConnectorOAuth2Contract,
-  customConnectorValuesContract,
-  customConnectorsContract,
-  customConnectorListResponseSchema,
-  customConnectorResponseSchema,
   isIntegrationManagedCustomConnector,
-  setCustomConnectorValuesResponseSchema,
   type CreateCustomConnectorBody,
-  type CustomConnectorResponse,
   type CustomConnectorValueInput,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  customConnectorByIdReaderContract as customConnectorByIdContract,
+  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+  customConnectorsReaderContract as customConnectorsContract,
+  customConnectorReaderListResponseSchema as customConnectorListResponseSchema,
+  customConnectorReaderResponseSchema as customConnectorResponseSchema,
+  setCustomConnectorValuesReaderResponseSchema as setCustomConnectorValuesResponseSchema,
+  startCustomConnectorOAuth2ReaderResponseSchema,
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrants,
@@ -307,7 +311,7 @@ async function readCustomConnectorCompletion(
 ): Promise<boolean> {
   signal.throwIfAborted();
   if (connector && isIntegrationManagedCustomConnector(connector)) {
-    return connector.connected;
+    return customConnectorManagedStatusSchema.parse(connector).connected;
   }
   return await readConnectorAccountCompletion(
     createClient,
@@ -436,14 +440,7 @@ const setCustomConnectorValuesForTarget$ = command(
     signal.throwIfAborted();
     const connector = setCustomConnectorValuesResponseSchema.parse(result.body);
     set(bumpReload$);
-    // The legacy alias on this operation is its actual operated account,
-    // unlike the default-scoped alias on a definition read. Retired by #41309.
-    const connectionId = connector.connectionId ?? connector.connectedAccountId;
-    if (connectionId === undefined) {
-      throw new Error(
-        "Connector account identity is unavailable. Refresh and try again.",
-      );
-    }
+    const connectionId = connector.connectionId;
     if (
       args.account.intent === "reconnect" &&
       connectionId !== args.account.connectionId
@@ -555,7 +552,7 @@ const startCustomConnectorAuthorization$ = command(
     const client = get(apiClient$)(customConnectorOAuth2Contract, {
       apiBase: "api",
     });
-    return await accept(
+    const result = await accept(
       client.start({
         params: { id: args.id },
         body: { account: args.account },
@@ -579,6 +576,10 @@ const startCustomConnectorAuthorization$ = command(
         },
       },
     );
+    return {
+      ...result,
+      body: startCustomConnectorOAuth2ReaderResponseSchema.parse(result.body),
+    };
   },
 );
 
@@ -657,12 +658,11 @@ async function waitForCustomConnectorAuthorizationWindow(
 
 function completedCustomConnectorAccountId(
   receipt: {
-    readonly connectionId?: string;
-    readonly connectedAccountId: string;
+    readonly connectionId: string;
   },
   account: PlatformConnectorAccountMutationIntent,
 ) {
-  const connectionId = receipt.connectionId ?? receipt.connectedAccountId;
+  const connectionId = receipt.connectionId;
   if (account.intent === "reconnect" && connectionId !== account.connectionId) {
     throw new Error("Connector account response identity mismatch.");
   }

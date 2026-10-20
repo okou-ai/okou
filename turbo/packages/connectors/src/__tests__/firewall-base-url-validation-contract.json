@@ -2,6 +2,69 @@
   "hostnamePolicy": "vm0-uts46-16.0-v1",
   "baseUrlTemplateResolutionCases": [
     {
+      "category": "authority-fragment",
+      "name": "split utf8 escape rejects an invalid continuation byte",
+      "base": "https://%c3%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "ff" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects a non-hex completion",
+      "base": "https://%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "z" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects an incomplete completion",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "6" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects invalid resolved utf8",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "ff" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects an encoded resolved slash",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "2f" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects an encoded resolved dot",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "2e" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects an encoded resolved percent",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "25" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects an encoded resolved control character",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "00" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "split escape rejects encoded resolved parameter syntax",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "7b" },
+      "expectedResolvedBase": null
+    },
+    {
       "category": "hostname-policy",
       "name": "runtime host rejects an encoded context-valid zero width non-joiner",
       "base": "https://${{ vars.HOST }}/v1",
@@ -181,6 +244,160 @@
     }
   ],
   "catalogBaseUrlValidationCases": [
+    {
+      "category": "valid",
+      "name": "hostname variable completes a three-byte utf8 character",
+      "base": "https://%e2%98%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "83" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%e2%98%83.example.com",
+      "expectedCanonicalBase": "https://xn--n3h.example.com"
+    },
+    {
+      "category": "authority",
+      "name": "split utf8 escape preserves a malformed fixed escape",
+      "base": "https://%zz%c3%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "bc" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "valid",
+      "name": "hostname variable completes a utf8 continuation byte",
+      "base": "https://%c3%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "bc" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%c3%bc.example.com",
+      "expectedCanonicalBase": "https://xn--tda.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "hostname variable completes a utf8 continuation nibble",
+      "base": "https://%c3%b${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "c" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%c3%bc.example.com",
+      "expectedCanonicalBase": "https://xn--tda.example.com"
+    },
+    {
+      "category": "authority",
+      "name": "split utf8 escape preserves a fixed invalid byte",
+      "base": "https://%ff%c3%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "bc" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "split utf8 escape preserves fixed encoded structure",
+      "base": "https://%2f%c3%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "bc" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "valid",
+      "name": "hostname variable completes the second hex digit",
+      "base": "https://%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%61.example.com",
+      "expectedCanonicalBase": "https://a.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "hostname variable completes both hex digits",
+      "base": "https://%${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "61" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%61.example.com",
+      "expectedCanonicalBase": "https://a.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "adjacent hostname variables complete a percent escape",
+      "base": "https://%${{ vars.FIRST }}${{ vars.SECOND }}.example.com",
+      "vars": { "FIRST": "6", "SECOND": "1" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%61.example.com",
+      "expectedCanonicalBase": "https://a.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "split escape preserves a literal hostname suffix",
+      "base": "https://%6${{ vars.SUFFIX }}pi.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%61pi.example.com",
+      "expectedCanonicalBase": "https://api.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "repeated hostname variable completes separate percent escapes",
+      "base": "https://%6${{ vars.SUFFIX }}.%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://%61.%61.example.com",
+      "expectedCanonicalBase": "https://a.a.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "split escape composes with a partial alabel",
+      "base": "https://xn--%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "2cher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--%62cher-kva.example.com",
+      "expectedCanonicalBase": "https://xn--bcher-kva.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "split escape preserves a complete literal escape",
+      "base": "https://api%62%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://api%62%61.example.com",
+      "expectedCanonicalBase": "https://apiba.example.com"
+    },
+    {
+      "category": "authority",
+      "name": "split escape preserves a malformed fixed escape",
+      "base": "https://%zz%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "split escape preserves fixed encoded structure",
+      "base": "https://%2f%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "split escape preserves fixed invalid utf8",
+      "base": "https://%ff%6${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "split escape preserves an irreparable adjacent non-hex fragment",
+      "base": "https://%z${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "split escape preserves an invalid fixed alabel",
+      "base": "https://%6${{ vars.SUFFIX }}.xn--a.example.com",
+      "vars": { "SUFFIX": "1" },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
     {
       "category": "hostname-policy",
       "name": "catalog rejects an encoded context-valid zero width non-joiner",
@@ -560,6 +777,12 @@
     }
   ],
   "baseUrlValidationCases": [
+    {
+      "category": "authority",
+      "name": "percent-encoded percent in a static host is invalid",
+      "base": "https://%25.example.com",
+      "expectedValid": false
+    },
     {
       "category": "hostname-policy",
       "name": "canonical alabel rejects a context-valid zero width non-joiner",

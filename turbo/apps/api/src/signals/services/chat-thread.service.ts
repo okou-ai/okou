@@ -46,7 +46,6 @@ import {
   asc,
   desc,
   eq,
-  exists,
   gt,
   gte,
   inArray,
@@ -76,7 +75,6 @@ import {
   cancelRun$,
   type CancelRunResult,
 } from "./agent-run-terminal-transition.service";
-import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { threadBoundWorkflowAutomationsPredicate } from "./workflow-user-automation-thread.service";
@@ -605,20 +603,7 @@ function chatThreadArtifactRows(args: {
         and(
           eq(runUploadedFiles.userId, args.userId),
           isNotNull(runUploadedFiles.runId),
-          or(
-            eq(runUploadedFiles.chatThreadId, args.threadId),
-            exists(
-              db
-                .select({ id: chatEvents.id })
-                .from(chatEvents)
-                .where(
-                  runOwnedChatEventForRunCondition({
-                    runId: runUploadedFiles.runId,
-                    chatThreadId: args.threadId,
-                  }),
-                ),
-            ),
-          ),
+          eq(runUploadedFiles.chatThreadId, args.threadId),
         ),
       )
       .orderBy(asc(runUploadedFiles.createdAt), asc(runUploadedFiles.id));

@@ -1,4 +1,5 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -28,7 +29,7 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Hide the resource trigger and panel when there is no content", async () => {
+test("Keep the resource trigger available and show an empty panel", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -45,15 +46,30 @@ test("Hide the resource trigger and panel when there is no content", async () =>
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByTestId("chat-thread-header-title");
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
+  expect(resourceButton()).toBeEnabled();
   expect(resourcePanel()).not.toBeInTheDocument();
+  click(resourceButton());
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(
+    within(panel).findByText("No artifacts found"),
+  ).resolves.toBeInTheDocument();
 });
 
-test("Hide the resource trigger until content has loaded", async () => {
+test("Keep chat usable before opening pending artifacts and related chats", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
-  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  mockArtifactConversation(context, {
+    catalog: [],
+    chatEvents: [
+      {
+        id: "resources-pending-user",
+        role: "user",
+        content: "Keep chatting while resources load",
+        createdAt: "2026-09-01T10:00:00Z",
+      },
+    ],
+  });
   const response = createDeferredPromise<void>(context.signal);
   context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
     await response.promise;
@@ -62,20 +78,48 @@ test("Hide the resource trigger until content has loaded", async () => {
       nextCursor: null,
     });
   });
+  context.mocks.api(chatRelationsContract.children, async ({ respond }) => {
+    await response.promise;
+    return respond(200, {
+      items: [
+        {
+          id: "d0000000-0000-4000-a000-000000000105",
+          threadId: "d0000000-0000-4000-a000-000000000102",
+          title: "Research child",
+          status: "idle",
+          sourceRunId: "d0000000-0000-4000-a000-000000000103",
+          createdAt: "2026-09-01T10:00:00.000Z",
+        },
+      ],
+    });
+  });
+  context.mocks.api(
+    chatRelationsContract.communications,
+    async ({ respond }) => {
+      await response.promise;
+      return respond(200, { items: [] });
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
+  await screen.findByText("Keep chatting while resources load");
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
+  expect(resourceButton()).toBeEnabled();
   expect(resourcePanel()).not.toBeInTheDocument();
-  response.resolve();
-  await waitFor(() => {
-    expect(resourceButton()).toBeInTheDocument();
-  });
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(within(panel).findByRole("status")).resolves.toHaveTextContent(
+    "Loading",
+  );
+  expect(
+    within(panel).queryByText("No artifacts found"),
+  ).not.toBeInTheDocument();
+  response.resolve();
   await within(panel).findByText("report.pdf");
+  await within(panel).findByText("Research child");
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
@@ -194,10 +238,13 @@ test("Show artifacts in the floating panel while links remain in the transcript"
 });
 
 test.each([0, 20])(
-  "Hide resources for a link-only chat with a link in message %i",
+  "Show empty resources for a link-only chat with a link in message %i",
   async (linkIndex) => {
     installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
+    context.mocks.data.userPreferences({
+      chatResourcesEnabledByDefault: false,
+    });
     mockArtifactConversation(context, {
       catalog: [],
       chatEvents: Array.from({ length: 21 }, (_, index) => {
@@ -229,7 +276,11 @@ test.each([0, 20])(
     });
     await screen.findByText("Conversation 20");
     expect(screen.queryByText("Conversation 0")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
+    expect(resourceButton()).toBeEnabled();
     expect(resourcePanel()).not.toBeInTheDocument();
+    click(resourceButton());
+    const panel = await screen.findByRole("region", { name: "Resources" });
+    await within(panel).findByText("No artifacts found");
+    expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   },
 );

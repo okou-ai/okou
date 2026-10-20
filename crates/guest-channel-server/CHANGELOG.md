@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.5.4](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.5.3...guest-channel-server-v0.5.4) (2026-10-20)
+
 ## [0.5.3](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.5.2...guest-channel-server-v0.5.3) (2026-10-19)
 
 ## [0.5.2](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.5.1...guest-channel-server-v0.5.2) (2026-10-19)

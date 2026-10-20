@@ -28,6 +28,7 @@ import {
   type CustomConnectorMcpResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
@@ -626,90 +627,103 @@ test("Let an MCP server discover authentication from a directed connection", asy
   });
 });
 
-test("Reconnect the exact manual custom-connector account", async () => {
-  const connectionId = crypto.randomUUID();
-  const connector = customConnector({
-    displayName: "Acme Configured API",
-    connected: true,
-    connectedAccountId: connectionId,
-    connectedAccountUpdatedAt: "2026-01-01T00:00:00Z",
-    missingRequiredFields: [],
-    configuredFieldKeys: ["secret"],
-  });
-  const account = customConnectorAccount(connector.id, {
-    id: connectionId,
-    configuredFieldKeys: ["secret"],
-  });
-  mockCustomAccounts(() => {
-    return [account];
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        },
-      ],
+test.each(["current", "canonical"] as const)(
+  "Reconnect the exact manual custom-connector account with a %s definition",
+  async (definitionShape) => {
+    const connectionId = crypto.randomUUID();
+    const connector = customConnector({
+      displayName: "Acme Configured API",
+      connected: true,
+      connectedAccountId: connectionId,
+      connectedAccountUpdatedAt: "2026-01-01T00:00:00Z",
+      missingRequiredFields: [],
+      configuredFieldKeys: ["secret"],
     });
-  });
-  let submittedValues: readonly {
-    readonly key: string;
-    readonly kind: "secret" | "variable";
-    readonly value: string;
-  }[] = [];
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  context.mocks.api(
-    customConnectorValuesContract.set,
-    ({ body, params, respond }) => {
-      expect(params.id).toBe(connector.id);
-      expect(body.account).toStrictEqual({
-        intent: "reconnect",
-        connectionId,
-      });
-      submittedValues = body.values;
+    const account = customConnectorAccount(connector.id, {
+      id: connectionId,
+      configuredFieldKeys: ["secret"],
+    });
+    mockCustomAccounts(() => {
+      return [account];
+    });
+    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
       return respond(200, {
-        ...connector,
-        connectedAccountUpdatedAt: "2026-01-01T00:00:01Z",
+        summaries: [
+          {
+            target: account.target,
+            accountCount: 1,
+            attentionCount: 0,
+            defaultConnection: account,
+          },
+        ],
       });
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, respond }) => {
-      return respond(200, { grants: body.grants });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-  });
-
-  await screen.findByText("Acme Configured API connected");
-  click(getButtonByText("Reconnect"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Connect Acme Configured API",
-  });
-  const secretInput = within(dialog).getByLabelText("Secret");
-  expect(secretInput).toHaveAccessibleDescription("Required · Configured");
-  await fill(secretInput, "replacement-secret");
-  click(getButtonByText("Save"));
-
-  await waitFor(() => {
-    expect(submittedValues).toStrictEqual([
-      {
-        key: "secret",
-        kind: "secret",
-        value: "replacement-secret",
+    });
+    let submittedValues: readonly {
+      readonly key: string;
+      readonly kind: "secret" | "variable";
+      readonly value: string;
+    }[] = [];
+    const {
+      connected: _connected,
+      connectedAccountId: _connectedAccountId,
+      connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+      missingRequiredFields: _missingRequiredFields,
+      configuredFieldKeys: _configuredFieldKeys,
+      ...definition
+    } = connector;
+    context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+      return respond(200, {
+        connectors: [definitionShape === "canonical" ? definition : connector],
+      });
+    });
+    context.mocks.api(
+      customConnectorValuesContract.set,
+      ({ body, params, respond }) => {
+        expect(params.id).toBe(connector.id);
+        expect(body.account).toStrictEqual({
+          intent: "reconnect",
+          connectionId,
+        });
+        submittedValues = body.values;
+        return respond(200, {
+          ...connector,
+          connectedAccountUpdatedAt: "2026-01-01T00:00:01Z",
+        });
       },
-    ]);
-  });
-});
+    );
+    context.mocks.api(
+      agentCustomConnectorsContract.update,
+      ({ body, respond }) => {
+        return respond(200, { grants: body.grants });
+      },
+    );
+
+    await setupPage({
+      context,
+      path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    });
+
+    await screen.findByText("Acme Configured API connected");
+    click(getButtonByText("Reconnect"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Connect Acme Configured API",
+    });
+    const secretInput = within(dialog).getByLabelText("Secret");
+    expect(secretInput).toHaveAccessibleDescription("Required · Configured");
+    await fill(secretInput, "replacement-secret");
+    click(getButtonByText("Save"));
+
+    await waitFor(() => {
+      expect(submittedValues).toStrictEqual([
+        {
+          key: "secret",
+          kind: "secret",
+          value: "replacement-secret",
+        },
+      ]);
+    });
+  },
+);
 
 test("Connect and authorize a custom OAuth connector", async () => {
   const completedAttempts = mockOAuthCompletions(context);

@@ -94,10 +94,7 @@ export const connectorOAuthStartCommand = addAccountMutationOptions(
       else if (result.result === "authorization") {
         console.log(result.authorizationUrl);
         console.log(`OAuth attempt ID: ${result.oauthAttemptId}`);
-      } else
-        console.log(
-          `Connected account ID: ${result.connectionId ?? result.connectedAccountId}`,
-        );
+      } else console.log(`Connected account ID: ${result.connectionId}`);
     }),
   );
 

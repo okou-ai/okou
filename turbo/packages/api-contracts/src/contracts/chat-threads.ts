@@ -2027,7 +2027,7 @@ export const chatThreadArtifactsContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "List uploaded files associated with every run in a chat thread",
+    summary: "List a chat thread's uploaded files grouped by source run",
   },
 });
 

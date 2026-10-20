@@ -135,10 +135,17 @@ async function setupRelationships({
     path: `/chats/${parent.id}?sidebar=${child.id}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  const origin = within(panel).getByRole("region", { name: "From" });
+  const origin = await screen.findByRole("region", { name: "From" });
+  const panel = screen
+    .getAllByRole("region", { name: "Resources" })
+    .find((candidate) => {
+      return candidate.contains(origin);
+    });
+  if (!panel) {
+    throw new Error("Expected the resource panel containing the chat origin");
+  }
   const messages = await within(panel).findByRole("region", {
-    name: "Messages",
+    name: "Chats",
   });
   const parentPane = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${parent.id}"]`,
@@ -227,7 +234,7 @@ test("Update relationship titles immediately and synchronize the saved browser t
   relationshipResponse.resolve();
 });
 
-test("Update From and Messages when another tab renames the parent", async () => {
+test("Update From and Chats when another tab renames the parent", async () => {
   const {
     origin,
     messages,

@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.772.0](https://github.com/okou-ai/okou/compare/core-v8.771.0...core-v8.772.0) (2026-10-20)
+
+
+### Features
+
+* enable discord integration for all users ([#41619](https://github.com/okou-ai/okou/issues/41619)) ([d7ea540](https://github.com/okou-ai/okou/commit/d7ea54097c343c791f5373ce7df45f7c0687c212))
+* **ios:** show live chat activity summaries ([#41639](https://github.com/okou-ai/okou/issues/41639)) ([3c2ee1b](https://github.com/okou-ai/okou/commit/3c2ee1b3137f64db78c4498270eae0b6c92fa1b3))
+* **ios:** support native chat attachments ([#41516](https://github.com/okou-ai/okou/issues/41516)) ([ae89baa](https://github.com/okou-ai/okou/commit/ae89baa9f4034b924e552cc86dce39509ddaec40))
+* restore original document designs and add sidebar report ([#41464](https://github.com/okou-ai/okou/issues/41464)) ([d4a7eed](https://github.com/okou-ai/okou/commit/d4a7eedf3347eaa393954e3aeabc58247b68002e))
+
+
+### Bug Fixes
+
+* keep auto on pi when codex execution is enabled ([#41648](https://github.com/okou-ai/okou/issues/41648)) ([1a3d4c8](https://github.com/okou-ai/okou/commit/1a3d4c8229ffdd4175b5ac510d6421ea5ee60076))
+
+
+### Refactoring
+
+* remove expired teams install redirect and wallet spend compatibility ([#41583](https://github.com/okou-ai/okou/issues/41583)) ([bad6179](https://github.com/okou-ai/okou/commit/bad61790761ccd91d8dc1224f4ca43ad87ab1ba5))
+* remove remote control cli management feature switch ([#41671](https://github.com/okou-ai/okou/issues/41671)) ([3e2cc22](https://github.com/okou-ai/okou/commit/3e2cc2296a0919f015a94f40035c39ef37355a95))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.578.0
+
 ## [8.771.0](https://github.com/okou-ai/okou/compare/core-v8.770.0...core-v8.771.0) (2026-10-19)
 
 

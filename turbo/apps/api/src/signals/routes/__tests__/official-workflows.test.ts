@@ -64,7 +64,7 @@ import {
 } from "@okouai/core/storage-names";
 
 import { gunzipSync } from "node:zlib";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -233,6 +233,11 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
+  return await syncSourceCatalog();
+}
+
+/** Publishes the deployed source catalog through its production cron route. */
+async function syncSourceCatalog() {
   const result = await accept(
     setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
       cronOfficialWorkflowCatalogContract,
@@ -1182,6 +1187,30 @@ async function readBriefSchedule(actor: ApiTestUser) {
   };
 }
 
+/** Independent oracle for the owner's Morning Brief start: 06:30-06:59 local. */
+function expectedMorningBriefMinute(actor: ApiTestUser): number {
+  if (!actor.orgId) {
+    throw new Error("Expected organization-scoped actor");
+  }
+  const hash = Number.parseInt(
+    createHash("sha256")
+      .update(`${actor.orgId}/${actor.userId}`)
+      .digest("hex")
+      .slice(0, 8),
+    16,
+  );
+  return 30 + ((hash + 15) % 30);
+}
+
+function localClock(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value));
+}
+
 async function prepareBriefMember({
   actor = bdd.user(),
   createdAt = new Date("2030-01-01T00:00:00.000Z"),
@@ -1322,13 +1351,9 @@ describe("Morning Brief explicit installation", () => {
     if (!changedSchedule.nextRunAt) {
       throw new Error("Expected next run");
     }
-    expect(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: "America/Los_Angeles",
-        hour: "numeric",
-        hour12: false,
-      }).format(new Date(changedSchedule.nextRunAt)),
-    ).toBe("07");
+    expect(localClock(changedSchedule.nextRunAt, "America/Los_Angeles")).toBe(
+      `06:${expectedMorningBriefMinute(actor)}`,
+    );
     await accept(
       morningBriefPreferenceClient().update({
         headers: authHeaders(actor),
@@ -1614,6 +1639,149 @@ function capturedOfficialSkill(
   }
   return gunzipSync(archive).toString("utf8");
 }
+
+describe("Morning Brief start time", () => {
+  it("starts an enabled brief at the owner's minute before 07:00 local time", async () => {
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Tokyo");
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected the Morning Brief installation");
+    }
+    const minute = expectedMorningBriefMinute(actor);
+    const cron = `${minute} 6 * * *`;
+    const [automation] = await listMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    expect(automation).toMatchObject({
+      enabled: true,
+      schedule: { type: "cron", cronExpression: cron, timezone: "Asia/Tokyo" },
+      official: {
+        reconciliationStatus: "current",
+        parameterBindings: [{ key: "cron", value: cron }],
+      },
+    });
+    if (!automation?.nextRunAt) {
+      throw new Error("Expected the next Morning Brief run");
+    }
+    expect(localClock(automation.nextRunAt, "Asia/Tokyo")).toBe(`06:${minute}`);
+  });
+
+  it.each([
+    { localTime: "06:10:00", keepsPendingOccurrence: false },
+    { localTime: "06:59:30", keepsPendingOccurrence: true },
+  ])(
+    "moves an existing 07:00 brief to the owner's minute without skipping a day (local $localTime)",
+    async ({ localTime, keepsPendingOccurrence }) => {
+      await withMockNowForTest(new Date("2030-01-01T03:00:00Z"), async () => {
+        installCatalogStorageFixture();
+        // The previously accepted catalog started every brief at 07:00.
+        const legacy = catalog([
+          ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+            return activeDefinition(name, [
+              {
+                key: "daily-delivery",
+                parameters: [],
+                desiredState: {
+                  kind: "schedule",
+                  schedule: { type: "cron", cronExpression: "0 7 * * *" },
+                },
+              },
+            ]);
+          }),
+          connectorDoctorDefinition(),
+        ]);
+        expect((await syncCatalog(legacy)).body.outcome).toBe("accepted");
+        const { actor } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Tokyo",
+        });
+        await connectBriefSource(actor);
+        await accept(
+          morningBriefPreferenceClient().update({
+            headers: authHeaders(actor),
+            body: { enabled: true },
+          }),
+          [200],
+        );
+        const [installation] = await listMorningBriefInstallations(actor);
+        if (!installation) {
+          throw new Error("Expected the Morning Brief installation");
+        }
+        const [initial] = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(initial).toMatchObject({
+          nextRunAt: "2030-01-01T22:00:00.000Z",
+          schedule: {
+            type: "cron",
+            cronExpression: "0 7 * * *",
+            timezone: "Asia/Tokyo",
+          },
+        });
+
+        const minute = expectedMorningBriefMinute(actor);
+        const cron = `${minute} 6 * * *`;
+        mockNow(new Date(`2030-01-02T${localTime}+09:00`));
+        expect((await syncSourceCatalog()).body).toMatchObject({
+          outcome: "accepted",
+        });
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        const [moved] = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(moved).toMatchObject({
+          id: initial?.id,
+          enabled: true,
+          nextRunAt: keepsPendingOccurrence
+            ? "2030-01-01T22:00:00.000Z"
+            : `2030-01-01T21:${minute}:00.000Z`,
+          schedule: {
+            type: "cron",
+            cronExpression: cron,
+            timezone: "Asia/Tokyo",
+          },
+          official: {
+            reconciliationStatus: "current",
+            parameterBindings: [{ key: "cron", value: cron }],
+          },
+        });
+        if (!moved?.nextRunAt) {
+          throw new Error("Expected the moved Morning Brief run");
+        }
+
+        // That day's brief runs once, then follows the owner's minute.
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        const fired = await fireOfficialSchedule(actor, moved);
+        const claim = await runs.claimRunnerJob(fired.runId);
+        mockNow(new Date(moved.nextRunAt).getTime() + 60_000);
+        await webhooks.requestAgentComplete(
+          { runId: fired.runId, exitCode: 0 },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        const [advanced] = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(advanced?.nextRunAt).toBe(`2030-01-02T21:${minute}:00.000Z`);
+      });
+    },
+  );
+});
 
 describe("Morning Brief catalog reconciliation", () => {
   const scenarios = MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.flatMap(

@@ -250,12 +250,11 @@ export interface WorkflowComposerSignals {
     [HTMLElement | null]
   >;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
-  readonly setSuggestionMenuRef$: Command<
+  readonly setSlashHintMenuRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
   >;
-  readonly setSlashHintMenuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"];
-  readonly setMentionHintMenuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"];
+  readonly setMentionHintMenuRef$: WorkflowComposerSignals["setSlashHintMenuRef$"];
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
@@ -2263,7 +2262,7 @@ function createSuggestionHintPlugin(
 
 function createSuggestionHintMenuRef(
   editor: Editor,
-  menuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"],
+  menuRef$: WorkflowComposerSignals["setSlashHintMenuRef$"],
   kind: "slash" | "mention",
 ) {
   return onRef(
@@ -2284,10 +2283,9 @@ function createSuggestionHintMenuRef(
 
 function createSuggestionMenuRefs(
   editor: Editor,
-  menuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"],
+  menuRef$: WorkflowComposerSignals["setSlashHintMenuRef$"],
 ) {
   return {
-    setSuggestionMenuRef$: menuRef$,
     setSlashHintMenuRef$: createSuggestionHintMenuRef(
       editor,
       menuRef$,

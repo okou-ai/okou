@@ -2,10 +2,8 @@ import {
   connectorAccountTargetKey,
   type ConnectorAccountSummary,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import { type CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   listConnectorAccountSummaries,
   type ConnectorCatalogStatus,
