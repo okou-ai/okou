@@ -716,6 +716,45 @@ their embedded-addon behavior until replaced. Native dependency coverage in
 byte accounting, capture privacy, admission and terminal release; cryptographic
 TLS verification remains covered by the native auth-wait suites.
 
+## Managed policy streaming
+
+Managed preset requests select public `request.stream` before body accumulation,
+after endpoint/header checks and stream-safe credential resolution. The JSON
+scanner validates every value while capturing only bounded policy scalars.
+Object frames own exact decoded duplicate-key identity, including escaped keys;
+normal usage extraction keeps its existing duplicate semantics.
+
+Each upload validates a chunk before forwarding it. It finishes JSON at declared
+length and releases its parser, retaining one final byte until true EOF, trailer
+checks and current authorization succeed. Failure clears parser/tail immediately
+and discards/counts subsequent bytes without generating native empty-data events.
+Cancellation uses native EOF, timeout or disconnect; it need not reset mid-upload.
+Headers and valid prefixes may already reach the provider, and their effects
+cannot be recalled. Successful body bytes and Content-Length remain exact.
+
+Managed requests have no count, body-size or aggregate admission reservation.
+Depth 128, work 262,144 units, keys 4,096 raw bytes and numbers 4,300 raw bytes bound
+parser state; long tokens and work accounting can differ from buffered validation.
+Opaque value strings can exceed 32 MiB. Capture remains optional and capped at
+64 KiB per flow. Total memory can scale with active flows, but SSE retains no
+complete upload or parser.
+
+The exact-version compatibility owner closes public-stream gaps at native EOF,
+H2 queued/window capacity and early response completion. Pending uploads belong
+to connection readers. Header classification binds that ownership before further
+reads; managed header waits include `HookCompleted`, so cancellation cannot race
+the reader into the native event lock before socket cleanup. H2 capacity gates
+ingress outside the lock. A provider reader drains its matching downstream writer
+independently of the blocked upload writer. Parsed EOF and empty protocol queues
+do not release pending transport ownership before the owning socket drain.
+
+These seams preserve native framing, verified TLS, connection selection and
+terminal hooks. Pausing one H2 client reader can delay other uploads on that
+connection. Dependency upgrades require re-auditing these owners and regressions.
+Runner/addon ship together; older artifacts keep their embedded behavior until
+replaced, and normal artifact rollback restores it. No alternate buffered path,
+transparent retry, replay or body worker pool is provided.
+
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated

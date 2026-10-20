@@ -8,10 +8,10 @@ import pytest
 from mitmproxy.flow import Error
 
 import flow_metadata_keys as metadata_keys
-import managed_openrouter as managed
+import managed_upload
 import mitm_addon
 from logging_utils import flush_log_path
-from tests.managed_openrouter_helpers import payload, request, sandbox
+from tests.managed_openrouter_helpers import authorize_headers, payload, request, sandbox
 from tests.request_handler_helpers import _write_registry
 
 
@@ -24,17 +24,6 @@ from tests.request_handler_helpers import _write_registry
         pytest.param(["private-length-canary"], "invalid", None, id="invalid-private-value"),
         pytest.param(["33554433", "33554434"], "conflicting", None, id="conflicting"),
         pytest.param(["0000"], "zero", 0, id="zero"),
-        pytest.param(["33554433"], "over_limit", 33_554_433, id="limit-plus-one"),
-        pytest.param(["100000000"], "over_limit", 100_000_000, id="longer-than-limit"),
-        pytest.param(
-            [" \t000100000000\t ", "100000000"],
-            "over_limit",
-            100_000_000,
-            id="normalized-matching-duplicates",
-        ),
-        pytest.param(
-            ["9007199254740991"], "over_limit", 9_007_199_254_740_991, id="json-safe-limit"
-        ),
         pytest.param(["9007199254740992"], "over_limit", None, id="beyond-json-safe-limit"),
         pytest.param(["9" * 5000], "over_limit", None, id="unbounded-numeral"),
     ],
@@ -83,7 +72,7 @@ async def test_length_rejection_persists_exact_or_explicitly_unavailable_evidenc
 
     assert flow.request.headers["Authorization"] == "Bearer private-credential-canary"
     assert flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] is True
-    assert managed.admission_state_for_tests() == (0, 0)
+    assert managed_upload.get(flow) is None
     proxy_path = Path(info["proxyLogPath"])
     assert await asyncio.to_thread(flush_log_path, str(proxy_path))
     text = await asyncio.to_thread(proxy_path.read_text)
@@ -94,7 +83,7 @@ async def test_length_rejection_persists_exact_or_explicitly_unavailable_evidenc
     assert policy["reason"] == "body_length"
     assert policy["rejection_phase"] == phase
     assert policy["content_length_kind"] == kind
-    assert policy["content_length_limit_bytes"] == 33_554_432
+    assert policy["content_length_limit_bytes"] == 9_007_199_254_740_991
     assert policy["declared_content_length_bytes"] == declared_bytes
     assert policy["declared_content_length_is_exact"] is (declared_bytes is not None)
     assert len(json.dumps(policy)) < 1024
@@ -109,8 +98,10 @@ async def test_length_rejection_persists_exact_or_explicitly_unavailable_evidenc
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
-@pytest.mark.parametrize("declared_bytes", [33_554_431, 33_554_432])
-async def test_lengths_at_or_below_limit_still_admit_before_body_arrives(
+@pytest.mark.parametrize(
+    "declared_bytes", [33_554_431, 33_554_432, 40 * 1024 * 1024, 150 * 1024 * 1024]
+)
+async def test_safe_lengths_select_streaming_without_reserving_body_bytes(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, declared_bytes
 ):
     info = sandbox(tmp_path, dialect)
@@ -119,15 +110,19 @@ async def test_lengths_at_or_below_limit_still_admit_before_body_arrives(
     flow.request.headers["Content-Length"] = str(declared_bytes)
     flow.request.raw_content = None
     with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
+        await authorize_headers(flow)
         assert flow.error is None
         assert flow.response is None
-        assert flow.request.stream is False
-        assert managed.admission_state_for_tests() == (1, declared_bytes)
+        assert callable(flow.request.stream)
+        upload = managed_upload.get(flow)
+        assert upload is not None
+        assert upload.received == 0
+        assert upload.length == declared_bytes
+        assert flow.request.raw_content is None
         flow.error = Error("client disconnected while uploading")
         mitm_addon.error(flow)
-        auth_fetch.assert_not_called()
-    assert managed.admission_state_for_tests() == (0, 0)
+        auth_fetch.assert_awaited_once()
+    assert managed_upload.get(flow) is None
     proxy_path = Path(info["proxyLogPath"])
     assert await asyncio.to_thread(flush_log_path, str(proxy_path))
     text = await asyncio.to_thread(proxy_path.read_text)
@@ -142,14 +137,13 @@ async def test_other_policy_rejection_does_not_claim_a_length_failure(
     registry = _write_registry(tmp_path, sandbox_info=info)
     flow = request(real_flow, {**payload(), "model": "@preset/other"})
     with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
         await mitm_addon.request(flow)
         assert flow.response is not None
         assert flow.response.status_code == 403
         assert flow.response.json()["reason"] == "model"
         mitm_addon.response(flow)
         auth_fetch.assert_not_called()
-    assert managed.admission_state_for_tests() == (0, 0)
+    assert managed_upload.get(flow) is None
     proxy_path = Path(info["proxyLogPath"])
     assert await asyncio.to_thread(flush_log_path, str(proxy_path))
     text = await asyncio.to_thread(proxy_path.read_text)

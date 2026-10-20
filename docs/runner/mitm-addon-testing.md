@@ -151,6 +151,20 @@ forwarded bytes before EOF and terminal network/usage records, and verify
 bounded retention and admission with capture on/off. They do not measure live
 production proxy RSS.
 
+When removing managed upload admissions, isolate count, individual size and
+aggregate bytes in separate native cases. Generate bounded input and hash
+provider bytes incrementally; keep SSEs live after uploads to check retention.
+Exercise both HTTP versions, zero windows/stream slots, queued cancellation,
+empty DATA versus EOF, discarded-event counts, real blocked TCP writers and
+split early responses. Header cancellation must cover ordinary and eager task
+scheduling, including cleanup after the public hook released its parser.
+
+Compare resources on identical baseline-eligible inputs in fresh pinned
+processes. Separate untraced CPU from traced allocations and report process RSS,
+Python allocations, SSE retention and synchronized event-loop progress. Newly
+accepted oversized inputs prove admission behavior, not comparative savings.
+Keep run-specific measurements in the owning issue/PR rather than this guide.
+
 Run the same static checks used by CI:
 
 ```bash

@@ -40,7 +40,9 @@ from tests.test_mitmproxy_auth_wait_disconnect import (
 type CertificateCase = Literal["valid", "wrong-host", "untrusted"]
 
 
-def _tls_material(tmp_path: Path, certificate_case: CertificateCase) -> tuple[Path, SSL.Context]:
+def _tls_material(
+    tmp_path: Path, certificate_case: CertificateCase, *, hostname: str = _HOST
+) -> tuple[Path, SSL.Context]:
     now = datetime.now(UTC)
     trusted_key = ec.generate_private_key(ec.SECP256R1())
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Synthetic trust root")])
@@ -61,7 +63,7 @@ def _tls_material(tmp_path: Path, certificate_case: CertificateCase) -> tuple[Pa
         ec.generate_private_key(ec.SECP256R1()) if certificate_case == "untrusted" else trusted_key
     )
     server_key = ec.generate_private_key(ec.SECP256R1())
-    host = "other.example" if certificate_case == "wrong-host" else _HOST
+    host = "other.example" if certificate_case == "wrong-host" else hostname
     leaf = (
         x509.CertificateBuilder()
         .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)]))
