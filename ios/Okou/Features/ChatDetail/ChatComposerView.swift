@@ -16,6 +16,8 @@ struct ChatComposerView: View {
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
+  var modelSelection: ChatModelSelectionStore? = nil
+
   @FocusState private var isFocused: Bool
   @State private var showsPhotos = false
   @State private var showsFiles = false
@@ -47,6 +49,9 @@ struct ChatComposerView: View {
             Button("Retry draft sync") { Task { await state.synchronize() } }.font(.caption)
           }
         }
+      }
+      if let modelSelection {
+        ChatModelPickerButton(selection: modelSelection)
       }
       if !attachments.items.isEmpty {
         ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
@@ -142,6 +147,7 @@ struct ChatComposerView: View {
           .disabled(
             (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
               || draftState?.canSend == false
+              || (!showsStop && modelSelection?.canSend == false)
           )
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")

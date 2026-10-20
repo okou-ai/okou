@@ -122,7 +122,7 @@ struct ChatDetailView: View {
           } else {
             await conversation.send()
           }
-        }, refresh: { await conversation.refresh() }
+        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
