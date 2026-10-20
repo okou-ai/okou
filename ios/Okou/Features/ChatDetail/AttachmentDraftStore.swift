@@ -31,6 +31,7 @@ final class AttachmentDraftStore {
   }
   var didRemove: (@MainActor (String?) -> Void)?
   var didChange: (@MainActor () -> Void)?
+  private(set) var inputID = UUID()
   private(set) var items: [Item] = []
   var savedItems: [SavedItem] {
     items.map { item in
@@ -154,6 +155,18 @@ final class AttachmentDraftStore {
     }
   }
 
+  func importPastedImages(_ providers: [NSItemProvider]) {
+    startImport {
+      for provider in providers {
+        try Task.checkCancellation()
+        do {
+          let file = try await AttachmentFileImporter.image(from: provider)
+          self.add(file)
+        } catch { self.report(error) }
+      }
+    }
+  }
+
   private func startImport(_ operation: @escaping @MainActor () async throws -> Void) {
     guard !closed else { return }
     let id = UUID()
@@ -252,6 +265,9 @@ final class AttachmentDraftStore {
   }
 
   func reset() {
+    // A native text paste can finish asynchronously too. Replacing the input
+    // detaches its binding when this draft is reset for a send or another agent.
+    inputID = UUID()
     for task in imports.values { task.cancel() }
     for task in uploads.values { task.cancel() }
     imports.removeAll()

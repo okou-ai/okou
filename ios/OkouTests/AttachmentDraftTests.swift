@@ -274,12 +274,13 @@ final class AttachmentDraftTests: XCTestCase {
   }
 }
 
-private final class AttachmentFlowFixture: Sendable {
+final class AttachmentFlowFixture: Sendable {
   static let fileID = "42000000-0000-4000-8000-000000000001"
   static let agentID = "42000000-0000-4000-8000-000000000002"
   static let threadID = "42000000-0000-4000-8000-000000000003"
   struct State: Sendable {
     var uploads = 0
+    var preparations: [Data] = []
     var messages: [Data] = []
     var accepted: Data?
     var draft = ComposerDraft()
@@ -315,6 +316,7 @@ private final class AttachmentFlowFixture: Sendable {
           body: String(
             decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
       case "/api/uploads/prepare":
+        state.value.withLock { $0.preparations.append(chatRequestBody(request)) }
         let url = "https://\(request.url!.host!)/storage/object"
         return ChatHTTPResponse(
           body: String(metadata.dropLast()) + ",\"uploadUrl\":\"\(url)\",\"uploadHeaders\":{}}")
@@ -431,6 +433,6 @@ private final class AttachmentFlowFixture: Sendable {
   }
 }
 
-private final class AttachmentFlowState: Sendable {
+final class AttachmentFlowState: Sendable {
   let value = Mutex(AttachmentFlowFixture.State())
 }
