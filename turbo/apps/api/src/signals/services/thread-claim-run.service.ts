@@ -205,7 +205,6 @@ import type {
 import type {
   ChatThreadExecutionSnapshot,
   ChatThreadContinuation,
-  ChatThreadContinuationRoute,
 } from "./chat-session-continuity.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
 
@@ -527,10 +526,6 @@ function threadRunModelFields(model: ThreadModelSelection) {
     modelProviderCredentialScope: model.modelProviderCredentialScope,
     selectedModelOverride: model.selectedModelOverride,
     builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
-    threadSessionRoute: {
-      selectedModel: model.selectedModelOverride,
-      cliAgentType: model.cliAgentType,
-    },
     codexServiceTier: model.codexServiceTier,
     piExecution: model.piExecution,
   };
@@ -5137,7 +5132,6 @@ interface ThreadRunCommand {
   readonly callbacks?: readonly AgentRunsCreateRunCallback[];
   readonly chatThreadId: string;
   readonly connectorSourceId?: string;
-  readonly threadSessionRoute?: ChatThreadContinuationRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;

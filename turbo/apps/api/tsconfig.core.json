@@ -116,7 +116,6 @@
     "src/signals/services/pi-memory-stage1-watermark.service.ts",
     "src/signals/services/run-thread-remote-access.service.ts",
     "src/signals/services/runner-job-queue-lifecycle.service.ts",
-    "src/signals/services/session-compatibility.ts",
     "src/signals/services/slack-installation-reward.ts",
     "src/signals/services/slack-workspace-write-plan.ts",
     "src/signals/services/storage-s3-prefix.utils.ts",
