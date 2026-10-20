@@ -107,7 +107,10 @@ private struct WorkspaceRootView: View {
         cache: ChatCache(
           scope: ChatCacheScope(
             apiBaseURL: configuration.apiURL,
-            userID: userID, workspaceID: workspaceID))))
+            userID: userID, workspaceID: workspaceID)),
+        draftStorage: ChatDraftStorage(
+          scope: ChatCacheScope(
+            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID))))
   }
 
   var body: some View {
@@ -150,6 +153,7 @@ private struct WorkspaceRootView: View {
                   error: store.error ?? store.list.error, attachmentURL: store.webURL,
                   attachments: store.newAttachmentDraft,
                   supportsAttachments: store.list.canAttachFiles,
+                  draftState: store.newComposer,
                   submit: { await store.sendNewChat() }, refresh: nil)
               }
           }

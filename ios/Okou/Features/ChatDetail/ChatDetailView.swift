@@ -115,11 +115,9 @@ struct ChatDetailView: View {
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
         attachments: conversation.attachmentDraft, supportsAttachments: supportsAttachments,
+        draftState: conversation.composer,
         submit: {
-          if history.canStop
-            && conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !conversation.attachmentDraft.hasAttachments
-          {
+          if history.canStop && !conversation.composer.hasContent {
             await conversation.stop()
           } else {
             await conversation.send()
