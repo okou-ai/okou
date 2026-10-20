@@ -2138,7 +2138,7 @@
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },
     "relations": {
-      "communications": "Pesan",
+      "communications": "Obrolan",
       "idle": "Tidak aktif",
       "loadFailed": "Gagal memuat",
       "messageUnavailable": "Pesan tidak tersedia",

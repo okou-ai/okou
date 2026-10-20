@@ -2185,7 +2185,7 @@
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
     "relations": {
-      "communications": "Messages",
+      "communications": "Discussions",
       "idle": "Inactive",
       "loadFailed": "Échec du chargement",
       "messageUnavailable": "Message indisponible",

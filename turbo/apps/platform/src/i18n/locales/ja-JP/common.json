@@ -2138,7 +2138,7 @@
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
     "relations": {
-      "communications": "メッセージ",
+      "communications": "チャット",
       "idle": "待機",
       "loadFailed": "読み込み失敗",
       "messageUnavailable": "メッセージ取得不可",

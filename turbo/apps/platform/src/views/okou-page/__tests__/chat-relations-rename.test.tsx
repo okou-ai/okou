@@ -145,7 +145,7 @@ async function setupRelationships({
     throw new Error("Expected the resource panel containing the chat origin");
   }
   const messages = await within(panel).findByRole("region", {
-    name: "Messages",
+    name: "Chats",
   });
   const parentPane = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${parent.id}"]`,
@@ -234,7 +234,7 @@ test("Update relationship titles immediately and synchronize the saved browser t
   relationshipResponse.resolve();
 });
 
-test("Update From and Messages when another tab renames the parent", async () => {
+test("Update From and Chats when another tab renames the parent", async () => {
   const {
     origin,
     messages,

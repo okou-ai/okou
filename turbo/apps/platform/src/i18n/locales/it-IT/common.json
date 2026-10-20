@@ -2185,7 +2185,7 @@
       "skipAutomationEvent": "Salta evento di automazione"
     },
     "relations": {
-      "communications": "Messaggi",
+      "communications": "Chat",
       "idle": "Inattiva",
       "loadFailed": "Caricamento non riuscito",
       "messageUnavailable": "Messaggio non disponibile",

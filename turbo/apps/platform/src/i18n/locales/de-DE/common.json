@@ -2145,7 +2145,7 @@
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
     "relations": {
-      "communications": "Nachrichten",
+      "communications": "Chats",
       "idle": "Inaktiv",
       "loadFailed": "Laden fehlgeschlagen",
       "messageUnavailable": "Nachricht nicht verfügbar",
