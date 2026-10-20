@@ -74,7 +74,6 @@ async function openWallet(
       },
     },
     featureSwitches: {
-      [FeatureSwitchKey.LinkWallet]: true,
       [FeatureSwitchKey.WalletSettings]: true,
       ...featureSwitches,
     },
@@ -163,7 +162,7 @@ test("lets a member connect their workspace wallet and disconnect after consent 
   await expect(button("Connect")).resolves.toBeEnabled();
 });
 
-test.each([FeatureSwitchKey.LinkWallet, FeatureSwitchKey.WalletSettings])(
+test.each([FeatureSwitchKey.WalletSettings])(
   "hides Wallet and its deep link without fetching or subscribing when %s is disabled",
   async (feature) => {
     context.mocks.api(walletUserContract.status, ({ never }) => {

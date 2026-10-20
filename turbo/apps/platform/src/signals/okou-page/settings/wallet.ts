@@ -14,10 +14,7 @@ import { withCleanup } from "../../utils.ts";
 
 export const walletSettingsEnabled$ = computed((get) => {
   const features = get(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.LinkWallet] &&
-    features[FeatureSwitchKey.WalletSettings]
-  );
+  return features[FeatureSwitchKey.WalletSettings];
 });
 
 const version$ = state(0);

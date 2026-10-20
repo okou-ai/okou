@@ -3,8 +3,6 @@ import {
   walletContract,
   walletUserContract,
 } from "@okouai/api-contracts/contracts/wallet";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -12,7 +10,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { LinkWalletError } from "../services/link-wallet-provider.service";
 import { walletTransactions$ } from "../services/link-wallet-transactions.service";
 import { walletApprovalStatus$ } from "../services/link-wallet-approval-status.service";
@@ -35,30 +32,6 @@ import { waitUntil } from "../context/wait-until";
 import { logger } from "../../lib/log";
 import { startLinkApprovalWorkflow } from "../services/link-approval-config.service";
 
-const walletEnabled$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const overrides = await get(
-    userFeatureSwitchOverrides(auth.orgId, auth.userId),
-  );
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.LinkWallet, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      overrides,
-    })
-  ) {
-    throw new LinkWalletError(
-      403,
-      "WALLET_DISABLED",
-      "Link wallet is not enabled",
-    );
-  }
-});
-const agentOwner$ = computed(async (get) => {
-  await get(walletEnabled$);
-  return await get(walletRunOwner$);
-});
-
 // Payment-capable runs may also inspect their wallet. Read access alone never
 // authorizes payment operations, which continue to require wallet:write.
 const readOwner$ = computed(async (get) => {
@@ -75,7 +48,7 @@ const readOwner$ = computed(async (get) => {
       "This operation requires wallet:read",
     );
   }
-  return await get(agentOwner$);
+  return await get(walletRunOwner$);
 });
 
 function walletError(error: unknown) {
@@ -110,11 +83,6 @@ const spendStatusBody$ = bodyResultOf(walletUserContract.spendStatus);
 
 const spendStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const input = await get(spendStatusBody$);
   signal.throwIfAborted();
   if (!input.ok) {
@@ -127,11 +95,6 @@ const spendStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const connectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const input = await get(connectStatusBody$);
   signal.throwIfAborted();
   if (!input.ok) {
@@ -205,33 +168,18 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 const userStatus$ = command(async ({ get }, signal: AbortSignal) => {
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const result = await settle(get(walletSettingsStatus$), signal);
   signal.throwIfAborted();
   return walletResponse(result);
 });
 const userTransactions$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const body = await get(walletTransactions$);
   signal.throwIfAborted();
   return { status: 200 as const, body };
 });
 const userActivity$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const { orgId, userId } = get(organizationAuthContext$);
   const query = get(userActivityQuery$);
   const result = await settle(
@@ -264,11 +212,6 @@ const userActivity$ = command(async ({ get, set }, signal: AbortSignal) => {
 const userPaymentMethods$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
-    const enabled = await settle(get(walletEnabled$), signal);
-    signal.throwIfAborted();
-    if (!enabled.ok) {
-      return walletError(enabled.error);
-    }
     const { orgId, userId } = get(organizationAuthContext$);
     const result = await settle(
       set(
@@ -292,11 +235,6 @@ const userPaymentMethods$ = command(
   },
 );
 const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const input = await get(userConnectBody$);
   signal.throwIfAborted();
   if (!input.ok) {
@@ -311,11 +249,6 @@ const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 const userDisconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const { orgId, userId } = get(organizationAuthContext$);
   const result = await settle(
     set(disconnectWallet$, { orgId, userId }, signal),
@@ -325,7 +258,7 @@ const userDisconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 const createSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = await settle(get(agentOwner$), signal);
+  const owner = await settle(get(walletRunOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
@@ -381,7 +314,7 @@ const getSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 const cancelSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = await settle(get(agentOwner$), signal);
+  const owner = await settle(get(walletRunOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
@@ -395,7 +328,7 @@ const cancelSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const spendCredentials$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const owner = await settle(get(agentOwner$), signal);
+  const owner = await settle(get(walletRunOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
@@ -426,11 +359,6 @@ const spendCredentials$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
 });
 const callback$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const enabled = await settle(get(walletEnabled$), signal);
-  signal.throwIfAborted();
-  if (!enabled.ok) {
-    return walletError(enabled.error);
-  }
   const auth = get(organizationAuthContext$);
   const result = await settle(
     set(

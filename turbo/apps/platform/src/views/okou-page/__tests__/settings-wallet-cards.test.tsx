@@ -81,7 +81,6 @@ async function openWallet() {
       },
     },
     featureSwitches: {
-      [FeatureSwitchKey.LinkWallet]: true,
       [FeatureSwitchKey.WalletSettings]: true,
     },
   });

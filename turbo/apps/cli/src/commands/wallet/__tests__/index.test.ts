@@ -639,28 +639,6 @@ describe("okou wallet", () => {
     await run(["spend", "cancel", id, "--json"]);
     expect(output).toHaveBeenCalledWith(JSON.stringify(result));
   });
-  it("reports an unavailable backend instead of making up an authorization link", async () => {
-    server.use(
-      http.post(`${origin}/api/wallet/connect`, () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: "WALLET_DISABLED",
-              message: "Link wallet is not enabled",
-            },
-          },
-          { status: 403 },
-        );
-      }),
-    );
-    await expect(run(["connect", "--json"])).rejects.toThrow(
-      "process.exit called",
-    );
-    expect(errors).toHaveBeenCalledWith(
-      expect.stringContaining("Link wallet is not enabled"),
-    );
-    expect(output).not.toHaveBeenCalled();
-  });
   it("explains the consent/approval distinction and refuses alternate credential retrieval in its guide", async () => {
     await run(["guide"]);
     expect(output).toHaveBeenCalledWith(

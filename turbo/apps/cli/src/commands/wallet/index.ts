@@ -291,5 +291,5 @@ export const walletCommand = new Command("wallet")
   .addCommand(walletUserInfoCommand)
   .addHelpText(
     "after",
-    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. When a spend response has autoContinue=true, the backend watches approval for at most 30 minutes and continues the original chat. Otherwise ask the user to return after approval. No agent-side polling or checkout commands are provided. Reads require wallet:read (existing wallet:write tokens are also accepted). Spending requires wallet:write and Link payment consent. All operations require the linkWallet feature switch. Connect requests payment, profile and Link transaction access together. Each purchase still requires separate approval.",
+    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. When a spend response has autoContinue=true, the backend watches approval for at most 30 minutes and continues the original chat. Otherwise ask the user to return after approval. No agent-side polling or checkout commands are provided. Reads require wallet:read (existing wallet:write tokens are also accepted). Spending requires wallet:write and Link payment consent. Connect requests payment, profile and Link transaction access together. Each purchase still requires separate approval.",
   );
