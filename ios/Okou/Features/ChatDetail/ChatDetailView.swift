@@ -5,6 +5,7 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let topContentInset: CGFloat
+  let sidebar: SidebarInteraction?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.openURL) private var openURL
@@ -19,10 +20,12 @@ struct ChatDetailView: View {
   private struct UsageDetails: Identifiable { let id: String }
 
   init(
-    conversation: ConversationStore, topContentInset: CGFloat = 0
+    conversation: ConversationStore, topContentInset: CGFloat = 0,
+    sidebar: SidebarInteraction? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
+    self.sidebar = sidebar
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -71,7 +74,7 @@ struct ChatDetailView: View {
         top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
       scroll: scrolling.scroll,
-      followsBottom: scrolling.followsBottom,
+      followsBottom: scrolling.followsBottom, sidebar: sidebar,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       refresh: { await conversation.refresh() }
     ) { row, anchor in

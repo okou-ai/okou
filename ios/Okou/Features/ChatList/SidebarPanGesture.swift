@@ -1,9 +1,10 @@
+import Observation
 import SwiftUI
 import UIKit
 
 /// Reject vertical drags before recognition so the transcript retains its native scrolling.
 struct SidebarPanGesture: UIGestureRecognizerRepresentable {
-  let isOpen: Bool
+  let interaction: SidebarInteraction
   let sidebarWidth: CGFloat
   let changed: (CGFloat) -> Void
   let ended: (CGFloat, CGFloat, Bool) -> Void
@@ -34,6 +35,12 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
     }
   }
 
+  static func dismantleUIGestureRecognizer(
+    _ recognizer: UIPanGestureRecognizer, coordinator: Coordinator
+  ) {
+    coordinator.parent.interaction.cancelDrag()
+  }
+
   final class Coordinator: NSObject, UIGestureRecognizerDelegate {
     var parent: SidebarPanGesture
     private var startX: CGFloat = 0
@@ -46,7 +53,7 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
       guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
       let velocity = pan.velocity(in: pan.view)
       return SidebarGesturePolicy.canBegin(
-        isOpen: parent.isOpen, sidebarWidth: parent.sidebarWidth,
+        isOpen: parent.interaction.isOpen, sidebarWidth: parent.sidebarWidth,
         startX: startX, velocity: velocity)
     }
 
@@ -89,5 +96,54 @@ enum SidebarGesturePolicy {
     if cancelled { return wasOpen }
     if abs(velocity) > 450 { return velocity > 0 }
     return (wasOpen ? sidebarWidth : 0) + translation > sidebarWidth / 2
+  }
+}
+
+/// The sidebar owns suspension synchronously, before SwiftUI renders its next frame.
+@MainActor
+protocol SidebarScrollParticipant: AnyObject {
+  func setSidebarActive(_ active: Bool)
+}
+
+@MainActor @Observable
+final class SidebarInteraction {
+  private(set) var isOpen = false
+  private(set) var translation: CGFloat?
+  @ObservationIgnored private weak var transcript: (any SidebarScrollParticipant)?
+
+  private var isActive: Bool { isOpen || translation != nil }
+
+  func dragChanged(_ translation: CGFloat) {
+    self.translation = translation
+    transcript?.setSidebarActive(true)
+  }
+
+  func endDrag(translation: CGFloat, velocity: CGFloat, cancelled: Bool, sidebarWidth: CGFloat) {
+    setOpen(
+      SidebarGesturePolicy.settlesOpen(
+        wasOpen: isOpen, sidebarWidth: sidebarWidth, translation: translation,
+        velocity: velocity, cancelled: cancelled))
+  }
+
+  func setOpen(_ open: Bool) {
+    isOpen = open
+    translation = nil
+    transcript?.setSidebarActive(isActive)
+  }
+
+  func cancelDrag() {
+    translation = nil
+    transcript?.setSidebarActive(isActive)
+  }
+
+  func attach(_ transcript: any SidebarScrollParticipant) {
+    if self.transcript !== transcript { self.transcript?.setSidebarActive(false) }
+    self.transcript = transcript
+    transcript.setSidebarActive(isActive)
+  }
+
+  func detach(_ transcript: any SidebarScrollParticipant) {
+    transcript.setSidebarActive(false)
+    if self.transcript === transcript { self.transcript = nil }
   }
 }
