@@ -7,10 +7,7 @@ import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { resolveCustomConnectorId } from "../custom-connector-selector";
 import { customConnectorMetadata } from "../management";
-import {
-  customMemberAccountSummaries,
-  memberConnectorFacts,
-} from "../member-status";
+import { readMemberConnectorFacts } from "../member-status";
 
 export const showCustomConnectorCommand = new Command("show")
   .description(
@@ -27,13 +24,13 @@ export const showCustomConnectorCommand = new Command("show")
         await resolveCustomConnectorId(selector),
       );
       if (!connector) throw new Error("Custom connector is unavailable.");
-      const summaries = await customMemberAccountSummaries([connector]);
+      const facts = await readMemberConnectorFacts(connector);
       if (!options.json) console.log("Custom connector metadata:");
       console.log(
         JSON.stringify(
           {
             ...customConnectorMetadata(connector),
-            ...memberConnectorFacts(connector, summaries),
+            ...facts,
           },
           null,
           2,

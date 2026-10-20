@@ -3,8 +3,7 @@ import chalk from "chalk";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   listConnectorCatalog,
-  listConnectorCatalogStatus,
-  listConnectorAccountSummaries,
+  listConnectedConnectors,
   listCustomConnectors,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -16,13 +15,13 @@ import {
 import { padEndAnsi, stripAnsi } from "./connected-as";
 import {
   connectorDiscoveryDefinitions,
+  connectorHasSavedAccounts,
   connectorDiscoveryItems,
   connectorDiscoveryJson,
   connectorDiscoveryTarget,
   isConnectorDiscoveryAuthorized,
   renderConnectorDiscoveryConnectedAsCell,
   type ConnectorDiscoveryDefinition,
-  type ConnectorDiscoveryItem,
 } from "./discovery";
 import { searchConnectorCatalog } from "./public-catalog";
 import {
@@ -38,11 +37,6 @@ import {
   type RunConnectorAccountLookup,
 } from "./run-account-context";
 import { connectorInspectionType } from "./inspection";
-import {
-  memberConnectorFacts,
-  memberConnectorStatusText,
-  type MemberConnectorFacts,
-} from "./member-status";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
@@ -84,26 +78,6 @@ function renderRunAvailabilityCell(lookup: RunConnectorAccountLookup): string {
     case "context-unavailable":
       return chalk.dim("unknown (run context unavailable)");
   }
-}
-
-function renderCurrentAvailabilityCell(
-  connector: ConnectorDiscoveryItem,
-  facts: MemberConnectorFacts,
-  agentContext: Awaited<
-    ReturnType<typeof resolveConnectorDiscoveryAgentContext>
-  >,
-): string {
-  if (facts.memberStatus !== "connected") {
-    return chalk.yellow(`no (${memberConnectorStatusText(facts)})`);
-  }
-
-  if (
-    agentContext &&
-    !isConnectorDiscoveryAuthorized(connector, agentContext)
-  ) {
-    return chalk.dim("no (not authorized)");
-  }
-  return chalk.green("yes");
 }
 
 function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
@@ -283,9 +257,9 @@ Scope:
   Searches the builtin catalog and org custom HTTP/MCP definitions.
   Inside a run, availability and account identity describe the accounts admitted
   to that run. A supported connector can still be unavailable in this run.
-  Outside a run, connection status describes the current member's accounts.
-  JSON accountSummary/memberStatus separate saved accounts and local status from
-  existing connected metadata and the Agent's authorization.
+  Outside a run, hasSavedAccounts describes saved-account directory membership,
+  including accounts needing reconnect, not health, defaults, scopes or availability.
+  Inspect connector status or accounts for details. Agent authorization is separate.
   Omit --agent inside a run to use the current Agent's authorization context;
   an explicit --agent must match that Agent and cannot change admitted accounts.
 
@@ -409,13 +383,13 @@ Examples:
           customConnectors,
           agentContext,
           origin,
-          summaries,
+          directory,
         ] = await Promise.all([
-          listConnectorCatalogStatus(),
+          listConnectorCatalog(),
           listCustomConnectors(),
           resolveConnectorDiscoveryAgentContext(agentId),
           getPlatformOrigin(),
-          listConnectorAccountSummaries(),
+          listConnectedConnectors(),
         ]);
         const discoveredConnectors = connectorDiscoveryItems(
           connectors,
@@ -427,33 +401,26 @@ Examples:
           limit: options.limit,
           json: options.json,
           jsonConnector: (connector) => {
-            return connectorDiscoveryJson(connector, agentContext, summaries);
+            return connectorDiscoveryJson(connector, agentContext, directory);
           },
-          availabilityHeader: "AVAILABLE",
+          availabilityHeader: "SAVED ACCOUNTS",
           renderAvailability: (connector) => {
-            return renderCurrentAvailabilityCell(
-              connector,
-              memberConnectorFacts(
-                connector.kind === "catalog"
-                  ? connector.catalogConnector
-                  : connector.customConnector,
-                summaries,
-              ),
-              agentContext,
-            );
+            return connectorHasSavedAccounts(connector, directory)
+              ? "yes"
+              : "no";
           },
-          accountHeader: "CONNECTED AS",
+          accountHeader: "ACCOUNT STATUS",
           renderAccount: (connector) => {
             return renderConnectorDiscoveryConnectedAsCell(
               connector,
-              summaries,
+              directory,
             );
           },
           connectionAction: (connector) => {
             return currentConnectorSearchAction(
               connector,
               agentContext,
-              summaries,
+              directory,
             );
           },
           origin,

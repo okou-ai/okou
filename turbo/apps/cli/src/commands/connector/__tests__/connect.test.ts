@@ -15,8 +15,7 @@ import { server } from "../../../mocks/server";
 import { connectCommand } from "../connect";
 import {
   connectorAccount,
-  connectorAccountSummary,
-  stubConnectorAccountSummaries,
+  stubConnectorAccounts,
   stubConnectorAccountDetails,
 } from "../../__tests__/helpers/connector-accounts";
 import {
@@ -26,7 +25,7 @@ import {
 import {
   catalogStatusItem,
   manualAuthMethod,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 
 const DEFAULT_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
@@ -72,10 +71,7 @@ describe("okou connector connect command", () => {
     connectCommand.setOptionValueWithSource("value", [], "default");
     connectCommand.setOptionValue("input", undefined);
     server.use(stubCustomConnectors([]));
-    server.use(
-      stubConnectorAccountSummaries([]),
-      stubConnectorAccountDetails(),
-    );
+    server.use(stubConnectorAccounts([]), stubConnectorAccountDetails());
   });
 
   afterEach(() => {
@@ -175,17 +171,32 @@ describe("okou connector connect command", () => {
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
-  it("preserves reconnect syntax and resolves the current default exactly", async () => {
+  it("preserves reconnect syntax using the independent default from another page", async () => {
     let receivedBody: unknown;
     server.use(
-      stubConnectorAccountSummaries([
-        connectorAccountSummary({ kind: "builtin", connectorSlug: "openai" }, [
-          connectorAccount(
-            { kind: "builtin", connectorSlug: "openai" },
-            { id: DEFAULT_CONNECTION_ID },
-          ),
-        ]),
-      ]),
+      http.get(
+        "http://localhost:3000/api/connector-accounts/connections",
+        ({ request }) => {
+          const target = { kind: "builtin", connectorSlug: "openai" } as const;
+          const selected = connectorAccount(target, {
+            id: DEFAULT_CONNECTION_ID,
+            connectionStatus: "reconnect-required",
+          });
+          const cursor = new URL(request.url).searchParams.get("cursor");
+          return HttpResponse.json({
+            connections: cursor
+              ? [selected]
+              : [
+                  connectorAccount(target, {
+                    id: SIBLING_CONNECTION_ID,
+                    isDefault: false,
+                  }),
+                ],
+            defaultConnection: selected,
+            nextCursor: cursor ? null : "page-2",
+          });
+        },
+      ),
       http.get(
         "http://localhost:3000/api/connectors/:connectorSlug",
         ({ params }) => {
@@ -229,6 +240,62 @@ describe("okou connector connect command", () => {
       authMethod: "api-token",
       values: { apiKey: "sk-updated" },
     });
+  });
+
+  it("requires an explicit account when saved accounts have no default", async () => {
+    server.use(
+      stubConnectorAccounts([
+        connectorAccount(
+          { kind: "builtin", connectorSlug: "openai" },
+          { id: SIBLING_CONNECTION_ID, isDefault: false },
+        ),
+      ]),
+    );
+    await expect(
+      connectCommand.parseAsync([
+        "node",
+        "okou",
+        "openai",
+        "--value",
+        "apiKey=updated",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Choose a saved account with --reconnect; no default account is selected.",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
+  });
+
+  it("reports unavailable account inventory instead of adding an account", async () => {
+    server.use(
+      http.get(
+        "http://localhost:3000/api/connector-accounts/connections",
+        () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "NOT_FOUND",
+                message: "Account target unavailable",
+              },
+            },
+            { status: 404 },
+          );
+        },
+      ),
+    );
+    await expect(
+      connectCommand.parseAsync([
+        "node",
+        "okou",
+        "openai",
+        "--value",
+        "apiKey=updated",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Connector accounts are unavailable",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
   it("reconnects one explicitly selected sibling without resolving the default", async () => {
@@ -313,7 +380,7 @@ describe("okou connector connect command", () => {
     let receivedType: string | undefined;
     let receivedBody: unknown;
     server.use(
-      stubConnectorCatalogStatus([
+      stubConnectorCatalog([
         catalogStatusItem({
           connectorSlug,
           label: "Partner Connector",

@@ -3,7 +3,7 @@ import { Command, Option } from "commander";
 import chalk from "chalk";
 import {
   connectBuiltinConnectorManualGrant,
-  listConnectorAccountSummaries,
+  listConnectorAccountConnections,
   getCustomConnector,
   type BuiltinConnectorManualGrantAccountMutation,
 } from "../../lib/api/domains/connectors";
@@ -21,7 +21,6 @@ import {
   resolveManagementConnector,
   type AccountMutationOptions,
 } from "./management";
-import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 
 interface ConnectOptions extends AccountMutationOptions {
   readonly authMethod?: string;
@@ -41,12 +40,18 @@ async function builtinAccountMutation(
   options: ConnectOptions,
 ): Promise<BuiltinConnectorManualGrantAccountMutation> {
   if (options.add || options.reconnect) return accountMutation(options);
-  const summary = (await listConnectorAccountSummaries()).get(
-    connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-  );
-  if (summary?.defaultConnection)
-    return { intent: "reconnect", connectionId: summary.defaultConnection.id };
-  if (summary && summary.accountCount > 0)
+  const accounts = await listConnectorAccountConnections({
+    kind: "builtin",
+    connectorSlug,
+  });
+  if (accounts.state === "unavailable") {
+    throw new Error(
+      "Connector accounts are unavailable; inspect connector status.",
+    );
+  }
+  if (accounts.defaultConnection)
+    return { intent: "reconnect", connectionId: accounts.defaultConnection.id };
+  if (accounts.connections.length > 0)
     throw new Error(
       "Choose a saved account with --reconnect; no default account is selected.",
     );

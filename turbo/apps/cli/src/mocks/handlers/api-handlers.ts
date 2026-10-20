@@ -253,16 +253,6 @@ export const apiHandlers = [
     });
   }),
 
-  // GET /api/connector-catalog/status - public catalog with connection status
-  ...API_ORIGINS.map((origin) => {
-    return http.get(`${origin}/api/connector-catalog/status`, () => {
-      return HttpResponse.json(
-        { connectors: defaultPublicCatalogStatus },
-        { status: 200 },
-      );
-    });
-  }),
-
   // GET /api/connector-catalog/:connectorSlug - one connector with status
   ...API_ORIGINS.map((origin) => {
     return http.get(
