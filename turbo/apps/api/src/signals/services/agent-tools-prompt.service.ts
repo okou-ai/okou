@@ -32,16 +32,20 @@ function buildIntegrationToolsPrompt(
   deliveryFormatGuidanceEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
+    ...(deliveryFormatGuidanceEnabled
+      ? [
+          "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+        ]
+      : []),
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
-    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`.",
+    "If you choose a hosted HTML view, use `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     ...(deliveryFormatGuidanceEnabled
       ? [
-          "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
-          "Choose the delivery format for every artifact based on the user's request, relevant remembered preferences, and intended use. Honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
-          "Producing DOCX, XLSX, or PDF requires the `office` skill. Read its `SKILL.md` entry point, then the relevant `docx/SKILL.md`, `xlsx/SKILL.md`, or `pdf/SKILL.md` within that package for setup, creation, and validation.",
+          "For file delivery, use the current integration's `upload-file` command.",
+          "If you choose DOCX, XLSX, or PDF delivery, use the `office` skill. Read its `SKILL.md` entry point, then the relevant `docx/SKILL.md`, `xlsx/SKILL.md`, or `pdf/SKILL.md` within that package for setup, creation, and validation.",
         ]
       : [
           "For static HTML or site artifacts, a hosted URL is the user-accessible artifact view; the local `index.html` is an implementation file inside the authored bundle.",
@@ -199,7 +203,6 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     '- Maps, places, and routing: use `okou maps search "<query>"`. Treat its answer as display-ready: reproduce it without rewriting, with its Google Maps sources immediately following it. Use `--lat` and `--lng` only for a location the user explicitly supplied; never infer location from server IP or untrusted headers.',
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
-    "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
     PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
