@@ -49,7 +49,7 @@ import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { connectorOverviewRoutes } from "./routes/connector-overview";
+import { agentConnectorAccessRoutes } from "./routes/agent-connector-access";
 import { connectedConnectorsRoutes } from "./routes/connected-connectors";
 import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
@@ -339,7 +339,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
-  ...connectorOverviewRoutes,
+  ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,
   ...remotesRoutes,
   ...connectorCheckRoutes,

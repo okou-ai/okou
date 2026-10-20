@@ -1,4 +1,4 @@
-import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connected-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import {

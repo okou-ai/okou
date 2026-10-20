@@ -19,7 +19,7 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -568,7 +568,7 @@ export function installComposerConnectorFixture(
     });
   });
   context.mocks.api(
-    connectorOverviewContract.agent,
+    agentConnectorAccessContract.agent,
     async ({ params, respond }) => {
       await options.authorizationGates?.[params.id];
       return respond(200, {

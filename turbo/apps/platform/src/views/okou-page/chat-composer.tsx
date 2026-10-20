@@ -42,9 +42,8 @@ import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCa
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   BuiltinConnectorBrief,
-  ConnectorDefaultAccountBrief,
   CustomConnectorBrief,
-} from "@okouai/api-contracts/contracts/connector-overview";
+} from "@okouai/api-contracts/contracts/connected-connectors";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   UserTemplateCatalogEntry,
@@ -6231,7 +6230,7 @@ function ComposerConnectorAccountChoices({
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
   readonly selection: ConnectorAccountSelection | undefined;
-  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
   readonly saving: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;
