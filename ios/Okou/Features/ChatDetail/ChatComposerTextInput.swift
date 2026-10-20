@@ -10,6 +10,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let acceptsImages: Bool
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
+  var editor: ComposerEditor? = nil
   @Environment(\.isEnabled) private var isEnabled
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -31,6 +32,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
 
   func updateUIView(_ view: ComposerTextView, context: Context) {
     context.coordinator.input = self
+    editor?.view = view
     // Reassigning text during composition cancels the system's marked range.
     if view.text != text, view.markedTextRange == nil {
       let selection = view.selectedRange
@@ -61,6 +63,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   }
 
   static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
+    if coordinator.input.editor?.view === view { coordinator.input.editor?.view = nil }
     view.delegate = nil
     view.pasteDelegate = nil
     view.pasteImages = { _ in }

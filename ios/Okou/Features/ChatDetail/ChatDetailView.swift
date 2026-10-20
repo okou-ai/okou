@@ -47,6 +47,9 @@ struct ChatDetailView: View {
         )
       }
     }
+    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
+    }
     result.append(.footer(history.executionState, hasMessages: !items.isEmpty))
     return result
   }
@@ -137,6 +140,12 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .followups(let source, let finishedAt):
+      RecommendedFollowupList(
+        source: source, finishedAt: finishedAt,
+        select: conversation.composer.editor.selectOrAppendText
+      )
+      .padding(EdgeInsets(top: 24, leading: 26, bottom: 0, trailing: 20))
     case .earlier(let isLoading):
       Button {
         scrolling.loadEarlierMessages()
