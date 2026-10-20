@@ -135,8 +135,15 @@ async function setupRelationships({
     path: `/chats/${parent.id}?sidebar=${child.id}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  const origin = within(panel).getByRole("region", { name: "From" });
+  const origin = await screen.findByRole("region", { name: "From" });
+  const panel = screen
+    .getAllByRole("region", { name: "Resources" })
+    .find((candidate) => {
+      return candidate.contains(origin);
+    });
+  if (!panel) {
+    throw new Error("Expected the resource panel containing the chat origin");
+  }
   const messages = await within(panel).findByRole("region", {
     name: "Messages",
   });
