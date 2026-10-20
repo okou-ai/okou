@@ -732,7 +732,12 @@ and does not guarantee zero provider billing. The final byte remains pending
 until complete JSON syntax, exact declared length, trailers and current
 authorization pass. Successful bytes and Content-Length remain unchanged.
 Duplicate keys, late routing overrides, incomplete/trailing JSON, non-finite
-numbers and unsupported tools abort further forwarding. Depth (128), document
+numbers and unsupported tools stop further body forwarding. The public callback
+discards the failed chunk, subsequent chunks and pending tail, but keeps counting
+received bytes. It releases parser state immediately and retains only bounded
+discard/accounting ownership until true EOF or native terminal cleanup. Immediate
+mid-upload reset is not required; a client that never finishes can remain open
+until the existing native timeout or disconnect. Depth (128), document
 work (262,144 units), object keys (4,096 raw bytes) and numeric tokens (4,300 bytes)
 remain parser bounds. Opaque escaped keys preserve JSON duplicate identity.
 Usage path normalization stays separate from policy observation.
@@ -747,9 +752,12 @@ Native deadlines, framing, verified TLS and resource bounds still apply.
 Public mitmproxy 12.2.3 APIs leave three demonstrated gaps. The exact-version
 compatibility layer contains narrowly scoped adaptations:
 
-- `flow.kill()` marks an in-flight flow but emits no immediate upstream abort
-  from a stream callback. A streamed-state adapter propagates native H1 close /
-  H2 reset before forwarding the rejected chunk, pending tail or EOM. It also
+- Public stream/request hooks do not own native EOF finalization. The native
+  streamed-request state emits EOM after the request hook without checking
+  `flow.kill()`. At true EOF, a small adapter cancels a failed upload upstream
+  and delegates client error, terminal hooks and stream removal to the native
+  protocol-error handler. It does not manually sequence `check_killed` or
+  `DropStream`, and does not force a reset on the failed body event. It also
   distinguishes empty non-EOS H2 DATA events from the public callback's EOF
   sentinel, so legal empty frames cannot finish or reject validation early.
 - Native H2 queues retain body data after the peer window or stream slots are
@@ -757,6 +765,8 @@ compatibility layer contains narrowly scoped adaptations:
   `request.stream` and pauses the owning reader outside the native event lock.
   Socket drain alone does not bound protocol queues. Queued cancellation and
   connection closure also remove unallocated managed headers and release state.
+  Failed uploads bypass further window/slot waits while their input is discarded,
+  so native capacity cannot prevent reaching their EOF cleanup.
 - A complete early response must finish while its upload is blocked. A terminal
   response adapter cancels the unfinished upload and finalizes its request side,
   preserving the provider response. The upstream reader must receive response
@@ -778,6 +788,7 @@ database, dependency pin or deployment configuration changes.
 Native regression suites cover both dialects and HTTP versions, >32 MiB original
 bytes, >16 live responses, early prefixes and final-byte holdback, late/last-byte
 policy failures, escaped keys and Unicode partitions, native cancellation,
+EOF rejection after discarded input, timeout/cancellation without EOF,
 H2 windows/stream slots/queued closure, real TCP backpressure and early responses,
 ordinary/eager scheduling, auth-await cancellation and preset changes. Verified
 TLS peers check successful native acquisition and reject untrusted certificates

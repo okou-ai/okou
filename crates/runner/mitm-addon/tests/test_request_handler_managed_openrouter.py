@@ -78,7 +78,7 @@ async def test_header_auth_and_public_stream_preserve_the_complete_body(
 @pytest.mark.parametrize(
     "override", [{"model": "@preset/another"}, {"provider": {}}, {"preset": "@preset/another"}]
 )
-async def test_invalid_stream_aborts_after_accepted_header_auth(
+async def test_invalid_stream_discards_after_accepted_header_auth(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, override
 ):
     path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
@@ -93,8 +93,10 @@ async def test_invalid_stream_aborts_after_accepted_header_auth(
         auth_fetch.assert_awaited_once()
         assert callable(flow.request.stream)
         assert flow.request.stream(raw) == b""
-        assert flow.error is not None
+        assert flow.error is None
         assert flow.response is None
+        assert flow.request.stream(b"remaining-private-body") == b""
+        assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
         assert flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] is True
         mitm_addon.error(flow)
     assert managed.admission_state_for_tests() == (0, 0)

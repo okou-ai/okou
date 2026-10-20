@@ -536,9 +536,7 @@ def _connector_auth_destination_is_current(
             flow,
             platform_connector_auth=current.platform_connector_auth,
         )
-    if flow.request.stream:
-        return False
-    if request_streaming.streamed_request_size(flow) is not None:
+    if flow.request.stream or request_streaming.streamed_request_size(flow) is not None:
         return False
     # An unavailable original Server may retain an acquisition error. The current
     # HTTP flow is still pre-forward; normal acquisition owns its transport outcome.
@@ -1105,9 +1103,7 @@ def _reject_managed_openrouter_request(
     body = managed_request_body.get(flow)
     if body is not None and callable(flow.request.stream):
         body.failure = str(error)
-        body.close()
         flow.response = None
-        flow.kill()
         return
     if terminate:
         request_classification.pop_cached_classification(flow)

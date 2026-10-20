@@ -21,6 +21,7 @@ from mitmproxy.proxy.layers.http._events import (
 from mitmproxy.test import taddons
 
 import managed_openrouter as managed
+import managed_request_body
 import mitm_addon
 import request_streaming
 from logging_utils import flush_log_path
@@ -129,6 +130,16 @@ async def test_public_prefix_forwarding_and_native_terminal_cancellation(
         if case == "changed-policy":
             info["piModelConfig"]["model"] = "@preset/replaced"
             _write_registry(tmp_path, sandbox_info=info)
+        stored = managed_request_body.get(flow)
+        assert stored is not None
+        if stored.failure is not None:
+            assert stored.validator is None
+            assert stored.tail == b""
+            assert flow.error is None
+            assert not any(
+                isinstance(c, SendHttp) and isinstance(c.event, RequestProtocolError)
+                for c in observed
+            )
         if flow.error is None:
             observed.extend(
                 await finish_hooks(context, stream, stream.handle_event(RequestEndOfMessage(1)))

@@ -129,8 +129,8 @@ Firewall and auth context
   large body kept buffered for publicDestination authorization. Written before
   buffering; released on request failure/cancellation or terminal response/error.
 - ``MANAGED_OPENROUTER_BODY``: incremental public-stream validator and pending
-  final-byte owner. Parser state releases at upload completion or abandonment;
-  terminal cleanup removes the small completed owner.
+  final-byte owner. Parser state releases at upload completion or rejection;
+  a rejected owner discards/counts input until EOF or terminal cleanup.
 - ``AWS_SIGV4_REQUEST_INSPECTION``: opaque bounded request-representation
   inspection written by managed SigV4 auth. Reused by request-header and request
   auth phases while the raw URL/header identity is unchanged, restored with an
@@ -264,7 +264,7 @@ AUTH_URL_REWRITE: Final = "auth_url_rewrite"
 AUTH_BASE_FORWARD_ADMISSION: Final = "auth_base_forward_admission"
 AWS_SIGV4_BODY_ADMISSION: Final = "aws_sigv4_body_admission"
 PUBLIC_DESTINATION_BODY_ADMISSION: Final = "public_destination_body_admission"
-# Owned by managed_openrouter; bulk storage releases after request upload.
+# Owned by managed_openrouter for parser/tail and terminal byte accounting.
 MANAGED_OPENROUTER_BODY: Final = "managed_openrouter_body"
 AWS_SIGV4_REQUEST_INSPECTION: Final = "aws_sigv4_request_inspection"
 TRUSTED_AUTHORITY_HOST: Final = "trusted_authority_host"

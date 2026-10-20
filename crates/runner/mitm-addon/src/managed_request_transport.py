@@ -1,12 +1,12 @@
-"""Version-bound cancellation and H2 capacity gaps in public streaming APIs.
+"""Version-bound EOF cleanup and H2 capacity gaps in public streaming APIs.
 
 Normal payload transformation and forwarding use public request.stream. Native
-mitmproxy 12.2.3 owns HTTP framing, TLS and queues. flow.kill cannot interrupt an
-in-transit callback, and socket drains do not bound its H2 stream buffers.
+mitmproxy 12.2.3 owns HTTP framing, TLS and queues. Public stream hooks do not
+own native EOF finalization, and socket drains do not bound H2 stream buffers.
 """
 
 from mitmproxy.proxy import commands, events, layer
-from mitmproxy.proxy.layers.http import DropStream, HttpStream, SendHttp
+from mitmproxy.proxy.layers.http import HttpStream, SendHttp
 from mitmproxy.proxy.layers.http._base import ReceiveHttp
 from mitmproxy.proxy.layers.http._events import (
     ErrorCode,
@@ -33,6 +33,10 @@ class _Http2Uploads:
         for stream_id, body in tuple(self.bodies.items()):
             if body.closed:
                 del self.bodies[stream_id]
+                continue
+            if body.failure is not None:
+                # Discarding input no longer needs upstream window capacity.
+                body.writable.set()
                 continue
             upstream_id = client.our_stream_id.get(stream_id)
             pending = upstream_id is None or client.h2_conn.stream_buffers.get(upstream_id)
@@ -157,17 +161,22 @@ def install() -> None:
         native = current(self, event)
         try:
             for command in native:
-                if body.failure is not None or self.flow.error is not None:
-                    # Public flow.kill only marks an in-flight flow. Emit native
-                    # upstream cancellation before yielding the callback's data/EOM.
+                if isinstance(event, RequestEndOfMessage) and (
+                    body.failure is not None or self.flow.error is not None
+                ):
+                    # Rejection waits for true EOF. Upstream owns cancellation;
+                    # its error handler owns the client hook/error/drop ordering.
                     yield SendHttp(
                         RequestProtocolError(
                             self.stream_id, "managed upload rejected", ErrorCode.CANCEL
                         ),
                         self.context.server,
                     )
-                    yield from self.check_killed(True)
-                    yield DropStream(self.stream_id)
+                    yield from self.handle_protocol_error(
+                        ResponseProtocolError(
+                            self.stream_id, "managed upload rejected", ErrorCode.KILL
+                        )
+                    )
                     return
                 yield command
         finally:

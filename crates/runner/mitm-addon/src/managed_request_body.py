@@ -37,23 +37,31 @@ class StreamBody:
     def __call__(self, chunk: bytes) -> bytes:
         if self.closed:
             return b""
+        self.received += len(chunk)
+        if self.observe is not None:
+            self.observe(chunk)
+        if self.failure is not None:
+            return b""
         try:
             return self._forward(chunk)
         except (PolicyError, BodyError) as error:
             self.failure = str(error)
-            reject = self.reject
-            self.close()
+            self.validator = None
+            self.tail = b""
+            self.revalidate = None
+            reject, self.reject = self.reject, None
+            # Discard the remaining input until genuine EOF or native timeout.
+            # Retain only accounting and reader ownership, never parser state.
+            self.header_ready.set()
+            self.writable.set()
             if reject is not None:
                 reject(self.failure)
             return b""
 
     def _forward(self, chunk: bytes) -> bytes:
-        if self.observe is not None:
-            self.observe(chunk)
         if self.validated:
             raise BodyError("incomplete_body")
         if chunk:
-            self.received += len(chunk)
             if self.received > self.length or self.validator is None:
                 raise BodyError("incomplete_body")
             for offset in range(0, len(chunk), PARSE_BYTES):
