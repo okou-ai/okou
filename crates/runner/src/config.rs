@@ -86,9 +86,9 @@ pub(crate) const DIAGNOSTIC_CONFIG_MAX_BYTES: u64 = 1024 * 1024;
 /// are resolved against the YAML file's parent directory during [`load`].
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct RunnerConfig {
-    /// Canonical physical host identity used only for diagnostic attribution.
-    /// The raw configured value is preserved and never used for scheduling,
-    /// authorization, targeting, or ownership.
+    /// Configured host identity for diagnostic attribution and advisory locality.
+    /// Preserve the raw value; authorization, process ownership, actual capacity
+    /// and validated cache checkout remain independent of this placement hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
     /// Runner group in `org/name` format (e.g. `vm0/prod`). Used to scope

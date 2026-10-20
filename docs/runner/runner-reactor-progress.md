@@ -371,7 +371,15 @@ are not resident-cache, released-byte or production memory-saving proof.
   executor handoff uses its actual admission or prepared-activation recovery owner;
   it does not fabricate a remote result for a failed or uncertain request.
 - Home-cache watcher work remains retained with ownership of its watcher
-  and drained filesystem events. Its classification does not own an idle-pool or
+  and drained filesystem events. Committed snapshots broadcast to independent
+  startup waiters after validation. Subscribe before checking readiness; local
+  readiness must remain independent of advertised active-key suppression.
+  A resource-backed claimed startup wait belongs to owned jobs, with its claim,
+  cancellation registration and ordinary lease guarded through executor handoff.
+  It releases the claim-RPC slot while retaining capacity through bounded wait
+  and ordinary startup. Soft drain joins this already owned work; result loss
+  schedules tracked recovery before releasing resources.
+  Watcher classification does not own an idle-pool or
   status waiter needed by an inline reactor branch. The observation owner admits
   one independent inventory refresh with bounded coalesced dirty keys. Ordinary
   heartbeat delivery reads the committed snapshot while validation or scanning
