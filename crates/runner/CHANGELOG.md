@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.235.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.20...runner-rs-v0.235.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.19...runner-rs-v0.234.20) (2026-10-20)
 
 

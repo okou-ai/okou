@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.2...runner-remote-v0.29.3) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-remote:** own tcp opening completion ([#41760](https://github.com/okou-ai/okou/issues/41760)) ([032c8bd](https://github.com/okou-ai/okou/commit/032c8bd64d45b32b020a17bd98c2edeb11a04eaf))
+
 ## [0.29.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.1...runner-remote-v0.29.2) (2026-10-20)
 
 ## [0.29.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.0...runner-remote-v0.29.1) (2026-10-20)

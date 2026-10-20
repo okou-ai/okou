@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.1](https://github.com/okou-ai/okou/compare/host-worker-v1.7.0...host-worker-v1.7.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **host:** prepare okou.app visibility and clerk deployment ([#41745](https://github.com/okou-ai/okou/issues/41745)) ([5d1c5b6](https://github.com/okou-ai/okou/commit/5d1c5b667eafb9a95cb1bf96a2aa254add2a776a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+
 ## [1.7.0](https://github.com/okou-ai/okou/compare/host-worker-v1.6.65...host-worker-v1.7.0) (2026-10-20)
 
 

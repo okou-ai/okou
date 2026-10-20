@@ -12,6 +12,24 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1046.1](https://github.com/okou-ai/okou/compare/app-v0.1046.0...app-v0.1046.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **app:** make the chat resources panel predictable and quieter ([#41659](https://github.com/okou-ai/okou/issues/41659)) ([47e9684](https://github.com/okou-ai/okou/commit/47e9684b5b468a36764d62df55dc5f5c24645a39))
+* **app:** polish document template surfaces ([#41734](https://github.com/okou-ai/okou/issues/41734)) ([f85cbd2](https://github.com/okou-ai/okou/commit/f85cbd2998bc2baadb3e0f9bce6524fd047cbe48))
+* **app:** scroll chat links to the referenced run ([#41748](https://github.com/okou-ai/okou/issues/41748)) ([43341b3](https://github.com/okou-ai/okou/commit/43341b39b443440dcbfcc6f1b4b204f4c2143d8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+    * @okouai/ui bumped to 1.16.2
+
 ## [0.1046.0](https://github.com/okou-ai/okou/compare/app-v0.1045.0...app-v0.1046.0) (2026-10-20)
 
 
