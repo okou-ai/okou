@@ -157,8 +157,7 @@ private struct WorkspaceRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaBar(edge: .top, spacing: 0) {
-          ConversationHeaderBar { mainHeader }
-            .frame(height: headerHeight)
+          mainHeader
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .accessibilityHidden(sidebar.isOpen)
