@@ -11,15 +11,10 @@ import {
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  builtinConnectorsSearchContract,
-  builtinConnectorManualGrantContract,
-} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSearchContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
@@ -377,42 +372,6 @@ describe("slug-first current catalog business readers", () => {
     const listed = await accept(client.list({ headers }), [200]);
     expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
-  it("summarizes case-owned accounts using current methods and briefs", async () => {
-    await publishedCatalog();
-    const client = setupApp({
-      context,
-      routes: [...connectorOverviewRoutes, ...builtinConnectorsRoutes],
-    });
-    const account = await accept(
-      client(builtinConnectorManualGrantContract).connect({
-        headers,
-        params: { connectorSlug: "gitlab" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: { accessToken: "gl-test-token", host: "gitlab.example.com" },
-        },
-      }),
-      [200],
-    );
-    const overview = await accept(
-      client(connectorOverviewContract).overview({ headers }),
-      [200],
-    );
-    expect(overview.body.accountSummaries).toStrictEqual([
-      expect.objectContaining({
-        target: { kind: "builtin", connectorSlug: "gitlab" },
-        accountCount: 1,
-        defaultConnection: expect.objectContaining({
-          id: account.body.id,
-          connectionStatus: "connected",
-        }),
-      }),
-    ]);
-    expect(overview.body.builtinConnectors).toContainEqual(
-      expect.objectContaining({ slug: "gitlab" }),
-    );
-  });
   it("a later slug request follows current publication without a retained version", async () => {
     const first = release("2099-02-02.first", "First OpenAI", "openai");
     serve(first);
@@ -527,7 +486,7 @@ describe("current-publication account readers", () => {
         );
       });
 
-      const legacyList = await accept(
+      const plainList = await accept(
         accountClient().connections({
           headers: authHeaders(),
           query: { kind: "builtin", connectorSlug: "github", limit: 100 },
@@ -535,11 +494,17 @@ describe("current-publication account readers", () => {
         [200],
       );
       expect(
-        legacyList.body.connections.every((account) => {
+        plainList.body.connections.every((account) => {
           return !("scopeMismatch" in account);
         }),
       ).toBeTruthy();
-      expect("defaultConnection" in legacyList.body).toBeFalsy();
+      expect(plainList.body.defaultConnection).toMatchObject({
+        id: currentId,
+        isDefault: true,
+      });
+      expect(plainList.body.defaultConnection).not.toHaveProperty(
+        "scopeMismatch",
+      );
 
       const enrichedList = await accept(
         accountClient().connections({
@@ -584,7 +549,11 @@ describe("current-publication account readers", () => {
       );
       expect(filteredList.body.connections).toHaveLength(1);
       expect(filteredList.body.connections[0]?.id).toBe(firstId);
-      expect("defaultConnection" in filteredList.body).toBeFalsy();
+      expect(filteredList.body.defaultConnection).toMatchObject({
+        id: currentId,
+        isDefault: true,
+        scopeMismatch: false,
+      });
 
       const firstDiff = await accept(
         accountClient().scopeDiff({

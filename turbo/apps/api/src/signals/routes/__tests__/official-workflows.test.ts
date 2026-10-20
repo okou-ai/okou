@@ -110,6 +110,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -1239,6 +1240,217 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief explicit installation", () => {
+  it.each([
+    { entry: "initialize", intendedEnabled: true },
+    { entry: "initialize", intendedEnabled: false },
+    { entry: "timezone-update", intendedEnabled: true },
+    { entry: "timezone-update", intendedEnabled: false },
+  ] as const)(
+    "reconciles an existing brief after $entry while preserving enabled=$intendedEnabled",
+    async ({ entry, intendedEnabled }) => {
+      const { actor, installationId, automationId } =
+        await pauseBriefWithoutTimezone(intendedEnabled);
+      if (entry === "initialize") {
+        await initializeBriefMember(actor, "Asia/Tokyo");
+      } else {
+        await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+      }
+      const [recovered] = await readMorningBriefAutomations(
+        actor,
+        installationId,
+      );
+      expect(recovered).toMatchObject({
+        id: automationId,
+        enabled: intendedEnabled,
+        schedule: {
+          timezone: "Asia/Tokyo",
+          cronExpression: `${expectedMorningBriefMinute(actor)} 6 * * *`,
+        },
+        official: { intendedEnabled, reconciliationStatus: "current" },
+      });
+      if (intendedEnabled) {
+        expect(recovered?.nextRunAt).not.toBeNull();
+      } else {
+        expect(recovered?.nextRunAt).toBeNull();
+      }
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: intendedEnabled,
+        status: intendedEnabled ? "enabled" : "paused",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it.each([true, false])(
+    "repairs an existing brief on retry without changing enabled=%s",
+    async (intendedEnabled) => {
+      const { actor, installationId, automationId } =
+        await pauseBriefWithoutTimezone(intendedEnabled);
+      // The accepted catalog can supply the missing configuration without
+      // another worker pass. GET remains an observation; retry owns recovery.
+      await publishRecoveryBrief("Asia/Shanghai");
+      const client = morningBriefPreferenceClient();
+      await accept(client.get({ headers: authHeaders(actor) }), [409]);
+      await expect(
+        readMorningBriefAutomations(actor, installationId),
+      ).resolves.toMatchObject([
+        {
+          id: automationId,
+          enabled: false,
+          nextRunAt: null,
+          official: {
+            intendedEnabled,
+            reconciliationStatus: "needs_reconfiguration",
+          },
+        },
+      ]);
+      const repaired = await accept(
+        client.retry({ headers: authHeaders(actor) }),
+        [200],
+      );
+      expect(repaired.body).toMatchObject({
+        enabled: intendedEnabled,
+        status: intendedEnabled ? "enabled" : "paused",
+      });
+      const [recovered] = await readMorningBriefAutomations(
+        actor,
+        installationId,
+      );
+      expect(recovered).toMatchObject({
+        id: automationId,
+        enabled: intendedEnabled,
+        schedule: {
+          cronExpression: `${expectedMorningBriefMinute(actor)} 6 * * *`,
+        },
+        official: { intendedEnabled, reconciliationStatus: "current" },
+      });
+      if (intendedEnabled) {
+        expect(recovered?.nextRunAt).not.toBeNull();
+      } else {
+        expect(recovered?.nextRunAt).toBeNull();
+      }
+    },
+  );
+
+  it("does not recover a departed member through configuration or retry", async () => {
+    const { actor, installationId, automationId } =
+      await pauseBriefWithoutTimezone(true);
+    mockBriefMemberships([]);
+    await initializeBriefMember(actor, "Asia/Tokyo");
+    await accept(
+      morningBriefPreferenceClient().retry({ headers: authHeaders(actor) }),
+      [409],
+    );
+    await expect(
+      readMorningBriefAutomations(actor, installationId),
+    ).resolves.toMatchObject([
+      {
+        id: automationId,
+        enabled: false,
+        nextRunAt: null,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "needs_reconfiguration",
+        },
+      },
+    ]);
+  });
+
+  it("keeps recovery of an absent brief free of installation side effects", async () => {
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Tokyo");
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    const result = await accept(
+      morningBriefPreferenceClient().retry({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(result.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+  });
+
+  it("preserves a user opt-out committed while recovery checks membership", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const requested = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementationOnce(
+      async () => {
+        requested.resolve();
+        await release.promise;
+        return {
+          data: [
+            {
+              id: `membership-${actor.userId}-${actor.orgId}`,
+              role: actor.orgRole,
+              createdAt: createdAt.getTime(),
+              organization: { id: actor.orgId },
+              publicUserData: { userId: actor.userId },
+            },
+          ],
+        };
+      },
+    );
+    const recovery = morningBriefPreferenceClient().retry({
+      headers: authHeaders(actor),
+    });
+    await requested.promise;
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    release.resolve();
+    const recovered = await accept(recovery, [200]);
+    expect(recovered.body).toMatchObject({ enabled: false, status: "paused" });
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+  });
+
+  it.each([
+    { providerStatus: 404, expectedStatus: 409 },
+    { providerStatus: 503, expectedStatus: 500 },
+  ] as const)(
+    "keeps an existing brief paused when membership lookup returns $providerStatus",
+    async ({ providerStatus, expectedStatus }) => {
+      const { actor, installationId, automationId } =
+        await pauseBriefWithoutTimezone(true);
+      await publishRecoveryBrief("Asia/Shanghai");
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+        new ClerkTransportTestError(providerStatus),
+      );
+      await accept(
+        morningBriefPreferenceClient().retry({ headers: authHeaders(actor) }),
+        [expectedStatus],
+      );
+      await expect(
+        readMorningBriefAutomations(actor, installationId),
+      ).resolves.toMatchObject([
+        {
+          id: automationId,
+          enabled: false,
+          nextRunAt: null,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "needs_reconfiguration",
+          },
+        },
+      ]);
+    },
+  );
+
   it.each(["ordinary-first", "official-first"] as const)(
     "keeps Morning Brief enrollment on the Official identity with same-name user content (%s)",
     async (order) => {
@@ -1600,6 +1812,99 @@ describe("Morning Brief explicit installation", () => {
     expect(saved.body.timezone).toBe("Asia/Tokyo");
   });
 });
+
+async function publishRecoveryBrief(timezone?: string) {
+  return await syncCatalog(
+    catalog([
+      ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+        return activeDefinition(name, [
+          {
+            key: "daily-delivery",
+            parameters: [
+              {
+                key: "cron",
+                type: "string",
+                format: "text",
+                required: true,
+                default: "0 9 * * *",
+              },
+            ],
+            desiredState: {
+              kind: "schedule",
+              schedule: {
+                type: "cron",
+                cronExpression: { parameter: "cron" },
+                ...(timezone === undefined ? {} : { timezone }),
+              },
+            },
+          },
+        ]);
+      }),
+      {
+        name: "connector-doctor",
+        lifecycle: "retired",
+        presentation: { category: "productivity" },
+      },
+    ]),
+  );
+}
+
+async function pauseBriefWithoutTimezone(intendedEnabled: boolean) {
+  const { actor, createdAt } = await prepareBriefMember();
+  await initializeBriefMember(actor, "Asia/Shanghai");
+  await accept(
+    morningBriefPreferenceClient().update({
+      headers: authHeaders(actor),
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  if (!intendedEnabled) {
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+  }
+  const [installation] = await listMorningBriefInstallations(actor);
+  if (!installation) {
+    throw new Error("Expected the existing Morning Brief installation");
+  }
+  const [before] = await readMorningBriefAutomations(actor, installation.id);
+  if (!before) {
+    throw new Error("Expected its existing automation");
+  }
+  // Departure removes preferences but retains the existing installation and
+  // choice. A real rejoin supplies fresh authority without initializing them.
+  await deliverClerkOrganizationMembershipDeleted(actor);
+  const rejoinedAt = new Date(createdAt.getTime() + 1000);
+  const membershipId = `rejoined-${actor.userId}-${actor.orgId}`;
+  mockBriefMemberships([{ actor, createdAt: rejoinedAt, membershipId }]);
+  await deliverClerkOrganizationMembershipCreated(
+    actor,
+    rejoinedAt,
+    membershipId,
+  );
+  await publishRecoveryBrief();
+  await executeAutomationCron();
+  await flushWaitUntilForTest();
+  await expect(
+    readMorningBriefAutomations(actor, installation.id),
+  ).resolves.toMatchObject([
+    {
+      id: before.id,
+      enabled: false,
+      nextRunAt: null,
+      official: {
+        intendedEnabled,
+        reconciliationStatus: "needs_reconfiguration",
+      },
+    },
+  ]);
+  return { actor, installationId: installation.id, automationId: before.id };
+}
 
 function capturedOfficialSkill(
   manifest: Parameters<typeof expectCanonicalStorageManifest>[0],
@@ -3540,7 +3845,7 @@ describe("Official schedule expiry", () => {
   );
 
   it.each(["before", "after"] as const)(
-    "preserves a Morning Brief occurrence claimed %s a later tick and duplicate Runner completion",
+    "preserves a Morning Brief occurrence claimed %s a later tick, settings retry and duplicate completion",
     async (claimTiming) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture();
@@ -3611,6 +3916,22 @@ describe("Official schedule expiry", () => {
         ).resolves.toStrictEqual(runIds);
         await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
           status: "running",
+        });
+        mockBriefMemberships([
+          { actor, createdAt: new Date("2030-01-01T00:00:00Z") },
+        ]);
+        await publishRecoveryBrief("Asia/Tokyo");
+        await accept(
+          morningBriefPreferenceClient().retry({ headers: authHeaders(actor) }),
+          [200],
+        );
+        await expect(
+          readAutomation(actor, automation.id),
+        ).resolves.toMatchObject({
+          enabled: true,
+          nextRunAt: null,
+          schedule: { timezone: "Asia/Tokyo" },
+          official: { reconciliationStatus: "current" },
         });
         await completion();
         await flushWaitUntilForTest();

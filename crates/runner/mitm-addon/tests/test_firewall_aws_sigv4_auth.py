@@ -24,6 +24,7 @@ from tests.aws_sigv4_helpers import (
 from tests.firewall_auth_helpers import handle_firewall_request_without_upstream_admission
 from tests.firewall_aws_sigv4_helpers import (
     FAR_FUTURE_EXPIRES_AT,
+    admitted_aws_sigv4_body,
     assert_sigv4_failed_closed,
     aws_allow,
     aws_api_entry,
@@ -612,7 +613,7 @@ async def test_header_sigv4_with_empty_resolved_secret_key_fails_closed(
         ),
     )
 
-    with mitm_ctx():
+    with mitm_ctx(), admitted_aws_sigv4_body(flow):
         result = await handle_firewall_request_without_upstream_admission(
             flow, allow, dict(sandbox_info)
         )
@@ -639,7 +640,7 @@ async def test_header_sigv4_seeded_cache_matches_auth_query_identity(
         query={"trace": "resolved-trace"},
     )
 
-    with mitm_ctx():
+    with mitm_ctx(), admitted_aws_sigv4_body(flow):
         result = await handle_firewall_request_without_upstream_admission(
             flow,
             allow,
@@ -718,7 +719,7 @@ async def test_header_sigv4_seeded_cache_matches_allow_context_identity(
         expires_at=FAR_FUTURE_EXPIRES_AT,
     )
 
-    with mitm_ctx():
+    with mitm_ctx(), admitted_aws_sigv4_body(flow):
         result = await handle_firewall_request_without_upstream_admission(
             flow, allow, dict(sandbox_info)
         )
@@ -786,7 +787,7 @@ async def test_header_sigv4_without_trusted_original_url_fails_closed(
         credentials=resolved_aws_sigv4_credentials(session_token=None),
     )
 
-    with mitm_ctx():
+    with mitm_ctx(), admitted_aws_sigv4_body(flow):
         result = await handle_firewall_request_without_upstream_admission(
             flow, allow, dict(sandbox_info)
         )
@@ -820,7 +821,7 @@ async def test_header_sigv4_with_malformed_current_request_target_fails_closed(
         credentials=resolved_aws_sigv4_credentials(session_token=None),
     )
 
-    with mitm_ctx():
+    with mitm_ctx(), admitted_aws_sigv4_body(flow):
         result = await handle_firewall_request_without_upstream_admission(
             flow, allow, dict(sandbox_info)
         )
@@ -845,7 +846,7 @@ async def test_header_sigv4_with_empty_resolved_session_token_fails_closed(
         credentials=resolved_aws_sigv4_credentials(session_token=""),
     )
 
-    with mitm_ctx():
+    with mitm_ctx(), admitted_aws_sigv4_body(flow):
         result = await handle_firewall_request_without_upstream_admission(
             flow, allow, dict(sandbox_info)
         )

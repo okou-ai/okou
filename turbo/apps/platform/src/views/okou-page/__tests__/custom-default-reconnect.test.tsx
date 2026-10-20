@@ -5,8 +5,8 @@ import {
 import {
   connectorAccountTargetKey,
   connectorAccountsContract,
+  type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
-  type ConnectorAccountSummary,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   customConnectorOAuth2Contract,
@@ -30,21 +30,38 @@ const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
 function mockAccountReads(
-  summaries: () => readonly ConnectorAccountSummary[],
+  read: () => readonly ConnectorAccountConnection[],
 ): void {
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [...summaries()] });
-  });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      const accounts = read().filter((account) => {
+        return (
+          connectorAccountTargetKey(account.target) ===
+          connectorAccountTargetKey(query)
+        );
+      });
+      return respond(200, {
+        connections: accounts,
+        nextCursor: null,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
+      });
+    },
+  );
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, query, respond }) => {
-      const account = summaries().find((summary) => {
+      const account = read().find((account) => {
         return (
-          connectorAccountTargetKey(summary.target) ===
-          connectorAccountTargetKey(query)
+          account.id === params.connectionId &&
+          connectorAccountTargetKey(account.target) ===
+            connectorAccountTargetKey(query)
         );
-      })?.defaultConnection;
-      return account?.id === params.connectionId
+      });
+      return account
         ? respond(200, account)
         : respond(404, {
             error: { code: "NOT_FOUND", message: "Account not found" },
@@ -85,15 +102,19 @@ test.each([1, 2])(
       reconnectReason: "authorization_expired_or_revoked",
       configuredFieldKeys: ["secret"],
     });
+    const siblingAccountIds = Array.from({ length: accountCount - 1 }, () => {
+      return crypto.randomUUID();
+    });
     mockAccountReads(() => {
       return [
-        {
-          target: account.target,
-          accountCount,
-          attentionCount:
-            account.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: account,
-        },
+        account,
+        ...siblingAccountIds.map((id) => {
+          return {
+            ...account,
+            id,
+            isDefault: false,
+          };
+        }),
       ];
     });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -150,10 +171,11 @@ test.each([1, 2])(
 );
 
 test("Resolve the current default instead of stale definition identity", async () => {
+  const staleConnectionId = crypto.randomUUID();
   let connector = customConnector({
     slug: "_acme-search",
     connected: true,
-    connectedAccountId: crypto.randomUUID(),
+    connectedAccountId: staleConnectionId,
     configuredFieldKeys: ["secret"],
     missingRequiredFields: [],
   });
@@ -161,14 +183,7 @@ test("Resolve the current default instead of stale definition identity", async (
     configuredFieldKeys: ["secret"],
   });
   mockAccountReads(() => {
-    return [
-      {
-        target: account.target,
-        accountCount: 2,
-        attentionCount: 0,
-        defaultConnection: account,
-      },
-    ];
+    return [account, { ...account, id: staleConnectionId, isDefault: false }];
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
@@ -228,33 +243,27 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   const release = context.mocks.deferred<void>();
   let preflight = false;
   context.mocks.api(
-    connectorAccountsContract.summaries,
-    async ({ respond }) => {
-      if (preflight) {
-        if (!requested.settled()) {
-          requested.resolve();
-        }
-        if (state === "pending") {
-          await release.promise;
-        }
-        if (state === "failed") {
-          return respond(403, {
-            error: { code: "FORBIDDEN", message: "Account access unavailable" },
-          });
-        }
+    connectorAccountsContract.connections,
+    async ({ query, respond }) => {
+      expect(query).toMatchObject(account.target);
+      if (preflight && !requested.settled()) {
+        requested.resolve();
+      }
+      if (preflight && state === "pending") {
+        await release.promise;
+      }
+      if (preflight && state === "failed") {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Account access unavailable" },
+        });
       }
       return respond(200, {
-        summaries:
+        connections:
           state === "expired" || state === "no-default"
-            ? [
-                {
-                  target: account.target,
-                  accountCount: 2,
-                  attentionCount: 1,
-                  defaultConnection: state === "expired" ? account : null,
-                },
-              ]
+            ? [{ ...account, isDefault: state === "expired" }]
             : [],
+        nextCursor: null,
+        defaultConnection: state === "expired" ? account : null,
       });
     },
   );

@@ -525,22 +525,7 @@ async fn execute(request: ExecRequest, guest_operations: &GuestOperationStartGat
         };
     }
 
-    let write_admission =
-        expected_run_id.map_or_else(guest_control_client::FrameWriteObserver::default, {
-            let guest_operations = guest_operations.clone();
-            |expected_run_id| {
-                guest_control_client::FrameWriteObserver::new(move || {
-                    guest_operations
-                        .ensure_run_control_matches(&expected_run_id)
-                        .map_err(|RunControlMismatch| {
-                            io::Error::new(
-                                io::ErrorKind::PermissionDenied,
-                                RUN_CONTROL_MISMATCH_ERROR,
-                            )
-                        })
-                })
-            }
-        });
+    let write_admission = control_write_admission(guest_operations, expected_run_id);
 
     let result = vsock
         .exec_operation_capture_with_write_admission(
@@ -567,6 +552,29 @@ async fn execute(request: ExecRequest, guest_operations: &GuestOperationStartGat
             error: format!("exec failed: {e}"),
         },
     }
+}
+
+fn control_write_admission(
+    guest_operations: &GuestOperationStartGate,
+    expected_run_id: Option<String>,
+) -> guest_control_client::FrameWriteObserver {
+    let guest_operations = guest_operations.clone();
+    guest_control_client::FrameWriteObserver::new(move || {
+        // Terminal recovery releases the Guest fence while policy stays Dirty.
+        // Recheck after reserving the normal-operation token so an older control
+        // observation cannot cross that fence, including sandbox-scoped exec.
+        guest_operations.ensure_policy_open().map_err(|error| {
+            io::Error::new(io::ErrorKind::NotConnected, control_start_error(error))
+        })?;
+        if let Some(expected_run_id) = &expected_run_id {
+            guest_operations
+                .ensure_run_control_matches(expected_run_id)
+                .map_err(|RunControlMismatch| {
+                    io::Error::new(io::ErrorKind::PermissionDenied, RUN_CONTROL_MISMATCH_ERROR)
+                })?;
+        }
+        Ok(())
+    })
 }
 
 fn exec_result_from_operation_result(

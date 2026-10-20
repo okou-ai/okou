@@ -3,14 +3,13 @@ import "./accept-browser.ts";
 import { browserUpgradeRequired } from "./browser-support.ts";
 import { initSentry } from "./sentry.ts";
 import { captureFirstSkeletonPaint, initPostHog } from "./posthog.ts";
-import { setupVisualViewportKeyboardState } from "./visual-viewport-keyboard.ts";
 import "../polyfill.ts";
 import { createRoot } from "react-dom/client";
 import { createStore } from "ccstate";
 import { bootstrap$ } from "../signals/bootstrap.ts";
 import { captureDiscordApprovalFragment$ } from "../signals/okou-page/discord-oauth-approval.ts";
 import { ASSISTANT_NAME } from "../signals/branding.ts";
-import { detach, Reason, resetSignal } from "../signals/utils.ts";
+import { detach, Reason } from "../signals/utils.ts";
 import { setupRouter } from "../views/main.tsx";
 import { renderUnsupportedBrowserPage } from "../views/unsupported-browser-page.tsx";
 
@@ -21,7 +20,6 @@ function startApplication(
   store: ReturnType<typeof createStore>,
 ): void {
   rootSignal.throwIfAborted();
-  const resetViewportSettleSignal$ = resetSignal();
 
   // Initialize Sentry before bootstrap so errors during startup are captured
   initSentry();
@@ -29,10 +27,6 @@ function startApplication(
   captureFirstSkeletonPaint();
 
   async function main() {
-    setupVisualViewportKeyboardState(rootSignal, () => {
-      return store.set(resetViewportSettleSignal$, rootSignal);
-    });
-
     await store.set(
       bootstrap$,
       __OKOU_APP_VERSION__,

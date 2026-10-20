@@ -46,7 +46,7 @@ import type {
 import {
   connectorCatalogItemForSlug,
   relatedConnectorCatalog,
-  withMemberAccountStatus,
+  withConnectorCompletion,
   reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
 import { replaceSearchParams$, searchParams$ } from "../../route.ts";
@@ -68,11 +68,7 @@ import {
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
 import { agents$ } from "../../agent.ts";
 import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
-import {
-  reloadConnectorAccountSummaries$,
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
-} from "../connector-accounts.ts";
+import { connectedConnectorTargetKeys$ } from "../connector-accounts.ts";
 import { sanitizeTokenInputRecord } from "./token-input.ts";
 import { IN_VITEST } from "../../../env.ts";
 import { connectorRedirectingPath } from "../../connectors-page/connector-redirecting.ts";
@@ -90,6 +86,7 @@ import type {
 } from "../../connector-domain.ts";
 import {
   readConnectorAccountCount,
+  readConnectorAccountPage,
   readConnectorOAuthCompletion,
   readConnectorAccountCompletion,
 } from "./connector-accounts.ts";
@@ -126,23 +123,46 @@ const resolveConnectorPostConnectOptions$ = command(
     options: PostConnectOptions,
     signal: AbortSignal,
   ): Promise<PostConnectOptions> => {
+    let account = options.account;
+    const page = options.useDefaultConnectorProjection
+      ? await readConnectorAccountPage(
+          get(apiClient$),
+          { kind: "builtin", connectorSlug },
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
+    if (page) {
+      if (page.defaultConnection) {
+        account = {
+          intent: "reconnect",
+          connectionId: page.defaultConnection.id,
+        };
+      } else if (page.connections.length > 0) {
+        throw new Error(
+          "This connector has saved accounts but no default. Choose an account in Connectors settings.",
+        );
+      } else {
+        account = { intent: "add" };
+      }
+    }
     if (!options.authorizeVisibleAgents) {
-      return options;
+      return { ...options, account };
     }
     const authorizeVisibleAgents =
-      options.account.intent === "add" &&
-      (await readConnectorAccountCount(
-        get(apiClient$),
-        { kind: "builtin", connectorSlug },
-        signal,
-      )) === 0;
-    return { ...options, authorizeVisibleAgents };
+      account.intent === "add" &&
+      (page?.connections.length ??
+        (await readConnectorAccountCount(
+          get(apiClient$),
+          { kind: "builtin", connectorSlug },
+          signal,
+        ))) === 0;
+    return { ...options, account, authorizeVisibleAgents };
   },
 );
 
 const reloadConnectorConnectionState$ = command(({ set }) => {
   set(reloadBuiltinConnectors$);
-  set(reloadConnectorAccountSummaries$);
 });
 // ---------------------------------------------------------------------------
 // Derived state
@@ -551,33 +571,26 @@ export const connectorCatalogDiscovery$ = relatedConnectorCatalog(
 
 export const relatedCatalogItems$ = computed(async (get) => {
   const { connectors } = await get(connectorCatalogDiscovery$);
-  const items = [...connectors];
-  const read = await settle(get(connectorAccountSummaryByTarget$));
+  const items = connectors.map(withConnectorCompletion);
+  const read = await settle(get(connectedConnectorTargetKeys$));
   // An unavailable status read leaves metadata browsable in provider order.
   if (!read.ok) {
     return items;
   }
-  const summaries = read.value;
-  const memberItems = items.map((item) => {
-    return withMemberAccountStatus(item, summaries);
-  });
+  const connectedTargets = read.value;
   const hasAccounts = (slug: ConnectorSlug) => {
-    return (
-      (summaries.get(
-        connectorAccountTargetKey({ kind: "builtin", connectorSlug: slug }),
-      )?.accountCount ?? 0) > 0
-    );
+    return connectedTargets.has(`builtin:${slug}`);
   };
 
   // Sort connected connectors to the top of the list
-  memberItems.sort((a, b) => {
+  items.sort((a, b) => {
     if (hasAccounts(a.slug) === hasAccounts(b.slug)) {
       return 0;
     }
     return hasAccounts(a.slug) ? -1 : 1;
   });
 
-  return memberItems;
+  return items;
 });
 
 export const filteredConnectorCatalogItems$ = computed(async (get) => {
@@ -604,8 +617,8 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
       : null;
 
   const relatedCatalogItems = await get(relatedCatalogItems$);
-  const summaries =
-    scope === "connected" ? await get(connectorAccountSummaryByTarget$) : null;
+  const connectedTargets =
+    scope === "connected" ? await get(connectedConnectorTargetKeys$) : null;
   return relatedCatalogItems.filter((connector) => {
     if (!matchesConnectorSearch(keyword, connector)) {
       return false;
@@ -617,12 +630,7 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
     // chosen, it only ever shows what this workspace has already connected.
     if (
       scope === "connected" &&
-      (summaries?.get(
-        connectorAccountTargetKey({
-          kind: "builtin",
-          connectorSlug: connector.slug,
-        }),
-      )?.accountCount ?? 0) === 0
+      !connectedTargets?.has(`builtin:${connector.slug}`)
     ) {
       return false;
     }
@@ -694,6 +702,7 @@ type ActiveConnectorExternalCodeState = {
   readonly code: string;
   readonly errorMessage: string | null;
   readonly authorizeVisibleAgents: boolean;
+  readonly account: PlatformConnectorAccountMutationIntent;
 };
 
 export type BuiltinConnectorOAuthDeviceAuthState =
@@ -2067,7 +2076,7 @@ const connectConnectorExternalCodeCommand$ = command(
             client.create({
               params: { connectorSlug },
               body: {
-                account: args.account,
+                account: options.account,
                 authMethod,
                 ...(shouldAuthorizeAgent(options)
                   ? { authorizeAgent: true as const }
@@ -2111,6 +2120,7 @@ const connectConnectorExternalCodeCommand$ = command(
           code: "",
           errorMessage: null,
           authorizeVisibleAgents: options.authorizeVisibleAgents ?? false,
+          account: options.account,
         });
         return true;
       })(),
@@ -2245,7 +2255,7 @@ const completeConnectorExternalCode$ = command(
             createClient,
             connectorSlug,
             connectionId,
-            options.account,
+            current.account,
             flowSignal,
           ))
         ) {
@@ -2256,6 +2266,7 @@ const completeConnectorExternalCode$ = command(
           connectorSlug,
           {
             ...options,
+            account: current.account,
             authorizeVisibleAgents: current.authorizeVisibleAgents,
             clearSelectedConnector: true,
             reloadConnectors: false,
@@ -2469,14 +2480,13 @@ const defaultConnectorProjectionMatchesAuthMethod$ = command(
     connectionId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const summaries = await waitForOperation(
-      get(connectorAccountSummaryByTarget$),
+    const page = await readConnectorAccountPage(
+      get(apiClient$),
+      { kind: "builtin", connectorSlug },
       signal,
     );
     signal.throwIfAborted();
-    const account = summaries.get(
-      connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-    )?.defaultConnection;
+    const account = page.defaultConnection;
     return (
       account?.id === connectionId &&
       account.authMethod === authMethod &&
@@ -2493,13 +2503,12 @@ const startConnectorBrowserAuthorization$ = command(
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
       readonly agentId: string | undefined;
-      readonly account: PlatformConnectorAccountMutationIntent;
       readonly options: PostConnectOptions;
     },
     signal: AbortSignal,
   ) => {
     const body = {
-      account: args.account,
+      account: args.options.account,
       authMethod: args.method.id,
       ...(shouldAuthorizeAgent(args.options)
         ? { authorizeAgent: true as const }
@@ -2564,7 +2573,6 @@ const openConnectorOAuthAuthCodeWindow$ = command(
       readonly connectorLabel: string;
       readonly connectorIcon: PublicConnectorCatalogIcon;
       readonly agentId: string | undefined;
-      readonly account: PlatformConnectorAccountMutationIntent;
       readonly beforeStart: (
         signal: AbortSignal,
       ) => Promise<PostConnectOptions>;
@@ -2689,10 +2697,11 @@ const finishAcceptedConnectorConnection$ = command(
     signal: AbortSignal,
   ): Promise<BuiltinConnectorConnectionResult | false> => {
     if (
-      !(await readConnectorAccountCompletion(
+      !(await readCompletedBuiltinConnectorAccount(
         get(apiClient$),
-        { kind: "builtin", connectorSlug: args.connectorSlug },
+        args.connectorSlug,
         args.connectionId,
+        args.options.account,
         signal,
       ))
     ) {
@@ -2879,7 +2888,6 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
     }
 
     const flow = createConnectorConnectFlowState(connectorSlug);
-    const account = options.account;
     set(internalConnectFlowState$, flow);
     set(internalPollingOAuthAuthCodeConnectorSlug$, connectorSlug);
     const release = () => {
@@ -2903,7 +2911,6 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
             connectorLabel: options.connectorLabel ?? connectorSlug,
             connectorIcon: options.connectorIcon,
             agentId: options.agentId,
-            account,
             beforeStart: async (sig) => {
               const resolvedOptions = await set(
                 resolveConnectorPostConnectOptions$,
@@ -2936,7 +2943,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
                   connectorSlug,
                   method,
                   options: oauthStart.options,
-                  account,
+                  account: oauthStart.options.account,
                   oauthStart,
                 },
                 signal,

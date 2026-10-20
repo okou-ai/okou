@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1047.1](https://github.com/okou-ai/okou/compare/app-v0.1047.0...app-v0.1047.1) (2026-10-20)
+
+
+### Performance Improvements
+
+* load connector and remote directories on demand ([#41709](https://github.com/okou-ai/okou/issues/41709)) ([8e16d76](https://github.com/okou-ai/okou/commit/8e16d761b4f269b9a71c1a9c2d990ad6dbc55188))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+    * @okouai/core bumped to 8.774.2
+
 ## [0.1047.0](https://github.com/okou-ai/okou/compare/app-v0.1046.1...app-v0.1047.0) (2026-10-20)
 
 

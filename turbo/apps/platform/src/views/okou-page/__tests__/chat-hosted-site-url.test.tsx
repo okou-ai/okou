@@ -106,6 +106,7 @@ async function setupHostedSite(
     return respond(200, { available: true });
   });
   context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
+    expect(body.expectedPublicSlug).toBe(currentSlug);
     currentSlug = body.publicSlug;
     return respond(200, {
       siteId,
@@ -143,41 +144,64 @@ async function copyFromResources(slug: string) {
   click(buttonNamed("Copy link", row));
 }
 
+async function openHostedSiteShare(preview: HTMLElement, sidebar: boolean) {
+  const shareLabel = sidebar ? "Share artifact" : "Share";
+  await waitFor(() => {
+    expect(buttonNamed(shareLabel, preview)).toBeEnabled();
+  });
+  click(buttonNamed(shareLabel, preview));
+  const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
+  await within(shareMenu).findByText("Published");
+  return shareMenu;
+}
+
+async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
+  await waitFor(() => {
+    expect(buttonNamed("Customize URL", shareMenu)).toBeEnabled();
+  });
+  click(buttonNamed("Customize URL", shareMenu));
+  const input = await within(shareMenu).findByLabelText("Website URL");
+  expect(input).toHaveFocus();
+  fireEvent.change(input, { target: { value: slug } });
+  expect(input).toHaveValue(slug);
+  await within(shareMenu).findByText("Available");
+  expect(buttonNamed("Save", shareMenu)).toBeEnabled();
+  click(buttonNamed("Save", shareMenu));
+  await within(shareMenu).findByText(`${slug}.okou.app`);
+  expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
+}
+
 test.each([false, true])(
-  "renaming a site updates its title, title link, and resource copy link (sidebar=%s)",
+  "consecutive site renames update the preview title, title link, and shared link (sidebar=%s)",
   async (sidebar) => {
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent("launch-site.okou.app");
-    const shareLabel = sidebar ? "Share artifact" : "Share";
-    await waitFor(() => {
-      expect(buttonNamed(shareLabel, preview)).toBeEnabled();
-    });
-    click(buttonNamed(shareLabel, preview));
-    const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
-    await within(shareMenu).findByText("Published");
+    const shareMenu = await openHostedSiteShare(preview, sidebar);
     for (const slug of ["renamed-site", "final-site"]) {
-      await waitFor(() => {
-        expect(buttonNamed("Customize URL", shareMenu)).toBeEnabled();
-      });
-      click(buttonNamed("Customize URL", shareMenu));
-      const input = await within(shareMenu).findByLabelText("Website URL");
-      expect(input).toHaveFocus();
-      fireEvent.change(input, { target: { value: slug } });
-      expect(input).toHaveValue(slug);
-      await within(shareMenu).findByText("Available");
-      expect(buttonNamed("Save", shareMenu)).toBeEnabled();
-      click(buttonNamed("Save", shareMenu));
+      await renameHostedSite(shareMenu, slug);
       await waitFor(() => {
         expect(title).toHaveTextContent(`${slug}.okou.app`);
         expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
-        expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
       });
       const clipboard = context.mocks.browser.clipboardWriteText();
       click(buttonNamed("Copy link", shareMenu));
       await waitFor(() => {
         expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
       });
+    }
+  },
+);
+
+test.each([false, true])(
+  "Resources copies the final address after consecutive site renames (sidebar=%s)",
+  async (sidebar) => {
+    const preview = await setupHostedSite(sidebar);
+    const title = await within(preview).findByTestId("artifact-title-link");
+    expect(title).toHaveTextContent("launch-site.okou.app");
+    const shareMenu = await openHostedSiteShare(preview, sidebar);
+    for (const slug of ["renamed-site", "final-site"]) {
+      await renameHostedSite(shareMenu, slug);
     }
     await userEvent.keyboard("{Escape}");
     click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));

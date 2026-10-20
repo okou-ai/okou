@@ -1899,7 +1899,6 @@
       "back": "Voltar",
       "configurePermissions": "Configurar permissões de {{connectorName}}",
       "customAuthorizeDescription": "Revise, conecte e autorize este conector personalizado para o agente.",
-      "defaultAccountFor": "{{connector}} · Usando a conta padrão: {{account}}",
       "directory": {
         "allCategories": "Todos",
         "askAdmin": "Peça a um administrador para habilitar",
@@ -1917,9 +1916,6 @@
         "matchCount_one": "{{count}} resultado",
         "matchCount_many": "{{count}} resultados",
         "matchCount_other": "{{count}} resultados",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_many": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Precisa de atenção",
         "nextCategories": "Próximas categorias",
         "noResultsBody": "Tente o nome de um produto ou crie o seu a partir de uma API ou servidor MCP.",
@@ -1938,6 +1934,7 @@
       },
       "fallsBackTo": "Usa {{account}} como alternativa",
       "find": "Buscar conectores...",
+      "loadFailed": "Não foi possível carregar os conectores.",
       "noUsableAccount": "Nenhuma conta utilizável",
       "remove": "Remover {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Conta selecionada: {{account}}",
@@ -2146,9 +2143,12 @@
     "relations": {
       "chats": "Chats",
       "loadFailed": "Falha ao carregar",
+      "messageUnavailable": "Mensagem indisponível",
       "origin": "De",
       "queued": "Na fila",
+      "received": "Recebido",
       "running": "Em execução",
+      "sent": "Enviado",
       "unavailable": "Indisponível",
       "untitled": "Sem título"
     },
@@ -3102,19 +3102,7 @@
       "rename": "Renomear",
       "setupIncomplete": "Configuração incompleta",
       "setupUnavailable": "Status da conta indisponível",
-      "skipName": "Pular",
-      "summaryMany": "{{value}} contas",
-      "summaryMany_one": "",
-      "summaryMany_many": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} conta",
-      "summaryOne_one": "",
-      "summaryOne_many": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} precisam de atenção",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_many": "",
-      "summaryWithAttention_other": ""
+      "skipName": "Pular"
     },
     "actions": {
       "apply": "Aplicar",
@@ -3279,7 +3267,6 @@
       },
       "scope": {
         "aria": "Escopo dos conectores",
-        "attention": "Requer atenção",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descobrir",

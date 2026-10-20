@@ -1,3 +1,4 @@
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import {
   chatRemoteAccessContract,
   type ThreadRemoteHostAccess,
@@ -93,19 +94,19 @@ function installDependencyFixture({
   };
   const sshIds = [SSH_ID, OTHER_SSH_ID, KDC_SSH_ID];
   let failAccessRead = false;
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: settings.filter((item) => {
-          return item.connectionId !== VNC_ID;
-        }),
-        vnc: settings.filter((item) => {
-          return item.connectionId === VNC_ID;
-        }),
-      });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: settings.filter((item) => {
+        return item.connectionId !== VNC_ID;
+      }),
+      vncHosts: settings.filter((item) => {
+        return item.connectionId === VNC_ID;
+      }),
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {

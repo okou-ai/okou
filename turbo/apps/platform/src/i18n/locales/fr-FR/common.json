@@ -1899,7 +1899,6 @@
       "back": "Retour",
       "configurePermissions": "Configurer les autorisations de {{connectorName}}",
       "customAuthorizeDescription": "Examiner, connecter et autoriser ce connecteur personnalisé pour l'agent.",
-      "defaultAccountFor": "{{connector}} · Compte par défaut utilisé : {{account}}",
       "directory": {
         "allCategories": "Tous",
         "askAdmin": "Demandez à un administrateur de l'activer",
@@ -1917,9 +1916,6 @@
         "matchCount_one": "{{count}} résultat",
         "matchCount_many": "{{count}} résultats",
         "matchCount_other": "{{count}} résultats",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_many": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "À vérifier",
         "nextCategories": "Catégories suivantes",
         "noResultsBody": "Essayez un nom de produit, ou créez le vôtre à partir d'une API ou d'un serveur MCP.",
@@ -1938,6 +1934,7 @@
       },
       "fallsBackTo": "Utilise {{account}} en repli",
       "find": "Rechercher des connecteurs...",
+      "loadFailed": "Impossible de charger les connecteurs.",
       "noUsableAccount": "Aucun compte utilisable",
       "remove": "Supprimer {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Compte sélectionné : {{account}}",
@@ -2146,9 +2143,12 @@
     "relations": {
       "chats": "Discussions",
       "loadFailed": "Échec du chargement",
+      "messageUnavailable": "Message indisponible",
       "origin": "Depuis",
       "queued": "En attente",
+      "received": "Reçu",
       "running": "En cours",
+      "sent": "Envoyé",
       "unavailable": "Indisponible",
       "untitled": "Sans titre"
     },
@@ -3102,19 +3102,7 @@
       "rename": "Renommer",
       "setupIncomplete": "Configuration incomplète",
       "setupUnavailable": "Statut du compte indisponible",
-      "skipName": "Ignorer",
-      "summaryMany": "{{value}} comptes",
-      "summaryMany_one": "",
-      "summaryMany_many": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} compte",
-      "summaryOne_one": "",
-      "summaryOne_many": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} nécessitent votre attention",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_many": "",
-      "summaryWithAttention_other": ""
+      "skipName": "Ignorer"
     },
     "actions": {
       "apply": "Appliquer",
@@ -3279,7 +3267,6 @@
       },
       "scope": {
         "aria": "Portée des connecteurs",
-        "attention": "Nécessite votre attention",
         "connected": "Connecté",
         "custom": "Personnalisés",
         "discover": "Découvrir",

@@ -5,6 +5,7 @@ from typing import Literal
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from hyperframe.frame import DataFrame
 from mitmproxy import http
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.flow import Error
@@ -26,6 +27,7 @@ from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.aws_sigv4_helpers import (
     DEFAULT_SIGV4_TIMESTAMP,
     RESOLVED_AWS_ACCESS_KEY_ID,
+    STS_FORM_BODY,
     STS_HOST,
     aws_sigv4_authorization,
     resolved_aws_sigv4_credentials,
@@ -91,6 +93,87 @@ def _write_aws_sigv4_firewall_registry(
             },
         ),
     )
+
+
+@pytest.mark.parametrize("protocol", ["http1", "http2"])
+@pytest.mark.parametrize("saturated", [False, True], ids=["admitted", "saturated"])
+async def test_pending_action_admission_precedes_native_body_buffering(
+    tmp_path: Path, monkeypatch, protocol: str, saturated: bool
+) -> None:
+    registry_path = _write_aws_sigv4_firewall_registry(
+        tmp_path, rules=["POST / AWS sigv4=sts action=GetCallerIdentity"]
+    )
+    get_headers = AsyncMock(
+        return_value=firewall_auth_response(headers={}, aws_sigv4=resolved_aws_sigv4_credentials())
+    )
+    if saturated:
+        monkeypatch.setattr(aws_sigv4_body_admission, "MAX_ADMITTED_AWS_SIGV4_REQUESTS", 0)
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        addon_context.options.update(
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
+        )
+        regular_headers = (
+            (b"x-amz-date", DEFAULT_SIGV4_TIMESTAMP.encode()),
+            (b"authorization", aws_sigv4_authorization().encode()),
+            (b"content-type", b"application/x-www-form-urlencoded"),
+            (b"content-length", str(len(STS_FORM_BODY)).encode()),
+        )
+        if protocol == "http2":
+            http_layer, headers_hook = start_http2_request(
+                addon_context,
+                method="POST",
+                end_stream=False,
+                host=STS_HOST,
+                regular_headers=regular_headers,
+            )
+            data_frame = DataFrame(1)
+            data_frame.data = STS_FORM_BODY
+            data_frame.flags.add("END_STREAM")
+            body_wire = data_frame.serialize()
+        else:
+            client, http_layer = start_http_layer(addon_context, alpn=b"http/1.1", host=STS_HOST)
+            head = (
+                b"POST / HTTP/1.1\r\nHost: "
+                + STS_HOST.encode()
+                + b"\r\n"
+                + b"".join(name + b": " + value + b"\r\n" for name, value in regular_headers)
+                + b"\r\n"
+            )
+            pending = list(http_layer.handle_event(events.DataReceived(client, head)))
+            headers_hook = next(cmd for cmd in pending if isinstance(cmd, HttpRequestHeadersHook))
+            body_wire = STS_FORM_BODY
+
+        await addon_context.master.addons.invoke_addon(mitm_addon, headers_hook)
+        flow = headers_hook.flow
+        assert flow.request.raw_content is None
+        get_headers.assert_not_awaited()
+        pending = list(http_layer.handle_event(events.HookCompleted(headers_hook, None)))
+        assert not any(isinstance(cmd, HttpRequestHook) for cmd in pending)
+        if saturated:
+            assert flow.error is not None
+            error_hook = next(cmd for cmd in pending if isinstance(cmd, HttpErrorHook))
+            await addon_context.master.addons.invoke_addon(mitm_addon, error_hook)
+            assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+            get_headers.assert_not_awaited()
+            return
+
+        assert aws_sigv4_body_admission.state_for_tests() == (1, len(STS_FORM_BODY))
+        pending = list(http_layer.handle_event(events.DataReceived(flow.client_conn, body_wire)))
+        request_hook = next(cmd for cmd in pending if isinstance(cmd, HttpRequestHook))
+        assert flow.request.raw_content == STS_FORM_BODY
+        await addon_context.master.addons.invoke_addon(mitm_addon, request_hook)
+        assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+        assert aws_sigv4_body_admission.state_for_tests() == (1, len(STS_FORM_BODY))
+        flow.response = http.Response.make(200, b"ok")
+        mitm_addon.response(flow)
+
+    get_headers.assert_awaited_once()
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
 def _start_http1_request(
@@ -197,10 +280,15 @@ async def test_http1_rejected_long_content_length_survives_aws_action_header_hoo
     get_headers.assert_not_awaited()
 
 
+@pytest.mark.parametrize("action_rule", [False, True], ids=["path-rule", "action-rule"])
 async def test_http2_open_sigv4_request_without_length_is_rejected_before_body(
     tmp_path: Path,
+    action_rule: bool,
 ) -> None:
-    registry_path = _write_aws_sigv4_firewall_registry(tmp_path)
+    registry_path = _write_aws_sigv4_firewall_registry(
+        tmp_path,
+        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"] if action_rule else None,
+    )
     get_headers = AsyncMock()
 
     with (

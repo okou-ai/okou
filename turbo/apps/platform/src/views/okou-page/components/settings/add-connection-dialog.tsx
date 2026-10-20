@@ -1,4 +1,4 @@
-import { useGet, useSet, useLastLoadable } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Input } from "@okouai/ui/components/ui/input";
@@ -62,10 +62,7 @@ import {
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import {
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
-} from "../../../../signals/okou-page/connector-accounts.ts";
+
 import { ConnectorIcon } from "./connector-icons.tsx";
 import { detach, onDomEventFn, Reason } from "../../../../signals/utils.ts";
 import { ConnectorHelpText } from "./connector-help-text.tsx";
@@ -108,12 +105,13 @@ function connectedStatusText(
       return $.connectors.card.updatePermissions;
     });
   }
-  if (account?.setupStatus === undefined) {
+  const setupStatus = account ? account.setupStatus : item.setupStatus;
+  if (setupStatus === undefined || setupStatus === null) {
     return i18n.t(($) => {
       return $.connectors.accounts.setupUnavailable;
     });
   }
-  if (account.setupStatus !== "complete") {
+  if (setupStatus !== "complete") {
     return i18n.t(($) => {
       return $.connectors.accounts.setupIncomplete;
     });
@@ -1582,16 +1580,8 @@ export function ConnectModal({
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const connectionAttempt = useGet(connectorConnectionAttempt$);
-  const summaries = useLastLoadable(connectorAccountSummaryByTarget$);
   const account =
-    summaries.state === "hasData"
-      ? summaries.data.get(
-          connectorAccountTargetKey({
-            kind: "builtin",
-            connectorSlug: item.slug,
-          }),
-        )?.defaultConnection
-      : undefined;
+    accountMode?.kind === "reconnect" ? accountMode.account : undefined;
 
   const selectedConnectorSlug = item.slug;
 

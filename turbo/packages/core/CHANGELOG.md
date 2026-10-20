@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.774.2](https://github.com/okou-ai/okou/compare/core-v8.774.1...core-v8.774.2) (2026-10-20)
+
+
+### Refactoring
+
+* **api:** retire delivery format guidance switch ([#41794](https://github.com/okou-ai/okou/issues/41794)) ([d013da9](https://github.com/okou-ai/okou/commit/d013da9a07294cb0f9f24e1fc15228baa55f5888))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+
 ## [8.774.1](https://github.com/okou-ai/okou/compare/core-v8.774.0...core-v8.774.1) (2026-10-20)
 
 

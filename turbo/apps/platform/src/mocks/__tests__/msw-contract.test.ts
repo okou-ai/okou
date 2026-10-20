@@ -43,6 +43,22 @@ const contracts = c.router({
     path: "/api/chat-threads/snapshot",
     responses: { 200: z.object({ source: z.literal("snapshot") }) },
   },
+  account: {
+    method: "GET",
+    path: "/api/connector-accounts/:connectionId",
+    pathParams: z.object({ connectionId: z.string() }),
+    responses: { 200: z.object({ connectionId: z.string() }) },
+  },
+  accounts: {
+    method: "GET",
+    path: "/api/connector-accounts/connections",
+    responses: { 200: z.object({ source: z.literal("accounts") }) },
+  },
+  accountSummaries: {
+    method: "GET",
+    path: "/api/connector-accounts/summaries",
+    responses: { 200: z.object({ source: z.literal("summaries") }) },
+  },
   events: {
     method: "GET",
     path: "/api/chat-threads/events",
@@ -151,4 +167,33 @@ test("Thread detail mocks leave static siblings to their own handlers", async ()
   await expect(events.json()).resolves.toStrictEqual({ source: "events" });
   const detail = await fetch("http://localhost/api/chat-threads/thread-one");
   await expect(detail.json()).resolves.toStrictEqual({ id: "thread-one" });
+});
+
+test("Account detail mocks leave static lists to their own handlers", async () => {
+  context.mocks.api(contracts.accounts, ({ respond }) => {
+    return respond(200, { source: "accounts" });
+  });
+  context.mocks.api(contracts.accountSummaries, ({ respond }) => {
+    return respond(200, { source: "summaries" });
+  });
+  context.mocks.api(contracts.account, ({ params, respond }) => {
+    return respond(200, { connectionId: params.connectionId });
+  });
+
+  const list = await fetch(
+    "http://localhost/api/connector-accounts/connections?kind=builtin&connectorSlug=github",
+  );
+  await expect(list.json()).resolves.toStrictEqual({ source: "accounts" });
+  const summaries = await fetch(
+    "http://localhost/api/connector-accounts/summaries",
+  );
+  await expect(summaries.json()).resolves.toStrictEqual({
+    source: "summaries",
+  });
+  const detail = await fetch(
+    "http://localhost/api/connector-accounts/account-one",
+  );
+  await expect(detail.json()).resolves.toStrictEqual({
+    connectionId: "account-one",
+  });
 });

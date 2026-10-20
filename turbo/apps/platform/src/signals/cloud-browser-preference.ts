@@ -1,10 +1,10 @@
 import { computed } from "ccstate";
 
-import { connectorOverview$ } from "./okou-page/connector-overview.ts";
+import { userPreferences$ } from "./okou-page/settings/user-preferences.ts";
 
-/** Whether Cloud browser should be enabled for untouched new-chat drafts. */
+/** The saved user default shown in Chat settings; submission resolves it server-side. */
 export const cloudBrowserEnabledByDefault$ = computed(
   async (get): Promise<boolean> => {
-    return (await get(connectorOverview$)).cloudBrowserEnabledByDefault;
+    return (await get(userPreferences$)).cloudBrowserEnabledByDefault;
   },
 );

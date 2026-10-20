@@ -1899,7 +1899,6 @@
       "back": "Indietro",
       "configurePermissions": "Configura le autorizzazioni {{connectorName}}",
       "customAuthorizeDescription": "Esamina, connetti e autorizza questo connettore personalizzato per l'agente.",
-      "defaultAccountFor": "{{connector}} · Account predefinito in uso: {{account}}",
       "directory": {
         "allCategories": "Tutti",
         "askAdmin": "Chiedi a un amministratore di abilitarlo",
@@ -1917,9 +1916,6 @@
         "matchCount_one": "{{count}} risultato",
         "matchCount_many": "{{count}} risultati",
         "matchCount_other": "{{count}} risultati",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_many": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Richiede attenzione",
         "nextCategories": "Categorie successive",
         "noResultsBody": "Prova con il nome di un prodotto oppure creane uno da un'API o da un server MCP.",
@@ -1938,6 +1934,7 @@
       },
       "fallsBackTo": "Passa a {{account}} come alternativa",
       "find": "Trova connettori...",
+      "loadFailed": "Impossibile caricare i connettori.",
       "noUsableAccount": "Nessun account utilizzabile",
       "remove": "Rimuovi {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Account selezionato: {{account}}",
@@ -2146,9 +2143,12 @@
     "relations": {
       "chats": "Chat",
       "loadFailed": "Caricamento non riuscito",
+      "messageUnavailable": "Messaggio non disponibile",
       "origin": "Da",
       "queued": "In coda",
+      "received": "Ricevuto",
       "running": "In esecuzione",
+      "sent": "Inviato",
       "unavailable": "Non disponibile",
       "untitled": "Senza titolo"
     },
@@ -3102,19 +3102,7 @@
       "rename": "Rinomina",
       "setupIncomplete": "Configurazione incompleta",
       "setupUnavailable": "Stato dell'account non disponibile",
-      "skipName": "Salta",
-      "summaryMany": "{{value}} account",
-      "summaryMany_one": "",
-      "summaryMany_many": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} account",
-      "summaryOne_one": "",
-      "summaryOne_many": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} richiedono attenzione",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_many": "",
-      "summaryWithAttention_other": ""
+      "skipName": "Salta"
     },
     "actions": {
       "apply": "Applicare",
@@ -3279,7 +3267,6 @@
       },
       "scope": {
         "aria": "Ambito dei connettori",
-        "attention": "Richiede attenzione",
         "connected": "Connesso",
         "custom": "Personalizzati",
         "discover": "Esplora",

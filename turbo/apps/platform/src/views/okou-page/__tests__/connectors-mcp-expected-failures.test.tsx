@@ -1,4 +1,3 @@
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   customConnectorOAuth2Contract,
@@ -64,9 +63,6 @@ test.each([
     context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
-    });
-    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-      return respond(200, { summaries: [] });
     });
     mockConnectorOverviewAccountSummaries(context, () => {
       return [];

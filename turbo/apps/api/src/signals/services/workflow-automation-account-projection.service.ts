@@ -13,7 +13,10 @@ import {
   googleCalendarAutomationProjectionCondition,
 } from "./google-calendar-automation-account.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
-import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
+import {
+  googleMeetAutomationProjectionColumns,
+  googleMeetAutomationProjectionCondition,
+} from "./google-meet-automation-account.service";
 import { reprojectNotionAutomationsForOwner } from "./notion-automation-account.service";
 import { reprojectStripeInvoicePaidAutomationsForOwner } from "./stripe-invoice-paid-workflow-automation.service";
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
@@ -50,7 +53,8 @@ export async function reprojectWorkflowAutomationsForOwner(
   const connectorSlug = args.target.connectorSlug;
   switch (connectorSlug) {
     case "gmail":
-    case "google-calendar": {
+    case "google-calendar":
+    case "google-meet": {
       const projectionDb = db;
       const projectionArgs = args;
       await (async () => {
@@ -61,10 +65,18 @@ export async function reprojectWorkflowAutomationsForOwner(
                 .from(workflowAutomations)
                 .where(gmailAutomationProjectionCondition(projectionArgs))
             : await projectionDb
-                .select(googleCalendarAutomationProjectionColumns())
+                .select(
+                  connectorSlug === "google-calendar"
+                    ? googleCalendarAutomationProjectionColumns()
+                    : googleMeetAutomationProjectionColumns(),
+                )
                 .from(workflowAutomations)
                 .where(
-                  googleCalendarAutomationProjectionCondition(projectionArgs),
+                  connectorSlug === "google-calendar"
+                    ? googleCalendarAutomationProjectionCondition(
+                        projectionArgs,
+                      )
+                    : googleMeetAutomationProjectionCondition(projectionArgs),
                 );
 
         for (const automation of automations) {
@@ -121,11 +133,6 @@ export async function reprojectWorkflowAutomationsForOwner(
     }
     case "google-forms": {
       await db.execute(googleFormsAccountProjectionStatement(args));
-      signal.throwIfAborted();
-      return;
-    }
-    case "google-meet": {
-      await reprojectGoogleMeetAutomationsForOwner(db, args);
       signal.throwIfAborted();
       return;
     }

@@ -1867,7 +1867,6 @@
       "back": "戻る",
       "configurePermissions": "{{connectorName}} 権限を構成する",
       "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
-      "defaultAccountFor": "{{connector}} · デフォルトアカウントを使用中: {{account}}",
       "directory": {
         "allCategories": "すべて",
         "askAdmin": "管理者に有効化を依頼してください",
@@ -1883,7 +1882,6 @@
         "emptyCustomBody": "HTTP API や MCP サーバーから作成すると、Okou は他のコネクターと同じように使えます。",
         "emptyCustomTitle": "カスタムコネクターはまだありません",
         "matchCount_other": "{{count}} 件の一致",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "対応が必要",
         "nextCategories": "次のカテゴリ",
         "noResultsBody": "製品名で検索するか、API や MCP サーバーから自分で作成してください。",
@@ -1898,6 +1896,7 @@
       },
       "fallsBackTo": "{{account}} にフォールバック",
       "find": "コネクタを検索...",
+      "loadFailed": "コネクターを読み込めませんでした。",
       "noUsableAccount": "使用可能なアカウントがありません",
       "remove": "{{connectorName}} を削除します",
       "selectedAccountFor": "{{connector}} · 選択中のアカウント: {{account}}",
@@ -2099,9 +2098,12 @@
     "relations": {
       "chats": "チャット",
       "loadFailed": "読み込み失敗",
+      "messageUnavailable": "メッセージ取得不可",
       "origin": "開始元",
       "queued": "待機中",
+      "received": "受信",
       "running": "実行中",
+      "sent": "送信",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
@@ -3035,13 +3037,7 @@
       "rename": "名前を変更",
       "setupIncomplete": "設定が未完了",
       "setupUnavailable": "アカウントの状態を取得できません",
-      "skipName": "スキップ",
-      "summaryMany": "{{value}} 件のアカウント",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} 件のアカウント",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} 件に対応が必要",
-      "summaryWithAttention_other": ""
+      "skipName": "スキップ"
     },
     "actions": {
       "apply": "申し込む",
@@ -3206,7 +3202,6 @@
       },
       "scope": {
         "aria": "コネクタの表示範囲",
-        "attention": "対応が必要",
         "connected": "接続済み",
         "custom": "カスタム",
         "discover": "探す",

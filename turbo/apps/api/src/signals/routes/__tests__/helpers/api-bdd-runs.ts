@@ -249,6 +249,7 @@ function runnerHeaders(valid: boolean): AuthHeaders {
 function runnerHeartbeatBody(
   args: {
     readonly runnerId?: string;
+    readonly runnerHostname?: RunnerHeartbeatBody["runnerHostname"];
     readonly group?: string;
     readonly snapshotGeneration?: RunnerHeartbeatBody["snapshotGeneration"];
     readonly snapshotSequence?: RunnerHeartbeatBody["snapshotSequence"];
@@ -265,6 +266,9 @@ function runnerHeartbeatBody(
 ): RunnerHeartbeatBody {
   return {
     runnerId: args.runnerId ?? randomUUID(),
+    ...(args.runnerHostname === undefined
+      ? {}
+      : { runnerHostname: args.runnerHostname }),
     group: args.group ?? "vm0/test",
     snapshotGeneration: args.snapshotGeneration ?? 1,
     snapshotSequence: args.snapshotSequence ?? 1,
@@ -1352,6 +1356,7 @@ export function createRunsApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 500)[],
       args: {
         readonly runnerId?: string;
+        readonly runnerHostname?: RunnerHeartbeatBody["runnerHostname"];
         readonly group?: string;
         readonly snapshotGeneration?: RunnerHeartbeatBody["snapshotGeneration"];
         readonly snapshotSequence?: RunnerHeartbeatBody["snapshotSequence"];

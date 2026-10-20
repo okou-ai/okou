@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.235.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.1...runner-rs-v0.235.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** admit aws action bodies before buffering ([#41786](https://github.com/okou-ai/okou/issues/41786)) ([0679752](https://github.com/okou-ai/okou/commit/0679752dbea1177504d59e53e0565cd4b9a44f53))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.235.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.0...runner-rs-v0.235.1) (2026-10-20)
 
 
