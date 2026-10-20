@@ -96,7 +96,7 @@ final class PersonalSubscriptionStore {
   }
   func reconnect(type: PersonalSubscriptionType) async -> Bool {
     await refresh(force: true)
-    guard !closed, !Task.isCancelled else { return false }
+    guard !closed, !Task.isCancelled, error == nil else { return false }
     guard let account = accounts.first(where: { $0.type == type.rawValue && $0.isActive != false })
     else {
       error = String(localized: "Refresh subscriptions and select an account to reconnect.")

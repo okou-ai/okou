@@ -35,6 +35,27 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     XCTAssertEqual(Set(keys.withLock { $0 }).count, 1)
   }
 
+  func testReconnectDoesNotUseACachedAccountWhenItsRequiredRefreshFails() async throws {
+    let failing = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if failing.withLock({ $0 }) {
+        return ChatHTTPResponse(
+          status: 503, body: "{\"error\":{\"message\":\"Accounts unavailable\"}}")
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    defer { store.close() }
+    await store.refresh()
+    XCTAssertEqual(store.accounts.first?.id, ModelHTTPFixtures.accountID)
+    failing.withLock { $0 = true }
+    let started = await store.reconnect(type: .codex)
+    XCTAssertFalse(started)
+    XCTAssertNotNil(store.error)
+    XCTAssertNil(store.authType)
+    XCTAssertEqual(store.phase, .idle)
+  }
+
   func testConnectionRefreshesModelsBeforeQuotaAndSurvivesAuthorizationDismissal() async throws {
     let quotaGate = ModelResponseGate()
     let quotaStarted = expectation(description: "Quota is still loading after model refresh")
