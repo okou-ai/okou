@@ -52,7 +52,6 @@ from aws_sigv4 import (
     inspect_request,
     sign_request,
 )
-from aws_sigv4_body_admission import MAX_AWS_SIGV4_REQUEST_BODY_BYTES
 from firewall_auth_cache import (
     FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE,
     FirewallAuthCacheEntryIdentity,
@@ -1110,7 +1109,7 @@ def _log_aws_sigv4_request_too_large(
         type="firewall",
         firewall_base=firewall_base,
         request_body_size_bytes=observed_size,
-        request_body_limit_bytes=MAX_AWS_SIGV4_REQUEST_BODY_BYTES,
+        request_body_limit_bytes=aws_sigv4_body_admission.MAX_AWS_SIGV4_REQUEST_BODY_BYTES,
     )
 
 
@@ -1175,7 +1174,7 @@ def mark_aws_sigv4_request_length_required(
         type="firewall",
         firewall_base=firewall_base,
         framing_error=reason,
-        request_body_limit_bytes=MAX_AWS_SIGV4_REQUEST_BODY_BYTES,
+        request_body_limit_bytes=aws_sigv4_body_admission.MAX_AWS_SIGV4_REQUEST_BODY_BYTES,
     )
     _mark_matched_firewall_failure(
         flow,
@@ -1236,7 +1235,7 @@ def _preflight_firewall_auth(
         plan.uses_aws_sigv4
         and aws_sigv4_request_requires_body_for_signing(flow)
         and body is not None
-        and len(body) > MAX_AWS_SIGV4_REQUEST_BODY_BYTES
+        and len(body) > aws_sigv4_body_admission.MAX_AWS_SIGV4_REQUEST_BODY_BYTES
     ):
         _set_aws_sigv4_request_too_large(
             flow,
