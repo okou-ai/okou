@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { requireDiscordPromptAccess$ } from "./discord-access.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
 
@@ -44,11 +44,11 @@ export function discordChatRouteReadPlan(
 
 export const loadDiscordChatRouteAccess$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     args: DiscordChatRouteAccessArgs,
     signal: AbortSignal,
   ) => {
+    const db = get(db$);
     const route = await (async () => {
       const plan = discordChatRouteReadPlan(args);
       const [route] = await db

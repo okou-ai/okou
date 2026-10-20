@@ -100,7 +100,6 @@ export const loadDiscordQueuedLaunchMaterial$ = command(
     const target = discordDeliveryTargetSchema.parse(context);
     const access = await set(
       loadDiscordChatRouteAccess$,
-      db,
       {
         ...args,
         target,
