@@ -98,7 +98,7 @@ evidence = next(step for step in native if step.get('id') == 'evidence')
 for env in [evidence['env'], ios['jobs']['publish-archive']['env']]:
     for key, value in artifact_env.items():
         assert env[key] == value
-simulator = next(step for step in native if 'ci-test.sh' in step.get('run', ''))
+simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']

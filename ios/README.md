@@ -286,7 +286,11 @@ Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
-server contract verification. To run the same CI build locally:
+server contract verification. CI starts its configured simulator while package
+checks and `build-for-testing` compile the test products, waits for both to
+succeed, then executes every native test with `test-without-building`. Failed or
+cancelled preparation still blocks the required gate. The standalone command
+builds and runs every suite with an explicit local simulator:
 
 ```sh
 RUNNER_TEMP="$(mktemp -d)" \

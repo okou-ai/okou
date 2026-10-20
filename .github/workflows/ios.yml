@@ -42,6 +42,7 @@ jobs:
           python3 ios/scripts/archive-proof.test.py
           python3 ios/scripts/archive-promotion.test.py
           python3 ios/scripts/preboot-simulator.test.py
+          python3 ios/scripts/run-ci-tests.test.py
       - name: Detect iOS changes
         id: changes
         env:
@@ -110,9 +111,7 @@ jobs:
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou.xcodeproj/project.pbxproj
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
-        run: |
-          python3 ios/scripts/preboot-simulator.py
-          bash ios/scripts/ci-test.sh
+        run: bash ios/scripts/run-ci-tests.sh
       - name: Record simulator inputs and test decision
         if: github.event_name == 'merge_group'
         run: |
