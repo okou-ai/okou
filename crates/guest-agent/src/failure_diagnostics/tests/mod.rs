@@ -117,6 +117,7 @@ fn cli_diagnostic(message: &str, source: FailureDetailSource) -> cli::CliFailure
         message: message.to_string(),
         source,
         failure_reason: None,
+        codex_failure: None,
     }
 }
 
@@ -332,6 +333,7 @@ fn cli_failure_message_preserves_structured_reason_with_stderr_message() {
         message: "turn failed".to_string(),
         source: FailureDetailSource::CodexJsonl,
         failure_reason: Some(FailureReason::InvalidApiKey),
+        codex_failure: None,
     };
     let msg = cli_failure_message(1, &stderr_lines, Some(&diagnostic));
 

@@ -37,6 +37,9 @@ pub struct FailureDiagnostic {
     /// Observed model-request, causal transport and completed retry evidence, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_request: Option<ModelRequestDiagnostic>,
+    /// Available native evidence from the selected direct Codex terminal error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_failure: Option<crate::codex_failure::CodexFailureEvidence>,
     /// Conservative session-history target status recorded during failure handling.
     pub session_history_status: SessionHistoryStatus,
     /// Content-safe shape classification for the submitted prompt.
@@ -94,6 +97,7 @@ impl FailureDiagnostic {
             failure_detail_source: None,
             failure_reason: None,
             model_request: None,
+            codex_failure: None,
             session_history_status: SessionHistoryStatus::Unknown,
             prompt_shape: prompt.prompt_shape,
             prompt_bytes: prompt.prompt_bytes,

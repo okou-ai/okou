@@ -507,23 +507,39 @@ impl AppServerState {
             ));
         }
         if let Some(failure) = self.scenario.turn_failure() {
+            if self.scenario == Scenario::RuntimeTurnFailedHttpConnectionStderr {
+                eprintln!("native mock detail for failed request");
+            }
             write_json_line(output, &turn_started_notification(&thread_id, &turn_id))?;
             write_turn_usage_notifications(output, &thread_id, &turn_id)?;
             if matches!(
                 self.scenario,
                 Scenario::RuntimeTurnFailedOutputTokenLimit
                     | Scenario::RuntimeOutputTokenLimitError
+                    | Scenario::RuntimeTurnFailedRequestSend
+                    | Scenario::RuntimeRequestSendError
             ) {
                 write_json_line(
                     output,
                     &assistant_item_completed_notification(
                         &thread_id,
                         &turn_id,
-                        "Partial answer before output limit",
+                        if matches!(
+                            self.scenario,
+                            Scenario::RuntimeTurnFailedRequestSend
+                                | Scenario::RuntimeRequestSendError
+                        ) {
+                            "Partial answer before request sending failure"
+                        } else {
+                            "Partial answer before output limit"
+                        },
                     ),
                 )?;
             }
-            if self.scenario == Scenario::RuntimeOutputTokenLimitError {
+            if matches!(
+                self.scenario,
+                Scenario::RuntimeOutputTokenLimitError | Scenario::RuntimeRequestSendError
+            ) {
                 write_json_line(
                     output,
                     &turn_error_notification(&thread_id, &turn_id, failure),

@@ -35,6 +35,7 @@ pub(crate) struct CodexFailureDiagnostic {
     pub event_type: &'static str,
     pub message: String,
     pub failure_reason: Option<FailureReason>,
+    pub evidence: Option<guest_contracts::codex_failure::CodexFailureEvidence>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -261,6 +262,7 @@ pub(crate) fn masked_codex_failure_diagnostic(
         event_type: diagnostic.event_type,
         message: mask_and_truncate_diagnostic(&diagnostic.message, masker),
         failure_reason: diagnostic.failure_reason,
+        evidence: diagnostic.evidence,
     })
 }
 
@@ -282,13 +284,14 @@ pub(crate) fn masked_jsonl_result_failure_diagnostic(
 
 fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnostic> {
     match event.get("type").and_then(Value::as_str)? {
-        "error" => {
+        "error" if event.get("will_retry").and_then(Value::as_bool) != Some(true) => {
             let error = event.get("error");
             Some(CodexFailureDiagnostic {
                 event_type: "error",
                 message: raw_message_from_field(event.get("message"))
                     .unwrap_or_else(|| "error".into()),
                 failure_reason: codex_error_failure_reason(event, error),
+                evidence: error.and_then(crate::codex_failure::terminal_evidence),
             })
         }
         "turn.completed" => {
@@ -301,6 +304,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 message: codex_error_message(turn_error)
                     .unwrap_or_else(|| format!("turn {status}")),
                 failure_reason: codex_error_failure_reason(event, turn_error),
+                evidence: turn_error.and_then(crate::codex_failure::terminal_evidence),
             })
         }
         _ => None,
@@ -916,6 +920,7 @@ mod tests {
                 event_type: "error",
                 message: "server rejected request".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1241,6 +1246,7 @@ mod tests {
                 event_type: "error",
                 message: "Incorrect API key provided".to_string(),
                 failure_reason: Some(FailureReason::InvalidApiKey),
+                evidence: None,
             })
         );
     }
@@ -1261,6 +1267,7 @@ mod tests {
                 event_type: "error",
                 message: "Selected model is at capacity. Please try a different model.".to_string(),
                 failure_reason: Some(FailureReason::ProviderOverloaded),
+                evidence: None,
             })
         );
     }
@@ -1281,6 +1288,7 @@ mod tests {
                 event_type: "error",
                 message: "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.".to_string(),
                 failure_reason: Some(FailureReason::ContextWindowExceeded),
+                evidence: None,
             })
         );
     }
@@ -1301,6 +1309,7 @@ mod tests {
                 event_type: "error",
                 message: message.to_string(),
                 failure_reason: Some(FailureReason::UnsupportedModel),
+                evidence: None,
             })
         );
     }
@@ -1321,6 +1330,7 @@ mod tests {
                 event_type: "error",
                 message: message.to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1342,6 +1352,7 @@ mod tests {
                 event_type: "error",
                 message: "Provider reported invalid_api_key in an error field".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1366,6 +1377,7 @@ mod tests {
                 message: "Access token expired and refresh failed for: codex-oauth-token."
                     .to_string(),
                 failure_reason: Some(FailureReason::ReconnectRequired),
+                evidence: None,
             })
         );
     }
@@ -1390,6 +1402,7 @@ mod tests {
                 message: "Access token expired and refresh failed for: codex-oauth-token."
                     .to_string(),
                 failure_reason: Some(FailureReason::ReconnectRequired),
+                evidence: None,
             })
         );
     }
@@ -1413,6 +1426,7 @@ mod tests {
                 event_type: "error",
                 message: "Access token refresh failed for: codex-oauth-token.".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1437,6 +1451,7 @@ mod tests {
                 message: "Access token expired and refresh failed for: notion, codex-oauth-token."
                     .to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1458,6 +1473,7 @@ mod tests {
                 event_type: "error",
                 message: "server rejected request (policy denied)".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1478,6 +1494,7 @@ mod tests {
                 event_type: "turn.completed",
                 message: "failed TurnCompleted reason".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1498,6 +1515,7 @@ mod tests {
                 event_type: "turn.completed",
                 message: "turn failed".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1516,6 +1534,7 @@ mod tests {
                 event_type: "error",
                 message: "request failed with token ***".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
@@ -1533,6 +1552,7 @@ mod tests {
                 event_type: "error",
                 message: "first line\\nsecond line\\rthird line".to_string(),
                 failure_reason: None,
+                evidence: None,
             })
         );
     }
