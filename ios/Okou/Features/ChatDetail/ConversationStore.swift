@@ -54,6 +54,11 @@ final class ConversationStore {
   private(set) var hasEarlierMessages = false
   private(set) var isLoadingEarlier = false
   private(set) var readingPosition: ConversationReadingPosition?
+  private(set) var navigationRequest: NavigationRequest?
+  struct NavigationRequest: Equatable {
+    let id = UUID()
+    let position: ConversationReadingPosition
+  }
   private(set) var isLoading = false
   private(set) var isSending = false
   private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
@@ -139,11 +144,12 @@ final class ConversationStore {
       && history?.executionState.isActive != true
   }
 
-  func refresh() async {
+  func refresh(waitForCurrent: Bool = false) async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     composer.requestSync()
-    if refreshTask != nil {
+    if let refreshTask {
       refreshAgain = true
+      if waitForCurrent { await refreshTask.value }
       return
     }
     isLoading = true
@@ -367,6 +373,20 @@ final class ConversationStore {
     }
     if position == nil { renderWindow.resumeFollowing() } else { renderWindow.pauseFollowing() }
     if readingPosition != position { readingPosition = position }
+  }
+
+  /// A run link lands on its original input, matching the PWA's run anchor.
+  @discardableResult
+  func revealRun(_ id: String) -> Bool {
+    guard !closed, let message = messages.first(where: { $0.runID == id && $0.role == .user }),
+      items.contains(where: { $0.id == message.id })
+    else { return false }
+    let position = ConversationReadingPosition(messageID: message.id, offset: 0)
+    rememberReadingPosition(position)
+    renderWindow.include(message.id)
+    publishWindow()
+    navigationRequest = NavigationRequest(position: position)
+    return true
   }
 
   func loadEarlierMessages() async {

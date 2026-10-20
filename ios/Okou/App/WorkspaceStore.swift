@@ -16,6 +16,9 @@ final class WorkspaceStore {
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
   var error: String?
+  private(set) var chatLinkError: String?
+  private var chatLinkRequestID = UUID()
+  @ObservationIgnored private var chatLinkThreadID: String?
   var selectedThreadID: String? {
     didSet {
       let previous = selectedConversation
@@ -305,11 +308,78 @@ final class WorkspaceStore {
 
   func selectChat(_ id: String) {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return }
+    chatLinkRequestID = UUID()
+    chatLinkThreadID = nil
     let reselected = selectedThreadID == id
     selectedThreadID = id
     selectedAgentID = thread.agentID
     selectedConversation?.setAutomaticReadSuppressed(false, resetReadWatermark: true)
     if reselected { requestRefresh(.history(threadID: id)) }
+  }
+
+  func dismissChatLinkError() { chatLinkError = nil }
+
+  func openChatLink(_ destination: ChatLinkDestination) async -> Bool {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return false }
+    let requestID = UUID()
+    chatLinkRequestID = requestID
+    chatLinkThreadID = nil
+    chatLinkError = nil
+    defer {
+      if chatLinkRequestID == requestID {
+        chatLinkThreadID = nil
+        requestPrune()
+      }
+    }
+    func ownsRequest() -> Bool {
+      !closed && !needsUpgrade && !Task.isCancelled && chatLinkRequestID == requestID
+    }
+    do {
+      let id: String
+      let runID: String?
+      switch destination {
+      case .thread(let threadID, let sourceRunID):
+        id = threadID
+        runID = sourceRunID
+      case .workflow(let workflowID):
+        let threadID = try await client.workflowChatThreadID(workflowID)
+        guard ownsRequest() else { return false }
+        guard let threadID else {
+          chatLinkError = "This workflow's chat is no longer available."
+          return false
+        }
+        id = threadID
+        runID = nil
+      }
+      if !list.threads.contains(where: { $0.id == id }) {
+        await list.refresh(waitForCurrent: true)
+        guard ownsRequest(), list.error == nil else { return false }
+      }
+      guard ownsRequest() else { return false }
+      // Keep the destination resident while its history resolves the run anchor.
+      chatLinkThreadID = id
+      guard let conversation = conversation(for: id) else {
+        chatLinkError = "This chat is no longer available in this workspace."
+        return false
+      }
+      if let runID {
+        if !conversation.revealRun(runID) {
+          await conversation.refresh(waitForCurrent: true)
+          guard ownsRequest() else { return false }
+          _ = conversation.revealRun(runID)
+        }
+      }
+      guard ownsRequest() else { return false }
+      selectChat(id)
+      return true
+    } catch is CancellationError {
+      return false
+    } catch {
+      guard ownsRequest() else { return false }
+      chatLinkError = error.localizedDescription
+      handle(error)
+      return false
+    }
   }
 
   func openSearchResult(_ id: String) async -> Bool {
@@ -341,6 +411,8 @@ final class WorkspaceStore {
 
   func startNewChat(agentID: String? = nil) {
     guard !isCreating, !needsUpgrade, !closed else { return }
+    chatLinkRequestID = UUID()
+    chatLinkThreadID = nil
     selectedThreadID = nil
     selectedAgentID =
       agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
@@ -449,9 +521,11 @@ final class WorkspaceStore {
       guard !closed, !Task.isCancelled else { return }
       let removed = !list.threads.contains(where: { $0.id == id })
       guard removed || conversations.count > limit else { continue }
-      guard selectedThreadID != id, let conversation = conversations[id], conversation.canRelease
+      guard selectedThreadID != id, chatLinkThreadID != id,
+        let conversation = conversations[id], conversation.canRelease
       else { continue }
       guard await sync.releaseHistory(threadID: id), !closed, selectedThreadID != id,
+        chatLinkThreadID != id,
         conversation.canRelease, conversations[id] === conversation
       else { continue }
       conversation.close()

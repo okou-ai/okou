@@ -74,6 +74,16 @@ final class ConversationScrollCoordinator {
     positionAtBottom(animated: true)
   }
 
+  func reveal(_ position: ConversationReadingPosition) {
+    guard isActive else { return }
+    invalidateRequests()
+    intent = .history
+    anchor.cancel()
+    conversation.rememberReadingPosition(position)
+    anchor.restore(position)
+    hasPositionedHistory = true
+  }
+
   func toggleWorkHistory(_ sectionID: String) {
     guard isActive else { return }
     invalidateRequests()
