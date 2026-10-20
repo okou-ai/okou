@@ -858,6 +858,12 @@ fn base_url_template_syntax_component_for_cache(
 }
 
 fn base_url_template_hostname_literal_syntax_target(literal: &str, trailing: bool) -> String {
+    let projected = if trailing {
+        base_url_template_open_host_escape_syntax_target(literal)
+    } else {
+        None
+    };
+    let literal = projected.as_deref().unwrap_or(literal);
     let label = if trailing {
         literal
             .rsplit_once(BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS)
@@ -892,6 +898,26 @@ fn base_url_template_hostname_literal_syntax_target(literal: &str, trailing: boo
     } else {
         format!("{syntax_label}{}", &literal[label.len()..])
     }
+}
+
+fn base_url_template_open_host_escape_syntax_target(literal: &str) -> Option<String> {
+    let (prefix, escape) = literal.rsplit_once('%')?;
+    if !(escape.is_empty()
+        || (escape.len() == 1 && escape.bytes().all(|byte| byte.is_ascii_hexdigit())))
+    {
+        return None;
+    }
+    let bytes = percent_decode_segment_bytes(prefix)?;
+    let pending = match std::str::from_utf8(&bytes) {
+        Ok(_) => 0,
+        Err(error) if error.error_len().is_none() => bytes.len() - error.valid_up_to(),
+        Err(_) => return None,
+    };
+    // Only an unfinished character can be completed by the variable. Keep all
+    // complete literal characters for the existing syntax/security checks, and
+    // preserve the original template for final URL and host-policy validation.
+    let end = prefix.len().checked_sub(pending * 3)?;
+    Some(format!("{}x", prefix.get(..end)?))
 }
 
 fn base_url_template_hostname_placeholder(prefix: &str, suffix: &str) -> &'static str {
@@ -1420,6 +1446,10 @@ fn path_part_is_dot_segment_for_cache(segment: &str) -> bool {
 }
 
 fn percent_decode_segment(segment: &str) -> Option<String> {
+    String::from_utf8(percent_decode_segment_bytes(segment)?).ok()
+}
+
+fn percent_decode_segment_bytes(segment: &str) -> Option<Vec<u8>> {
     let bytes = segment.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -1434,7 +1464,7 @@ fn percent_decode_segment(segment: &str) -> Option<String> {
         decoded.push((hex_value(high)? << 4) | hex_value(low)?);
         index += 3;
     }
-    String::from_utf8(decoded).ok()
+    Some(decoded)
 }
 
 fn hex_value(byte: u8) -> Option<u8> {
