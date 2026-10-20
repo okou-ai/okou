@@ -2465,6 +2465,13 @@
       "when": 1792468091095,
       "tag": "1429_atom_subscription_grant_cancellation",
       "breakpoints": true
+    },
+    {
+      "idx": 1430,
+      "version": "7",
+      "when": 1792472301308,
+      "tag": "1430_chat_thread_snapshot_content_digest",
+      "breakpoints": true
     }
   ]
 }

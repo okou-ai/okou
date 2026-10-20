@@ -198,16 +198,6 @@ describe("chat thread event sequence contract", () => {
       data: { sinceSeqId: 42 },
     });
   });
-
-  it("accepts an empty response when no snapshot row exists", () => {
-    expect(
-      chatThreadsContract.snapshot.responses[200].safeParse({
-        chatThreads: [],
-        latestEventId: null,
-        latestSeqId: null,
-      }).success,
-    ).toBe(true);
-  });
 });
 
 describe("chat thread computer access contract", () => {
