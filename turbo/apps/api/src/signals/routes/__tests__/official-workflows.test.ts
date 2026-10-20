@@ -532,6 +532,7 @@ function installCatalogStorageFixture() {
 async function deliverClerkOrganizationCreated(
   actor: ApiTestUser,
   createdAt: Date,
+  options: { readonly isolatePg?: true } = {},
 ): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
@@ -545,7 +546,7 @@ async function deliverClerkOrganizationCreated(
       created_at: createdAt.getTime(),
     },
   });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await webhooks.requestClerkWebhook("{}", {}, [200], options);
   await flushWaitUntilForTest();
 }
 
@@ -1198,7 +1199,12 @@ async function prepareBriefMember({
   }
   mockBriefMemberships([{ actor, createdAt }]);
   if (bootstrap) {
-    await deliverClerkOrganizationCreated(actor, createdAt);
+    // Without a catalog sync, this webhook is the case's first API operation.
+    await deliverClerkOrganizationCreated(
+      actor,
+      createdAt,
+      catalogAvailable ? {} : { isolatePg: true },
+    );
   }
   return { actor, createdAt };
 }
