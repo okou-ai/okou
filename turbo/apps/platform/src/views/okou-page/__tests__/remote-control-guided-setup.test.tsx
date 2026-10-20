@@ -414,7 +414,22 @@ test("Direct SSH requires a name, retains input through username help and saves 
     `remoteResource=ssh%3A${savedId}`,
   );
 });
-test("Tailscale setup adds a narrow grant with the selected port and leaves the target untagged", async () => {
+test("Tailscale setup keeps custom tags consistent across instructions, credentials and the saved network", async () => {
+  let savedNetworks: TailscaleConfig[] = [];
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: savedNetworks });
+  });
+  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
+    expect(body.tags).toStrictEqual(["tag:office-review", "tag:remote-review"]);
+    const created = {
+      ...network,
+      id: body.id,
+      name: body.name,
+      tags: body.tags,
+    };
+    savedNetworks = [created];
+    return respond(201, created);
+  });
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
   click(getAction("button", "Start setup"));
@@ -429,8 +444,9 @@ test("Tailscale setup adds a narrow grant with the selected port and leaves the 
     name: "Create an Okou tag in Tailscale",
   });
   expect(
-    screen.getByText(/Do not tag your personal target computer/u),
+    screen.getByText("Access controls → Definitions → Tags → Create tag"),
   ).toBeInTheDocument();
+  expect(screen.queryByText("Show detailed instructions")).toBeNull();
   click(getAction("button", "Tag created, continue"));
   await screen.findByRole("heading", {
     name: "Allow Okou to reach this computer",
@@ -461,10 +477,73 @@ test("Tailscale setup adds a narrow grant with the selected port and leaves the 
     screen.getByText(/Click Save and continue after copying/u),
   ).toBeInTheDocument();
   click(getAction("button", "Return to form"));
+  await fill(screen.getByLabelText("Network name"), "Custom tag network");
+  await fill(screen.getByLabelText("Client ID"), "test-only-client-id");
+  await fill(screen.getByLabelText("Client Secret"), "test-only-client-secret");
+  click(screen.getByText("Allowed tags", { selector: "summary" }));
+  await fill(
+    screen.getByLabelText("Allowed tags"),
+    "tag:office-review, tag:remote-review",
+  );
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", {
+    name: "Allow Okou to reach this computer",
+  });
+  expect(
+    screen.getByText("tag:office-review, tag:remote-review"),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      "Access controls → Policies → General access rules → Add rule",
+    ),
+  ).toBeVisible();
+  click(screen.getByText("Show grant to add"));
+  expect(
+    JSON.parse(screen.getByText(/"tcp:2222"/u).textContent!),
+  ).toStrictEqual({
+    src: ["tag:office-review", "tag:remote-review"],
+    dst: ["100.64.0.20"],
+    ip: ["tcp:2222"],
+  });
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", {
+    name: "Create an Okou tag in Tailscale",
+  });
+  expect(screen.getByText("office-review")).toBeVisible();
+  expect(screen.getByText("remote-review")).toBeVisible();
+  click(getAction("button", "Tag created, continue"));
+  click(getAction("button", "Rule saved, continue"));
+  await screen.findByRole("heading", {
+    name: "Create and enter connection credentials",
+  });
+  expect(screen.getByLabelText("Network name")).toHaveValue(
+    "Custom tag network",
+  );
+  expect(screen.getByLabelText("Client Secret")).toHaveValue(
+    "test-only-client-secret",
+  );
+  click(getAction("button", "Where do I get these details?"));
+  click(getAction("button", "Next"));
+  click(getAction("button", "Next"));
+  expect(
+    screen.getByText(
+      /tag:office-review, tag:remote-review from the current Okou form/u,
+    ),
+  ).toBeVisible();
+  click(screen.getByText("Tag missing?"));
+  expect(screen.getByText(/Definitions → Tags → Create tag/u)).toBeVisible();
+  click(getAction("button", "Return to form"));
+  click(getAction("button", "Save and continue"));
+  await screen.findByRole("heading", {
+    name: "Enable SSH on the target computer",
+  });
+  expect(savedNetworks).toHaveLength(1);
 });
 test("A single saved network is explicitly selected and can be changed", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [network] });
+    return respond(200, {
+      configs: [{ ...network, tags: ["tag:existing-office"] }],
+    });
   });
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
@@ -475,6 +554,11 @@ test("A single saved network is explicitly selected and can be changed", async (
   });
   click(getAction("button", "Set up a new network"));
   expect(picker).not.toHaveTextContent("Office network");
+  click(getAction("button", "I have installed it"));
+  await fill(await screen.findByLabelText("Computer address"), "100.64.0.20");
+  click(getAction("button", "Continue"));
+  const tagName = await screen.findByText("existing-office");
+  expect(tagName).toBeVisible();
 });
 test("VNC groups actual service methods and retains the connection step while adding SSH", async () => {
   await page("/connectors?scope=remote-control&setup=vnc");
@@ -1165,6 +1249,9 @@ test("Tailscale guide uses current form tags and keeps secret inputs mounted thr
     screen.getByText(/tag:office, tag:review from the current Okou form/u),
   ).toBeInTheDocument();
   click(screen.getByText("Tag missing?"));
+  expect(
+    screen.getByText(/Definitions → Tags → Create tag/u),
+  ).toBeInTheDocument();
   expect(
     screen.getByText(/Enter office, review as Tag name/u),
   ).toBeInTheDocument();

@@ -74,6 +74,7 @@ export interface RemoteSetup {
   readonly address: string;
   readonly port: string;
   readonly networkId: string;
+  readonly tailscaleTags: string;
   readonly formStarted: boolean;
   readonly savedName: string;
   readonly savedId: string;
@@ -104,6 +105,7 @@ function initialSetup(
     address: "",
     port: protocol === "ssh" ? "22" : "5900",
     networkId: "",
+    tailscaleTags: "tag:okou",
     formStarted: false,
     savedName: "",
     savedId: "",
@@ -128,6 +130,13 @@ export const remoteSetup$ = computed((get) => {
     return initialSetup(sessionKey, deepLink, get(flowSequence$));
   }
   return null;
+});
+export const remoteSetupTailscaleTags$ = computed((get) => {
+  return (
+    get(remoteSetup$)
+      ?.tailscaleTags.split(/[,\s]+/u)
+      .filter(Boolean) ?? []
+  );
 });
 
 export const resetRemoteSetup$ = command(({ get, set }) => {
@@ -217,7 +226,10 @@ export const beginRemoteGuide$ = command(
       !get(remoteSetup$)?.networkId &&
       networks?.length === 1
     ) {
-      set(updateRemoteSetup$, { networkId: networks[0]!.id });
+      set(updateRemoteSetup$, {
+        networkId: networks[0]!.id,
+        tailscaleTags: networks[0]!.tags.join(", "),
+      });
     }
   },
 );
@@ -292,7 +304,11 @@ export const openRemoteNetwork$ = command(
       return;
     }
     if (kind === "tailscale") {
-      await set(openTailscaleDialog$, "create", null, signal);
+      const dialog = await get(tailscaleDialog$);
+      signal.throwIfAborted();
+      if (!dialog) {
+        await set(openTailscaleDialog$, "create", null, signal);
+      }
       signal.throwIfAborted();
       if (
         get(remoteSetup$)?.sessionKey === current.sessionKey &&

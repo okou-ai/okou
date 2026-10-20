@@ -46,6 +46,7 @@ import {
   openExistingRemoteSetup$,
   openRemoteNetwork$,
   remoteSetup$,
+  remoteSetupTailscaleTags$,
   saveRemoteCloudflare$,
   saveRemoteSsh$,
   saveRemoteTailscale$,
@@ -449,7 +450,16 @@ function SavedNetworkPicker({ setup }: { readonly setup: RemoteSetup }) {
         value={setup.networkId || null}
         onValueChange={(value) => {
           if (value !== null) {
-            update({ networkId: value });
+            const network =
+              tailscale.state === "hasData" && setup.route === "tailscale"
+                ? tailscale.data?.find((item) => {
+                    return item.id === value;
+                  })
+                : undefined;
+            update({
+              networkId: value,
+              ...(network ? { tailscaleTags: network.tags.join(", ") } : {}),
+            });
           }
         }}
       >
@@ -645,15 +655,20 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
 function CopyValue({
   label,
   value,
+  help,
 }: {
   readonly label: string;
   readonly value: string;
+  readonly help?: string;
 }) {
   const { t } = useTranslation();
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3 border-b border-divider p-4 last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="break-all font-mono">{value}</dd>
+      <dd className="grid gap-1.5 break-all">
+        <span className="font-mono">{value}</span>
+        {help && <span className="text-xs text-muted-foreground">{help}</span>}
+      </dd>
       <CopyButton
         text={value}
         aria-label={`${t(($) => {
@@ -690,6 +705,7 @@ function InstructionStep({
 function TagStep() {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
+  const tags = useGet(remoteSetupTailscaleTags$);
   return (
     <StepCard
       title={t(($) => {
@@ -725,12 +741,20 @@ function TagStep() {
         })}
       >
         <dl className="overflow-hidden rounded-lg border border-divider bg-gray-50 text-sm">
-          <CopyValue
-            label={t(($) => {
-              return $.remoteControlSetup.tagName;
-            })}
-            value="okou"
-          />
+          {tags.map((tag) => {
+            return (
+              <CopyValue
+                key={tag}
+                label={t(($) => {
+                  return $.remoteControlSetup.tagName;
+                })}
+                value={tag.replace(/^tag:/u, "")}
+                help={t(($) => {
+                  return $.remoteControlSetup.tagValueHelp;
+                })}
+              />
+            );
+          })}
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 p-4">
             <dt className="text-muted-foreground">
               {t(($) => {
@@ -744,34 +768,12 @@ function TagStep() {
             </dd>
           </div>
         </dl>
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.remoteControlSetup.tagValueHelp;
-          })}
-        </p>
         <p className="text-[13px] text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.tagSave;
           })}
         </p>
       </InstructionStep>
-      <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
-          {t(($) => {
-            return $.remoteControlSetup.details;
-          })}
-        </summary>
-        <p className="pt-3 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.remoteControlSetup.tagDetails;
-          })}
-        </p>
-      </details>
-      <p className="-mt-2 text-[13px] text-muted-foreground">
-        {t(($) => {
-          return $.remoteControlSetup.tagTarget;
-        })}
-      </p>
       <ContinueButton
         onClick={() => {
           update({ step: "rule" });
@@ -784,9 +786,37 @@ function TagStep() {
     </StepCard>
   );
 }
-function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
+function RulePortSetting({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
+  return (
+    <details className="border-t border-divider pt-4">
+      <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
+        {t(($) => {
+          return $.remoteControlSetup.customPort;
+        })}
+      </summary>
+      <label className="mt-3 grid gap-2">
+        {t(($) => {
+          return $.remoteControlSetup.port;
+        })}
+        <Input
+          type="number"
+          min={1}
+          max={65_535}
+          required
+          value={setup.port}
+          onChange={(event) => {
+            update({ port: event.target.value });
+          }}
+        />
+      </label>
+    </details>
+  );
+}
+function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
+  const { t } = useTranslation();
+  const tags = useGet(remoteSetupTailscaleTags$);
   const [opening, open] = useLoadableSet(openRemoteNetwork$);
   const signal = useGet(pageSignal$);
   const validPort =
@@ -794,7 +824,11 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
     Number(setup.port) >= 1 &&
     Number(setup.port) <= 65_535;
   const grant = JSON.stringify(
-    { src: ["tag:okou"], dst: [setup.address], ip: [`tcp:${setup.port}`] },
+    {
+      src: tags,
+      dst: [setup.address],
+      ip: [`tcp:${setup.port}`],
+    },
     null,
     2,
   );
@@ -837,7 +871,7 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
             label={t(($) => {
               return $.remoteControlSetup.source;
             })}
-            value="tag:okou"
+            value={tags.join(", ")}
           />
           <CopyValue
             label={t(($) => {
@@ -852,29 +886,13 @@ function RuleStep({ setup }: { readonly setup: RemoteSetup }) {
             value={`tcp:${setup.port}`}
           />
         </dl>
+        <p className="text-[13px] text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.ruleSave;
+          })}
+        </p>
       </InstructionStep>
-      <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
-          {t(($) => {
-            return $.remoteControlSetup.customPort;
-          })}
-        </summary>
-        <label className="mt-3 grid gap-2">
-          {t(($) => {
-            return $.remoteControlSetup.port;
-          })}
-          <Input
-            type="number"
-            min={1}
-            max={65_535}
-            required
-            value={setup.port}
-            onChange={(event) => {
-              update({ port: event.target.value });
-            }}
-          />
-        </label>
-      </details>
+      <RulePortSetting setup={setup} />
       <details>
         <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
           {t(($) => {
