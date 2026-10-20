@@ -2050,21 +2050,53 @@ function createSyncAgentMentionAvatarsCommand(
   });
 }
 
+interface ComposerCompositionQuery {
+  readonly before: string;
+  readonly text: string;
+}
+
 function mountCompositionListeners(
   editor: Editor,
   compositionGate: CompositionGate,
+  updateQuery: (query: ComposerCompositionQuery | null) => void,
   signal: AbortSignal,
 ): void {
-  editor.view.dom.addEventListener(
-    "compositionstart",
-    compositionGate.compositionStart,
-    { signal },
+  const key = new PluginKey("composerComposition");
+  let before: string | null = null;
+  editor.registerPlugin(
+    new Plugin({
+      key,
+      props: {
+        handleDOMEvents: {
+          compositionstart(view) {
+            compositionGate.compositionStart();
+            const { $from } = view.state.selection;
+            before = $from.parent.isTextblock
+              ? nodeText($from.parent, $from.parentOffset)
+              : null;
+            updateQuery(before === null ? null : { before, text: "" });
+            return false;
+          },
+          compositionupdate(_view, event) {
+            // The preedit text can arrive before ProseMirror's DOM observer.
+            // Publish a query only; the IME retains ownership of the document.
+            updateQuery(before === null ? null : { before, text: event.data });
+            return false;
+          },
+          compositionend() {
+            before = null;
+            updateQuery(null);
+            compositionGate.compositionEnd();
+            return false;
+          },
+        },
+      },
+    }),
   );
-  editor.view.dom.addEventListener(
-    "compositionend",
-    compositionGate.compositionEnd,
-    { signal },
-  );
+  signal.addEventListener("abort", () => {
+    editor.unregisterPlugin(key);
+    updateQuery(null);
+  });
 }
 
 function mountLocalizationListener(
@@ -2078,6 +2110,27 @@ function mountLocalizationListener(
   i18n.on("languageChanged", refreshLocalizedUi);
   signal.addEventListener("abort", () => {
     i18n.off("languageChanged", refreshLocalizedUi);
+  });
+}
+
+function createMountCompositionCommand(
+  editor: Editor,
+  compositionGate: CompositionGate,
+  compositionQuery$: State<ComposerCompositionQuery | null>,
+  selectedIndex$: State<number | null>,
+  previewIndex$: State<number | null>,
+) {
+  return command(({ set }, signal: AbortSignal) => {
+    mountCompositionListeners(
+      editor,
+      compositionGate,
+      (query) => {
+        set(compositionQuery$, query);
+        set(selectedIndex$, null);
+        set(previewIndex$, null);
+      },
+      signal,
+    );
   });
 }
 
@@ -2256,6 +2309,7 @@ interface MountEditorOptions {
   templateSelection: ReturnType<typeof createTemplateSelectionSignals>;
   openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   caretIndex$: State<number>;
+  mountComposition$: Command<void, [AbortSignal]>;
   editorInteractionActiveState$: State<boolean>;
   suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>;
   selectedSuggestionIndexState$: State<number | null>;
@@ -2330,6 +2384,7 @@ function createMountEditorCommand({
   templateSelection,
   openTemplatePicker$,
   caretIndex$,
+  mountComposition$,
   editorInteractionActiveState$,
   suggestionMenu,
   selectedSuggestionIndexState$,
@@ -2416,7 +2471,7 @@ function createMountEditorCommand({
       set(workflowNames.request$);
       editor.mount(element);
       mountLocalizationListener(editor, runtime, signal);
-      mountCompositionListeners(editor, compositionGate, signal);
+      set(mountComposition$, signal);
       set(
         draft.setInputSyncTarget$,
         createMountedDraftInputSyncTarget({
@@ -3041,15 +3096,65 @@ function createActiveSuggestionRange<T>(
   editor: Editor,
   caretIndex$: State<number>,
   editorInteractionActiveState$: State<boolean>,
+  input$: Computed<string>,
   findRange: (value: string, caretIndex: number) => T | null,
 ): Computed<T | null> {
   return computed((get) => {
+    // Candidate replacement can change the text without moving the caret.
+    get(input$);
     const caretIndex = get(caretIndex$);
     if (caretIndex < 0 || !get(editorInteractionActiveState$)) {
       return null;
     }
     const textblock = activeTextblock(editor);
     return textblock ? findRange(textblock.value, textblock.caretIndex) : null;
+  });
+}
+
+function composingSlashRange({
+  before,
+  text,
+}: ComposerCompositionQuery): SlashWorkflowRange | null {
+  const value = before + text;
+  const range = findActiveSlashWorkflowRange(value, value.length);
+  if (range || !findActiveSlashWorkflowRange(before, before.length)) {
+    return range;
+  }
+  // Pinyin IMEs can display syllable separators inside an uncommitted token.
+  // Normalize only that preedit segment, preserving committed word boundaries
+  // and the original offsets used to replace the slash token.
+  const normalized =
+    before + text.replace(/(?<=[a-z])[\u0020\u00a0'’]+(?=[a-z0-9])/giu, "");
+  const normalizedRange = findActiveSlashWorkflowRange(
+    normalized,
+    normalized.length,
+  );
+  return normalizedRange ? { ...normalizedRange, end: value.length } : null;
+}
+
+function createActiveSlashRange(
+  editor: Editor,
+  caretIndex$: State<number>,
+  interactionActive$: State<boolean>,
+  input$: Computed<string>,
+  compositionQuery$: State<ComposerCompositionQuery | null>,
+): Computed<SlashWorkflowRange | null> {
+  const editorRange$ = createActiveSuggestionRange(
+    editor,
+    caretIndex$,
+    interactionActive$,
+    input$,
+    findActiveSlashWorkflowRange,
+  );
+  return computed((get) => {
+    const composition = get(compositionQuery$);
+    if (!composition) {
+      return get(editorRange$);
+    }
+    if (get(caretIndex$) < 0 || !get(interactionActive$)) {
+      return null;
+    }
+    return composingSlashRange(composition);
   });
 }
 
@@ -3081,6 +3186,31 @@ function createSelectedSuggestionIndex(
     // choose a row before it becomes active or opens a template preview.
     return get(activeSlashRange$)?.query === "" ? -1 : 0;
   });
+}
+
+function createSuggestionSelectionSignals(
+  selectedIndexState$: State<number | null>,
+  previewIndexState$: State<number | null>,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  return {
+    selectedSuggestionIndex$: createSelectedSuggestionIndex(
+      selectedIndexState$,
+      activeSlashRange$,
+    ),
+    setSelectedSuggestionIndex$: command(({ set }, index: number) => {
+      set(selectedIndexState$, index);
+      set(previewIndexState$, null);
+    }),
+    // Keep pointer preview separate from keyboard selection so the panel can
+    // tell which interaction drives its active row.
+    previewSuggestionIndex$: computed((get) => {
+      return get(previewIndexState$);
+    }),
+    previewSuggestion$: command(({ set }, index: number | null) => {
+      set(previewIndexState$, index);
+    }),
+  };
 }
 
 export type SlashMenuSide = "start" | "end";
@@ -3186,6 +3316,7 @@ export function createWorkflowComposerSignals<
   feedback: ComposerFeedbackModel = createComposerFeedbackModel(),
 ): WorkflowComposerSignals {
   const caretIndex$ = state(-1);
+  const compositionQuery$ = state<ComposerCompositionQuery | null>(null);
   const editorInteractionActiveState$ = state(false);
   const suggestionMenu = createSuggestionMenuBoundary();
   const selectedSuggestionIndexState$ = state<number | null>(null);
@@ -3199,6 +3330,13 @@ export function createWorkflowComposerSignals<
   const templatePreview = createTemplatePreviewRuntime();
   const compositionGate = createCompositionGate();
   const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
+  const mountComposition$ = createMountCompositionCommand(
+    editor,
+    compositionGate,
+    compositionQuery$,
+    selectedSuggestionIndexState$,
+    previewSuggestionIndexState$,
+  );
   connectComposerFeedback(feedback, editor);
   const { agentId$, workflows$, workflowNames } = createComposerAgentResources(
     editor,
@@ -3208,35 +3346,24 @@ export function createWorkflowComposerSignals<
     agentMentionAvatarRuntime,
   );
   const templates = createTemplateSignals(editor, draft, openDialog$);
-  const activeSlashRange$ = createActiveSuggestionRange(
+  const activeSlashRange$ = createActiveSlashRange(
     editor,
     caretIndex$,
     editorInteractionActiveState$,
-    findActiveSlashWorkflowRange,
+    draft.input$,
+    compositionQuery$,
   );
   const activeChatThreadSuggestionRange$ = createActiveSuggestionRange(
     editor,
     caretIndex$,
     editorInteractionActiveState$,
+    draft.input$,
     findActiveChatThreadSuggestionRange,
   );
   const chatThreadSuggestions$ = createComposerChatThreadSuggestions(
     activeChatThreadSuggestionRange$,
     agentId$,
   );
-  const setSelectedSuggestionIndex$ = command(({ set }, index: number) => {
-    set(selectedSuggestionIndexState$, index);
-    set(previewSuggestionIndexState$, null);
-  });
-  // Reported as-is rather than collapsed onto the keyboard index: the panel
-  // needs to know whether the pointer is the one driving, because that decides
-  // whether a row still carries the keyboard mark.
-  const previewSuggestionIndex$ = computed((get) => {
-    return get(previewSuggestionIndexState$);
-  });
-  const previewSuggestion$ = command(({ set }, index: number | null) => {
-    set(previewSuggestionIndexState$, index);
-  });
   const closeSuggestionMenu$ = createCloseSuggestionMenuCommand(
     editor,
     editorInteractionActiveState$,
@@ -3254,6 +3381,7 @@ export function createWorkflowComposerSignals<
     templateSelection: templates.selection,
     openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
+    mountComposition$,
     editorInteractionActiveState$,
     suggestionMenu,
     selectedSuggestionIndexState$,
@@ -3291,13 +3419,11 @@ export function createWorkflowComposerSignals<
     agentId$,
     workflows$,
     reloadWorkflows$: reloadMountedComposerWorkflows$,
-    selectedSuggestionIndex$: createSelectedSuggestionIndex(
+    ...createSuggestionSelectionSignals(
       selectedSuggestionIndexState$,
+      previewSuggestionIndexState$,
       activeSlashRange$,
     ),
-    setSelectedSuggestionIndex$,
-    previewSuggestionIndex$,
-    previewSuggestion$,
     ...createSlashExpansionSignals(editor, activeSlashRange$, suggestionMenu),
     closeSuggestionMenu$,
     ...createSuggestionMenuRefs(editor, suggestionMenu.ref$),
