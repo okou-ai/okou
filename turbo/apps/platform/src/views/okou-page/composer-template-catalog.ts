@@ -125,12 +125,11 @@ const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 416 } as const;
 const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = ["illustration"] as const;
 
 /**
- * A document cover shows the head of its first page, as the picker's document
- * card does: a whole A4 page scaled into a 170px tile sets its title at about
- * five pixels, and two of them stood 240px tall in a pane the command list
- * holds near 194px, so not one caption was in view. The head is where the
- * format lives -- masthead, columns, a row of fields -- and 4:3 keeps a row of
- * covers and their names inside the pane.
+ * A document cover is the picker's document card at slash size: a 4:3 tile
+ * whose first page stands as a sheet cropped by the tile's bottom edge
+ * (`DocumentTemplateCover`). A whole A4 page scaled into a 170px tile set its
+ * title at about five pixels, and two of them stood 240px tall in a pane the
+ * command list holds near 194px, so not one caption was in view.
  */
 const SLASH_DOCUMENT_COVER_ASPECT = { width: 4, height: 3 } as const;
 
@@ -151,6 +150,8 @@ export interface SlashTemplatePreview {
    * Absent when the category uses the shared 16:9 tile.
    */
   readonly aspect?: { readonly width: number; readonly height: number };
+  /** Documents only: whether the sheet stands over the ones behind it. */
+  readonly morePages?: boolean;
   readonly template: GenerationTemplateRequest;
   readonly attachment: ComposerTemplateAttachment;
 }
@@ -166,7 +167,10 @@ export function customSlashTemplatePreview(
         ? (template.previewAssets[0]?.url ?? template.coverUrl)
         : template.coverUrl,
     ...(template.kind === "document"
-      ? { aspect: SLASH_DOCUMENT_COVER_ASPECT }
+      ? {
+          aspect: SLASH_DOCUMENT_COVER_ASPECT,
+          morePages: template.coverHasMorePages,
+        }
       : template.kind === "illustration"
         ? { aspect: { width: 1, height: 1 } }
         : {}),
@@ -252,6 +256,7 @@ function documentPreview(item: DocumentTemplateItem): SlashTemplatePreview {
     title: item.title,
     coverUrl: nativeCoverUrl(item.previewImageUrl),
     aspect: SLASH_DOCUMENT_COVER_ASPECT,
+    morePages: item.previewPages.length > 1,
     template: toDocumentGenerationTemplate(item),
     attachment: {
       type: "document",

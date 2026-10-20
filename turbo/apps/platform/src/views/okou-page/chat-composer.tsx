@@ -3615,17 +3615,26 @@ export function TemplateImportCard({
           kind === "illustration"
             ? "aspect-[4/5]"
             : kind === "document"
-              ? compact
-                ? "aspect-[210/297]"
-                : "aspect-[4/3]"
+              ? "aspect-[4/3]"
               : "aspect-video",
         )}
       >
-        <Plus
-          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
+        {compact ? (
+          // On a shelf the accepted formats sit inside the tile, under the
+          // plus, so the caption below stays one line like every cover's --
+          // and the member still sees what the tile takes before choosing a
+          // file.
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
+            <Plus className="size-8" strokeWidth={1.5} aria-hidden />
+            <span className="max-w-full truncate text-xs">{hints[kind]}</span>
+          </span>
+        ) : (
+          <Plus
+            className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
+            strokeWidth={1.5}
+            aria-hidden
+          />
+        )}
         <input
           type="file"
           className="sr-only"
@@ -3648,15 +3657,18 @@ export function TemplateImportCard({
       </span>
       {compact ? (
         // On a shelf the import tile is one cover among many, so its caption
-        // is one line in the shelf's metrics, like every cover beside it. A
-        // second line made this tile 32px taller than its row, and on the
-        // document shelf -- where it shows under Custom only -- switching
+        // is one line in the shelf's metrics and ink, like every cover beside
+        // it. A second line made this tile 32px taller than its row, and on
+        // the document shelf -- where it shows under Custom only -- switching
         // filters grew and shrank the shelf, which moved the whole centred
-        // page under the pointer. The full name stays the input's label; the
-        // shelf already says which type the file becomes, so the visible
-        // caption drops the type word where the tile is too narrow for it.
-        <span className={RAIL_TILE_CAPTION}>
-          {kind === "presentation" ? label : labels.illustration}
+        // page under the pointer.
+        <span
+          className={cn(
+            RAIL_TILE_CAPTION,
+            "text-muted-foreground transition-colors group-hover/tile:text-foreground",
+          )}
+        >
+          {label}
         </span>
       ) : (
         <span

@@ -131,7 +131,6 @@ type ComposerTemplateEditorSignals = Pick<
   | "hasTemplateAttachment$"
   | "insertTemplate$"
   | "openTemplatePicker$"
-  | "templateRequests$"
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
@@ -407,7 +406,6 @@ function composerTemplateSignals(
     hasTemplateAttachment$: composer.hasTemplateAttachment$,
     insertTemplate$: composer.insertTemplate$,
     openTemplatePicker$: composer.openTemplatePicker$,
-    templateRequests$: composer.templateRequests$,
   };
 }
 

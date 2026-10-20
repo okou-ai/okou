@@ -425,9 +425,11 @@ test("Document defaults to Custom when documents exist and separates built-in pu
   expect(
     within(shelf).getByLabelText("Import your own document"),
   ).toHaveAttribute("accept", ".docx,.doc");
+  // The shelf draws a document the way the picker and the slash panel do,
+  // from the same cover.
   expect(
     button(`Use template ${own.title}`, shelf).querySelector("img"),
-  ).toHaveAttribute("src", own.previewAssets[0]!.url);
+  ).toHaveAttribute("src", own.coverUrl);
 
   click(button(`Use template ${own.title}`, shelf));
   click(button("Reports", categories));

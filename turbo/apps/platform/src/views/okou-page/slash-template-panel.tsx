@@ -27,6 +27,7 @@ import {
 } from "../../signals/okou-page/custom-template-library.ts";
 import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
 import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
+import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -184,8 +185,8 @@ function SlashTemplateCover({
   const { t } = useTranslation();
   const aspect = preview.aspect;
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
-  // A document page is cropped to its head rather than fitted whole; other
-  // custom artwork has no known shape, so it is fitted.
+  // A document is drawn as the picker's card draws it; other custom artwork
+  // has no known shape, so it is fitted.
   const documentPage = category === "document";
   return (
     <button
@@ -206,7 +207,7 @@ function SlashTemplateCover({
     >
       <span
         className={cn(
-          "flex items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-border/60 transition-colors group-hover:bg-state-hover",
+          "relative flex items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-border/60 transition-colors group-hover:bg-state-hover",
           !aspect && "aspect-video",
         )}
         style={
@@ -217,18 +218,21 @@ function SlashTemplateCover({
             : undefined
         }
       >
-        {preview.coverUrl ? (
+        {preview.coverUrl && documentPage ? (
+          <DocumentTemplateCover
+            coverUrl={preview.coverUrl}
+            hasMorePages={preview.morePages === true}
+          />
+        ) : preview.coverUrl ? (
           <img
             src={preview.coverUrl}
             alt=""
             loading="lazy"
             className={cn(
               "h-full w-full",
-              documentPage
-                ? "bg-[#ffffff] object-cover object-top"
-                : preview.template.type === "custom"
-                  ? "object-contain"
-                  : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
+              preview.template.type === "custom"
+                ? "object-contain"
+                : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
             )}
           />
         ) : (

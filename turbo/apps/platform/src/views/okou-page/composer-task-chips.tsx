@@ -21,7 +21,6 @@ import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { cn } from "@okouai/ui/lib/utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
-import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   DOCUMENT_TEMPLATE_CATEGORIES,
   DOCUMENT_TEMPLATE_ITEMS,
@@ -50,10 +49,7 @@ import {
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
 import { ComposerRailPager } from "./rail-pager.tsx";
-import {
-  TEMPLATE_TILE_SELECTED,
-  TEMPLATE_TILE_SELECTION_FRAME,
-} from "./template-tile.ts";
+import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
   slashTemplatePreviews,
   toDocumentGenerationTemplate,
@@ -212,21 +208,19 @@ function ComposerTemplateCover({
   coverUrl,
   width,
   ratio,
-  contain = false,
-  selected,
+  documentPage,
   onSelect,
 }: {
   readonly title: string;
   readonly coverUrl: string | null;
   readonly width: string;
   readonly ratio: string;
-  readonly contain?: boolean;
   /**
-   * Set by a shelf that stays open after a pick, so the cover already in the
-   * draft says so the way a gallery tile does. Omitted where a pick closes
-   * the shelf.
+   * A document cover is drawn as the picker draws it -- the first page as a
+   * sheet on the tile's ground, cropped by the tile's bottom edge -- so one
+   * template looks the same on the shelf, in the slash panel and in the picker.
    */
-  readonly selected?: boolean;
+  readonly documentPage?: { readonly hasMorePages: boolean };
   readonly onSelect: () => void;
 }) {
   const { t } = useTranslation();
@@ -241,28 +235,25 @@ function ComposerTemplateCover({
         },
         { title },
       )}
-      aria-pressed={selected}
       onClick={onSelect}
     >
       <span
         className={cn(
-          "flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
-          selected !== undefined && TEMPLATE_TILE_SELECTION_FRAME,
-          selected && TEMPLATE_TILE_SELECTED,
+          "relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
           ratio,
         )}
       >
-        {coverUrl ? (
+        {coverUrl && documentPage ? (
+          <DocumentTemplateCover
+            coverUrl={coverUrl}
+            hasMorePages={documentPage.hasMorePages}
+          />
+        ) : coverUrl ? (
           <img
             src={coverUrl}
             alt=""
             loading="lazy"
-            className={cn(
-              "h-full w-full object-center",
-              contain
-                ? "object-contain"
-                : "object-cover transition-transform duration-200 group-hover/tile:scale-[1.04]",
-            )}
+            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
           />
         ) : (
           <Image size={24} aria-hidden />
@@ -478,16 +469,12 @@ function ComposerDocumentTemplateRail({
   const selectTemplate = useSet(signals.taskChips.selectTemplate$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const requests = useGet(signals.template.templateRequests$);
-  const inDraft = (match: (request: GenerationTemplateRequest) => boolean) => {
-    return requests.some(match);
-  };
   return (
     <ComposerRail
       signals={signals}
       key={category}
       rail={`templates:document:${category}`}
-      gap="gap-4"
+      gap="gap-3"
       items={
         category === "custom"
           ? [
@@ -496,7 +483,7 @@ function ComposerDocumentTemplateRail({
                 signals={signals}
                 kind="document"
                 compact
-                className="block w-[142px]"
+                className="block w-[200px]"
                 onImported={() => {
                   setMode(null);
                 }}
@@ -506,16 +493,12 @@ function ComposerDocumentTemplateRail({
                   <ComposerTemplateCover
                     key={template.id}
                     title={template.title}
-                    coverUrl={template.previewAssets[0]?.url ?? null}
-                    width="w-[142px]"
-                    ratio="aspect-[210/297]"
-                    contain
-                    selected={inDraft((request) => {
-                      return (
-                        request.type === "custom" &&
-                        request.selection.userTemplateId === template.id
-                      );
-                    })}
+                    coverUrl={template.coverUrl}
+                    width="w-[200px]"
+                    ratio="aspect-[4/3]"
+                    documentPage={{
+                      hasMorePages: template.coverHasMorePages,
+                    }}
                     onSelect={() => {
                       selectTemplate(
                         {
@@ -543,15 +526,9 @@ function ComposerDocumentTemplateRail({
                   coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
                     width: 284,
                   })}
-                  width="w-[142px]"
-                  ratio="aspect-[210/297]"
-                  contain
-                  selected={inDraft((request) => {
-                    return (
-                      request.type === "document" &&
-                      request.selection.documentTemplateId === item.id
-                    );
-                  })}
+                  width="w-[200px]"
+                  ratio="aspect-[4/3]"
+                  documentPage={{ hasMorePages: item.previewPages.length > 1 }}
                   onSelect={() => {
                     selectTemplate(toDocumentGenerationTemplate(item), {
                       type: "document",
