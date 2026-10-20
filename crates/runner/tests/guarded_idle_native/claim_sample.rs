@@ -37,12 +37,19 @@ pub async fn wait(path: &Path, after_ns: u64) -> TestResult<u64> {
             .filter(|line| line.ends_with(b"\n"))
         {
             let sample: Value = serde_json::from_slice(line)?;
-            if let Some(at) = sample["monotonic_ns"].as_u64().filter(|at| *at > after_ns)
-                && sample["processes"].as_array().is_some_and(|processes| {
-                    processes.iter().any(|process| {
-                        process["pid"].as_u64() == Some(u64::from(std::process::id()))
+            if let Some(at) = sample
+                .get("monotonic_ns")
+                .and_then(Value::as_u64)
+                .filter(|at| *at > after_ns)
+                && sample
+                    .get("processes")
+                    .and_then(Value::as_array)
+                    .is_some_and(|processes| {
+                        processes.iter().any(|process| {
+                            process.get("pid").and_then(Value::as_u64)
+                                == Some(u64::from(std::process::id()))
+                        })
                     })
-                })
             {
                 return Ok(at);
             }
