@@ -46,7 +46,7 @@ final class ComposerDraftStore {
       && !attachments.items.contains { if case .uploading = $0.state { true } else { false } }
   }
   func requestSync() {
-    guard !closed, syncTask == nil else { return }
+    guard !closed, !Task.isCancelled, syncTask == nil else { return }
     Task { [weak self] in await self?.synchronize() }
   }
   private let target: ChatDraftTarget
@@ -148,7 +148,7 @@ final class ComposerDraftStore {
   }
 
   func synchronize() async {
-    guard !closed, !localReadFailed, let repository else { return }
+    guard !closed, !Task.isCancelled, !localReadFailed, let repository else { return }
     if let syncTask {
       await syncTask.value
       return

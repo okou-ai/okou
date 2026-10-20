@@ -34,6 +34,16 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertTrue(server.state.value.withLock { $0.paths.allSatisfy { !$0.contains("POST") } })
   }
 
+  func testCancelledDraftOpeningDoesNotStartRemoteRequests() async {
+    let server = DraftServer()
+    let composer = server.composer()
+    defer { composer.close() }
+    let opening = Task { await composer.synchronize() }
+    opening.cancel()
+    await opening.value
+    XCTAssertTrue(server.state.value.withLock { $0.paths.isEmpty })
+  }
+
   func testTypingDuringLateRemoteLoadKeepsLocalInputAndClearCannotResurrectRemote() async throws {
     for clear in [false, true] {
       let gate = DraftGate()

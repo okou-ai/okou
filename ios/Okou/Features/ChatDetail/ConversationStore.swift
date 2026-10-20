@@ -126,8 +126,8 @@ final class ConversationStore {
   }
 
   func refresh() async {
-    composer.requestSync()
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    composer.requestSync()
     if refreshTask != nil {
       refreshAgain = true
       return
