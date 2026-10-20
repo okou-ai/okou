@@ -3,7 +3,7 @@ import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button, LoadErrorRow } from "@okouai/ui";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import {

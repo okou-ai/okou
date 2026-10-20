@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   customConnectorSlugSchema,
+  isIntegrationManagedCustomConnector,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { z } from "zod";
@@ -31,6 +32,9 @@ import type { ConnectorAccountMutationOptions } from "../okou-page/settings/conn
 import { completeDirectedConnectorAction$ } from "./directed-connector-callback.ts";
 import { routeChatActionCallback$ } from "../chat-page/action-callback.ts";
 import { connectorCatalogItemForSlug } from "../external/connectors.ts";
+import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
+import { customConnectorManagedStatusSchema } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { connectorAccountSummaryByTarget$ } from "../okou-page/connector-accounts.ts";
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/connect` route params.
@@ -58,6 +62,28 @@ export const directedConnectCustomSlug$ = computed(
     return parsed.success ? parsed.data : null;
   },
 );
+
+export const directedConnectCustomConnected$ = computed(async (get) => {
+  const slug = get(directedConnectCustomSlug$);
+  if (!slug) {
+    return false;
+  }
+  const connector = (await get(customConnectors$)).find((candidate) => {
+    return candidate.slug === slug;
+  });
+  if (!connector) {
+    return false;
+  }
+  if (isIntegrationManagedCustomConnector(connector)) {
+    return customConnectorManagedStatusSchema.parse(connector).connected;
+  }
+  const summaries = await get(connectorAccountSummaryByTarget$);
+  const account = summaries.get(`custom:${connector.id}`)?.defaultConnection;
+  return (
+    account?.connectionStatus === "connected" &&
+    account.setupStatus === "complete"
+  );
+});
 
 type DirectedConnectAccountTarget =
   | { readonly kind: "default" }

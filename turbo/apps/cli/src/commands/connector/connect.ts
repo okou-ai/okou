@@ -97,7 +97,7 @@ async function connectCustom(
     account,
     values: inputValues,
   });
-  const connectionId = result.connectionId ?? result.connectedAccountId;
+  const connectionId = result.connectionId;
   if (
     !connectionId ||
     (account.intent === "reconnect" && connectionId !== account.connectionId)

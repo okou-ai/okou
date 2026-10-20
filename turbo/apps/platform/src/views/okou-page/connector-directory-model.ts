@@ -1,11 +1,10 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import { withMemberAccount } from "../../signals/external/connectors.ts";
 import {
   groupConnectorsByCategory,
   type ConnectorCategorySection,
@@ -47,6 +46,21 @@ export interface ConnectorDirectoryModel {
     PlatformConnectorCatalogStatusItem
   >;
   readonly categoryLabelOf: (category: string) => string | undefined;
+}
+
+export function directoryConnectorAccountProjections(
+  connectors: readonly PlatformConnectorCatalogStatusItem[],
+  summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
+) {
+  return connectors.map((connector) => {
+    const account = summaries?.get(
+      `builtin:${connector.slug}`,
+    )?.defaultConnection;
+    // A known default supplies UI identity. Otherwise preserve raw metadata so
+    // existing stale-identity guards can offer management without inventing one.
+    // #41699 drops retained projections after replacement API/client drain.
+    return account ? withMemberAccount(connector, account) : connector;
+  });
 }
 
 export function currentDirectoryAccountSummaries(
@@ -127,7 +141,8 @@ function customConnectorGroups(
       summary.accountCount > 0 &&
       (summary.attentionCount > 0 ||
         summary.defaultConnection === null ||
-        !connector.connected)
+        summary.defaultConnection.connectionStatus !== "connected" ||
+        summary.defaultConnection.setupStatus !== "complete")
     );
   });
   const attentionIds = new Set(

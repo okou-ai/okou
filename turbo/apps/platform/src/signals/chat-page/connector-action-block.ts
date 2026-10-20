@@ -14,9 +14,12 @@ import {
 import {
   customConnectorSlugSchema,
   isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {
   connectorCatalogItemBySlug,
@@ -515,7 +518,7 @@ function createCustomConnectorSignals(
       return false;
     }
     if (isIntegrationManagedCustomConnector(connector)) {
-      return connector.connected;
+      return customConnectorManagedStatusSchema.parse(connector).connected;
     }
     const summaries = await get(connectorAccountSummaryByTarget$);
     const account = summaries.get(

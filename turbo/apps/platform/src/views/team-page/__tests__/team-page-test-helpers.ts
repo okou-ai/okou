@@ -161,6 +161,9 @@ export function mockConnectorOverview(
                   externalUsername: null,
                   externalEmail: null,
                   connectionStatus: "connected" as const,
+                  setupStatus: "complete" as const,
+                  missingRequiredFields: [],
+                  configuredFieldKeys: connector.configuredFieldKeys,
                 },
               },
             ]

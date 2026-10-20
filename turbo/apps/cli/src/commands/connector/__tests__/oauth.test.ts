@@ -84,7 +84,7 @@ describe("connector oauth start", () => {
   );
 
   it.each([undefined, ID])(
-    "prints whitelisted custom automatic identity with optional connectionId %s",
+    "normalizes whitelisted custom automatic identity from connectionId %s",
     async (connectionId) => {
       const connector = customMcpConnector({
         authMode: "automatic",
@@ -129,7 +129,7 @@ describe("connector oauth start", () => {
       expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
         result: "connected",
         connectedAccountId: ID,
-        ...(connectionId ? { connectionId } : {}),
+        connectionId: ID,
       });
     },
   );

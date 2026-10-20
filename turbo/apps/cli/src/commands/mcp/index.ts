@@ -97,7 +97,9 @@ const listCommand = new Command()
           displayName: connector.displayName,
           transport: connector.transport,
           endpoint: connector.endpoint,
-          connected: connector.connected,
+          runtimeAvailable: connector.runtimeAvailable,
+          // #41699 removes the legacy JSON alias with the old Run field.
+          connected: connector.runtimeAvailable,
           connectionStatus: connector.connectionStatus,
           setupStatus: connector.setupStatus,
           missingRequiredFields: connector.missingRequiredFields,
@@ -134,7 +136,9 @@ const listCommand = new Command()
         ),
       );
       for (const connector of connectors) {
-        const status = connector.connected ? "connected" : "disconnected";
+        const status = connector.runtimeAvailable
+          ? "connected"
+          : "disconnected";
         console.log(
           [
             connector.slug.padEnd(slugWidth),

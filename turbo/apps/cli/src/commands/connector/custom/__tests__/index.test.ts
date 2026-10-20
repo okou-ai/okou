@@ -101,6 +101,66 @@ describe("okou connector custom readers", () => {
     });
   });
 
+  it.each([customConnector(), customMcpConnector()])(
+    "uses canonical member accounts when the $kind definition omits old projections",
+    async (definition) => {
+      const accountId = "55555555-5555-4555-8555-555555555555";
+      const accountDefinition = {
+        ...definition,
+        connected: true,
+        connectedAccountId: accountId,
+        missingRequiredFields: [],
+        configuredFieldKeys: ["apiKey"],
+      };
+      const projections = new Set([
+        "connected",
+        "connectedAccountId",
+        "connectedAccountUpdatedAt",
+        "missingRequiredFields",
+        "configuredFieldKeys",
+      ]);
+      const canonical = Object.fromEntries(
+        Object.entries(definition).filter(([key]) => {
+          return !projections.has(key);
+        }),
+      );
+      server.use(
+        stubConnectorAccountSummaries(
+          customAccountSummaries([accountDefinition]),
+        ),
+        http.get("http://localhost:3000/api/custom-connectors", () => {
+          return HttpResponse.json({ connectors: [canonical] });
+        }),
+      );
+
+      await customConnectorCommand.parseAsync([
+        "node",
+        "okou",
+        "list",
+        "--json",
+      ]);
+
+      const json: unknown = JSON.parse(consoleLog.mock.calls.flat().join("\n"));
+      expect(json).toMatchObject({
+        context: "current",
+        connectors: [
+          {
+            id: definition.id,
+            kind: definition.kind,
+            target: { kind: "custom", customConnectorId: definition.id },
+            integrationManaged: false,
+            connectionId: accountId,
+            memberStatus: "connected",
+            accountSummary: {
+              accountCount: 1,
+              defaultConnection: { id: accountId, setupStatus: "complete" },
+            },
+          },
+        ],
+      });
+    },
+  );
+
   it.each(
     [customConnector(), customMcpConnector()].flatMap((connector) => {
       return [

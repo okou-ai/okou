@@ -3,6 +3,8 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -107,40 +109,82 @@ test("Expired builtin and custom defaults with healthy siblings remain in Needs 
   expect(fixture.manualConnectionRequests).toStrictEqual([]);
 });
 
-test("Healthy saved accounts stay connected while zero-account connectors remain available to add", async () => {
-  const builtinTarget = { kind: "builtin", connectorSlug: "github" } as const;
-  const customTarget = {
-    kind: "custom",
-    customConnectorId: ACME_CONNECTOR_ID,
-  } as const;
-  installComposerConnectorFixture({
-    catalog: [
+test.each(["current", "canonical"] as const)(
+  "Healthy saved accounts with %s definitions stay connected while zero-account connectors remain available to add",
+  async (definitionShape) => {
+    const builtinTarget = { kind: "builtin", connectorSlug: "github" } as const;
+    const customTarget = {
+      kind: "custom",
+      customConnectorId: ACME_CONNECTOR_ID,
+    } as const;
+    const catalog = [
       builtinConnector({ slug: "github", label: "GitHub" }),
       builtinConnector({ slug: "notion", label: "Notion", connected: false }),
-    ],
-    customConnectors: [acme(true)],
-    accountSummaries: [
-      accountSummary(builtinTarget, savedAccounts(builtinTarget)),
-      accountSummary(customTarget, savedAccounts(customTarget)),
-    ],
-  });
-  const dialog = await openDirectory();
-  await within(dialog).findByText("Notion");
-  expect(within(dialog).queryByText("GitHub")).toBeNull();
-  await fill(
-    within(dialog).getByPlaceholderText("Find connectors..."),
-    "github",
-  );
-  await expect(
-    findFastControl("button", "Open GitHub details", dialog),
-  ).resolves.toHaveTextContent("+1");
-  await fill(within(dialog).getByPlaceholderText("Find connectors..."), "");
-  await openCustom(dialog);
-  await expect(
-    findFastControl("button", "Connect Acme Search", dialog),
-  ).resolves.toHaveTextContent("2 accounts");
-  expect(within(dialog).queryByText("Needs attention")).toBeNull();
-});
+    ];
+    installComposerConnectorFixture({
+      catalog,
+      customConnectors: [acme(true)],
+      accountSummaries: [
+        accountSummary(builtinTarget, savedAccounts(builtinTarget)),
+        accountSummary(customTarget, savedAccounts(customTarget)),
+      ],
+    });
+    if (definitionShape === "canonical") {
+      context.mocks.api(
+        connectorCatalogReaderContract.discovery,
+        ({ query, respond }) => {
+          const keyword = query.keyword?.toLowerCase() ?? "";
+          const connectors = catalog
+            .filter((item) => {
+              return (
+                item.slug.includes(keyword) ||
+                item.label.toLowerCase().includes(keyword)
+              );
+            })
+            .map(
+              ({ connected: _connected, connection: _connection, ...item }) => {
+                return item;
+              },
+            );
+          return respond(200, {
+            connectors,
+            totalConnectorCount: catalog.length,
+          });
+        },
+      );
+    }
+    const {
+      connected: _connected,
+      connectedAccountId: _connectedAccountId,
+      connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+      missingRequiredFields: _missingRequiredFields,
+      configuredFieldKeys: _configuredFieldKeys,
+      ...definition
+    } = acme(true);
+    context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+      return respond(200, {
+        connectors: [definitionShape === "canonical" ? definition : acme(true)],
+      });
+    });
+    const dialog = await openDirectory();
+    await within(dialog).findByText("Notion");
+    expect(within(dialog).queryByText("GitHub")).toBeNull();
+    await fill(
+      within(dialog).getByPlaceholderText("Find connectors..."),
+      "github",
+    );
+    await expect(
+      findFastControl("button", "Open GitHub details", dialog),
+    ).resolves.toHaveTextContent("+1");
+    await fill(within(dialog).getByPlaceholderText("Find connectors..."), "");
+    await openCustom(dialog);
+    await expect(
+      findFastControl("button", "Connect Acme Search", dialog),
+    ).resolves.toHaveTextContent("2 accounts");
+    expect(within(dialog).queryByText("Needs attention")).toBeNull();
+    expect(within(dialog).queryByText("Reconnect required")).toBeNull();
+  },
+);
 
 async function openExpiringBuiltinDirectory(refreshable: boolean) {
   const clock = { nowMs: new Date("2026-10-19T08:00:00.000Z").getTime() };
@@ -230,14 +274,29 @@ test("A saved custom account with incomplete setup is visible without claiming i
   } as const;
   installComposerConnectorFixture({
     customConnectors: [acme()],
-    accountSummaries: [accountSummary(target, savedAccounts(target))],
+    accountSummaries: [
+      {
+        ...accountSummary(
+          target,
+          savedAccounts(target).map((account) => {
+            return account.isDefault
+              ? {
+                  ...account,
+                  setupStatus: "incomplete" as const,
+                  missingRequiredFields: ["secret"],
+                }
+              : account;
+          }),
+        ),
+        attentionCount: 1,
+      },
+    ],
   });
   const dialog = await openDirectory();
   await openCustom(dialog);
   await within(dialog).findByText("Needs attention");
   const card = await findFastControl("button", "Connect Acme Search", dialog);
-  expect(card).toHaveTextContent("2 accounts");
-  expect(card).toHaveTextContent("Reconnect required");
+  expect(card).toHaveTextContent("1/2 need attention");
 });
 
 test("Connecting a custom account updates the directory when it is reopened", async () => {
