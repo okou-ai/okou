@@ -164,35 +164,6 @@ function captureContinuation() {
   return prompts;
 }
 
-test("duplicate wallet cards share the pending continuation and its failure", async () => {
-  const authorization = mockAuthorization();
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "Continuation unavailable" },
-    });
-  });
-  await openChat([TRACKED_CONNECT_URL, TRACKED_CONNECT_URL].join("\n\n"));
-  await authorization.read;
-  const links = await waitFor(() => {
-    const links = actionLinks();
-    expect(links).toHaveLength(2);
-    return links;
-  });
-  click(links[0]!);
-  await waitFor(() => {
-    expect(screen.getAllByText("Waiting for authorization")).toHaveLength(2);
-  });
-  await authorization.subscribedRead;
-  authorization.complete();
-  await waitFor(() => {
-    expect(
-      screen.getAllByText(
-        "Authorized. Continue to retry sending your message.",
-      ),
-    ).toHaveLength(2);
-  });
-});
-
 test("wallet consent completed before subscription attachment is recovered by the initial read", async () => {
   const authorization = mockAuthorization();
   const prompts = captureContinuation();

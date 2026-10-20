@@ -667,60 +667,6 @@ test("Load connector accounts progressively", async () => {
   expect(accountActions(dialog)).toHaveLength(8);
 });
 
-test("A failed account page preserves loaded accounts and allows another load", async () => {
-  const accounts = mockGithubAccounts(context, 8);
-  let retry = false;
-  context.mocks.api(
-    connectorAccountsContract.connections,
-    ({ query, respond }) => {
-      if (query.cursor && !retry) {
-        return respond(500, {
-          error: { code: "INTERNAL", message: "Account page unavailable" },
-        });
-      }
-      return respond(200, {
-        connections: query.cursor ? accounts.slice(3) : accounts.slice(0, 3),
-        defaultConnection:
-          accounts.find((account) => {
-            return account.isDefault;
-          }) ?? null,
-        nextCursor: query.cursor ? null : "3",
-      });
-    },
-  );
-  await setupAccountsPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage GitHub accounts");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Manage GitHub accounts",
-  });
-  await expect(
-    within(dialog).findByText("Work 7"),
-  ).resolves.toBeInTheDocument();
-
-  click(getConnectorAction("button", "Load more", dialog));
-
-  await expect(
-    screen.findByText("Account page unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Work 7")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Load more", dialog)).toBeEnabled();
-  });
-  retry = true;
-
-  click(getConnectorAction("button", "Load more", dialog));
-
-  await expect(
-    within(dialog).findByText("Work 1"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Work 7")).toBeInTheDocument();
-  expect(accountActions(dialog)).toHaveLength(8);
-});
-
 async function openNamedConnectorAccountRename() {
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },

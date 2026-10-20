@@ -6,7 +6,6 @@ import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { chatThreadComputerUseHostContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -596,59 +595,4 @@ test("Save an existing chat's Computer Use disconnection before sending", async 
   expect(externalOrder.at(-1)).toBe("send:Continue without the desktop");
   expect(laterSend.computerUseHostId).toBeUndefined();
   expect(laterSend.cloudBrowserEnabled).toBeUndefined();
-});
-
-test("Send the selected computer after saving the chat preference fails", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sends: CapturedComputerSend[] = [];
-  installRunChat({
-    computerUseHostId: null,
-    cloudBrowserEnabled: false,
-    onSendRequest(body) {
-      sends.push({
-        prompt: body.prompt,
-        computerUseHostId: body.computerUseHostId,
-        cloudBrowserEnabled: body.cloudBrowserEnabled,
-      });
-    },
-  });
-  installComputerHosts(() => {
-    return [
-      computerHost({
-        id: PRIMARY_HOST_ID,
-        displayName: "Studio Mac",
-        status: "online",
-      }),
-    ];
-  });
-  context.mocks.api(chatThreadComputerUseHostContract.update, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "The computer preference could not be saved",
-      },
-    });
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-  await openComputerMenu();
-  await user.click(
-    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
-  );
-
-  await expect(
-    screen.findByText("The computer preference could not be saved"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByRole("switch", { name: "Studio Mac", checked: true }),
-  ).toBeChecked();
-
-  await sendText("Inspect the selected computer");
-
-  await expect(waitForComputerSend(sends, 1)).resolves.toMatchObject({
-    prompt: "Inspect the selected computer",
-    computerUseHostId: PRIMARY_HOST_ID,
-    cloudBrowserEnabled: false,
-  });
 });

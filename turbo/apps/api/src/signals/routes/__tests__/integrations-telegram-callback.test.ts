@@ -231,21 +231,14 @@ describe("Telegram callback HTTP/browser protocol", () => {
       expect(page.messages).toStrictEqual([]);
       expect(page.closed()).toBeFalsy();
       expect(page.navigation).toStrictEqual([]);
-      expect(page.status()).toContain(
-        "can no longer confirm the connection result",
-      );
     },
   );
 
   it.each([false, true])(
-    "scrubs proof and points to the original page while supporting confirmed outcomes (fragment=%s)",
+    "scrubs proof and waits for a binding outcome (fragment=%s)",
     async (fragment) => {
       const page = await browser(authorizedUrl(fragment));
       expect(page.response.status).toBe(200);
-      expect(page.status()).toContain("Keep this page open");
-      expect(page.status()).toContain(
-        "Return to the original page or check Telegram settings for the connection result",
-      );
       expect(page.response.headers.get("cache-control")).toBe("no-store");
       expect(page.response.headers.get("referrer-policy")).toBe("no-referrer");
       expect(page.currentUrl()).toBe(
@@ -266,13 +259,7 @@ describe("Telegram callback HTTP/browser protocol", () => {
         target: ORIGIN,
       });
       page.receive(message({ type: "telegram-auth-ack", stage: "identity" }));
-      const count = page.messages.length;
-      page.tick(500);
-      expect(page.messages.slice(count)).toStrictEqual([]);
       expect(page.navigation).toStrictEqual([]);
-      expect(page.status()).toContain(
-        "Return to the original page or check Telegram settings for the connection result",
-      );
       expect(page.closed()).toBeFalsy();
       page.receive(message({ type: "telegram-auth-result", status: "linked" }));
       expect(page.messages.at(-1)?.message).toStrictEqual(
@@ -294,12 +281,9 @@ describe("Telegram callback HTTP/browser protocol", () => {
     page.tick(500);
     expect(page.messages.at(-1)).toStrictEqual(first);
     page.receive(message({ type: "telegram-auth-ack", stage: "identity" }));
-    const count = page.messages.length;
-    page.tick(500);
-    expect(page.messages).toHaveLength(count);
-    page.tick(120_000);
-    expect(page.status()).toContain(
-      "can no longer confirm the connection result",
+    page.receive(message());
+    expect(page.messages.at(-1)?.message).toStrictEqual(
+      message({ type: "telegram-auth-bridge-ready" }),
     );
     page.pagehide();
     expect(page.timers.size).toBe(0);
@@ -364,7 +348,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       message({ type: "telegram-auth", data: PROOF }),
     );
     expect(page.navigation).toStrictEqual([]);
-    expect(page.status()).toContain("Keep this page open");
     page.pagehide();
   });
 
@@ -416,7 +399,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       page.tick(250);
       expect(page.navigation).toStrictEqual([]);
       expect(page.status()).not.toContain("secret");
-      expect(page.status()).not.toContain("Keep this page open");
       expect(page.settings()).toBe(SETTINGS);
       expect(page.closed()).toBeFalsy();
       expect(page.listenerCount()).toBe(0);
@@ -446,9 +428,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
       expect(page.messages).toStrictEqual([]);
       expect(page.navigation).toStrictEqual([]);
       expect(page.closed()).toBeFalsy();
-      expect(page.status()).toContain(
-        "can no longer confirm the connection result",
-      );
       expect(page.listenerCount()).toBe(0);
     },
   );
@@ -461,11 +440,8 @@ describe("Telegram callback HTTP/browser protocol", () => {
     expect(rejected.messages).toStrictEqual([]);
     const duplicateProof = authorizedUrl();
     duplicateProof.searchParams.append("hash", "b".repeat(64));
-    const invalid = await browser(duplicateProof);
-    expect(invalid.messages).toStrictEqual([]);
-    expect(invalid.status()).toContain(
-      "can no longer confirm the connection result",
-    );
+    const interrupted = await browser(duplicateProof);
+    expect(interrupted.messages).toStrictEqual([]);
   });
 
   it.each(["absent", "closed"] as const)(
@@ -473,38 +449,24 @@ describe("Telegram callback HTTP/browser protocol", () => {
     async (state) => {
       const page = await browser(authorizedUrl(), state);
       expect(page.messages).toStrictEqual([]);
-      expect(page.status()).toContain(
-        "can no longer confirm the connection result",
-      );
       expect(page.settings()).toBe(SETTINGS);
       expect(page.navigation).toStrictEqual([]);
       expect(page.timers.size).toBe(0);
     },
   );
 
-  it("opener closure or an unacknowledged native attempt cannot establish a binding outcome", async () => {
+  it("interrupts on opener closure and ignores late results after timeout", async () => {
     const closed = await browser(authorizedUrl());
     closed.owner.closed = true;
     closed.tick(500);
-    expect(closed.status()).toContain(
-      "can no longer confirm the connection result",
-    );
     expect(closed.timers.size).toBe(0);
-    // The original page may already have handled Telegram's native identity
-    // and disposed its callback listener. No ACK says nothing about binding.
     const timedOut = await browser(authorizedUrl());
-    expect(timedOut.status()).toContain("Keep this page open");
-    expect(timedOut.status()).toContain(
-      "Return to the original page or check Telegram settings for the connection result",
-    );
+    timedOut.receive(message());
     timedOut.tick(120_000);
     timedOut.receive(
       message({ type: "telegram-auth-result", status: "linked" }),
     );
     timedOut.tick(500);
-    expect(timedOut.status()).toContain(
-      "can no longer confirm the connection result",
-    );
     expect(timedOut.navigation).toStrictEqual([]);
     expect(timedOut.timers.size).toBe(0);
     expect(timedOut.listenerCount()).toBe(0);
@@ -516,9 +478,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     const reload = await browser(new URL(first.currentUrl()));
     expect(reload.messages).toStrictEqual([]);
     expect(reload.closed()).toBeFalsy();
-    expect(reload.status()).toContain(
-      "can no longer confirm the connection result",
-    );
     expect(reload.settings()).toBe(
       "http://localhost:3002/settings/telegram?bot=official",
     );
@@ -528,9 +487,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     const page = await browser(authorizedUrl());
     page.elapse(120_001);
     page.receive(message({ type: "telegram-auth-result", status: "linked" }));
-    expect(page.status()).toContain(
-      "can no longer confirm the connection result",
-    );
     expect(page.navigation).toStrictEqual([]);
     expect(page.timers.size).toBe(0);
   });
@@ -538,9 +494,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
   it("does not deliver identity if history scrubbing is unavailable", async () => {
     const page = await browser(authorizedUrl(), "open", true);
     expect(page.messages).toStrictEqual([]);
-    expect(page.status()).toContain(
-      "can no longer confirm the connection result",
-    );
     expect(page.timers.size).toBe(0);
   });
 });

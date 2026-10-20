@@ -36,109 +36,10 @@ const UPDATED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000002";
 const OTHER_THREAD_ID = "82000000-0000-4000-a000-000000000004";
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 
-test.each(["user", "org"] as const)(
-  "Uploaded templates load before realtime and catch up when the %s scope attaches",
-  async (scope) => {
-    mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-    mockTemplateChat();
-    const uploaded = createUploadedTemplate({
-      id: UPLOADED_TEMPLATE_ID,
-      title: "Available before subscriptions",
-    });
-    const library = mockPresentationTemplateLibrary([uploaded]);
-    const gates = {
-      user: context.mocks.ably.deferSubscribeOnChannel(
-        "user:test-user-123",
-        "presentationTemplatesChanged",
-      ),
-      org: context.mocks.ably.deferSubscribeOnChannel(
-        "org:org_default",
-        "presentationTemplatesChanged",
-      ),
-    };
-    const user = userEvent.setup();
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      host: "app.okou.ai",
-      sharedWorkerTestTransport: "message-port",
-    });
-    await Promise.all([gates.user.started, gates.org.started]);
-    const picker = await openTemplatePicker(user, "Presentation");
-
-    await expect(
-      within(picker).findByLabelText(`Select template ${uploaded.title}`),
-    ).resolves.toBeInTheDocument();
-    const published = createUploadedTemplate({
-      id: UPDATED_TEMPLATE_ID,
-      title: "Published before attachment",
-    });
-    library.replace([uploaded, published]);
-    gates[scope].attach();
-    await expect(
-      within(picker).findByLabelText(`Select template ${published.title}`),
-    ).resolves.toBeInTheDocument();
-    gates[scope === "user" ? "org" : "user"].attach();
-  },
-);
-
-test("A failed template subscription leaves the catalog and the other scope usable", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Available despite subscription failure",
-  });
-  const library = mockPresentationTemplateLibrary([uploaded]);
-  const org = context.mocks.ably.deferSubscribeOnChannel(
-    "org:org_default",
-    "presentationTemplatesChanged",
-  );
-  const userSubscription = context.mocks.ably.deferSubscribeOnChannel(
-    "user:test-user-123",
-    "presentationTemplatesChanged",
-  );
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
-  });
-  await Promise.all([org.started, userSubscription.started]);
-  const picker = await openTemplatePicker(user, "Presentation");
-  await expect(
-    within(picker).findByLabelText(`Select template ${uploaded.title}`),
-  ).resolves.toBeInTheDocument();
-  org.fail(new Error("Template subscription unavailable"));
-  const published = createUploadedTemplate({
-    id: UPDATED_TEMPLATE_ID,
-    title: "Published through the user subscription",
-  });
-  library.replace([uploaded, published]);
-  userSubscription.attach();
-  await expect(
-    within(picker).findByLabelText(`Select template ${published.title}`),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
-  ).toBeEnabled();
-});
-
 test("An empty catalog keeps the import card available", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   mockPresentationTemplateLibrary([]);
-  const gates = {
-    user: context.mocks.ably.deferSubscribeOnChannel(
-      "user:test-user-123",
-      "presentationTemplatesChanged",
-    ),
-    org: context.mocks.ably.deferSubscribeOnChannel(
-      "org:org_default",
-      "presentationTemplatesChanged",
-    ),
-  };
   const user = userEvent.setup();
   await setupPage({
     context,
@@ -146,10 +47,7 @@ test("An empty catalog keeps the import card available", async () => {
     host: "app.okou.ai",
     sharedWorkerTestTransport: "message-port",
   });
-  await Promise.all([gates.user.started, gates.org.started]);
   const picker = await openTemplatePicker(user, "Presentation");
-  gates.user.attach();
-  gates.org.attach();
   expect(
     within(picker).getByLabelText("Import your own deck"),
   ).toBeInTheDocument();

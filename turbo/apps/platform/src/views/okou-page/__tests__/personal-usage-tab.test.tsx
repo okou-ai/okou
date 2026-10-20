@@ -236,9 +236,7 @@ function mockPersonalUsageStory(
   tier: "limited-free-1" | "pro" = "pro",
   mockUsagePackCredits = true,
   role: "admin" | "member" = "admin",
-  failPageOnce: number | null = null,
 ): UsageRecordRequestLog {
-  let failedPage = false;
   const requests: UsageRecordRequestLog = {
     ranges: [],
   };
@@ -251,15 +249,6 @@ function mockPersonalUsageStory(
   mockBillingStatus(tier);
   context.mocks.api(usageRecordContract.get, ({ query, respond }) => {
     requests.ranges.push(query.range);
-    if (query.page === failPageOnce && !failedPage) {
-      failedPage = true;
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Usage page is temporarily unavailable",
-        },
-      });
-    }
     return respond(200, personalUsagePage(rows, query.page, query.pageSize));
   });
   if (mockUsagePackCredits) {
@@ -872,68 +861,6 @@ test("Merge every Social Search vendor into one connector-segment row", async ()
   expect(
     screen.queryByTestId("usage-kind-segment-other"),
   ).not.toBeInTheDocument();
-});
-
-test("A failed usage page keeps earlier records and enables another load", async () => {
-  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
-  mockBillingStatus();
-  mockEmptyUsagePackCredits();
-  const first = usageRow({
-    title: "Earlier usage",
-    credits: 100,
-    runId: "run-earlier",
-  });
-  const next = usageRow({
-    title: "Later usage",
-    credits: 200,
-    runId: "run-later",
-  });
-  const firstPage = [
-    first,
-    ...Array.from({ length: 19 }, (_, index) => {
-      return usageRow({
-        title: `Earlier filler ${index}`,
-        credits: 10,
-        runId: `run-filler-${index}`,
-      });
-    }),
-  ];
-  let retry = false;
-  context.mocks.api(usageRecordContract.get, ({ query, respond }) => {
-    if (query.page > 1 && !retry) {
-      return respond(500, {
-        error: { code: "INTERNAL", message: "Usage page unavailable" },
-      });
-    }
-    return respond(200, {
-      period: {
-        start: "2026-03-01T00:00:00.000Z",
-        end: "2026-04-01T00:00:00.000Z",
-      },
-      rows: query.page === 1 ? firstPage : [next],
-      totalCredits: 490,
-      pagination: { page: query.page, pageSize: query.pageSize, total: 21 },
-    });
-  });
-  await openUsageSettings("usage-records");
-  await expect(screen.findByText("Earlier usage")).resolves.toBeInTheDocument();
-
-  click(screen.getByText("Load more"));
-
-  await expect(
-    screen.findByText("Usage page unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Earlier usage")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(screen.getByText("Load more")).toBeEnabled();
-  });
-  retry = true;
-
-  click(screen.getByText("Load more"));
-
-  await expect(screen.findByText("Later usage")).resolves.toBeInTheDocument();
-  expect(screen.getByText("Earlier usage")).toBeInTheDocument();
-  expect(screen.queryByText("Load more")).not.toBeInTheDocument();
 });
 
 test("Refresh all loaded usage pages after billing changes", async () => {

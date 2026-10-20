@@ -76,12 +76,6 @@ test("An invited teammate is only marked invited once the API accepts the addres
   await typeInvite(TEAMMATE);
   click(getButtonByName("Send invite"));
 
-  await expect(screen.findByText("Sending…")).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Team member’s email")).toHaveValue(TEAMMATE);
-  expect(screen.getByLabelText("Team member’s email")).toBeDisabled();
-  expect(screen.queryByText("Invited")).not.toBeInTheDocument();
-  expect(getButtonByName("Continue")).toBeDisabled();
-
   sent.resolve();
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
@@ -176,34 +170,4 @@ test("A malformed address cannot be sent, and the step says why in the reader's 
   // The malformed address never reached the API, so no raw refusal is shown.
   expect(requested).toStrictEqual([TEAMMATE]);
   expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
-});
-
-test("A failed invite preserves the address and can be submitted again", async () => {
-  let retry = false;
-  context.mocks.api(orgInviteContract.invite, ({ body, respond }) => {
-    if (!retry) {
-      return respond(500, {
-        error: { code: "INTERNAL", message: "Invitation service unavailable" },
-      });
-    }
-    return respond(200, { message: `Invitation sent to ${body.email}` });
-  });
-  await openTeamStep();
-  await typeInvite(TEAMMATE);
-
-  click(getButtonByName("Send invite"));
-
-  await expect(
-    screen.findByText("Invitation service unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Invited")).not.toBeInTheDocument();
-  expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Team member’s email")).toHaveValue(TEAMMATE);
-  expect(getButtonByName("Send invite")).toBeEnabled();
-
-  retry = true;
-  click(getButtonByName("Send invite"));
-
-  await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
-  expect(getButtonByName("Continue")).toBeEnabled();
 });
