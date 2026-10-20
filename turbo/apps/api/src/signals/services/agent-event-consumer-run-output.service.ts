@@ -26,7 +26,8 @@ import { runMetadataWritePlan } from "./agent-run-metadata-write.service";
 import { captureRunNativeSession$ } from "./run-native-session.service";
 import {
   assertRunOutputOwner,
-  prepareRunOutputOwnership,
+  prepareRunOutputOwnership$,
+  type PreparedRunOutputOwnership,
   type RunOutputDiagnostics,
   type RunContentOwnership,
 } from "./run-content-ownership.service";
@@ -448,9 +449,7 @@ const materializePreparedRunOutputEvents$ = command(
     { set },
     args: {
       readonly prepared: ReturnType<typeof preparedRunOutputProjection>;
-      readonly preparedOwnership: NonNullable<
-        Awaited<ReturnType<typeof prepareRunOutputOwnership>>
-      >;
+      readonly preparedOwnership: PreparedRunOutputOwnership;
       readonly diagnostics: RunOutputDiagnostics;
     },
     signal: AbortSignal,
@@ -525,8 +524,8 @@ const prepareAndMaterializeRunOutputEvents$ = command(
     diagnostics.startAttempt("preparation");
     const prepared = preparedRunOutputProjection(payload, suppliedCitations);
 
-    const preparedOwnership = await prepareRunOutputOwnership(
-      set(writeDb$),
+    const preparedOwnership = await set(
+      prepareRunOutputOwnership$,
       payload.runId,
       diagnostics,
     );
