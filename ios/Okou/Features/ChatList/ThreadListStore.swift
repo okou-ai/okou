@@ -27,6 +27,9 @@ final class ThreadListStore {
   private var refreshTask: Task<Void, Never>?
   private var navigationTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
+  private var pinTasks: [String: Task<Void, Never>] = [:]
+  private var lastPinIDs: [String: String] = [:]
+  private var optimisticPins: [(id: String, change: ChatThreadChange)] = []
   private var closed = false
   private var blocked = false
 
@@ -46,8 +49,7 @@ final class ThreadListStore {
     guard !closed, !Task.isCancelled else { return }
     if let cached = await sync.cachedThreads() {
       guard !closed, !Task.isCancelled else { return }
-      threads = cached
-      didRefresh(cached)
+      projectThreads(cached)
     }
   }
 
@@ -143,8 +145,8 @@ final class ThreadListStore {
             unreadAgentIDs = Set(
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
           }
-          if threads != result { threads = result }
-          didRefresh(result)
+          optimisticPins.removeAll { response.eventIDs.contains($0.id) }
+          projectThreads(result)
           error = nil
         } catch is CancellationError {
           return
@@ -254,10 +256,71 @@ final class ThreadListStore {
     } catch { show(error) }
   }
 
+  func togglePinned(_ id: String) async {
+    guard let thread = threads.first(where: { $0.id == id }) else { return }
+    await setPinned(thread, pinned: thread.pinnedAt == nil)
+  }
+
+  func canPin(_ id: String) -> Bool {
+    !closed && !blocked && (!updatingThreads.contains(id) || lastPinIDs[id] != nil)
+  }
+
   func setPinned(_ thread: ChatThread, pinned: Bool) async {
-    await updateThread(thread.id) { [commands] in
-      try await commands.setPinned(threadID: thread.id, pinned: pinned)
+    guard canPin(thread.id), !Task.isCancelled,
+      let current = threads.first(where: { $0.id == thread.id }),
+      (current.pinnedAt != nil) != pinned
+    else { return }
+    let eventID = UUID().uuidString
+    let pinOrder: String?
+    do {
+      pinOrder =
+        pinned
+        ? try ChatThreadReplay.firstPinOrder(
+          threads.filter { $0.agentID == current.agentID && $0.id != current.id }) : nil
+    } catch {
+      show(error)
+      return
     }
+    optimisticPins.append(
+      (
+        eventID,
+        ChatThreadChange(
+          kind: pinned ? .pinned : .unpinned, chatThreadId: current.id,
+          agentId: current.agentID, pinOrder: pinOrder, createdAt: .now)
+      ))
+    projectThreads(threads)
+    let previous = lastPinIDs[current.id].flatMap { pinTasks[$0] }
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        pinTasks[eventID] = nil
+        if lastPinIDs[current.id] == eventID {
+          lastPinIDs[current.id] = nil
+          updatingThreads.remove(current.id)
+        }
+      }
+      await previous?.value
+      guard !closed, !blocked, !Task.isCancelled else { return }
+      do {
+        try await commands.setPinned(
+          threadID: current.id, pinned: pinned, eventID: eventID, pinOrder: pinOrder)
+        try Task.checkCancellation()
+        guard !closed else { return }
+        await refresh()
+      } catch is CancellationError {
+      } catch { show(error) }
+    }
+    pinTasks[eventID] = task
+    lastPinIDs[current.id] = eventID
+    updatingThreads.insert(current.id)
+    await task.value
+  }
+
+  private func projectThreads(_ snapshot: [ChatThread]) {
+    let result = ChatThreadReplay.sidebarOrder(
+      ChatThreadReplay.replay(snapshot: snapshot, events: optimisticPins.map(\.change)))
+    if threads != result { threads = result }
+    didRefresh(result)
   }
 
   func dismissError() {
@@ -306,6 +369,7 @@ final class ThreadListStore {
     refreshTask?.cancel()
     navigationTask?.cancel()
     for task in updateTasks.values { task.cancel() }
+    for task in pinTasks.values { task.cancel() }
   }
 
   private func show(_ failure: Error) {

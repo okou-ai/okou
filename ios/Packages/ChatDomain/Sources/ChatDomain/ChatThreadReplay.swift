@@ -32,6 +32,55 @@ public enum ChatThreadReplay {
     }
   }
 
+  /// The prepend-only subset of fractional-indexing's generateKeyBetween(null, first).
+  /// Keep the base-62 keys compatible with the PWA and the existing pin API.
+  public static func firstPinOrder(_ threads: [ChatThread]) throws -> String {
+    guard let first = sidebarOrder(threads).first(where: { $0.pinnedAt != nil }) else {
+      return "a0"
+    }
+    let key = Array(pinRank(first).utf8)
+    let digits = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".utf8)
+    guard let head = key.first else { throw ChatError.invalidContract("Invalid pin order.") }
+    let length: Int
+    switch head {
+    case 97...122: length = Int(head - 97) + 2
+    case 65...90: length = Int(90 - head) + 2
+    default: throw ChatError.invalidContract("Invalid pin order.")
+    }
+    guard key.count >= length, key.dropFirst().allSatisfy({ digits.contains($0) }),
+      key.count == length || key.last != digits[0]
+    else { throw ChatError.invalidContract("Invalid pin order.") }
+    var integer = Array(key.prefix(length))
+    let fraction = Array(key.dropFirst(length))
+    if head == 65, integer.dropFirst().allSatisfy({ $0 == digits[0] }) {
+      guard let index = fraction.firstIndex(where: { $0 != digits[0] }),
+        let digit = digits.firstIndex(of: fraction[index])
+      else { throw ChatError.invalidContract("Invalid pin order.") }
+      let prefix = Array(fraction.prefix(index))
+      let midpoint: [UInt8] =
+        digit > 1
+        ? [digits[(digit + 1) / 2]]
+        : (index + 1 < fraction.count ? [digits[1]] : [digits[0], digits[31]])
+      return String(decoding: integer + prefix + midpoint, as: UTF8.self)
+    }
+    if !fraction.isEmpty { return String(decoding: integer, as: UTF8.self) }
+    for index in (1..<integer.count).reversed() {
+      guard let digit = digits.firstIndex(of: integer[index]) else {
+        throw ChatError.invalidContract("Invalid pin order.")
+      }
+      if digit > 0 {
+        integer[index] = digits[digit - 1]
+        return String(decoding: integer, as: UTF8.self)
+      }
+      integer[index] = digits[61]
+    }
+    if head == 97 { return "Zz" }
+    guard head > 65 else { throw ChatError.invalidContract("Invalid pin order.") }
+    integer[0] = head - 1
+    if integer[0] < 90 { integer.append(digits[61]) } else { integer.removeLast() }
+    return String(decoding: integer, as: UTF8.self)
+  }
+
   private static func apply(
     _ event: ChatThreadChange,
     to threads: inout [String: ChatThread],

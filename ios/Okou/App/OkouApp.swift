@@ -276,21 +276,8 @@ private struct WorkspaceRootView: View {
         .accessibilityIdentifier("open-sidebar")
         Spacer()
         if let thread = store.list.threads.first(where: { $0.id == store.selectedThreadID }) {
-          let pinned = thread.pinnedAt != nil
-          let updating = store.list.updatingThreads.contains(thread.id)
-          Button {
-            Task { await store.list.setPinned(thread, pinned: !pinned) }
-          } label: {
-            Image(systemName: pinned ? "pin.fill" : "pin")
-              .font(.system(size: 19, weight: .medium))
-              .frame(width: 32, height: 32)
-          }
-          .buttonStyle(.glass)
-          .buttonBorderShape(.circle)
-          .disabled(updating || store.needsUpgrade)
-          .accessibilityLabel(pinned ? "Unpin chat" : "Pin chat")
-          .accessibilityValue(updating ? "Updating" : (pinned ? "Pinned" : "Not pinned"))
-          .accessibilityIdentifier("toggle-chat-pin")
+          ChatThreadPinButton(
+            list: store.list, threadID: thread.id, needsUpgrade: store.needsUpgrade)
         }
       }
     }

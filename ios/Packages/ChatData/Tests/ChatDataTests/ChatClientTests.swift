@@ -17,7 +17,14 @@ private let fixtureDate = "2026-09-17T10:00:00.000Z"
 final class ChatClientTests: XCTestCase {
   func testNativeThreadActionsUseCanonicalEndpoints() async throws {
     let requests = Mutex<[(String, String, String)]>([])
+    let queries = Mutex<[[URLQueryItem]]>([])
+    let pinEventID = UUID().uuidString
+    let unpinEventID = UUID().uuidString
     let fixture = ChatHTTPFixture { request in
+      queries.withLock {
+        $0.append(
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+      }
       requests.withLock {
         $0.append(
           (
@@ -28,8 +35,9 @@ final class ChatClientTests: XCTestCase {
       return ChatHTTPResponse(status: 204, body: "")
     }
     let service = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
-    try await service.setPinned(threadID: fixtureThread, pinned: true)
-    try await service.setPinned(threadID: fixtureThread, pinned: false)
+    try await service.setPinned(
+      threadID: fixtureThread, pinned: true, eventID: pinEventID, pinOrder: "a0")
+    try await service.setPinned(threadID: fixtureThread, pinned: false, eventID: unpinEventID)
     try await service.setArchived(threadID: fixtureThread, archived: true)
     try await service.setArchived(threadID: fixtureThread, archived: false)
     try await service.rename(threadID: fixtureThread, title: "Renamed")
@@ -45,6 +53,13 @@ final class ChatClientTests: XCTestCase {
         "/api/chat-threads/\(fixtureThread)/rename",
       ])
     XCTAssertEqual(requests.withLock { $0.last?.2 }, "{\"title\":\"Renamed\"}")
+    XCTAssertEqual(
+      queries.withLock { $0[0] },
+      [
+        URLQueryItem(name: "eventId", value: pinEventID),
+        URLQueryItem(name: "pinOrder", value: "a0"),
+      ])
+    XCTAssertEqual(queries.withLock { $0[1] }, [URLQueryItem(name: "eventId", value: unpinEventID)])
   }
 
   func testCreateUsesSelectedAgentAndSavedModelWithoutOnboardingBootstrap() async throws {
@@ -505,6 +520,49 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(paths.filter { $0 == "/history-snapshot?" }.count, 1)
     XCTAssertTrue(paths.contains("/api/chat-threads/events?11"))
     XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?3"))
+  }
+
+  func testThreadListRetainsObservedEventIdentitiesAcrossSnapshotCompaction() async throws {
+    let directory = try temporaryChatCacheDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let compact = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      let current = compact.withLock { $0 }
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        let thread = threadJSON(id: fixtureThread)
+          .replacingOccurrences(
+            of: "Original title", with: current ? "Compacted title" : "Original title")
+        let cursor = current ? "\"\(eventIdentity(101))\"" : "null"
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[\(thread)],"latestEventId":\(cursor),"latestSeqId":\(current ? "101" : "null")}
+            """)
+      case "/api/chat-threads/events":
+        let events =
+          current && chatQueryValue("sinceSeqId", in: request) == nil
+          ? (1...101).map {
+            threadEventJSON(seq: $0, kind: "renamed", thread: fixtureThread, title: "Event \($0)")
+          }
+          : []
+        return ChatHTTPResponse(
+          body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let sync = ChatSync(
+      client: fixture.client,
+      cache: ChatCache(
+        scope: ChatCacheScope(
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+        directory: directory))
+    _ = try await sync.threads()
+    compact.withLock { $0 = true }
+    let result = try await sync.threadsWithIndicators()
+    XCTAssertEqual(result.threads.first?.title, "Compacted title")
+    XCTAssertEqual(result.eventIDs, Set((1...101).map(eventIdentity)))
   }
 
   func testExpiredListAndHistoryCursorsReplacePersistedCacheAfterRestart() async throws {

@@ -203,9 +203,13 @@ public actor ChatCommands {
     }
   }
 
-  public func setPinned(threadID: String, pinned: Bool) async throws {
+  public func setPinned(
+    threadID: String, pinned: Bool, eventID: String, pinOrder: String? = nil
+  ) async throws {
     let action = pinned ? "pin" : "unpin"
-    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
+    var query = [URLQueryItem(name: "eventId", value: eventID)]
+    if pinned, let pinOrder { query.append(URLQueryItem(name: "pinOrder", value: pinOrder)) }
+    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST", query: query)
   }
 
   public func setArchived(threadID: String, archived: Bool) async throws {
