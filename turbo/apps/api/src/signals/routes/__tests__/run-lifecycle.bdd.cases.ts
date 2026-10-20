@@ -12704,9 +12704,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [200],
           );
           expect(legacyReplay.body).toStrictEqual(completion.body);
-          expect(await api.readRun(actor, created.runId)).toStrictEqual(
-            completed,
-          );
+          await expect(
+            api.readRun(actor, created.runId),
+          ).resolves.toStrictEqual(completed);
 
           // A late duplicate report cannot flip the settled run.
           const duplicate = await webhooks.requestAgentComplete(
