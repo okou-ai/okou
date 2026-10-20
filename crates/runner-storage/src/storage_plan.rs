@@ -36,7 +36,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use api_contracts::generated::{
-    constants::runners::paths::{CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR},
+    constants::runners::paths::{
+        CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR, PI_AGENT_DIR,
+    },
     types::runners::storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::storage_manifest as wire;
@@ -759,7 +761,10 @@ fn record_removed_artifacts<'a>(
 }
 
 fn is_framework_home_path(path: &str) -> bool {
-    matches!(path, CANONICAL_CLAUDE_CONFIG_DIR | CANONICAL_CODEX_HOME_DIR)
+    matches!(
+        path,
+        CANONICAL_CLAUDE_CONFIG_DIR | CANONICAL_CODEX_HOME_DIR | PI_AGENT_DIR
+    )
 }
 fn is_removed_framework_home_instruction(path: &str, fingerprint: &StorageFingerprint) -> bool {
     is_framework_home_path(path)

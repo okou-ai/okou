@@ -320,20 +320,26 @@ fn fresh_artifact_is_cache_eligible_without_changing_repair_semantics() {
 
 #[test]
 fn removed_framework_instruction_uses_narrow_cleanup() {
-    let previous = StorageFingerprints {
-        storages: HashMap::from([(
-            "/home/user/.codex".into(),
-            StorageFingerprint::new("agent-instructions@test", "v1"),
-        )]),
-        artifacts: HashMap::new(),
-    };
+    for home in [
+        "/home/user/.codex",
+        "/home/user/.claude",
+        "/home/user/.pi/agent",
+    ] {
+        let previous = StorageFingerprints {
+            storages: HashMap::from([(
+                home.into(),
+                StorageFingerprint::new("agent-instructions@test", "v1"),
+            )]),
+            artifacts: HashMap::new(),
+        };
 
-    let plan = build_storage_plan(&manifest(Vec::new(), Vec::new()), Some(&previous)).unwrap();
+        let plan = build_storage_plan(&manifest(Vec::new(), Vec::new()), Some(&previous)).unwrap();
 
-    assert!(plan.cleanup_paths.is_empty());
-    assert_eq!(plan.instruction_cleanups.len(), 1);
-    assert_eq!(plan.instruction_cleanups[0].mount_path, "/home/user/.codex");
-    assert_eq!(plan.instruction_cleanups[0].target_filename, None);
+        assert!(plan.cleanup_paths.is_empty(), "{home}");
+        assert_eq!(plan.instruction_cleanups.len(), 1);
+        assert_eq!(plan.instruction_cleanups[0].mount_path, home);
+        assert_eq!(plan.instruction_cleanups[0].target_filename, None);
+    }
 }
 
 #[test]
@@ -365,13 +371,20 @@ fn canonical_framework_home_is_not_enough_for_narrow_cleanup() {
 
 #[test]
 fn tainted_framework_home_uses_narrow_cleanup() {
-    let previous = StorageFingerprints {
-        storages: HashMap::from([("/home/user/.claude".into(), StorageFingerprint::tainted())]),
-        artifacts: HashMap::new(),
-    };
+    for home in [
+        "/home/user/.codex",
+        "/home/user/.claude",
+        "/home/user/.pi/agent",
+    ] {
+        let previous = StorageFingerprints {
+            storages: HashMap::from([(home.into(), StorageFingerprint::tainted())]),
+            artifacts: HashMap::new(),
+        };
 
-    let plan = build_storage_plan(&manifest(Vec::new(), Vec::new()), Some(&previous)).unwrap();
+        let plan = build_storage_plan(&manifest(Vec::new(), Vec::new()), Some(&previous)).unwrap();
 
-    assert!(plan.cleanup_paths.is_empty());
-    assert_eq!(plan.instruction_cleanups.len(), 1);
+        assert!(plan.cleanup_paths.is_empty(), "{home}");
+        assert_eq!(plan.instruction_cleanups.len(), 1);
+        assert_eq!(plan.instruction_cleanups[0].mount_path, home);
+    }
 }

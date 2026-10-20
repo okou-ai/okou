@@ -37,6 +37,7 @@ import {
   CANONICAL_CODEX_SESSIONS_DIR,
   CANONICAL_GUEST_HOME_DIR,
   CANONICAL_PI_SESSION_DIR,
+  PI_AGENT_DIR,
   CANONICAL_WORKING_DIR,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
@@ -601,6 +602,14 @@ export const rustConstantBindings = [
     rustDoc: [
       "Canonical working directory path expected inside runner guests.",
       "Rust and TypeScript components use this shared contract value when building runner commands and paths.",
+    ],
+  },
+  {
+    rustModulePath: runnerPathsModule,
+    rustConstName: "PI_AGENT_DIR",
+    value: rustString(PI_AGENT_DIR),
+    rustDoc: [
+      "Canonical Pi agent directory containing instructions, skills and native state.",
     ],
   },
   {

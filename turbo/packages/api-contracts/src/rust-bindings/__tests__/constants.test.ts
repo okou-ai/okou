@@ -48,6 +48,7 @@ import {
   CANONICAL_CODEX_SESSIONS_DIR,
   CANONICAL_GUEST_HOME_DIR,
   CANONICAL_PI_SESSION_DIR,
+  PI_AGENT_DIR,
   CANONICAL_WORKING_DIR,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
@@ -506,6 +507,14 @@ const expectedBindings = [
     rustConstName: "CANONICAL_WORKING_DIR",
     value: rustString(CANONICAL_WORKING_DIR),
     rustDoc: canonicalWorkingDirDoc,
+  },
+  {
+    rustModulePath: ["runners", "paths"],
+    rustConstName: "PI_AGENT_DIR",
+    value: rustString(PI_AGENT_DIR),
+    rustDoc: [
+      "Canonical Pi agent directory containing instructions, skills and native state.",
+    ],
   },
   {
     rustModulePath: ["runners", "paths"],
