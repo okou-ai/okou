@@ -6,6 +6,10 @@ from usage.json_selective import JsonSelectiveExtractor, JsonValueKind, Path
 
 _TOOL_ITEM_PATH_SIZE = 2
 _TOOL_TYPE_PATH_SIZE = 3
+# Captured policy values are ASCII. Every character can legally arrive as
+# six raw JSON bytes (\uXXXX), including ordinary ASCII letters and slashes.
+_JSON_ESCAPE_WIDTH = 6
+_FUNCTION_TOOL = "function"
 
 
 class PolicyError(ValueError):
@@ -43,11 +47,11 @@ class PolicyJsonValidator:
         if path == ("model",):
             if kind != "string":
                 raise PolicyError("model")
-            return 512
+            return len(self._preset) * _JSON_ESCAPE_WIDTH
         if path == ("service_tier",):
             if self._tier is None or kind != "string":
                 raise PolicyError("service_tier")
-            return 32
+            return len(self._tier) * _JSON_ESCAPE_WIDTH
         if path == ("tools",) and kind != "array":
             raise PolicyError("server_tools")
         if len(path) == _TOOL_ITEM_PATH_SIZE and path[0] == "tools":
@@ -57,7 +61,7 @@ class PolicyJsonValidator:
         if len(path) == _TOOL_TYPE_PATH_SIZE and path[0] == "tools" and path[2] == "type":
             if kind != "string":
                 raise PolicyError("server_tools")
-            return 32
+            return len(_FUNCTION_TOOL) * _JSON_ESCAPE_WIDTH
         if kind == "object":
             self._objects.append(set())
         return None
@@ -82,7 +86,7 @@ class PolicyJsonValidator:
                 raise PolicyError("service_tier")
             self._tier_seen = True
         elif len(path) == _TOOL_TYPE_PATH_SIZE and path[0] == "tools" and path[2] == "type":
-            if value != "function":
+            if value != _FUNCTION_TOOL:
                 raise PolicyError("server_tools")
             self._tool_type_seen = True
 
