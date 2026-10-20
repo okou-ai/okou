@@ -12,6 +12,7 @@ import {
   resetSignal,
   settle,
   waitForOperation,
+  withAbortAfter,
 } from "../../signals/utils.ts";
 import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import { mockNow, now } from "../time.ts";
@@ -72,16 +73,20 @@ function prepare() {
   telemetry.ingest.mockReset();
 }
 
-test("Owner cancellation clears the auth deadline timer", () => {
+test("Owner cancellation and operation settlement clear auth deadline timers", async () => {
   prepare();
-  let timerId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const timerIds: ReturnType<typeof globalThis.setTimeout>[] = [];
   const originalSetTimeout = globalThis.setTimeout;
   const setTimeoutSpy = vi
     .spyOn(globalThis, "setTimeout")
     .mockImplementation((callback, ms, ...args) => {
       if (ms === 5000) {
-        timerId = 1 as unknown as ReturnType<typeof globalThis.setTimeout>;
-        return timerId;
+        const timerId = timerIds.length + 1;
+        const typedTimerId = timerId as unknown as ReturnType<
+          typeof globalThis.setTimeout
+        >;
+        timerIds.push(typedTimerId);
+        return typedTimerId;
       }
       return originalSetTimeout(callback, ms, ...args);
     });
@@ -91,7 +96,16 @@ test("Owner cancellation clears the auth deadline timer", () => {
     const signal = abortAfter(5000, owner);
     context.store.set(resetDeadline$, context.signal);
     expect(signal.aborted).toBeTruthy();
-    expect(clearTimeoutSpy).toHaveBeenCalledWith(timerId);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timerIds[0]);
+
+    const operationOwner = context.store.set(resetDeadline$, context.signal);
+    let operationSignal: AbortSignal | undefined;
+    await withAbortAfter(5000, operationOwner, (deadlineSignal) => {
+      operationSignal = deadlineSignal;
+      return Promise.resolve();
+    });
+    expect(operationSignal?.aborted).toBeTruthy();
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timerIds[1]);
   } finally {
     setTimeoutSpy.mockRestore();
     clearTimeoutSpy.mockRestore();

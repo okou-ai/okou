@@ -3,10 +3,10 @@ import workerUrl from "virtual:sandbox-file-download-worker";
 import type { SandboxChannelPeer } from "@okouai/core/sandbox-channel-peer";
 import { sandboxFileOffsetSchema } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import {
-  abortAfter,
   createDeferredPromise,
   onRejection,
   waitForOperation,
+  withAbortAfter,
   withCleanup,
   type DeferredPromise,
 } from "../signals/utils.ts";
@@ -60,27 +60,19 @@ export async function downloadWorker(
   }
   // Registration belongs to the origin and cannot be aborted. Retire this
   // caller's wait before opening WSS or preparing an attachment on a late reply.
-  // eslint-disable-next-line ccstate/no-new-abort-controller -- cancel this phase's deadline on completion; the child is combined with the caller signal.
-  const registrationOwner = new AbortController();
-  const registrationSignal = AbortSignal.any([
+  const registration = await withAbortAfter(
+    IDLE_MS,
     signal,
-    registrationOwner.signal,
-  ]);
-  const registration = await withCleanup(
-    waitForOperation(
-      navigator.serviceWorker.register(workerUrl, {
-        scope: SCOPE,
-        updateViaCache: "none",
-      }),
-      abortAfter(
-        IDLE_MS,
-        registrationSignal,
-        new DOMException("The operation timed out", "TimeoutError"),
-      ),
-    ),
-    () => {
-      registrationOwner.abort();
+    async (deadlineSignal) => {
+      return await waitForOperation(
+        navigator.serviceWorker.register(workerUrl, {
+          scope: SCOPE,
+          updateViaCache: "none",
+        }),
+        deadlineSignal,
+      );
     },
+    new DOMException("The operation timed out", "TimeoutError"),
   );
   signal.throwIfAborted();
   const worker =
@@ -94,30 +86,29 @@ export async function downloadWorker(
   if (worker.state === "activated") {
     return worker;
   }
-  // eslint-disable-next-line ccstate/no-new-abort-controller -- cancel this phase's deadline on completion; the child is combined with the caller signal.
-  const readyOwner = new AbortController();
-  const readySignal = abortAfter(
+  return await withAbortAfter(
     IDLE_MS,
-    AbortSignal.any([signal, readyOwner.signal]),
+    signal,
+    async (readySignal) => {
+      const ready = createDeferredPromise<ServiceWorker>(readySignal);
+      const inspect = () => {
+        if (ready.settled()) {
+          return;
+        }
+        if (worker.state === "activated") {
+          ready.resolve(worker);
+        } else if (worker.state === "redundant") {
+          ready.reject(new FileDownloadError("updateRequired"));
+        }
+      };
+      worker.addEventListener("statechange", inspect);
+      inspect();
+      return await withCleanup(ready.promise, () => {
+        worker.removeEventListener("statechange", inspect);
+      });
+    },
     new DOMException("The operation timed out", "TimeoutError"),
   );
-  const ready = createDeferredPromise<ServiceWorker>(readySignal);
-  const inspect = () => {
-    if (ready.settled()) {
-      return;
-    }
-    if (worker.state === "activated") {
-      ready.resolve(worker);
-    } else if (worker.state === "redundant") {
-      ready.reject(new FileDownloadError("updateRequired"));
-    }
-  };
-  worker.addEventListener("statechange", inspect);
-  inspect();
-  return await withCleanup(ready.promise, () => {
-    readyOwner.abort();
-    worker.removeEventListener("statechange", inspect);
-  });
 }
 
 /** One bounded port queue; a failed consumer closes its dedicated WSS source. */
@@ -175,24 +166,19 @@ export class SandboxFileDownload {
     if (this.closed || this.pending) {
       throw new FileDownloadError("unavailable");
     }
-    // eslint-disable-next-line ccstate/no-new-abort-controller -- each pull owns one idle deadline; combine with the download lifetime and cancel after the pull settles.
-    const pendingOwner = new AbortController();
-    const deadline = abortAfter(
+    return await withAbortAfter(
       IDLE_MS,
-      AbortSignal.any([this.signal, pendingOwner.signal]),
-      new DOMException("The operation timed out", "TimeoutError"),
-    );
-    const pending = createDeferredPromise<DownloadMessage>(deadline);
-    this.pending = pending;
-    return await withCleanup(
-      onRejection(pending.promise, () => {
-        if (deadline.aborted && !this.signal.aborted) {
-          this.fail(new FileDownloadError("unavailable"));
-        }
-      }),
-      () => {
-        pendingOwner.abort();
+      this.signal,
+      async (deadline) => {
+        const pending = createDeferredPromise<DownloadMessage>(deadline);
+        this.pending = pending;
+        return await onRejection(pending.promise, () => {
+          if (deadline.aborted && !this.signal.aborted) {
+            this.fail(new FileDownloadError("unavailable"));
+          }
+        });
       },
+      new DOMException("The operation timed out", "TimeoutError"),
     );
   }
 

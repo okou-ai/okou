@@ -27,14 +27,13 @@ import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import {
-  abortAfter,
   onRef,
   onRejection,
   resetSignal,
   settle,
   waitForOperation,
   waitLoopUntil,
-  withCleanup,
+  withAbortAfter,
 } from "../utils.ts";
 import {
   runChatActionCallback$,
@@ -499,55 +498,50 @@ function createRecoverySignals(
         // Duplicate cards share one loop, cancelled when their last owner leaves.
         const signal = set(resetRecovery$, get(pageSignal$));
         set(internalState$, "checking");
-        // eslint-disable-next-line ccstate/no-new-abort-controller -- cancel this recovery deadline on completion; the child is combined with the reset/page owner.
-        const recoveryOwner = new AbortController();
-        const recoverySignal = abortAfter(
-          RECOVERY_DEADLINE_MS,
-          AbortSignal.any([signal, recoveryOwner.signal]),
-          new DOMException("The operation timed out", "TimeoutError"),
-        );
         let reads = 0;
         let reconciled = false;
-        await withCleanup(
-          onRejection(
-            waitLoopUntil(
-              async () => {
-                set(refresh$, recoverySignal);
-                const result = await settle(
-                  waitForOperation(get(request$), recoverySignal),
-                  recoverySignal,
-                );
-                if (
-                  result.ok &&
-                  (result.value.kind !== "action" ||
-                    result.value.action.state !== "applying")
-                ) {
+        await withAbortAfter(
+          RECOVERY_DEADLINE_MS,
+          signal,
+          async (recoverySignal) => {
+            await onRejection(
+              waitLoopUntil(
+                async () => {
+                  set(refresh$, recoverySignal);
+                  const result = await settle(
+                    waitForOperation(get(request$), recoverySignal),
+                    recoverySignal,
+                  );
                   if (
-                    result.value.kind === "action" &&
-                    result.value.action.state === "pending"
+                    result.ok &&
+                    (result.value.kind !== "action" ||
+                      result.value.action.state !== "applying")
                   ) {
-                    await set(beginEntry$, recoverySignal);
-                    recoverySignal.throwIfAborted();
+                    if (
+                      result.value.kind === "action" &&
+                      result.value.action.state === "pending"
+                    ) {
+                      await set(beginEntry$, recoverySignal);
+                      recoverySignal.throwIfAborted();
+                    }
+                    reconciled = true;
+                    return true;
                   }
-                  reconciled = true;
-                  return true;
-                }
-                reads += 1;
-                return reads >= RECOVERY_MAX_READS;
+                  reads += 1;
+                  return reads >= RECOVERY_MAX_READS;
+                },
+                RECOVERY_INTERVAL_MS,
+                recoverySignal,
+                { retryTransientErrors: false },
+              ),
+              () => {
+                // The deadline can reject with TimeoutError or a wrapped AbortError.
+                signal.throwIfAborted();
+                set(internalState$, "exhausted");
               },
-              RECOVERY_INTERVAL_MS,
-              recoverySignal,
-              { retryTransientErrors: false },
-            ),
-            () => {
-              // The deadline can reject with TimeoutError or a wrapped AbortError.
-              signal.throwIfAborted();
-              set(internalState$, "exhausted");
-            },
-          ),
-          () => {
-            recoveryOwner.abort();
+            );
           },
+          new DOMException("The operation timed out", "TimeoutError"),
         );
         signal.throwIfAborted();
         set(internalState$, reconciled ? "idle" : "exhausted");
