@@ -479,8 +479,30 @@ mod tests {
 
     #[test]
     fn decoder_rejects_window_larger_than_explicit_limit() {
-        // Zstd frame header with no content size and a 2^28-byte window.
-        let frame = [0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x90];
+        let mut header = tar::Header::new_gnu();
+        header.set_path(TEMPLATE_FILE).unwrap();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_mode(0o644);
+        header.set_size(0);
+        header.set_cksum();
+        let mut tar_bytes = header.as_bytes().to_vec();
+        tar_bytes.extend_from_slice(&[0; TAR_TRAILER_BYTES as usize]);
+
+        // Build the frame directly so its 2^28-byte window is independent of
+        // encoder heuristics for this small payload. There is no content size.
+        let mut frame = vec![0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x90];
+        // A final raw block stores its payload length above the three flag bits.
+        let raw_block_header = ((tar_bytes.len() as u32) << 3) | 1;
+        frame.extend_from_slice(&raw_block_header.to_le_bytes()[..3]);
+        frame.extend_from_slice(&tar_bytes);
+
+        // Prove the complete frame is valid when its advertised window is allowed.
+        let mut decoder = zstd::stream::read::Decoder::new(Cursor::new(&frame)).unwrap();
+        decoder.window_log_max(28).unwrap();
+        let mut decoded = Vec::new();
+        decoder.read_to_end(&mut decoded).unwrap();
+        assert_eq!(decoded, tar_bytes);
+
         let staging = tempfile::tempdir().unwrap();
 
         let error = unpack_template_from_reader(
