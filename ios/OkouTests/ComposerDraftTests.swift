@@ -34,6 +34,57 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertTrue(server.state.value.withLock { $0.paths.allSatisfy { !$0.contains("POST") } })
   }
 
+  func testQuotedDraftRoundTripsNotesSourcesOrderAndConflictRecovery() async throws {
+    let remote = try JSONDecoder().decode(
+      ComposerDraft.self,
+      from: Data(
+        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"PWA passage","note":[{"type":"text","text":"First "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"note"}],"eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"}},{"type":"text","text":"After"}]},"draftAttachments":null}"#
+          .utf8))
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    await composer.synchronize()
+    let quote = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
+    composer.editBlock(quote.id, text: "First revised note")
+    let source = remote.draftUserMessage?.parts[1]["source"]
+    XCTAssertEqual(composer.document.parts[1]["source"], source)
+    let inline = quote.content.parts[1]
+    guard case .array(let note) = composer.document.parts[1]["note"] else {
+      return XCTFail("Feedback note was lost")
+    }
+    XCTAssertTrue(note.contains(inline))
+    let message = ChatMessage(
+      id: "native-event", role: .assistant, text: "Second 🌷 passage",
+      createdAt: Date(), isQueued: false, isError: false)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
+    let second = try XCTUnwrap(composer.addFeedback(selection))
+    composer.editBlock(second, text: "Independent note")
+    XCTAssertEqual(
+      composer.document.parts.map { $0["type"]?.string }, ["text", "feedback", "text", "feedback"])
+    await composer.synchronize()
+    let saved = server.state.value.withLock { $0.remote }
+    XCTAssertEqual(saved, composer.value)
+    composer.close()
+    composer.editBlock(second, text: "Retired editor")
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.value, saved)
+    let quotes = reopened.editorBlocks.filter(\.isFeedback)
+    XCTAssertEqual(quotes.map(\.content.text), ["First revised note", "Independent note"])
+    reopened.removeFeedback(quotes[0].id)
+    XCTAssertEqual(reopened.document.text, "Before\nAfter")
+    XCTAssertEqual(
+      reopened.editorBlocks.filter(\.isFeedback).map(\.content.text), ["Independent note"])
+    server.state.value.withLock { $0.remote = remote }
+    await reopened.synchronize()
+    XCTAssertNotNil(reopened.conflictingRemote)
+    reopened.useRemote()
+    XCTAssertEqual(reopened.value, remote)
+    XCTAssertEqual(reopened.editorBlocks.filter(\.isFeedback).first?.content.text, "First note")
+  }
+
   func testCancelledDraftOpeningDoesNotStartRemoteRequests() async {
     let server = DraftServer()
     let composer = server.composer()

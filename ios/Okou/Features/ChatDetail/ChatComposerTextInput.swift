@@ -11,6 +11,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
   var editor: ComposerEditor? = nil
+  var placeholder = "Message Okou"
+  var identifier = "message-input"
+  var expanded = false
   @Environment(\.isEnabled) private var isEnabled
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -42,6 +45,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
         location: min(selection.location, end),
         length: min(selection.length, max(0, end - selection.location)))
     }
+    view.placeholder.text = placeholder
+    view.accessibilityLabel = placeholder
+    view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
     view.acceptsImages = acceptsImages && isEnabled
     view.pasteImages = pasteImages
@@ -59,7 +65,8 @@ struct ChatComposerTextInput: UIViewRepresentable {
     guard let width = proposal.width else { return nil }
     let line = uiView.font?.lineHeight ?? 20
     let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
-    return CGSize(width: width, height: isFocused ? min(max(height, line * 2), line * 6) : line)
+    return CGSize(
+      width: width, height: isFocused || expanded ? min(max(height, line * 2), line * 6) : line)
   }
 
   static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
@@ -84,11 +91,11 @@ struct ChatComposerTextInput: UIViewRepresentable {
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
-      guard input.isCurrent() else { return }
+      guard input.isCurrent(), !input.isFocused else { return }
       input.isFocused = true
     }
     func textViewDidEndEditing(_ textView: UITextView) {
-      guard input.isCurrent() else { return }
+      guard input.isCurrent(), input.isFocused else { return }
       input.isFocused = false
     }
 
@@ -118,6 +125,7 @@ final class ComposerTextView: UITextView {
   var pasteImages: ([NSItemProvider]) -> Void = { _ in }
   let placeholder = UILabel()
   private var wantsFocus = false
+  private var focusTask: Task<Void, Never>?
 
   init() {
     super.init(frame: .zero, textContainer: nil)
@@ -133,12 +141,27 @@ final class ComposerTextView: UITextView {
 
   func setFocused(_ focused: Bool) {
     wantsFocus = focused
-    reconcileFocus()
+    if focused {
+      scheduleFocus()
+    } else {
+      focusTask?.cancel()
+      reconcileFocus()
+    }
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    reconcileFocus()
+    scheduleFocus()
+  }
+
+  private func scheduleFocus() {
+    focusTask?.cancel()
+    // Responder callbacks can publish SwiftUI bindings. Run the handoff after
+    // the representable update, when the destination editor has been mounted.
+    focusTask = Task { @MainActor [weak self] in
+      guard !Task.isCancelled else { return }
+      self?.reconcileFocus()
+    }
   }
 
   private func reconcileFocus() {

@@ -14,6 +14,13 @@ final class ChatDraftTests: XCTestCase {
     let scope = ChatCacheScope(apiBaseURL: origin, userID: "user", workspaceID: "org")
     var document = ChatDraftDocument()
     document.replaceText("Restored after restart")
+    let message = ChatMessage(
+      id: "assistant-event", role: .assistant, text: "🌷 Selected passage", createdAt: Date(),
+      isQueued: false, isError: false)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: (message.text as NSString).range(of: "Selected passage")))
+    document.parts.append(selection.part)
     let draft = ComposerDraft(document: document)
     let agent = ChatDraftTarget.agent("agent")
     let thread = ChatDraftTarget.thread("thread")
