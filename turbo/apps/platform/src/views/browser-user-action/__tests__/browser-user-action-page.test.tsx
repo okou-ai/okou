@@ -14,6 +14,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
+import { state } from "ccstate";
 import { expect, test } from "vitest";
 
 import {
@@ -51,6 +52,7 @@ function action(
       : {}),
     requestToken: REQUEST_TOKEN,
     state,
+    callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
     agentId: AGENT_ID,
     threadId: THREAD_ID,
@@ -397,6 +399,29 @@ function route(args: { readonly threadId?: string } = {}): string {
   return `/browser/actions/${REQUEST_TOKEN}?${params.toString()}`;
 }
 
+const BROWSER_USER_ACTION_TOPIC = `browserUserActionChanged:${THREAD_ID}`;
+
+// The fake API reports a callback once it was sent and notifies the thread
+// after persisting it, as the production API does.
+const callbackSent$ = state(false);
+
+function notifyBrowserUserActionChanged(): void {
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
+}
+
+function acceptCallback(): void {
+  context.store.set(callbackSent$, true);
+  notifyBrowserUserActionChanged();
+}
+
+async function browserUserActionSubscribed() {
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(BROWSER_USER_ACTION_TOPIC),
+    ).toBeTruthy();
+  });
+}
+
 function button(name: string): HTMLElement {
   const result = queryAllByRoleFast("button").find((candidate) => {
     return candidate.textContent?.trim() === name;
@@ -430,6 +455,7 @@ test.each([true, false])(
       sentPrompt = body.prompt ?? "";
       expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
       expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
 
@@ -501,6 +527,7 @@ test("A required native slider starts at the website position and needs delibera
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -554,6 +581,7 @@ test("An optional native slider stays untouched unless the user changes it", asy
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -598,6 +626,7 @@ test("An optional native slider submits a changed position with its observed sna
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -649,6 +678,7 @@ test("A required native color starts from the website and needs explicit confirm
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -695,6 +725,7 @@ test("An optional native color remains untouched or submits an explicit change",
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -739,6 +770,7 @@ test("A changed native color submits its observed website snapshot", async () =>
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -828,6 +860,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -941,6 +974,7 @@ test("An optional file selection leaves existing website files untouched", async
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -989,6 +1023,7 @@ test("A required file field can retain already selected website files", async ()
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1030,6 +1065,7 @@ test("The standalone form accepts input and submission while its background chec
     return respond(200, action(state));
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 
@@ -1136,6 +1172,7 @@ test("The standalone form uses preflight's observed multiline and email controls
     return respond(200, action(state));
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 
@@ -1182,6 +1219,7 @@ test("The standalone form uses the existing input style with live number constra
     return respond(200, { ...numberAction(true), state });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1227,6 +1265,7 @@ test.each([
       return respond(200, { ...numberAction(false), state });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
@@ -1274,6 +1313,7 @@ test.each([
       return respond(200, { ...dateTimeAction(inputType, false), state });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
@@ -1315,6 +1355,7 @@ test.each([
       return respond(200, { ...dateTimeAction("date", false), state });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
@@ -1373,6 +1414,7 @@ test.each([
     });
     context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
       expect(body.prompt).toBe(CALLBACK_PROMPT);
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
@@ -1419,6 +1461,7 @@ test("An untouched optional checkbox preserves a checked website value", async (
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1464,6 +1507,7 @@ test("A required checked checkbox submits its valid website state", async () => 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1525,6 +1569,7 @@ test("A changed checkbox state on Retry uses the fresh valid website snapshot", 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1590,6 +1635,7 @@ test("A radio group submits an indexed choice without its duplicate value", asyn
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(CALLBACK_PROMPT);
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1652,6 +1698,7 @@ test("A radio choice from a changed website group uses its fresh snapshot on Ret
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1721,6 +1768,7 @@ test("An untouched optional radio group preserves the existing selection", async
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1767,6 +1815,7 @@ test("An Agent-required radio group submits its existing valid website choice", 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1813,6 +1862,7 @@ test("The standalone form selects a required native option by index, not its web
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -1886,6 +1936,7 @@ test("A required multiple select cannot keep a disabled website choice and drops
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 
@@ -1939,6 +1990,7 @@ test("An optional multiple select distinguishes untouched from an explicit clear
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -2011,6 +2063,7 @@ test("An optional single select clears its website selection through the native 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -2098,6 +2151,7 @@ test.each([
       });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
@@ -2206,37 +2260,6 @@ test("Changed site constraints require a fresh preflight without losing ordinary
   expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
 });
 
-test("Tab return keeps password and code drafts in an active standalone form", async () => {
-  const pending = sensitiveAction("pending");
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, pending);
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, pending);
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  const password = await screen.findByLabelText("Password");
-  await fill(password, "temporary-secret");
-  await fill(screen.getByLabelText("Verification code"), "012345");
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
-  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
-  act(() => {
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
-  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
-});
-
 test("Leaving and returning to a standalone form clears password and code drafts", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, sensitiveAction("pending"));
@@ -2293,6 +2316,7 @@ test("The standalone form records cancellation before notifying the agent", asyn
     expect(body.prompt).toBe("The user cancelled the browser input request.");
     expect(body.clientEventId).toBe(CANCEL_CLIENT_ID);
     expect(body.chatThreadSortEventId).toBe(CANCEL_SORT_ID);
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 
@@ -2336,6 +2360,7 @@ test("Standalone preflight makes a confirmed changed target stale before showing
   });
   context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
     state = "stale";
+    notifyBrowserUserActionChanged();
     return respond(200, action(state));
   });
 
@@ -2352,44 +2377,8 @@ test("Standalone preflight makes a confirmed changed target stale before showing
   ).toBeVisible();
 });
 
-test("Retry after a failed standalone request also runs preflight", async () => {
-  let reads = 0;
-  let checks = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
-    return reads === 1
-      ? respond(503, {
-          error: {
-            code: "BROWSER_UNAVAILABLE",
-            message: "Browser unavailable",
-          },
-        })
-      : respond(200, action("pending"));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    checks += 1;
-    return respond(200, action("pending"));
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await waitFor(() => {
-    expect(button("Retry")).toBeVisible();
-  });
-  expect(checks).toBe(0);
-  click(button("Retry"));
-  await screen.findByRole("form", { name: "Sign in to download invoices" });
-  expect(reads).toBe(2);
-  expect(checks).toBe(1);
-});
-
 test.each(["apply", "cancel"] as const)(
-  "Reconciles a lost %s response before offering a stable callback retry",
+  "Reconciles a lost %s response from a thread change signal before a stable callback retry",
   async (operation) => {
     let current: BrowserUserActionResponse["state"] = "pending";
     let notificationFailed = false;
@@ -2425,6 +2414,7 @@ test.each(["apply", "cancel"] as const)(
           error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
         });
       }
+      acceptCallback();
       return respond(201, { threadId: THREAD_ID });
     });
 
@@ -2440,7 +2430,12 @@ test.each(["apply", "cancel"] as const)(
     await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
     await fill(within(form).getByLabelText("Password"), "synthetic-password");
     await fill(within(form).getByLabelText("Verification code"), "012345");
+    await browserUserActionSubscribed();
     click(button(operation === "apply" ? "Add to browser" : "Cancel"));
+    await waitFor(() => {
+      expect(current).not.toBe("pending");
+    });
+    context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
     await expect(
       screen.findByText(
@@ -2484,11 +2479,13 @@ test.each([
     context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
       if (outcome === "expired") {
         expired = true;
+        notifyBrowserUserActionChanged();
         return respond(410, {
           error: { code: "BROWSER_USER_ACTION_EXPIRED", message: "Expired" },
         });
       }
       current = outcome;
+      notifyBrowserUserActionChanged();
       return respond(200, sensitiveAction(current));
     });
     await setupPage({
@@ -2511,23 +2508,13 @@ test.each([
   },
 );
 
-test("An authoritative pending recovery rechecks the form before an explicit retry", async () => {
+test("A lost apply response keeps the draft for an explicit retry", async () => {
   let responseLost = false;
   let current: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(current));
   });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    const pending = action("pending");
-    return respond(200, {
-      ...pending,
-      fields: pending.fields.map((field) => {
-        return responseLost && field.key === "email"
-          ? { ...field, label: "Confirmed email" }
-          : field;
-      }),
-    });
-  });
+  mockPendingPreflight();
   context.mocks.http.post(
     `*${browserUserActionsContract.apply.path.replace(":requestToken", REQUEST_TOKEN)}`,
     () => {
@@ -2540,6 +2527,7 @@ test("An authoritative pending recovery rechecks the form before an explicit ret
     },
   );
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
@@ -2559,12 +2547,13 @@ test("An authoritative pending recovery rechecks the form before an explicit ret
   click(button("Add to browser"));
 
   await expect(
-    screen.findByLabelText(/Confirmed email/u),
+    screen.findByText(
+      "Couldn't add the information. Your entries are still here. Try again.",
+    ),
   ).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("Remembered answer")).toHaveValue(
     "Keep this draft",
   );
-  expect(screen.queryByText("Information added")).toBeNull();
   click(button("Add to browser"));
   await expect(
     screen.findByText("Agent notified"),
@@ -2598,7 +2587,7 @@ test.each([
   },
 );
 
-test("An unresolved applying action stops waiting and offers a read-only check", async () => {
+test("An applying action settles when the thread signals a change", async () => {
   let current: BrowserUserActionResponse["state"] = "applying";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(current));
@@ -2611,64 +2600,18 @@ test("An unresolved applying action stops waiting and offers a read-only check",
   });
 
   await expect(
-    screen.findByText("Outcome not confirmed"),
+    screen.findByText("Checking browser status"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("form")).toBeNull();
+  await browserUserActionSubscribed();
   current = "uncertain";
-  click(button("Check status"));
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
   await expect(
     screen.findByText("Check the browser"),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("form")).toBeNull();
 });
 
-test(
-  "A stalled recovery read reaches its deadline and permits another status check",
-  // This verifies the real 90-second owner deadline without replacing the clock.
-  { timeout: 120_000 },
-  async () => {
-    const started = createDeferredPromise<AbortSignal>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    let initial = true;
-    let available = false;
-    context.mocks.api(
-      browserUserActionsContract.get,
-      async ({ request, respond }) => {
-        if (initial) {
-          initial = false;
-          return respond(200, action("applying"));
-        }
-        if (!available) {
-          started.resolve(request.signal);
-          await release.promise;
-        }
-        return respond(200, action("uncertain"));
-      },
-    );
-    await setupPage({
-      context,
-      path: route(),
-      host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-    });
-    const readSignal = await started.promise;
-    await expect(
-      screen.findByText("Outcome not confirmed", {}, { timeout: 100_000 }),
-    ).resolves.toBeInTheDocument();
-    expect(readSignal.aborted).toBeTruthy();
-    available = true;
-    await act(async () => {
-      release.resolve(undefined);
-      await release.promise;
-    });
-    click(button("Check status"));
-    await expect(
-      screen.findByText("Check the browser"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByRole("form")).toBeNull();
-  },
-);
-
-test("A recovery read is cancelled when the route changes and its late result stays stale", async () => {
+test("A status read is cancelled when the route changes and its late result stays stale", async () => {
   const nextToken = `vm0_browser_user_action_${"c".repeat(43)}`;
   const started = createDeferredPromise<AbortSignal>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
@@ -2733,6 +2676,7 @@ test("A terminal standalone action retries only its stable callback", async () =
     expect(body.prompt).toBe(CALLBACK_PROMPT);
     expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
     expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 
@@ -2764,6 +2708,7 @@ test("A failed notification announces the error and remains retryable", async ()
         error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
       });
     }
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 
@@ -2797,6 +2742,7 @@ test("A failed callback retries without repeating the Browser mutation", async (
       { key: "email", value: "owner@example.test" },
     ]);
     state = "succeeded";
+    notifyBrowserUserActionChanged();
     return respond(200, action(state));
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
@@ -2808,6 +2754,7 @@ test("A failed callback retries without repeating the Browser mutation", async (
         error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
       });
     }
+    acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
 

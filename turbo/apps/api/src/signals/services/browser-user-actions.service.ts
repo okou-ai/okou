@@ -44,6 +44,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { publishBrowserUserActionChangedSafely } from "../external/realtime";
 import {
   deleteS3Objects,
   downloadS3BufferWithMaxBytes,
@@ -109,6 +110,14 @@ const expired = () => {
     "Browser user-action request expired",
   );
 };
+/**
+ * Expiry is derived from the browser lease, not persisted. A write that finds
+ * it notifies the thread so every open card reads the expired state.
+ */
+const expiredAfterNotify = async (row: RequestRow) => {
+  await publishBrowserUserActionChangedSafely(row.userId, row.chatThreadId);
+  return expired();
+};
 const conflict = (message: string, code = "BROWSER_USER_ACTION_CONFLICT") => {
   return failure(409, code, message);
 };
@@ -173,7 +182,7 @@ export const prepareBrowserUserFileUpload$ = command(
       return conflict("Browser file upload is not available");
     }
     if (!(await set(requestHasLiveBrowser$, row))) {
-      return expired();
+      return await expiredAfterNotify(row);
     }
     const uploadUrl = await get(
       generatePresignedPutUrl(
@@ -192,7 +201,7 @@ export const prepareBrowserUserFileUpload$ = command(
     // The signed PUT and the provider's idle lease use the same duration.
     // Its absolute timeout and request state still gate the subsequent apply.
     if (!(await set(touchExactProvider$, row))) {
-      return expired();
+      return await expiredAfterNotify(row);
     }
     signal.throwIfAborted();
     return { kind: "ok", value: { uploadUrl } };
@@ -422,7 +431,7 @@ const touchExactProvider$ = command(
 const restorePending$ = command(
   async ({ set }, requestTokenHash: string): Promise<void> => {
     const db = set(writeDb$);
-    await db
+    const [restored] = await db
       .update(browserUserActionRequests)
       .set({ status: "pending", applyStartedAt: null })
       .where(
@@ -430,7 +439,17 @@ const restorePending$ = command(
           eq(browserUserActionRequests.requestTokenHash, requestTokenHash),
           eq(browserUserActionRequests.status, "applying"),
         ),
+      )
+      .returning({
+        userId: browserUserActionRequests.userId,
+        chatThreadId: browserUserActionRequests.chatThreadId,
+      });
+    if (restored) {
+      await publishBrowserUserActionChangedSafely(
+        restored.userId,
+        restored.chatThreadId,
       );
+    }
   },
 );
 
@@ -452,6 +471,9 @@ const finalize$ = command(
         ),
       )
       .returning();
+    if (row) {
+      await publishBrowserUserActionChangedSafely(row.userId, row.chatThreadId);
+    }
     return row ?? null;
   },
 );
@@ -482,6 +504,8 @@ const convertClosedBrowserUserActions$ = command(
     const candidates = await db
       .select({
         requestTokenHash: browserUserActionRequests.requestTokenHash,
+        userId: browserUserActionRequests.userId,
+        chatThreadId: browserUserActionRequests.chatThreadId,
         payload: browserUserActionRequests.payload,
         providerSessionId: browserUserActionRequests.providerSessionId,
         status: browserUserActionRequests.status,
@@ -514,7 +538,7 @@ const convertClosedBrowserUserActions$ = command(
         throw new Error("Expected a closed Browser user-action candidate");
       }
       const nextStatus = candidate.status === "pending" ? "stale" : "uncertain";
-      const updated = await db
+      const [updated] = await db
         .update(browserUserActionRequests)
         .set({
           status: nextStatus,
@@ -534,10 +558,18 @@ const convertClosedBrowserUserActions$ = command(
           ),
         )
         .returning({
-          requestTokenHash: browserUserActionRequests.requestTokenHash,
+          userId: browserUserActionRequests.userId,
+          chatThreadId: browserUserActionRequests.chatThreadId,
         });
+      if (updated) {
+        await publishBrowserUserActionChangedSafely(
+          updated.userId,
+          updated.chatThreadId,
+        );
+        maintenanceSignal.throwIfAborted();
+      }
       if (
-        updated.length > 0 &&
+        updated &&
         candidate.payload.kind === "input" &&
         candidate.payload.target.fields[0]?.fieldKind === "file"
       ) {
@@ -1156,29 +1188,36 @@ export const readBrowserUserAction$ = command(
       row.applyStartedAt.getTime() <= nowDate().getTime() - APPLY_STUCK_AFTER_MS
     ) {
       const now = nowDate();
-      row =
-        (
-          await db
-            .update(browserUserActionRequests)
-            .set({
-              status: "uncertain",
-              completedAt: now,
-            })
-            .where(
-              and(
-                eq(
-                  browserUserActionRequests.requestTokenHash,
-                  row.requestTokenHash,
-                ),
-                eq(browserUserActionRequests.status, "applying"),
-                lt(
-                  browserUserActionRequests.applyStartedAt,
-                  new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
-                ),
-              ),
-            )
-            .returning()
-        )[0] ?? (await set(loadExactBrowserUserActionRequest$, row));
+      const [uncertain] = await db
+        .update(browserUserActionRequests)
+        .set({
+          status: "uncertain",
+          completedAt: now,
+        })
+        .where(
+          and(
+            eq(
+              browserUserActionRequests.requestTokenHash,
+              row.requestTokenHash,
+            ),
+            eq(browserUserActionRequests.status, "applying"),
+            lt(
+              browserUserActionRequests.applyStartedAt,
+              new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
+            ),
+          ),
+        )
+        .returning();
+      signal.throwIfAborted();
+      row = uncertain ?? (await set(loadExactBrowserUserActionRequest$, row));
+      signal.throwIfAborted();
+      if (uncertain) {
+        await publishBrowserUserActionChangedSafely(
+          uncertain.userId,
+          uncertain.chatThreadId,
+        );
+        signal.throwIfAborted();
+      }
     }
     signal.throwIfAborted();
     if (!row) {
@@ -1506,7 +1545,7 @@ export const preflightBrowserUserAction$ = command(
     const leased = await set(touchExactProvider$, located);
     signal.throwIfAborted();
     if (!leased) {
-      return expired();
+      return await expiredAfterNotify(located);
     }
     const inspected = await inspectPendingBrowserUserAction(
       located,
@@ -1528,7 +1567,7 @@ export const preflightBrowserUserAction$ = command(
       return conflict("Browser input state changed during preflight");
     }
     if (!(await set(requestHasLiveBrowser$, current))) {
-      return expired();
+      return await expiredAfterNotify(current);
     }
     if (inspection.kind === "stale") {
       const [stale] = await db
@@ -1548,6 +1587,11 @@ export const preflightBrowserUserAction$ = command(
       if (!stale) {
         return conflict("Browser input state changed during preflight");
       }
+      await publishBrowserUserActionChangedSafely(
+        stale.userId,
+        stale.chatThreadId,
+      );
+      signal.throwIfAborted();
       if (payload.target.fields[0]?.fieldKind === "file") {
         const cleanup = await settle(
           get(
@@ -1773,7 +1817,7 @@ export const applyBrowserUserAction$ = command(
 
     if (!(await set(requestHasLiveBrowser$, located))) {
       signal.throwIfAborted();
-      return expired();
+      return await expiredAfterNotify(located);
     }
     if (located.status !== "pending") {
       signal.throwIfAborted();
@@ -1859,7 +1903,7 @@ export const cancelBrowserUserAction$ = command(
     let current = row;
     if (current.status !== "cancelled") {
       if (!(await set(requestHasLiveBrowser$, current))) {
-        return expired();
+        return await expiredAfterNotify(current);
       }
       if (current.status !== "pending") {
         return conflict(
@@ -1886,6 +1930,11 @@ export const cancelBrowserUserAction$ = command(
       if (!updated) {
         return conflict("Browser user-action state changed");
       }
+      await publishBrowserUserActionChangedSafely(
+        updated.userId,
+        updated.chatThreadId,
+      );
+      signal.throwIfAborted();
       current = updated;
     }
     const result: ServiceResult<BrowserUserActionResponse> = {

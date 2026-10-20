@@ -43,6 +43,7 @@ enum ChatWorkProjection {
     var sections: [ChatWorkSection] = []
     var statusIDs = Set<String>()
     var latestStatusIDs = Set<String>()
+    var historicalFailureIDs = Set<String>()
     for (index, phase) in phases.enumerated() {
       let outputs = phase.events.filter { $0.eventType == .outputMessage && byID[$0.id] != nil }
       let anchor = outputs.last
@@ -52,7 +53,7 @@ enum ChatWorkProjection {
       }
       statusIDs.formUnion(trailing.map(\.id))
       if phase.events.contains(where: { isInput($0.eventType) || byID[$0.id] != nil }) {
-        // A new input retires the previous outcome before it has assistant output.
+        // A new input retires the live outcome; historical failure facts stay readable.
         // Deduplicate repeated outcomes without discarding distinct recovery details.
         var seen = Set<String>()
         latestStatusIDs = Set(
@@ -60,6 +61,7 @@ enum ChatWorkProjection {
             guard let message = byID[row.id] else { return false }
             return seen.insert("\(message.isError):\(message.text)").inserted
           }.map(\.id))
+        historicalFailureIDs.formUnion(latestStatusIDs.filter { byID[$0]?.failure != nil })
       }
       guard let runID = phase.runID, let anchor, let anchorIndex,
         let first = phase.events.first
@@ -80,6 +82,7 @@ enum ChatWorkProjection {
     }
     let visibleMessages = messages.filter {
       !statusIDs.contains($0.id) || latestStatusIDs.contains($0.id)
+        || historicalFailureIDs.contains($0.id)
     }
     let visibleIDs = Set(visibleMessages.map(\.id))
     var usageAnchors: [String: String] = [:]

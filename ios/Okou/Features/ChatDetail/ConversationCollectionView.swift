@@ -9,6 +9,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState)
+  case failure(ChatMessage, AssistantFailureState, topSpacing: CGFloat)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
   case usage(runID: String, state: ConversationRunUsageState)
 
@@ -18,6 +19,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .message(let message, _, _, _, _, _): message.id
     case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
+    case .failure(let message, _, _): message.id
     case .followups: "conversation-followups"
     case .usage(let runID, _): "usage:\(runID)"
     }
@@ -25,6 +27,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
 
   var message: ChatMessage? {
     if case .message(let message, _, _, _, _, _) = self { return message }
+    if case .failure(let message, _, _) = self { return message }
     return nil
   }
 }
@@ -72,6 +75,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let anchor: ConversationScrollAnchor
   let scroll: ConversationCollectionScroll
   let followsBottom: Bool
+  var sidebar: SidebarInteraction?
   let phaseChanged: (ScrollPhase) -> Void
   let metricsChanged: (ConversationCollectionMetrics) -> Void
   let refresh: () async -> Void
@@ -98,7 +102,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
 
 @MainActor
 final class ConversationCollectionController<Content: View>: UIViewController,
-  UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling
+  UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling, SidebarScrollParticipant
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
 
@@ -207,6 +211,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     loading.hidesWhenStopped = true
     view.addSubview(loading)
+    source.sidebar?.attach(self)
     registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
       (controller: ConversationCollectionController<Content>, _: UITraitCollection) in
       controller.publishViewportChange()
@@ -243,8 +248,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func update(_ source: ConversationCollectionView<Content>) {
+    let sidebarChanged = self.source.sidebar !== source.sidebar
+    if sidebarChanged, isViewLoaded { self.source.sidebar?.detach(self) }
     self.source = source
     if isViewLoaded {
+      if sidebarChanged { source.sidebar?.attach(self) }
       updateContentInsets()
       prepareRowsIfNeeded()
     }
@@ -262,6 +270,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func stop() {
+    source.sidebar?.detach(self)
     stopped = true
     stopLoading()
     preparation?.cancel()
@@ -275,6 +284,28 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     if source.scroll.owner === self { source.scroll.owner = nil }
     source.anchor.isPresentedMarker = nil
     collection?.delegate = nil
+  }
+
+  func setSidebarActive(_ active: Bool) {
+    guard isViewLoaded else { return }
+    let enabled = !active
+    guard collection.isUserInteractionEnabled != enabled else { return }
+    let wasScrolling = isScrolling
+    // Cancel this touch's transcript pan and block new transcript touches. Keep
+    // isScrollEnabled unchanged: UIHostingConfiguration needs its scroll-container
+    // layout semantics even when the sidebar is covering a newly mounted detail.
+    // Ancestor SwiftUI responder/relationship recognizers must keep running.
+    collection.isUserInteractionEnabled = enabled
+    collection.panGestureRecognizer.isEnabled = enabled
+    if active {
+      collection.stopScrollingAndZooming()
+      // A newly mounted detail must still restore its saved position while the
+      // sidebar is open. Only interrupted motion relinquishes its correction.
+      if wasScrolling {
+        source.anchor.cancel()
+        scrollingEnded()
+      }
+    }
   }
 
   private func isPresentedMarker(_ marker: ConversationRowMarker) -> Bool {
@@ -704,6 +735,7 @@ private final class ConversationLayoutFrame: NSObject {
 private final class ConversationAccessibilityCollection: UICollectionView {
   var beginsAccessibilityScroll: (() -> Void)?
   override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+    guard isUserInteractionEnabled else { return false }
     guard direction == .up || direction == .down else {
       return super.accessibilityScroll(direction)
     }

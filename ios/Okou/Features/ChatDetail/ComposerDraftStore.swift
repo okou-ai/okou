@@ -391,6 +391,8 @@ final class ComposerDraftStore {
 
   func clear() {
     guard !closed else { return }
+    // Native focus callbacks must finish while their editor generation is still current.
+    editor.dismissKeyboard()
     localReadFailed = false
     cleared = true
     applying = true

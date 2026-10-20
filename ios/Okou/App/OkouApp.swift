@@ -79,8 +79,7 @@ private struct WorkspaceRootView: View {
   let workspaceID: String
   let userID: String
   @State private var store: WorkspaceStore
-  @State private var isSidebarOpen = false
-  @State private var sidebarDrag: CGFloat?
+  @State private var sidebar = SidebarInteraction()
   @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -118,7 +117,7 @@ private struct WorkspaceRootView: View {
       let topInset = geometry.safeAreaInsets.top
       let screenHeight = geometry.size.height + topInset + geometry.safeAreaInsets.bottom
       let sidebarOffset = min(
-        max((isSidebarOpen ? sidebarWidth : 0) + (sidebarDrag ?? 0), 0), sidebarWidth)
+        max((sidebar.isOpen ? sidebarWidth : 0) + (sidebar.translation ?? 0), 0), sidebarWidth)
       let sidebarProgress = sidebarOffset / sidebarWidth
       let panelCornerRadius = 30 * sidebarProgress
       ZStack(alignment: .leading) {
@@ -131,13 +130,13 @@ private struct WorkspaceRootView: View {
           newChat: startNewChat
         )
         .frame(width: sidebarWidth, height: geometry.size.height)
-        .allowsHitTesting(isSidebarOpen)
-        .accessibilityHidden(!isSidebarOpen)
+        .allowsHitTesting(sidebar.isOpen)
+        .accessibilityHidden(!sidebar.isOpen)
 
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, topContentInset: headerHeight
+              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar
             )
             .id(conversation.thread.id)
           } else {
@@ -162,7 +161,7 @@ private struct WorkspaceRootView: View {
             .frame(height: headerHeight)
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
-        .accessibilityHidden(isSidebarOpen)
+        .accessibilityHidden(sidebar.isOpen)
         .background(alignment: .top) {
           RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
             .fill(Color(uiColor: .systemBackground))
@@ -178,10 +177,10 @@ private struct WorkspaceRootView: View {
               .offset(y: -topInset)
           }
           .buttonStyle(.plain)
-          .allowsHitTesting(isSidebarOpen)
+          .allowsHitTesting(sidebar.isOpen)
           .accessibilityLabel("Close sidebar")
           .accessibilityIdentifier("close-sidebar")
-          .accessibilityHidden(!isSidebarOpen)
+          .accessibilityHidden(!sidebar.isOpen)
         }
         .mask(alignment: .top) {
           RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
@@ -195,24 +194,22 @@ private struct WorkspaceRootView: View {
       .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
       .gesture(
         SidebarPanGesture(
-          isOpen: isSidebarOpen, sidebarWidth: sidebarWidth,
+          interaction: sidebar, sidebarWidth: sidebarWidth,
           changed: { translation in
-            if sidebarDrag == nil {
+            if sidebar.translation == nil {
               UIApplication.shared.sendAction(
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
-            sidebarDrag = translation
+            sidebar.dragChanged(translation)
           },
           ended: { translation, velocity, cancelled in
-            let wasOpen = isSidebarOpen
-            let opens = SidebarGesturePolicy.settlesOpen(
-              wasOpen: wasOpen, sidebarWidth: sidebarWidth, translation: translation,
-              velocity: velocity, cancelled: cancelled)
+            let wasOpen = sidebar.isOpen
             withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-              isSidebarOpen = opens
-              sidebarDrag = nil
+              sidebar.endDrag(
+                translation: translation, velocity: velocity, cancelled: cancelled,
+                sidebarWidth: sidebarWidth)
             }
-            if opens && !wasOpen { Task { await store.refreshNavigation() } }
+            if sidebar.isOpen && !wasOpen { Task { await store.refreshNavigation() } }
           })
       )
     }
@@ -221,7 +218,10 @@ private struct WorkspaceRootView: View {
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)
     }
-    .onDisappear { store.close() }
+    .onDisappear {
+      sidebar.cancelDrag()
+      store.close()
+    }
     .onReceive(
       NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
     ) { _ in
@@ -344,16 +344,14 @@ private struct WorkspaceRootView: View {
     UIApplication.shared.sendAction(
       #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-      isSidebarOpen = true
-      sidebarDrag = nil
+      sidebar.setOpen(true)
     }
     Task { await store.refreshNavigation() }
   }
 
   private func closeSidebar() {
     withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-      isSidebarOpen = false
-      sidebarDrag = nil
+      sidebar.setOpen(false)
     }
   }
 

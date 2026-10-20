@@ -16,7 +16,7 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
-import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -25,7 +25,7 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import type { FormEvent, ReactNode, Ref } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -47,11 +47,9 @@ export type BrowserUserActionCardVariant = "inline" | "standalone";
 
 function BrowserActionSurface({
   children,
-  resumeRef,
   variant,
 }: {
   readonly children: ReactNode;
-  readonly resumeRef?: Ref<HTMLDivElement>;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
@@ -64,7 +62,6 @@ function BrowserActionSurface({
     >
       <ChatCard
         data-testid="browser-user-action-card"
-        ref={resumeRef}
         className={
           variant === "standalone"
             ? "w-full p-5 sm:p-6"
@@ -1802,6 +1799,21 @@ function PendingFormWithCheck({
   );
 }
 
+function PendingStandaloneAction({
+  signals,
+  request,
+}: {
+  readonly signals: BrowserUserActionSignals;
+  readonly request: PendingBrowserInputRequest;
+}) {
+  const entryRef = useSet(signals.standaloneEntryRef$);
+  return (
+    <div ref={entryRef} className="contents">
+      <PendingFormWithCheck signals={signals} request={request} />
+    </div>
+  );
+}
+
 function PendingInlineAction({
   signals,
   request,
@@ -1812,7 +1824,6 @@ function PendingInlineAction({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const beginEntry = useSet(signals.beginEntry$);
-  const dialogRef = useSet(signals.dialogRef$);
   const title =
     request.action.title ??
     t(($) => {
@@ -1838,7 +1849,7 @@ function PendingInlineAction({
               </Button>
             }
           />
-          <DialogContent ref={dialogRef}>
+          <DialogContent>
             <DialogHeader>
               <DialogTitle className="break-words">{title}</DialogTitle>
               {request.action.reason !== undefined && (
@@ -1859,57 +1870,23 @@ function PendingInlineAction({
   );
 }
 
-function RecoveryState({
-  checking,
-  signals,
+function ApplyingState({
   variant,
 }: {
-  readonly checking: boolean;
-  readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
-  const recoveryRef = useSet(signals.recoveryRef$);
-  const recover = useSet(signals.recover$);
   return (
-    <div ref={checking ? recoveryRef : undefined} className="contents">
-      <ActionState
-        icon={
-          checking ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : (
-            <AlertCircle size={20} />
-          )
-        }
-        title={t(($) => {
-          return checking
-            ? $.chat.browserInput.checkingOutcome
-            : $.chat.browserInput.outcomeNotConfirmed;
-        })}
-        description={t(($) => {
-          return checking
-            ? $.chat.browserInput.checkingOutcomeDescription
-            : $.chat.browserInput.outcomeNotConfirmedDescription;
-        })}
-        action={
-          checking ? undefined : (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                recover();
-              }}
-            >
-              {t(($) => {
-                return $.chat.browserInput.checkStatus;
-              })}
-            </Button>
-          )
-        }
-        variant={variant}
-      />
-    </div>
+    <ActionState
+      icon={<Loader2 size={20} className="animate-spin" />}
+      title={t(($) => {
+        return $.chat.browserInput.checkingOutcome;
+      })}
+      description={t(($) => {
+        return $.chat.browserInput.checkingOutcomeDescription;
+      })}
+      variant={variant}
+    />
   );
 }
 
@@ -1918,7 +1895,6 @@ function BrowserUserActionCardContent({
   callbackFailed,
   continuing,
   onContinue,
-  refresh,
   requestLoadable,
   signals,
   variant,
@@ -1927,27 +1903,18 @@ function BrowserUserActionCardContent({
   readonly callbackFailed: boolean;
   readonly continuing: boolean;
   readonly onContinue: () => void;
-  readonly refresh: () => void;
   readonly requestLoadable: Loadable<BrowserUserActionRequestState>;
   readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
-  const recoveryState = useGet(signals.recoveryState$);
   let content: ReactNode;
   if (
-    recoveryState !== "idle" ||
-    (requestLoadable.state === "hasData" &&
-      requestLoadable.data.kind === "action" &&
-      requestLoadable.data.action.state === "applying")
+    requestLoadable.state === "hasData" &&
+    requestLoadable.data.kind === "action" &&
+    requestLoadable.data.action.state === "applying"
   ) {
-    content = (
-      <RecoveryState
-        checking={recoveryState !== "exhausted"}
-        signals={signals}
-        variant={variant}
-      />
-    );
+    content = <ApplyingState variant={variant} />;
   } else if (requestLoadable.state === "loading") {
     content = (
       <ActionState
@@ -1968,13 +1935,6 @@ function BrowserUserActionCardContent({
         description={t(($) => {
           return $.chat.browserInput.loadFailedDescription;
         })}
-        action={
-          <Button type="button" size="sm" variant="outline" onClick={refresh}>
-            {t(($) => {
-              return $.chat.browserInput.retry;
-            })}
-          </Button>
-        }
         variant={variant}
       />
     );
@@ -1991,7 +1951,7 @@ function BrowserUserActionCardContent({
       variant === "inline" ? (
         <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingFormWithCheck signals={signals} request={pendingRequest} />
+        <PendingStandaloneAction signals={signals} request={pendingRequest} />
       );
   } else {
     content = (
@@ -2018,54 +1978,29 @@ export function BrowserUserActionCard({
   readonly variant?: BrowserUserActionCardVariant;
 }) {
   const pageSignal = useGet(pageSignal$);
-  const requestLoadable = useLoadable(signals.request$);
-  const refresh = useSet(signals.refresh$);
-  const retryStandaloneRequest = useSet(signals.retryStandaloneRequest$);
-  const resumeRef = useSet(signals.resumeRef$);
-  const locallyDelivered = useGet(signals.callbackDelivered$);
+  // Keep the settled state while a notification re-reads it, so an open
+  // dialog is not remounted by an unrelated change in the same thread.
+  const requestLoadable = useLastLoadable(signals.request$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
-  const recoveryState = useGet(signals.recoveryState$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
   const action =
     requestLoadable.state === "hasData" &&
     requestLoadable.data.kind === "action"
       ? requestLoadable.data.action
       : undefined;
-  const callbackDelivered =
-    locallyDelivered || action?.callbackDelivered === true;
-  const needsReturnRefresh =
-    recoveryState !== "idle" ||
-    (action !== undefined &&
-      ((variant === "inline" &&
-        action.kind === "input" &&
-        action.state === "pending") ||
-        ((action.state === "succeeded" || action.state === "cancelled") &&
-          !callbackDelivered) ||
-        action.state === "applying"));
+  const callbackDelivered = action?.callbackDelivered === true;
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
   };
-  const onRefresh = () => {
-    if (variant === "standalone") {
-      detach(retryStandaloneRequest(pageSignal), Reason.DomCallback);
-    } else {
-      refresh();
-    }
-  };
-
   return (
-    <BrowserActionSurface
-      variant={variant}
-      resumeRef={needsReturnRefresh ? resumeRef : undefined}
-    >
+    <BrowserActionSurface variant={variant}>
       <BrowserUserActionCardContent
         callbackDelivered={callbackDelivered}
         callbackFailed={callbackFailed}
         continuing={continuing}
         onContinue={onContinue}
-        refresh={onRefresh}
         requestLoadable={requestLoadable}
         signals={signals}
         variant={variant}

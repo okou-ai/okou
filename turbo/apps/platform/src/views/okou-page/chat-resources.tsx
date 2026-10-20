@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -329,14 +330,82 @@ function ChatResourcesStatus({
   );
 }
 
-function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
-  const artifactsId = `${thread.threadId}-resource-artifacts`;
+function ChatResourceArtifacts({
+  thread,
+  artifactCount,
+  hasMore,
+  expanded,
+  controls,
+  children,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly artifactCount: number;
+  readonly hasMore: boolean;
+  readonly expanded: boolean;
+  readonly controls: string;
+  readonly children: ReactNode;
+}) {
   const { t } = useTranslation();
-  const data = useLastResolved(thread.resources.content$);
   const [paging, loadMore] = useLoadableSet(thread.resources.catalog.loadMore$);
   const pageSignal = useGet(pageSignal$);
-  const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
+  if (artifactCount === 0) {
+    return null;
+  }
+  return (
+    <section
+      className={RESOURCE_SECTION_CLASS}
+      aria-label={t(($) => {
+        return $.artifacts.sidebar.panelTitle;
+      })}
+    >
+      <ChatResourceSectionHeading
+        title={t(($) => {
+          return $.artifacts.sidebar.panelTitle;
+        })}
+      />
+      {children}
+      {(artifactCount > RESOURCE_PREVIEW_LIMIT || hasMore) && (
+        <ChatResourceSectionToggle
+          expanded={expanded}
+          hasMore={hasMore}
+          loading={paging.state === "loading"}
+          controls={controls}
+          onToggle={(trigger) => {
+            if (expanded && hasMore) {
+              detach(loadMore(pageSignal), Reason.DomCallback);
+              return;
+            }
+            toggleSection("artifacts", trigger);
+          }}
+        />
+      )}
+      {expanded && hasMore && paging.state === "loading" && (
+        <p
+          role="status"
+          className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
+        >
+          <RunningIndicator />
+          {t(($) => {
+            return $.chat.resources.loading;
+          })}
+        </p>
+      )}
+      {expanded && hasMore && paging.state === "hasError" && (
+        <p role="alert" className="px-2 py-1 text-xs text-muted-foreground">
+          {t(($) => {
+            return $.chat.resources.loadFailed;
+          })}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
+  const artifactsId = `${thread.threadId}-resource-artifacts`;
+  const data = useLastResolved(thread.resources.content$);
+  const expanded = useGet(thread.resources.expandedSections$);
   return (
     <div
       data-resource-scroll
@@ -344,18 +413,14 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
     >
       <ChatOrigin thread={thread} />
       <ChatRelationships thread={thread} />
-      {data && data.artifacts.length > 0 && (
-        <section
-          className={RESOURCE_SECTION_CLASS}
-          aria-label={t(($) => {
-            return $.artifacts.sidebar.panelTitle;
-          })}
-        >
-          <ChatResourceSectionHeading
-            title={t(($) => {
-              return $.artifacts.sidebar.panelTitle;
-            })}
-          />
+      <ChatResourceArtifacts
+        thread={thread}
+        artifactCount={data?.artifacts.length ?? 0}
+        hasMore={Boolean(data?.nextCursor)}
+        expanded={expanded.artifacts}
+        controls={artifactsId}
+      >
+        {data && (
           <ul id={artifactsId} className="m-0 list-none p-0">
             {data.artifacts
               .slice(0, expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT)
@@ -369,49 +434,8 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
                 );
               })}
           </ul>
-          {(data.artifacts.length > RESOURCE_PREVIEW_LIMIT ||
-            data.nextCursor) && (
-            <ChatResourceSectionToggle
-              expanded={expanded.artifacts}
-              hasMore={Boolean(data.nextCursor)}
-              loading={paging.state === "loading"}
-              controls={artifactsId}
-              onToggle={(trigger) => {
-                if (expanded.artifacts && data.nextCursor) {
-                  detach(loadMore(pageSignal), Reason.DomCallback);
-                  return;
-                }
-                toggleSection("artifacts", trigger);
-              }}
-            />
-          )}
-          {expanded.artifacts &&
-            data.nextCursor &&
-            paging.state === "loading" && (
-              <p
-                role="status"
-                className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
-              >
-                <RunningIndicator />
-                {t(($) => {
-                  return $.chat.resources.loading;
-                })}
-              </p>
-            )}
-          {expanded.artifacts &&
-            data.nextCursor &&
-            paging.state === "hasError" && (
-              <p
-                role="alert"
-                className="px-2 py-1 text-xs text-muted-foreground"
-              >
-                {t(($) => {
-                  return $.chat.resources.loadFailed;
-                })}
-              </p>
-            )}
-        </section>
-      )}
+        )}
+      </ChatResourceArtifacts>
       <ChatResourcesStatus thread={thread} />
     </div>
   );

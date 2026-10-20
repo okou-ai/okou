@@ -18,6 +18,7 @@ import {
 } from "@testing-library/react";
 import { compile } from "tailwindcss";
 import { HttpResponse } from "msw";
+import { state } from "ccstate";
 import { expect, test } from "vitest";
 
 import {
@@ -57,6 +58,16 @@ const BROWSER_INPUT_SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001105";
 const BROWSER_INPUT_CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001106";
 const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
 const BROWSER_INPUT_CALLBACK = "Continue after browser input";
+const BROWSER_USER_ACTION_TOPIC = `browserUserActionChanged:${RUN_THREAD_ID}`;
+
+// The fake API reports a callback once it was sent and notifies the thread
+// after persisting it, as the production API does.
+const callbackSent$ = state(false);
+
+function acceptCallback(): void {
+  context.store.set(callbackSent$, true);
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
+}
 
 function browserInputAction(
   state: BrowserUserActionResponse["state"],
@@ -72,6 +83,7 @@ function browserInputAction(
       : {}),
     requestToken: BROWSER_INPUT_TOKEN,
     state,
+    callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
     agentId: CAPABILITY_AGENT_ID,
     threadId: RUN_THREAD_ID,
@@ -246,6 +258,14 @@ function buttonsByName(
       candidate.getAttribute("aria-label") === name ||
       candidate.textContent?.replace(/\s+/gu, " ").trim() === name
     );
+  });
+}
+
+async function browserUserActionSubscribed() {
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(BROWSER_USER_ACTION_TOPIC),
+    ).toBeTruthy();
   });
 }
 
@@ -599,17 +619,30 @@ test.each([true, false])(
     const description = hasTaskContext
       ? "The website requires sign-in to access your invoices."
       : "";
-    let reads = 0;
     let preflights = 0;
     let state: BrowserUserActionResponse["state"] = "pending";
+    const companionToken = `vm0_browser_user_action_${"d".repeat(43)}`;
+    let companionState: BrowserUserActionResponse["state"] = "pending";
     let sentPrompt = "";
     const firstCheckStarted = createDeferredPromise<void>(context.signal);
     const releaseFirstCheck = createDeferredPromise<void>(context.signal);
     installCapabilityChat({
-      events: completedConversation(`[Enter details](${browserInputUrl()})`),
+      events: completedConversation(
+        [
+          `[Enter details](${browserInputUrl()})`,
+          `[Companion request](${browserInputUrl().replace(BROWSER_INPUT_TOKEN, companionToken)})`,
+        ].join("\n\n"),
+      ),
     });
-    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      reads += 1;
+    context.mocks.api(browserUserActionsContract.get, ({ params, respond }) => {
+      if (params.requestToken === companionToken) {
+        return respond(200, {
+          ...browserInputAction(companionState),
+          requestToken: companionToken,
+          title: "Companion request",
+          callbackDelivered: false,
+        });
+      }
       return respond(200, {
         ...browserInputAction(state, hasTaskContext),
         fields: [
@@ -675,6 +708,7 @@ test.each([true, false])(
       sentPrompt = body.prompt ?? "";
       expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
       expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+      acceptCallback();
       return respond(201, {
         threadId: RUN_THREAD_ID,
       });
@@ -724,11 +758,14 @@ test.each([true, false])(
     );
     expect(window.location.href).toBe(currentUrl);
     expect(preflights).toBe(1);
-    const readsBeforeFocus = reads;
-    window.dispatchEvent(new Event("focus"));
+    await browserUserActionSubscribed();
+    companionState = "succeeded";
+    context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
+    await expect(
+      screen.findByText("Information added"),
+    ).resolves.toBeInTheDocument();
     expect(dialog).toBeVisible();
     expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
-    expect(reads).toBe(readsBeforeFocus);
 
     const closeButton = buttonsByName("Close", dialog)[0];
     if (!closeButton) {
@@ -800,16 +837,6 @@ test("Closing an inline form clears password and code drafts while preserving or
   );
   await fill(within(dialog).getByLabelText("Password"), "synthetic-password");
   await fill(within(dialog).getByLabelText("Verification code"), "123456");
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  expect(within(dialog).getByLabelText("Password")).toHaveValue(
-    "synthetic-password",
-  );
-  expect(within(dialog).getByLabelText("Verification code")).toHaveValue(
-    "123456",
-  );
 
   const close = buttonsByName("Close", dialog)[0];
   if (!close) {
@@ -959,6 +986,7 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1028,6 +1056,7 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1118,6 +1147,7 @@ test("An inline Browser slider confirms the observed website position without na
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1195,6 +1225,7 @@ test("An inline Browser color picker confirms the observed website selection wit
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1307,6 +1338,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1416,6 +1448,7 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1467,16 +1500,17 @@ test("A pending transcript card becomes consumed when the standalone form comple
   });
   await readyChat();
   await findButton("Enter information");
+  await browserUserActionSubscribed();
 
   state = "succeeded";
-  window.dispatchEvent(new Event("focus"));
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test.each(["apply", "cancel"] as const)(
-  "An inline dialog reconciles a lost %s response without replaying the write",
+  "An inline dialog reconciles a lost %s response from a thread change signal",
   async (operation) => {
     let current: BrowserUserActionResponse["state"] = "pending";
     installCapabilityChat({
@@ -1507,6 +1541,7 @@ test.each(["apply", "cancel"] as const)(
           ? BROWSER_INPUT_SUCCESS_SORT_ID
           : BROWSER_INPUT_CANCEL_SORT_ID,
       );
+      acceptCallback();
       return respond(201, {
         threadId: RUN_THREAD_ID,
       });
@@ -1519,6 +1554,7 @@ test.each(["apply", "cancel"] as const)(
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     await readyChat();
+    await browserUserActionSubscribed();
     click(await findButton("Enter information"));
     const dialog = await screen.findByRole("dialog", {
       name: "Sign in to download invoices",
@@ -1531,6 +1567,10 @@ test.each(["apply", "cancel"] as const)(
     click(
       await findButton(operation === "apply" ? "Add to browser" : "Cancel"),
     );
+    await waitFor(() => {
+      expect(current).not.toBe("pending");
+    });
+    context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
     await expect(
       screen.findByText(
@@ -1546,17 +1586,15 @@ test.each(["apply", "cancel"] as const)(
   },
 );
 
-test("Duplicate initially applying cards recover to a terminal state", async () => {
-  let applying = true;
+test("Duplicate initially applying cards recover after a thread change signal", async () => {
+  let actionState: BrowserUserActionResponse["state"] = "applying";
   installCapabilityChat({
     events: completedConversation(
       `[First input](${browserInputUrl()})\n\n[Same input](${browserInputRelativeUrl()})`,
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    const response = browserInputAction(applying ? "applying" : "uncertain");
-    applying = false;
-    return respond(200, response);
+    return respond(200, browserInputAction(actionState));
   });
   await setupPage({
     context,
@@ -1565,100 +1603,21 @@ test("Duplicate initially applying cards recover to a terminal state", async () 
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
+  await browserUserActionSubscribed();
+  expect(screen.getAllByText("Checking browser status")).toHaveLength(2);
 
+  actionState = "uncertain";
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
   await waitFor(() => {
     expect(screen.getAllByText("Check the browser")).toHaveLength(2);
   });
-  expect(buttonsByName("Enter information")).toHaveLength(0);
-});
-
-test("An inline recovery read failure offers a check instead of write retry", async () => {
-  let initial = true;
-  let available = false;
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.http.get(
-    `*${browserUserActionsContract.get.path.replace(":requestToken", BROWSER_INPUT_TOKEN)}`,
-    () => {
-      if (initial) {
-        initial = false;
-        return HttpResponse.json(browserInputAction("applying"));
-      }
-      return available
-        ? HttpResponse.json(browserInputAction("succeeded"))
-        : HttpResponse.error();
-    },
-  );
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  await expect(
-    screen.findByText("Outcome not confirmed"),
-  ).resolves.toBeInTheDocument();
-  expect(buttonsByName("Enter information")).toHaveLength(0);
-  available = true;
-  click(await findButton("Check status"));
-  await expect(
-    screen.findByText("Information added"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Closing the input dialog refreshes an action completed in another tab", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...browserInputAction(state),
-      callbackDelivered: state === "succeeded",
-    });
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, browserInputAction("pending"));
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  click(await findButton("Enter information"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  await expect(
-    within(dialog).findByLabelText("Account email"),
-  ).resolves.toBeVisible();
-
-  state = "succeeded";
-  window.dispatchEvent(new Event("focus"));
-  expect(dialog).toBeVisible();
-
-  const closeButton = buttonsByName("Close", dialog)[0];
-  if (!closeButton) {
-    throw new Error("Browser input dialog close button was not visible");
-  }
-  click(closeButton);
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test.each([
   { label: "Password", value: "synthetic-password" },
   { label: "Verification code", value: "123456" },
 ])(
-  "Leaving an open dialog clears the $label draft and discards its deferred return refresh",
+  "Leaving an open dialog clears the $label draft",
   async ({ label, value }) => {
     installCapabilityChat({
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
@@ -1668,12 +1627,7 @@ test.each([
     context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
       return respond(200, { connectors: [], totalConnectorCount: 0 });
     });
-    // An abandoned refresh has no page result. Observe the actual HTTP
-    // boundary, then assert route ownership in the test body rather than
-    // throwing inside a handler that MSW could turn into a 500 response.
-    const readRoutes: string[] = [];
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      readRoutes.push(window.location.pathname);
       return respond(200, browserInputAction("pending"));
     });
     context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
@@ -1698,10 +1652,6 @@ test.each([
     const input = within(dialog).getByLabelText(label);
     await fill(input, value);
     expect(input).toHaveValue(value);
-    expect(readRoutes).toContain(RUN_PATH);
-    act(() => {
-      window.dispatchEvent(new Event("focus"));
-    });
     act(() => {
       window.history.back();
     });
@@ -1725,7 +1675,6 @@ test.each([
     expect(within(reopened).getByLabelText("Verification code")).toHaveValue(
       "",
     );
-    expect(readRoutes).not.toContain("/connectors");
   },
 );
 
@@ -1753,36 +1702,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
-test("A mounted transcript card rechecks callback delivery on page return", async () => {
-  let delivered = false;
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...browserInputAction("succeeded"),
-      callbackDelivered: delivered,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-  await findButton("Notify agent");
-
-  delivered = true;
-  window.dispatchEvent(new Event("focus"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Notify agent")).toHaveLength(0);
-});
-
 test("Absolute and relative Browser input URLs both render dialog cards", async () => {
-  let reads = 0;
   installCapabilityChat({
     events: completedConversation(
       [
@@ -1792,7 +1712,6 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
     return respond(200, browserInputAction("pending"));
   });
   context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
@@ -1823,10 +1742,6 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
   await expect(
     within(dialog).findByLabelText("Account email"),
   ).resolves.toBeVisible();
-  const readsBeforeFocus = reads;
-  window.dispatchEvent(new Event("focus"));
-  expect(dialog).toBeVisible();
-  expect(reads).toBe(readsBeforeFocus);
 });
 
 test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {

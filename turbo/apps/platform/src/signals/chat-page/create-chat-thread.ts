@@ -1899,6 +1899,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       // under the panel owner, including re-entry with already cached trees.
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
+      set(registries.browserUserActionCardSignals.subscribe$, signal);
     },
   );
 
