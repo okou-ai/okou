@@ -13,6 +13,7 @@ export interface DeviceAuthSessionPublication {
 export function deviceAuthSessionPublicationSql(args: {
   readonly orgId: string;
   readonly type: string;
+  readonly modelProviderAccountId: string;
   readonly authSession?: DeviceAuthSessionPublication;
 }) {
   const session = args.authSession;
@@ -23,6 +24,7 @@ export function deviceAuthSessionPublicationSql(args: {
     SET status = 'imported', approval_url = NULL, verification_code = NULL,
         encrypted_provider_state = NULL, error_message = NULL,
         completed_at = clock_timestamp(), cancelled_at = NULL,
+        model_provider_account_id = ${args.modelProviderAccountId},
         updated_at = clock_timestamp()
     WHERE ${modelProviderAuthSessions.id} = ${session.id}
       AND ${modelProviderAuthSessions.orgId} = ${args.orgId}
