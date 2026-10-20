@@ -32,6 +32,7 @@ _BASE_URL_TEMPLATE_HOST_PLACEHOLDER = "x.y"
 _BASE_URL_TEMPLATE_PORT_PLACEHOLDER = "1"
 _BASE_URL_TEMPLATE_PATH_PLACEHOLDER = "x"
 _BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS = re.compile(r"([.:/?#@\[\]\u3002\uff0e\uff61])")
+_BASE_URL_TEMPLATE_OPEN_HOST_ESCAPE = re.compile(r"%[0-9a-fA-F]?$")
 _BASE_URL_TEMPLATE_ENCODED_HOST_STRUCTURE = frozenset(r".:/?#@[]\%{}*")
 _BASE_URL_TEMPLATE_PLACEHOLDERS: dict[
     builtin_base_url_template.BaseUrlTemplateComponentKind, str
@@ -514,6 +515,11 @@ def _base_url_template_syntax_target(firewall_name: str, raw_base: str) -> str |
 
 
 def _base_url_template_hostname_literal_syntax_target(literal: str, *, trailing: bool) -> str:
+    if trailing:
+        # A variable may complete this octet. Project only the unfinished escape
+        # for syntax checks; keep complete literal escapes and validate the real
+        # encoding again after resolution, before applying host policy.
+        literal = _BASE_URL_TEMPLATE_OPEN_HOST_ESCAPE.sub("x", literal)
     parts = _BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS.split(literal)
     index = -1 if trailing else 0
     decoded = percent_decode_host(

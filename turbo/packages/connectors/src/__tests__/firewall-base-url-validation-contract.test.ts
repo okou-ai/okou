@@ -6,6 +6,7 @@ import { z } from "zod";
 import { FIREWALL_HOSTNAME_POLICY_VERSION } from "../firewall-hostname-policy";
 import {
   canonicalizeFirewallBaseUrl,
+  canonicalizeFirewallBaseUrlVarsForExecution,
   firewallsSchema,
   resolveFirewallBaseUrlTemplate,
   validateBaseUrl,
@@ -17,6 +18,8 @@ const baseUrlTemplateResolutionCaseSchema = z.object({
   base: z.string(),
   vars: z.record(z.string(), z.string()),
   expectedResolvedBase: z.string().nullable(),
+  // Python preserves encoded host text; TypeScript returns its canonical form.
+  expectedCanonicalBase: z.string().optional(),
 });
 
 const baseUrlValidationCaseSchema = z.object({
@@ -132,7 +135,9 @@ function assertTemplateResolutionResult(
     return;
   }
 
-  expect(resolve()).toBe(testCase.expectedResolvedBase);
+  expect(resolve()).toBe(
+    testCase.expectedCanonicalBase ?? testCase.expectedResolvedBase,
+  );
 }
 
 function assertCatalogValidationResult(
@@ -159,7 +164,9 @@ function assertCatalogValidationResult(
   }
 
   expect(testCase.expectedResolvedBase).not.toBeNull();
-  expect(validate()).toBe(testCase.expectedResolvedBase);
+  expect(validate()).toBe(
+    testCase.expectedCanonicalBase ?? testCase.expectedResolvedBase,
+  );
 }
 
 const contract = loadContract();
@@ -186,4 +193,55 @@ describe("firewall base URL template resolution contract", () => {
       assertTemplateResolutionResult(testCase);
     });
   }
+});
+
+describe("credentialed split hostname escapes", () => {
+  it.each([
+    ["https://%6${{ vars.SUFFIX }}.example.com", "1"],
+    ["https://%${{ vars.SUFFIX }}.example.com", "61"],
+  ])(
+    "preserves execution variables and enforces ownership for %s",
+    (base, suffix) => {
+      const hostPolicy = {
+        kind: "providerOwned" as const,
+        exactHosts: ["a.example.com"],
+      };
+      const firewalls = firewallsSchema.parse([
+        {
+          name: "contract",
+          apis: [
+            {
+              base,
+              hostPolicy,
+              auth: {
+                headers: { Authorization: "Bearer ${{ secrets.TOKEN }}" },
+              },
+            },
+          ],
+        },
+      ]);
+      const vars = canonicalizeFirewallBaseUrlVarsForExecution(firewalls, {
+        SUFFIX: suffix,
+      });
+      expect(vars).toEqual({ SUFFIX: suffix });
+      expect(
+        resolveFirewallBaseUrlTemplate({
+          serviceName: "contract",
+          base,
+          vars,
+          credentialed: true,
+          hostPolicy,
+        }),
+      ).toBe("https://a.example.com");
+      expect(() => {
+        return resolveFirewallBaseUrlTemplate({
+          serviceName: "contract",
+          base,
+          vars: { SUFFIX: suffix === "1" ? "2" : "62" },
+          credentialed: true,
+          hostPolicy,
+        });
+      }).toThrow("host policy does not allow resolved host");
+    },
+  );
 });

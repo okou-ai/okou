@@ -858,6 +858,20 @@ fn base_url_template_syntax_component_for_cache(
 }
 
 fn base_url_template_hostname_literal_syntax_target(literal: &str, trailing: bool) -> String {
+    // A variable may complete the final octet. Project only an unfinished
+    // escape for syntax checks, preserving complete escapes and the original
+    // template for full resolved-URL and host-policy validation.
+    let projected;
+    let literal: &str = if trailing
+        && let Some((prefix, escape)) = literal.rsplit_once('%')
+        && (escape.is_empty()
+            || (escape.len() == 1 && escape.bytes().all(|byte| byte.is_ascii_hexdigit())))
+    {
+        projected = format!("{prefix}x");
+        &projected
+    } else {
+        literal
+    };
     let label = if trailing {
         literal
             .rsplit_once(BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS)
