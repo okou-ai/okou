@@ -250,32 +250,31 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             origin: FinalizingActivationOrigin::GenericIdlePool,
         },
         FinalizingResource::Handoff(candidate) => {
-            let reservation =
-                match candidate.into_reservation(run_id, admission.history_generation_run_id) {
-                    Ok(reservation) => reservation,
-                    Err(candidate) => {
-                        drop(active_run_guard);
-                        candidate
-                            .into_destroy_job()
-                            .run_with_context("finalizing_handoff_identity_mismatch")
-                            .await;
-                        ctx.reuse_state_notify.notify_one();
-                        pre_spawn_timing.record_finalizing_handoff(
-                            FinalizingHandoffOutcome::ActivationFailed,
-                            Some(FinalizingHandoffReason::HandoffIdentityMismatch),
-                        );
-                        return Ok(complete_claimed_without_sandbox(
-                            claimed,
-                            cancellation,
-                            ExecutionFailure::from_error(
-                                "finalizing handoff identity did not match claimed successor",
-                            ),
-                            pre_spawn_timing.finalizing_diagnostics(),
-                            &ctx,
-                        )
-                        .await);
-                    }
-                };
+            let reservation = match candidate.into_reservation(run_id, admission.source_run_id) {
+                Ok(reservation) => reservation,
+                Err(candidate) => {
+                    drop(active_run_guard);
+                    candidate
+                        .into_destroy_job()
+                        .run_with_context("finalizing_handoff_identity_mismatch")
+                        .await;
+                    ctx.reuse_state_notify.notify_one();
+                    pre_spawn_timing.record_finalizing_handoff(
+                        FinalizingHandoffOutcome::ActivationFailed,
+                        Some(FinalizingHandoffReason::HandoffIdentityMismatch),
+                    );
+                    return Ok(complete_claimed_without_sandbox(
+                        claimed,
+                        cancellation,
+                        ExecutionFailure::from_error(
+                            "finalizing handoff identity did not match claimed successor",
+                        ),
+                        pre_spawn_timing.finalizing_diagnostics(),
+                        &ctx,
+                    )
+                    .await);
+                }
+            };
             let idle_snapshot = ctx.idle_pool.lock().await.status_snapshot();
             FinalizingActivation::Reserved {
                 reservation: ReservedIdleActivation::new(reservation, idle_snapshot),
@@ -475,7 +474,7 @@ async fn prepare_finalizing_resource(
 
     info!(
         run_id = %run_id,
-        predecessor_run_id = %admission.history_generation_run_id,
+        predecessor_run_id = %admission.source_run_id,
         "finalizing successor claimed before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {
