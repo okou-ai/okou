@@ -537,7 +537,6 @@ interface CustomConnectorAuthorizationTargetArgs {
   readonly id: string;
   readonly authorizationTarget: CustomConnectorAuthorizationTarget;
   readonly account: CustomConnectorAccountMutationIntent;
-  readonly useDefaultConnectorProjection?: boolean;
   readonly onSuccess?: (
     result: CustomConnectorConnectionResult,
     signal: AbortSignal,
@@ -829,7 +828,6 @@ export const connectCustomConnectorAuthorization$ = command(
     args: {
       readonly id: string;
       readonly account: CustomConnectorAccountMutationIntent;
-      readonly useDefaultConnectorProjection?: boolean;
       readonly onSuccess?: CustomConnectorAuthorizationTargetArgs["onSuccess"];
     },
     signal: AbortSignal,
@@ -879,7 +877,6 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
       readonly id: string;
       readonly agentId: string;
       readonly account: CustomConnectorAccountMutationIntent;
-      readonly useDefaultConnectorProjection?: boolean;
       readonly onSuccess?: CustomConnectorAuthorizationTargetArgs["onSuccess"];
     },
     signal: AbortSignal,
@@ -889,9 +886,6 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
       {
         id: args.id,
         account: args.account,
-        ...(args.useDefaultConnectorProjection
-          ? { useDefaultConnectorProjection: true as const }
-          : {}),
         authorizationTarget: { kind: "agent", agentId: args.agentId },
         onSuccess: args.onSuccess,
       },
