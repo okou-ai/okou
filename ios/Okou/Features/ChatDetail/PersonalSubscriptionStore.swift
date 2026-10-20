@@ -187,6 +187,10 @@ final class PersonalSubscriptionStore {
   }
   private func complete(request: UUID) async {
     guard authRevision == request, !closed else { return }
+    if authType == .claude {
+      flowTask?.cancel()
+      flowTask = nil
+    }
     phase = .complete
     clearSecrets()
     await refreshAfterMutation()

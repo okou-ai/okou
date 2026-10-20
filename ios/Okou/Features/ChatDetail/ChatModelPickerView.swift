@@ -129,12 +129,12 @@ struct ChatModelPickerView: View {
             Section { Text("This model is unavailable. Choose an available model before sending.") }
           }
           let efforts = configuration.efforts(for: selection.selection)
-          if !efforts.isEmpty {
+          if !efforts.isEmpty, let effectiveEffort = selection.effectiveEffort {
             Section {
               Picker(
                 "Thinking effort",
                 selection: Binding(
-                  get: { selection.effectiveEffort ?? "" },
+                  get: { effectiveEffort },
                   set: { value in Task { await selection.choose(effort: value) } }
                 )
               ) {
