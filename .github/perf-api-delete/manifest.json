@@ -1,20 +1,6 @@
 {
   "baseline-start": [],
-  "delete-1": [
-    "turbo/apps/api/src/signals/routes/__tests__/cron-connector-catalog.test.ts"
-  ],
-  "delete-2": [
-    "turbo/apps/api/src/signals/routes/__tests__/cron-connector-catalog.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts"
-  ],
-  "delete-5": [
-    "turbo/apps/api/src/signals/routes/__tests__/cron-connector-catalog.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/wallet.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/official-workflows.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts"
-  ],
-  "delete-18": [
+  "delete-30": [
     "turbo/apps/api/src/signals/routes/__tests__/cron-connector-catalog.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/wallet.test.ts",
@@ -32,9 +18,21 @@
     "turbo/apps/api/src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/workflow-automations.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/billing-concurrency-checkout.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/agentphone.bdd.test.ts"
+    "turbo/apps/api/src/signals/routes/__tests__/agentphone.bdd.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-activity-summary.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-serialization.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/webhooks-callbacks.bdd.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/personal-subscription-run-identity.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-callbacks.bdd.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-slack-read.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/computer-use.bdd.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/internal-callbacks-discord.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-telegram-post.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/runner-vnc.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/runner-wss-target.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts"
   ],
-  "delete-58": [
+  "delete-100": [
     "turbo/apps/api/src/signals/routes/__tests__/cron-connector-catalog.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/wallet.test.ts",
@@ -92,7 +90,49 @@
     "turbo/apps/api/src/signals/routes/__tests__/chat-threads-create.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/artifact-catalog.bdd.test.ts",
     "turbo/apps/api/src/signals/routes/__tests__/integrations-slack-message.test.ts",
-    "turbo/apps/api/src/signals/routes/__tests__/chat-events-effort.test.ts"
+    "turbo/apps/api/src/signals/routes/__tests__/chat-events-effort.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/stripe-automation-events.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-discord-files.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/image-io-generate.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/shared-thread-artifacts.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/runner-ssh.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/banking.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-events-subscription-authority.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-events-budget-steer.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-slack-upload-init.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/cron-project-chat-event-search.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/discord-oauth.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/slack-link-unfurl.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-relations.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/runners-built-in-claims.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-thread-queue-pick.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/teams-route-ownership.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/vnc-access.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/webhooks-notion.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-telegram.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/vnc-configuration.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/discord-conversation-parity.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-events-connectors.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/mcp-connectors.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-completed-replay.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/ssh-connections.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/workflows.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/artifact-shares.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/ssh-access.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/shared-threads.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/clerk-deletion-pi-memory-completion.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-discord.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/credit-low-balance-alert.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/mcp-server.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-event-annotations.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/tailscale.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/teams-bot-compose-owner.test.ts",
+    "turbo/apps/api/src/signals/routes/__tests__/chat-events-message-queue.test.ts"
   ],
   "baseline-end": []
 }
