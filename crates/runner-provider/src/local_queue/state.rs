@@ -483,15 +483,13 @@ impl LocalQueue {
     }
 
     pub fn complete_job_sync(&self, run_id: RunId, exit_code: i32, error: Option<String>) {
-        if !self.write_result_sync(run_id, exit_code, error.as_deref()) {
-            if self.remove_job_files_if_present(run_id) {
-                let _ = std::fs::remove_file(super::cancel_path(&self.group_dir, run_id));
-                let _ = std::fs::remove_file(super::claim_path(&self.group_dir, run_id));
-                self.cleanup_active_inputs_sync(run_id);
-            }
+        let result_written = self.write_result_sync(run_id, exit_code, error.as_deref());
+        let jobs_removed = self.remove_job_files_if_present(run_id);
+        // A published result is terminal even if job removal fails. Without
+        // that result, retain state until every job is known to be removed.
+        if !result_written && !jobs_removed {
             return;
         }
-        let _ = self.remove_job_files_if_present(run_id);
         // Best-effort cleanup of cancel file (may have been written after the
         // last discover() scan but before the job actually finished).
         let _ = std::fs::remove_file(super::cancel_path(&self.group_dir, run_id));
