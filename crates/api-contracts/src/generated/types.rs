@@ -3752,6 +3752,32 @@ pub mod webhooks {
                 NativeOnly,
             }
 
+            /// Policy used when a final Run output Storage root is missing.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum RequestCompletionStorageOutputMissingRootPolicy {
+                /// Treat a missing Storage root as an error.
+                #[serde(rename = "fail")]
+                Fail,
+                /// Preserve the parent Storage version when the root is missing.
+                #[serde(rename = "preserveParentVersion")]
+                PreserveParentVersion,
+            }
+
+            /// Storage version captured by a final Run output.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct RequestCompletionStorageOutput {
+                /// Storage name referenced by the Run.
+                pub name: String,
+                /// Storage version selected for the Run output.
+                pub version: String,
+                /// Guest filesystem path where the Storage is mounted.
+                pub mount_path: String,
+                /// Optional policy retained when the Storage mount root is missing.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub missing_root_policy: Option<RequestCompletionStorageOutputMissingRootPolicy>,
+            }
+
             /// Policy used when a final Run output artifact root is missing.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
             pub enum RequestCompletionArtifactSnapshotMissingRootPolicy {
@@ -3797,6 +3823,9 @@ pub mod webhooks {
                 /// Native history is retained only in the disposable sandbox/home.
                 pub cli_agent_session_history_disposition:
                     RequestCompletionCliAgentSessionHistoryDisposition,
+                /// Canonical writeback Storage outputs; omit while the API reader is being prepared.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub storage_outputs: Option<Vec<RequestCompletionStorageOutput>>,
                 /// Optional artifact versions captured by the Run output.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub artifact_snapshots: Option<Vec<RequestCompletionArtifactSnapshot>>,

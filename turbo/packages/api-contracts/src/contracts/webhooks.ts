@@ -322,13 +322,7 @@ export const webhookBuiltInGenerationFalContract = c.router({
   },
 });
 
-/**
- * Artifact snapshots schema — canonical
- * `Array<{name, version, mountPath, missingRootPolicy?}>` form. Legacy
- * `Record<name, version>` support was removed in #10913 after the DB
- * migration and guest-agent writer flip completed.
- */
-const artifactSnapshotsSchema = z.array(runStorageOutputSchema);
+const storageOutputsSchema = z.array(runStorageOutputSchema);
 
 /**
  * Volume versions snapshot schema
@@ -342,13 +336,28 @@ const runCompletionMetadataShape = {
   cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
   cliAgentSessionHistoryDisposition: z.enum(["native_only"]),
   // Versions of the run's authorized writeback mounts after publication.
-  artifactSnapshots: artifactSnapshotsSchema.optional(),
+  storageOutputs: storageOutputsSchema.optional(),
+  // Old Runner -> new API compatibility. Remove with #41332 after old Runner
+  // owners finish execution/finalization and exit, with compatible rollbacks.
+  artifactSnapshots: storageOutputsSchema.optional(),
   volumeVersionsSnapshot: volumeVersionsSnapshotSchema.optional(),
 } as const;
 
 export const runCompletionMetadataSchema = z
   .object(runCompletionMetadataShape)
-  .strict();
+  .strict()
+  .refine(
+    (metadata) => {
+      return (
+        metadata.storageOutputs === undefined ||
+        metadata.artifactSnapshots === undefined
+      );
+    },
+    {
+      message: "Specify only one of storageOutputs and artifactSnapshots",
+      path: ["storageOutputs"],
+    },
+  );
 
 const webhookCompleteBodySchema = z.object({
   runId: z.string().min(1, "runId is required"),

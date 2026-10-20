@@ -223,6 +223,8 @@ async fn prepare_finalization_impl(
         cli_agent_session_id,
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
+        // Keep the current wire format until the new API reader is deployed.
+        storage_outputs: None,
         artifact_snapshots,
         volume_versions_snapshot: None,
     };
