@@ -48,13 +48,13 @@ describe("official skill volume seeds", () => {
         [
           "computer-use",
           "gen",
-          "office-files",
+          "office",
           "ppt-avatar-video",
           "workflow-setup",
         ],
         rawDevSeedSkillVolumes,
       ),
-    ).toStrictEqual(["office-files", "ppt-avatar-video", "workflow-setup"]);
+    ).toStrictEqual(["office", "ppt-avatar-video", "workflow-setup"]);
   });
 });
 
