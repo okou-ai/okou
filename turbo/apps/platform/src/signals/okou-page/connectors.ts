@@ -2,8 +2,10 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
-import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
+import type {
+  ConnectedConnectors,
+  BuiltinConnectorBrief,
+} from "@okouai/api-contracts/contracts/connected-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
