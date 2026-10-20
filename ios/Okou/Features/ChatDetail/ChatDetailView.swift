@@ -148,17 +148,6 @@ struct ChatDetailView: View {
             messageToSelect = nil
           } : nil)
     }
-    .sheet(
-      item: Binding(
-        get: { conversation.connectorActions.active },
-        set: { if $0 == nil { conversation.connectorActions.cancel() } }
-      )
-    ) { flow in
-      ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
-    }
-    .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
-    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(item: $usageDetails) { selection in
       ConversationRunUsageDetails(
@@ -169,6 +158,17 @@ struct ChatDetailView: View {
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
       .task { await conversation.modelSelection?.models.loadUsageCatalog() }
+    }
+    .sheet(
+      item: Binding(
+        get: { conversation.connectorActions.active },
+        set: { if $0 == nil { conversation.connectorActions.cancel() } }
+      )
+    ) { flow in
+      ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
