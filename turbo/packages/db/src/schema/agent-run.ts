@@ -132,6 +132,16 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
     index("idx_agent_runs_chat_thread_id")
       .on(table.chatThreadId)
       .where(sql`${table.chatThreadId} IS NOT NULL`),
+    index("idx_agent_runs_chat_executed_order")
+      .on(
+        table.chatThreadId,
+        table.startedAt.desc(),
+        table.createdAt.desc(),
+        table.id.desc(),
+      )
+      .where(
+        sql`${table.chatThreadId} IS NOT NULL AND ${table.startedAt} IS NOT NULL`,
+      ),
     index("idx_agent_runs_workflow_automation")
       .on(table.workflowAutomationId)
       .where(sql`${table.workflowAutomationId} IS NOT NULL`),

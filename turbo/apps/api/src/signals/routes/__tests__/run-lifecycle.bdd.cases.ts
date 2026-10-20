@@ -3438,6 +3438,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
+          finalizingSourceRunId: first.runId,
           expiresAt: new Date(sourceCompletedAt + 1500).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
@@ -3546,6 +3547,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
+          finalizingSourceRunId: first.runId,
           expiresAt: new Date(
             successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
@@ -3751,6 +3753,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference",
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor",
+          finalizingSourceRunId: first.runId,
           expiresAt: new Date(
             successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
