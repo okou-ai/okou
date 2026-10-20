@@ -104,6 +104,7 @@ async function page(
   path = "/connectors?scope=remote-control",
   enabled = true,
   role?: "admin" | "member",
+  legacyEnabled = !enabled,
 ) {
   if (role) {
     context.mocks.data.org({
@@ -128,8 +129,8 @@ async function page(
       : {}),
     featureSwitches: {
       [FeatureSwitchKey.RemoteControlGuidedSetup]: enabled,
-      [FeatureSwitchKey.VncAccess]: true,
-      [FeatureSwitchKey.TailscaleAccess]: true,
+      [FeatureSwitchKey.VncAccess]: legacyEnabled,
+      [FeatureSwitchKey.TailscaleAccess]: legacyEnabled,
     },
   });
 }
@@ -146,17 +147,30 @@ async function directForm() {
   await screen.findByLabelText("Computer address");
   return await screen.findByLabelText("SSH username");
 }
-test("The new deep link keeps the existing experience when the switch is off", async () => {
-  await page("/connectors?scope=remote-control&setup=ssh", false);
-  await waitFor(() => {
-    expect(getAction("button", "Add host")).toBeInTheDocument();
-  });
-  expect(
-    screen.queryByRole("heading", { name: "Set up a connection" }),
-  ).toBeNull();
-  expect(queryAction("button", "Add connection")).toBeNull();
-});
-test("Remote control opens management before setup, without standalone credential navigation", async () => {
+test.each([
+  ["ssh", false],
+  ["vnc", false],
+  ["ssh", true],
+  ["vnc", true],
+] as const)(
+  "The new deep link %s keeps the existing experience when guided is off and legacy=%s",
+  async (protocol, legacyEnabled) => {
+    await page(
+      `/connectors?scope=remote-control&setup=${protocol}`,
+      false,
+      undefined,
+      legacyEnabled,
+    );
+    await waitFor(() => {
+      expect(getAction("button", "Add host")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("heading", { name: "Set up a connection" }),
+    ).toBeNull();
+    expect(queryAction("button", "Add connection")).toBeNull();
+  },
+);
+test("The guided switch alone exposes both SSH and VNC from connection management", async () => {
   await page();
   await screen.findByRole("heading", { name: "No devices added yet" });
   expect(
@@ -182,6 +196,120 @@ test("Private network links to connection management without starting device set
   expect(
     screen.queryByRole("heading", { name: "Set up a connection" }),
   ).toBeNull();
+});
+test.each([
+  ["ssh", false],
+  ["vnc", false],
+  ["ssh", true],
+  ["vnc", true],
+] as const)(
+  "%s offers distinct setup paths with legacy switches=%s",
+  async (protocol, legacyEnabled) => {
+    await page(
+      `/connectors?scope=remote-control&setup=${protocol}`,
+      true,
+      undefined,
+      legacyEnabled,
+    );
+    await screen.findByRole("heading", { name: "Set up a connection" });
+    expect(queryAction("button", "View saved connections")).toBeNull();
+    click(getAction("button", "Start setup"));
+    await screen.findByRole("heading", {
+      name:
+        protocol === "ssh"
+          ? "Install Tailscale on the target computer"
+          : "Target operating system",
+    });
+    click(getAction("button", "Back"));
+    await screen.findByRole("heading", { name: "Set up a connection" });
+    click(
+      getAction(
+        "button",
+        "Already have connection details? Enter them directly",
+      ),
+    );
+    await screen.findByRole("heading", {
+      name:
+        protocol === "ssh"
+          ? "Use existing connection settings"
+          : "Which login settings does the VNC service use?",
+    });
+    expect(
+      screen.queryByRole("heading", { name: "Target operating system" }),
+    ).toBeNull();
+    click(getAction("button", "Back"));
+    await screen.findByRole("heading", { name: "Set up a connection" });
+  },
+);
+test("First-time setup from existing settings opens installation without cycling through the entry page", async () => {
+  await page("/connectors?scope=remote-control&setup=ssh");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(
+    getAction("button", "Already have connection details? Enter them directly"),
+  );
+  await screen.findByRole("heading", {
+    name: "Use existing connection settings",
+  });
+  click(getAction("button", "First time? Set up your computer step by step"));
+  await screen.findByRole("heading", {
+    name: "Install Tailscale on the target computer",
+  });
+  expect(
+    screen.queryByRole("heading", { name: "Set up a connection" }),
+  ).toBeNull();
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(getAction("button", "Start setup"));
+  await screen.findByRole("heading", {
+    name: "Install Tailscale on the target computer",
+  });
+});
+test("Existing Tailscale settings open the saved network and device login form, preserving the draft on return", async () => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [network] });
+  });
+  await page("/connectors?scope=remote-control&setup=ssh");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(
+    getAction("button", "Already have connection details? Enter them directly"),
+  );
+  await screen.findByRole("heading", {
+    name: "Use existing connection settings",
+  });
+  click(
+    screen.getByText(
+      "The device is already on Tailscale. Use its network settings.",
+    ),
+  );
+  const username = await screen.findByLabelText("SSH username");
+  expect(
+    screen.queryByRole("heading", {
+      name: "Install Tailscale on the target computer",
+    }),
+  ).toBeNull();
+  await expect(
+    screen.findByRole("combobox", { name: "Tailscale" }),
+  ).resolves.toHaveTextContent("Office network");
+  await fill(username, "draft-user");
+  await fill(
+    screen.getByLabelText(/Connection name/u),
+    "Existing network draft",
+  );
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", {
+    name: "Use existing connection settings",
+  });
+  click(
+    screen.getByText(
+      "The device is already on Tailscale. Use its network settings.",
+    ),
+  );
+  await expect(screen.findByLabelText("SSH username")).resolves.toHaveValue(
+    "draft-user",
+  );
+  expect(screen.getByLabelText(/Connection name/u)).toHaveValue(
+    "Existing network draft",
+  );
 });
 test.each(["tailscale", "cloudflare"] as const)(
   "%s credential update opens blank replacement fields without fetching saved secrets",

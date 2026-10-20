@@ -1,3 +1,4 @@
+import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
 import {
   isFeatureEnabled,
@@ -71,7 +72,7 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
-    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
+    vncEnabled: isVncAccessEnabled(context),
     remoteConnectionDiagnosticsEnabled: isFeatureEnabled(
       FeatureSwitchKey.RemoteConnectionDiagnostics,
       context,

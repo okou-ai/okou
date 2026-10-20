@@ -1,10 +1,8 @@
 import { closeSshDialog$ } from "./ssh.ts";
-import { closeVncDialog$ } from "./vnc.ts";
+import { closeVncDialog$, vncEnabled$ } from "./vnc.ts";
 import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
 import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { command, computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
 import {
   remoteControlGuidedEnabled$,
@@ -17,6 +15,7 @@ import {
   saveTailscale$,
   tailscaleDialog$,
   tailscaleConfigs$,
+  tailscaleEnabled$,
   openTailscaleDialog$,
   replaceTailscaleCredentials$,
 } from "./tailscale.ts";
@@ -106,13 +105,10 @@ export const remoteResource$ = computed((get) => {
   ) {
     return null;
   }
-  if (kind === "vnc" && !get(featureSwitch$)[FeatureSwitchKey.VncAccess]) {
+  if (kind === "vnc" && !get(vncEnabled$)) {
     return null;
   }
-  if (
-    kind === "tailscale" &&
-    !get(featureSwitch$)[FeatureSwitchKey.TailscaleAccess]
-  ) {
+  if (kind === "tailscale" && !get(tailscaleEnabled$)) {
     return null;
   }
   return { kind, id };

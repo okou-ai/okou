@@ -1,11 +1,10 @@
+import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   VNC_ERROR_CODES,
   type VncErrorCode,
 } from "@okouai/api-contracts/contracts/vnc-errors";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { vncErrorResponse } from "../../lib/vnc-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -72,7 +71,7 @@ const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
+  if (!isVncAccessEnabled(featureContext)) {
     return null;
   }
   const owner = { orgId: auth.orgId, userId: auth.userId };

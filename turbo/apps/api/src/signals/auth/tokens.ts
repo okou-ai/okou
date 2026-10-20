@@ -1,3 +1,4 @@
+import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { createHmac, hkdfSync } from "node:crypto";
 
 import {
@@ -48,8 +49,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["discord:write", FeatureSwitchKey.DiscordIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
-  ["vnc:read", FeatureSwitchKey.VncAccess],
-  ["vnc:write", FeatureSwitchKey.VncAccess],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [
@@ -170,6 +169,9 @@ function isAgentCapabilityEnabled(
   orgId: string,
   overrides: Partial<Record<FeatureSwitchKey, boolean>> | undefined,
 ): boolean {
+  if (capability === "vnc:read" || capability === "vnc:write") {
+    return isVncAccessEnabled({ userId, orgId, overrides });
+  }
   const featureSwitch = featureSwitchForCapability(
     CONDITIONAL_CAPABILITIES,
     capability,

@@ -32,8 +32,6 @@ import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/cu
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { agents$ } from "../../signals/agent.ts";
@@ -150,7 +148,7 @@ import {
   openBuiltinAccountManager$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
-import { vncSummary$ } from "../../signals/vnc.ts";
+import { vncSummary$, vncEnabled$ } from "../../signals/vnc.ts";
 import { sshSummary$ } from "../../signals/ssh.ts";
 import {
   PrivateNetworkPanel,
@@ -1357,8 +1355,7 @@ export function ConnectorsPage() {
   const remoteResource = useGet(remoteResource$);
   const networkPage = useLastResolved(remoteNetworkPage$);
   const leaveSetup = useSet(leaveRemoteSetup$);
-  const vncEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
+  const vncEnabled = useGet(vncEnabled$);
   const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
   const filteredCatalogItemsLoadable = useLoadable(
     filteredConnectorCatalogItems$,

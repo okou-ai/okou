@@ -1,6 +1,5 @@
+import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { notFound } from "../../lib/error";
@@ -40,7 +39,7 @@ const accessContext$ = command(async ({ get, set }, signal: AbortSignal) => {
   return {
     auth,
     owner: { orgId: auth.orgId, userId: auth.userId },
-    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
+    vncEnabled: isVncAccessEnabled(featureContext),
   };
 });
 

@@ -229,88 +229,101 @@ describe("live chat VNC Run inventory", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
-    const f = await claimed.fixture({
-      defaultEnabled: false,
-    });
-    if (!f.threadId) {
-      throw new Error("Missing fixture chat thread");
-    }
-    const threadId = f.threadId;
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
-    api.authenticate(f);
-    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-      chatRemoteAccessContract,
-    );
-    const listIds = async () => {
-      return (
-        await accept(
-          inventory().list({ headers: claimed.agentHeaders(f) }),
-          [200],
-        )
-      ).body.hosts.map((host) => {
-        return host.id;
+  it.each([
+    FeatureSwitchKey.VncAccess,
+    FeatureSwitchKey.RemoteControlGuidedSetup,
+  ])(
+    "%s keeps live chat inventory behind explicit host and SSH dependency authorization",
+    async (feature) => {
+      const f = await claimed.fixture({
+        defaultEnabled: false,
       });
-    };
-    await expect(listIds()).resolves.toStrictEqual([]);
-    await accept(
-      remote.updateHostDefault({
-        headers,
-        params: { protocol: "vnc", connectionId: f.connectionId },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
-    const ssh = await accept(
-      sshConnections().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "VNC gateway",
-          host: "gateway.example.com",
-          credential: inlineSshKey("deploy", "private-key"),
-        },
-      }),
-      [201],
-    );
-    await accept(
-      api.connections().update({
-        headers,
-        params: { connectionId: f.connectionId },
-        body: {
-          expectedGeneration: 1,
-          transport: { type: "ssh", connectionId: ssh.body.id },
-          security: {
-            ...vncConnectionBody().security,
-            serverName: "desktop.internal",
+      if (!f.threadId) {
+        throw new Error("Missing fixture chat thread");
+      }
+      const threadId = f.threadId;
+      await updateFeatureSwitchesForUser(context, f, {
+        [FeatureSwitchKey.VncAccess]: false,
+        [FeatureSwitchKey.RemoteControlGuidedSetup]: false,
+        [feature]: true,
+      });
+      api.authenticate(f);
+      const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      );
+      const listIds = async () => {
+        return (
+          await accept(
+            inventory().list({ headers: claimed.agentHeaders(f) }),
+            [200],
+          )
+        ).body.hosts.map((host) => {
+          return host.id;
+        });
+      };
+      await expect(listIds()).resolves.toStrictEqual([]);
+      await accept(
+        remote.updateHostDefault({
+          headers,
+          params: { protocol: "vnc", connectionId: f.connectionId },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
+      const ssh = await accept(
+        sshConnections().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "VNC gateway",
+            host: "gateway.example.com",
+            credential: inlineSshKey("deploy", "private-key"),
           },
-        },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([]);
-    await accept(
-      remote.updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
-    await accept(
-      remote.setThreadOverride({
-        headers,
-        params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    await expect(listIds()).resolves.toStrictEqual([]);
-  });
+        }),
+        [201],
+      );
+      await accept(
+        api.connections().update({
+          headers,
+          params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: 1,
+            transport: { type: "ssh", connectionId: ssh.body.id },
+            security: {
+              ...vncConnectionBody().security,
+              serverName: "desktop.internal",
+            },
+          },
+        }),
+        [200],
+      );
+      await expect(listIds()).resolves.toStrictEqual([]);
+      await accept(
+        remote.updateHostDefault({
+          headers,
+          params: { protocol: "ssh", connectionId: ssh.body.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      await expect(listIds()).resolves.toStrictEqual([f.connectionId]);
+      await accept(
+        remote.setThreadOverride({
+          headers,
+          params: { threadId, protocol: "ssh", connectionId: ssh.body.id },
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await expect(listIds()).resolves.toStrictEqual([]);
+      await updateFeatureSwitchesForUser(context, f, { [feature]: false });
+      await accept(
+        inventory().list({ headers: claimed.agentHeaders(f) }),
+        [404],
+      );
+    },
+  );
 
   async function createHost(host = "vnc.example.com") {
     return await accept(

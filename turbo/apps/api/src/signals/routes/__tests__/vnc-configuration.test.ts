@@ -553,6 +553,45 @@ const inlineUpdateProfiles = Object.freeze<
 ]);
 
 describe("VNC owner configuration", () => {
+  it("supports guided-only configuration and still enforces revocation and membership", async () => {
+    useSecretKmsProbe();
+    const value = await owner();
+    await updateFeatureSwitchesForUser(context, value, {
+      [FeatureSwitchKey.VncAccess]: false,
+      [FeatureSwitchKey.RemoteControlGuidedSetup]: true,
+    });
+    const created = await accept(
+      connections().create({ headers, body: hostBody() }),
+      [201],
+    );
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toContainEqual(created.body);
+    const savedCredentials = await accept(
+      credentials().list({ headers }),
+      [200],
+    );
+    expect(JSON.stringify(savedCredentials.body)).not.toContain(" secret ");
+    await updateFeatureSwitchesForUser(context, value, {
+      [FeatureSwitchKey.RemoteControlGuidedSetup]: false,
+    });
+    await accept(connections().list({ headers }), [404]);
+    await accept(credentials().list({ headers }), [404]);
+    await updateFeatureSwitchesForUser(context, value, {
+      [FeatureSwitchKey.VncAccess]: true,
+    });
+    const legacy = await accept(connections().list({ headers }), [200]);
+    expect(legacy.body.connections).toContainEqual(created.body);
+    await updateFeatureSwitchesForUser(context, value, {
+      [FeatureSwitchKey.VncAccess]: false,
+      [FeatureSwitchKey.RemoteControlGuidedSetup]: true,
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [], totalCount: 0 },
+    );
+    await accept(connections().list({ headers }), [404]);
+    await accept(connections().create({ headers, body: hostBody() }), [404]);
+  });
+
   it.each(inlineUpdateProfiles)(
     "rebinds inline $authentication.method with $security.type and returns persisted metadata",
     async (profile) => {

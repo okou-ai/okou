@@ -4,6 +4,7 @@ import type {
   InitClientReturn,
   InitClientArgs,
 } from "@okouai/api-contracts/contracts/trpc-contract";
+import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
@@ -64,8 +65,12 @@ import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
 import { invalidateTailscale$ } from "./tailscale.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
+export const vncEnabled$ = computed((get) => {
+  return isVncAccessEnabled({ overrides: get(featureSwitch$) });
+});
+
 export const vncIdentity$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.VncAccess]) {
+  if (!get(vncEnabled$)) {
     return null;
   }
   const [user, identity] = await Promise.all([
@@ -82,7 +87,7 @@ export const vncClients$ = computed(async (get) => {
     const session = clerk.session;
     if (
       !identity ||
-      !get(featureSwitch$)[FeatureSwitchKey.VncAccess] ||
+      !get(vncEnabled$) ||
       !session ||
       identity !== `${clerk.organization?.id}:${clerk.user?.id}`
     ) {
@@ -965,7 +970,7 @@ export const mountVncForm$ = onRef(
           // Only an actual authority change discards the stored draft here.
           if (
             get(authenticatedSessionKey$) !== mountedSession ||
-            !get(featureSwitch$)[FeatureSwitchKey.VncAccess]
+            !get(vncEnabled$)
           ) {
             set(closeVncDialog$);
           }

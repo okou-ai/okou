@@ -5,7 +5,10 @@ import {
 } from "./remote-network-scope.ts";
 import { command, computed, state } from "ccstate";
 import { privateNetworkHostCount } from "../lib/private-network-references.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  isTailscaleAccessEnabled,
+  isVncAccessEnabled,
+} from "@okouai/core/remote-control-features";
 import {
   tailscaleChangedPayloadSchema,
   tailscaleContract,
@@ -29,15 +32,15 @@ import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal, settle } from "./utils.ts";
 
 export const tailscaleEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.TailscaleAccess];
+  return isTailscaleAccessEnabled({ overrides: get(featureSwitch$) });
 });
 
 /** VNC uses reusable networks without enabling the Tailscale SSH editor. */
 export const tailscaleSettingsEnabled$ = computed((get) => {
   const switches = get(featureSwitch$);
   return (
-    switches[FeatureSwitchKey.TailscaleAccess] ||
-    switches[FeatureSwitchKey.VncAccess]
+    isTailscaleAccessEnabled({ overrides: switches }) ||
+    isVncAccessEnabled({ overrides: switches })
   );
 });
 

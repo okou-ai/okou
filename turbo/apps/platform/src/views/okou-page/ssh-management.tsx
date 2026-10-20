@@ -1043,10 +1043,33 @@ function SshConflictReview({ dialog }: { readonly dialog: SshDialogState }) {
   );
 }
 
+function useCreateDialogCopy() {
+  const { t } = useTranslation();
+  const editor = useGet(sshConnectionModeEditor$);
+  const setup = useGet(remoteSetup$);
+  const existingTailscale =
+    setup?.entryMode === "existing" &&
+    (editor.mode === "tailscale" || editor.mode === "tailscale_ssh");
+  return {
+    title: t(($) => {
+      return editor.mode === "direct" || existingTailscale
+        ? $.remoteControlSetup.directTitle
+        : $.remoteControlSetup.loginTitle;
+    }),
+    description: t(($) => {
+      return existingTailscale
+        ? $.remoteControlSetup.tailscaleDescription
+        : editor.mode === "direct"
+          ? $.remoteControlSetup.directDescription
+          : $.remoteControlSetup.loginDescription;
+    }),
+  };
+}
+
 function useDialogCopy(dialog: SshDialogState | null, inline: boolean) {
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
-  const editor = useGet(sshConnectionModeEditor$);
+  const createCopy = useCreateDialogCopy();
   if (inline && dialog?.kind === "edit") {
     return {
       title: t(($) => {
@@ -1058,18 +1081,7 @@ function useDialogCopy(dialog: SshDialogState | null, inline: boolean) {
     };
   }
   if (inline && dialog?.kind === "create") {
-    return {
-      title: t(($) => {
-        return editor.mode === "direct"
-          ? $.remoteControlSetup.directTitle
-          : $.remoteControlSetup.loginTitle;
-      }),
-      description: t(($) => {
-        return editor.mode === "direct"
-          ? $.remoteControlSetup.directDescription
-          : $.remoteControlSetup.loginDescription;
-      }),
-    };
+    return createCopy;
   }
   switch (dialog?.kind) {
     case "create": {
@@ -1450,6 +1462,10 @@ function SshHostFields({
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
   const connectionEditor = useGet(sshConnectionModeEditor$);
+  const tailscale =
+    connectionEditor.mode === "tailscale" ||
+    connectionEditor.mode === "tailscale_ssh";
+  const inlineCreate = inline && dialog.kind === "create";
   return (
     <>
       <SshRebindNotice connection={dialog.connection} />
@@ -1471,10 +1487,7 @@ function SshHostFields({
               {connectionEditor.mode === "cloudflare_access" && (
                 <AccessSelection disabled={fieldsDisabled} />
               )}
-              {(connectionEditor.mode === "tailscale" ||
-                connectionEditor.mode === "tailscale_ssh") && (
-                <TailscaleSelection disabled={fieldsDisabled} />
-              )}
+              {tailscale && <TailscaleSelection disabled={fieldsDisabled} />}
             </div>
           </details>
           <h2 className="text-base font-medium">
@@ -1485,7 +1498,10 @@ function SshHostFields({
         </>
       ) : (
         <>
-          {inline && dialog.kind === "create" ? (
+          {inlineCreate && tailscale && (
+            <TailscaleSelection disabled={fieldsDisabled} />
+          )}
+          {inlineCreate ? (
             <GuidedSshEndpointFields initialHost={initialHost} />
           ) : (
             <EndpointFields
@@ -1496,8 +1512,7 @@ function SshHostFields({
           {connectionEditor.mode === "cloudflare_access" && (
             <AccessSelection disabled={fieldsDisabled} />
           )}
-          {(connectionEditor.mode === "tailscale" ||
-            connectionEditor.mode === "tailscale_ssh") && (
+          {tailscale && !inlineCreate && (
             <TailscaleSelection disabled={fieldsDisabled} />
           )}
         </>
@@ -1520,7 +1535,7 @@ function SshHostFields({
           disabled={fieldsDisabled || connectionEditor.mode === "tailscale_ssh"}
         />
       </fieldset>
-      {inline && dialog.kind === "create" && (
+      {inlineCreate && (
         <>
           <SshConnectionName connection={null} />
           <GuidedSshAdvancedFields

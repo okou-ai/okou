@@ -1,7 +1,6 @@
+import { isVncAccessEnabled } from "@okouai/core/remote-control-features";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { vncErrorResponse } from "../../lib/vnc-error";
@@ -32,7 +31,7 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
+  if (!isVncAccessEnabled(featureContext)) {
     return null;
   }
   if (!(await hasCurrentVncMembership(get(clerk$), auth, signal))) {

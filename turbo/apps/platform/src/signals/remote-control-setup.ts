@@ -24,6 +24,7 @@ import {
   openVncDialog$,
   saveVnc$,
   vncDialog$,
+  vncEnabled$,
   chooseVncProfile$,
   chooseVncTransport$,
   vncEditor$,
@@ -35,7 +36,6 @@ import {
   saveTailscale$,
   tailscaleConfigs$,
   tailscaleDialog$,
-  tailscaleEnabled$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
@@ -67,6 +67,7 @@ export interface RemoteSetup {
   readonly sessionKey: string;
   readonly flowId: number;
   readonly protocol: "ssh" | "vnc";
+  readonly entryMode: "guided" | "existing";
   readonly step: RemoteSetupStep;
   readonly route: RemoteSetupRoute;
   readonly os: RemoteSetupOs;
@@ -96,6 +97,7 @@ function initialSetup(
     sessionKey,
     flowId,
     protocol,
+    entryMode: "guided",
     step: "entry",
     route: "direct",
     os: "mac",
@@ -122,10 +124,7 @@ export const remoteSetup$ = computed((get) => {
     return current;
   }
   const deepLink = get(searchParams$).get("setup");
-  if (
-    deepLink === "ssh" ||
-    (deepLink === "vnc" && get(featureSwitch$)[FeatureSwitchKey.VncAccess])
-  ) {
+  if (deepLink === "ssh" || (deepLink === "vnc" && get(vncEnabled$))) {
     return initialSetup(sessionKey, deepLink, get(flowSequence$));
   }
   return null;
@@ -164,7 +163,7 @@ export const enterRemoteSetup$ = command(
     if (
       !sessionKey ||
       !get(remoteControlGuidedEnabled$) ||
-      (protocol === "vnc" && !get(featureSwitch$)[FeatureSwitchKey.VncAccess])
+      (protocol === "vnc" && !get(vncEnabled$))
     ) {
       return;
     }
@@ -197,15 +196,18 @@ export const beginRemoteGuide$ = command(
     if (!current) {
       return;
     }
+    set(updateRemoteSetup$, { entryMode: "guided" });
     if (current.protocol === "vnc") {
       set(updateRemoteSetup$, { step: "os" });
       return;
     }
-    if (!get(tailscaleEnabled$)) {
-      set(updateRemoteSetup$, { step: "existing" });
-      return;
-    }
-    set(updateRemoteSetup$, { route: "tailscale", step: "install" });
+    set(updateRemoteSetup$, {
+      route: "tailscale",
+      step: "install",
+      ...(current.route !== "tailscale"
+        ? { address: "", networkId: "", formStarted: false }
+        : {}),
+    });
     const networks = await get(tailscaleConfigs$);
     signal.throwIfAborted();
     if (
@@ -238,7 +240,7 @@ export const openRemoteLogin$ = command(
       }
       signal.throwIfAborted();
       set(chooseSshConnectionMode$, current.route);
-      if (current.route === "tailscale") {
+      if (current.route === "tailscale" && current.networkId) {
         set(chooseSshTailscaleConfig$, current.networkId);
       }
       if (current.route === "cloudflare_access") {
@@ -262,6 +264,22 @@ export const openRemoteLogin$ = command(
     }
   },
 );
+export const openExistingRemoteSetup$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const current = get(remoteSetup$);
+    if (!current) {
+      return;
+    }
+    set(updateRemoteSetup$, { entryMode: "existing" });
+    if (current.protocol === "vnc") {
+      await set(openRemoteLogin$, signal);
+      signal.throwIfAborted();
+    } else {
+      set(updateRemoteSetup$, { step: "existing" });
+    }
+  },
+);
+
 export const openRemoteNetwork$ = command(
   async (
     { get, set },

@@ -43,6 +43,7 @@ import {
   enterRemoteSetup$,
   leaveRemoteSetup$,
   openRemoteLogin$,
+  openExistingRemoteSetup$,
   openRemoteNetwork$,
   remoteSetup$,
   saveRemoteCloudflare$,
@@ -157,7 +158,9 @@ function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
     setup.step === "entry" ||
     setup.step === "existing" ||
     setup.step === "saved" ||
-    (setup.route === "direct" && setup.protocol === "ssh")
+    (setup.protocol === "ssh" &&
+      (setup.route === "direct" ||
+        (setup.entryMode === "existing" && setup.route === "tailscale")))
   ) {
     return null;
   }
@@ -188,13 +191,16 @@ function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
       return $.remoteControlSetup.loginProgress;
     }),
   ];
+  const existingVnc = vnc && setup.entryMode === "existing";
+  const visibleLabels = existingVnc ? labels.slice(1) : labels;
+  const activeStep = existingVnc ? active - 1 : active;
   return (
     <ol className="order-3 flex w-full items-center justify-center gap-2 text-xs text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
-      {labels.map((label, index) => {
+      {visibleLabels.map((label, index) => {
         return (
           <li
             key={label}
-            aria-current={active === index + 1 ? "step" : undefined}
+            aria-current={activeStep === index + 1 ? "step" : undefined}
             className="flex items-center gap-2"
           >
             {index > 0 && (
@@ -203,13 +209,17 @@ function SetupProgress({ setup }: { readonly setup: RemoteSetup }) {
             <span
               className={cn(
                 "flex size-[22px] shrink-0 items-center justify-center rounded-full border border-divider",
-                active === index + 1 &&
+                activeStep === index + 1 &&
                   "border-foreground bg-foreground text-background",
               )}
             >
-              {active > index + 1 ? <Check size={12} aria-hidden /> : index + 1}
+              {activeStep > index + 1 ? (
+                <Check size={12} aria-hidden />
+              ) : (
+                index + 1
+              )}
             </span>
-            <span className={cn(active === index + 1 && "text-foreground")}>
+            <span className={cn(activeStep === index + 1 && "text-foreground")}>
               {label}
             </span>
           </li>
@@ -298,10 +308,10 @@ function SetupEntry({
   readonly vncEnabled: boolean;
 }) {
   const { t } = useTranslation();
-  const update = useSet(updateRemoteSetup$);
-  const leave = useSet(leaveRemoteSetup$);
   const [starting, start] = useLoadableSet(beginRemoteGuide$);
+  const [opening, openExisting] = useLoadableSet(openExistingRemoteSetup$);
   const signal = useGet(pageSignal$);
+  const busy = starting.state === "loading" || opening.state === "loading";
   return (
     <div>
       <header className="mb-6 grid gap-1">
@@ -336,7 +346,7 @@ function SetupEntry({
         <div className="flex flex-wrap items-center gap-3 sm:gap-5">
           <Button
             className={REMOTE_PAGE_ACTION}
-            disabled={starting.state === "loading"}
+            disabled={busy}
             onClick={() => {
               detach(start(signal), Reason.DomCallback);
             }}
@@ -348,8 +358,9 @@ function SetupEntry({
           <Button
             variant="quiet"
             className="h-auto whitespace-normal px-0 text-left text-[13px]"
+            disabled={busy}
             onClick={() => {
-              update({ step: setup.protocol === "vnc" ? "os" : "existing" });
+              detach(openExisting(signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -358,7 +369,9 @@ function SetupEntry({
             <ChevronRight size={14} aria-hidden />
           </Button>
         </div>
-        <OperationError failed={starting.state === "hasError"} />
+        <OperationError
+          failed={starting.state === "hasError" || opening.state === "hasError"}
+        />
       </Card>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
@@ -367,11 +380,6 @@ function SetupEntry({
             return $.remoteControlSetup.entryPermission;
           })}
         </span>
-        <Button variant="quiet" size="sm" onClick={leave}>
-          {t(($) => {
-            return $.remoteControlSetup.viewConnections;
-          })}
-        </Button>
       </div>
     </div>
   );
@@ -1055,6 +1063,39 @@ function ServiceStep({ setup }: { readonly setup: RemoteSetup }) {
     </StepCard>
   );
 }
+function ExistingConnectionMethod({
+  icon,
+  title,
+  description,
+  disabled,
+  onClick,
+}: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly description: string;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="outline"
+      className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+        {icon}
+      </span>
+      <span className="grid min-w-0 flex-1 gap-1">
+        <strong>{title}</strong>
+        <span className="text-xs font-normal text-muted-foreground">
+          {description}
+        </span>
+      </span>
+      <ChevronRight size={16} aria-hidden />
+    </Button>
+  );
+}
 function ExistingStep() {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
@@ -1063,6 +1104,7 @@ function ExistingStep() {
   const signal = useGet(pageSignal$);
   const setup = useGet(remoteSetup$);
   const [starting, start] = useLoadableSet(beginRemoteGuide$);
+  const busy = opening.state === "loading" || starting.state === "loading";
   return (
     <div className="grid gap-3">
       <header className="mb-2 grid gap-1.5">
@@ -1077,66 +1119,54 @@ function ExistingStep() {
           })}
         </p>
       </header>
-      <Button
-        variant="outline"
-        className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
-        disabled={opening.state === "loading"}
+      <ExistingConnectionMethod
+        icon={<Link2 size={20} aria-hidden />}
+        title={t(($) => {
+          return $.remoteControlSetup.direct;
+        })}
+        description={t(($) => {
+          return $.remoteControlSetup.directHelp;
+        })}
+        disabled={busy}
         onClick={() => {
           if (setup?.route !== "direct") {
             update({ route: "direct", address: "", formStarted: false });
           }
           detach(open(signal), Reason.DomCallback);
         }}
-      >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
-          <Link2 size={20} aria-hidden />
-        </span>
-        <span className="grid min-w-0 flex-1 gap-1">
-          <strong>
-            {t(($) => {
-              return $.remoteControlSetup.direct;
-            })}
-          </strong>
-          <span className="text-xs font-normal text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.directHelp;
-            })}
-          </span>
-        </span>
-        <ChevronRight size={16} aria-hidden />
-      </Button>
+      />
       {tailscale && (
-        <Button
-          variant="outline"
-          className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
+        <ExistingConnectionMethod
+          icon={<Network size={20} aria-hidden />}
+          title={t(($) => {
+            return $.tailscale.title;
+          })}
+          description={t(($) => {
+            return $.remoteControlSetup.tailscaleHelp;
+          })}
+          disabled={busy}
           onClick={() => {
             if (setup?.route !== "tailscale") {
-              update({ formStarted: false, address: "", networkId: "" });
+              update({
+                route: "tailscale",
+                formStarted: false,
+                address: "",
+                networkId: "",
+              });
             }
-            detach(start(signal), Reason.DomCallback);
+            detach(open(signal), Reason.DomCallback);
           }}
-        >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
-            <Network size={20} aria-hidden />
-          </span>
-          <span className="grid min-w-0 flex-1 gap-1">
-            <strong>
-              {t(($) => {
-                return $.tailscale.title;
-              })}
-            </strong>
-            <span className="text-xs font-normal text-muted-foreground">
-              {t(($) => {
-                return $.remoteControlSetup.tailscaleHelp;
-              })}
-            </span>
-          </span>
-          <ChevronRight size={16} aria-hidden />
-        </Button>
+        />
       )}
-      <Button
-        variant="outline"
-        className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
+      <ExistingConnectionMethod
+        icon={<Cloud size={20} aria-hidden />}
+        title={t(($) => {
+          return $.cloudflareAccess.title;
+        })}
+        description={t(($) => {
+          return $.remoteControlSetup.cloudflareHelp;
+        })}
+        disabled={busy}
         onClick={() => {
           update({
             route: "cloudflare_access",
@@ -1146,29 +1176,13 @@ function ExistingStep() {
             formStarted: false,
           });
         }}
-      >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
-          <Cloud size={20} aria-hidden />
-        </span>
-        <span className="grid min-w-0 flex-1 gap-1">
-          <strong>
-            {t(($) => {
-              return $.cloudflareAccess.title;
-            })}
-          </strong>
-          <span className="text-xs font-normal text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.cloudflareHelp;
-            })}
-          </span>
-        </span>
-        <ChevronRight size={16} aria-hidden />
-      </Button>
+      />
       <Button
         variant="quiet"
         className="justify-self-start"
+        disabled={busy}
         onClick={() => {
-          update({ step: "entry" });
+          detach(start(signal), Reason.DomCallback);
         }}
       >
         <ArrowLeft size={16} aria-hidden />
@@ -1367,8 +1381,12 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
             step:
               setup.step === "login"
                 ? setup.protocol === "vnc"
-                  ? "service"
-                  : setup.route === "direct"
+                  ? setup.entryMode === "existing"
+                    ? "entry"
+                    : "service"
+                  : setup.route === "direct" ||
+                      (setup.route === "tailscale" &&
+                        setup.entryMode === "existing")
                     ? "existing"
                     : setup.route === "cloudflare_access"
                       ? "cf-access"
@@ -1385,6 +1403,7 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
       <SetupProgress setup={setup} />
       {setup.protocol === "ssh" &&
         setup.route === "tailscale" &&
+        setup.entryMode === "guided" &&
         setup.step !== "entry" &&
         setup.step !== "saved" && (
           <span className="text-xs text-muted-foreground">
