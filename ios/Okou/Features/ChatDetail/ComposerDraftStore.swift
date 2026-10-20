@@ -22,6 +22,136 @@ final class ComposerDraftStore {
       changed()
     }
   }
+  struct EditorBlock: Identifiable {
+    let id: UUID
+    let indices: Range<Int>
+    let quote: String?
+    let content: ChatDraftDocument
+    var isFeedback: Bool { quote != nil }
+    var hasParagraph: Bool {
+      content.parts.contains {
+        ["text", "chat_thread", "agent", "template"].contains($0["type"]?.string ?? "")
+      }
+    }
+    var searchableRanges: [NSRange] {
+      var result: [NSRange] = []
+      var offset = 0
+      var continuesText = false
+      for part in content.parts {
+        guard part["type"]?.string == "text", let text = part["text"]?.string else {
+          continuesText = false
+          continue
+        }
+        let length = text.utf16.count
+        if continuesText {
+          result[result.count - 1].length += length
+        } else {
+          result.append(NSRange(location: offset, length: length))
+        }
+        offset += length
+        continuesText = true
+      }
+      return result
+    }
+  }
+
+  struct EditorFocusRequest: Equatable {
+    let id = UUID()
+    let blockID: UUID
+  }
+
+  private var quoteIDs: [UUID] = []
+  private var textIDs: [UUID] = [UUID()]
+  private(set) var focusRequest: EditorFocusRequest?
+  private(set) var editorGeneration = UUID()
+  var editorBlocks: [EditorBlock] {
+    guard document.isSupported else { return [] }
+    var blocks: [EditorBlock] = []
+    var start = 0
+    var ordinal = 0
+    for (index, part) in document.parts.enumerated() where part["type"]?.string == "feedback" {
+      blocks.append(
+        EditorBlock(
+          id: textIDs[ordinal], indices: start..<index, quote: nil,
+          content: ChatDraftDocument(parts: Array(document.parts[start..<index]))))
+      guard let quote = part["quote"]?.string, case .array(let note) = part["note"] else {
+        return []
+      }
+      blocks.append(
+        EditorBlock(
+          id: quoteIDs[ordinal], indices: index..<(index + 1), quote: quote,
+          content: ChatDraftDocument(parts: note)))
+      ordinal += 1
+      start = index + 1
+    }
+    blocks.append(
+      EditorBlock(
+        id: textIDs[ordinal], indices: start..<document.parts.count, quote: nil,
+        content: ChatDraftDocument(parts: Array(document.parts[start...]))))
+    return blocks
+  }
+
+  private func resetEditors() {
+    quoteIDs = document.parts.filter { $0["type"]?.string == "feedback" }.map { _ in UUID() }
+    textIDs = (0...quoteIDs.count).map { _ in UUID() }
+    focusRequest = nil
+    editorGeneration = UUID()
+  }
+
+  func requestEditorFocus(_ id: UUID) {
+    guard !closed, editorBlocks.contains(where: { $0.id == id }) else { return }
+    focusRequest = EditorFocusRequest(blockID: id)
+  }
+
+  func consumeFocusRequest(_ request: EditorFocusRequest) {
+    if focusRequest == request { focusRequest = nil }
+  }
+
+  @discardableResult func addFeedback(_ selection: ChatFeedbackSelection) -> UUID? {
+    guard !closed, document.isSupported else { return nil }
+    document.parts.append(selection.part)
+    let id = UUID()
+    quoteIDs.append(id)
+    textIDs.append(UUID())
+    focusRequest = EditorFocusRequest(blockID: id)
+    changed()
+    return id
+  }
+
+  func editBlock(_ id: UUID, text: String) {
+    guard !closed, let block = editorBlocks.first(where: { $0.id == id }),
+      block.content.text != text
+    else { return }
+    var content = block.content
+    content.replaceText(text)
+    if block.isFeedback, case .object(var part) = document.parts[block.indices.lowerBound] {
+      part["note"] = .array(content.parts)
+      document.parts[block.indices.lowerBound] = .object(part)
+    } else {
+      document.parts.replaceSubrange(block.indices, with: content.parts)
+    }
+    changed()
+  }
+
+  func removeFeedback(_ id: UUID) {
+    guard !closed, let ordinal = quoteIDs.firstIndex(of: id),
+      let block = editorBlocks.first(where: { $0.id == id })
+    else { return }
+    let blocks = editorBlocks
+    // Removing a block between text sections leaves two paragraphs, as on the web.
+    let separatesParagraphs =
+      blocks[ordinal * 2].hasParagraph && blocks[ordinal * 2 + 2].hasParagraph
+    document.parts.replaceSubrange(
+      block.indices,
+      with: separatesParagraphs
+        ? [.object(["type": .string("text"), "text": .string("\n")])] : [])
+    quoteIDs.remove(at: ordinal)
+    textIDs.remove(at: ordinal + 1)
+    // The removed note hands focus to the preceding text gap in this composer.
+    focusRequest = EditorFocusRequest(blockID: textIDs[ordinal])
+    changed()
+  }
+
   private(set) var document = ChatDraftDocument()
   let attachments: AttachmentDraftStore
   let editor = ComposerEditor()
@@ -89,6 +219,7 @@ final class ComposerDraftStore {
         + error.localizedDescription
       didFail(error)
     }
+    resetEditors()
     attachments.didChange = { [weak self] in self?.changed() }
     attachments.didRemove = { [weak self] fileID in
       guard let self, let fileID else { return }
@@ -233,6 +364,7 @@ final class ComposerDraftStore {
     applying = true
     document = remote.draftUserMessage ?? ChatDraftDocument()
     metadata = remote.draftAttachments ?? []
+    resetEditors()
     cleared = false
     attachments.restoreRemote(remote)
     applying = false
@@ -263,6 +395,7 @@ final class ComposerDraftStore {
     cleared = true
     applying = true
     document = ChatDraftDocument()
+    resetEditors()
     metadata = []
     attachments.reset()
     applying = false
@@ -275,6 +408,7 @@ final class ComposerDraftStore {
     destination.applying = true
     destination.document = value.draftUserMessage ?? ChatDraftDocument()
     destination.metadata = value.draftAttachments ?? []
+    destination.resetEditors()
     attachments.moveReadyFiles(to: destination.attachments)
     destination.applying = false
     destination.changed()

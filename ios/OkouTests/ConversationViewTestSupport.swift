@@ -61,7 +61,7 @@ func stableHostingGeometry(_ view: UIView) async {
 }
 
 @MainActor
-private func hostingPresentationFrame() async {
+func hostingPresentationFrame() async {
   // Display-link callbacks prepare upcoming frames. Span a complete presented frame
   // before sampling geometry, including cold SwiftUI pipeline compilation on CI.
   await withCheckedContinuation { continuation in

@@ -216,6 +216,15 @@ final class ConversationStore {
     suppressAutomaticRead = suppressed
   }
 
+  func quote(_ selection: ChatFeedbackSelection) {
+    guard !closed, !needsUpgrade,
+      let message = messages.first(where: { $0.id == selection.eventID }),
+      message.text.utf16.elementsEqual(selection.text.utf16),
+      message.role == .assistant, !message.isError
+    else { return }
+    composer.addFeedback(selection)
+  }
+
   /// A first send carries the selection acknowledged by thread creation. It must not
   /// wait for the new detail view's independent metadata read to become sendable.
   func send(initialSelection: ChatModelSelection? = nil) async {

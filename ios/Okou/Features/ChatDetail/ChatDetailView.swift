@@ -12,6 +12,7 @@ struct ChatDetailView: View {
   @State private var activityOwner = UUID()
   @State private var messageToSelect: ChatMessage?
   @State private var usageDetails: UsageDetails?
+  @State private var selectionToQuote: ChatFeedbackSelection?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -99,6 +100,8 @@ struct ChatDetailView: View {
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
     .onDisappear {
+      selectionToQuote = nil
+      messageToSelect = nil
       scrolling.deactivate()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
@@ -110,8 +113,20 @@ struct ChatDetailView: View {
     ) {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
-    .sheet(item: $messageToSelect) { message in
-      MessageTextSelectionSheet(text: message.copyText)
+    .sheet(
+      item: $messageToSelect,
+      onDismiss: {
+        if let selection = selectionToQuote { conversation.quote(selection) }
+        selectionToQuote = nil
+      }
+    ) { message in
+      MessageTextSelectionSheet(
+        text: message.copyText, message: message,
+        quote: message.role == .assistant
+          ? { selection in
+            selectionToQuote = selection
+            messageToSelect = nil
+          } : nil)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(item: $usageDetails) { selection in

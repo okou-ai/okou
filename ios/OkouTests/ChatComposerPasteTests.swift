@@ -386,7 +386,10 @@ final class ChatComposerPasteTests: XCTestCase {
     input.insertText("stale callback")
     XCTAssertEqual(conversation.draft, "")
     XCTAssertTrue(input.text.contains("stale callback"))
-    try await eventually {
+    try await eventually(
+      message:
+        "Replacement: same=\(self.textView(in: host.view) === input), focused=\(self.textView(in: host.view)?.isFirstResponder == true), text=\(self.textView(in: host.view)?.text ?? "<missing>"), key=\(window.isKeyWindow)"
+    ) {
       guard let replacement = self.textView(in: host.view) else { return false }
       return replacement !== input && replacement.isFirstResponder && replacement.text.isEmpty
     }

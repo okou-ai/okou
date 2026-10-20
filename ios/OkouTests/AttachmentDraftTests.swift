@@ -358,7 +358,7 @@ final class AttachmentFlowFixture: Sendable {
             "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case let path where path.hasSuffix("/event-rows"):
         if let accepted = state.value.withLock({ $0.accepted }) {
-          let message = try JSONDecoder().decode(Message.self, from: accepted)
+          let message = try JSONDecoder().decode(PersistedMessage.self, from: accepted)
           let after =
             URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
             .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
@@ -415,6 +415,11 @@ final class AttachmentFlowFixture: Sendable {
       isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       draftRepository: storage.map { _ in ChatDraftRepository(client: http.client) },
       draftStorage: storage)
+  }
+
+  private struct PersistedMessage: Decodable {
+    let clientEventId: String
+    let userMessage: ChatDraftDocument
   }
 
   struct Message: Codable {
