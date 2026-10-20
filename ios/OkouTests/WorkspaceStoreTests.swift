@@ -265,8 +265,10 @@ final class WorkspaceStoreTests: XCTestCase {
 
     store.startNewChat()
     XCTAssertNil(store.selectedThreadID)
-    XCTAssertEqual(store.newChatDraft, "")
+    XCTAssertEqual(store.newChatDraft, "Old draft")
     XCTAssertTrue(requests.withLock { $0.isEmpty })
+    store.newComposer.clear()
+    XCTAssertEqual(store.newChatDraft, "")
 
     store.newChatDraft = "First message"
     await store.sendNewChat()

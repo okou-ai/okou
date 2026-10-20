@@ -13,7 +13,7 @@ struct ChatAttachmentChips: View {
           VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
               Button {
-                previewURL = item.file.url
+                if item.file.url.isFileURL { previewURL = item.file.url }
               } label: {
                 HStack(spacing: 8) {
                   if let data = item.file.thumbnail, let image = UIImage(data: data) {
@@ -31,6 +31,7 @@ struct ChatAttachmentChips: View {
                 .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
+              .disabled(!item.file.url.isFileURL)
               .accessibilityLabel("Preview \(item.file.filename)")
               Button {
                 draft.remove(item.id)
@@ -48,6 +49,8 @@ struct ChatAttachmentChips: View {
             case .uploading(let fraction):
               ProgressView(value: fraction)
                 .accessibilityLabel("Uploading \(item.file.filename)")
+            case .checking:
+              Text("Checking uploaded file…").foregroundStyle(.secondary)
             case .ready:
               Text(
                 ByteCountFormatter.string(fromByteCount: Int64(item.file.size), countStyle: .file)
@@ -58,7 +61,7 @@ struct ChatAttachmentChips: View {
               Button {
                 draft.retry(item.id)
               } label: {
-                Text("Retry upload").font(.caption.weight(.medium))
+                Text("Retry attachment").font(.caption.weight(.medium))
                   .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                   .contentShape(Rectangle())
               }
