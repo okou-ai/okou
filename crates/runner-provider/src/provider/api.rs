@@ -637,17 +637,22 @@ impl ApiProvider {
         error: &ProviderError,
         now: Instant,
     ) {
-        let Some(api_error) = eligible_heartbeat_transport_error(state, error) else {
-            log_heartbeat_failure(state, error);
-            return;
+        let retryable = matches!(state.mode.as_str(), "starting" | "running" | "draining")
+            && match error {
+                ProviderError::ApiStatus(api_error) => api_error.status.as_u16() == 520,
+                _ => eligible_heartbeat_transport_error(error).is_some(),
+            };
+        let observation = if retryable {
+            Some(
+                self.heartbeat_degradation_tracker
+                    .observe_failure(now, HEARTBEAT_DEGRADED_AFTER)
+                    .await,
+            )
+        } else {
+            None
         };
 
-        let observation = self
-            .heartbeat_degradation_tracker
-            .observe_failure(now, HEARTBEAT_DEGRADED_AFTER)
-            .await;
-
-        log_retryable_heartbeat_failure(state, error, api_error, observation);
+        log_heartbeat_failure(state, error, observation);
     }
 
     async fn record_heartbeat_success_at(&self, state: &HeartbeatState, now: Instant) {
@@ -1286,10 +1291,18 @@ fn log_poll_recovery(provider: &ApiProvider, reason: PollReason, recovery: Degra
     );
 }
 
-fn log_heartbeat_failure(state: &HeartbeatState, error: &ProviderError) {
+fn log_heartbeat_failure(
+    state: &HeartbeatState,
+    error: &ProviderError,
+    observation: Option<DegradationObservation>,
+) {
     let reusable_sandboxes = state.held_sandbox_states.len();
     let home_states = state.held_home_states.len();
     if let ProviderError::ApiTransport(api_error) = error {
+        if let Some(observation) = observation {
+            log_retryable_heartbeat_failure(state, error, api_error, observation);
+            return;
+        }
         let request = &api_error.request;
         warn!(
             error = %error,
@@ -1314,6 +1327,61 @@ fn log_heartbeat_failure(state: &HeartbeatState, error: &ProviderError) {
         return;
     }
 
+    if let ProviderError::ApiStatus(api_error) = error {
+        if let Some(observation) = observation {
+            let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
+            if observation.emit_degradation {
+                warn!(
+                    endpoint = api_error.endpoint_label,
+                    status = api_error.status.as_u16(),
+                    failure_kind = "http_status",
+                    runner_id = %state.runner_id,
+                    runner_group = %state.group,
+                    mode = %state.mode,
+                    running = state.running_count,
+                    reusable_sandboxes,
+                    home_states,
+                    consecutive_failures = observation.consecutive_failures,
+                    failure_elapsed_ms,
+                    will_retry = true,
+                    degraded = observation.degraded,
+                    "heartbeat delivery degraded"
+                );
+            } else {
+                info!(
+                    endpoint = api_error.endpoint_label,
+                    status = api_error.status.as_u16(),
+                    failure_kind = "http_status",
+                    runner_id = %state.runner_id,
+                    runner_group = %state.group,
+                    mode = %state.mode,
+                    running = state.running_count,
+                    reusable_sandboxes,
+                    home_states,
+                    consecutive_failures = observation.consecutive_failures,
+                    failure_elapsed_ms,
+                    will_retry = true,
+                    degraded = observation.degraded,
+                    "heartbeat failed, will retry"
+                );
+            }
+        } else {
+            warn!(
+                endpoint = api_error.endpoint_label,
+                status = api_error.status.as_u16(),
+                failure_kind = "http_status",
+                runner_id = %state.runner_id,
+                runner_group = %state.group,
+                mode = %state.mode,
+                running = state.running_count,
+                reusable_sandboxes,
+                home_states,
+                "heartbeat failed"
+            );
+        }
+        return;
+    }
+
     warn!(
         error = %error,
         runner_id = %state.runner_id,
@@ -1326,13 +1394,7 @@ fn log_heartbeat_failure(state: &HeartbeatState, error: &ProviderError) {
     );
 }
 
-fn eligible_heartbeat_transport_error<'a>(
-    state: &HeartbeatState,
-    error: &'a ProviderError,
-) -> Option<&'a ApiTransportError> {
-    if !matches!(state.mode.as_str(), "starting" | "running" | "draining") {
-        return None;
-    }
+fn eligible_heartbeat_transport_error(error: &ProviderError) -> Option<&ApiTransportError> {
     let ProviderError::ApiTransport(api_error) = error else {
         return None;
     };
@@ -2985,25 +3047,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn heartbeat_real_connection_interruptions_recover_without_axiom_warning() {
+    async fn heartbeat_transient_failures_recover_without_axiom_warning() {
         for (action, failure_cause) in [
             (
                 RawHttpAction::ResetConnection,
-                ApiTransportCause::ConnectionReset,
+                Some(ApiTransportCause::ConnectionReset),
             ),
             (
                 RawHttpAction::Disconnect,
-                ApiTransportCause::HttpIncompleteMessage,
+                Some(ApiTransportCause::HttpIncompleteMessage),
+            ),
+            (
+                RawHttpAction::Respond(http_response(
+                    "520 Unknown",
+                    b"sensitive-heartbeat-status-response",
+                )),
+                None,
             ),
         ] {
-            assert_heartbeat_interruption_recovers_without_axiom_warning(action, failure_cause)
-                .await;
+            assert_heartbeat_failure_recovers_without_axiom_warning(action, failure_cause).await;
         }
     }
 
-    async fn assert_heartbeat_interruption_recovers_without_axiom_warning(
+    async fn assert_heartbeat_failure_recovers_without_axiom_warning(
         action: RawHttpAction,
-        failure_cause: ApiTransportCause,
+        failure_cause: Option<ApiTransportCause>,
     ) {
         let axiom = MockServer::start_async().await;
         let ingested = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
@@ -3048,8 +3116,13 @@ mod tests {
         let events = captured.entries();
         let retry = captured_event(&events, "heartbeat failed, will retry");
         assert_eq!(retry.level, Level::INFO);
-        assert_eq!(event_field(retry, "failure_kind"), "request");
-        assert_eq!(event_field(retry, "failure_cause"), failure_cause.as_str());
+        if let Some(failure_cause) = failure_cause {
+            assert_eq!(event_field(retry, "failure_kind"), "request");
+            assert_eq!(event_field(retry, "failure_cause"), failure_cause.as_str());
+        } else {
+            assert_eq!(event_field(retry, "failure_kind"), "http_status");
+            assert_eq!(event_field(retry, "status"), "520");
+        }
         assert_eq!(event_field(retry, "will_retry"), "true");
         assert_eq!(event_field(retry, "degraded"), "false");
         let recovery = captured_event(&events, "heartbeat delivery recovered");
@@ -3063,12 +3136,127 @@ mod tests {
         assert!(!heartbeat_event_debug.contains("runner-token"));
         assert!(!heartbeat_event_debug.contains("thread:heartbeat-test"));
         assert!(!heartbeat_event_debug.contains("http://"));
+        assert!(!heartbeat_event_debug.contains("sensitive-heartbeat-status-response"));
 
         assert!(ingest.calls_async().await > 0);
         let ingested = ingested.lock().unwrap();
         assert_eq!(ingested.len(), 1);
         assert_eq!(ingested[0]["message"], "heartbeat failed");
         assert_eq!(ingested[0]["level"], "warn");
+    }
+
+    #[tokio::test]
+    async fn heartbeat_http520_and_transport_failures_share_degradation_and_reset() {
+        const STATUS_BODY: &str = "sensitive-degraded-heartbeat-status-body";
+        let http_error =
+            || api_status_error("heartbeat", StatusCode::from_u16(520).unwrap(), STATUS_BODY);
+
+        for mode in ["starting", "running", "draining"] {
+            let mut state = heartbeat_state_for_test();
+            state.mode = mode.to_string();
+            for (first, second) in [
+                (http_error(), http_error()),
+                (
+                    http_error(),
+                    heartbeat_transport_error(ApiFailureKind::Timeout),
+                ),
+                (
+                    heartbeat_transport_error(ApiFailureKind::Timeout),
+                    http_error(),
+                ),
+            ] {
+                let provider = idle_api_provider_for_test();
+                let started_at = Instant::now();
+                let (_, events) = capture_api_provider_events(async {
+                    for (error, elapsed) in [
+                        (&first, Duration::ZERO),
+                        (&second, HEARTBEAT_DEGRADED_AFTER - Duration::from_millis(1)),
+                        (&second, HEARTBEAT_DEGRADED_AFTER),
+                        (&first, HEARTBEAT_DEGRADED_AFTER + Duration::from_secs(1)),
+                    ] {
+                        provider
+                            .record_heartbeat_failure_at(&state, error, started_at + elapsed)
+                            .await;
+                    }
+                    provider
+                        .record_heartbeat_success_at(
+                            &state,
+                            started_at + HEARTBEAT_DEGRADED_AFTER + Duration::from_secs(2),
+                        )
+                        .await;
+                    let later_started_at =
+                        started_at + HEARTBEAT_DEGRADED_AFTER + Duration::from_secs(3);
+                    provider
+                        .record_heartbeat_failure_at(&state, &second, later_started_at)
+                        .await;
+                    provider
+                        .record_heartbeat_failure_at(
+                            &state,
+                            &first,
+                            later_started_at + HEARTBEAT_DEGRADED_AFTER,
+                        )
+                        .await;
+                })
+                .await;
+                let failures = events
+                    .iter()
+                    .filter(|event| event.fields.contains_key("consecutive_failures"))
+                    .collect::<Vec<_>>();
+
+                assert_eq!(failures.len(), 6, "mode={mode}; {events:#?}");
+                for ((event, count), (level, elapsed, degraded)) in
+                    failures.iter().zip([1, 2, 3, 4, 1, 2]).zip([
+                        (Level::INFO, 0, "false"),
+                        (Level::INFO, 29_999, "false"),
+                        (Level::WARN, 30_000, "true"),
+                        (Level::INFO, 31_000, "true"),
+                        (Level::INFO, 0, "false"),
+                        (Level::WARN, 30_000, "true"),
+                    ])
+                {
+                    assert_eq!(event.level, level, "mode={mode}; {events:#?}");
+                    assert_eq!(event_field(event, "mode"), mode);
+                    assert_eq!(
+                        event_field(event, "consecutive_failures"),
+                        count.to_string()
+                    );
+                    assert_eq!(
+                        event_field(event, "failure_elapsed_ms"),
+                        elapsed.to_string()
+                    );
+                    assert_eq!(event_field(event, "degraded"), degraded);
+                    assert_eq!(event_field(event, "will_retry"), "true");
+                    let message = if level == Level::WARN {
+                        "heartbeat delivery degraded"
+                    } else {
+                        "heartbeat failed, will retry"
+                    };
+                    assert_eq!(event_field(event, "message"), message);
+                    if event_field(event, "failure_kind") == "http_status" {
+                        assert_eq!(event_field(event, "endpoint"), "heartbeat");
+                        assert_eq!(event_field(event, "status"), "520");
+                        assert_eq!(event_field(event, "running"), "1");
+                        assert_eq!(event_field(event, "reusable_sandboxes"), "1");
+                        assert_eq!(event_field(event, "home_states"), "1");
+                        assert!(!event.fields.contains_key("error"));
+                    }
+                }
+                let recovery = captured_event(&events, "heartbeat delivery recovered");
+                assert_eq!(recovery.level, Level::INFO);
+                assert_eq!(event_field(recovery, "recovered_after_failures"), "4");
+                assert_eq!(event_field(recovery, "failure_elapsed_ms"), "32000");
+                assert_eq!(event_field(recovery, "was_degraded"), "true");
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| event.level == Level::WARN)
+                        .count(),
+                    2,
+                    "each episode should emit only one degradation warning: {events:#?}"
+                );
+                assert!(!format!("{events:#?}").contains(STATUS_BODY));
+            }
+        }
     }
 
     #[tokio::test]
@@ -3338,6 +3526,7 @@ mod tests {
                 body: "failed".to_string(),
             })),
             ProviderError::Internal("synthetic heartbeat invariant".to_string()),
+            ProviderError::Api("heartbeat 520: untyped error".to_string()),
         ];
         let mut stopping_state = state.clone();
         stopping_state.mode = "stopping".to_string();
@@ -3358,6 +3547,17 @@ mod tests {
                     started_at + Duration::from_secs(15),
                 )
                 .await;
+            provider
+                .record_heartbeat_failure_at(
+                    &stopping_state,
+                    &api_status_error(
+                        "heartbeat",
+                        StatusCode::from_u16(520).unwrap(),
+                        "stopping status body",
+                    ),
+                    started_at + Duration::from_secs(15),
+                )
+                .await;
         })
         .await;
 
@@ -3373,7 +3573,7 @@ mod tests {
             .count();
         assert_eq!(
             immediate_warnings,
-            unsupported_errors.len() + 1,
+            unsupported_errors.len() + 2,
             "events={events:#?}"
         );
         {
@@ -3404,36 +3604,57 @@ mod tests {
 
     #[tokio::test]
     async fn heartbeat_status_failure_logs_held_state_counts_without_body() {
-        let server =
-            RawHttpTestServer::spawn(vec![RawHttpAction::Respond(status_response(500))]).await;
-        let api_url = server.url();
-        let provider = api_provider_for_test(
-            api_url,
-            CancellationToken::new(),
-            Arc::new(PollWakeups::new(false)),
-        );
-        let state = heartbeat_state_for_test();
+        const STATUS_BODY: &str = "sensitive-heartbeat-status-body";
+        for (status, mode) in [
+            (400, "running"),
+            (401, "running"),
+            (403, "running"),
+            (408, "running"),
+            (429, "running"),
+            (500, "running"),
+            (502, "running"),
+            (503, "running"),
+            (521, "running"),
+            (520, "stopping"),
+        ] {
+            let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(http_response(
+                &format!("{status} Unknown"),
+                STATUS_BODY.as_bytes(),
+            ))])
+            .await;
+            let provider = api_provider_for_test(
+                server.url(),
+                CancellationToken::new(),
+                Arc::new(PollWakeups::new(false)),
+            );
+            let mut state = heartbeat_state_for_test();
+            state.mode = mode.to_string();
 
-        let (_, events) = capture_api_provider_events(provider.heartbeat(&state)).await;
-        server.assert_finished().await;
-        let event = captured_event(&events, "heartbeat failed");
+            let (_, events) = capture_api_provider_events(provider.heartbeat(&state)).await;
+            server.assert_finished().await;
+            let event = captured_event(&events, "heartbeat failed");
 
-        assert_eq!(event.level, Level::WARN);
-        assert_eq!(event_field(event, "reusable_sandboxes"), "1");
-        assert_eq!(event_field(event, "home_states"), "1");
-        assert!(
-            provider
-                .heartbeat_degradation_tracker
-                .active_episode
-                .lock()
-                .await
-                .is_none()
-        );
-        let event_debug = format!("{event:#?}");
-        assert!(
-            !event_debug.contains("thread:heartbeat-test"),
-            "event should not include heartbeat body: {event_debug}"
-        );
+            assert_eq!(event.level, Level::WARN, "status={status}; mode={mode}");
+            assert_eq!(event_field(event, "endpoint"), "heartbeat");
+            assert_eq!(event_field(event, "status"), status.to_string());
+            assert_eq!(event_field(event, "failure_kind"), "http_status");
+            assert_eq!(event_field(event, "mode"), mode);
+            assert_eq!(event_field(event, "reusable_sandboxes"), "1");
+            assert_eq!(event_field(event, "home_states"), "1");
+            assert!(!event.fields.contains_key("will_retry"));
+            assert!(
+                provider
+                    .heartbeat_degradation_tracker
+                    .active_episode
+                    .lock()
+                    .await
+                    .is_none()
+            );
+            let event_debug = format!("{event:#?}");
+            assert!(!event_debug.contains("thread:heartbeat-test"));
+            assert!(!event_debug.contains(STATUS_BODY));
+            assert!(!event.fields.contains_key("error"));
+        }
     }
 
     #[tokio::test]
