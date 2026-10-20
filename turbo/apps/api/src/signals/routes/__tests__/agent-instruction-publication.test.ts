@@ -20,12 +20,14 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
-function clients(signal?: AbortSignal) {
-  const app = setupApp({
+async function clients(
+  options: { readonly signal?: AbortSignal; readonly isolatePg?: true } = {},
+) {
+  const app = await setupApp({
     context,
     routes: [...agentsRoutes, ...agentInstructionsRoutes],
     rethrowErrors: true,
-    ...(signal ? { signal } : {}),
+    ...options,
   });
   return {
     instructions: app(agentInstructionsContract),
@@ -61,6 +63,7 @@ function uploadPause() {
 
 async function instructionFixture(
   afterWrite?: (command: PutObjectCommand) => Promise<void>,
+  options: { readonly isolatePg?: true } = {},
 ) {
   const orgId = `org_${randomUUID()}`;
   const userId = `user_${randomUUID()}`;
@@ -73,7 +76,7 @@ async function instructionFixture(
       }
     },
   });
-  const api = clients();
+  const api = await clients(options);
   const agent = await accept(
     api.collection.create({
       headers,
@@ -109,7 +112,7 @@ function isArchive(command: PutObjectCommand): boolean {
 
 describe("Agent instruction preparation and publication", () => {
   it("rejects NUL text before publication and preserves the current instructions", async () => {
-    const fixture = await instructionFixture();
+    const fixture = await instructionFixture(undefined, { isolatePg: true });
     await fixture.update("Current instructions");
     await accept(
       fixture.api.instructions.update({
@@ -123,7 +126,7 @@ describe("Agent instruction preparation and publication", () => {
   });
 
   it("keeps empty instructions readable and reuses registered content without remote writes", async () => {
-    const fixture = await instructionFixture();
+    const fixture = await instructionFixture(undefined, { isolatePg: true });
     await expect(fixture.content()).resolves.toBe("");
     for (const content of ["Version A", "Version B"]) {
       await fixture.update(content);
@@ -213,13 +216,16 @@ describe("Agent instruction preparation and publication", () => {
     "keeps the previous HEAD after a failed %s receipt and permits retry",
     async (filename) => {
       let failedKey: string | undefined;
-      const fixture = await instructionFixture((command) => {
-        if (command.input.Key?.endsWith(`/${failedKey}`)) {
-          failedKey = undefined;
-          return Promise.reject(new Error("Instruction upload failed"));
-        }
-        return Promise.resolve();
-      });
+      const fixture = await instructionFixture(
+        (command) => {
+          if (command.input.Key?.endsWith(`/${failedKey}`)) {
+            failedKey = undefined;
+            return Promise.reject(new Error("Instruction upload failed"));
+          }
+          return Promise.resolve();
+        },
+        { isolatePg: true },
+      );
       await fixture.update("Committed instructions");
       failedKey = filename;
       await expect(
@@ -359,9 +365,9 @@ describe("Agent instruction preparation and publication", () => {
     onTestFinished(() => {
       controller.abort();
     });
-    const cancelledApi = clients(
-      AbortSignal.any([context.signal, controller.signal]),
-    );
+    const cancelledApi = await clients({
+      signal: AbortSignal.any([context.signal, controller.signal]),
+    });
     blocked = true;
     const updating = cancelledApi.instructions.update({
       headers,
@@ -402,9 +408,9 @@ describe("Agent instruction preparation and publication", () => {
     onTestFinished(() => {
       controller.abort();
     });
-    const cancelledApi = clients(
-      AbortSignal.any([context.signal, controller.signal]),
-    );
+    const cancelledApi = await clients({
+      signal: AbortSignal.any([context.signal, controller.signal]),
+    });
     pauses.push(olderPause, newerPause);
     const older = cancelledApi.instructions.update({
       headers,
