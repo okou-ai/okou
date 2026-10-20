@@ -23,8 +23,10 @@ import {
   lte,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import {
@@ -35,6 +37,11 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 
+import {
+  parseRawRows,
+  pgInt8ToSafeIntegerSchema,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
@@ -1449,6 +1456,181 @@ async function advanceSnapshotScanState(
   return updated !== undefined;
 }
 
+function snapshotRepairCandidateIdsSql(): SQL {
+  // These static predicates match the repair partial index. Binding the zero
+  // or regex constants would prevent generic plans from proving membership.
+  return new QueryBuilder()
+    .select({ chatThreadId: chatEventSnapshots.chatThreadId })
+    .from(chatEventSnapshots)
+    .where(
+      and(
+        eq(
+          chatEventSnapshots.archiveSchemaVersion,
+          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+        ),
+        sql`(
+          ${chatEventSnapshots.lastSeqId} <= 0
+          OR ${chatEventSnapshots.terminalSeqId} IS NULL
+          OR btrim(${chatEventSnapshots.objectKey}) = ''
+          OR NOT (${chatEventSnapshots.objectKey} ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')
+          OR ${chatEventSnapshots.objectKey} ~ '^chat-events/[0-9a-f-]{36}/[0-9]+-[0-9a-f]{64}[.]ndjson[.]gz$'
+        )`,
+      ),
+    )
+    .getSQL();
+}
+
+function snapshotCandidateRowsSql(): SQL {
+  return new QueryBuilder()
+    .select({
+      chatThreadId: chatThreads.id,
+      indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId,
+      lastMessageAt: chatThreads.lastMessageAt,
+      headId: currentSnapshot.id,
+      headLastSeqId: currentSnapshot.lastSeqId,
+      headLastEventId: currentSnapshot.lastEventId,
+      headTerminalSeqId: currentSnapshot.terminalSeqId,
+      headTerminalEventId: currentSnapshot.terminalEventId,
+      headObjectKey: currentSnapshot.objectKey,
+      headArchiveSchemaVersion: currentSnapshot.archiveSchemaVersion,
+    })
+    .from(chatThreads)
+    .innerJoin(
+      chatEventSearchMessageWatermarks,
+      eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
+    )
+    .leftJoin(
+      currentSnapshot,
+      and(
+        eq(currentSnapshot.chatThreadId, chatThreads.id),
+        eq(
+          currentSnapshot.archiveSchemaVersion,
+          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+        ),
+      ),
+    )
+    .getSQL();
+}
+
+function globalSnapshotCandidatesSql(
+  cursorChatThreadId: string | null,
+  cycleUpperBoundLastMessageAt: Date | null,
+  limit: number,
+): SQL {
+  // Partition by source keys, not by eligible candidates. The window is only
+  // a read optimization: the durable cursor still follows attempted work.
+  const sourceKeys = new QueryBuilder()
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        snapshotCandidateAfterCursor(cursorChatThreadId),
+        cycleUpperBoundLastMessageAt === null
+          ? undefined
+          : lte(chatThreads.lastMessageAt, cycleUpperBoundLastMessageAt),
+      ),
+    )
+    .orderBy(asc(chatThreads.id))
+    .limit(4 * limit);
+  const repairIds = snapshotRepairCandidateIdsSql();
+  const candidateRows = snapshotCandidateRowsSql();
+  const eligibleSource = sql.join(
+    [
+      ...(cycleUpperBoundLastMessageAt === null
+        ? []
+        : [lte(chatThreads.lastMessageAt, cycleUpperBoundLastMessageAt)]),
+      sql`${chatEventSearchMessageWatermarks.indexedSeqId} > 0`,
+    ],
+    sql` AND `,
+  );
+  const headWhere = and(
+    eligibleSource,
+    snapshotCandidateAfterCursor(cursorChatThreadId),
+    lte(chatThreads.id, sql`(SELECT upper_id FROM bounds)`),
+    or(
+      isNull(currentSnapshot.id),
+      lt(
+        currentSnapshot.lastSeqId,
+        chatEventSearchMessageWatermarks.indexedSeqId,
+      ),
+      inArray(currentSnapshot.chatThreadId, sql`(${repairIds})`),
+    ),
+  );
+  const tailJoin = and(
+    eq(
+      chatEventSnapshots.chatThreadId,
+      chatEventSearchMessageWatermarks.chatThreadId,
+    ),
+    eq(
+      chatEventSnapshots.archiveSchemaVersion,
+      CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+    ),
+  );
+  const tailCandidateWhere = and(
+    sql`${chatEventSearchMessageWatermarks.indexedSeqId} > 0`,
+    gt(
+      chatEventSearchMessageWatermarks.chatThreadId,
+      sql`(SELECT upper_id FROM bounds)`,
+    ),
+    or(
+      isNull(chatEventSnapshots.chatThreadId),
+      lt(
+        chatEventSnapshots.lastSeqId,
+        chatEventSearchMessageWatermarks.indexedSeqId,
+      ),
+    ),
+  );
+  const tailWhere = and(
+    eligibleSource,
+    gt(chatThreads.id, sql`(SELECT upper_id FROM bounds)`),
+    sql`${chatThreads.id} = ANY(ARRAY(SELECT chat_thread_id FROM candidate_ids))`,
+  );
+  // Drizzle's boolean helpers also accept an empty tree. Narrow their SQL
+  // result before interpolation; undefined must never enter the envelope.
+  if (
+    headWhere === undefined ||
+    tailJoin === undefined ||
+    tailCandidateWhere === undefined ||
+    tailWhere === undefined
+  ) {
+    throw new Error("Snapshot candidate predicates must not be empty");
+  }
+  return sql`
+      WITH bounds AS MATERIALIZED (
+        SELECT id AS upper_id FROM (${sourceKeys.getSQL()}) source_keys
+        ORDER BY id DESC LIMIT 1
+      ), head (
+        "chatThreadId", "indexedSeqId", "lastMessageAt", "headId",
+        "headLastSeqId", "headLastEventId", "headTerminalSeqId",
+        "headTerminalEventId", "headObjectKey", "headArchiveSchemaVersion"
+      ) AS MATERIALIZED (
+        ${candidateRows}
+        WHERE ${headWhere}
+        ORDER BY ${asc(chatThreads.id)} LIMIT ${limit}
+      ), tail (
+        "chatThreadId", "indexedSeqId", "lastMessageAt", "headId",
+        "headLastSeqId", "headLastEventId", "headTerminalSeqId",
+        "headTerminalEventId", "headObjectKey", "headArchiveSchemaVersion"
+      ) AS MATERIALIZED (
+        WITH candidate_ids AS MATERIALIZED (
+          SELECT ${chatEventSearchMessageWatermarks.chatThreadId}
+          FROM ${chatEventSearchMessageWatermarks}
+          LEFT JOIN ${chatEventSnapshots} ON ${tailJoin}
+          WHERE ${tailCandidateWhere}
+          UNION
+          ${repairIds}
+          AND ${gt(chatEventSnapshots.chatThreadId, sql`(SELECT upper_id FROM bounds)`)}
+        )
+        ${candidateRows}
+        WHERE ${tailWhere}
+        ORDER BY ${asc(chatThreads.id)}
+        LIMIT GREATEST(${limit} - (SELECT count(*) FROM head), 0)
+      )
+      SELECT * FROM head UNION ALL SELECT * FROM tail
+      ORDER BY "chatThreadId" ASC LIMIT ${limit}
+    `;
+}
+
 async function loadSnapshotCandidates(
   db: Db,
   chatThreadIds: readonly string[] | null,
@@ -1456,6 +1638,29 @@ async function loadSnapshotCandidates(
   cycleUpperBoundLastMessageAt: Date | null,
   limit: number,
 ): Promise<readonly SnapshotCandidate[]> {
+  if (chatThreadIds === null) {
+    const query = globalSnapshotCandidatesSql(
+      cursorChatThreadId,
+      cycleUpperBoundLastMessageAt,
+      limit,
+    );
+    // Materialized CTEs and a remaining-row LIMIT require a SQL envelope;
+    // decode its complete projection rather than asserting execute<Row>.
+    const rowSchema = z.object({
+      chatThreadId: z.uuid(),
+      indexedSeqId: pgInt8ToSafeIntegerSchema,
+      lastMessageAt: pgTimestampWithoutTimezoneToDateSchema,
+      headId: z.uuid().nullable(),
+      headLastSeqId: pgInt8ToSafeIntegerSchema.nullable(),
+      headLastEventId: z.uuid().nullable(),
+      headTerminalSeqId: pgInt8ToSafeIntegerSchema.nullable(),
+      headTerminalEventId: z.uuid().nullable(),
+      headObjectKey: z.string().nullable(),
+      headArchiveSchemaVersion: z.int().nullable(),
+    });
+    return parseRawRows(rowSchema, await db.execute(query));
+  }
+
   const rows = await db
     .select({
       chatThreadId: chatThreads.id,
@@ -1486,9 +1691,7 @@ async function loadSnapshotCandidates(
     )
     .where(
       and(
-        chatThreadIds === null
-          ? undefined
-          : inArray(chatThreads.id, chatThreadIds),
+        inArray(chatThreads.id, chatThreadIds),
         snapshotCandidateAfterCursor(cursorChatThreadId),
         cycleUpperBoundLastMessageAt === null
           ? undefined
@@ -1510,11 +1713,7 @@ async function loadSnapshotCandidates(
         ),
       ),
     )
-    .orderBy(
-      ...(chatThreadIds === null
-        ? [asc(chatThreads.id)]
-        : [asc(chatThreads.lastMessageAt), asc(chatThreads.id)]),
-    )
+    .orderBy(asc(chatThreads.lastMessageAt), asc(chatThreads.id))
     .limit(limit);
 
   return rows.map((row): SnapshotCandidate => {
