@@ -6,11 +6,18 @@ import { BrowserUserActionPage } from "../../views/browser-user-action/browser-u
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import { browserUserActionPageDescriptor$ } from "./browser-user-action-page-state.ts";
+import {
+  browserUserActionPageDescriptor$,
+  browserUserActionPageSignals$,
+} from "./browser-user-action-page-state.ts";
 
 export const setupBrowserUserActionPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const descriptor = get(browserUserActionPageDescriptor$);
+    const signals = get(browserUserActionPageSignals$);
+    if (signals) {
+      set(signals.subscribe$, signal);
+    }
     set(
       updatePage$,
       createElement(BrowserUserActionPage, {

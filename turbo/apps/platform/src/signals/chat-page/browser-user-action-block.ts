@@ -130,10 +130,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
-  readonly subscriptionRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
+  readonly subscribe$: Command<void, [AbortSignal]>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly updateChoiceDraft$: Command<
     void,
@@ -417,20 +414,19 @@ function createSubscriptionSignals(
     set(refresh$);
     return false;
   });
-  const subscriptionRef$ = onRef(
-    command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
-      set(
-        setAblyLoop$,
-        {
-          topic: `browserUserActionChanged:${threadId}`,
-          loopCommand$: invalidate$,
-          options: { runOnSubscribe: true },
-        },
-        signal,
-      );
-    }),
-  );
-  return { subscriptionRef$ };
+  // Re-read on subscribe: cached cards may have missed changes while unowned.
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyLoop$,
+      {
+        topic: `browserUserActionChanged:${threadId}`,
+        loopCommand$: invalidate$,
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  });
+  return { subscribe$ };
 }
 
 function createCheckboxDraftSignals() {
@@ -1701,5 +1697,8 @@ export function createBrowserUserActionCardSignalsRegistry(): BrowserUserActionC
   return createCardSignalsRegistry(
     browserUserActionResourceKey,
     createBrowserUserActionSignals,
+    (signals) => {
+      return signals.subscribe$;
+    },
   );
 }

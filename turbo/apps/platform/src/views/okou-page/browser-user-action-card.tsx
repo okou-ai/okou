@@ -25,7 +25,7 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import type { FormEvent, ReactNode, Ref } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -47,11 +47,9 @@ export type BrowserUserActionCardVariant = "inline" | "standalone";
 
 function BrowserActionSurface({
   children,
-  subscriptionRef,
   variant,
 }: {
   readonly children: ReactNode;
-  readonly subscriptionRef?: Ref<HTMLDivElement>;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
@@ -64,7 +62,6 @@ function BrowserActionSurface({
     >
       <ChatCard
         data-testid="browser-user-action-card"
-        ref={subscriptionRef}
         className={
           variant === "standalone"
             ? "w-full p-5 sm:p-6"
@@ -1984,7 +1981,6 @@ export function BrowserUserActionCard({
   // Keep the settled state while a notification re-reads it, so an open
   // dialog is not remounted by an unrelated change in the same thread.
   const requestLoadable = useLastLoadable(signals.request$);
-  const subscriptionRef = useSet(signals.subscriptionRef$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
@@ -1999,7 +1995,7 @@ export function BrowserUserActionCard({
     detach(continueAction(pageSignal), Reason.DomCallback);
   };
   return (
-    <BrowserActionSurface variant={variant} subscriptionRef={subscriptionRef}>
+    <BrowserActionSurface variant={variant}>
       <BrowserUserActionCardContent
         callbackDelivered={callbackDelivered}
         callbackFailed={callbackFailed}
