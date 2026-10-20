@@ -6,12 +6,16 @@ import type { ChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 
+// Keep the percentage constraint outside the capped chip: a percentage in its
+// max-width is ignored while a content-sized message bubble measures the title.
+export const STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS =
+  "inline-flex max-w-full align-middle";
 export const STRUCTURED_INLINE_REFERENCE_CLASS = inlineReferenceVariants({
-  className: "max-w-[min(240px,100%)]",
+  className: "min-w-0 max-w-[240px]",
 });
 export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = inlineReferenceVariants({
   interactive: true,
-  className: "max-w-[min(240px,100%)]",
+  className: "min-w-0 max-w-[240px]",
 });
 
 /**
@@ -41,23 +45,28 @@ export function ChatThreadLinkChip({
 }) {
   const { t } = useTranslation();
   return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{ pathParams: { threadId }, searchParams, hash }}
-      aria-label={t(
-        ($) => {
-          return $.chat.thread.openNamedChat;
-        },
-        { title },
-      )}
-      className={
-        insideMarkdown
-          ? `${STRUCTURED_INLINE_LINK_REFERENCE_CLASS} ${MARKDOWN_CHIP_RESET_CLASS}`
-          : STRUCTURED_INLINE_LINK_REFERENCE_CLASS
-      }
-    >
-      <MessageCircle size={13} className="shrink-0 text-selected-foreground" />
-      <span className="min-w-0 truncate">{title}</span>
-    </Link>
+    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
+      <Link
+        pathname={ROUTES.chat}
+        options={{ pathParams: { threadId }, searchParams, hash }}
+        aria-label={t(
+          ($) => {
+            return $.chat.thread.openNamedChat;
+          },
+          { title },
+        )}
+        className={
+          insideMarkdown
+            ? `${STRUCTURED_INLINE_LINK_REFERENCE_CLASS} ${MARKDOWN_CHIP_RESET_CLASS}`
+            : STRUCTURED_INLINE_LINK_REFERENCE_CLASS
+        }
+      >
+        <MessageCircle
+          size={13}
+          className="shrink-0 text-selected-foreground"
+        />
+        <span className="min-w-0 truncate">{title}</span>
+      </Link>
+    </span>
   );
 }
