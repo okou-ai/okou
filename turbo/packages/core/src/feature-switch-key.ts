@@ -49,6 +49,7 @@ export enum FeatureSwitchKey {
   ChatResourcePanel = "chatResourcePanel",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
+  PwaKeyboardViewport = "pwaKeyboardViewport",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",

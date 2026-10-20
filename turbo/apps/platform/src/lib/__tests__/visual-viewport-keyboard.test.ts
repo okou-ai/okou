@@ -2,7 +2,10 @@ import { expect, test, vi, type Mock } from "vitest";
 
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../signals/utils.ts";
-import { setupVisualViewportKeyboardState } from "../visual-viewport-keyboard.ts";
+import {
+  setPwaKeyboardViewportEnabled,
+  setupVisualViewportKeyboardState,
+} from "../visual-viewport-keyboard.ts";
 
 const context = testContext();
 
@@ -74,6 +77,7 @@ class ControlledViewportClock {
 class MockVisualViewport extends EventTarget {
   height: number;
   offsetTop = 0;
+  pageTop = 0;
   scale = 1;
 
   constructor(height: number) {
@@ -84,6 +88,7 @@ class MockVisualViewport extends EventTarget {
   resizeTo(height: number, offsetTop = this.offsetTop): void {
     this.height = height;
     this.offsetTop = offsetTop;
+    this.pageTop = offsetTop;
     this.dispatchEvent(new Event("resize"));
   }
 }
@@ -147,10 +152,18 @@ async function resizeAndSettle(
   await clock.flushUpdate();
 }
 
-function startViewportKeyboardState(): ControlledViewportClock {
+function startViewportKeyboardState(enabled = true): ControlledViewportClock {
   const resetSettled$ = resetSignal();
   const { store, signal } = context;
   const clock = new ControlledViewportClock();
+  setPwaKeyboardViewportEnabled(enabled);
+  signal.addEventListener(
+    "abort",
+    () => {
+      setPwaKeyboardViewportEnabled(false);
+    },
+    { once: true },
+  );
   setupVisualViewportKeyboardState(
     signal,
     () => {
@@ -161,7 +174,79 @@ function startViewportKeyboardState(): ControlledViewportClock {
   return clock;
 }
 
-test("Repeated mobile keyboard sessions keep an existing-chat composer visible", async () => {
+test("Disabling the rollout retains the existing PWA scroll reserve and composer reveal", async () => {
+  const viewport = new MockVisualViewport(844);
+  setInnerHeight(844);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  const { editor, scrollIntoView } = focusComposer(true);
+  const clock = startViewportKeyboardState(false);
+
+  await resizeAndSettle(viewport, clock, 520, 100);
+
+  expect(editor).toHaveFocus();
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-scroll-reserve",
+    ),
+  ).toBe("340px");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("");
+  expect(scrollIntoView).toHaveBeenCalledWith({
+    behavior: "auto",
+    block: "end",
+    inline: "nearest",
+  });
+});
+
+test("Changing the rollout while editing switches geometry without discarding the draft or focus", async () => {
+  const viewport = new MockVisualViewport(844);
+  setInnerHeight(844);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  const { editor } = focusComposer(true);
+  editor.textContent = "Keep this draft";
+  const clock = startViewportKeyboardState(false);
+  await resizeAndSettle(viewport, clock, 520, 100);
+
+  setPwaKeyboardViewportEnabled(true);
+  await clock.flushUpdate();
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("520px");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-scroll-reserve",
+    ),
+  ).toBe("");
+
+  setPwaKeyboardViewportEnabled(false);
+  await clock.flushUpdate();
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-top",
+    ),
+  ).toBe("");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-scroll-reserve",
+    ),
+  ).toBe("340px");
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent("Keep this draft");
+});
+
+test("Repeated PWA keyboard sessions fit the shell to the visible viewport", async () => {
   const viewport = new MockVisualViewport(844);
   setInnerHeight(844);
   setStandalone(true);
@@ -173,22 +258,28 @@ test("Repeated mobile keyboard sessions keep an existing-chat composer visible",
   for (let cycle = 0; cycle < 5; cycle += 1) {
     await resizeAndSettle(viewport, clock, 520, 100 + cycle * 20);
 
-    expect(scrollIntoView).toHaveBeenCalledTimes(cycle + 1);
+    expect(document.activeElement).toBe(editor);
     expect(
       document.documentElement.style.getPropertyValue(
-        "--okou-keyboard-scroll-reserve",
+        "--okou-keyboard-viewport-height",
       ),
-    ).toBe("340px");
-    expect(scrollIntoView).toHaveBeenLastCalledWith({
-      behavior: "auto",
-      block: "end",
-      inline: "nearest",
-    });
+    ).toBe("520px");
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--okou-keyboard-viewport-top",
+      ),
+    ).toBe(`${100 + cycle * 20}px`);
 
     viewport.offsetTop = 280;
+    viewport.pageTop = 280;
     viewport.dispatchEvent(new Event("scroll"));
     await clock.flushUpdate();
-    expect(scrollIntoView).toHaveBeenCalledTimes(cycle + 1);
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--okou-keyboard-viewport-top",
+      ),
+    ).toBe("280px");
+    expect(scrollIntoView).not.toHaveBeenCalled();
 
     if (cycle % 2 === 0) {
       // Hiding the software keyboard can leave its accessory bar visible
@@ -202,7 +293,12 @@ test("Repeated mobile keyboard sessions keep an existing-chat composer visible",
     expect(document.documentElement.dataset.keyboardOpen).toBeUndefined();
     expect(
       document.documentElement.style.getPropertyValue(
-        "--okou-keyboard-scroll-reserve",
+        "--okou-keyboard-viewport-height",
+      ),
+    ).toBe("");
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--okou-keyboard-viewport-top",
       ),
     ).toBe("");
     if (document.activeElement !== editor) {
@@ -223,4 +319,122 @@ test("An ordinary mobile browser does not force-scroll the page for the keyboard
 
   expect(document.documentElement.dataset.keyboardOpen).toBe("true");
   expect(scrollIntoView).not.toHaveBeenCalled();
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("");
+});
+
+test("PWA keyboard geometry follows document scrolling without changing the selection", async () => {
+  const viewport = new MockVisualViewport(844);
+  setInnerHeight(844);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  const { editor } = focusComposer(true);
+  editor.textContent = "Keep this draft";
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  selection?.addRange(range);
+  const clock = startViewportKeyboardState();
+  await resizeAndSettle(viewport, clock, 520, 80);
+
+  vi.stubGlobal("scrollY", 40);
+  viewport.pageTop = 120;
+  window.dispatchEvent(new Event("scroll"));
+  await clock.flushUpdate();
+
+  expect(document.activeElement).toBe(editor);
+  expect(selection?.toString()).toBe("Keep this draft");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-top",
+    ),
+  ).toBe("120px");
+});
+
+test("PWA focus panning uses visual document coordinates without double-counting WebKit scrollY", async () => {
+  const viewport = new MockVisualViewport(874);
+  setInnerHeight(874);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  const { editor } = focusComposer(true);
+  const clock = startViewportKeyboardState();
+
+  viewport.resizeTo(471, 341);
+  // iOS 26.5 standalone reports scrollY in the visual viewport's document
+  // coordinates, not the layout viewport coordinates implied by offsetTop.
+  viewport.pageTop = 403;
+  vi.stubGlobal("scrollY", 403);
+  await clock.flushUpdate();
+
+  expect(document.activeElement).toBe(editor);
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-top",
+    ),
+  ).toBe("403px");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("471px");
+});
+
+test("Pinch zoom does not open a keyboard session or reflow an open keyboard layout", async () => {
+  const viewport = new MockVisualViewport(844);
+  setInnerHeight(844);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  focusComposer(true);
+  const clock = startViewportKeyboardState();
+
+  viewport.scale = 2;
+  await resizeAndSettle(viewport, clock, 422, 80);
+  expect(document.documentElement.dataset.keyboardOpen).toBeUndefined();
+
+  viewport.scale = 1;
+  await resizeAndSettle(viewport, clock, 520, 0);
+  viewport.scale = 2;
+  await resizeAndSettle(viewport, clock, 260, 80);
+  expect(document.documentElement.dataset.keyboardOpen).toBe("true");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("520px");
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-top",
+    ),
+  ).toBe("0px");
+
+  await resizeAndSettle(viewport, clock, 422, 80);
+  expect(document.documentElement.dataset.keyboardOpen).toBeUndefined();
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("");
+});
+
+test("Resizing the layout viewport while editing does not look like a software keyboard", async () => {
+  const viewport = new MockVisualViewport(844);
+  setInnerHeight(844);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  const { editor } = focusComposer(true);
+  const clock = startViewportKeyboardState();
+
+  setInnerHeight(520);
+  await resizeAndSettle(viewport, clock, 520);
+
+  expect(document.activeElement).toBe(editor);
+  expect(document.documentElement.dataset.keyboardOpen).toBeUndefined();
+  expect(
+    document.documentElement.style.getPropertyValue(
+      "--okou-keyboard-viewport-height",
+    ),
+  ).toBe("");
 });

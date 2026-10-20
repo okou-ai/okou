@@ -4269,6 +4269,9 @@ function splitQueuedEventsForThinkingIndicator(groups: ChatEventGroup[]): {
 function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
+  const keyboardViewportEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.PwaKeyboardViewport] &&
+    standalonePwa;
 
   // The pane's canvas runs behind the composer the way it runs behind the
   // header. A fill of its own can only match a flat canvas, and a gradient
@@ -4278,11 +4281,15 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0"
+      className={cn(
+        "relative",
+        keyboardViewportEnabled ? "flex min-h-0 flex-col" : "shrink-0",
+      )}
     >
       <div
         className={cn(
           "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-4 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          keyboardViewportEnabled && "min-h-0",
           standalonePwa && "overscroll-contain",
         )}
       >
