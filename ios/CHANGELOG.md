@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/ios-v0.10.0...ios-v0.11.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** paste images into chat attachments ([#41652](https://github.com/okou-ai/okou/issues/41652)) ([1a74785](https://github.com/okou-ai/okou/commit/1a74785397fb00f47ba73f39674f00a93b78a363))
+
+
+### Refactoring
+
+* **ios:** remove dedicated feature switches ([#41675](https://github.com/okou-ai/okou/issues/41675)) ([261b88c](https://github.com/okou-ai/okou/commit/261b88cfcbd8edc9073b6ae64863b5d56e7baaa9))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/ios-v0.9.1...ios-v0.10.0) (2026-10-20)
 
 

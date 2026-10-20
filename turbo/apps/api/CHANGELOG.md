@@ -9,6 +9,44 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.757.0](https://github.com/okou-ai/okou/compare/api-v1.756.0...api-v1.757.0) (2026-10-20)
+
+
+### Features
+
+* **api:** stagger morning brief starts per owner before 07:00 ([#41703](https://github.com/okou-ai/okou/issues/41703)) ([6f5b51f](https://github.com/okou-ai/okou/commit/6f5b51fd5c08f4065a66eeec687feb97efd0879c))
+* **host:** enforce hosted site visibility in the delivery worker ([#41707](https://github.com/okou-ai/okou/issues/41707)) ([15308b6](https://github.com/okou-ai/okou/commit/15308b61db8a86f607f1400363c24449a3d233c2))
+* route document generation through the office skill ([#41735](https://github.com/okou-ai/okou/issues/41735)) ([d5d8560](https://github.com/okou-ai/okou/commit/d5d85600d5beaf338b9d5580b5be0f733814a306))
+
+
+### Bug Fixes
+
+* **api:** resume bounded chat thread snapshot garbage collection ([#41711](https://github.com/okou-ai/okou/issues/41711)) ([f80becf](https://github.com/okou-ai/okou/commit/f80becf373467006e7cc2e48527ad0132bc0779c))
+
+
+### Refactoring
+
+* **api:** inline the slack command connection read ([#41733](https://github.com/okou-ai/okou/issues/41733)) ([60aa5ff](https://github.com/okou-ai/okou/commit/60aa5ff530f42f5162014ad92738dd6bd5ad22d4))
+* **api:** localize calendar account projection ([#41696](https://github.com/okou-ai/okou/issues/41696)) ([a60f034](https://github.com/okou-ai/okou/commit/a60f0348713d62f45cc94e78d208a1114820f961))
+* **api:** localize slack route compose reads ([#41736](https://github.com/okou-ai/okou/issues/41736)) ([89e2c7e](https://github.com/okou-ai/okou/commit/89e2c7ef9f4a91d88c78b46d95e6ead953109ac3))
+* prepare connector projection and runtime readers ([#41715](https://github.com/okou-ai/okou/issues/41715)) ([7500d09](https://github.com/okou-ai/okou/commit/7500d0902eb219e3a2c190a8b0057308e3db8aa9))
+
+
+### Performance Improvements
+
+* **api:** optimize chat maintenance scans and simplify thread artifacts ([#41710](https://github.com/okou-ai/okou/issues/41710)) ([3b63fc5](https://github.com/okou-ai/okou/commit/3b63fc53448127fcb2fd559ae9589d79ad3b6913))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/connectors bumped to 3.16.12
+    * @okouai/core bumped to 8.773.0
+    * @okouai/db bumped to 1.350.0
+    * @okouai/pi-agent-runtime bumped to 1.50.29
+
 ## [1.756.0](https://github.com/okou-ai/okou/compare/api-v1.755.0...api-v1.756.0) (2026-10-20)
 
 
