@@ -84,14 +84,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RemoteControlCliManagement]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Remote control CLI management",
-    description:
-      "Manage owned SSH, VNC and private-network configuration through the CLI.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatResourcePanel]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat resources",
