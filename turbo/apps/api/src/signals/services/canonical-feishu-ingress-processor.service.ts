@@ -304,18 +304,6 @@ async function loadConnection(
   return connectorId ? { ...connection, connectorId } : undefined;
 }
 
-async function markIngressProcessed(db: Db, ingressId: string): Promise<void> {
-  await db
-    .update(feishuChatIngress)
-    .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        eq(feishuChatIngress.status, "processing"),
-      ),
-    );
-}
-
 async function markIngressFailed(
   db: Db,
   ingressId: string,
@@ -615,7 +603,19 @@ async function finishUnconnectedFeishuIngress(
     signal,
   );
   signal.throwIfAborted();
-  await markIngressProcessed(args.db, args.ingressId);
+  const processedIngressDb = args.db;
+  const processedIngressId = args.ingressId;
+  await (async (): Promise<void> => {
+    await processedIngressDb
+      .update(feishuChatIngress)
+      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(feishuChatIngress.id, processedIngressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      );
+  })();
 }
 
 async function finishUnavailableAgentFeishuIngress(
@@ -632,7 +632,19 @@ async function finishUnavailableAgentFeishuIngress(
     signal,
   );
   signal.throwIfAborted();
-  await markIngressProcessed(args.db, args.ingressId);
+  const processedIngressDb = args.db;
+  const processedIngressId = args.ingressId;
+  await (async (): Promise<void> => {
+    await processedIngressDb
+      .update(feishuChatIngress)
+      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(feishuChatIngress.id, processedIngressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      );
+  })();
 }
 
 async function loadFeishuIngressDispatchContext(
@@ -967,7 +979,19 @@ const processClaimedIngress$ = command(
     );
     signal.throwIfAborted();
     if (commandHandled) {
-      await markIngressProcessed(args.db, ingress.ingressId);
+      const processedIngressDb = args.db;
+      const processedIngressId = ingress.ingressId;
+      await (async (): Promise<void> => {
+        await processedIngressDb
+          .update(feishuChatIngress)
+          .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(feishuChatIngress.id, processedIngressId),
+              eq(feishuChatIngress.status, "processing"),
+            ),
+          );
+      })();
       signal.throwIfAborted();
       return null;
     }

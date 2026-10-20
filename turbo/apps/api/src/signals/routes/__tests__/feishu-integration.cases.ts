@@ -597,6 +597,7 @@ async function enableFeishuIntegration(
     readonly orgId: string | null;
   },
   extraSwitches: Readonly<Record<string, boolean>> = {},
+  options: { readonly isolatePg?: true } = {},
 ): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Feishu integration tests require an organization");
@@ -608,6 +609,7 @@ async function enableFeishuIntegration(
       [FEISHU_PLATFORMS[platform].featureSwitch]: true,
       ...extraSwitches,
     },
+    options,
   );
 }
 
@@ -652,6 +654,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
   const deletedUsers = new Set<string>();
   const claims = new Map<string, string>();
   let operations: ReturnType<typeof createFixtureOperationOwner>;
+  let databaseMode: "shared" | "isolated-pending" | "isolated" = "shared";
   let accepted: () => void;
   let retainedHistory: (() => void) | undefined;
   let retainedWebhook: (() => void) | undefined;
@@ -672,8 +675,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       }
     };
   }
-  function own<T>(operation: () => Promise<T> | T): Promise<T> {
+  function own<T>(
+    operation: () => Promise<T> | T,
+    options: { readonly isolatePg?: true } = {},
+  ): Promise<T> {
     return operations.run(() => {
+      if (options.isolatePg) {
+        databaseMode = "isolated-pending";
+      }
       const pending = settleIncludingAbort(() => {
         return Promise.resolve(operation());
       });
@@ -681,6 +690,9 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       return pending.then((result) => {
         if (!result.ok) {
           throw result.error;
+        }
+        if (options.isolatePg) {
+          databaseMode = "isolated";
         }
         return result.value;
       });
@@ -808,94 +820,98 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     // not rewound. From this point only normal teardown notifications are sent.
     await settle(flushWaitUntilForTest);
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    for (const actor of actors.values()) {
-      if (deletedUsers.has(actor.userId)) {
-        continue;
+    if (databaseMode !== "isolated-pending") {
+      for (const actor of actors.values()) {
+        if (deletedUsers.has(actor.userId)) {
+          continue;
+        }
+        await settle(async () => {
+          const reads = createRunReadsApi(context);
+          let page = await reads.requestListLogs(actor, { limit: 100 }, [200]);
+          const all = [...page.body.data];
+          while (page.body.pagination.hasMore) {
+            const cursor = requireValue(
+              page.body.pagination.nextCursor,
+              "Expected Run-list cursor",
+            );
+            page = await reads.requestListLogs(
+              actor,
+              { limit: 100, cursor },
+              [200],
+            );
+            all.push(...page.body.data);
+          }
+          for (const run of all) {
+            if (["queued", "pending", "running"].includes(run.status)) {
+              await settle(() => {
+                return runsApi.requestCancelRun(actor, run.id, [200]);
+              });
+            }
+            const token = claims.get(run.id);
+            if (
+              token &&
+              !["completed", "failed", "timeout"].includes(run.status)
+            ) {
+              await settle(() => {
+                return webhooksApi.requestAgentComplete(
+                  { runId: run.id, exitCode: 1, error: "Run cancelled" },
+                  { authorization: `Bearer ${token}` },
+                  [200],
+                );
+              });
+            }
+          }
+        });
       }
-      await settle(async () => {
-        const reads = createRunReadsApi(context);
-        let page = await reads.requestListLogs(actor, { limit: 100 }, [200]);
-        const all = [...page.body.data];
-        while (page.body.pagination.hasMore) {
-          const cursor = requireValue(
-            page.body.pagination.nextCursor,
-            "Expected Run-list cursor",
+    }
+    await settle(flushWaitUntilForTest);
+    if (databaseMode === "shared") {
+      const organizations = new Map<string, ApiTestUser>();
+      for (const actor of actors.values()) {
+        if (
+          actor.orgId &&
+          !deletedUsers.has(actor.userId) &&
+          (!organizations.has(actor.orgId) || actor.orgRole === "org:admin")
+        ) {
+          organizations.set(actor.orgId, actor);
+        }
+      }
+      for (const actor of organizations.values()) {
+        if (actor.orgRole !== "org:admin") {
+          continue;
+        }
+        await settle(async () => {
+          await enableFeishuIntegration(platform, actor);
+          mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+          const client = setupApp({ context, routes: feishuConnectRoutes })(
+            connectContract,
           );
-          page = await reads.requestListLogs(
-            actor,
-            { limit: 100, cursor },
+          const status = await accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
             [200],
           );
-          all.push(...page.body.data);
-        }
-        for (const run of all) {
-          if (["queued", "pending", "running"].includes(run.status)) {
+          for (const installation of status.body.installations ?? []) {
             await settle(() => {
-              return runsApi.requestCancelRun(actor, run.id, [200]);
-            });
-          }
-          const token = claims.get(run.id);
-          if (
-            token &&
-            !["completed", "failed", "timeout"].includes(run.status)
-          ) {
-            await settle(() => {
-              return webhooksApi.requestAgentComplete(
-                { runId: run.id, exitCode: 1, error: "Run cancelled" },
-                { authorization: `Bearer ${token}` },
+              return accept(
+                client.removeInstallation({
+                  headers: { authorization: "Bearer clerk-session" },
+                  params: { installationId: installation.id },
+                }),
                 [200],
               );
             });
           }
-        }
-      });
-    }
-    await settle(flushWaitUntilForTest);
-    const organizations = new Map<string, ApiTestUser>();
-    for (const actor of actors.values()) {
-      if (
-        actor.orgId &&
-        !deletedUsers.has(actor.userId) &&
-        (!organizations.has(actor.orgId) || actor.orgRole === "org:admin")
-      ) {
-        organizations.set(actor.orgId, actor);
+        });
       }
-    }
-    for (const actor of organizations.values()) {
-      if (actor.orgRole !== "org:admin") {
-        continue;
-      }
-      await settle(async () => {
-        await enableFeishuIntegration(platform, actor);
-        mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-        const client = setupApp({ context, routes: feishuConnectRoutes })(
-          connectContract,
-        );
-        const status = await accept(
-          client.getStatus({
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [200],
-        );
-        for (const installation of status.body.installations ?? []) {
+      for (const actor of actors.values()) {
+        const orgId = actor.orgId;
+        if (orgId && !deletedUsers.has(actor.userId)) {
           await settle(() => {
-            return accept(
-              client.removeInstallation({
-                headers: { authorization: "Bearer clerk-session" },
-                params: { installationId: installation.id },
-              }),
-              [200],
-            );
+            return deleteFeatureSwitchesForUser(context, { ...actor, orgId });
           });
         }
-      });
-    }
-    for (const actor of actors.values()) {
-      const orgId = actor.orgId;
-      if (orgId && !deletedUsers.has(actor.userId)) {
-        await settle(() => {
-          return deleteFeatureSwitchesForUser(context, { ...actor, orgId });
-        });
       }
     }
     if (errors.length === 1) {
@@ -910,6 +926,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     actors.clear();
     deletedUsers.clear();
     claims.clear();
+    databaseMode = "shared";
     retainedHistory = undefined;
     retainedWebhook = undefined;
     let previous: (() => void) | undefined;
@@ -1264,7 +1281,9 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     };
   }
 
-  async function setupFeishuRunFixture(): Promise<FeishuRunFixture> {
+  async function setupFeishuRunFixture(
+    options: { readonly isolatePg?: true } = {},
+  ): Promise<FeishuRunFixture> {
     const appId = `cli_${randomUUID()}`;
     const actor = createActor({
       userId: `user_${randomUUID()}`,
@@ -1273,10 +1292,13 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     });
     const runnerGroup = runsApi.configureRunnerGroup();
     await own(() => {
-      return enableFeishuIntegration(platform, actor, {
-        [FeatureSwitchKey.OkouDebug]: true,
-      });
-    });
+      return enableFeishuIntegration(
+        platform,
+        actor,
+        { [FeatureSwitchKey.OkouDebug]: true },
+        options,
+      );
+    }, options);
     authOrgApi.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
@@ -1717,6 +1739,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     connectContract,
     reset,
     fixtureState,
+    configureTestInstallation,
     setupFeishuInstallationFixture,
     setupFeishuRunFixture,
     claimConnectedFeishuSource,
@@ -1757,6 +1780,7 @@ export function registerFeishuIntegrationTests(
       connectContract,
       reset,
       fixtureState,
+      configureTestInstallation,
       setupFeishuInstallationFixture,
       setupFeishuRunFixture,
       claimConnectedFeishuSource,
@@ -4372,7 +4396,7 @@ export function registerFeishuIntegrationTests(
       });
 
       it("deduplicates unconnected messages and sends one connect link", async () => {
-        const fixture = await setupFeishuRunFixture();
+        const fixture = await setupFeishuRunFixture({ isolatePg: true });
         const { appId, callbackUrl } = fixture;
 
         const firstMessageId = `om_${randomUUID()}`;
@@ -4416,6 +4440,80 @@ export function registerFeishuIntegrationTests(
         expect(
           `${new URL(connectUrl).origin}${new URL(connectUrl).pathname}`,
         ).toBe(`${APP_ORIGIN}${provider.settingsPath}`);
+      });
+
+      it("replies when the default agent has not been initialized", async () => {
+        const actor = createActor({
+          userId: `user_${randomUUID()}`,
+          orgId: `org_${randomUUID()}`,
+          orgRole: "org:admin",
+        });
+        const appId = `cli_${randomUUID()}`;
+        await own(
+          () => {
+            return enableFeishuIntegration(
+              platform,
+              actor,
+              {},
+              { isolatePg: true },
+            );
+          },
+          { isolatePg: true },
+        );
+        const { callbackUrl } = await configureTestInstallation({ appId });
+        const client = feishuConnectClient(platform);
+        const status = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(status.body).toMatchObject({
+          isInstalled: true,
+          callbackVerified: true,
+          defaultAgentId: null,
+        });
+        const messageId = `om_${randomUUID()}`;
+        const event = directMessage(
+          appId,
+          "hello before onboarding",
+          undefined,
+          {
+            messageId,
+          },
+        );
+        const response = await own(() => {
+          return postEvent(callbackUrl, event, { encrypted: true });
+        });
+        expect(response.status).toBe(200);
+        await own(flushWaitUntilForTest);
+        const replies = fixtureState.outboundMessages.filter((message) => {
+          return message.kind === "reply";
+        });
+        expect(replies).toHaveLength(1);
+        const reply = requireValue(
+          replies[0],
+          "Expected unavailable Agent reply",
+        );
+        expect(reply.target).toBe(messageId);
+        expect(reply.replyInThread).toBeTruthy();
+        expect(reply.msgType).toBe("interactive");
+        expect(messageContent(reply)).toContain("Agent unavailable");
+        expect(messageContent(reply)).toContain(
+          `The configured ${provider.name} agent could not be found. Ask an admin to select another agent.`,
+        );
+        const duplicate = await own(() => {
+          return postEvent(callbackUrl, event, { encrypted: true });
+        });
+        expect(duplicate.status).toBe(200);
+        await own(flushWaitUntilForTest);
+        expect(
+          fixtureState.outboundMessages.filter((message) => {
+            return message.kind === "reply";
+          }),
+        ).toHaveLength(1);
       });
 
       it("preserves agent access and retries welcome when reconnecting", async () => {
@@ -4774,7 +4872,7 @@ export function registerFeishuIntegrationTests(
       });
 
       it("handles connected commands and disconnects the current user", async () => {
-        const fixture = await setupFeishuRunFixture();
+        const fixture = await setupFeishuRunFixture({ isolatePg: true });
         const { appId, callbackUrl } = fixture;
         await connectFixtureUser(fixture);
         const client = setupApp({ context, routes: feishuConnectRoutes })(
