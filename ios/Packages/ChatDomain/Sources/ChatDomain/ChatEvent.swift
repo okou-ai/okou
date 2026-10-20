@@ -60,46 +60,5 @@ public struct ChatEvent: Sendable {
       self.userMessage = userMessage
     }
   }
-  public struct UserMessage: Decodable, Sendable {
-    public let version: Int
-    public let parts: [Part]
-
-    public init(
-      version: Int,
-      parts: [Part]
-    ) {
-      self.version = version
-      self.parts = parts
-    }
-    public struct Part: Decodable, Sendable {
-      public let type: String
-      public let text: String?
-      public let titleSnapshot: String?
-      public let nameSnapshot: String?
-      public let fileId: String?
-      public let contentType: String?
-      public let filenameSnapshot: String?
-      public let workflowName: String?
-
-      public init(
-        type: String,
-        text: String? = nil,
-        titleSnapshot: String? = nil,
-        nameSnapshot: String? = nil,
-        fileId: String? = nil,
-        contentType: String? = nil,
-        filenameSnapshot: String? = nil,
-        workflowName: String? = nil
-      ) {
-        self.type = type
-        self.text = text
-        self.titleSnapshot = titleSnapshot
-        self.nameSnapshot = nameSnapshot
-        self.fileId = fileId
-        self.contentType = contentType
-        self.filenameSnapshot = filenameSnapshot
-        self.workflowName = workflowName
-      }
-    }
-  }
+  public typealias UserMessage = ChatUserMessage
 }

@@ -50,6 +50,8 @@ final class ConversationHistoryFixture: Sendable {
               """)
         }
       case path: return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      case path + "/mark-read":
+        return ChatHTTPResponse(body: "{\"lastReadAt\":\"2026-10-20T00:00:00Z\"}")
       case path + "/connector-selections": return ChatHTTPResponse(body: "{\"selections\":[]}")
       case path + "/metadata":
         return ChatHTTPResponse(

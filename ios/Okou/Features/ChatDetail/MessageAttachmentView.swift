@@ -70,7 +70,7 @@ struct MessageAttachmentView: View {
       thumbnailMessage ?? metadata
     )
     .accessibilityIdentifier("message-attachment-\(attachment.id)")
-    .task(id: loadsThumbnail ? attachment.id : nil) {
+    .task(id: loadsThumbnail ? attachment.downloadID : nil) {
       thumbnail = nil
       thumbnailMessage = nil
       guard loadsThumbnail, isMedia else { return }
