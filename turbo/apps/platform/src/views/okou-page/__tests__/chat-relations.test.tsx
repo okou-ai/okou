@@ -249,7 +249,7 @@ test("Keep loaded relationships visible while retrying a failed source", async (
   await within(panel).findByText("Updated child");
 });
 
-test("Hide the resources popup and trigger when the last resource disappears", async () => {
+test("Keep the resources popup and trigger when the last resource disappears", async () => {
   let empty = false;
   await setupRelations({
     mock: () => {
@@ -275,16 +275,15 @@ test("Hide the resources popup and trigger when the last resource disappears", a
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
   click(buttonNamed("Try again", panel));
-  await waitFor(() => {
-    expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
-  });
+  await within(panel).findByText("No artifacts found");
+  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("region", { name: "Resources" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
+  ).toBeInTheDocument();
+  expect(buttonNamed("Open artifacts")).toBeEnabled();
 });
 
-test("Hide the next chat's popup while its relationships load", async () => {
+test("Keep the next chat's popup available while its relationships load", async () => {
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
@@ -326,11 +325,15 @@ test("Hide the next chat's popup while its relationships load", async () => {
       "Next related chat",
     );
   });
-  expect(
-    screen.queryByRole("region", { name: "Resources" }),
-  ).not.toBeInTheDocument();
-  response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(within(panel).findByRole("status")).resolves.toHaveTextContent(
+    "Loading",
+  );
+  expect(
+    within(panel).queryByText("Next related chat"),
+  ).not.toBeInTheDocument();
+  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
+  response.resolve();
   await within(panel).findByText("Research child");
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
 });
