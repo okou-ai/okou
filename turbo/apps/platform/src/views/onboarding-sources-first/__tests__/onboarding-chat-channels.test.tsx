@@ -160,7 +160,7 @@ test("The step sends an admin to Slack's own install and turns connected once th
 
   // New Teams actions opt into the canonical completion page.
   expect(open).toHaveBeenCalledWith(
-    `${window.location.origin}${TEAMS_CONNECT_URL}&completion=settings&_t=${NOW}`,
+    `${window.location.origin}${TEAMS_CONNECT_URL}&_t=${NOW}`,
     "_blank",
   );
 
@@ -333,7 +333,6 @@ test.each([
             id: "official",
             botUsername: "okou_bot",
             loginBotId: "987654321",
-            authCallbackProtocol: 2,
             domainConfigured: false,
           },
         });
@@ -407,7 +406,6 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
           id: "official",
           botUsername: "okou_bot",
           loginBotId: "987654321",
-          authCallbackProtocol: 2,
           domainConfigured: true,
         },
       });

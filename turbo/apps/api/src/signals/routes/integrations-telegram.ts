@@ -162,7 +162,6 @@ const getIntegrationTelegramLinkStatusInner$ = computed(async (get) => {
       botId: query.botId,
       origin: query.origin,
       source: query.source,
-      callbackProtocol: query.callbackProtocol,
       clientRequestId: get(request$).header(CLIENT_REQUEST_ID_HEADER),
     }),
   );

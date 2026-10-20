@@ -42,7 +42,6 @@ test.each(["focus", "visibility", "realtime"])(
     expect(getAction("button", "Install in Teams", card)).toBeEnabled();
     click(getAction("button", "Install in Teams", card));
     const url = new URL(open.calls[0]?.url ?? "");
-    expect(url.searchParams.get("completion")).toBe("settings");
     expect(url.searchParams.get("prompt")).toBe("Retain my work");
     popup.close();
     expect(getAction("button", "Install in Teams", card)).toBeEnabled();
@@ -142,7 +141,6 @@ test("Teams actions preserve prompt and protected preview access", async () => {
   );
   const url = new URL(open.calls[0]?.url ?? "");
   expect(url.origin).toBe("https://pr-431-api.vm6.ai");
-  expect(url.searchParams.get("completion")).toBe("settings");
   expect(url.searchParams.get("prompt")).toBe("Retain my work");
   expect(url.searchParams.get("x-vercel-protection-bypass")).toBe(
     "preview-secret",

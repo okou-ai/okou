@@ -10,7 +10,6 @@ export const teamsOauthConnectQuerySchema = z.object({
   orgId: z.string().optional(),
   userId: z.string().optional(),
   prompt: z.string().optional(),
-  completion: z.literal("settings").optional(),
 });
 
 export const teamsOauthCallbackQuerySchema = z.object({
