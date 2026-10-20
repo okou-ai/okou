@@ -719,6 +719,8 @@ pub enum FailureReason {
     ContextWindowExceeded,
     /// The Codex app-server input limit was exceeded.
     InputTooLarge,
+    /// The provider rejected image input exceeding its size limit.
+    ProviderImageTooLarge,
     /// The provider stopped because an output-token limit was reached.
     OutputTokenLimit,
     /// The provider rejected the request because of a rate limit.
@@ -759,6 +761,7 @@ impl FailureReason {
             Self::TermsAcceptanceRequired => "terms_acceptance_required",
             Self::ContextWindowExceeded => "context_window_exceeded",
             Self::InputTooLarge => "input_too_large",
+            Self::ProviderImageTooLarge => "provider_image_too_large",
             Self::OutputTokenLimit => "output_token_limit",
             Self::ProviderRateLimited => "provider_rate_limited",
             Self::ProviderOverloaded => "provider_overloaded",
@@ -789,6 +792,7 @@ impl From<FailureReason>
             FailureReason::TermsAcceptanceRequired => Self::TermsAcceptanceRequired,
             FailureReason::ContextWindowExceeded => Self::ContextWindowExceeded,
             FailureReason::InputTooLarge => Self::InputTooLarge,
+            FailureReason::ProviderImageTooLarge => Self::ProviderImageTooLarge,
             FailureReason::OutputTokenLimit => Self::OutputTokenLimit,
             FailureReason::ProviderRateLimited => Self::ProviderRateLimited,
             FailureReason::ProviderOverloaded => Self::ProviderOverloaded,
@@ -1524,6 +1528,10 @@ mod tests {
                 "context_window_exceeded",
             ),
             (FailureReason::InputTooLarge, "input_too_large"),
+            (
+                FailureReason::ProviderImageTooLarge,
+                "provider_image_too_large",
+            ),
             (FailureReason::OutputTokenLimit, "output_token_limit"),
             (FailureReason::ProviderRateLimited, "provider_rate_limited"),
             (FailureReason::ProviderOverloaded, "provider_overloaded"),

@@ -12668,6 +12668,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     describe("RUN-03: sandbox completion reports against missing completion outputs and settled runs", () => {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
+          "provider_image_too_large",
           "insufficient_credits",
           "invalid_api_key",
           "invalid_credentials",

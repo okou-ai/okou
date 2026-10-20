@@ -517,6 +517,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
                     | FailureReason::InvalidCredentials
                     | FailureReason::TermsAcceptanceRequired
                     | FailureReason::ContextWindowExceeded
+                    | FailureReason::ProviderImageTooLarge
                     | FailureReason::OutputTokenLimit
                     | FailureReason::ProviderRateLimited
                     | FailureReason::ProviderOverloaded
@@ -741,6 +742,7 @@ mod tests {
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,
             FailureReason::ContextWindowExceeded,
+            FailureReason::ProviderImageTooLarge,
             FailureReason::OutputTokenLimit,
             FailureReason::ProviderRateLimited,
             FailureReason::ProviderOverloaded,
@@ -897,6 +899,13 @@ mod tests {
     fn pi_provider_failures_log_info_with_observed_request_and_retry_evidence() {
         for (reason, status, retries, retry_limit, message) in [
             (
+                FailureReason::ProviderImageTooLarge,
+                413,
+                0,
+                None,
+                r#"413: {"message":"Downloaded image content cannot exceed 30MB","code":413,"metadata":{"provider_name":null}}"#,
+            ),
+            (
                 FailureReason::ProviderRateLimited,
                 429,
                 3,
@@ -924,7 +933,9 @@ mod tests {
                 PromptMetadata::from_prompt("plain prompt"),
             )
             .with_failure_reason(reason)
-            .with_failure_detail_source(FailureDetailSource::PiResult);
+            .with_failure_detail_source(FailureDetailSource::PiResult)
+            .with_cli_exit_code(1)
+            .with_cli_observed_exit(CliObservedExitDiagnostic::from_exit_code(0));
             diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
                 http_status: Some(status),
                 transport_attempts: 1,
@@ -939,6 +950,10 @@ mod tests {
             assert_field_eq(&event, "failure_framework", "pi");
             assert_field_eq(&event, "failure_class", "cli_nonzero");
             assert_field_eq(&event, "failure_detail_source", "pi_result");
+            assert_field_eq(&event, "error", message);
+            assert_field_eq(&event, "exit_code", "1");
+            assert_field_eq(&event, "failure_cli_exit_code", "1");
+            assert_field_eq(&event, "cli_observed_exit_code", "0");
             assert_field_eq(&event, "model_http_status", &status.to_string());
             assert_field_eq(&event, "model_transport_attempts", "1");
             assert_field_eq(&event, "model_retry_attempts", &retries.to_string());
@@ -1144,6 +1159,7 @@ mod tests {
     #[test]
     fn info_level_reason_on_non_cli_failure_logs_job_execution_failed_at_error() {
         for reason in [
+            FailureReason::ProviderImageTooLarge,
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,

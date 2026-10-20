@@ -40,6 +40,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   safety_policy_refusal: "suppress",
   codex_access_program_unavailable: "suppress",
   input_too_large: "suppress",
+  provider_image_too_large: "suppress",
   execution_timeout: "suppress",
   insufficient_credits: "suppress-caller-owned",
   provider_insufficient_credits: "suppress-caller-owned",

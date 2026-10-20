@@ -20,6 +20,7 @@ export const knownRunFailureReasonSchema = z.enum([
   "terms_acceptance_required",
   "context_window_exceeded",
   "input_too_large",
+  "provider_image_too_large",
   "output_token_limit",
   "provider_rate_limited",
   "provider_overloaded",
