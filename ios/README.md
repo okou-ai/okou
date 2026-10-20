@@ -13,8 +13,14 @@ enables native photo, video and file selection in new and existing chats, with
 local previews, upload progress, removal and retry. Uploads use the existing
 direct-to-storage API and its 1 GB limit; files of 5 MB or more use multipart
 uploads. A message can contain files with or without text. Selected files and
-uploads belong to their workspace and draft, and are cleaned up when removed,
-sent or closed. Its home screen follows the mobile
+uploads belong to their workspace and draft. Draft text, canonical message context
+and completed-upload metadata persist per API origin, user, workspace and
+Agent/thread, and synchronize through the existing draft APIs. New-chat drafts
+belong to their Agent without creating a thread. Local file copies are removed
+when removed from a draft or sent; closing retains recovery metadata. File bytes
+remain temporary: interrupted uploads require explicit retry through the existing
+uploader, and purged copies require reselection. Restored uploads are checked
+against the file authority before sending. Its home screen follows the mobile
 web agent-chat structure with an agent avatar, greeting, and composer; focusing
 the compact composer animates it into a multiline field. The ChatGPT-style
 sliding sidebar contains pinned agents and recent chats scoped to the selected

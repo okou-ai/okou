@@ -58,11 +58,8 @@ export function planUsageCharges(events: readonly PricedUsageEvent[]) {
   return { byUser, outcomes };
 }
 
-export function settledEventsSql(
-  plan: ReturnType<typeof planUsageCharges>,
-  at: Date,
-) {
-  const source = sql`unnest(${sql.param(
+function settlementSource(plan: ReturnType<typeof planUsageCharges>) {
+  return sql`unnest(${sql.param(
     plan.outcomes.map((outcome) => {
       return outcome.id;
     }),
@@ -77,13 +74,49 @@ export function settledEventsSql(
         return outcome.billingError;
       }),
     )}::varchar(50)[]) AS settlement(id, credits_charged, billing_error)`;
+}
+
+export function settledEventsSql(
+  plan: ReturnType<typeof planUsageCharges>,
+  at: Date,
+) {
   return sql`UPDATE ${usageEvent}
     SET credits_charged = settlement.credits_charged,
         status = 'processed',
         processed_at = ${sql.param(at, usageEvent.processedAt)},
         billing_error = settlement.billing_error
-    FROM ${source}
+    FROM ${settlementSource(plan)}
     WHERE ${usageEvent.id} = settlement.id`;
+}
+
+/**
+ * Free Official usage has no cash, grant, expiry-lot or debt effect, so one
+ * statement claims and settles it. Every prepared event must still be pending
+ * when locked; otherwise nothing is written and the whole batch stays pending
+ * for the next settlement cycle, like a rolled-back paid claim.
+ */
+export function freeUsageSettlementSql(
+  orgId: string,
+  snapshots: readonly PendingUsageSnapshot[],
+  plan: ReturnType<typeof planUsageCharges>,
+  at: Date,
+) {
+  return sql`WITH claimable AS (
+      SELECT ${usageEvent.id} AS id FROM ${usageEvent}
+      WHERE ${claimUsageWhere(orgId, snapshots)}
+      FOR UPDATE
+    ), complete AS (
+      SELECT count(*) = ${snapshots.length} AS claimed FROM claimable
+    )
+    UPDATE ${usageEvent}
+    SET credits_charged = settlement.credits_charged,
+        status = 'processed',
+        processed_at = ${sql.param(at, usageEvent.processedAt)},
+        billing_error = settlement.billing_error
+    FROM ${settlementSource(plan)}, complete
+    WHERE ${usageEvent.id} = settlement.id
+      AND ${usageEvent.id} IN (SELECT id FROM claimable)
+      AND complete.claimed`;
 }
 
 export interface ConditionalDeduction {

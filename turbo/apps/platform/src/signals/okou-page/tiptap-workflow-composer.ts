@@ -2165,7 +2165,9 @@ function createSuggestionHintPlugin(
           kind === "slash"
             ? findActiveSlashWorkflowRange(text, caretIndex)
             : findActiveChatThreadSuggestionRange(text, caretIndex);
-        if (range?.query !== "" || /^\S/u.test(text.slice(caretIndex))) {
+        // Only text before the caret belongs to the active query; existing text
+        // after it must not hide the hint when inserting a trigger.
+        if (range?.query !== "") {
           return DecorationSet.empty;
         }
         const hint =

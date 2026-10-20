@@ -221,6 +221,7 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
   const clippedSource=slides.map(()=>[]);
   const sourceTexts = slides.map((slide,index) => {
     const texts=textNodes(slide).flatMap(node=>{const g=window.__okouNative?.geometry(node.parentElement);if(g&&(!g.similarity||Math.abs(g.rotation)>.0001))return [node.nodeValue.replace(/\s+/g,' ').trim()];const parts=fragment(node,false);if(parts.clipped)clippedSource[index].push({original:node.nodeValue.trim(),visible:parts.map(p=>p.text).join(' ')});return parts.map(p=>p.text.trim());});
+    for(const element of slide.querySelectorAll('svg text'))if(!element.closest('defs,symbol,clipPath,mask,pattern,marker')&&visible(element)&&element.textContent.trim())texts.push(element.textContent.replace(/\s+/g,' ').trim());
     for(const element of [slide,...slide.querySelectorAll('*')])for(const item of window.__okouNative?.nodes.get(element)?.generated||[])if(item.text.trim())texts.push(item.text.trim());
     return texts;
   });
