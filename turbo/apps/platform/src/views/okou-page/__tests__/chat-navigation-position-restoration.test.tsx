@@ -1,8 +1,10 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
@@ -614,32 +616,118 @@ test("Return to the latest message in a thread opened from the sidebar", async (
   await expectAtLatestActivity(geometry);
 });
 
-test("Open a conversation at a linked message", async () => {
-  const events = conversationEvents("deep-link", "Linked");
+test.each(["event", "run"])(
+  "Open a conversation at a linked %s",
+  async (kind) => {
+    const linkedEventId = "deep-link-run-3";
+    const events = conversationEvents("deep-link", "Linked").map((event) => {
+      return event.id === "deep-link-user-3"
+        ? { ...event, id: linkedEventId }
+        : event;
+    });
+    mockChatLifecycleWithoutBrowserSession({
+      threadId: DEEP_LINK_THREAD_ID,
+      threadTitle: "Linked conversation",
+      chatEvents: events,
+    });
+    await setupPage({
+      context,
+      host: APP_HOST,
+      path: `/chats/${DEEP_LINK_THREAD_ID}#${kind}-${linkedEventId}`,
+    });
+
+    const linkedText = "Linked message 3";
+    await waitForThreadMessage(DEEP_LINK_THREAD_ID, linkedText);
+    const geometry = installChatScrollGeometry(
+      threadContainer(DEEP_LINK_THREAD_ID),
+    );
+    fireEvent.resize(window);
+
+    await expectReadingPosition(geometry, linkedText, 0);
+    expect(geometry.viewportOffsetFor("Linked message 6")).toBeGreaterThan(
+      geometry.viewportHeight(),
+    );
+    expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
+  },
+);
+
+test("Click a received resource message to locate its run in the current conversation", async () => {
+  context.mocks.data.userPreferences({
+    chatResourcesEnabledByDefault: false,
+  });
+  const linkedRunId = "d0000000-0000-4000-a000-000000000801";
+  const peerId = "d0000000-0000-4000-a000-000000000802";
+  const linkedText = "Linked message 3";
+  const events = conversationEvents("resource-link", "Linked").map((event) => {
+    return event.runId === "resource-link-run-3"
+      ? {
+          ...event,
+          id: event.id === "resource-link-user-3" ? linkedRunId : event.id,
+          runId: linkedRunId,
+        }
+      : event;
+  });
   mockChatLifecycleWithoutBrowserSession({
     threadId: DEEP_LINK_THREAD_ID,
     threadTitle: "Linked conversation",
     chatEvents: events,
   });
-  const linkedEventId = "deep-link-user-3";
-
+  context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+    return respond(200, {
+      items: [
+        {
+          threadId: peerId,
+          title: "Related conversation",
+          status: "idle",
+          sentCount: 0,
+          receivedCount: 1,
+          lastMessageAt: "2026-07-01T10:00:07.000Z",
+        },
+      ],
+    });
+  });
+  context.mocks.api(chatRelationsContract.messages, ({ respond }) => {
+    return respond(200, {
+      items: [
+        {
+          id: "d0000000-0000-4000-a000-000000000803",
+          direction: "received",
+          sourceChatThreadId: peerId,
+          targetChatThreadId: DEEP_LINK_THREAD_ID,
+          sourceRunId: "d0000000-0000-4000-a000-000000000804",
+          targetRunId: linkedRunId,
+          messageEventId: linkedRunId,
+          createdAt: "2026-07-01T10:00:07.000Z",
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: linkedText }],
+          },
+        },
+      ],
+    });
+  });
   await setupPage({
     context,
     host: APP_HOST,
-    path: `/chats/${DEEP_LINK_THREAD_ID}#event-${linkedEventId}`,
+    path: `/chats/${DEEP_LINK_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-
-  const linkedText = "Linked message 3";
   await waitForThreadMessage(DEEP_LINK_THREAD_ID, linkedText);
   const geometry = installChatScrollGeometry(
     threadContainer(DEEP_LINK_THREAD_ID),
   );
   fireEvent.resize(window);
+  await waitFor(() => {
+    expect(geometry.atBottom()).toBeTruthy();
+  });
+  click(buttonNamed("Open artifacts"));
+  const resources = await screen.findByRole("region", { name: "Resources" });
+  await within(resources).findByText("Related conversation");
+  click(buttonNamed("Messages with Related conversation"));
+  const message = await within(resources).findByText(linkedText);
+  click(message.closest("a")!);
 
   await expectReadingPosition(geometry, linkedText, 0);
-  expect(geometry.viewportOffsetFor("Linked message 6")).toBeGreaterThan(
-    geometry.viewportHeight(),
-  );
   expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
 });
 
