@@ -35,6 +35,53 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     XCTAssertEqual(Set(keys.withLock { $0 }).count, 1)
   }
 
+  func testConnectionRefreshesModelsBeforeQuotaAndSurvivesAuthorizationDismissal() async throws {
+    let quotaGate = ModelResponseGate()
+    let quotaStarted = expectation(description: "Quota is still loading after model refresh")
+    let linked = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url!.path
+      if path.hasSuffix("/sessions") { return authSession(code: false) }
+      if path.hasSuffix("/complete") {
+        linked.withLock { $0 = true }
+        return ChatHTTPResponse(body: "{\"status\":\"complete\"}")
+      }
+      if path == "/api/me/3rd-party-subscriptions" {
+        quotaStarted.fulfill()
+        await quotaGate.wait()
+        return ChatHTTPResponse(body: ModelHTTPFixtures.subscriptions)
+      }
+      var response = try XCTUnwrap(ModelHTTPFixtures.response(path))
+      if path == "/api/user-model-preference", linked.withLock({ $0 }) {
+        response.body = response.body.replacingOccurrences(
+          of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
+      }
+      return response
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    defer {
+      quotaGate.open()
+      resource.close()
+    }
+    await resource.refresh()
+    let store = resource.subscriptions
+    store.start(type: .claude)
+    try await eventually { store.phase == .pending }
+    store.authorizationCode = "example-code"
+    let completion = Task { await store.submitClaudeCode() }
+    await fulfillment(of: [quotaStarted], timeout: 3)
+    XCTAssertEqual(resource.configuration?.defaultSelection.model, "claude-model")
+    XCTAssertTrue(store.accounts.isEmpty)
+    store.cancelAuth()
+    completion.cancel()
+    quotaGate.open()
+    await completion.value
+    XCTAssertEqual(store.phase, .idle)
+    XCTAssertEqual(store.accounts.first?.id, ModelHTTPFixtures.accountID)
+    XCTAssertEqual(store.authorizationCode, "")
+  }
+
   func testCodexPollsWithSessionTokenAndRefreshesAfterSuccess() async throws {
     let completed = expectation(description: "Codex token completion")
     let fixture = ChatHTTPFixture { request in

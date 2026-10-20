@@ -22,6 +22,8 @@ final class PersonalSubscriptionStore {
   private(set) var authError: String?
   @ObservationIgnored private var session: SubscriptionAuthSession?
   @ObservationIgnored private var flowTask: Task<Void, Never>?
+  @ObservationIgnored private var mutationRefreshTask: Task<Void, Never>?
+  private var mutationRevision = UUID()
   private var authAccountID: String?
   private var authRevision = UUID()
   private var readRevision = 0
@@ -84,8 +86,7 @@ final class PersonalSubscriptionStore {
     do {
       try await action()
       guard !closed, !Task.isCancelled else { return }
-      await refresh(force: true)
-      await didMutate?()
+      await refreshAfterMutation()
     } catch is CancellationError {
     } catch {
       guard !closed else { return }
@@ -188,9 +189,23 @@ final class PersonalSubscriptionStore {
     guard authRevision == request, !closed else { return }
     phase = .complete
     clearSecrets()
-    await refresh(force: true)
-    guard authRevision == request, !closed else { return }
-    await didMutate?()
+    await refreshAfterMutation()
+  }
+  /// Successful mutations invalidate model structure before slow upstream quota reads.
+  /// This workspace-owned task survives dismissal of the authorization sheet.
+  private func refreshAfterMutation() async {
+    mutationRefreshTask?.cancel()
+    let request = UUID()
+    mutationRevision = request
+    let task = Task { [weak self] in
+      guard let self, !closed else { return }
+      defer { if mutationRevision == request { mutationRefreshTask = nil } }
+      await didMutate?()
+      guard !closed, !Task.isCancelled else { return }
+      await refresh(force: true)
+    }
+    mutationRefreshTask = task
+    await task.value
   }
   private func expire(type: PersonalSubscriptionType, token: String, request: UUID) async {
     guard authRevision == request, !closed else { return }
@@ -228,6 +243,8 @@ final class PersonalSubscriptionStore {
   }
   func close() {
     closed = true
+    mutationRefreshTask?.cancel()
+    mutationRefreshTask = nil
     cancelAuth()
     readRevision += 1
     accounts = []
