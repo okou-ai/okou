@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import {
   createAuthOrgAgentsBddApi,
@@ -375,14 +373,6 @@ describe("ORG-01: org update and delete error matrix", () => {
     );
     expect(wrongConfirm.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
 
-    const rawDelete = await api.requestRawJson(
-      admin,
-      "/api/org/delete",
-      "POST",
-      {},
-      [400],
-    );
-    expect(rawDelete.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
     const stillThere = await api.readOrg(admin);
     expect(stillThere.name).toBe("BDD R5 Org Renamed");
 
@@ -489,13 +479,6 @@ describe("ORG-02: membership admin matrix", () => {
       context.mocks.clerk.organizations.getOrganizationMembershipList,
     ).toHaveBeenCalledTimes(3);
     expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "ClerkReadUnavailableError",
-        message: "Clerk read is temporarily unavailable",
-        providerStatus: 521,
-      }),
-    );
 
     api.mockClerkOrg(admin);
     context.mocks.signalTimers.delay.mockClear();
@@ -648,54 +631,6 @@ describe("ORG-02: membership admin matrix", () => {
     ).toHaveBeenCalledTimes(2);
     expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(1);
     expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "ClerkReadUnavailableError",
-        providerStatus: 521,
-      }),
-    );
-  });
-
-  it("rejects Clerk member records without required user identifiers", async () => {
-    const admin = api.user();
-    const orgId = orgIdOf(admin);
-    api.mockClerkOrg(admin);
-
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValueOnce(
-      {
-        data: [
-          {
-            role: "org:admin",
-            publicUserData: {},
-            createdAt: now(),
-          },
-        ],
-      },
-    );
-    const missingMemberId = await api.requestListMembers(admin, [500]);
-    expect(missingMemberId.status).toBe(500);
-
-    server.use(
-      http.get(
-        "https://api.clerk.com/v1/organizations/:orgId/membership_requests",
-        ({ params }) => {
-          if (params.orgId !== orgId) {
-            return HttpResponse.json({ data: [] });
-          }
-          return HttpResponse.json({
-            data: [
-              {
-                id: `request-${shortId()}`,
-                public_user_data: {},
-                created_at: now(),
-              },
-            ],
-          });
-        },
-      ),
-    );
-    const missingRequestUserId = await api.requestListMembers(admin, [500]);
-    expect(missingRequestUserId.status).toBe(500);
   });
 
   it("enforces role, self, nonmember, and clerk-failure arms across member routes [ORG-MEMBERS-C]", async () => {

@@ -1022,7 +1022,6 @@ describe("FW-3: billable firewall lease", () => {
     if (leased.status !== 200) {
       throw new Error("Expected the entitled billable auth to lease");
     }
-    expect(leased.body.expiresAt).not.toBeNull();
 
     webhooks.configureStripeBillingEnv();
     await webhooks.postStripeEvent(

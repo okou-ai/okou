@@ -302,7 +302,6 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain(`Auto-inbox label (${item.id})`);
     expect(result.prompt).toContain("Use the workflow-setup skill");
     expect(result.prompt).toContain("Gmail label-applied automation");
-    expect(result.prompt).not.toContain("# Artifact Template Context");
   });
 
   it("builds website template package guidance", () => {

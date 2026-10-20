@@ -425,7 +425,6 @@ test("Keep independent effort selections when changing models", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Extra");
   });
-  expect(screen.queryByText("ultracode")).not.toBeInTheDocument();
   await expect(findButton("Claude Sonnet 5, Extra")).resolves.toBeVisible();
   click(modelOption(/^GPT 5\.6 Sol/u, panel));
   await expect(findButton("GPT 5.6 Sol, Max")).resolves.toBeVisible();

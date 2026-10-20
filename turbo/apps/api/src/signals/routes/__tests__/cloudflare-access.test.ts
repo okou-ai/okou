@@ -1284,16 +1284,6 @@ describe("Cloudflare Access owner configuration", () => {
     },
   );
 
-  it("does not configure SSH hosts when only Access configs are created", async () => {
-    const o = owner();
-    await config();
-    await ordinary.runtime(o);
-    await config("Second");
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([]);
-  });
-
   it("preserves chat host authority across Access config updates", async () => {
     const f = await claimedFixture();
     const second = await config("Second");

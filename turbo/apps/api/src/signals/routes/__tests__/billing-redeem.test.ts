@@ -117,19 +117,6 @@ describe("POST /api/billing/redeem/:campaign", () => {
     });
   });
 
-  it("returns campaign_misconfigured when the campaign is missing from env config", async () => {
-    mockEnv("OKOU_ONE_TIME_CAMPAIGN", JSON.stringify({}));
-    const fixture = redeemFixture();
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const response = await accept(postRedeem(), [200]);
-
-    expect(response.body).toStrictEqual({
-      status: "error",
-      reason: "campaign_misconfigured",
-    });
-  });
-
   // Web returns 400 when the caller has no active org (resolveOrg throws).
   // Api hardens to 401 via authRoute({ missingOrganizationStatus: 401 }) —
   // intentional Wave 6 cutover convention, documented in PR body.

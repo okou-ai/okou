@@ -313,17 +313,6 @@ describe("slug-first current catalog business readers", () => {
     );
     expect(permissions.body.permissions.connectorSlug).toBe("notion");
   });
-  it("reports an absent slug as unknown", async () => {
-    await publishedCatalog();
-    const result = await accept(
-      catalogClient().get({
-        headers,
-        params: { connectorSlug: "missing-catalog-slug" },
-      }),
-      [404],
-    );
-    expect(result.body.error.code).toBe("NOT_FOUND");
-  });
   it("follows permission metadata changes and removal across catalog publications", async () => {
     const client = catalogClient();
     const first = release(

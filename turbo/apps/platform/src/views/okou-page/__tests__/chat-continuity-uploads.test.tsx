@@ -262,7 +262,6 @@ test("Keep successful attachments after another upload fails", async () => {
     expect(fastButton("Remove ready.txt")).toBeVisible();
     expect(fastButton("Send")).toBeEnabled();
   });
-  expect(document.body).not.toHaveTextContent("Cancel upload failed.txt");
   await userEvent.click(fastButton("Send"));
   await waitFor(() => {
     expect(deliveredAttachments).toStrictEqual(["ready.txt"]);

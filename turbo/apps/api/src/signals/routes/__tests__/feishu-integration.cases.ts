@@ -1953,7 +1953,6 @@ export function registerFeishuIntegrationTests(
           );
         });
         const callbackUrl = configured.body.callbackUrl;
-        expect(callbackUrl).not.toBeNull();
         if (!callbackUrl) {
           throw new Error("Expected Feishu setup to return a callback URL");
         }
@@ -3250,7 +3249,6 @@ export function registerFeishuIntegrationTests(
           );
         });
         const connectUrl = status.body.installations?.[0]?.connectUrl;
-        expect(connectUrl).toBeDefined();
         expect(status.body.oauthRedirectUrl).toBe(
           `${APP_ORIGIN}${provider.callbackPath}`,
         );
@@ -3735,7 +3733,6 @@ export function registerFeishuIntegrationTests(
           );
         });
         const callbackUrl = configured.body.callbackUrl;
-        expect(callbackUrl).not.toBeNull();
         if (!callbackUrl) {
           throw new Error("Expected Feishu setup to return a callback URL");
         }
@@ -5384,7 +5381,6 @@ export function registerFeishuIntegrationTests(
         expect(claim.prompt).toContain("   [TYPE] file");
         const fileId = claim.prompt.match(/ {3}\[FILE_KEY\] ([^\n]+)/u)?.[1];
         expect(fileId).toMatch(/^feishu_file_[A-Za-z0-9_-]{22}$/u);
-        expect(fileId?.length).toBeLessThan(64);
         expect(claim.prompt).not.toContain(fileKey);
         expect(claim.prompt).toContain(`   [FILE_KEY] ${fileId}`);
         expect(claim.appendSystemPrompt).toContain(

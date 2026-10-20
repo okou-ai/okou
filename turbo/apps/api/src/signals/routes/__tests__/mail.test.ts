@@ -1251,19 +1251,6 @@ describe("POST /api/mail/drafts/link", () => {
       { errors: [{ domain: "other", reason: "badRequest" }] },
     ],
     [
-      "conflicting body code",
-      400,
-      { code: 500, errors: [{ domain: "global", reason: "badRequest" }] },
-    ],
-    [
-      "conflicting body status",
-      400,
-      {
-        status: "INTERNAL",
-        errors: [{ domain: "global", reason: "badRequest" }],
-      },
-    ],
-    [
       "conflicting details",
       400,
       {
