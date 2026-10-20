@@ -11,6 +11,9 @@ struct ChatDetailView: View {
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
   @State private var messageToSelect: ChatMessage?
+  @State private var usageDetails: UsageDetails?
+
+  private struct UsageDetails: Identifiable { let id: String }
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0
@@ -46,6 +49,8 @@ struct ChatDetailView: View {
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory)
         )
+      case .usage(let runID):
+        result.append(.usage(runID: runID, state: conversation.runUsage.states[runID] ?? .loading))
       }
     }
     if let source = history.recommendedFollowups, conversation.pending.isEmpty {
@@ -109,6 +114,16 @@ struct ChatDetailView: View {
       MessageTextSelectionSheet(text: message.copyText)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
+    .sheet(item: $usageDetails) { selection in
+      ConversationRunUsageDetails(
+        state: conversation.runUsage.states[selection.id] ?? .loading,
+        catalog: conversation.modelSelection?.models.usageCatalog,
+        retry: { conversation.runUsage.retry(selection.id) }
+      )
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
+      .task { await conversation.modelSelection?.models.loadUsageCatalog() }
+    }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
         draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
@@ -206,6 +221,15 @@ struct ChatDetailView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
+    case .usage(let runID, let state):
+      ConversationRunUsageView(
+        runID: runID, state: state, showDetails: { usageDetails = UsageDetails(id: runID) }
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: "usage:\(runID)", anchor: anchor) }
+      }
+      .padding(.horizontal, 26)
     }
   }
 

@@ -7,7 +7,7 @@ enum ChatWorkProjection {
   }
 
   static func build(rows: [ChatEvent], messages: [ChatMessage])
-    -> (messages: [ChatMessage], sections: [ChatWorkSection])
+    -> (messages: [ChatMessage], sections: [ChatWorkSection], usageAnchors: [String: String])
   {
     let byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
     let revoked = Set(rows.compactMap(\.revokesEventId))
@@ -78,9 +78,26 @@ enum ChatWorkProjection {
           hiddenMessageIDs: hidden, stepCount: outputs.count - 1,
           startTime: eventTime(first), endTime: endTimes[index]))
     }
-    return (
-      messages.filter { !statusIDs.contains($0.id) || latestStatusIDs.contains($0.id) }, sections
-    )
+    let visibleMessages = messages.filter {
+      !statusIDs.contains($0.id) || latestStatusIDs.contains($0.id)
+    }
+    let visibleIDs = Set(visibleMessages.map(\.id))
+    var usageAnchors: [String: String] = [:]
+    for phase in phases {
+      let assistant = phase.events.filter {
+        visibleIDs.contains($0.id) && byID[$0.id]?.role != .user
+      }
+      // Match PWA's last eligible assistant group. Local lifecycle placeholders
+      // alone are not server output; a later steer must not move an older total.
+      guard let runID = phase.runID,
+        assistant.contains(where: {
+          $0.eventType == .outputMessage || $0.payload?.error?.isEmpty == false
+        }),
+        let anchor = assistant.last
+      else { continue }
+      usageAnchors[runID] = anchor.id
+    }
+    return (visibleMessages, sections, usageAnchors)
   }
 
   private static func isInput(_ type: ChatEventType) -> Bool {

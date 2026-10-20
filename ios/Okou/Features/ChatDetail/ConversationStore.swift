@@ -63,6 +63,7 @@ final class ConversationStore {
   let messageMarkdown: MessageMarkdownCache
   let measurements = ConversationMeasurementCache()
   let activitySummary: ConversationActivitySummary
+  let runUsage: ConversationRunUsageStore
   private var detailOwner: UUID?
 
   private let sync: ChatSync
@@ -100,6 +101,7 @@ final class ConversationStore {
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil
   ) {
     self.modelSelection = modelSelection
+    self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
@@ -317,7 +319,12 @@ final class ConversationStore {
       detailOwner = nil
       attachmentViewer.deactivate()
     }
+    reconcileVisibility()
+  }
+
+  func reconcileVisibility() {
     reconcileActivitySummary()
+    reconcileRunUsage()
   }
 
   func reconcileActivitySummary() {
@@ -330,6 +337,7 @@ final class ConversationStore {
   func close() {
     closed = true
     activitySummary.stop()
+    runUsage.close()
     modelSelection?.close()
     refreshTask?.cancel()
     sendTask?.cancel()
@@ -408,6 +416,7 @@ final class ConversationStore {
         section.hiddenMessageIDs.map { ($0, section) }
       })
     var nextItems: [ConversationItem] = []
+    let usageAnchors = history?.runUsageAnchors ?? [:]
     for message in next {
       if let section = headers[message.id] {
         nextItems.append(.work(section, expanded: expandedWorkSections.contains(section.id)))
@@ -418,8 +427,16 @@ final class ConversationStore {
       } else {
         nextItems.append(.message(message))
       }
+      if let runID = message.runID, usageAnchors[runID] == message.id,
+        history?.usageEventIDs[runID] != nil
+      {
+        nextItems.append(.usage(runID: runID))
+      }
     }
-    guard items != nextItems else { return }
+    guard items != nextItems else {
+      reconcileRunUsage()
+      return
+    }
     if let position = readingPosition, !nextItems.contains(where: { $0.id == position.messageID }) {
       let surviving = Set(nextItems.map(\.id))
       if let index = items.firstIndex(where: { $0.id == position.messageID }),
@@ -442,6 +459,16 @@ final class ConversationStore {
     let next = Array(items[renderWindow.range])
     if visibleItems != next { visibleItems = next }
     hasEarlierMessages = renderWindow.hasEarlierMessages
+    reconcileRunUsage()
+  }
+
+  private func reconcileRunUsage() {
+    runUsage.update(
+      runIDs: isVisible()
+        ? visibleItems.compactMap {
+          if case .usage(let runID) = $0 { return runID }
+          return nil
+        } : [], events: history?.usageEventIDs ?? [:])
   }
 
   private func persistPending() {

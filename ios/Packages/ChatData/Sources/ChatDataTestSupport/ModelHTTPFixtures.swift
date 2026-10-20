@@ -24,8 +24,8 @@ public enum ModelHTTPFixtures {
     {"model":"codex-model","resolvedModel":"codex-model","displayName":"Codex Example","sortOrder":2,"replacedBy":null,"piRouteClass":"gpt-codex","runOptions":{"fast":{"chatGptUsageMultiplier":3.75}}},
     {"model":"claude-model","resolvedModel":"claude-model","displayName":"Claude Example","sortOrder":3,"replacedBy":null}],
     "routes":[
-    {"model":"codex-model","providerType":"codex-oauth-token","concreteProviderType":"codex-oauth-token","enabled":true,"priority":0,"efforts":["low","medium","high","xhigh","max","ultra"],"defaultEffort":"medium","piRuntimeCapable":true},
-    {"model":"claude-model","providerType":"claude-code-oauth-token","concreteProviderType":"claude-code-oauth-token","enabled":true,"priority":0,"efforts":["low","medium","high","extra","max","ultracode"],"defaultEffort":"high","piRuntimeCapable":false}]}
+    {"model":"codex-model","upstreamModel":"codex-model","providerType":"codex-oauth-token","concreteProviderType":"codex-oauth-token","enabled":true,"priority":0,"efforts":["low","medium","high","xhigh","max","ultra"],"defaultEffort":"medium","piRuntimeCapable":true},
+    {"model":"claude-model","upstreamModel":"claude-model","providerType":"claude-code-oauth-token","concreteProviderType":"claude-code-oauth-token","enabled":true,"priority":0,"efforts":["low","medium","high","extra","max","ultracode"],"defaultEffort":"high","piRuntimeCapable":false}]}
     """
   public static let metadata = """
     {"id":"\(threadID)","agentId":"\(agentID)","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"serviceTier":null,"cloudBrowserEnabled":false,"computerUseHostId":null}

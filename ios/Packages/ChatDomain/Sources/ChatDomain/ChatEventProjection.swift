@@ -120,6 +120,10 @@ public enum ChatEventProjection {
       }
     }
     let work = ChatWorkProjection.build(rows: rows, messages: messages)
+    var usageEventIDs: [String: String] = [:]
+    for row in rows where row.eventType == .usageRecorded {
+      if let runID = row.runId { usageEventIDs[runID] = row.id }
+    }
     return ChatHistory(
       messages: work.messages, executionState: state,
       activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
@@ -127,7 +131,8 @@ public enum ChatEventProjection {
       persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
       latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max(),
       recommendedFollowups: ChatFollowupProjection.source(
-        rows: rows, active: state.isActive))
+        rows: rows, active: state.isActive),
+      usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
   }
 
   /// Raw history may contain historical private memory-citation envelopes.

@@ -18,7 +18,10 @@ final class ConversationHistoryFixture: Sendable {
     self.init(rows: (0..<count).map { Self.row($0 + 1) })
   }
 
-  init(rows initial: [String], fileOrigin: URL? = nil) {
+  init(
+    rows initial: [String], fileOrigin: URL? = nil,
+    usage: ChatHTTPFixture.Handler? = nil
+  ) {
     let rows = HistoryRows(initial)
     self.rows = rows
     let requests = requests
@@ -28,6 +31,9 @@ final class ConversationHistoryFixture: Sendable {
       }
       let path = "/api/chat-threads/\(Self.threadID)"
       switch request.url?.path {
+      case path + "/usage":
+        guard let usage else { throw URLError(.unsupportedURL) }
+        return try await usage(request)
       case "/api/web/file-url":
         guard let fileOrigin else { throw URLError(.unsupportedURL) }
         let id =
@@ -82,7 +88,9 @@ final class ConversationHistoryFixture: Sendable {
   }
 
   @MainActor
-  func conversation(cache: ChatCache? = nil) -> ConversationStore {
+  func conversation(
+    cache: ChatCache? = nil, isVisible: @escaping @MainActor () -> Bool = { true }
+  ) -> ConversationStore {
     let sync = ChatSync(client: http.client, cache: cache)
     return ConversationStore(
       thread: ChatThread(
@@ -90,7 +98,7 @@ final class ConversationHistoryFixture: Sendable {
         updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
+      isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }
 
   static func id(_ sequence: Int) -> String {

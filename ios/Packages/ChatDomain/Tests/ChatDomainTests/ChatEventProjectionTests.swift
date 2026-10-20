@@ -3,6 +3,19 @@ import Foundation
 import XCTest
 
 final class ChatEventProjectionTests: XCTestCase {
+  func testUsageHintsRetainLatestEventIdentityWithoutInventingMessagesOrActiveRuns() throws {
+    let history = try ChatEventProjection.history(
+      rows: [
+        event(1, type: .usageRecorded, at: 1, runID: "old"),
+        event(2, type: .usageRecorded, at: 2, runID: "other"),
+        event(3, type: .usageRecorded, at: 3, runID: "old"),
+      ], recovering: false)
+    XCTAssertEqual(history.usageEventIDs, ["old": eventID(3), "other": eventID(2)])
+    XCTAssertTrue(history.messages.isEmpty)
+    XCTAssertTrue(history.activeRunIDs.isEmpty)
+    XCTAssertEqual(history.executionState, .idle)
+  }
+
   func testQueuedAutomationWithoutMessageCanBeStopped() throws {
     let history = try ChatEventProjection.history(
       rows: [event(1, type: .inputAutomation, at: 1)], recovering: false)
