@@ -51,6 +51,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
       return method.manualFields.allSatisfy { !$0.required || values[$0.id]?.isEmpty == false }
         && method.startOptions.allSatisfy { !$0.required || options[$0.id]?.isEmpty == false }
     }
+    if status.custom?.usesBrowserAuthorization == true { return true }
     return status.custom?.fields.allSatisfy { !$0.required || values[$0.key]?.isEmpty == false }
       ?? false
   }
@@ -189,9 +190,7 @@ final class ConnectorActionStore {
           flow.action, status: current, method: flow.method, values: flow.values,
           options: flow.options)
         try check(flow)
-        if current.custom.map({ !["oauth", "automatic"].contains($0.authMode) }) != false {
-          flow.values = [:]
-        }
+        flow.values = [:]
         flow.code = ""
         flow.browserClosed = false
         if let sessionID = result.sessionId {
@@ -299,18 +298,8 @@ final class ConnectorActionStore {
     flow.operatedID = id
     flow.session = nil
     flow.browserURL = nil
-    var account = try await service.account(id: id, target: flow.status.target)
+    let account = try await service.account(id: id, target: flow.status.target)
     try check(flow)
-    if let custom = flow.status.custom, ["oauth", "automatic"].contains(custom.authMode),
-      !flow.values.isEmpty
-    {
-      let receipt = try await service.configureCustom(custom, connectionID: id, values: flow.values)
-      try check(flow)
-      guard try receipt.operatedID == id else { throw APIClientError.invalidResponse }
-      flow.values = [:]
-      account = try await service.account(id: id, target: flow.status.target)
-      try check(flow)
-    }
     guard account.ready else {
       throw APIClientError.http(
         status: 409, message: "Connector setup is incomplete. Refresh and try again.")

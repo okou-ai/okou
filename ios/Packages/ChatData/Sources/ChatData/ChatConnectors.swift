@@ -69,6 +69,7 @@ public struct ChatCustomConnector: Decodable, Sendable {
     public let description: String?
     public var id: String { key }
   }
+  public var usesBrowserAuthorization: Bool { authMode == "oauth" || authMode == "automatic" }
   public var managed: Bool { oauthConfig?.providerAdapter == "feishu" }
 }
 
@@ -315,7 +316,7 @@ public struct ChatConnectorService: Sendable {
         "/api/connectors/\(slug)/\(route)", method: "POST", body: JSONEncoder().encode(body))
     }
     guard let custom = status.custom else { throw APIClientError.invalidResponse }
-    if ["oauth", "automatic"].contains(custom.authMode) {
+    if custom.usesBrowserAuthorization {
       struct Body: Encodable {
         let account: Account
         let agentId: String
@@ -326,7 +327,7 @@ public struct ChatConnectorService: Sendable {
     }
     return try await configureCustom(custom, connectionID: status.account?.id, values: values)
   }
-  public func configureCustom(
+  private func configureCustom(
     _ custom: ChatCustomConnector, connectionID: String?, values: [String: String]
   ) async throws -> ChatConnectorReceipt {
     struct Account: Encodable {

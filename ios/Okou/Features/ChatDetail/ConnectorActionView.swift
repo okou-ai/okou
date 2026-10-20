@@ -135,7 +135,7 @@ struct ConnectorAuthorizationSheet: View {
                 .font(.footnote)
               }
             }
-          } else {
+          } else if flow.status.custom?.usesBrowserAuthorization != true {
             Section("Connection details") {
               ForEach(flow.status.custom?.fields ?? []) { field in
                 credential(field.label, key: field.key, secret: field.kind == "secret")

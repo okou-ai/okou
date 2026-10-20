@@ -272,49 +272,57 @@ final class ConnectorActionTests: XCTestCase {
     try await eventually { store.active == nil }
     XCTAssertEqual(polls.withLock { $0 }, 2)
   }
-  func testCustomOAuthSavesAdditionalFieldsToTheOperatedAccountBeforeContinuing() async throws {
-    let connected = Mutex(false)
-    let configured = Mutex(false)
-    let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/custom-connectors" {
-        let custom = F.custom(mode: "oauth").replacingOccurrences(
-          of: "\"fields\":[]",
-          with:
-            "\"fields\":[{\"key\":\"region\",\"label\":\"Region\",\"kind\":\"variable\",\"required\":true}]"
-        )
-        return ChatHTTPResponse(body: "{\"connectors\":[\(custom)]}")
+  func testCustomOAuthAndAutomaticDoNotRequestProviderOwnedCredentialFields() async throws {
+    for mode in ["oauth", "automatic"] {
+      let connected = Mutex(false)
+      let callbacks = Mutex(0)
+      let fixture = ChatHTTPFixture { request in
+        if request.url!.path == "/api/custom-connectors" {
+          let fields =
+            mode == "oauth"
+            ? "[{\"key\":\"access_token\",\"label\":\"Access token\",\"kind\":\"secret\",\"required\":true}]"
+            : "[]"
+          let custom = F.custom(mode: mode).replacingOccurrences(
+            of: "\"fields\":[]", with: "\"fields\":\(fields)")
+          return ChatHTTPResponse(body: "{\"connectors\":[\(custom)]}")
+        }
+        if request.url!.path.hasSuffix("/oauth2/start") {
+          XCTAssertEqual(request.httpMethod, "POST")
+          let body = String(decoding: chatRequestBody(request), as: UTF8.self)
+          XCTAssertFalse(body.contains("access_token"))
+          XCTAssertFalse(body.contains("values"))
+          if mode == "oauth" {
+            return ChatHTTPResponse(
+              body:
+                "{\"result\":\"authorization\",\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(F.attemptID)\"}"
+            )
+          }
+          connected.withLock { $0 = true }
+          return ChatHTTPResponse(
+            body: "{\"result\":\"connected\",\"connectionId\":\"\(F.accountID)\"}")
+        }
+        if request.url!.path.contains("oauth-completions") {
+          connected.withLock { $0 = true }
+          return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+        }
+        XCTAssertFalse(request.url!.path.hasSuffix("/values"))
+        if request.url!.path == "/api/chat/events" {
+          XCTAssertTrue(connected.withLock { $0 })
+          callbacks.withLock { $0 += 1 }
+        }
+        return try XCTUnwrap(
+          F.response(request, connected: connected.withLock { $0 }, customMode: mode))
       }
-      if request.url!.path.hasSuffix("/oauth2/start") {
-        connected.withLock { $0 = true }
-        return ChatHTTPResponse(
-          body: "{\"result\":\"connected\",\"connectionId\":\"\(F.accountID)\"}")
-      }
-      if request.url!.path.hasSuffix("/values") {
-        XCTAssertEqual(request.httpMethod, "PUT")
-        let body = String(decoding: chatRequestBody(request), as: UTF8.self)
-        XCTAssertTrue(body.contains(F.accountID))
-        XCTAssertTrue(body.contains("eu-west"))
-        configured.withLock { $0 = true }
-        return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
-      }
-      if request.url!.path == "/api/connector-accounts/\(F.accountID)" {
-        return ChatHTTPResponse(
-          body: F.account(custom: true).replacingOccurrences(
-            of: "\"setupStatus\":\"complete\"",
-            with: "\"setupStatus\":\"\(configured.withLock { $0 } ? "complete" : "incomplete")\""))
-      }
-      return try XCTUnwrap(
-        F.response(request, connected: connected.withLock { $0 }, customMode: "oauth"))
+      let store = store(fixture)
+      defer { store.close() }
+      store.activate(try descriptor(fixture, custom: true))
+      try await eventually { store.active != nil }
+      XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
+      XCTAssertTrue(try XCTUnwrap(store.active).values.isEmpty)
+      store.submit()
+      try await eventually { store.active == nil }
+      XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
-    let store = store(fixture)
-    defer { store.close() }
-    store.activate(try descriptor(fixture, custom: true))
-    try await eventually { store.active != nil }
-    XCTAssertFalse(try XCTUnwrap(store.active).canSubmit)
-    store.active?.values["region"] = "eu-west"
-    store.submit()
-    try await eventually { store.active == nil }
-    XCTAssertTrue(configured.withLock { $0 })
   }
   func testAccountConfirmationUsesPUTAndPreservesTheSelectionWhileContinuing() async throws {
     let selected = Mutex(false)
