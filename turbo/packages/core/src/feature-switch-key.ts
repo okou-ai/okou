@@ -63,7 +63,6 @@ export enum FeatureSwitchKey {
   CustomTemplates = "customTemplates",
   BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
-  DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
