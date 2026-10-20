@@ -132,6 +132,7 @@ import * as customConnectorAccountOauthBindingSchema from "./schema/custom-conne
 import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
 import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
 import * as hostedSiteSchema from "./runtime/hosted-site";
+import * as hostedSiteBrowserSessionSchema from "./schema/hosted-site-browser-session";
 import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
@@ -299,6 +300,7 @@ export const schema = {
   ...builtinConnectorDcrRegistrationSchema,
   ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
+  ...hostedSiteBrowserSessionSchema,
   ...artifactSchema,
   ...sharedThreadSchema,
   ...userArtifactFavoriteSchema,

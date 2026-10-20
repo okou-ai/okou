@@ -1,6 +1,6 @@
 import { command, computed, state, type Command } from "ccstate";
 import { match } from "path-to-regexp";
-import type { RoutePath } from "./route-paths";
+import { ROUTES, type RoutePath } from "./route-paths";
 import {
   clerk$,
   clerkUser$,
@@ -448,9 +448,11 @@ export const setupAuthPageWrapper = (
       window.location.href = resolveAppAuthUrl(
         "/sign-in/tasks/choose-organization",
         {
-          redirectUrl: isIntegrationAuthContinuation(new URL(location.href))
-            ? location.href
-            : undefined,
+          redirectUrl:
+            isIntegrationAuthContinuation(new URL(location.href)) ||
+            get(pathname$) === ROUTES.hostedSiteAuthorize
+              ? location.href
+              : undefined,
         },
       );
       return;

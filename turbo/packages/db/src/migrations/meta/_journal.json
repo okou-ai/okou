@@ -2514,6 +2514,13 @@
       "when": 1792486883859,
       "tag": "1436_agent_runs_chat_executed_order",
       "breakpoints": true
+    },
+    {
+      "idx": 1437,
+      "version": "7",
+      "when": 1792491106829,
+      "tag": "1437_hosted_site_browser_sessions",
+      "breakpoints": true
     }
   ]
 }

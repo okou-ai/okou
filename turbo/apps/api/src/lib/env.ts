@@ -101,6 +101,19 @@ const SCHEMA = {
   R2_HOSTED_SITES_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   // Activate only after the matching Worker and rollback floor pass #41704.
   HOSTED_SITE_ACCESS_ENABLED: z.enum(["true", "false"]).default("false"),
+  // Server-owned cohort; a user's Lab override cannot admit another Site.
+  HOSTED_SITE_VISIBILITY_SITE_IDS: z
+    .string()
+    .default("")
+    .transform((value) => {
+      return value
+        .split(",")
+        .map((id) => {
+          return id.trim();
+        })
+        .filter(Boolean);
+    })
+    .pipe(z.array(z.uuid())),
   OKOU_PUBLIC_HOST_DOMAIN: z.string().min(1),
   OKOU_HOST_SCHEME: z.enum(["http", "https"]),
   // Legacy-layout sites.vm0.io URLs retain their own domain and scheme.

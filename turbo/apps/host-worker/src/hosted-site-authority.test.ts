@@ -188,7 +188,7 @@ it.each(["true", "invalid"])(
 );
 
 it.each(["/", "/style-12345678.css"])(
-  "never reads restricted content without configured Clerk: %s",
+  "never reads restricted content without a site session: %s",
   async (path) => {
     let reads = 0;
     server.use(
@@ -202,7 +202,7 @@ it.each(["/", "/style-12345678.css"])(
         reads++;
       }),
     );
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(401);
     expect(reads).toBe(0);
   },
 );
@@ -655,3 +655,47 @@ it.each(["disabled", "unavailable"])(
     }
   },
 );
+
+it("handles a real alias's authorization callback before reading hosted HTML", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: false, decision: "authenticate" });
+    }),
+  );
+  const env = {
+    ...environment(),
+    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+  };
+  const initial = await fetchWorker(
+    new Request("https://demo.okou.app/", { headers: { Accept: "text/html" } }),
+    env,
+  );
+  expect(initial.status).toBe(302);
+  const bridge = new URL(initial.headers.get("Location")!);
+  expect(bridge.searchParams.get("siteId")).toBe(siteId);
+  const pending = initial.headers.getSetCookie()[0]!.split(";")[0]!;
+  server.use(
+    http.post(
+      `https://authority.test/api/host/sites/${siteId}/sessions`,
+      () => {
+        return HttpResponse.json({
+          sessionToken: `okou_site_${"a".repeat(64)}`,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+        });
+      },
+    ),
+  );
+  const response = await fetchWorker(
+    new Request(
+      `https://demo.okou.app/.okou/auth/callback?code=${"b".repeat(64)}&state=${bridge.searchParams.get("state")}`,
+      { headers: { Cookie: pending } },
+    ),
+    env,
+  );
+  expect(response.status).toBe(303);
+  expect(response.headers.get("Location")).toBe("https://demo.okou.app/");
+  expect(response.headers.getSetCookie().join(";")).toContain(
+    "__Host-okou-site-session=",
+  );
+  expect(await response.text()).toBe("");
+});
