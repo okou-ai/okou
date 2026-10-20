@@ -2458,6 +2458,13 @@
       "when": 1792421309143,
       "tag": "1428_retire_workflow_deferred_retry_index",
       "breakpoints": true
+    },
+    {
+      "idx": 1429,
+      "version": "7",
+      "when": 1792469488841,
+      "tag": "1429_safe_nick_fury",
+      "breakpoints": true
     }
   ]
 }

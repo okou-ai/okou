@@ -30,6 +30,7 @@ import { settle } from "../utils";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
+import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import {
   copySharedThreadArtifacts$,
@@ -53,6 +54,7 @@ export const resolveSharedThreadHostedDownload$ = command(
     { get, set },
     args: {
       readonly publicSlug: string;
+      readonly viewerId?: string;
       readonly record: Pick<
         Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
         "publicBrand" | "threadId" | "publicToken" | "targetKind" | "targetId"
@@ -95,10 +97,22 @@ export const resolveSharedThreadHostedDownload$ = command(
     ) {
       return null;
     }
+    if (
+      !(
+        await set(
+          checkHostedSiteAccess$,
+          { siteId: target.siteId, userId: args.viewerId },
+          signal,
+        )
+      ).allowed
+    ) {
+      return null;
+    }
     return await set(
       signSharedThreadHostedDownload$,
       {
         publicSlug: args.publicSlug,
+        viewerId: args.viewerId,
         layoutSegment: record.publicBrand,
         target,
       },
@@ -113,6 +127,7 @@ export const signSharedThreadHostedDownload$ = command(
     { set },
     args: {
       readonly publicSlug: string;
+      readonly viewerId?: string;
       readonly layoutSegment: SharedThreadArtifactPolicy["publicBrand"];
       readonly target: Extract<
         SharedThreadArtifactPolicy["resources"][string],
@@ -139,6 +154,7 @@ export const signSharedThreadHostedDownload$ = command(
           aliasUrl: url,
         },
         manifest: target.manifest,
+        viewerId: args.viewerId,
         prefix: `shared-artifacts/${args.layoutSegment}/${target.snapshotId}/${target.id}`,
       },
       signal,

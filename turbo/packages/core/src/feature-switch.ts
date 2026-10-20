@@ -67,6 +67,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  // Keep disabled until the live session and rollout gates in #41704 pass.
+  [FeatureSwitchKey.HostedSiteVisibility]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Website visibility",
+    description: "Control who can visit a published website.",
+    enabled: false,
+  },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
   [FeatureSwitchKey.HostedSiteUrlEditing]: {

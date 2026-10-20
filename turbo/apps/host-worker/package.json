@@ -21,6 +21,7 @@
     "wrangler": "^4.129.0"
   },
   "dependencies": {
+    "@clerk/backend": "3.13.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*"
   }

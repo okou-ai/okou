@@ -741,9 +741,11 @@ export const clerk$: Computed<ClerkClient> = computed((): ClerkClient => {
  */
 export async function authenticateClerkSession(
   request: Request,
+  options?: { readonly authorizedParties: readonly string[] },
 ): Promise<ClerkSessionAuthentication> {
   const requestState = await clerkSdk().authenticateRequest(request, {
     acceptsToken: "session_token",
+    ...(options ? { authorizedParties: [...options.authorizedParties] } : {}),
   });
 
   if (!requestState.isAuthenticated) {

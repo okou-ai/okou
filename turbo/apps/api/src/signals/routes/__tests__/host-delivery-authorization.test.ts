@@ -46,7 +46,7 @@ test("rejects malformed pointer identities at the anonymous request boundary", a
     client.deliveryAuthorization({ params, query }),
     [200],
   );
-  expect(missing.body).toStrictEqual({ allowed: false });
+  expect(missing.body).toStrictEqual({ allowed: false, decision: "deny" });
   expect(missing.headers.get("Cache-Control")).toBe("private, no-store");
 });
 

@@ -210,14 +210,17 @@ for (const state of ["allowed", "denied", "redirect"]) {
       (request) => {
         const url = new URL(request.url);
         if (url.hostname === "redirected.example")
-          return Response.json({ allowed: true });
+          return Response.json({ allowed: true, decision: "allow" });
         if (url.pathname === `/api/host/delivery/${siteId}/${deploymentId}`) {
           return state === "redirect"
             ? new Response(null, {
                 status: 302,
                 headers: { Location: "https://redirected.example/authority" },
               })
-            : Response.json({ allowed: state === "allowed" });
+            : Response.json({
+                allowed: state === "allowed",
+                decision: state === "allowed" ? "allow" : "deny",
+              });
         }
         if (url.pathname === "/api/host/aliases/demo") {
           assert.equal(url.searchParams.get("publicBrand"), "okou");

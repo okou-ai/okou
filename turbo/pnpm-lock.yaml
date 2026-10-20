@@ -538,6 +538,9 @@ importers:
 
   apps/host-worker:
     dependencies:
+      '@clerk/backend':
+        specifier: 3.13.1
+        version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts

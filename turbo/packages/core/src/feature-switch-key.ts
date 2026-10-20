@@ -7,6 +7,7 @@ export enum FeatureSwitchKey {
   IosChatActivitySummary = "iosChatActivitySummary",
   IosChatAttachments = "iosChatAttachments",
   JsonTreePreview = "jsonTreePreview",
+  HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
   RemoteControlCliManagement = "remoteControlCliManagement",
