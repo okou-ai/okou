@@ -46,7 +46,7 @@ final class ChatModelConfigurationTests: XCTestCase {
     XCTAssertEqual(configuration.requestedEffort(for: configuration.defaultSelection), "ultra")
   }
 
-  func testMissingExecutionMetadataFailsTheGatedPanelAndAutoWritesExplicitNull() async throws {
+  func testMissingExecutionMetadataFailsClearlyAndAutoWritesExplicitNull() async throws {
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request) }
@@ -62,7 +62,7 @@ final class ChatModelConfigurationTests: XCTestCase {
     let service = ChatModelService(client: fixture.client)
     do {
       _ = try await service.load()
-      XCTFail("An enabled native panel requires canonical runtime metadata")
+      XCTFail("The native panel requires canonical runtime metadata")
     } catch let error as APIClientError {
       if case .incompatibleData = error {} else { XCTFail("Unexpected contract error") }
     }

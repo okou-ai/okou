@@ -261,7 +261,7 @@ final class WorkspaceStore {
       }
     }
     if full { await synchronizeDrafts() }
-    if modelStore.configuration?.enabled == true && (full || batch.contains(.threadList)) {
+    if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
       await selectedConversation?.modelSelection?.refresh()
     }
     await trimConversations(limit: conversationLimit)
@@ -318,7 +318,7 @@ final class WorkspaceStore {
   func createChat(agentID: String? = nil) async -> ChatThread? {
     guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
     guard newModelSelection.canSend else { return nil }
-    let selection = newModelSelection.enabled ? newModelSelection.selection : nil
+    let selection = modelStore.configuration.map { _ in newModelSelection.selection }
     let effort = newModelSelection.requestedEffort
     newModelSelection.isSending = true
     isCreating = true
@@ -368,7 +368,7 @@ final class WorkspaceStore {
       newComposer.requestSync()
     }
     sourceComposer.requestSync()
-    await conversation.send()
+    await conversation.send(initialSelection: ChatModelSelection(thread: created))
   }
 
   func reduceMemory() async {

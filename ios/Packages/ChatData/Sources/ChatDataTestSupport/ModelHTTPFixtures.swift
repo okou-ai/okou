@@ -9,7 +9,7 @@ public enum ModelHTTPFixtures {
     {"selectedModel":"codex-model","serviceTier":null,"modelSettings":{"codex-model":{"effort":"ultra"},"claude-model":{"effort":"extra"}},"selectedImageModel":null,"updatedAt":null}
     """
   public static let features = """
-    {"effectiveSwitches":{"iosChatModelSelection":true,"subscriptionLinkingEntry":true,"_codexExecution":false}}
+    {"effectiveSwitches":{"subscriptionLinkingEntry":true,"_codexExecution":false}}
     """
   public static let models = """
     {"models":[

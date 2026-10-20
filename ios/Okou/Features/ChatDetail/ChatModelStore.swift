@@ -94,11 +94,10 @@ final class ChatModelSelectionStore {
       URLQueryItem(name: "billingView", value: "plans"),
     ])
   }
-  var enabled: Bool { models.configuration?.enabled == true }
   var isBusy: Bool { isSaving || isLoading || isSending }
   var canSend: Bool {
-    guard models.configuration != nil || !models.active else { return false }
-    guard enabled else { return true }
+    guard models.active else { return true }
+    guard models.configuration != nil else { return false }
     return !isSaving && !isLoading && hasLoaded && !uncertain
       && models.configuration?.row(for: selection)?.memberEffective.availability == "available"
   }
@@ -107,7 +106,7 @@ final class ChatModelSelectionStore {
 
   func open() async {
     if models.configuration == nil { await models.refresh() }
-    if enabled { await refresh() }
+    if models.configuration != nil { await refresh() }
     // Usage never delays the model list; the separate task is cancelled with the sheet.
   }
   func refresh() async {
@@ -164,7 +163,7 @@ final class ChatModelSelectionStore {
     await save(next, effort: nil)
   }
   private func save(_ next: ChatModelSelection, effort: String?) async {
-    guard !closed, !isBusy, !uncertain, enabled,
+    guard !closed, !isBusy, !uncertain, models.configuration != nil,
       models.configuration?.row(for: next)?.isConfigurable == true
     else { return }
     revision += 1
@@ -201,7 +200,7 @@ final class ChatModelSelectionStore {
     }
   }
   func saveForFutureChats() async {
-    guard !closed, !isBusy, !uncertain, enabled else { return }
+    guard !closed, !isBusy, !uncertain, models.configuration != nil else { return }
     isSaving = true
     let value = selection
     defer { isSaving = false }

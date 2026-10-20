@@ -29,8 +29,8 @@ settings menu provides account actions. Native list actions support pinning,
 archiving, and renaming chats; archive controls follow the existing
 `chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
-agent and the existing saved model preference. The `iosChatModelSelection` switch
-enables a native model sheet and personal subscription account management.
+agent and the existing saved model preference. A native model sheet supports
+chat-specific choices and personal subscription account management.
 Workspace setup and Okou account management remain on the web.
 
 Conversation history renders durable user messages and assistant results using

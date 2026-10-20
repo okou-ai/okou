@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   IosChatActivitySummary = "iosChatActivitySummary",
-  IosChatModelSelection = "iosChatModelSelection",
   IosChatAttachments = "iosChatAttachments",
   JsonTreePreview = "jsonTreePreview",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",

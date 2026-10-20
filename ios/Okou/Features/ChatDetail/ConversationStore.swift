@@ -180,16 +180,22 @@ final class ConversationStore {
     await task.value
   }
 
-  func send() async {
+  /// A first send carries the selection acknowledged by thread creation. It must not
+  /// wait for the new detail view's independent metadata read to become sendable.
+  func send(initialSelection: ChatModelSelection? = nil) async {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard composer.hasContent, composer.canSend, attachmentDraft.isReady,
       !isSending, !closed, !needsUpgrade, !Task.isCancelled
     else { return }
-    guard modelSelection?.canSend != false else { return }
+    guard initialSelection != nil || modelSelection?.canSend != false else { return }
     var message = PendingMessage(
       id: UUID().uuidString.lowercased(), text: text, createdAt: Date(),
       attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
-    if modelSelection?.enabled == true {
+    if let initialSelection {
+      message.modelSelection = initialSelection
+      message.reasoningEffort = modelSelection?.models.configuration?.requestedEffort(
+        for: initialSelection)
+    } else if modelSelection?.models.configuration != nil {
       message.modelSelection = modelSelection?.selection
       message.reasoningEffort = modelSelection?.requestedEffort
     }

@@ -124,7 +124,6 @@ public struct ChatModelConfiguration: Sendable {
     ChatModelConfiguration(
       preference: preference, available: available, catalog: catalog, switches: switches)
   }
-  public var enabled: Bool { switches["iosChatModelSelection"] == true }
   public var canLinkSubscriptions: Bool { switches["subscriptionLinkingEntry"] == true }
   public var models: [AvailableRunModels.Model] {
     available.models.sorted {
@@ -209,8 +208,7 @@ public struct ChatModelService: Sendable {
       preference: preference, available: models, catalog: catalog,
       switches: features.effectiveSwitches)
     guard
-      !configuration.enabled
-        || configuration.catalog.routes.allSatisfy({ $0.piRuntimeCapable != nil })
+      configuration.catalog.routes.allSatisfy({ $0.piRuntimeCapable != nil })
     else {
       throw APIClientError.incompatibleData
     }

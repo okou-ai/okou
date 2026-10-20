@@ -11,7 +11,7 @@ struct ChatModelPickerButton: View {
 
   var body: some View {
     Group {
-      if selection.enabled {
+      if models.configuration != nil {
         Button {
           isPresented = true
         } label: {
