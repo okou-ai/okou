@@ -42,9 +42,8 @@ import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCa
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   BuiltinConnectorBrief,
-  ConnectorDefaultAccountBrief,
   CustomConnectorBrief,
-} from "@okouai/api-contracts/contracts/connector-overview";
+} from "@okouai/api-contracts/contracts/connected-connectors";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   UserTemplateCatalogEntry,
@@ -4386,8 +4385,8 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const realtime = useLoadable(
-    signals.template.presentationTemplatesRealtimeReady$,
+  const initialization = useLoadable(
+    signals.template.presentationTemplatesInitialized$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
@@ -4397,7 +4396,7 @@ function ImportedPresentationTemplateLibraryStatus({
   }
   let message: string;
   let retry: (() => void) | undefined;
-  if (realtime.state === "hasError") {
+  if (initialization.state === "hasError") {
     message = t(($) => {
       return $.chat.templates.importedUnavailable;
     });
@@ -5889,7 +5888,7 @@ function ComposerConnectorAccountChoices({
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
   readonly selection: ConnectorAccountSelection | undefined;
-  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
   readonly saving: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;

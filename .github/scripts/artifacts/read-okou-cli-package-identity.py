@@ -58,7 +58,13 @@ class ArchiveReader:
         return data
 
 
-def read_identity(path):
+def read_identity(path, verify_package=False):
+    required_files = {
+        "package/okou.js": "the canonical okou.js implementation",
+        "package/image-resize-worker.js": "image-resize-worker.js",
+        "package/photon_rs_bg.wasm": "photon_rs_bg.wasm",
+    }
+    found_files = set()
     flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
     with os.fdopen(os.open(path, flags), "rb") as source:
         info = os.fstat(source.fileno())
@@ -72,6 +78,12 @@ def read_identity(path):
                     path = PurePosixPath(entry.name)
                     if path.is_absolute() or ".." in path.parts:
                         raise ValueError("unsafe CLI package path")
+                    canonical = str(path)
+                    if verify_package and canonical in required_files:
+                        if (entry.name != canonical or canonical in found_files
+                                or entry.type not in (tarfile.REGTYPE, tarfile.AREGTYPE)):
+                            raise ValueError("CLI package requires one regular " + canonical)
+                        found_files.add(canonical)
                     if path != PurePosixPath("package/package.json"):
                         continue
                     if (entry.name != "package/package.json" or metadata is not None
@@ -86,10 +98,11 @@ def read_identity(path):
                 pass
     if metadata is None:
         raise ValueError("CLI package is missing package.json")
-    package = fields(json.loads(
+    document = json.loads(
         metadata.decode("utf-8"), object_pairs_hook=JsonObject,
         parse_int=JsonInteger, parse_constant=invalid_constant,
-    ), ("name", "version", "okouBuildIdentity"))
+    )
+    package = fields(document, ("name", "version", "okouBuildIdentity"))
     build = fields(package["okouBuildIdentity"],
                    ("schemaVersion", "piAgentRuntime", "piSdk"))
     if package["name"] != "@okouai/cli":
@@ -105,15 +118,31 @@ def read_identity(path):
     parts = sdk.split("+okou.")
     if len(parts) != 2 or not RELEASE_VERSION.fullmatch(parts[0]) or not re.fullmatch(r"[0-9a-f]{12}", parts[1]):
         raise ValueError("invalid CLI package SDK identity")
+    if verify_package:
+        installation = fields(document, ("private", "bin"))
+        if (installation["private"] is not True or
+                installation["bin"] != [("okou", "okou.js")]):
+            raise ValueError("invalid standalone CLI package installation metadata")
+        dependency_fields = {"dependencies", "optionalDependencies", "peerDependencies"}
+        seen = set()
+        for name, value in document:
+            if name not in dependency_fields:
+                continue
+            if name in seen or (value is not None and (not isinstance(value, JsonObject) or value)):
+                raise ValueError("CLI package must bundle all dependencies")
+            seen.add(name)
+        for name, description in required_files.items():
+            if name not in found_files:
+                raise ValueError("CLI package is missing " + description)
     return {"versions": {"cli": package["version"], "piAgentRuntime": build["piAgentRuntime"],
                          "piSdk": sdk}}
 
 
 if __name__ == "__main__":
     try:
-        if len(sys.argv) != 2:
-            raise ValueError("usage: read-okou-cli-package-identity.py <package.tgz>")
-        print(json.dumps(read_identity(sys.argv[1]), separators=(",", ":"), sort_keys=True))
+        if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--verify-package"):
+            raise ValueError("usage: read-okou-cli-package-identity.py <package.tgz> [--verify-package]")
+        print(json.dumps(read_identity(sys.argv[1], len(sys.argv) == 3), separators=(",", ":"), sort_keys=True))
     except (OSError, ValueError, tarfile.TarError, EOFError, RecursionError) as error:
         print("Invalid CLI package identity: " + str(error), file=sys.stderr)
         sys.exit(1)

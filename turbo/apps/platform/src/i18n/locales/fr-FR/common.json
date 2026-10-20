@@ -1733,6 +1733,7 @@
     },
     "banking": {
       "accountFallback": "Compte bancaire",
+      "actionFailed": "L'action bancaire a échoué",
       "active_one": "Accès actif pour {{count}} compte",
       "active_many": "Accès actif pour {{count}} comptes",
       "active_other": "Accès actif pour {{count}} comptes",
@@ -5243,7 +5244,7 @@
         "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
+        "preparationFailed": "Temporairement indisponible. Okou réessaiera automatiquement.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
         "retry": "Réessayer",
         "retryMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour. Réessayez pour continuer.",
@@ -5252,7 +5253,7 @@
       "proactiveSuggestions": {
         "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
         "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
-        "preparationFailed": "La configuration n’a pas pu aboutir. Réessayez.",
+        "preparationFailed": "Temporairement indisponible. Okou réessaiera automatiquement.",
         "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",
         "retry": "Réessayer",
         "retryMessage": "Impossible de charger ou de modifier ces paramètres. Réessayez.",

@@ -126,10 +126,6 @@ export function MorningBriefSettings() {
   };
 
   const handleRetry = () => {
-    if (preference?.status === "error") {
-      detach(updatePreference(true, pageSignal), Reason.DomCallback);
-      return;
-    }
     if (mutationLoadable.state === "hasError" && preference) {
       detach(
         updatePreference(!preference.enabled, pageSignal),
@@ -140,11 +136,7 @@ export function MorningBriefSettings() {
     detach(retryPreference(pageSignal), Reason.DomCallback);
   };
 
-  const showRetry =
-    loadFailed ||
-    mutationFailed ||
-    conflicted ||
-    preference?.status === "error";
+  const showRetry = loadFailed || mutationFailed || conflicted;
 
   return (
     <div

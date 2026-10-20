@@ -16,7 +16,22 @@ use tokio::sync::{oneshot, watch};
 use super::cleanup_progress::{accounting, coverage, pending, settled};
 use super::*;
 
-async fn live(
+#[derive(Clone, Copy)]
+pub(super) enum Injection {
+    Callback(bool),
+    Native(super::native_unpark::Fault),
+}
+
+impl Injection {
+    fn witness(self, proof: &evidence::Case, phase: &str, value: Value) -> io::Result<()> {
+        match self {
+            Self::Callback(_) => proof.speculative_fault_witness(phase, value),
+            Self::Native(_) => proof.unpark_witness(phase, value),
+        }
+    }
+}
+
+pub(super) async fn live(
     context: &transitions::Context,
     proof: &evidence::Case,
     backing: &Arc<dyn SandboxBackingProcess>,
@@ -38,6 +53,7 @@ async fn inject(
     history: RunId,
     panic: bool,
 ) -> TestResult<()> {
+    let witness = |phase, value| proof.speculative_fault_witness(phase, value);
     let operation = RunId::new_v4();
     let (entered, mut receipt) = oneshot::channel();
     let (release, mut released) = watch::channel(false);
@@ -80,7 +96,7 @@ async fn inject(
         if !context.pool.lock().await.is_empty() {
             return Err(io::Error::other("pending speculative resource was published").into());
         }
-        proof.speculative_fault_witness("callback_waiting", json!({
+        witness("callback_waiting", json!({
             "mode":if panic {"panic"} else {"drop"}, "history_run_id":history,
             "operation_run_id":operation,"reuse_key":context.reuse_key,
             "prepare_started_ns":started_ns,"rpc_completed_ns":rpc_completed_ns,
@@ -134,14 +150,17 @@ async fn inject(
         proof.retain(incoming);
         return Err(io::Error::other("uncertain native preparation became inventory").into());
     }
-    proof.speculative_fault_witness("preparation_lost", json!({
-        "failure_requested_ns":failure_requested_ns?.0,"failure_joined_ns":evidence::clocks()?.0,
-        "mode":if panic {"panic"} else {"drop"},"panic_caught":panic,
-        "state":"Uncertain","commit_refused":true,"repark_refused":true,"incoming_refused":true,
-        "original_metadata_preserved":true,"original_full_lease_active":true,
-        "original_exit_polled_pending":true,"pool_empty":context.pool.lock().await.is_empty(),
-        "allocated":context.budget.allocated(),
-    }))?;
+    witness(
+        "preparation_lost",
+        json!({
+            "failure_requested_ns":failure_requested_ns?.0,"failure_joined_ns":evidence::clocks()?.0,
+            "mode":if panic {"panic"} else {"drop"},"panic_caught":panic,
+            "state":"Uncertain","commit_refused":true,"repark_refused":true,"incoming_refused":true,
+            "original_metadata_preserved":true,"original_full_lease_active":true,
+            "original_exit_polled_pending":true,"pool_empty":context.pool.lock().await.is_empty(),
+            "allocated":context.budget.allocated(),
+        }),
+    )?;
     Ok(())
 }
 
@@ -155,12 +174,14 @@ async fn read_status(path: &Path) -> TestResult<Value> {
 async fn save(
     context: &transitions::Context,
     inputs: &fixture::Inputs,
-    proof: &evidence::Case,
+    receipt: (&evidence::Case, Injection),
     gate: &foreground_io::Gate,
     probe: &mut foreground_probe::Probe,
     task: &mut GuardedActivationCleanupTask,
     path: &Path,
 ) -> TestResult<()> {
+    let (proof, injection) = receipt;
+    let witness = |phase, value| injection.witness(proof, phase, value);
     let mut completion = Box::pin(task.join());
     let mut completed = None;
     let mut pool_hold = None;
@@ -170,7 +191,7 @@ async fn save(
         gate.wait_entered().await?;
         pending(completion.as_mut(), &mut completed).await?;
         proof.join_exit().await?;
-        proof.speculative_fault_witness("tail_blocked", json!({
+        witness("tail_blocked", json!({
             "original_exit_confirmed":true,"receiver_polled_pending":true,"coverage":coverage(context,inputs,proof,false)?,
         }))?;
         pool_hold = Some(context.pool.lock().await);
@@ -186,7 +207,7 @@ async fn save(
         }
         let heartbeat_pending_ns = evidence::clocks()?.0;
         let observer = foreground_probe::observe().await?;
-        proof.speculative_fault_witness("pool_wait_progress", json!({
+        witness("pool_wait_progress", json!({
             "pool_held_ns":pool_held_ns,"status_held_ns":status_held_ns,
             "heartbeat_pending_ns":heartbeat_pending_ns,"heartbeat_polled_pending":true,
             "observer":observer,"coverage":coverage(context,inputs,proof,false)?,
@@ -195,7 +216,7 @@ async fn save(
         drop(pool_hold.take());
         let heartbeat = probe.complete().await?;
         pending(completion.as_mut(), &mut completed).await?;
-        proof.speculative_fault_witness("tail_wait_progress", json!({
+        witness("tail_wait_progress", json!({
             "pool_released_ns":pool_released_ns,"status_held_ns":status_held_ns,
             "heartbeat":heartbeat,"receiver_polled_pending":true,
             "coverage":coverage(context,inputs,proof,false)?,
@@ -231,7 +252,7 @@ async fn save(
         if context.budget.allocated() != (0, 0, 0) || !context.pool.lock().await.is_empty() {
             return Err(io::Error::other("speculative saving left resources").into());
         }
-        proof.speculative_fault_witness("saving_joined", json!({
+        witness("saving_joined", json!({
             "io_released_ns":io_released_ns.ok_or_else(||io::Error::other("IO release absent"))?,
             "saving_joined_ns":evidence::clocks()?.0,"home_cache_promoted":true,
             "original_lease_released":true,"allocated":context.budget.allocated(),
@@ -258,7 +279,7 @@ async fn save(
         }
         probe.request()?;
         let heartbeat = probe.complete().await?;
-        proof.speculative_fault_witness("status_wait_progress", json!({
+        witness("status_wait_progress", json!({
             "status_wait_polled_ns":polled_ns,"status_waits_before":before,"status_waits_after":after,
             "heartbeat":heartbeat,"publication_polled_pending":true,"allocated":context.budget.allocated(),
         }))?;
@@ -272,26 +293,30 @@ async fn save(
     };
     publication?;
     outcome.map_err(io::Error::other)??;
-    proof.speculative_fault_witness("status_published", json!({
-        "status_released_ns":status_released_ns?.0,"publication_joined_ns":evidence::clocks()?.0,
-        "published_status":read_status(path).await?,"regular_file":true,"allocated":context.budget.allocated(),
-    }))?;
+    witness(
+        "status_published",
+        json!({
+            "status_released_ns":status_released_ns?.0,"publication_joined_ns":evidence::clocks()?.0,
+            "published_status":read_status(path).await?,"regular_file":true,"allocated":context.budget.allocated(),
+        }),
+    )?;
     Ok(())
 }
 
-pub async fn exercise(
+pub(super) async fn exercise(
     context: transitions::Context,
     inputs: &fixture::Inputs,
     proof: &Arc<evidence::Case>,
     directory: &Path,
     backing: Arc<dyn SandboxBackingProcess>,
     history: RunId,
-    panic: bool,
+    injection: Injection,
 ) -> TestResult<()> {
+    let witness = |phase, value| injection.witness(proof, phase, value);
     let initial = context.pool.lock().await.status_snapshot();
     context.status.set_idle_snapshot(initial).await?;
     let path = directory.join("status.json");
-    proof.speculative_fault_witness(
+    witness(
         "inputs_verified",
         json!({
             "policy":serde_json::to_value(inputs)?,"status_path":path,
@@ -310,6 +335,7 @@ pub async fn exercise(
     let mut speculative = None;
     let mut cleanup = None;
     let mut task = None;
+    let mut native_hold = None;
     let outcome: TestResult<()> = async {
         let reservation = context
             .pool
@@ -317,6 +343,7 @@ pub async fn exercise(
             .await
             .take_reserved(&context.reuse_key)
             .ok_or_else(|| io::Error::other("speculative original absent"))?;
+        let sandbox_id = reservation.sandbox_id().to_string();
         speculative = Some(match GuardedSpeculativeIdleOwner::new(reservation) {
             Ok(owner) => owner,
             Err(owner) => {
@@ -327,7 +354,30 @@ pub async fn exercise(
         let owner = speculative
             .as_mut()
             .ok_or_else(|| io::Error::other("speculative capsule absent"))?;
-        inject(&context, proof, &backing, owner, history, panic).await?;
+        match injection {
+            Injection::Callback(panic) => {
+                inject(&context, proof, &backing, owner, history, panic).await?
+            }
+            Injection::Native(fault) => {
+                native_hold = Some(native_unpark::Hold::new(sandbox_id)?);
+                native_unpark::inject(
+                    &context,
+                    proof,
+                    &backing,
+                    owner,
+                    history,
+                    fault,
+                    native_hold
+                        .as_mut()
+                        .ok_or_else(|| io::Error::other("native gate custody absent"))?,
+                )
+                .await?;
+            }
+        }
+        if let (Injection::Native(fault), Some(hold)) = (injection, native_hold.as_mut()) {
+            hold.finish(&context, proof, &backing, owner, &mut probe, fault)
+                .await?;
+        }
         cleanup = Some(owner.take_cleanup_owner()?);
         task = Some(
             context
@@ -336,14 +386,23 @@ pub async fn exercise(
                     &mut cleanup,
                     &context.operations,
                     inputs.envelope(),
-                    "native_speculative_callback_loss",
+                    "native_speculative_cancellation",
                 )
                 .await?,
         );
         let task = task
             .as_mut()
             .ok_or_else(|| io::Error::other("speculative cleanup observer absent"))?;
-        save(&context, inputs, proof, &gate, &mut probe, task, &path).await
+        save(
+            &context,
+            inputs,
+            (proof.as_ref(), injection),
+            &gate,
+            &mut probe,
+            task,
+            &path,
+        )
+        .await
     }
     .await;
     let released = gate.release();
@@ -352,12 +411,20 @@ pub async fn exercise(
         proof.retain(cleanup.take());
         proof.retain(task.take());
     }
+    let native_join = match native_hold.as_mut() {
+        Some(hold) => hold.close().await,
+        None => Ok(()),
+    };
+    if native_join.is_err() {
+        proof.retain(native_hold.take());
+    }
     context.tracker.close_and_wait().await;
     let operations = context.operations.close_and_wait().await;
     let reporting = probe.finish().await;
     released?;
     reporting?;
     outcome?;
+    native_join?;
     let operations = operations?;
     settled(&operations)?;
     let activation = context.tracker.take_retained_activation_owners()?;
@@ -367,7 +434,7 @@ pub async fn exercise(
         proof.retain(finalizing);
         return Err(io::Error::other("speculative callback retained unresolved owners").into());
     }
-    proof.speculative_fault_witness(
+    witness(
         "producers_joined",
         json!({
             "tracker_joined":true,"accounting_joined":true,"heartbeat_joined":true,

@@ -45,7 +45,6 @@ import type { Tx } from "../../lib/db-types";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { clerk$ } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import { safeSync, settle } from "../utils";
 import {
@@ -57,11 +56,7 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import {
-  publishCustomConnectorOrganizationInvalidationAfterCommit,
-  publishCustomConnectorUserInvalidationAfterCommit,
-  type CapturedConnectorClientInvalidationAbort,
-} from "./connector-client-invalidation.service";
+import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import {
   replaceConnectorConnection,
   resolveConnectorConnectionMutation,
@@ -1992,12 +1987,10 @@ export const createCustomConnector$ = command(
       created.row,
       created.oauthConfig,
     );
-    await publishCustomConnectorOrganizationInvalidationAfterCommit(
-      args.orgId,
-      get(clerk$).organizations,
-      signal,
-      postCommitAbort,
-    );
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
+    }
+    signal.throwIfAborted();
     return result;
   },
 );
@@ -2287,7 +2280,7 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
       args.grantConfigurationChanged ||
       connector.storageVersion !== args.existing.storageVersion
     ) {
-      // eslint-disable-next-line api/signal-check-await -- Finish both committed invalidations before propagating cancellation.
+      // eslint-disable-next-line api/signal-check-await -- Preserve the committed wakeup outcome for the caller to propagate cancellation.
       const wakeup = await settle(
         set(
           publishConnectorRuntimeSyncWakeups$,
@@ -2299,7 +2292,7 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
         ),
       );
       // The wakeup command observes cancellation only after its publication.
-      // Keep that outcome until organization invalidation has also completed.
+      // Keep that outcome for the caller to propagate after resolving the result.
       if (!wakeup.ok && (!signal.aborted || wakeup.error !== signal.reason)) {
         throw wakeup.error;
       }
@@ -2489,19 +2482,17 @@ export const updateCustomConnectorDefinition$ = command(
       signal.throwIfAborted();
       return normalized ?? notFound("Custom connector not found");
     }
-    await publishCustomConnectorOrganizationInvalidationAfterCommit(
-      args.orgId,
-      get(clerk$).organizations,
-      signal,
-      postCommitAbort,
-    );
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
+    }
+    signal.throwIfAborted();
     return normalized;
   },
 );
 
 export const deleteCustomConnector$ = command(
   async (
-    { get, set },
+    { set },
     args: { readonly orgId: string; readonly id: string },
     signal: AbortSignal,
   ): Promise<NotFoundResponse | ForbiddenResponse | undefined> => {
@@ -2582,12 +2573,10 @@ export const deleteCustomConnector$ = command(
       signal.throwIfAborted();
       return deleted;
     }
-    await publishCustomConnectorOrganizationInvalidationAfterCommit(
-      args.orgId,
-      get(clerk$).organizations,
-      signal,
-      postCommitAbort,
-    );
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
+    }
+    signal.throwIfAborted();
     L.debug("custom connector deleted", { orgId: args.orgId, id: args.id });
     return undefined;
   },
@@ -3175,11 +3164,10 @@ export const setCustomConnectorValues$ = command(
       signal.throwIfAborted();
       return writeResult;
     }
-    await publishCustomConnectorUserInvalidationAfterCommit(
-      args.userId,
-      signal,
-      postCommitAbort,
-    );
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
+    }
+    signal.throwIfAborted();
 
     const markers = await get(
       customConnectorValueMarkers({
@@ -3309,11 +3297,10 @@ export const deleteCustomConnectorAccount$ = command(
       signal.throwIfAborted();
       return result;
     }
-    await publishCustomConnectorUserInvalidationAfterCommit(
-      args.userId,
-      signal,
-      postCommitAbort,
-    );
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
+    }
+    signal.throwIfAborted();
     return result;
   },
 );

@@ -3,10 +3,10 @@ import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-ro
 import { inviteOrgMemberRequestSchema } from "@okouai/api-contracts/contracts/org-members";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRejection, settle } from "../utils.ts";
 import {
   sourcesFirstDraft$,
   updateSourcesFirstDraft$,
+  updateSourcesFirstUi$,
   type SourcesFirstInvite,
 } from "./onboarding-sources-first-state.ts";
 
@@ -25,14 +25,6 @@ const recordInvite$ = command(({ get, set }, invite: SourcesFirstInvite) => {
   });
 });
 
-const dropInvite$ = command(({ get, set }, email: string) => {
-  set(updateSourcesFirstDraft$, {
-    invites: get(sourcesFirstDraft$).invites.filter((current) => {
-      return current.email !== email;
-    }),
-  });
-});
-
 /**
  * Whether the address is one the invite route would accept, judged by the
  * route's own body schema so the step never forwards a refusal the browser
@@ -43,8 +35,7 @@ export function sourcesFirstInviteEmailValid(email: string): boolean {
 }
 
 /**
- * A well-formed address is sent once: one already in flight or already
- * accepted is not sent again.
+ * A well-formed address already accepted by the server is not sent again.
  */
 export function sourcesFirstInviteSendable(
   invites: readonly SourcesFirstInvite[],
@@ -72,13 +63,12 @@ export const sendSourcesFirstInvite$ = command(
     if (!sourcesFirstInviteSendable(get(sourcesFirstDraft$).invites, address)) {
       return;
     }
-    set(recordInvite$, { email: address, status: "pending", failure: null });
     const client = get(apiClient$)(orgInviteContract);
     // The route refuses an address it cannot invite — already a member,
     // already invited, no permission, inactive plan — and names the reason,
     // so those answers belong to the address. A session, server, or network
     // failure says nothing about it and keeps `accept`'s own handling.
-    const invitation = accept(
+    const response = await accept(
       client.invite({
         body: { email: address, role: "member" },
         fetchOptions: { signal },
@@ -86,21 +76,8 @@ export const sendSourcesFirstInvite$ = command(
       [200, 400, 403, 409, 503],
       signal,
     );
-    const answer = await onRejection(settle(invitation, signal), () => {
-      // Only cancellation reaches here: leaving the step aborted the request
-      // before its answer was read. Drop the entry rather than report an
-      // outcome this browser never saw; typing the address again asks the API
-      // for a fresh one.
-      set(dropInvite$, address);
-    });
     signal.throwIfAborted();
-    if (!answer.ok) {
-      // `accept` already reported the failure, and it belongs to the request
-      // rather than to the address.
-      set(dropInvite$, address);
-      return;
-    }
-    const response = answer.value;
+    set(updateSourcesFirstUi$, { inviteEmail: "", inviteEmailLeft: false });
     set(
       recordInvite$,
       response.status === 200

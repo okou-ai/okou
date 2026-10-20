@@ -12861,12 +12861,23 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             threadId: run.threadId,
             prompt: "resume recovered native history",
           });
-          expect(
-            (await api.claimRunnerJob(next.runId)).nativeContinuation,
-          ).toMatchObject({
-            sessionId: body.completion.cliAgentSessionId,
-            generationRunId: expect.any(String),
-          });
+          const continuation = (await api.claimRunnerJob(next.runId))
+            .nativeContinuation;
+          // Cancellation retains the Active slot until recovery completion.
+          // A prior failure completion already released it: recovery outputs
+          // still belong to that Run but cannot acquire Thread publication.
+          if (terminalStatus === "cancelled") {
+            expect(continuation).toMatchObject({
+              sessionId: body.completion.cliAgentSessionId,
+              generationRunId: run.runId,
+            });
+          } else {
+            expect(continuation).toStrictEqual({
+              sessionId: null,
+              generationRunId: null,
+              recoveryPrompt: null,
+            });
+          }
           await api.requestCancelRun(actor, next.runId, [200]);
         },
       );
@@ -13160,71 +13171,109 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(expiredTelemetry.body.error.code).toBe("UNAUTHORIZED");
       });
 
-      it("continues from recovery outputs posted after timeout completion", async () => {
-        const api = createRunsApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+      it.each(["initialized", "uninitialized"] as const)(
+        "preserves %s native binding through timeout and late recovery outputs",
+        async (nativeState) => {
+          const api = createRunsApi(context);
+          const webhooks = createWebhookCallbackApi(context);
+          const { actor, agentId } = await entitledRunActor(
+            {},
+            NATIVE_RUNNER_ROUTE,
+          );
 
-        const source = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "run until the execution deadline",
-        });
-        const sourceClaim = await api.claimRunnerJob(source.runId);
-        const history = `bdd timeout recovery history ${source.runId}`;
-        const historyHash = createHash("sha256").update(history).digest("hex");
-        const cliSessionId = `bdd-timeout-cli-${source.runId}`;
-        mockSessionHistoryBlob(historyHash, history);
-        const sandboxHeaders = {
-          authorization: `Bearer ${sourceClaim.sandboxToken}`,
-        };
+          const source = await api.createThreadRun(actor, {
+            agentId,
+            prompt: "run until the execution deadline",
+          });
+          const sourceClaim = await api.claimRunnerJob(source.runId);
+          const history = `bdd timeout recovery history ${source.runId}`;
+          const historyHash = createHash("sha256")
+            .update(history)
+            .digest("hex");
+          const cliSessionId = `bdd-timeout-cli-${source.runId}`;
+          mockSessionHistoryBlob(historyHash, history);
+          const sandboxHeaders = {
+            authorization: `Bearer ${sourceClaim.sandboxToken}`,
+          };
 
-        const completion = await webhooks.requestAgentComplete(
-          {
-            runId: source.runId,
-            exitCode: 124,
-            error: "Agent execution timed out after 7200 seconds",
-            lastEventSequence: 0,
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(completion.body).toStrictEqual({
-          success: true,
-          status: "failed",
-        });
-        const failed = await api.readRun(actor, source.runId);
-        expect(failed.status).toBe("failed");
-        expect(failed.error).toBe(
-          "Agent execution timed out after 7200 seconds",
-        );
+          if (nativeState === "initialized") {
+            await webhooks.requestAgentEvents(
+              {
+                runId: source.runId,
+                events: [
+                  {
+                    type: "system",
+                    subtype: "init",
+                    session_id: cliSessionId,
+                    sequenceNumber: 0,
+                  },
+                ],
+              },
+              sandboxHeaders,
+              [200],
+            );
+            await flushWaitUntilForTest();
+          }
 
-        await webhooks.requestAgentRunOutputs(
-          {
-            runId: source.runId,
-            cliAgentType: "claude-code",
-            cliAgentSessionId: cliSessionId,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-          sandboxHeaders,
-          [200],
-        );
+          const completion = await webhooks.requestAgentComplete(
+            {
+              runId: source.runId,
+              exitCode: 124,
+              error: "Agent execution timed out after 7200 seconds",
+              lastEventSequence: 0,
+            },
+            sandboxHeaders,
+            [200],
+          );
+          expect(completion.body).toStrictEqual({
+            success: true,
+            status: "failed",
+          });
+          const failed = await api.readRun(actor, source.runId);
+          expect(failed.status).toBe("failed");
+          expect(failed.error).toBe(
+            "Agent execution timed out after 7200 seconds",
+          );
 
-        const continued = await api.createThreadRun(actor, {
-          agentId,
-          threadId: source.threadId,
-          prompt: "continue after the execution deadline",
-        });
-        const continuedClaim = await api.claimRunnerJob(continued.runId);
-        expect(continuedClaim.nativeContinuation).toMatchObject({
-          sessionId: cliSessionId,
-          generationRunId: expect.any(String),
-        });
+          await webhooks.requestAgentRunOutputs(
+            {
+              runId: source.runId,
+              cliAgentType: "claude-code",
+              cliAgentSessionId: cliSessionId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+            sandboxHeaders,
+            [200],
+          );
+          expect((await api.readRun(actor, source.runId)).result).toMatchObject(
+            {
+              frameworkSessionId: expect.any(String),
+              storageOutputs: expect.any(Array),
+            },
+          );
 
-        await api.requestCancelRun(actor, continued.runId, [200]);
-      });
+          const continued = await api.createThreadRun(actor, {
+            agentId,
+            threadId: source.threadId,
+            prompt: "continue after the execution deadline",
+          });
+          const continuedClaim = await api.claimRunnerJob(continued.runId);
+          if (nativeState === "initialized") {
+            expect(continuedClaim.nativeContinuation).toMatchObject({
+              sessionId: cliSessionId,
+              generationRunId: source.runId,
+            });
+          } else {
+            expect(continuedClaim.nativeContinuation).toStrictEqual({
+              sessionId: null,
+              generationRunId: null,
+              recoveryPrompt: null,
+            });
+          }
+
+          await api.requestCancelRun(actor, continued.runId, [200]);
+        },
+      );
 
       it("acknowledges a clean exit whose missing outputs fails the run", async () => {
         const api = createRunsApi(context);

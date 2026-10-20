@@ -5,6 +5,25 @@ The command unit tests separately cover permission enforcement, parsing,
 artifact transfer, fixed-frame geometry, table metadata, script fonts,
 selector waiting, file URLs, and page/occurrence-scoped native-text checks.
 
+## Text flow slots and visual lines
+
+`text-flow-slots.html` covers tight leading with overlapping font Range bounds,
+column flex shrinking, grow with a zero flex basis, padding/borders, centered
+and right-aligned anchors, rich runs beside a badge, independent columns,
+mixed font sizes, superscripts/subscripts and RTL. Convert all four pages with
+the production CLI and compare HTML/PPTX page renders. Text materialization
+must keep owners and neighboring flex/grid slots within 0.5 CSS px of their
+original rectangles. Different wraps of one node and explicit line breaks must
+not consume each other's horizontal space. Uncertain inline contexts retain
+measured bounds.
+
+Native text shapes carry an optional `https://okou.ai/presentation/text-source/v1`
+extension keyed by their final shape identity. It stores canonical font families,
+numeric weights, italic styles, text runs and proven source-line ids while the
+ordinary DrawingML retains embedded font aliases. The Google upload adapter
+consumes this extension; it does not require a renderer-specific Google object id.
+The `convert.test.ts` command test checks transport, not visual fidelity.
+
 ## Editable SVG contract
 
 `svg-native.html` covers native inline SVG export and its explicit boundaries:

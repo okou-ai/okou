@@ -8,6 +8,7 @@ import type {
   PiPreparationObserver,
 } from "./preparation-timing";
 import { MemoryPiSession } from "./session-memory";
+import { piMemorySummaryTokenCount as countMemorySummaryTokens } from "./memory-recall";
 import type {
   PiMemoryRecallOutcome,
   PiMemoryRecallOutcomeStatus,
@@ -86,6 +87,11 @@ export type {
   PiMemoryStage1Evidence,
   PiMemoryStage1ProviderUsage,
 };
+
+/** Exact o200k token count shared by summary projection and memory recall. */
+export function piMemorySummaryTokenCount(content: string): number {
+  return countMemorySummaryTokens(content);
+}
 
 /** Create the canonical empty native Pi history for a new sandbox launch. */
 export function createPiSessionJsonl(args: {

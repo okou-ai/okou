@@ -1703,6 +1703,7 @@
     },
     "banking": {
       "accountFallback": "銀行帳戶",
+      "actionFailed": "銀行操作失敗",
       "active_other": "已對 {{count}} 個帳戶開通訪問",
       "automationOff": "自動化執行無法使用只讀訪問權限。",
       "cancel": "取消",
@@ -5164,7 +5165,7 @@
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
-        "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
+        "preparationFailed": "暫時無法執行，Okou 會自動重試。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
         "retry": "重試",
         "retryMessage": "晨報設定無法載入或更新，請重試以繼續。",
@@ -5173,7 +5174,7 @@
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
         "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
-        "preparationFailed": "主動建議設定未能完成，請重試。",
+        "preparationFailed": "暫時無法執行，Okou 會自動重試。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
         "retry": "重試",
         "retryMessage": "無法載入或更新主動建議設定，請重試。",

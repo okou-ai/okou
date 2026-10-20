@@ -38,24 +38,12 @@ import {
   setJobsActiveTab$,
 } from "../../signals/okou-page/jobs-page.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { onDomEventFn, onRejection } from "../../signals/utils.ts";
+import { onDomEventFn } from "../../signals/utils.ts";
 import { serializeAvatarSvgConfig } from "../okou-page/avatar-svg-utils.ts";
 import { AvatarMaker } from "../okou-page/avatar-maker.tsx";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 
 type Visibility = "public" | "private";
-
-async function createWithErrorToast(
-  creation: Promise<void>,
-  message: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await onRejection(creation, () => {
-    if (!signal.aborted) {
-      toast.error(message);
-    }
-  });
-}
 
 /**
  * The create-agent dialog lives in the app shell, not on the Agents page, so
@@ -87,19 +75,13 @@ export function CreateAgentDialogContainer() {
     if (!canCreate) {
       return;
     }
-    await createWithErrorToast(
-      createSubagentWithSetupThreadFn(
-        {
-          displayName: trimmedName,
-          avatarUrl,
-          visibility,
-          responsibility: trimmedResponsibility,
-        },
-        pageSignal,
-      ),
-      t(($) => {
-        return $.list.create.setupFailed;
-      }),
+    await createSubagentWithSetupThreadFn(
+      {
+        displayName: trimmedName,
+        avatarUrl,
+        visibility,
+        responsibility: trimmedResponsibility,
+      },
       pageSignal,
     );
     setActiveTab(visibility);

@@ -313,172 +313,185 @@ describe("GET /api/cron/project-chat-event-search", () => {
     ).toBeFalsy();
   }, 60_000);
 
-  it("publishes Unicode search hits with UTF-16 ranges and the documented token policy", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-      isolatePg: true,
-    });
-    const bdd = createBddApi(context);
-    const chat = createChatFilesBddApi(context);
-    const mcp = createMcpWebApi(context);
-    createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.readOnboardingStatus(owner);
-    await bdd.completeOnboarding(owner);
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Unicode research",
-      visibility: "private",
-    });
-    const examples = [
-      {
-        content: "ACK-QA-A1-🧪-中文",
-        keyword: "中文",
-        ranges: [{ start: 13, end: 15 }],
-        highlighted: "中文",
-      },
-      {
-        content: "𠀀-代理",
-        keyword: "代理",
-        ranges: [{ start: 3, end: 5 }],
-        highlighted: "代理",
-      },
-      {
-        content: "e\u0301-组合",
-        keyword: "组合",
-        ranges: [{ start: 3, end: 5 }],
-        highlighted: "组合",
-      },
-      {
-        content: "👩‍💻-连接",
-        keyword: "连接",
-        ranges: [{ start: 6, end: 8 }],
-        highlighted: "连接",
-      },
-      {
-        content: "Prefix FoObAr suffix",
-        keyword: "foobar",
-        ranges: [{ start: 7, end: 13 }],
-        highlighted: "FoObAr",
-      },
-      {
-        content: "1️⃣ 数字",
-        keyword: "1️⃣",
-        ranges: [{ start: 0, end: 1 }],
-        highlighted: "1",
-      },
-      {
-        content: "X-分词测试",
-        keyword: "词测试",
-        ranges: [{ start: 3, end: 6 }],
-        highlighted: "词测试",
-      },
-    ];
-    const inputs: {
-      readonly threadId: string;
-      readonly example: (typeof examples)[number];
-    }[] = [];
-    for (const example of examples) {
-      const sent = await chat.requestSendEvent(
-        owner,
-        { agentId: agent.agentId, model: null, prompt: example.content },
-        [201],
+  it.each(["UTF-16 ranges", "the documented token policy"] as const)(
+    "publishes Unicode search hits with %s",
+    async (contract) => {
+      const app = await setupApp({
+        context,
+        routes: cronProjectChatEventSearchRoutes,
+        isolatePg: true,
+      });
+      const bdd = createBddApi(context);
+      const chat = createChatFilesBddApi(context);
+      const mcp = createMcpWebApi(context);
+      createRunsApi(context).configureRunnerGroup();
+      bdd.acceptAgentStorageWrites();
+      const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+      await bdd.readOnboardingStatus(owner);
+      await bdd.completeOnboarding(owner);
+      const agent = await bdd.createAgent(owner, {
+        displayName: "Unicode research",
+        visibility: "private",
+      });
+      const examples = [
+        {
+          contract: "UTF-16 ranges",
+          content: "ACK-QA-A1-🧪-中文",
+          keyword: "中文",
+          ranges: [{ start: 13, end: 15 }],
+          highlighted: "中文",
+        },
+        {
+          contract: "UTF-16 ranges",
+          content: "𠀀-代理",
+          keyword: "代理",
+          ranges: [{ start: 3, end: 5 }],
+          highlighted: "代理",
+        },
+        {
+          contract: "UTF-16 ranges",
+          content: "e\u0301-组合",
+          keyword: "组合",
+          ranges: [{ start: 3, end: 5 }],
+          highlighted: "组合",
+        },
+        {
+          contract: "UTF-16 ranges",
+          content: "👩‍💻-连接",
+          keyword: "连接",
+          ranges: [{ start: 6, end: 8 }],
+          highlighted: "连接",
+        },
+        {
+          contract: "the documented token policy",
+          content: "Prefix FoObAr suffix",
+          keyword: "foobar",
+          ranges: [{ start: 7, end: 13 }],
+          highlighted: "FoObAr",
+        },
+        {
+          contract: "the documented token policy",
+          content: "1️⃣ 数字",
+          keyword: "1️⃣",
+          ranges: [{ start: 0, end: 1 }],
+          highlighted: "1",
+        },
+        {
+          contract: "the documented token policy",
+          content: "X-分词测试",
+          keyword: "词测试",
+          ranges: [{ start: 3, end: 6 }],
+          highlighted: "词测试",
+        },
+      ].filter((example) => {
+        return example.contract === contract;
+      });
+      const inputs = await Promise.all(
+        examples.map(async (example) => {
+          const sent = await chat.requestSendEvent(
+            owner,
+            { agentId: agent.agentId, model: null, prompt: example.content },
+            [201],
+          );
+          if (sent.status !== 201) {
+            throw new Error("Expected public input acceptance");
+          }
+          return { threadId: sent.body.threadId, example };
+        }),
       );
-      if (sent.status !== 201) {
-        throw new Error("Expected public input acceptance");
-      }
-      inputs.push({ threadId: sent.body.threadId, example });
       await flushWaitUntilForTest();
-    }
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    await accept(
-      app(cronProjectChatEventSearchContract).project({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
-    const token = mcp.authorize(owner);
-    async function search(keyword: string) {
-      const response = await mcp.call(token(), "search_chat_messages", {
-        keyword,
-        agentId: agent.agentId,
-      });
-      expect(response.isError).not.toBeTruthy();
-      const result = mcpChatSearchContract.search.responses[200].parse(
-        response.structuredContent,
-      );
-      const native = await chat.searchChat(owner, keyword, {
-        agentId: agent.agentId,
-      });
-      expect(
-        result.results.map((hit) => {
-          return {
-            content: hit.matchedMessage.content,
-            ranges: hit.matchedRanges,
-          };
+      mockEnv("CRON_SECRET", CRON_SECRET);
+      await accept(
+        app(cronProjectChatEventSearchContract).project({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
         }),
-      ).toStrictEqual(
-        native.results.map((hit) => {
-          return {
-            content: hit.matchedMessage.content,
-            ranges: hit.matchedRanges,
-          };
-        }),
+        [200],
       );
-      return result.results;
-    }
-    for (const { threadId, example } of inputs) {
-      const results = await search(example.keyword);
-      expect(results).toHaveLength(1);
-      const hit = results[0];
-      if (!hit) {
-        throw new Error("Expected an indexed Unicode hit");
+      const token = mcp.authorize(owner);
+      async function search(keyword: string) {
+        const response = await mcp.call(token(), "search_chat_messages", {
+          keyword,
+          agentId: agent.agentId,
+        });
+        expect(response.isError).not.toBeTruthy();
+        const result = mcpChatSearchContract.search.responses[200].parse(
+          response.structuredContent,
+        );
+        const native = await chat.searchChat(owner, keyword, {
+          agentId: agent.agentId,
+        });
+        expect(
+          result.results.map((hit) => {
+            return {
+              content: hit.matchedMessage.content,
+              ranges: hit.matchedRanges,
+            };
+          }),
+        ).toStrictEqual(
+          native.results.map((hit) => {
+            return {
+              content: hit.matchedMessage.content,
+              ranges: hit.matchedRanges,
+            };
+          }),
+        );
+        return result.results;
       }
-      expect(hit.threadId).toBe(threadId);
-      expect(hit.matchedMessage.content).toBe(example.content);
-      expect(hit.matchedRanges).toStrictEqual(example.ranges);
-      expect(
-        hit.matchedRanges.map(({ start, end }) => {
-          return hit.matchedMessage.content.slice(start, end);
+      await Promise.all(
+        inputs.map(async ({ threadId, example }) => {
+          const results = await search(example.keyword);
+          expect(results).toHaveLength(1);
+          const hit = results[0];
+          if (!hit) {
+            throw new Error("Expected an indexed Unicode hit");
+          }
+          expect(hit.threadId).toBe(threadId);
+          expect(hit.matchedMessage.content).toBe(example.content);
+          expect(hit.matchedRanges).toStrictEqual(example.ranges);
+          expect(
+            hit.matchedRanges.map(({ start, end }) => {
+              return hit.matchedMessage.content.slice(start, end);
+            }),
+          ).toStrictEqual([example.highlighted]);
         }),
-      ).toStrictEqual([example.highlighted]);
-    }
-    await expect(search("中文 🧪")).resolves.toMatchObject([
-      {
-        matchedMessage: { content: "ACK-QA-A1-🧪-中文" },
-        matchedRanges: [{ start: 13, end: 15 }],
-      },
-    ]);
-    await expect(search("e\u0301")).resolves.toMatchObject([
-      {
-        matchedMessage: { content: "e\u0301-组合" },
-        matchedRanges: [{ start: 0, end: 1 }],
-      },
-    ]);
-    await expect(search("prefix suffix")).resolves.toMatchObject([
-      {
-        matchedMessage: { content: "Prefix FoObAr suffix" },
-        matchedRanges: [
-          { start: 0, end: 6 },
-          { start: 14, end: 20 },
-        ],
-      },
-    ]);
-    for (const keyword of [
-      "🧪",
-      "👩‍💻",
-      "!!!",
-      "中",
-      "𠀀",
-      "foobar 中",
-      "foo",
-      "é",
-      "prefix nonexistent",
-    ]) {
-      await expect(search(keyword)).resolves.toStrictEqual([]);
-    }
-  });
+      );
+      if (contract === "UTF-16 ranges") {
+        await Promise.all([
+          expect(search("中文 🧪")).resolves.toMatchObject([
+            {
+              matchedMessage: { content: "ACK-QA-A1-🧪-中文" },
+              matchedRanges: [{ start: 13, end: 15 }],
+            },
+          ]),
+          expect(search("e\u0301")).resolves.toMatchObject([
+            {
+              matchedMessage: { content: "e\u0301-组合" },
+              matchedRanges: [{ start: 0, end: 1 }],
+            },
+          ]),
+        ]);
+      } else {
+        await expect(search("prefix suffix")).resolves.toMatchObject([
+          {
+            matchedMessage: { content: "Prefix FoObAr suffix" },
+            matchedRanges: [
+              { start: 0, end: 6 },
+              { start: 14, end: 20 },
+            ],
+          },
+        ]);
+      }
+      const absentKeywords =
+        contract === "UTF-16 ranges"
+          ? ["🧪", "👩‍💻", "!!!", "中", "𠀀", "é"]
+          : ["foobar 中", "foo", "prefix nonexistent"];
+      await Promise.all(
+        absentKeywords.map(async (keyword) => {
+          await expect(search(keyword)).resolves.toStrictEqual([]);
+        }),
+      );
+    },
+  );
 
   it("publishes messages searchable with inclusive MCP ISO time filters and unchanged Web milliseconds", async () => {
     // Authenticated operator publication is the system boundary in this case;

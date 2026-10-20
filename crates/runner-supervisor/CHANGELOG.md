@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.0...runner-supervisor-v0.19.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** prefer same-host runners for draining predecessor homes ([#41799](https://github.com/okou-ai/okou/issues/41799)) ([ca63626](https://github.com/okou-ai/okou/commit/ca6362664686066960a89b36b4c99c2beee508d0))
+
 ## [0.19.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.18.1...runner-supervisor-v0.19.0) (2026-10-20)
 
 
