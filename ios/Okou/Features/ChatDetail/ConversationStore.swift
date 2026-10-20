@@ -93,7 +93,7 @@ final class ConversationStore {
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
     self.draftStorage = draftStorage
-    draftTarget = .thread(agentID: thread.agentID, threadID: thread.id)
+    draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands,
       repository: draftRepository, storage: draftStorage, didFail: didFail)

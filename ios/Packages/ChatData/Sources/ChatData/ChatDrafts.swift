@@ -5,27 +5,27 @@ import Foundation
 public enum ChatDraftTarget: Equatable, Sendable {
   case unassigned
   case agent(String)
-  case thread(agentID: String, threadID: String)
+  case thread(String)
 
   public var key: String {
     switch self {
     case .unassigned: "unassigned"
     case .agent(let id): "agent/" + id
-    case .thread(let agent, let thread): "agent/" + agent + "/thread/" + thread
+    case .thread(let id): "thread/" + id
     }
   }
   var readPath: String? {
     switch self {
     case .unassigned: nil
     case .agent(let id): "/api/agents/\(id)/draft"
-    case .thread(_, let id): "/api/chat-threads/\(id)/draft"
+    case .thread(let id): "/api/chat-threads/\(id)/draft"
     }
   }
   var writePath: String? {
     switch self {
     case .unassigned: nil
     case .agent: readPath
-    case .thread(_, let id): "/api/chat-threads/\(id)"
+    case .thread(let id): "/api/chat-threads/\(id)"
     }
   }
 }

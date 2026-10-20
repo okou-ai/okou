@@ -190,7 +190,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(store.selectedThreadID, storeThreadID)
   }
 
-  func testSelectedChatReassignmentUpdatesAgentContextAndNewChat() async {
+  func testSelectedChatReassignmentUpdatesAgentContextAndNewChat() async throws {
     let otherAgentID = "40000000-0000-4000-8000-000000000006"
     let reassigned = Mutex(false)
     let fixture = ChatHTTPFixture { request in
@@ -228,11 +228,19 @@ final class WorkspaceStoreTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.baseURL,
+        userID: "user", workspaceID: "workspace"), directory: directory)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
     defer { store.close() }
     await store.refresh()
     store.selectChat(storeThreadID)
     XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    store.selectedConversation?.draft = "Draft survives Agent reassignment"
 
     reassigned.withLock { $0 = true }
     await store.refresh()
@@ -250,6 +258,14 @@ final class WorkspaceStoreTests: XCTestCase {
     store.startNewChat(agentID: storeAgentID)
     await store.refresh()
     XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    store.close()
+    let reopened = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
+    defer { reopened.close() }
+    await reopened.refresh()
+    reopened.selectChat(storeThreadID)
+    XCTAssertEqual(reopened.selectedConversation?.thread.agentID, otherAgentID)
+    XCTAssertEqual(reopened.selectedConversation?.draft, "Draft survives Agent reassignment")
   }
 
   func testNewChatDoesNotCreateUntilSendAndKeepsDraftIfCreationFails() async {

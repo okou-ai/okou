@@ -16,7 +16,7 @@ final class ChatDraftTests: XCTestCase {
     document.replaceText("Restored after restart")
     let draft = ComposerDraft(document: document)
     let agent = ChatDraftTarget.agent("agent")
-    let thread = ChatDraftTarget.thread(agentID: "agent", threadID: "thread")
+    let thread = ChatDraftTarget.thread("thread")
     try ChatDraftStorage(scope: scope, directory: directory).save(draft, key: agent.key)
     let reopened = ChatDraftStorage(scope: scope, directory: directory)
     XCTAssertEqual(try reopened.load(agent.key, as: ComposerDraft.self), draft)
@@ -64,7 +64,7 @@ final class ChatDraftTests: XCTestCase {
         body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
     }
     let repository = ChatDraftRepository(client: fixture.client)
-    for target in [ChatDraftTarget.agent("agent"), .thread(agentID: "agent", threadID: "thread")] {
+    for target in [ChatDraftTarget.agent("agent"), .thread("thread")] {
       let restored = try await repository.load(target)
       XCTAssertEqual(restored, draft)
       try await repository.save(restored, to: target)
