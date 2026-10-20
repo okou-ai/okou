@@ -20,6 +20,7 @@ mod dual_history;
 mod evidence;
 mod fences;
 mod finalizing;
+mod fixed_restore;
 mod fixture;
 mod foreground;
 mod foreground_growth;
@@ -109,6 +110,7 @@ enum Corpus {
     SpeculativeFault(bool),
     NativeUnpark(native_unpark::Fault),
     NativePause(native_pause::Fault),
+    FixedRestore(fixed_restore::Selection),
     DualHistory(bool),
     ClaimUnavailable(claim_peer::Outcome),
     ClaimProducerLost { cancelled: bool, restored: bool },
@@ -1215,6 +1217,11 @@ async fn exercise_selected_factories(
 ) -> TestResult<()> {
     for &scope in scopes {
         for restored in [false, true] {
+            if let Corpus::FixedRestore(selected) = corpus
+                && selected.restored != restored
+            {
+                continue;
+            }
             if let Corpus::ClaimProducerLost {
                 restored: selected, ..
             } = corpus
@@ -1284,6 +1291,8 @@ async fn exercise_selected_factories(
                                 fault.name().into()
                             } else if let Corpus::NativePause(fault) = corpus {
                                 fault.pause_name().into()
+                            } else if let Corpus::FixedRestore(selected) = corpus {
+                                selected.label()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1442,6 +1451,10 @@ async fn exercise_retirement(
         .map(|input| input.original_run_id)
         .unwrap_or_else(RunId::new_v4);
     let sandbox_id = SandboxId::new_v4();
+    let fixed_probe = matches!(corpus, Corpus::FixedRestore(_))
+        .then(|| fixed_restore::Probe::new(sandbox_id.to_string()))
+        .transpose()?;
+    let full_session = corpus == Corpus::Continuation || fixed_probe.is_some();
     let reuse_key = real_claim
         .as_ref()
         .map(|input| input.reuse_key.clone())
@@ -1501,7 +1514,7 @@ async fn exercise_retirement(
     let mut storage_fingerprints = StorageFingerprints::default();
     let mut original_exit = 0;
     let mut continuation_fixture = None;
-    let (mut sandbox, home) = if corpus == Corpus::Continuation {
+    let (mut sandbox, home) = if full_session {
         let proof = proof
             .ok_or_else(|| io::Error::other("native continuation requires measured owners"))?;
         let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096)
@@ -1514,22 +1527,24 @@ async fn exercise_retirement(
             cache.clone(),
             rootfs_hash.clone(),
             proof.clone(),
-            matches!(scope, NativeScope::Batch(_)),
+            corpus == Corpus::Continuation && matches!(scope, NativeScope::Batch(_)),
         )
         .await?;
-        let result = continuation
-            .execute(continuation::Execution {
-                factory: factory.clone(),
-                operations: operations.clone(),
-                inputs,
-                run: run_id,
-                id: sandbox_id,
-                key: reuse_key.clone(),
-                history: continuation::SEED.to_vec(),
-                original: run_id,
-                continued: false,
-            })
-            .await;
+        let execution = continuation.execute(continuation::Execution {
+            factory: factory.clone(),
+            operations: operations.clone(),
+            inputs,
+            run: run_id,
+            id: sandbox_id,
+            key: reuse_key.clone(),
+            history: continuation::SEED.to_vec(),
+            original: run_id,
+            continued: false,
+        });
+        let result = match &fixed_probe {
+            Some(probe) => probe.scope.scope(execution).await,
+            None => execution.await,
+        };
         let mut prepared = match result {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -1548,6 +1563,16 @@ async fn exercise_retirement(
             .ok_or_else(|| io::Error::other("native original backing unavailable"))?;
         proof.bind(sandbox_id.to_string(), backing, budget.clone())?;
         continuation.record_original(run_id, &prepared)?;
+        if fixed_probe.is_some() {
+            proof.fixed_restore_witness("original_session", serde_json::json!({
+                "history_run_id":run_id,"thread_id":continuation.session()?.0,
+                "history_hex":hex::encode(&prepared.history),
+                "history_sha256":continuation::digest(&prepared.history),
+                "history_bytes":prepared.history.len(),"final_identity_verified":prepared.identity.is_some(),
+                "physical_history":fixed_restore::session_file(&*prepared.sandbox,&continuation.session()?.0).await?,
+                "executor_completed":true,"exit_code":prepared.exit_code,
+            }))?;
+        }
         original_history = std::mem::take(&mut prepared.history);
         continuation_fixture = Some(continuation);
         (prepared.sandbox, prepared.home)
@@ -1563,8 +1588,7 @@ async fn exercise_retirement(
         }
         (sandbox, home)
     };
-    if corpus == Corpus::Continuation
-        && let Err(error) = fixture::prepare_started_guest(&mut *sandbox, run_id).await
+    if full_session && let Err(error) = fixture::prepare_started_guest(&mut *sandbox, run_id).await
     {
         if let Some(proof) = proof {
             proof.retain(sandbox);
@@ -1574,7 +1598,7 @@ async fn exercise_retirement(
         return Err(error);
     }
     if let Some(proof) = proof
-        && corpus != Corpus::Continuation
+        && !full_session
     {
         let backing = sandbox
             .backing_process()
@@ -1608,15 +1632,23 @@ async fn exercise_retirement(
         .await;
     }
     let parked: TestResult<_> = async {
-        if matches!(corpus, Corpus::ClaimProducerLost { .. }) {
+        if matches!(
+            corpus,
+            Corpus::ClaimProducerLost { .. } | Corpus::FixedRestore(_)
+        ) {
             let digest = fixture::verify_speculative_guest(&*sandbox, run_id).await?;
             fixture::exec(&*sandbox, "sync").await?;
-            proof.ok_or_else(|| io::Error::other("claim loss proof absent"))?
-                .claim_producer_witness("original_data_durable", serde_json::json!({
-                    "history_run_id": run_id, "payload_sha256": digest,
-                    "payload_bytes": fixture::PAYLOAD_BYTES, "original_private_and_home_verified": true,
-                    "guest_sync_completed": true,
-                }))?;
+            let proof = proof.ok_or_else(|| io::Error::other("request loss proof absent"))?;
+            let value = serde_json::json!({
+                "history_run_id": run_id, "payload_sha256": digest,
+                "payload_bytes": fixture::PAYLOAD_BYTES, "original_private_and_home_verified": true,
+                "guest_sync_completed": true,
+            });
+            if fixed_probe.is_some() {
+                proof.fixed_restore_witness("original_data_durable", value)?;
+            } else {
+                proof.claim_producer_witness("original_data_durable", value)?;
+            }
         }
         let backing = sandbox
             .backing_process()
@@ -1624,7 +1656,7 @@ async fn exercise_retirement(
         if sandbox.park().await? != SandboxParkOutcome::Reusable {
             return Err(io::Error::other("native fixture could not physically park").into());
         }
-        let lease = if corpus == Corpus::Continuation {
+        let lease = if full_session {
             first_lease.take()
         } else {
             ResourceBudget::try_reserve_lease(&budget, 2, 4096)
@@ -2044,6 +2076,19 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if let Corpus::FixedRestore(selected) = corpus {
+                    let proof = proof.ok_or_else(|| io::Error::other("fixed restore proof absent"))?;
+                    proof.retain(continuation_fixture.take());
+                    return fixed_restore::exercise(fixed_restore::Request {
+                        context: transitions::Context {
+                            factory:factory.clone(),pool:pool.clone(),status:status.clone(),
+                            operations:operations.clone(),budget:budget.clone(),tracker:tracker.clone(),
+                            rootfs_hash:rootfs_hash.clone(),reuse_key:reuse_key.clone(),
+                        }, inputs, proof, directory:paths.base_dir(), backing:backing.clone(),
+                        history:run_id, selection:selected, cache:&cache,
+                        probe:fixed_probe.as_ref().ok_or_else(||io::Error::other("fixed connection missing"))?,
+                    }).await.map(|()| None);
+                }
                 let speculative_injection = match corpus {
                     Corpus::SpeculativeFault(panic) => Some(speculative_fault::Injection::Callback(panic)),
                     Corpus::NativeUnpark(fault) => Some(speculative_fault::Injection::Native(fault)),

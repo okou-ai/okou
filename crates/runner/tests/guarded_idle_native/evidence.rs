@@ -336,6 +336,10 @@ impl Case {
         self.write_event("NATIVE_PAUSE_WITNESS ", phase, evidence)
     }
 
+    pub fn fixed_restore_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_FIXED_RESTORE_WITNESS ", phase, evidence)
+    }
+
     pub fn require_original_lease_released(&self) -> io::Result<()> {
         let state = self
             .state

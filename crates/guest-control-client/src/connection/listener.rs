@@ -157,6 +157,8 @@ impl GuestControlClient {
         timing: Option<&mut GuestConnectionTiming>,
         sandbox_id: Option<String>,
     ) -> io::Result<Self> {
+        #[cfg(feature = "test-support")]
+        let stream = crate::test_support::ConnectionScope::adapt(stream, sandbox_id.as_deref())?;
         // Handshake on the unsplit stream (reader task not running yet).
         let (stream, handshake_decoder) = Self::handshake(stream, deadline, timing).await?;
 

@@ -4,7 +4,7 @@ version = "0.53.15"
 edition.workspace = true
 
 [features]
-test-support = []
+test-support = ["guest-control-client/test-support"]
 
 [dependencies]
 async-trait.workspace = true

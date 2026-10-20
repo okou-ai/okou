@@ -330,7 +330,9 @@ impl Fixture {
                 .ok_or_else(|| io::Error::other("native storage manifest missing"))?,
         );
         let this = self.clone();
-        let work = permit.spawn(move |mut operation| async move {
+        let connection_scope = guest_control_client::test_support::ConnectionScope::current();
+        let work = permit.spawn(move |mut operation| {
+          let execution = async move {
             let idle = custody.lock().map_err(|_| io::Error::other("native reused custody poisoned"))?.take();
             let params = JobParams { home_source_run_id: None, profile_name: fixture::PROFILE.into(), vcpu: 2, memory_mb: 4096, home_disk_mb: 16384, rootfs_hash: this.rootfs_hash.clone(), restore_guest_state: true, device_rate_limits: None, home_image_prepare_lock_policy: Default::default() };
             let (mut outcome, _telemetry) = if let Some(idle) = idle {
@@ -431,6 +433,13 @@ impl Fixture {
                 return Err(io::Error::other("native reused continuation did not acquire its active entry lease").into());
             }
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Prepared { sandbox, home, identity, history, storage, exit_code, preparation })
+          };
+          async move {
+            match connection_scope {
+                Some(scope) => scope.scope(execution).await,
+                None => execution.await,
+            }
+          }
         })?;
         work.join().await?
     }

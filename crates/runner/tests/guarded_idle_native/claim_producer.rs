@@ -158,7 +158,7 @@ async fn live(request: &Request<'_>) -> TestResult<()> {
     Ok(())
 }
 
-fn home(directory: &Path, id: &str) -> TestResult<Value> {
+pub(super) fn home(directory: &Path, id: &str) -> TestResult<Value> {
     let path = sandbox_firecracker::FactoryPaths::new(directory.into())
         .workspace(id)
         .join("home.ext4");
