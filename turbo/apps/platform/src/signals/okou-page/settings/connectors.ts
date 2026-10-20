@@ -961,6 +961,24 @@ type FinishConnectorConnectionOptions = PostConnectOptions & {
   readonly toastMessage?: string | null;
 };
 
+async function readCompletedBuiltinConnectorAccount(
+  createClient: ApiClientFactory,
+  connectorSlug: ConnectorSlug,
+  connectionId: string,
+  account: PlatformConnectorAccountMutationIntent,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (account.intent === "reconnect" && account.connectionId !== connectionId) {
+    throw new Error("Connector account response identity mismatch.");
+  }
+  return await readConnectorAccountCompletion(
+    createClient,
+    { kind: "builtin", connectorSlug },
+    connectionId,
+    signal,
+  );
+}
+
 const authorizeConnectorForVisibleAgents$ = command(
   async (
     { get, set },
@@ -1103,16 +1121,11 @@ export const submitBuiltinManualGrant$ = command(
         signal.throwIfAborted();
         const connectionId = result.body.connectionId ?? result.body.id;
         if (
-          options.account.intent === "reconnect" &&
-          options.account.connectionId !== connectionId
-        ) {
-          throw new Error("Connector account response identity mismatch.");
-        }
-        if (
-          !(await readConnectorAccountCompletion(
+          !(await readCompletedBuiltinConnectorAccount(
             createClient,
-            { kind: "builtin", connectorSlug },
+            connectorSlug,
             connectionId,
+            options.account,
             signal,
           ))
         ) {
@@ -1229,16 +1242,11 @@ export const connectBuiltinConnectorNoAuth$ = command(
         signal.throwIfAborted();
         const connectionId = result.body.connectionId ?? result.body.id;
         if (
-          options.account.intent === "reconnect" &&
-          options.account.connectionId !== connectionId
-        ) {
-          throw new Error("Connector account response identity mismatch.");
-        }
-        if (
-          !(await readConnectorAccountCompletion(
+          !(await readCompletedBuiltinConnectorAccount(
             createClient,
-            { kind: "builtin", connectorSlug },
+            connectorSlug,
             connectionId,
+            options.account,
             signal,
           ))
         ) {
@@ -1576,6 +1584,19 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
 
         if (pollResult.status === "complete") {
           signal.throwIfAborted();
+          const connectionId =
+            pollResult.connectionId ?? pollResult.connector.id;
+          if (
+            !(await readCompletedBuiltinConnectorAccount(
+              get(apiClient$),
+              connectorSlug,
+              connectionId,
+              options.account,
+              signal,
+            ))
+          ) {
+            return { stop: true };
+          }
           await set(
             finishConnectorConnection$,
             connectorSlug,
@@ -1592,7 +1613,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           );
           return {
             stop: true,
-            connectionId: pollResult.connectionId ?? pollResult.connector.id,
+            connectionId,
           };
         }
 
@@ -2200,6 +2221,19 @@ const completeConnectorExternalCode$ = command(
           return false;
         }
 
+        const connectionId =
+          completeResult.body.connectionId ?? completeResult.body.connector.id;
+        if (
+          !(await readCompletedBuiltinConnectorAccount(
+            createClient,
+            connectorSlug,
+            connectionId,
+            options.account,
+            flowSignal,
+          ))
+        ) {
+          return false;
+        }
         await set(
           finishConnectorConnection$,
           connectorSlug,
@@ -2215,11 +2249,7 @@ const completeConnectorExternalCode$ = command(
           internalConnectorExternalCodeState$,
           createIdleConnectorExternalCodeState(),
         );
-        return {
-          connectionId:
-            completeResult.body.connectionId ??
-            completeResult.body.connector.id,
-        };
+        return { connectionId };
       })(),
       () => {
         if (connectorStateChanged) {

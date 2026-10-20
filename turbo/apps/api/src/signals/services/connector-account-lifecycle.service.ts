@@ -751,7 +751,7 @@ function accountAuthLookupFromCatalogRows(
   }[],
   connectorSlugs: readonly ConnectorSlug[],
 ): ConnectorRuntimeAuthLookup {
-  // Account projections omit a stored builtin account with no catalog entry.
+  // Missing runtime metadata must not erase the saved account's identity.
   const source = connectorCatalogSlugSourceFromRows(
     rows.map((row) => {
       return {
