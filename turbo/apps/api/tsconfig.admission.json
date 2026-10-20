@@ -177,6 +177,7 @@
     "src/signals/services/official-workflow-account-projection.ts",
     "src/signals/services/official-workflow-constants.ts",
     "src/signals/services/official-workflow-installation.service.ts",
+    "src/signals/services/official-workflow-owner-schedule.ts",
     "src/signals/services/official-workflow-reconciliation-sql.ts",
     "src/signals/services/official-workflow-reconciliation.service.ts",
     "src/signals/services/official-workflow-reconciliation.types.ts",

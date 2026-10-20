@@ -101,12 +101,22 @@ function morningBriefDefinition(
     blueprints: [
       {
         key: "daily-delivery",
-        parameters: [],
+        // Installation and reconciliation bind each owner's start minute
+        // before 07:00 local time; the default keeps 07:00 when none is bound.
+        parameters: [
+          {
+            key: "cron",
+            type: "string",
+            required: true,
+            format: "text",
+            default: "0 7 * * *",
+          },
+        ],
         desiredState: {
           kind: "schedule",
           schedule: {
             type: "cron",
-            cronExpression: "0 7 * * *",
+            cronExpression: { parameter: "cron" },
           },
         },
       },
