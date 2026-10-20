@@ -146,6 +146,7 @@ where
         unpark_firecracker,
         resume_guest,
         || {},
+        None,
     )
     .await
 }
@@ -201,6 +202,8 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
         is_parked: false,
         park_outcome: None,
         park_fence: None,
+        unpark_attempt: None,
+        terminal_unpark: None,
         guest_rpc_endpoint: None,
         guest_duplex_endpoint: None,
         runtime_cancel: CancellationToken::new(),
@@ -1904,6 +1907,7 @@ async fn ready_for_operations_boundary_releases_fence_before_reopening_gate() {
             assert!(matches!(release_state.state(), CoordinatorState::Parked));
             release_events.lock().unwrap().push("release_fence");
         },
+        None,
     )
     .await
     .unwrap();
@@ -1946,6 +1950,7 @@ async fn ready_for_operations_boundary_firecracker_failure_does_not_resume_guest
         || {
             drop(fence.take());
         },
+        None,
     )
     .await;
 
@@ -1986,6 +1991,7 @@ async fn ready_for_operations_boundary_guest_resume_failure_marks_dirty() {
         || {
             drop(fence.take());
         },
+        None,
     )
     .await;
 
@@ -2128,6 +2134,7 @@ async fn ready_for_operations_boundary_cancel_during_firecracker_unpark_keeps_fe
             || {
                 drop(fence.take());
             },
+            None,
         );
         tokio::pin!(unpark);
 
@@ -2205,6 +2212,7 @@ async fn ready_for_operations_boundary_reopen_failure_marks_dirty() {
         || {
             release_events.lock().unwrap().push("release_fence");
         },
+        None,
     )
     .await;
 
