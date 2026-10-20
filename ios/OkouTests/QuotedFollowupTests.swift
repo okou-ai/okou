@@ -14,7 +14,7 @@ final class QuotedFollowupTests: XCTestCase {
     let conversation = fixture.conversation()
     defer { conversation.close() }
     conversation.draft = "Keep the ordinary draft."
-    let message = output("👋 First paragraph.\n\n  Selected 🌷 passage.  \n\nLast paragraph.")
+    let message = output("👋 First paragraph.\n\n  Selected 🌷 é passage.  \n\nLast paragraph.")
     let host = UIHostingController(
       rootView: QuoteHarness(conversation: conversation, message: message))
     let window = try await mount(host)
@@ -25,7 +25,7 @@ final class QuotedFollowupTests: XCTestCase {
     let selection = try XCTUnwrap(
       textViews(in: window).first { $0.accessibilityIdentifier == "message-selection-text" })
     selection.becomeFirstResponder()
-    let range = (message.text as NSString).range(of: "  Selected 🌷 passage.  ")
+    let range = (message.text as NSString).range(of: "  Selected 🌷 é passage.  ")
     selection.selectedRange = range
     await hostingPresentationFrame()
     attach(window, name: "Native assistant text selection")
@@ -166,7 +166,13 @@ final class QuotedFollowupTests: XCTestCase {
     unrelated.quote(first)
     XCTAssertFalse(unrelated.composer.hasContent)
     unrelated.close()
-    let changed = output("Changed source text")
+    // Canonically equal Swift strings can have different UTF-16 offsets.
+    let changed = ChatMessage(
+      id: message.id, role: .assistant,
+      text: message.text.replacingOccurrences(of: "Café", with: "Cafe\u{0301}"),
+      createdAt: message.createdAt, isQueued: false, isError: false)
+    XCTAssertEqual(changed.text, message.text)
+    XCTAssertNotEqual(changed.text.utf16.count, message.text.utf16.count)
     conversation.quote(
       try XCTUnwrap(
         ChatFeedbackSelection(
@@ -287,7 +293,7 @@ private final class QuoteHistoryFixture: Sendable {
             $0.name == "sinceSeqId"
           }?.value.flatMap(Int.init) ?? 0
         let output =
-          "Review the final evidence before release.\n\nKeep the owner visible for each stage."
+          "Review the final evidence before release. Café status.\n\nKeep the owner visible for each stage."
         let content = String(decoding: try JSONEncoder().encode(output), as: UTF8.self)
         var rows: [String] = []
         if after < 1 {

@@ -50,7 +50,7 @@ private struct MessageSelectionTextView: UIViewRepresentable {
   func updateUIView(_ view: UITextView, context: Context) {
     context.coordinator.input = self
     // Parent updates must not replace the native selection while the reader adjusts it.
-    if view.text != text { view.text = text }
+    if view.text?.utf16.elementsEqual(text.utf16) != true { view.text = text }
   }
 
   static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) { view.delegate = nil }
@@ -63,12 +63,14 @@ private struct MessageSelectionTextView: UIViewRepresentable {
       _ textView: UITextView, editMenuForTextIn range: NSRange,
       suggestedActions: [UIMenuElement]
     ) -> UIMenu? {
-      guard let message = input.message, input.quote != nil, textView.text == message.text,
+      guard let message = input.message, input.quote != nil,
+        textView.text?.utf16.elementsEqual(message.text.utf16) == true,
         let selection = ChatFeedbackSelection(message: message, range: range)
       else { return UIMenu(children: suggestedActions) }
       let action = UIAction(title: "Quote", image: UIImage(systemName: "text.quote")) {
         [weak self, weak textView] _ in
-        guard let self, let textView, textView.text == selection.text,
+        guard let self, let textView,
+          textView.text?.utf16.elementsEqual(selection.text.utf16) == true,
           textView.selectedRange == range
         else { return }
         input.quote?(selection)

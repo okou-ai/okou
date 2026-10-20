@@ -219,7 +219,8 @@ final class ConversationStore {
   func quote(_ selection: ChatFeedbackSelection) {
     guard !closed, !needsUpgrade,
       let message = messages.first(where: { $0.id == selection.eventID }),
-      message.text == selection.text, message.role == .assistant, !message.isError
+      message.text.utf16.elementsEqual(selection.text.utf16),
+      message.role == .assistant, !message.isError
     else { return }
     composer.addFeedback(selection)
   }
