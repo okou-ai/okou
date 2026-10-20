@@ -22,7 +22,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
+    if [ "${3:-}" = "6060606060606060606060606060606060606060" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN:-1}" = "1" ]
       else
@@ -231,6 +237,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/guest-storage-output-completion-reader" ]; then
+      [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_GUEST_STORAGE_COMPLETION_READER_COMMIT-6060606060606060606060606060606060606060}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-storage-output-reader" ]; then
       [ "${MOCK_RUN_STORAGE_OUTPUT_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_RUN_STORAGE_OUTPUT_READER_COMMIT-c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de}"
@@ -419,6 +430,29 @@ for storage_reader_case in \
   [ ! -s "${tmp_dir}/storage-reader-floor.output" ] || fail "unsupported Storage reader must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "unsupported Storage reader must fail before artifact or host access"
+  fi
+done
+
+for completion_reader_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Missing or invalid Guest Storage-output completion reader rollback floor" \
+    run_resolver "${tmp_dir}/completion-reader-policy.output" "MOCK_GUEST_STORAGE_COMPLETION_READER_COMMIT=${completion_reader_commit}"
+  [ ! -s "${tmp_dir}/completion-reader-policy.output" ] || fail "invalid completion reader policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid completion reader policy must fail before artifact or host access"
+  fi
+done
+
+for completion_reader_case in \
+  "MOCK_GUEST_STORAGE_COMPLETION_READER_AVAILABLE=0|Cannot read the Guest Storage-output completion reader rollback floor from main" \
+  "MOCK_GUEST_STORAGE_COMPLETION_READER_ON_MAIN=0|Guest Storage-output completion reader rollback floor is not on main" \
+  "MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID=0|Rollback target predates the Guest Storage-output completion reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${completion_reader_case#*|}" \
+    run_resolver "${tmp_dir}/completion-reader-floor.output" "${completion_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/completion-reader-floor.output" ] || fail "unsupported completion reader must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "unsupported completion reader must fail before artifact or host access"
   fi
 done
 
