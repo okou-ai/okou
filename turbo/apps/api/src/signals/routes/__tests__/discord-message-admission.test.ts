@@ -1,4 +1,5 @@
 import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
@@ -6,15 +7,15 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsDiscordMessageRoutes } from "../integrations-discord-message";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const channelId = "1346579924358245999";
 
-function memberClient() {
-  createRouteMocks(context).clerk.session(
-    `user_${randomUUID()}`,
-    `org_${randomUUID()}`,
-  );
+function memberClient(
+  actor = { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` },
+) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
   return setupApp({ context, routes: integrationsDiscordMessageRoutes })(
     integrationsDiscordMessageContract,
   );
@@ -38,10 +39,17 @@ describe("Discord message request admission", () => {
   );
 
   it.each([undefined, "18446744073709551615"])(
-    "keeps default-off admission for an otherwise valid reply ID %j",
+    "rejects an otherwise valid reply ID %j when Discord is explicitly disabled",
     async (replyToMessageId) => {
+      const actor = {
+        userId: `user_${randomUUID()}`,
+        orgId: `org_${randomUUID()}`,
+      };
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.DiscordIntegration]: false,
+      });
       const response = await accept(
-        memberClient().sendMessage({
+        memberClient(actor).sendMessage({
           headers,
           body: { channelId, replyToMessageId, text: "Reply" },
         }),
