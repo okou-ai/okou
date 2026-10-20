@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Text flow slot regression</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+    .slide {
+      width: 1200px;
+      height: 675px;
+      padding: 48px;
+      background: white;
+      position: relative;
+    }
+    .stack {
+      height: 480px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 72px;
+      line-height: 0.83;
+      font-weight: 500;
+      letter-spacing: -1px;
+    }
+    p {
+      margin: 0;
+      font-size: 28px;
+    }
+    .grow {
+      flex: 1 1 0;
+      padding: 12px;
+      border: 2px solid #222;
+    }
+    .row {
+      display: flex;
+      gap: 20px;
+      width: 1104px;
+    }
+    .cell {
+      flex: 1 1 0;
+      font-size: 32px;
+      padding: 12px;
+    }
+    .badge {
+      display: inline-block;
+      background: #d8f6ec;
+      padding: 4px 12px;
+    }
+    .right {
+      text-align: right;
+    }
+    .center {
+      text-align: center;
+    }
+  </style>
+  <section class="slide">
+    <div class="stack">
+      <h1>
+        Text flows through a tight title<br />without moving its neighbors
+      </h1>
+      <p>
+        A flex item keeps the space measured before its children become
+        absolute.
+      </p>
+      <p>Preserve every frame and its original vertical position.</p>
+    </div>
+  </section>
+  <section class="slide">
+    <div class="stack">
+      <p class="grow">
+        A growing item has an explicit basis of zero.<br />Its used slot
+        survives materialization.
+      </p>
+      <p class="grow">
+        The second growing item retains its height.<br />Padding and borders
+        stay inside that slot.
+      </p>
+      <p>Fixed footer neighbor</p>
+    </div>
+  </section>
+  <section class="slide">
+    <h1 class="center">Centered tight line<br />keeps its anchor</h1>
+    <p
+      class="right"
+      style="margin-top: 72px; font-size: 48px; line-height: 0.85"
+    >
+      Right aligned text wraps<br />and retains its right edge
+    </p>
+    <p style="margin-top: 60px">
+      Inline <strong>bold text</strong> beside a
+      <span class="badge">real badge</span> must respect the badge boundary.
+    </p>
+  </section>
+  <section class="slide">
+    <div class="row">
+      <div class="cell">
+        Separate columns keep their own boundaries.<br />Column one stays
+        independent.
+      </div>
+      <div class="cell" style="transform: rotate(3deg)">
+        Separate columns keep their own boundaries.<br />Column two stays
+        independent.
+      </div>
+    </div>
+    <p style="margin-top: 72px">
+      Mixed <span style="font-size: 48px">font sizes</span>, H<sub>2</sub>O and
+      x<sup>2</sup> remain conservative.
+    </p>
+    <p dir="rtl" style="margin-top: 32px">
+      English RTL direction stays conservative
+    </p>
+  </section>
+</html>
