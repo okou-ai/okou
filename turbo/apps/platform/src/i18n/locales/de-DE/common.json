@@ -554,7 +554,6 @@
       },
       "kindIcon": "{{kind}} Artefakt",
       "loading": "Artefakte werden geladen",
-      "loadMore": "Mehr laden",
       "retry": "Erneut versuchen"
     },
     "fileBadges": {
@@ -2174,10 +2173,10 @@
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
       "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
-      "expand": "Ausklappen",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "loading": "Ressourcen werden geladen",
       "retry": "Erneut versuchen",
+      "showMore": "Mehr anzeigen",
       "title": "Chat-Ressourcen"
     },
     "run": {

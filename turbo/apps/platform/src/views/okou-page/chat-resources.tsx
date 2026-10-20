@@ -14,6 +14,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  RunningIndicator,
   surfaceVariants,
   Tooltip,
   TooltipContent,
@@ -339,7 +340,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   return (
     <div
       data-resource-scroll
-      className="isolate min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-1 [overflow-anchor:none]"
+      className="isolate mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [overflow-anchor:none]"
     >
       <ChatOrigin thread={thread} />
       <ChatRelationships thread={thread} />
@@ -372,28 +373,43 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
             data.nextCursor) && (
             <ChatResourceSectionToggle
               expanded={expanded.artifacts}
+              hasMore={Boolean(data.nextCursor)}
+              loading={paging.state === "loading"}
               controls={artifactsId}
               onToggle={(trigger) => {
+                if (expanded.artifacts && data.nextCursor) {
+                  detach(loadMore(pageSignal), Reason.DomCallback);
+                  return;
+                }
                 toggleSection("artifacts", trigger);
               }}
             />
           )}
-          {expanded.artifacts && data.nextCursor && (
-            <Button
-              variant="quiet"
-              size="xs"
-              disabled={paging.state === "loading"}
-              onClick={() => {
-                detach(loadMore(pageSignal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return paging.state === "hasError"
-                  ? $.chat.resources.retry
-                  : $.artifacts.catalog.loadMore;
-              })}
-            </Button>
-          )}
+          {expanded.artifacts &&
+            data.nextCursor &&
+            paging.state === "loading" && (
+              <p
+                role="status"
+                className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
+              >
+                <RunningIndicator />
+                {t(($) => {
+                  return $.chat.resources.loading;
+                })}
+              </p>
+            )}
+          {expanded.artifacts &&
+            data.nextCursor &&
+            paging.state === "hasError" && (
+              <p
+                role="alert"
+                className="px-2 py-1 text-xs text-muted-foreground"
+              >
+                {t(($) => {
+                  return $.chat.resources.loadFailed;
+                })}
+              </p>
+            )}
         </section>
       )}
       <ChatResourcesStatus thread={thread} />

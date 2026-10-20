@@ -553,7 +553,6 @@
       },
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果",
-      "loadMore": "加载更多",
       "retry": "重试"
     },
     "fileBadges": {
@@ -2167,10 +2166,10 @@
       "collapse": "收起",
       "copyLink": "复制链接",
       "empty": "这个对话的成果和关联对话会显示在这里。",
-      "expand": "展开",
       "loadFailed": "无法加载聊天资源",
       "loading": "正在加载资源",
       "retry": "重试",
+      "showMore": "查看更多",
       "title": "聊天资源"
     },
     "run": {
