@@ -1850,6 +1850,7 @@ describe("Browser user-action route", () => {
           },
         ],
       };
+      context.mocks.ably.publish.mockClear();
       const providerReadStarted = createDeferredPromise<void>(context.signal);
       const releaseProviderRead = createDeferredPromise<void>(context.signal);
       let holdNextRead = true;
@@ -1907,6 +1908,11 @@ describe("Browser user-action route", () => {
         throw applied.error;
       }
       expect(applied.value.body.state).toBe("succeeded");
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        `browserUserActionChanged:${owned.current.threadId}`,
+        null,
+      );
       const terminal = await accept(
         userActionClient().get({ headers, params }),
         [200],

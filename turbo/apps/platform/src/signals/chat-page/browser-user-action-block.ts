@@ -26,13 +26,13 @@ import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import { waitAblyLoopUntil$ } from "../realtime.ts";
 import {
   onRef,
   onRejection,
   resetSignal,
   settle,
   waitForOperation,
-  waitLoopUntil,
   withAbortAfter,
 } from "../utils.ts";
 import {
@@ -51,8 +51,6 @@ import {
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
-const RECOVERY_INTERVAL_MS = 2000;
-const RECOVERY_MAX_READS = 35;
 const RECOVERY_DEADLINE_MS = 90_000;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
@@ -456,12 +454,14 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
 }
 
 function createRecoverySignals(
+  threadId: string,
   request$: BrowserUserActionSignals["request$"],
   refresh$: BrowserUserActionSignals["refresh$"],
   beginEntry$: BrowserUserActionSignals["beginEntry$"],
 ) {
   const internalState$ = state<"idle" | "checking" | "exhausted">("idle");
   const ownerCount$ = state(0);
+  const reconciled$ = state(false);
   const resetRecovery$ = resetSignal();
   const recoveryState$ = computed((get) => {
     return get(internalState$);
@@ -469,6 +469,33 @@ function createRecoverySignals(
   const recover$ = command(({ set }) => {
     set(internalState$, "checking");
   });
+  const checkStatus$ = command(
+    async ({ get, set }, recoverySignal: AbortSignal): Promise<boolean> => {
+      set(refresh$, recoverySignal);
+      const result = await settle(
+        waitForOperation(get(request$), recoverySignal),
+        recoverySignal,
+      );
+      if (!result.ok) {
+        return true;
+      }
+      if (
+        result.value.kind === "action" &&
+        result.value.action.state === "applying"
+      ) {
+        return false;
+      }
+      if (
+        result.value.kind === "action" &&
+        result.value.action.state === "pending"
+      ) {
+        await set(beginEntry$, recoverySignal);
+        recoverySignal.throwIfAborted();
+      }
+      set(reconciled$, true);
+      return true;
+    },
+  );
   const recoveryRef$ = onRef(
     command(
       async (
@@ -498,41 +525,20 @@ function createRecoverySignals(
         // Duplicate cards share one loop, cancelled when their last owner leaves.
         const signal = set(resetRecovery$, get(pageSignal$));
         set(internalState$, "checking");
-        let reads = 0;
-        let reconciled = false;
+        set(reconciled$, false);
         await withAbortAfter(
           RECOVERY_DEADLINE_MS,
           signal,
           async (recoverySignal) => {
             await onRejection(
-              waitLoopUntil(
-                async () => {
-                  set(refresh$, recoverySignal);
-                  const result = await settle(
-                    waitForOperation(get(request$), recoverySignal),
-                    recoverySignal,
-                  );
-                  if (
-                    result.ok &&
-                    (result.value.kind !== "action" ||
-                      result.value.action.state !== "applying")
-                  ) {
-                    if (
-                      result.value.kind === "action" &&
-                      result.value.action.state === "pending"
-                    ) {
-                      await set(beginEntry$, recoverySignal);
-                      recoverySignal.throwIfAborted();
-                    }
-                    reconciled = true;
-                    return true;
-                  }
-                  reads += 1;
-                  return reads >= RECOVERY_MAX_READS;
+              set(
+                waitAblyLoopUntil$,
+                {
+                  topic: `browserUserActionChanged:${threadId}`,
+                  loopCommand$: checkStatus$,
+                  options: { runOnSubscribe: true },
                 },
-                RECOVERY_INTERVAL_MS,
                 recoverySignal,
-                { retryTransientErrors: false },
               ),
               () => {
                 // The deadline can reject with TimeoutError or a wrapped AbortError.
@@ -544,7 +550,7 @@ function createRecoverySignals(
           new DOMException("The operation timed out", "TimeoutError"),
         );
         signal.throwIfAborted();
-        set(internalState$, reconciled ? "idle" : "exhausted");
+        set(internalState$, get(reconciled$) ? "idle" : "exhausted");
       },
     ),
   );
@@ -1830,6 +1836,7 @@ export function createBrowserUserActionSignals(
   const requestSignals = createRequestSignals(descriptor);
   const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
   const recoverySignals = createRecoverySignals(
+    descriptor.threadId,
     requestSignals.request$,
     requestSignals.refresh$,
     entrySignals.beginEntry$,

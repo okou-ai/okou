@@ -1478,17 +1478,17 @@ test.each(["apply", "cancel"] as const)(
   },
 );
 
-test("Duplicate initially applying cards recover to a terminal state", async () => {
-  let applying = true;
+test("Duplicate initially applying cards recover after a thread change signal", async () => {
+  let actionState: BrowserUserActionResponse["state"] = "applying";
+  let reads = 0;
   installCapabilityChat({
     events: completedConversation(
       `[First input](${browserInputUrl()})\n\n[Same input](${browserInputRelativeUrl()})`,
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    const response = browserInputAction(applying ? "applying" : "uncertain");
-    applying = false;
-    return respond(200, response);
+    reads += 1;
+    return respond(200, browserInputAction(actionState));
   });
   await setupPage({
     context,
@@ -1498,9 +1498,19 @@ test("Duplicate initially applying cards recover to a terminal state", async () 
   });
   await readyChat();
 
+  const topic = `browserUserActionChanged:${RUN_THREAD_ID}`;
+  await waitFor(() => {
+    expect(reads).toBe(2);
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+  expect(screen.getAllByText("Checking browser status")).toHaveLength(2);
+
+  actionState = "uncertain";
+  context.mocks.ably.trigger(topic);
   await waitFor(() => {
     expect(screen.getAllByText("Check the browser")).toHaveLength(2);
   });
+  expect(reads).toBe(3);
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 

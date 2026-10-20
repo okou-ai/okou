@@ -483,6 +483,17 @@ export async function publishConnectorPermissionUpdatedSafely(
 }
 
 /**
+ * Notify a chat thread that a Browser user-action request changed. The card
+ * re-fetches the persisted request state after this best-effort signal.
+ */
+export async function publishBrowserUserActionChangedSafely(
+  userId: string,
+  threadId: string,
+): Promise<void> {
+  await publishUserSignal([userId], `browserUserActionChanged:${threadId}`);
+}
+
+/**
  * Notify the user's open chat surfaces that one managed browser changed
  * lifecycle state. The thread-scoped payload lets each card registry reload
  * only the matching shared signals.
