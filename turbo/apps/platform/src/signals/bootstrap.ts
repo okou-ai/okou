@@ -26,7 +26,8 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { bestEffort, onDomEventFn } from "./utils.ts";
+import { bestEffort, onDomEventFn, resetSignal } from "./utils.ts";
+import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
@@ -592,6 +593,8 @@ const completeBootstrap$ = command(
   },
 );
 
+const resetViewportSettleSignal$ = resetSignal();
+
 export const bootstrap$ = command(
   async (
     { get, set },
@@ -599,6 +602,9 @@ export const bootstrap$ = command(
     render: () => void,
     signal: AbortSignal,
   ): Promise<void> => {
+    setupVisualViewportKeyboardState(signal, () => {
+      return set(resetViewportSettleSignal$, signal);
+    });
     set(captureDiscordApprovalFragment$, signal);
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);
