@@ -8,17 +8,11 @@ import chalk from "chalk";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
-import {
-  connectorAccount,
-  connectorAccountSummary,
-  stubConnectorAccountSummaries,
-} from "../../__tests__/helpers/connector-accounts";
+import { stubConnectedConnectors } from "../../__tests__/helpers/connector-accounts";
 import {
   catalogItem,
-  catalogStatusItem,
   manualAuthMethod,
   stubConnectorCatalog,
-  stubConnectorCatalogStatus,
 } from "../../__tests__/helpers/connector-catalog";
 import {
   stubRunConnectorAccountInspection,
@@ -81,62 +75,6 @@ function connector(
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   };
-}
-
-function stubConnectors(connectors: readonly TestConnectorAccount[]) {
-  return stubConnectorsWithCatalogSlugs(connectors, [
-    "fal",
-    "luma",
-    "luma-ai",
-    "openai",
-    "replicate",
-    "runway",
-  ]);
-}
-
-function stubConnectorsWithCatalogSlugs(
-  connectors: readonly TestConnectorAccount[],
-  catalogConnectorSlugs: readonly string[],
-) {
-  const connectedBySlug = new Map(
-    connectors.map((item) => {
-      const connectorSlug = item.slug;
-      return [
-        connectorSlug,
-        catalogStatusItem({
-          connectorSlug,
-          label: CONNECTOR_LABELS[connectorSlug] ?? connectorSlug,
-          generation: [...(CONNECTOR_GENERATION[connectorSlug] ?? [])],
-          authMethods: [manualAuthMethod()],
-          connection: {
-            authMethod: item.authMethod,
-            externalUsername: item.externalUsername,
-            externalEmail: item.externalEmail,
-            reconnectReason: null,
-          },
-          connected: true,
-          connectionStatus: item.connectionStatus,
-        }),
-      ] as const;
-    }),
-  );
-  const visibleConnectorSlugs = new Set([
-    ...catalogConnectorSlugs,
-    ...connectedBySlug.keys(),
-  ]);
-  return stubConnectorCatalogStatus(
-    [...visibleConnectorSlugs].map((connectorSlug) => {
-      return (
-        connectedBySlug.get(connectorSlug) ??
-        catalogStatusItem({
-          connectorSlug,
-          label: CONNECTOR_LABELS[connectorSlug] ?? connectorSlug,
-          generation: [...(CONNECTOR_GENERATION[connectorSlug] ?? [])],
-          authMethods: [manualAuthMethod()],
-        })
-      );
-    }),
-  );
 }
 
 function stubRunConnectorsWithCatalogSlugs(
@@ -273,7 +211,6 @@ describe("okou generate lister", () => {
   });
 
   it("lists ready image generation connectors for the current agent", async () => {
-    let defaultStatusRequests = 0;
     server.use(
       ...stubRunConnectors(contextPath, [
         connector("fal", "fal-user"),
@@ -281,31 +218,13 @@ describe("okou generate lister", () => {
         connector("replicate", "replicate-user"),
       ]),
       stubUserConnectors(["fal", "openai"]),
-      http.get("http://localhost:3000/api/connector-catalog/status", () => {
-        defaultStatusRequests += 1;
-        return HttpResponse.json({
-          connectors: [
-            catalogStatusItem({
-              connectorSlug: "fal",
-              generation: ["image"],
-              connection: {
-                authMethod: "api-token",
-                externalUsername: "default-account-a",
-                externalEmail: null,
-                reconnectReason: "authorization_expired_or_revoked",
-              },
-              connected: true,
-              connectionStatus: "reconnect-required",
-            }),
-          ],
-        });
-      }),
+      stubConnectedConnectors(["fal", "openai", "replicate"]),
     );
 
     await generateCommand.parseAsync(["node", "cli", "image"]);
 
     const text = output();
-    expect(text).toContain("Image generation choices for current agent");
+    expect(text).toContain("Image generation choices for current run");
     expect(text).toContain(`Agent:    ${AGENT_ID}`);
     expect(text).toContain("Connectors:");
     expect(text).toContain("fal");
@@ -322,8 +241,6 @@ describe("okou generate lister", () => {
     );
     expect(text).toContain("Use: okou generate image --provider built-in -h");
     expect(text).not.toContain("Next actions:");
-    expect(text).not.toContain("default-account-a");
-    expect(defaultStatusRequests).toBe(0);
     expect(text).toContain(
       "Use --all to see every image generation candidate.",
     );
@@ -366,7 +283,6 @@ describe("okou generate lister", () => {
   });
 
   it("shows not-ready candidates and action links with --all", async () => {
-    let defaultStatusRequests = 0;
     server.use(
       ...stubRunConnectors(contextPath, [
         connector("fal", "fal-user"),
@@ -377,25 +293,7 @@ describe("okou generate lister", () => {
         },
       ]),
       stubUserConnectors(["fal"]),
-      http.get("http://localhost:3000/api/connector-catalog/status", () => {
-        defaultStatusRequests += 1;
-        return HttpResponse.json({
-          connectors: [
-            catalogStatusItem({
-              connectorSlug: "openai",
-              generation: ["image"],
-              connection: {
-                authMethod: "api-token",
-                externalUsername: "healthy-default-a",
-                externalEmail: null,
-                reconnectReason: null,
-              },
-              connected: true,
-              connectionStatus: "connected",
-            }),
-          ],
-        });
-      }),
+      stubConnectedConnectors(["fal", "openai", "replicate"]),
     );
 
     await generateCommand.parseAsync(["node", "cli", "image", "--all"]);
@@ -417,32 +315,34 @@ describe("okou generate lister", () => {
       `[Reconnect OpenAI](http://localhost:3000/connectors/openai/reconnect/${RUN_CONNECTION_ID}?agentId=${AGENT_ID})`,
     );
     expect(text).toContain("start a new run");
-    expect(text).not.toContain("healthy-default-a");
-    expect(defaultStatusRequests).toBe(0);
   });
 
-  it("preserves default-account generation discovery outside a run", async () => {
+  it("discovers saved providers outside a run and directs users to inspect accounts", async () => {
     vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
-    server.use(stubConnectors([connector("fal", "default-account-a")]));
-    const target = { kind: "builtin", connectorSlug: "fal" } as const;
     server.use(
-      stubConnectorAccountSummaries([
-        connectorAccountSummary(target, [
-          connectorAccount(target, {
-            externalUsername: "default-account-a",
-          }),
-        ]),
+      stubConnectorCatalog([
+        catalogItem({
+          connectorSlug: "fal",
+          label: "fal.ai",
+          generation: ["image"],
+        }),
       ]),
+      stubConnectedConnectors(["fal"]),
     );
 
     await generateCommand.parseAsync(["node", "cli", "image"]);
 
-    expect(output()).toContain("@default-account-a");
+    expect(output()).toContain(
+      "Image generation choices (saved-account directory)",
+    );
+    expect(output()).toContain(
+      "saved accounts; inspect with okou connector status fal",
+    );
+    expect(output()).toContain("agent authorization could not be checked");
   });
 
   it("fails closed when connector-backed discovery has no run projection", async () => {
-    let defaultStatusRequests = 0;
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
     server.use(
       stubConnectorCatalog([
@@ -454,17 +354,13 @@ describe("okou generate lister", () => {
         }),
       ]),
       stubUserConnectors(["fal"]),
-      http.get("http://localhost:3000/api/connector-catalog/status", () => {
-        defaultStatusRequests += 1;
-        return HttpResponse.json({ connectors: [] });
-      }),
+      stubConnectedConnectors(["fal", "openai", "replicate"]),
     );
 
     await generateCommand.parseAsync(["node", "cli", "image", "--all"]);
 
     expect(output()).toContain("run account context unavailable");
     expect(output()).toContain("start a new run");
-    expect(defaultStatusRequests).toBe(0);
   });
 
   it("does not list providers that are absent from the public catalog", async () => {
@@ -541,12 +437,12 @@ describe("okou generate lister", () => {
   });
 
   it("suggests the built-in presentation command", async () => {
-    server.use(stubConnectorsWithCatalogSlugs([], []), stubUserConnectors([]));
+    server.use(stubUserConnectors([]));
 
     await generateCommand.parseAsync(["node", "cli", "presentation"]);
 
     const text = output();
-    expect(text).toContain("Presentation generation choices for current agent");
+    expect(text).toContain("Presentation generation choices for current run");
     expect(text).not.toContain("Connectors:");
     expect(text).not.toContain(
       "No ready presentation generation connectors found.",
@@ -560,12 +456,12 @@ describe("okou generate lister", () => {
   });
 
   it("suggests the built-in website command", async () => {
-    server.use(stubConnectorsWithCatalogSlugs([], []), stubUserConnectors([]));
+    server.use(stubUserConnectors([]));
 
     await generateCommand.parseAsync(["node", "cli", "website"]);
 
     const text = output();
-    expect(text).toContain("Website generation choices for current agent");
+    expect(text).toContain("Website generation choices for current run");
     expect(text).not.toContain("Connectors:");
     expect(text).not.toContain("No ready website generation connectors found.");
     expect(text).toContain("Built-in command:");
@@ -601,12 +497,12 @@ describe("okou generate lister", () => {
       "Built-in mobile app design generation",
     ],
   ])("suggests the built-in %s command", async (type, label, commandLabel) => {
-    server.use(stubConnectorsWithCatalogSlugs([], []), stubUserConnectors([]));
+    server.use(stubUserConnectors([]));
 
     await generateCommand.parseAsync(["node", "cli", type]);
 
     const text = output();
-    expect(text).toContain(`${label} generation choices for current agent`);
+    expect(text).toContain(`${label} generation choices for current run`);
     expect(text).not.toContain(`No ready ${type} generation connectors found.`);
     expect(text).toContain("Built-in command:");
     expect(text).toContain(commandLabel);
@@ -629,7 +525,7 @@ describe("okou generate lister", () => {
     await generateCommand.parseAsync(["node", "cli", "music"]);
 
     const text = output();
-    expect(text).toContain("Music generation choices for current agent");
+    expect(text).toContain("Music generation choices for current run");
     expect(text).toContain("Connectors:");
     expect(text).toContain("ElevenLabs");
     expect(text).toContain("@elevenlabs-user");

@@ -77,12 +77,6 @@ describe.each(targets)("$kind account reader preparation", (target) => {
     },
   ])("retains old or additive setup metadata without defaults: %j", (setup) => {
     const { account, inspection, mcp } = payloads(target, setup);
-    const summary = {
-      target,
-      accountCount: 1,
-      attentionCount: 0,
-      defaultConnection: account,
-    };
     expect(
       connectorAccountsContract.connections.responses[200].parse({
         connections: [account],
@@ -94,11 +88,6 @@ describe.each(targets)("$kind account reader preparation", (target) => {
       nextCursor: null,
       defaultConnection: account,
     });
-    expect(
-      connectorAccountsContract.summaries.responses[200].parse({
-        summaries: [summary],
-      }),
-    ).toStrictEqual({ summaries: [summary] });
     expect(
       chatThreadConnectorSelectionContract.get.responses[200].parse({
         selections: [{ connectionId, target }],

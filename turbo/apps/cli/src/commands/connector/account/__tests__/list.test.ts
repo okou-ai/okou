@@ -7,7 +7,7 @@ import { server } from "../../../../mocks/server";
 import {
   authCodeMethod,
   catalogStatusItem,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
@@ -43,7 +43,7 @@ function connectorAccount(
 }
 
 function stubCatalog(): ReturnType<typeof http.get> {
-  return stubConnectorCatalogStatus([
+  return stubConnectorCatalog([
     catalogStatusItem({
       connectorSlug: "github",
       label: "GitHub",
@@ -58,7 +58,14 @@ function stubAccounts(
   return http.get(
     "http://localhost:3000/api/connector-accounts/connections",
     () => {
-      return HttpResponse.json({ connections, nextCursor: null });
+      return HttpResponse.json({
+        connections,
+        defaultConnection:
+          connections.find((account) => {
+            return account.isDefault;
+          }) ?? null,
+        nextCursor: null,
+      });
     },
   );
 }
@@ -135,7 +142,7 @@ describe("okou connector account list command", () => {
     async (builtinLabel, customLabel, selector, kind) => {
       let targetQuery: string | undefined;
       server.use(
-        stubConnectorCatalogStatus([
+        stubConnectorCatalog([
           catalogStatusItem({ connectorSlug: "github", label: builtinLabel }),
         ]),
         stubCustomConnectors([customConnector({ displayName: customLabel })]),
@@ -143,7 +150,11 @@ describe("okou connector account list command", () => {
           "http://localhost:3000/api/connector-accounts/connections",
           ({ request }) => {
             targetQuery = new URL(request.url).search;
-            return HttpResponse.json({ connections: [], nextCursor: null });
+            return HttpResponse.json({
+              connections: [],
+              defaultConnection: null,
+              nextCursor: null,
+            });
           },
         ),
       );
@@ -178,7 +189,7 @@ describe("okou connector account list command", () => {
         scenario === "UUID collision" ? CUSTOM_CONNECTOR_ID : "Shared Name";
       const custom = customConnector({ displayName: "Shared Name" });
       server.use(
-        stubConnectorCatalogStatus([
+        stubConnectorCatalog([
           catalogStatusItem({
             connectorSlug: builtinSlug,
             label: scenario === "custom names" ? "GitHub" : "Shared Name",
@@ -216,7 +227,7 @@ describe("okou connector account list command", () => {
     "uses an explicit %s qualifier to resolve a UUID collision",
     async (kind) => {
       server.use(
-        stubConnectorCatalogStatus([
+        stubConnectorCatalog([
           catalogStatusItem({ connectorSlug: CUSTOM_CONNECTOR_ID }),
         ]),
         stubCustomConnectors([customConnector()]),
@@ -324,6 +335,7 @@ describe("okou connector account list command", () => {
                   },
                 }),
               ],
+              defaultConnection: null,
               nextCursor: null,
             });
           },
@@ -355,10 +367,12 @@ describe("okou connector account list command", () => {
             cursor
               ? {
                   connections: [connectorAccount({ id: SECOND_CONNECTION_ID })],
+                  defaultConnection: connectorAccount(),
                   nextCursor: null,
                 }
               : {
                   connections: [connectorAccount()],
+                  defaultConnection: connectorAccount(),
                   nextCursor: "page-2",
                 },
           );
@@ -379,6 +393,71 @@ describe("okou connector account list command", () => {
     expect(output).toContain(FIRST_CONNECTION_ID);
     expect(output).toContain(SECOND_CONNECTION_ID);
   });
+
+  it.each([false, true])(
+    "reports the independent default outside search results (empty: %s)",
+    async (empty) => {
+      const defaultConnection = connectorAccount({
+        id: FIRST_CONNECTION_ID,
+        displayName: "Default work account",
+        externalEmail: "work@example.com",
+        isDefault: true,
+      });
+      server.use(
+        http.get(
+          "http://localhost:3000/api/connector-accounts/connections",
+          ({ request }) => {
+            expect(new URL(request.url).searchParams.get("search")).toBe(
+              "personal",
+            );
+            return HttpResponse.json({
+              connections: empty
+                ? []
+                : [
+                    connectorAccount({
+                      id: SECOND_CONNECTION_ID,
+                      displayName: "Personal",
+                      isDefault: false,
+                    }),
+                  ],
+              defaultConnection,
+              nextCursor: null,
+            });
+          },
+        ),
+      );
+      await listConnectorAccountsCommand.parseAsync([
+        "node",
+        "okou",
+        "github",
+        "--search",
+        "personal",
+        "--json",
+      ]);
+      const result = JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"));
+      expect(result).toMatchObject({
+        defaultConnectionId: FIRST_CONNECTION_ID,
+      });
+      expect(result.accounts).toHaveLength(empty ? 0 : 1);
+      if (!empty)
+        expect(result.accounts[0]).toMatchObject({
+          connectionId: SECOND_CONNECTION_ID,
+          isDefault: false,
+        });
+      mockConsoleLog.mockClear();
+      listConnectorAccountsCommand.setOptionValue("json", false);
+      await listConnectorAccountsCommand.parseAsync([
+        "node",
+        "okou",
+        "github",
+        "--search",
+        "personal",
+      ]);
+      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+        `Default account: Default work account (work@example.com) (${FIRST_CONNECTION_ID})`,
+      );
+    },
+  );
 
   it("emits stable JSON without credentials or operational timestamps", async () => {
     server.use(
@@ -401,6 +480,7 @@ describe("okou connector account list command", () => {
     const parsed: unknown = JSON.parse(output);
     expect(parsed).toStrictEqual({
       context: "available",
+      defaultConnectionId: FIRST_CONNECTION_ID,
       connector: {
         kind: "builtin",
         slug: "github",
@@ -518,6 +598,7 @@ describe("okou connector account list command", () => {
               )
             : HttpResponse.json({
                 connections: [connectorAccount()],
+                defaultConnection: connectorAccount(),
                 nextCursor: "page-2",
               });
         },
@@ -548,6 +629,7 @@ describe("okou connector account list command", () => {
             connections: [
               connectorAccount({ displayName: "Available account" }),
             ],
+            defaultConnection: null,
             nextCursor: null,
           });
         },
