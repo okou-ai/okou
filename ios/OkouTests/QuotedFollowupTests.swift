@@ -114,8 +114,11 @@ final class QuotedFollowupTests: XCTestCase {
     XCTAssertEqual(first.userMessage, ChatDraftDocument(parts: [selection.part]))
     XCTAssertEqual(retried.userMessage, first.userMessage)
     XCTAssertEqual(conversation.draft, "New work while retrying")
+    XCTAssertTrue(conversation.pending.isEmpty)
+    XCTAssertNil(conversation.error)
     let durable = try XCTUnwrap(
-      conversation.messages.first(where: { $0.id == first.clientEventId })?.userMessage?.parts.first
+      conversation.history?.messages.first(where: { $0.id == first.clientEventId })?.userMessage?
+        .parts.first
     )
     XCTAssertEqual(durable.quote, selection.quote)
     XCTAssertEqual(durable.note, [])
