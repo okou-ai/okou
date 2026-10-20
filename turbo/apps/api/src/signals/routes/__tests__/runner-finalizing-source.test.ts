@@ -176,7 +176,7 @@ describe("independent finalizing resource source", () => {
   });
 
   it("selects the newest executed identity before checking producer eligibility", async () => {
-    const f = await terminalPredecessor(context, "failed", false);
+    const f = await terminalPredecessor(context, "failed");
     mockNow(f.clock + 100);
     const newer = await continuation(f);
     const claimed = await f.owned.claimRunnerRun(newer.runId, {
@@ -200,14 +200,18 @@ describe("independent finalizing resource source", () => {
       activeReuseProducers: [{ ...producer, runId: f.run.runId }],
     });
     const next = await continuation(f);
-    expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
+    const withoutLatestProducer = await poll(f, next.runId);
+    expect(withoutLatestProducer?.historyGenerationRunId).toBe(f.run.runId);
+    expect(withoutLatestProducer?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
     await heartbeat(f, {
       snapshotSequence: 3,
       activeReuseProducers: [{ ...producer, runId: newer.runId }],
     });
-    expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
+    const withLatestProducer = await poll(f, next.runId);
+    expect(withLatestProducer?.historyGenerationRunId).toBe(f.run.runId);
+    expect(withLatestProducer?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
       finalizingSourceRunId: newer.runId,
     });
