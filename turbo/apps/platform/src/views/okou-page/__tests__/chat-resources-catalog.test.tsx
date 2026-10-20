@@ -62,13 +62,14 @@ test("Browse directory artifacts with permanently optional source URLs and open 
   });
   const resources = await screen.findByRole("region", { name: "Resources" });
   await within(resources).findByText("report.pdf");
-  // Shared snapshots legitimately omit source/alias URLs. Their directory
-  // entries remain usable, and unknown URLs remain ordinary message links.
-  expect(within(resources).getByText("Report").closest("a")).toHaveAttribute(
-    "href",
-    "https://files.example.test/report.pdf",
-  );
-  expect(within(resources).getByText("Current guide")).toBeInTheDocument();
+  // Shared snapshots legitimately omit source/alias URLs; their directory
+  // entries remain usable without extracting links from messages.
+  expect(
+    within(resources).queryByRole("region", { name: "Links" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(resources).queryByText("Current guide"),
+  ).not.toBeInTheDocument();
 
   click(artifactEntryNamed("report.pdf", resources));
   const sidebar = await screen.findByTestId("artifact-sidebar");
@@ -122,17 +123,6 @@ test.each([
     expect(artifactEntryNamed(title, resources)).toBeInTheDocument();
   },
 );
-
-test("Deduplicate both source and hosted alias links using only summaries", async () => {
-  await setupResources({ aliasUrl: "https://report.sites.okou.ai/" });
-  const resources = await screen.findByRole("region", { name: "Resources" });
-  await within(resources).findByText("report.pdf");
-  const links = within(resources).getByRole("region", { name: "Links" });
-  expect(within(links).queryByText("Report")).not.toBeInTheDocument();
-  expect(within(links).queryByText("Hosted alias")).not.toBeInTheDocument();
-  expect(within(links).getByText("Current guide")).toBeInTheDocument();
-  expect(within(links).getByText("Reference")).toBeInTheDocument();
-});
 
 test("Copy an artifact's on-demand detail URL without opening its preview", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();

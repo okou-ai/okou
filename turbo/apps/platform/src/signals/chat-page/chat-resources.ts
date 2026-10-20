@@ -80,7 +80,6 @@ export interface ChatResourceLink {
 export interface ChatResourceContent {
   readonly artifacts: readonly ArtifactSummary[];
   readonly nextCursor: string | null;
-  readonly links: readonly ChatResourceLink[];
 }
 
 async function messageLinks(content: string): Promise<ChatResourceLink[]> {
@@ -199,11 +198,8 @@ function createChatResourceContentSignals(
       if (!get(initialEventsReady$)) {
         return null;
       }
-      const [page, links] = await Promise.all([
-        get(catalog.catalog$),
-        get(links$),
-      ]);
-      return { artifacts: page.artifacts, nextCursor: page.nextCursor, links };
+      // The floating panel must not trigger message-derived link extraction.
+      return await get(catalog.catalog$);
     },
   );
 
@@ -389,7 +385,6 @@ export function createChatResourceSignals(
   const expandedSections$ = state({
     messages: false,
     artifacts: false,
-    links: false,
   });
   return {
     expandedSections$: computed((get) => {
@@ -398,7 +393,7 @@ export function createChatResourceSignals(
     toggleSection$: command(
       (
         { get, set },
-        section: "messages" | "artifacts" | "links",
+        section: "messages" | "artifacts",
         trigger: HTMLElement,
       ) => {
         if (get(expandedSections$)[section]) {

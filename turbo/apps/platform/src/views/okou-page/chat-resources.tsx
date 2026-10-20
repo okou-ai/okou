@@ -26,7 +26,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
+import { CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
@@ -101,8 +101,7 @@ function ChatResourcesButtonInner({
   if (
     !hasRelations &&
     content.state !== "hasError" &&
-    !data?.artifacts.length &&
-    !data?.links.length
+    !data?.artifacts.length
   ) {
     return null;
   }
@@ -313,16 +312,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
             )}
           </section>
         )}
-        <ChatResourceLinks
-          thread={thread}
-          preview={{
-            limit: RESOURCE_PREVIEW_LIMIT,
-            expanded: expanded.links,
-            onToggle: (trigger) => {
-              toggleSection("links", trigger);
-            },
-          }}
-        />
         {content.state === "hasError" && (
           <div
             role="alert"
