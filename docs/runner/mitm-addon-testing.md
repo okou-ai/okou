@@ -158,6 +158,9 @@ Exercise both HTTP versions, zero windows/stream slots, queued cancellation,
 empty DATA versus EOF, discarded-event counts, real blocked TCP writers and
 split early responses. Header cancellation must cover ordinary and eager task
 scheduling, including cleanup after the public hook released its parser.
+Interleave response headers before upload EOF with valid completion, policy or
+authorization rejection, and a blocked upload writer. Verify response bytes,
+privacy/accounting and terminal cleanup across both completion orders.
 
 Compare resources on identical baseline-eligible inputs in fresh pinned
 processes. Separate untraced CPU from traced allocations and report process RSS,

@@ -164,3 +164,64 @@ async def test_completed_stream_can_reuse_native_http1_connection(tmp_path, fake
             assert not peer.native.streams
             assert managed_upload.get(peer.flow) is None
         assert not peer.closed
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("client_h2", [False, True])
+@pytest.mark.parametrize("provider_h2", [False, True])
+@pytest.mark.parametrize("ending", ["response", "request", "authorization"])
+async def test_policy_rejection_preserves_an_already_streaming_provider_response(
+    tmp_path, fake_firewall_headers, dialect, client_h2, provider_h2, ending
+):
+    info = sandbox(tmp_path, dialect)
+    info["captureNetworkBodies"] = True
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    prefix = b'{"model":"' + PRESET.encode() + b'","messages":[]'
+    if dialect == "openai-responses":
+        prefix = prefix.replace(b'"messages"', b'"input"')
+    rejected = b',"provider":{}' if ending != "authorization" else b""
+    remaining = b"}"
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as context,
+        fake_firewall_headers(),
+    ):
+        context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
+        )
+        peer = WireSession(context, client_h2=client_h2, provider_h2=provider_h2)
+        try:
+            await peer.start(len(prefix) + len(rejected) + len(remaining), dialect)
+            await peer.write(prefix)
+            await peer.respond()
+            assert b"data: {}" in peer.response
+            if ending == "authorization":
+                info["piModelConfig"]["model"] = "@preset/changed"
+                _write_registry(tmp_path, sandbox_info=info)
+            else:
+                await peer.write(rejected)
+            assert peer.received == len(prefix)
+            assert not peer.upstream_ended
+            if ending == "response":
+                await peer.respond(first=False, final=True)
+                assert peer.response.count(b"data: {}") == 2
+                assert peer.flow.error is None
+                observed = len(prefix) + len(rejected)
+            else:
+                await peer.write(remaining, final=True)
+                assert peer.response.count(b"data: {}") == 1
+                assert peer.flow.error is not None
+                observed = len(prefix) + len(rejected) + len(remaining)
+            assert peer.flow.response is not None
+            assert peer.flow.response.status_code == 200
+            assert not peer.flow.live
+            assert not peer.native.streams
+            assert managed_upload.get(peer.flow) is None
+            network = Path(info["networkLogPath"])
+            assert await asyncio.to_thread(flush_log_path, str(network))
+            saved = await asyncio.to_thread(network.read_text)
+            [entry] = [json.loads(line) for line in saved.splitlines()]
+            assert entry["request_size"] == observed
+            assert "request_body" not in entry
+        finally:
+            peer.close()

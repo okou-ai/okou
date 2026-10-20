@@ -38,10 +38,12 @@ async def scheduling(request):
 
 @pytest.mark.parametrize("http2", [False, True])
 @pytest.mark.parametrize("status", [200, 429])
-@pytest.mark.parametrize("parsed_eof", [False, True])
+@pytest.mark.parametrize("upload_state", ["receiving", "parsed", "response-first"])
 async def test_split_early_response_with_blocked_upload_writer(
-    tmp_path, fake_firewall_headers, scheduling, http2, status, parsed_eof
+    tmp_path, fake_firewall_headers, scheduling, http2, status, upload_state
 ):
+    parsed_eof = upload_state != "receiving"
+    response_first = upload_state == "response-first"
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
     body = (
         b'{"model":"'
@@ -146,6 +148,21 @@ async def test_split_early_response_with_blocked_upload_writer(
 
             async def provider():
                 h2 = H2Connection(H2Configuration(client_side=False, header_encoding=None))
+
+                async def response_prefix():
+                    if http2:
+                        h2.send_headers(
+                            1, [(b":status", str(status).encode()), (b"content-length", b"3")]
+                        )
+                        h2.send_data(1, b"a")
+                        provider_out.write(h2.data_to_send())
+                    else:
+                        provider_out.write(
+                            f"HTTP/1.1 {status} Final\r\nContent-Length: 3\r\n\r\na".encode()
+                        )
+                    await provider_out.drain()
+                    await response_headers.wait()
+
                 if http2:
                     h2.initiate_connection()
                     h2.update_settings({SettingCodes.INITIAL_WINDOW_SIZE: 4 * 1024 * 1024})
@@ -163,6 +180,8 @@ async def test_split_early_response_with_blocked_upload_writer(
                 else:
                     head = await provider_in.readuntil(b"\r\n\r\n")
                     assert b"authorization: bearer tcp-fixture" in head.lower()
+                if response_first:
+                    await response_prefix()
                 provider_out.transport.pause_reading()
                 provider_ready.set()
                 await stopped.wait()
@@ -176,18 +195,8 @@ async def test_split_early_response_with_blocked_upload_writer(
                     assert upload.tail == b""
                 else:
                     assert upload.received < len(body)
-                if http2:
-                    h2.send_headers(
-                        1, [(b":status", str(status).encode()), (b"content-length", b"3")]
-                    )
-                    h2.send_data(1, b"a")
-                    provider_out.write(h2.data_to_send())
-                else:
-                    provider_out.write(
-                        f"HTTP/1.1 {status} Final\r\nContent-Length: 3\r\n\r\na".encode()
-                    )
-                await provider_out.drain()
-                await response_headers.wait()
+                if not response_first:
+                    await response_prefix()
                 if http2:
                     h2.send_data(1, b"bc", end_stream=True)
                     provider_out.write(h2.data_to_send())

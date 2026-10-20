@@ -748,6 +748,12 @@ ingress outside the lock. A provider reader drains its matching downstream write
 independently of the blocked upload writer. Parsed EOF and empty protocol queues
 do not release pending transport ownership before the owning socket drain.
 
+A provider response can begin before upload EOF. Later upload rejection preserves
+that native response object; final authorization uses a predicate that cannot
+replace it with a local response. The request hook keeps upload transport
+ownership through drain or terminal response even when response headers already
+exist, and records completed receive accounting independently of response timing.
+
 These seams preserve native framing, verified TLS, connection selection and
 terminal hooks. Pausing one H2 client reader can delay other uploads on that
 connection. Dependency upgrades require re-auditing these owners and regressions.

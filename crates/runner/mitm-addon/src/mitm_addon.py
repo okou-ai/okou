@@ -1117,7 +1117,7 @@ def _reject_managed_openrouter_request(
         upload.validator = None
         upload.tail = b""
         upload.ready.set()
-        flow.response = None
+        # Native response ownership survives a later upload rejection.
         return
     if terminate:
         request_classification.pop_cached_classification(flow)
@@ -1403,7 +1403,7 @@ async def _try_firewall_request_stream_from_headers(
                     fall_back()
                     return
                 upload.observe = flow.request.stream
-                upload.authorized = lambda: _revalidate_current_firewall_authorization_for_request(
+                upload.authorized = lambda: _firewall_authorization_is_current_for_requestheaders(
                     flow,
                     allow,
                     expected_run_id=expected_run_id,
@@ -1694,7 +1694,12 @@ async def request(flow: http.HTTPFlow) -> None:
     connector_intent.capture_and_strip(flow)
 
     if flow.response is not None or flow.error is not None:
-        managed_openrouter.release_from_flow(flow)
+        # An early provider response can overlap streamed EOF. Keep upload
+        # transport ownership until its drain or terminal response boundary.
+        if flow.error is not None:
+            managed_openrouter.release_from_flow(flow)
+        elif managed_upload.get(flow) is not None:
+            flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
