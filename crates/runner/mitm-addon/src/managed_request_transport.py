@@ -224,7 +224,9 @@ class ManagedRequestBodyHook(commands.StartHook):
     resumed: bool = False
 
     def args(self) -> list[object]:
-        return [self.flow, self.stage, self.data]
+        # The production ProxyConnectionHandler accepts one hook argument.
+        # Keep the bounded operation payload together through that dispatcher.
+        return [self]
 
 
 def install(register: Callable[[ManagedRequestBodyHook], None]) -> None:

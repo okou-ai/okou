@@ -63,6 +63,7 @@ import http_network_log
 import managed_openrouter
 import managed_openrouter_json
 import managed_request_body
+import managed_request_transport
 import matching
 import mitmproxy_compat
 import model_websocket_usage
@@ -1894,12 +1895,9 @@ def _is_valid_websocket_key(value: bytes) -> bool:
 # ============================================================================
 
 
-async def managedrequestbody(
-    flow: http.HTTPFlow,
-    stage: Literal["receive", "finish", "replay"],
-    data: bytes,
-) -> None:
+async def managedrequestbody(hook: managed_request_transport.ManagedRequestBodyHook) -> None:
     """Own one bounded body operation before native transport may continue."""
+    flow, stage, data = hook.flow, hook.stage, hook.data
     body = managed_request_body.get(flow)
     if body is None:
         if flow.killable:

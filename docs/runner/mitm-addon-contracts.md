@@ -731,6 +731,9 @@ numeric tokens (4,300 bytes) remain parser resource bounds.
 The exact-version compatibility bridge intercepts only marked requests in
 `HttpStream.state_consume_request_body`. It delegates framing, the terminal
 request hook, current authorization, connection selection and TLS to mitmproxy.
+Managed body hooks carry one structured argument because the production
+`ProxyConnectionHandler` requires single-argument hooks. That payload owns the
+flow, operation stage and bounded bytes until the native continuation resumes.
 Each receive hook is joined before another connection read. The finish
 checkpoint additionally joins authorization, connection acquisition and the
 complete upload, so a paused continuation cannot accumulate subsequent socket
@@ -809,6 +812,9 @@ both upstream HTTP versions, exact body bytes and the provider response; wrong
 hostnames and untrusted certificates fail before HTTP credentials or body bytes.
 `test_managed_request_early_response_limit.py` verifies the native close/reset
 before releasing a blocked real-file read, then checks physical storage cleanup.
+`test_mitmproxy_managed_request_connection.py` exercises the concrete production
+hook dispatcher, real sockets and native framing for both managed dialects under
+ordinary and eager task scheduling.
 
 ## Header-phase credential-resolution failures
 

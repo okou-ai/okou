@@ -4,9 +4,11 @@ import asyncio
 import json
 from unittest.mock import patch
 
+import pytest
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.proxy.layers.http import HTTPMode
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
+from mitmproxy.proxy.mode_servers import ProxyConnectionHandler
 from mitmproxy.proxy.server import ConnectionHandler, ConnectionIO
 from mitmproxy.test import taddons
 
@@ -18,15 +20,33 @@ from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 
+@pytest.fixture(params=[False, True])
+async def task_factory(request):
+    loop = asyncio.get_running_loop()
+    previous = loop.get_task_factory()
+    if request.param:
+        loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        yield
+    finally:
+        loop.set_task_factory(previous)
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 async def test_native_framing_and_hook_tasks_complete_a_managed_request(
     tmp_path,
     fake_firewall_headers,
+    dialect,
+    task_factory,
 ):
-    registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
-    body = json.dumps(payload()).encode()
+    info = sandbox(tmp_path, dialect)
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    value = payload(dialect)
+    value["messages" if dialect == "openai-completions" else "input"][0]["content"] = "x" * 180000
+    body = json.dumps(value).encode()
     wire = (
         b"POST "
-        + PATHS["openai-completions"].encode()
+        + PATHS[dialect].encode()
         + b" HTTP/1.1\r\nHost: openrouter.ai\r\nContent-Type: application/json\r\nContent-Length: "
         + str(len(body)).encode()
         + b"\r\n"
@@ -80,7 +100,13 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
             context, alpn=b"http/1.1", host="openrouter.ai", mode=HTTPMode.transparent
         )
 
-        class Handler(ConnectionHandler):
+        class Handler(ProxyConnectionHandler):
+            def __init__(self):
+                # Keep the fixture's prepared native HTTP context and sockets,
+                # while exercising the concrete production hook dispatcher.
+                ConnectionHandler.__init__(self, native.context)
+                self.master = context.master
+
             async def handle_hook(self, hook):
                 if isinstance(hook, HttpRequestHeadersHook):
                     flow = hook.flow
@@ -92,13 +118,13 @@ async def test_native_framing_and_hook_tasks_complete_a_managed_request(
                         peername=("104.18.32.47", 443),
                     )
                     flow.server_conn.alpn = b"http/1.1"
-                await context.master.addons.invoke_addon(mitm_addon, hook)
+                await super().handle_hook(hook)
 
             async def hook_task(self, hook):
                 hooks.append(asyncio.current_task())
                 await super().hook_task(hook)
 
-        handler = Handler(native.context)
+        handler = Handler()
         handler.layer = native
         async with (
             await asyncio.start_server(guest, "127.0.0.1", 0) as guest_server,
