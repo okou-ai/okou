@@ -7,7 +7,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { onRejection, resetSignal, settle, tapError } from "../utils.ts";
+import { resetSignal, settle, tapError } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -1070,54 +1070,46 @@ function createComposerDraftHandoffSignals({
       restored: RestoredDraftState | null,
       signal: AbortSignal,
     ): Promise<boolean> => {
+      signal.throwIfAborted();
       const handoff = get(composerDraftHandoffState$);
       if (!handoff) {
         return false;
       }
-      // Claim before awaiting attachment reconciliation so concurrent page
-      // setup and click handlers cannot merge the same remote draft twice.
+      // The merge is applied synchronously by seed$ before reconciliation.
+      // Consume the handoff once, even if reconciling an attachment fails.
       set(composerDraftHandoffState$, null);
-      return await onRejection(
-        async () => {
-          if (handoff.needsRemoteMerge && restored) {
-            const localInput = get(draftInput.input$);
-            const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
-              set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
-                version: 1 as const,
-                parts: [{ type: "text" as const, text: localInput }],
-              };
-            const mergedDocument = mergeComposerDraftDocument(
-              localDocument,
-              restored,
-            );
-            const mergedContent = mergedDocument
-              ? messageDocumentToPrompt(mergedDocument)
-              : null;
-            if (mergedDocument && mergedContent !== null) {
-              await set(
-                seed$,
-                {
-                  content: mergedContent,
-                  userMessage: mergedDocument,
-                  generationTemplate: get(internalGenerationTemplate$),
-                  attachments: [
-                    ...get(internalAttachments$),
-                    ...restored.attachments.map(createRestoredAttachment),
-                  ],
-                },
-                signal,
-              );
-            }
-          }
-          signal.throwIfAborted();
-          return true;
-        },
-        () => {
-          if (get(composerDraftHandoffState$) === null) {
-            set(composerDraftHandoffState$, handoff);
-          }
-        },
-      );
+      if (handoff.needsRemoteMerge && restored) {
+        const localInput = get(draftInput.input$);
+        const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
+          set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
+            version: 1 as const,
+            parts: [{ type: "text" as const, text: localInput }],
+          };
+        const mergedDocument = mergeComposerDraftDocument(
+          localDocument,
+          restored,
+        );
+        const mergedContent = mergedDocument
+          ? messageDocumentToPrompt(mergedDocument)
+          : null;
+        if (mergedDocument && mergedContent !== null) {
+          await set(
+            seed$,
+            {
+              content: mergedContent,
+              userMessage: mergedDocument,
+              generationTemplate: get(internalGenerationTemplate$),
+              attachments: [
+                ...get(internalAttachments$),
+                ...restored.attachments.map(createRestoredAttachment),
+              ],
+            },
+            signal,
+          );
+        }
+      }
+      signal.throwIfAborted();
+      return true;
     },
   );
 

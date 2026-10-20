@@ -399,17 +399,17 @@ describe("with an unconnected banking conversation", () => {
 
 async function startPendingBankingConnect(
   outcome: "page navigation" | "session failure",
+  duplicate = false,
 ) {
   const popup = mockOpenedWindow();
   const requested = context.mocks.deferred<void>();
   const response = context.mocks.deferred<void>();
+  const actionUrl = bankingActionUrl({
+    reason: "Review recent cash-flow activity",
+    callbackPrompt: "Continue the banking review",
+  });
   installActionConversation({
-    lines: [
-      bankingActionUrl({
-        reason: "Review recent cash-flow activity",
-        callbackPrompt: "Continue the banking review",
-      }),
-    ],
+    lines: duplicate ? [actionUrl, "", actionUrl] : [actionUrl],
   });
   context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
     return respond(200, emptyBankingStatus());
@@ -434,7 +434,8 @@ async function startPendingBankingConnect(
   );
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
   await readyChat();
-  const summary = await screen.findByTestId("banking-action-card");
+  const summaries = await screen.findAllByTestId("banking-action-card");
+  const summary = summaries[0]!;
   click(getButton("View details", summary));
   const card = await screen.findByRole("dialog", {
     name: "Banking access request",
@@ -445,10 +446,32 @@ async function startPendingBankingConnect(
   expect(popup.navigations).toStrictEqual([]);
   expect(getButton("Connect a bank", card)).toBeDisabled();
 
-  return { popup, response, card };
+  return { popup, response, card, summaries };
 }
 
-test("Banking connect closes its blank popup on page navigation", async () => {
+test("Duplicate banking cards share the active request and its failure", async () => {
+  const { response, card, summaries } = await startPendingBankingConnect(
+    "session failure",
+    true,
+  );
+  expect(summaries).toHaveLength(2);
+  click(getButton("Close", card));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  click(getButton("View details", summaries[1]!));
+  const duplicate = await screen.findByRole("dialog", {
+    name: "Banking access request",
+  });
+  expect(getButton("Connect a bank", duplicate)).toBeDisabled();
+  response.resolve();
+  await expect(
+    within(duplicate).findByText("Bank connection unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(getButton("Connect a bank", duplicate)).toBeEnabled();
+});
+
+test("Banking connect stops before navigating its popup when the page changes", async () => {
   const { popup, response, card } =
     await startPendingBankingConnect("page navigation");
   click(getButton("Close", card));
@@ -458,13 +481,13 @@ test("Banking connect closes its blank popup on page navigation", async () => {
   click(getButton("New chat"));
   await waitFor(() => {
     expect(location.pathname).not.toBe(RUN_PATH);
-    expect(popup.openedWindow.closed).toBeTruthy();
+    expect(popup.openedWindow.closed).toBeFalsy();
   });
   response.resolve(undefined);
   expect(popup.navigations).toStrictEqual([]);
 });
 
-test("Banking connect closes its blank popup on session failure", async () => {
+test("Banking connect reports session failure without navigating or closing its popup", async () => {
   const { popup, response, card } =
     await startPendingBankingConnect("session failure");
   response.resolve(undefined);
@@ -473,7 +496,7 @@ test("Banking connect closes its blank popup on session failure", async () => {
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(getButton("Connect a bank", card)).toBeEnabled();
-    expect(popup.openedWindow.closed).toBeTruthy();
+    expect(popup.openedWindow.closed).toBeFalsy();
   });
   expect(popup.navigations).toStrictEqual([]);
 });

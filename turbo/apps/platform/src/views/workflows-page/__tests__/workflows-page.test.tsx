@@ -4301,6 +4301,40 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
   expect(requests).toBe(1);
 });
 
+test("Reopening a workflow tooltip reads the author again after a failed request", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+  let retry = false;
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    if (!retry) {
+      return respond(500, {
+        error: { code: "INTERNAL", message: "Author unavailable" },
+      });
+    }
+    return respond(200, { displayName: "Recovered Author", imageUrl: null });
+  });
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  const title = linkByAriaLabel("Open Sales Research");
+
+  await user.hover(title);
+
+  await expect(
+    screen.findByText("Author unavailable"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(title);
+  await waitFor(() => {
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  retry = true;
+
+  await user.hover(title);
+
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("Recovered Author"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("Discard cached author data on account change and abort the old account's pending request", async () => {
   const user = userEvent.setup();
   const clerk = context.mocks.clerk();

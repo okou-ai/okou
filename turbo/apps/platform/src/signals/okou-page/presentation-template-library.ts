@@ -18,7 +18,8 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
-import { onRejection, waitForOperation } from "../utils.ts";
+import { waitForOperation } from "../utils.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 
 export type { PresentationTemplateDetail, PresentationTemplateSummary };
 
@@ -31,11 +32,13 @@ interface ImportedPresentationTemplateDetailResolver {
 }
 
 const presentationTemplatesVersion$ = state(0);
-const presentationTemplatesSubscription$ = state<Promise<boolean> | null>(null);
-const presentationTemplatesRealtimeReady$ = computed((get) => {
-  const subscription = get(presentationTemplatesSubscription$);
+const presentationTemplatesInitialization$ = state<Promise<boolean> | null>(
+  null,
+);
+const presentationTemplatesInitialized$ = computed((get) => {
+  const subscription = get(presentationTemplatesInitialization$);
   if (subscription === null) {
-    throw new Error("Presentation template subscriptions were not initialized");
+    throw new Error("Presentation template realtime was not initialized");
   }
   return subscription;
 });
@@ -64,9 +67,9 @@ interface CachedImportedPresentationTemplateCatalog {
 const importedPresentationTemplateCatalog$ = computed(
   async (get): Promise<ImportedPresentationTemplateCatalog> => {
     get(presentationTemplatesVersion$);
-    // Attach realtime before the baseline fetch so an update cannot be lost
-    // between loading the catalog and starting its subscription.
-    if (!(await get(presentationTemplatesRealtimeReady$))) {
+    // Authentication and the shared bridge must be ready before the first read.
+    // Each subscription refreshes on attachment and after continuity gaps.
+    if (!(await get(presentationTemplatesInitialized$))) {
       return { templates: [] };
     }
     const client = get(apiClient$)(presentationTemplatesContract);
@@ -107,39 +110,18 @@ const acquirePresentationTemplateSubscriptions$ = command(
     if (!bridge) {
       return false;
     }
-    const subscriptionIds = [crypto.randomUUID(), crypto.randomUUID()];
-    let disposed = false;
-    const dispose = () => {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      signal.removeEventListener("abort", dispose);
-      for (const subscriptionId of subscriptionIds) {
-        bridge.unsubscribeRealtime(subscriptionId);
-      }
-    };
-    const invalidate = () => {
-      if (!disposed) {
-        set(refreshPresentationTemplates$);
-      }
-    };
-    signal.addEventListener("abort", dispose, { once: true });
-    await onRejection(async () => {
-      await Promise.all(
-        subscriptionIds.map(async (subscriptionId, index) => {
-          await bridge.subscribeRealtime(
-            subscriptionId,
-            index === 0 ? "user" : "org",
-            "presentationTemplatesChanged",
-            invalidate,
-            invalidate,
-          );
-        }),
+    for (const scope of ["user", "org"] as const) {
+      set(
+        setAblyInvalidationLoop$,
+        {
+          scope,
+          topic: "presentationTemplatesChanged",
+          invalidations: [refreshPresentationTemplates$],
+          options: { runOnSubscribe: true },
+        },
+        signal,
       );
-      signal.throwIfAborted();
-    }, dispose);
-    signal.throwIfAborted();
+    }
     return true;
   },
 );
@@ -155,7 +137,7 @@ export const subscribePresentationTemplatesChanged$ = command(
       initialization,
       signal,
     );
-    set(presentationTemplatesSubscription$, subscription);
+    set(presentationTemplatesInitialization$, subscription);
     return subscription;
   },
 );
@@ -812,7 +794,7 @@ export function createImportedPresentationTemplateSignals() {
   });
 
   return {
-    presentationTemplatesRealtimeReady$,
+    presentationTemplatesInitialized$,
     retryImportedPresentationTemplates$: refreshPresentationTemplates$,
     importedPresentationTemplates$,
     loadImportedPresentationTemplates$,

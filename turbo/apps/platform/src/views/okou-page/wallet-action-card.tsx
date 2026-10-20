@@ -96,11 +96,11 @@ function WalletConnectCard({
       : last.state === "hasData"
         ? last.data
         : null;
-  const busy = useGet(connect.busy$);
   const continued = useGet(connect.continued$);
-  const callbackFailed = useGet(connect.callbackFailed$);
   const pageSignal = useGet(pageSignal$);
+  const continuation = useLoadable(connect.operation$);
   const start = useSet(connect.start$);
+  const busy = continuation.state === "loading";
   const title = t(($) => {
     return $.chat.walletAction.connectTitle;
   });
@@ -121,18 +121,22 @@ function WalletConnectCard({
       return $.chat.walletAction.unavailable;
     }),
   };
-  const description = callbackFailed
-    ? t(($) => {
-        return $.chat.walletAction.callbackFailed;
-      })
-    : current.state === "hasError"
+  const description =
+    continuation.state === "hasError" && status?.status === "authorized"
       ? t(($) => {
-          return $.chat.walletAction.checkFailed;
+          return $.chat.walletAction.callbackFailed;
         })
-      : status && (status.status !== "pending" || busy)
-        ? statusLabels[status.status]
-        : descriptor.hostname;
+      : current.state === "hasError" || continuation.state === "hasError"
+        ? t(($) => {
+            return $.chat.walletAction.checkFailed;
+          })
+        : status && (status.status !== "pending" || busy)
+          ? statusLabels[status.status]
+          : descriptor.hostname;
   const activate = () => {
+    if (busy || continued) {
+      return;
+    }
     detach(
       start(pageSignal),
       Reason.DomCallback,

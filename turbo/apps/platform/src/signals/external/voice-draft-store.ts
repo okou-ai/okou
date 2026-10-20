@@ -113,11 +113,11 @@ export async function createVoiceDraftRecording(
       },
       async (transaction, track) => {
         const existing = await track(transaction.store.get(key));
-        if (existing) {
+        if (existing?.sampleCount) {
           return existing;
         }
         const recording = { id, sampleCount: 0, chunkCount: 0 };
-        await track(transaction.store.add(recording, key));
+        await track(transaction.store.put(recording, key));
         return recording;
       },
     ),

@@ -277,13 +277,13 @@ test("Wrong protocol, operation, product bot, origin and window cannot authorize
 });
 
 test.each([
-  { status: 409 as const, outcome: "conflict" },
-  { status: 400 as const, outcome: "expired" },
-  { status: 403 as const, outcome: "prerequisite" },
-  { status: 404 as const, outcome: "failed" },
+  { status: 409 as const },
+  { status: 400 as const },
+  { status: 403 as const },
+  { status: 404 as const },
 ])(
-  "Binding $status reaches the visible callback as $outcome, never linked",
-  async ({ status, outcome }) => {
+  "Binding $status fails on the original page without a second callback outcome",
+  async ({ status }) => {
     context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
       return respond(status, {
         error: { code: "CONFLICT", message: "Cannot connect this account." },
@@ -296,10 +296,13 @@ test.each([
       screen.findByText("Cannot connect this account."),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect({ value: hasResult(bridge.outgoing, outcome) }).toStrictEqual({
-        value: true,
-      });
+      expect(bridge.button).toBeEnabled();
     });
+    expect(
+      bridge.outgoing.some(({ message }) => {
+        return message.type === "telegram-auth-result";
+      }),
+    ).toBeFalsy();
     expect({ value: hasResult(bridge.outgoing, "linked") }).toStrictEqual({
       value: false,
     });
@@ -311,7 +314,7 @@ test.each([
   },
 );
 
-test("The callback receives interrupted when navigation aborts an in-flight binding, even if it commits", async () => {
+test("Navigation after identity delivery leaves the connection result to the original page", async () => {
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   context.mocks.api(integrationsTelegramContract.link, async ({ respond }) => {
@@ -332,7 +335,7 @@ test("The callback receives interrupted when navigation aborts an in-flight bind
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
   expect({ value: hasResult(bridge.outgoing, "interrupted") }).toStrictEqual({
-    value: true,
+    value: false,
   });
   release.resolve();
   expect({ value: hasResult(bridge.outgoing, "linked") }).toStrictEqual({
@@ -441,13 +444,15 @@ test("An unacknowledged result is repeated on readiness and stops after its corr
 });
 
 test.each(["account", "session"])(
-  "An initiating %s change during POST reports interrupted even when the old server request finishes",
+  "After identity delivery, an initiating %s change cancels binding without another callback outcome",
   async (change) => {
     const requested = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
+    let bindingSignal: AbortSignal | undefined;
     context.mocks.api(
       integrationsTelegramContract.link,
-      async ({ respond }) => {
+      async ({ request, respond }) => {
+        bindingSignal = request.signal;
         requested.resolve();
         await release.promise;
         return respond(200, {
@@ -470,13 +475,13 @@ test.each(["account", "session"])(
       );
       context.mocks.clerk().stateChanged();
     });
-    release.resolve();
     await waitFor(() => {
-      expect({
-        value: hasResult(bridge.outgoing, "interrupted"),
-      }).toStrictEqual({
-        value: true,
-      });
+      expect(bindingSignal?.aborted).toBeTruthy();
+      expect(bridge.button).toBeEnabled();
+    });
+    release.resolve();
+    expect({ value: hasResult(bridge.outgoing, "interrupted") }).toStrictEqual({
+      value: false,
     });
     expect({ value: hasResult(bridge.outgoing, "linked") }).toStrictEqual({
       value: false,

@@ -1,13 +1,8 @@
-import { MessagePort } from "node:worker_threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
-import {
-  sharedDatabaseClientMessageSchema,
-  sharedDatabaseWorkerMessageSchema,
-} from "../../../shared-database/protocol.ts";
 
 import {
   click,
@@ -41,94 +36,16 @@ const UPDATED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000002";
 const OTHER_THREAD_ID = "82000000-0000-4000-a000-000000000004";
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 
-// Infrastructure-only synchronization: the page has no partial-ACK state for
-// one scope while its sibling is still pending. Observe the real transport only
-// to order provider events; assert loading and recovery through the page below.
-function observeTemplateSubscriptions() {
-  const messages = vi.spyOn(MessagePort.prototype, "postMessage");
-  const hasType = (message: unknown, type: string): boolean => {
-    return (
-      typeof message === "object" &&
-      message !== null &&
-      "type" in message &&
-      message.type === type
-    );
-  };
-  const subscriptions = () => {
-    return messages.mock.calls.flatMap(([message]) => {
-      if (!hasType(message, "realtime-subscribe")) {
-        return [];
-      }
-      const parsed = sharedDatabaseClientMessageSchema.safeParse(message);
-      return parsed.success &&
-        parsed.data.type === "realtime-subscribe" &&
-        parsed.data.topic === "presentationTemplatesChanged"
-        ? [parsed.data]
-        : [];
-    });
-  };
-  const releasedScopes = () => {
-    const released = new Set(
-      messages.mock.calls.flatMap(([message]) => {
-        if (!hasType(message, "realtime-unsubscribe")) {
-          return [];
-        }
-        const parsed = sharedDatabaseClientMessageSchema.safeParse(message);
-        return parsed.success && parsed.data.type === "realtime-unsubscribe"
-          ? [parsed.data.subscriptionId]
-          : [];
-      }),
-    );
-    return new Set(
-      subscriptions()
-        .filter((subscription) => {
-          return released.has(subscription.subscriptionId);
-        })
-        .map((subscription) => {
-          return subscription.scope;
-        }),
-    );
-  };
-  return {
-    waitForSubscribed: async (scope: "user" | "org") => {
-      await waitFor(() => {
-        const request = subscriptions().find((subscription) => {
-          return subscription.scope === scope;
-        });
-        expect(request).toBeDefined();
-        expect(
-          messages.mock.calls.some(([message]) => {
-            if (!hasType(message, "realtime-subscribed")) {
-              return false;
-            }
-            const parsed = sharedDatabaseWorkerMessageSchema.safeParse(message);
-            return (
-              parsed.success &&
-              parsed.data.type === "realtime-subscribed" &&
-              parsed.data.subscriptionId === request?.subscriptionId
-            );
-          }),
-        ).toBeTruthy();
-      });
-    },
-    waitForReleased: async (scope: "user" | "org") => {
-      await waitFor(() => {
-        expect([...releasedScopes()]).toStrictEqual([scope]);
-      });
-    },
-  };
-}
-
 test.each(["user", "org"] as const)(
-  "Uploaded templates wait when the %s subscription attaches first",
+  "Uploaded templates load before realtime and catch up when the %s scope attaches",
   async (scope) => {
     mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
     mockTemplateChat();
     const uploaded = createUploadedTemplate({
       id: UPLOADED_TEMPLATE_ID,
-      title: "Both subscriptions are ready",
+      title: "Available before subscriptions",
     });
-    mockPresentationTemplateLibrary([uploaded]);
+    const library = mockPresentationTemplateLibrary([uploaded]);
     const gates = {
       user: context.mocks.ably.deferSubscribeOnChannel(
         "user:test-user-123",
@@ -139,7 +56,6 @@ test.each(["user", "org"] as const)(
         "presentationTemplatesChanged",
       ),
     };
-    const observed = observeTemplateSubscriptions();
     const user = userEvent.setup();
     await setupPage({
       context,
@@ -150,30 +66,38 @@ test.each(["user", "org"] as const)(
     await Promise.all([gates.user.started, gates.org.started]);
     const picker = await openTemplatePicker(user, "Presentation");
 
-    gates[scope].attach();
-    await observed.waitForSubscribed(scope);
-    expect(
-      within(picker).queryByLabelText(`Select template ${uploaded.title}`),
-    ).not.toBeInTheDocument();
-    expect(
-      within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
-    ).toBeEnabled();
-    gates[scope === "user" ? "org" : "user"].attach();
     await expect(
       within(picker).findByLabelText(`Select template ${uploaded.title}`),
     ).resolves.toBeInTheDocument();
+    const published = createUploadedTemplate({
+      id: UPDATED_TEMPLATE_ID,
+      title: "Published before attachment",
+    });
+    library.replace([uploaded, published]);
+    gates[scope].attach();
+    await expect(
+      within(picker).findByLabelText(`Select template ${published.title}`),
+    ).resolves.toBeInTheDocument();
+    gates[scope === "user" ? "org" : "user"].attach();
   },
 );
 
-test("A template subscription failure releases both scopes and leaves built-ins usable", async () => {
+test("A failed template subscription leaves the catalog and the other scope usable", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
-  mockPresentationTemplateLibrary([]);
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Available despite subscription failure",
+  });
+  const library = mockPresentationTemplateLibrary([uploaded]);
   const org = context.mocks.ably.deferSubscribeOnChannel(
     "org:org_default",
     "presentationTemplatesChanged",
   );
-  const observed = observeTemplateSubscriptions();
+  const userSubscription = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "presentationTemplatesChanged",
+  );
   const user = userEvent.setup();
   await setupPage({
     context,
@@ -181,26 +105,24 @@ test("A template subscription failure releases both scopes and leaves built-ins 
     host: "app.okou.ai",
     sharedWorkerTestTransport: "message-port",
   });
-  await org.started;
+  await Promise.all([org.started, userSubscription.started]);
   const picker = await openTemplatePicker(user, "Presentation");
-  await observed.waitForSubscribed("user");
-  org.fail(new Error("Template subscription unavailable"));
   await expect(
-    within(picker).findByText(
-      "Uploaded templates are temporarily unavailable.",
-    ),
+    within(picker).findByLabelText(`Select template ${uploaded.title}`),
   ).resolves.toBeInTheDocument();
-  expect(within(picker).getByText(firstBuiltInTitle())).toBeInTheDocument();
+  org.fail(new Error("Template subscription unavailable"));
+  const published = createUploadedTemplate({
+    id: UPDATED_TEMPLATE_ID,
+    title: "Published through the user subscription",
+  });
+  library.replace([uploaded, published]);
+  userSubscription.attach();
+  await expect(
+    within(picker).findByLabelText(`Select template ${published.title}`),
+  ).resolves.toBeInTheDocument();
   expect(
     within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
   ).toBeEnabled();
-  // Worker-side listener release has no separate page-visible surface, and the
-  // channels themselves no longer answer for this catalog: the custom template
-  // catalog listens to the same topic and keeps its own subscriptions through
-  // this failure. Follow the subscriptions this catalog created instead. Only
-  // the scope that attached has a listener to release — the one that failed to
-  // subscribe never held one.
-  await observed.waitForReleased("user");
 });
 
 test("An empty catalog keeps the import card available", async () => {
@@ -217,7 +139,6 @@ test("An empty catalog keeps the import card available", async () => {
       "presentationTemplatesChanged",
     ),
   };
-  const observed = observeTemplateSubscriptions();
   const user = userEvent.setup();
   await setupPage({
     context,
@@ -229,8 +150,6 @@ test("An empty catalog keeps the import card available", async () => {
   const picker = await openTemplatePicker(user, "Presentation");
   gates.user.attach();
   gates.org.attach();
-  await observed.waitForSubscribed("user");
-  await observed.waitForSubscribed("org");
   expect(
     within(picker).getByLabelText("Import your own deck"),
   ).toBeInTheDocument();

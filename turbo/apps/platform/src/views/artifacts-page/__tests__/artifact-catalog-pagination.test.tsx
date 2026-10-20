@@ -138,3 +138,54 @@ test("Scrolling through artifacts appends later results without losing earlier o
     findArtifactAction("first-page.txt"),
   ).resolves.toBeInTheDocument();
 });
+
+test("A failed artifact page preserves loaded cards and the next scroll retries it", async () => {
+  let retry = false;
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    if (query.cursor === "cursor-2") {
+      if (!retry) {
+        return respond(500, {
+          error: { code: "INTERNAL", message: "Artifact page unavailable" },
+        });
+      }
+      return respond(200, {
+        artifacts: [
+          artifact({
+            id: "a0000000-0000-4000-a000-000000000002",
+            title: "retried-page.txt",
+          }),
+        ],
+        nextCursor: null,
+      });
+    }
+    return respond(200, {
+      artifacts: [artifact({ title: "retained-page.txt" })],
+      nextCursor: "cursor-2",
+    });
+  });
+  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
+  await expect(
+    findArtifactAction("retained-page.txt"),
+  ).resolves.toBeInTheDocument();
+  const viewport = getCatalogViewport();
+  placeNearCatalogEnd(viewport);
+
+  fireEvent.scroll(viewport);
+
+  await expect(
+    screen.findByText("Artifact page unavailable"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    findArtifactAction("retained-page.txt"),
+  ).resolves.toBeInTheDocument();
+  retry = true;
+
+  fireEvent.scroll(viewport);
+
+  await expect(
+    findArtifactAction("retried-page.txt"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    findArtifactAction("retained-page.txt"),
+  ).resolves.toBeInTheDocument();
+});

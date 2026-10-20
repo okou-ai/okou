@@ -4704,8 +4704,8 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const realtime = useLoadable(
-    signals.template.presentationTemplatesRealtimeReady$,
+  const initialization = useLoadable(
+    signals.template.presentationTemplatesInitialized$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
@@ -4715,7 +4715,7 @@ function ImportedPresentationTemplateLibraryStatus({
   }
   let message: string;
   let retry: (() => void) | undefined;
-  if (realtime.state === "hasError") {
+  if (initialization.state === "hasError") {
     message = t(($) => {
       return $.chat.templates.importedUnavailable;
     });

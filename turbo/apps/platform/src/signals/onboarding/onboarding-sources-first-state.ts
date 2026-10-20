@@ -50,10 +50,10 @@ export type SubscriptionProvider = OnboardingSubscriptionProvider;
 export type ChatChannelId = "telegram" | "imessage" | "teams";
 
 /**
- * Where one address stands with the invitation API: in flight, accepted by the
- * API, or refused by it. Nothing but an API answer makes an address invited.
+ * The invitation API result for an address. Request lifecycle belongs to
+ * the command loadable; only an API answer makes an address invited.
  */
-export type SourcesFirstInviteStatus = "pending" | "invited" | "failed";
+export type SourcesFirstInviteStatus = "invited" | "failed";
 
 export interface SourcesFirstInvite {
   readonly email: string;
