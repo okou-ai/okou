@@ -411,7 +411,7 @@ mod tests {
         assert!(response.diagnostic.is_empty());
         assert!(!cli_cancellation.is_cancelled());
 
-        for message_id in ["cancel-1", "cancel-2"] {
+        for (sequence, message_id) in [(1, "cancel-1"), (2, "cancel-2")] {
             process_control_ipc::write_request(
                 &mut stream,
                 &process_control_ipc::ControlRequest {
@@ -429,27 +429,29 @@ mod tests {
             );
             assert!(response.diagnostic.is_empty());
             assert!(cli_cancellation.is_cancelled());
-        }
 
-        process_control_ipc::write_request(
-            &mut stream,
-            &process_control_ipc::ControlRequest {
-                message_id: "input-after-valid-cancel".to_string(),
-                payload: active_input_payload(1),
-            },
-        )
-        .unwrap();
-        let response = process_control_ipc::read_response(&mut stream)
-            .expect("control task should send response");
-        assert_eq!(response.message_id, "input-after-valid-cancel");
-        assert_eq!(
-            response.status,
-            process_control_ipc::ControlResponseStatus::Rejected
-        );
-        assert_eq!(
-            response.diagnostic,
-            guest_contracts::active_input::ACTIVE_INPUT_CLOSED_DIAGNOSTIC
-        );
+            let input_message_id = format!("input-after-{message_id}");
+            process_control_ipc::write_request(
+                &mut stream,
+                &process_control_ipc::ControlRequest {
+                    message_id: input_message_id.clone(),
+                    payload: active_input_payload(sequence),
+                },
+            )
+            .unwrap();
+            let response = process_control_ipc::read_response(&mut stream)
+                .expect("control task should send response");
+            assert_eq!(response.message_id, input_message_id);
+            assert_eq!(
+                response.status,
+                process_control_ipc::ControlResponseStatus::Rejected,
+                "{message_id} should close active input"
+            );
+            assert_eq!(
+                response.diagnostic,
+                guest_contracts::active_input::ACTIVE_INPUT_CLOSED_DIAGNOSTIC
+            );
+        }
 
         drop(stream);
         handle.join();
