@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.774.0](https://github.com/okou-ai/okou/compare/core-v8.773.0...core-v8.774.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add workspace chat search and unread controls ([#41660](https://github.com/okou-ai/okou/issues/41660)) ([d709362](https://github.com/okou-ai/okou/commit/d7093621fb92b80f5598635a1f0953157fc2d1f5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+
 ## [8.773.0](https://github.com/okou-ai/okou/compare/core-v8.772.0...core-v8.773.0) (2026-10-20)
 
 

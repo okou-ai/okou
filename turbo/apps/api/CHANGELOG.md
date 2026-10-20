@@ -9,6 +9,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.758.0](https://github.com/okou-ai/okou/compare/api-v1.757.0...api-v1.758.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+
+### Bug Fixes
+
+* **host:** prepare okou.app visibility and clerk deployment ([#41745](https://github.com/okou-ai/okou/issues/41745)) ([5d1c5b6](https://github.com/okou-ai/okou/commit/5d1c5b667eafb9a95cb1bf96a2aa254add2a776a))
+
+
+### Refactoring
+
+* **api:** localize gmail account projection ([#41761](https://github.com/okou-ai/okou/issues/41761)) ([37de7ca](https://github.com/okou-ai/okou/commit/37de7cac4b8fddd0e08a9f9f012c75c6bd4f7b71))
+* **api:** localize official telegram link database access ([#41759](https://github.com/okou-ai/okou/issues/41759)) ([1c5c055](https://github.com/okou-ai/okou/commit/1c5c055e5b7910e23760c2a78d5771219cd24216))
+* **api:** resolve native continuation from thread bindings ([#41762](https://github.com/okou-ai/okou/issues/41762)) ([32986a1](https://github.com/okou-ai/okou/commit/32986a17a2469dfa758d8b6684c63943777e19b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+    * @okouai/db bumped to 1.351.0
+    * @okouai/pi-agent-runtime bumped to 1.50.30
+
 ## [1.757.0](https://github.com/okou-ai/okou/compare/api-v1.756.0...api-v1.757.0) (2026-10-20)
 
 

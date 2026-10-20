@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/ios-v0.11.0...ios-v0.12.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add workspace chat search and unread controls ([#41660](https://github.com/okou-ai/okou/issues/41660)) ([d709362](https://github.com/okou-ai/okou/commit/d7093621fb92b80f5598635a1f0953157fc2d1f5))
+
 ## [0.11.0](https://github.com/okou-ai/okou/compare/ios-v0.10.0...ios-v0.11.0) (2026-10-20)
 
 
