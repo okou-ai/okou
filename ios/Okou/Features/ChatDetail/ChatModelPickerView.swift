@@ -5,55 +5,55 @@ struct ChatModelPickerButton: View {
   @Bindable var selection: ChatModelSelectionStore
   @State private var isPresented = false
   private var models: ChatModelStore { selection.models }
-  private var onlyAuto: Bool {
-    models.configuration?.models.allSatisfy { $0.selectedModel == nil } == true
+  private var isLoading: Bool { models.isLoading || selection.isBusy }
+  private var hasError: Bool {
+    models.error != nil || selection.error != nil
+      || (models.configuration != nil && !selection.canSend && !isLoading)
+  }
+  private var accessibilityValue: String {
+    guard let configuration = models.configuration else {
+      return models.error == nil
+        ? String(localized: "Loading model settings")
+        : String(localized: "Model settings unavailable")
+    }
+    var parts = [configuration.catalog.name(selection.selection.model)]
+    if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
+    if selection.selection.serviceTier == "priority" {
+      parts.append(String(localized: "Fast mode"))
+    }
+    if hasError { parts.append(String(localized: "Model settings need attention")) }
+    return parts.joined(separator: " · ")
   }
 
   var body: some View {
-    Group {
-      if models.configuration != nil {
-        Button {
-          isPresented = true
-        } label: {
-          HStack(spacing: 6) {
-            if onlyAuto && models.configuration?.canLinkSubscriptions == true {
-              SubscriptionBrandIcon(type: .codex)
-              SubscriptionBrandIcon(type: .claude)
-              Text("Subscriptions")
-            } else {
-              Text(models.configuration?.catalog.name(selection.selection.model) ?? "Auto")
-              if let effort = selection.effectiveEffort { Text("· " + effortLabel(effort)) }
-              if selection.selection.serviceTier == "priority" { Image(systemName: "bolt.fill") }
-            }
-            Image(systemName: "chevron.down").font(.caption2)
-            if selection.isSaving { ProgressView().controlSize(.mini) }
-            if selection.error != nil || (!selection.canSend && !selection.isBusy) {
-              Image(systemName: "exclamationmark.circle")
-                .foregroundStyle(.orange).accessibilityLabel("Model settings need attention")
-            }
-          }
-          .font(.subheadline)
-          .lineLimit(1)
-          .frame(minHeight: 36)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .contentShape(Rectangle())
+    // Keep the entry mounted before metadata exists so its load task can start.
+    Button {
+      isPresented = true
+    } label: {
+      Group {
+        if isLoading {
+          ProgressView().controlSize(.small)
+        } else {
+          Image(systemName: hasError ? "exclamationmark.circle" : "slider.horizontal.3")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("chat-model-picker")
-        .accessibilityHint("Choose a model, thinking effort, or Fast mode for this chat")
-        .sheet(isPresented: $isPresented) {
-          ChatModelPickerView(selection: selection)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        }
-      } else if models.active && models.configuration == nil {
-        HStack {
-          if models.isLoading { ProgressView().controlSize(.small) }
-          if models.error != nil {
-            Button("Retry model settings") { Task { await models.refresh() } }
-          }
-        }.font(.caption)
       }
+      .font(.system(size: 16, weight: .medium))
+      .frame(width: 22, height: 22)
+    }
+    .buttonStyle(.glass)
+    .buttonBorderShape(.circle)
+    .controlSize(.small)
+    .tint(hasError ? .orange : .primary)
+    .frame(width: 44, height: 44)
+    .contentShape(Circle())
+    .accessibilityIdentifier("chat-model-picker")
+    .accessibilityLabel("Model settings")
+    .accessibilityValue(accessibilityValue)
+    .accessibilityHint("Choose a model, thinking effort, or Fast mode for this chat")
+    .sheet(isPresented: $isPresented) {
+      ChatModelPickerView(selection: selection)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
     .task {
       await selection.open()
@@ -221,7 +221,9 @@ struct ChatModelPickerView: View {
       .navigationTitle("Chat models")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-      .task { await selection.open() }
+      .task {
+        if !models.isLoading && !selection.isLoading { await selection.open() }
+      }
       .task { await subscriptions.refresh() }
       .sheet(isPresented: $showsAuth, onDismiss: subscriptions.cancelAuth) {
         SubscriptionAuthorizationView(store: subscriptions)
