@@ -157,7 +157,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    collection.topEdgeEffect.style = .soft
+    // The header owns its translucent material; a second edge effect obscures the history.
+    collection.topEdgeEffect.isHidden = true
     collection.bottomEdgeEffect.style = .soft
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
