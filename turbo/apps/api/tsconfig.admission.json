@@ -160,6 +160,7 @@
     "src/signals/services/web-chat-queue-context.service.ts",
     "src/signals/services/web-chat-session-prompt.service.ts",
     "src/signals/services/workflow-automation-enqueue.service.ts",
+    "src/signals/services/workflow-automation-queue-revocation.service.ts",
     "src/signals/services/workflow-automation-trigger-source.ts",
     "src/signals/services/workflow-input-queue.service.ts",
     "src/signals/services/workflow-queue-admission-timing.service.ts",
