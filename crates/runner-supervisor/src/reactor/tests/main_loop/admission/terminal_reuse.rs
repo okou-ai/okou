@@ -3,21 +3,62 @@ use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 
 #[tokio::test]
 async fn cooperative_cancellation_cleanup_reuses_generic_sandbox_for_waiting_successor() {
-    assert_non_success_cleanup_reuses_sandbox(true).await;
+    assert_cleanup_reuses_sandbox(true, 1, None).await;
 }
 
 #[tokio::test]
 async fn nonzero_exit_cleanup_reuses_generic_sandbox_for_waiting_successor() {
-    assert_non_success_cleanup_reuses_sandbox(false).await;
+    assert_cleanup_reuses_sandbox(false, 1, None).await;
 }
 
-async fn assert_non_success_cleanup_reuses_sandbox(cancelled: bool) {
+#[tokio::test]
+async fn independent_source_takes_precedence_over_unrelated_native_generation() {
+    assert_cleanup_reuses_sandbox(true, 1, Some(RunId::new_v4())).await;
+}
+
+#[tokio::test]
+async fn successful_source_without_native_continuation_uses_generic_activation() {
+    assert_cleanup_reuses_sandbox(false, 0, None).await;
+}
+
+pub(super) fn generic_finalizing_candidate(
+    run_id: RunId,
+    reuse_key: &str,
+    source: RunId,
+    deadline: std::time::Instant,
+) -> runner_provider::JobCandidate {
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
+        .with_reuse_key(Some(reuse_key.into()))
+        .with_runner_preference(
+            ActiveRunnerPreference::new(
+                RunnerProcessIdentity::new(
+                    TEST_RUNNER_ID.parse().unwrap(),
+                    TEST_HEARTBEAT_GENERATION,
+                )
+                .unwrap(),
+                RunnerPreferenceTier::FinalizingPredecessor,
+                deadline,
+            )
+            .with_finalizing_source_run_id(source),
+        )
+}
+
+async fn assert_cleanup_reuses_sandbox(
+    cancelled: bool,
+    exit_code: i32,
+    native_generation: Option<RunId>,
+) {
     let process_gate = MockLifecycleGate::new();
     let park_gate = MockLifecycleGate::new();
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(process_gate.clone());
     overrides.set_park_lifecycle_gate(park_gate.clone());
-    overrides.push_wait_process_exit(sandbox::ProcessExit::new(1, 1, Vec::new(), Vec::new()));
+    overrides.push_wait_process_exit(sandbox::ProcessExit::new(
+        1,
+        exit_code,
+        Vec::new(),
+        Vec::new(),
+    ));
     let (config, env) =
         mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
     let budget = Arc::clone(&config.capacity.budget);
@@ -59,13 +100,15 @@ async fn assert_non_success_cleanup_reuses_sandbox(cancelled: bool) {
     );
     env.handle
         .discover_tx
-        .send(finalizing_candidate(
-            successor,
-            reuse_key,
-            predecessor,
-            TEST_RUNNER_ID,
-            TEST_HEARTBEAT_GENERATION,
-        ))
+        .send(
+            generic_finalizing_candidate(
+                successor,
+                reuse_key,
+                predecessor,
+                std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
+            )
+            .with_history_generation_run_id(native_generation),
+        )
         .unwrap();
     wait_cancel_handle(&env.cancel_tokens, successor, Duration::from_secs(5)).await;
     assert!(
@@ -90,7 +133,11 @@ async fn assert_non_success_cleanup_reuses_sandbox(cancelled: bool) {
         .wait_completion(predecessor, Duration::from_secs(5))
         .await
         .unwrap();
-    assert_ne!(first.exit_code, 0);
+    if cancelled || exit_code != 0 {
+        assert_ne!(first.exit_code, 0);
+    } else {
+        assert_eq!(first.exit_code, 0);
+    }
     assert_eq!(
         overrides.create_configs().len(),
         1,
@@ -101,7 +148,7 @@ async fn assert_non_success_cleanup_reuses_sandbox(cancelled: bool) {
         overrides
             .completed_final_exec_park_handoff_points()
             .is_empty(),
-        "non-success must use generic activation rather than exact direct handoff"
+        "independent source without compatible native history must use generic activation"
     );
     assert_eq!(budget.allocated(), (2, 4096, 1));
 
@@ -142,12 +189,11 @@ async fn resolved_finalizing_preference_consumes_ready_generic_sandbox() {
     );
     env.handle
         .discover_tx
-        .send(finalizing_candidate(
+        .send(generic_finalizing_candidate(
             successor,
             reuse_key,
             RunId::new_v4(),
-            TEST_RUNNER_ID,
-            TEST_HEARTBEAT_GENERATION,
+            std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
         ))
         .unwrap();
     let completion = env
@@ -197,12 +243,11 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool) {
     );
     env.handle
         .discover_tx
-        .send(finalizing_candidate(
+        .send(generic_finalizing_candidate(
             successor,
             reuse_key,
             predecessor,
-            TEST_RUNNER_ID,
-            TEST_HEARTBEAT_GENERATION,
+            std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
         ))
         .unwrap();
     if let Some(guard) = &guard {

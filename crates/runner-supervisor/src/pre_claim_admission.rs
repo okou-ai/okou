@@ -668,20 +668,26 @@ async fn prepare_ranked_preference_candidate(
 
     let selected_finalizing =
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
+    // Old API writers still identify finalizing sources through native history.
+    // Remove this bridge in #41657 after old writers, retained discovery payloads
+    // and incompatible API/Runner rollback artifacts are no longer reachable.
+    let finalizing_source_run_id = preference
+        .finalizing_source_run_id()
+        .or(history_generation_run_id);
     if selected_finalizing
-        && let Some(history_generation_run_id) = history_generation_run_id
-        && let Some(predecessor) = ctx.active_runs.finalizing_predecessor(
-            history_generation_run_id,
-            reuse_key,
-            profile_name,
-        )
+        && let Some(source_run_id) = finalizing_source_run_id
+        && source_run_id != candidate.run_id()
+        && let Some(predecessor) =
+            ctx.active_runs
+                .finalizing_predecessor(source_run_id, reuse_key, profile_name)
     {
         return finalizing_preparation(
             candidate,
             predecessor,
             preference.deadline(),
             reuse_key,
-            history_generation_run_id,
+            source_run_id,
+            history_generation_run_id.filter(|generation| *generation == source_run_id),
         );
     }
     // Publication can resolve the selected producer between discovery and
@@ -809,7 +815,8 @@ fn finalizing_preparation(
     predecessor: ActiveRunReuseProof,
     deadline: Instant,
     reuse_key: &str,
-    history_generation_run_id: RunId,
+    source_run_id: RunId,
+    history_generation_run_id: Option<RunId>,
 ) -> PreferencePreparation {
     PreferencePreparation::Ready(PreparedCandidate {
         candidate,
@@ -817,6 +824,7 @@ fn finalizing_preparation(
             predecessor,
             deadline,
             reuse_key: reuse_key.to_owned(),
+            source_run_id,
             history_generation_run_id,
         })),
         blank_pool_selection: None,
