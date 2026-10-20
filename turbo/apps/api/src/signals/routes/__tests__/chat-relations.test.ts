@@ -325,7 +325,7 @@ describe("chat relationships", () => {
       const peer = await chat.createThread(actor, { agentId });
       peerIds.push(peer.id);
       const messageCount = index === 0 ? firstPeerMessageCount : 1;
-      for (let messageIndex = 0; messageIndex < messageCount; messageIndex++) {
+      const sendMessage = async (messageIndex: number) => {
         const clientEventId = randomUUID();
         await requestSendEventWithBearer(
           token,
@@ -338,9 +338,17 @@ describe("chat relationships", () => {
           },
           [201],
         );
-        if (index === 0) {
-          messageIds.push(clientEventId);
-        }
+        return clientEventId;
+      };
+      const sentMessageIds = await Promise.all(
+        Array.from({ length: messageCount - 1 }, (_, messageIndex) => {
+          return sendMessage(messageIndex);
+        }),
+      );
+      // Keep a later accepted message so timestamp ordering remains meaningful.
+      sentMessageIds.push(await sendMessage(messageCount - 1));
+      if (index === 0) {
+        messageIds.push(...sentMessageIds);
       }
     }
     const communications = await accept(
@@ -387,6 +395,15 @@ describe("chat relationships", () => {
         .sort()
         .reverse(),
     );
+    if (firstPeerMessageCount > 1) {
+      expect(
+        new Set(
+          messages.body.items.map((item) => {
+            return item.createdAt;
+          }),
+        ).size,
+      ).toBeGreaterThan(1);
+    }
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
