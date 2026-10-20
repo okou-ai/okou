@@ -2169,11 +2169,8 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
-      "emptyLinks": "此聊天中暫無連結",
       "expand": "展開",
-      "links": "連結",
       "loadFailed": "無法載入聊天資源",
-      "loadingLinks": "正在載入連結",
       "retry": "重試",
       "title": "聊天資源"
     },

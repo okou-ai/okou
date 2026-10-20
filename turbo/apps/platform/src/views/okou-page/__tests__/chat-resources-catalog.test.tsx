@@ -25,7 +25,7 @@ function artifactEntryNamed(title: string, container: HTMLElement) {
   return button;
 }
 
-test("Browse directory artifacts with permanently optional source URLs and open their detail", async () => {
+test("Browse artifacts without source URLs in the popover and sidebar without showing message links", async () => {
   const report = artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf");
   await setupResources({
     sourceUrl: false,
@@ -80,6 +80,23 @@ test("Browse directory artifacts with permanently optional source URLs and open 
   ).resolves.toHaveAttribute(
     "src",
     "https://files.example.test/download-report.pdf#navpanes=0",
+  );
+
+  click(buttonNamed("Back to all artifacts", sidebar));
+  const artifactList = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(artifactList).findByText("report.pdf");
+  expect(
+    within(artifactList).getByRole("heading", { name: "Artifacts 1" }),
+  ).toBeInTheDocument();
+  expect(within(artifactList).queryByText("Links")).not.toBeInTheDocument();
+  expect(
+    within(artifactList).queryByText("Current guide"),
+  ).not.toBeInTheDocument();
+  expect(within(artifactList).queryByRole("tablist")).not.toBeInTheDocument();
+
+  click(buttonNamed("Preview report.pdf", artifactList));
+  await within(await screen.findByTestId("artifact-sidebar")).findByText(
+    "download-report.pdf",
   );
 });
 

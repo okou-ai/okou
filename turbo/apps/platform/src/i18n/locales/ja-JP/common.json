@@ -2169,11 +2169,8 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "emptyLinks": "このチャットにはまだリンクがありません",
       "expand": "展開",
-      "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
-      "loadingLinks": "リンクを読み込み中",
       "retry": "再試行",
       "title": "チャットのリソース"
     },

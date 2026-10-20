@@ -2218,11 +2218,8 @@
     "resources": {
       "collapse": "Recolher",
       "copyLink": "Copiar link",
-      "emptyLinks": "Ainda não há links neste chat",
       "expand": "Expandir",
-      "links": "Links",
       "loadFailed": "Não foi possível carregar os recursos",
-      "loadingLinks": "Carregando links",
       "retry": "Tentar novamente",
       "title": "Recursos da conversa"
     },
