@@ -90,12 +90,14 @@ struct ChatComposerView: View {
         .padding(.horizontal, 12)
       }
 
+      let inputID = attachments.inputID
       ChatComposerTextInput(
         text: $draft, isFocused: $isFocused,
         acceptsImages: !isBusy && !needsUpgrade,
+        isCurrent: { attachments.inputID == inputID },
         pasteImages: attachments.importPastedImages
       )
-      .id(attachments.inputID)
+      .id(inputID)
       .accessibilityIdentifier("message-input")
       .padding(.leading, isFocused ? 18 : 58)
       .padding(.trailing, isFocused ? 18 : 58)

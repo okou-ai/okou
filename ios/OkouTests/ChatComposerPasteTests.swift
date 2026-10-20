@@ -216,12 +216,9 @@ final class ChatComposerPasteTests: XCTestCase {
     let fixture = AttachmentFlowFixture()
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
-    let host = UIHostingController(
-      rootView: ChatComposerView(
-        draft: Binding(get: { workspace.newChatDraft }, set: { workspace.newChatDraft = $0 }),
-        isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
-        error: nil, attachmentURL: fixture.http.baseURL, attachments: workspace.newAttachmentDraft,
-        supportsAttachments: true, submit: {}, refresh: nil))
+    workspace.selectedAgentID = AttachmentFlowFixture.agentID
+    let originalComposer = workspace.newComposer
+    let host = UIHostingController(rootView: WorkspacePasteComposerHarness(workspace: workspace))
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
@@ -253,6 +250,9 @@ final class ChatComposerPasteTests: XCTestCase {
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: "another-agent")
+    input.insertText("stale edit")
+    XCTAssertEqual(workspace.newChatDraft, "")
+    XCTAssertTrue(originalComposer.text.contains("stale edit"))
     try await eventually { self.textView(in: host.view) !== input && input.delegate == nil }
     continuation.yield()
     // Wait until UIKit has resolved the old paste, rather than waiting a fixed delay.
@@ -336,6 +336,98 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.preparations.isEmpty })
   }
 
+  func testRetiredNativeEditorCannotChangeAClearedDraftBeforeDismantling() async throws {
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    conversation.draft = "Old draft"
+    let host = UIHostingController(rootView: composer(conversation))
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(textView(in: host.view))
+    input.becomeFirstResponder()
+    conversation.composer.clear()
+    input.insertText("stale callback")
+    XCTAssertEqual(conversation.draft, "")
+    XCTAssertTrue(input.text.contains("stale callback"))
+  }
+
+  func testRemoteHydrationCannotCancelAnImagePasteBeforeItsFileArrives() async throws {
+    let reading = expectation(description: "Draft hydration started")
+    let loading = expectation(description: "Image provider started")
+    let (readStream, readGate) = AsyncStream<Void>.makeStream()
+    let (imageStream, imageGate) = AsyncStream<Void>.makeStream()
+    defer {
+      readGate.finish()
+      imageGate.finish()
+    }
+    let reads = Mutex(0)
+    let fixture = AttachmentFlowFixture(draftRead: {
+      let first = reads.withLock {
+        $0 += 1
+        return $0 == 1
+      }
+      guard first else { return }
+      reading.fulfill()
+      for await _ in readStream { break }
+    })
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL, userID: "paste-user", workspaceID: "paste-workspace"),
+      directory: directory)
+    let repository = ChatDraftRepository(client: fixture.http.client)
+    var document = ChatDraftDocument()
+    document.replaceText("Saved on another device")
+    let remote = ComposerDraft(document: document)
+    try await repository.save(remote, to: .thread(AttachmentFlowFixture.threadID))
+    let conversation = fixture.conversation(storage: storage)
+    defer {
+      conversation.composer.clear()
+      conversation.close()
+    }
+    let host = UIHostingController(rootView: composer(conversation))
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let synchronization = Task { await conversation.composer.synchronize() }
+    await fulfillment(of: [reading], timeout: 3)
+    let file = try makeImage()
+    defer { try? FileManager.default.removeItem(at: file) }
+    let provider = NSItemProvider()
+    provider.registerFileRepresentation(
+      forTypeIdentifier: UTType.png.identifier, fileOptions: .openInPlace, visibility: .all
+    ) { callback in
+      loading.fulfill()
+      Task {
+        for await _ in imageStream { break }
+        callback(file, true, nil)
+      }
+      return Progress(totalUnitCount: 1)
+    }
+    let input = try XCTUnwrap(textView(in: host.view))
+    input.paste(itemProviders: [provider])
+    await fulfillment(of: [loading], timeout: 3)
+    readGate.yield()
+    await synchronization.value
+    imageGate.yield()
+    try await eventually {
+      conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
+        && fixture.state.value.withLock { $0.preparations.count == 1 }
+    }
+    let unchanged = try await repository.load(.thread(AttachmentFlowFixture.threadID))
+    XCTAssertEqual(unchanged, remote)
+    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
+    conversation.composer.keepLocal()
+    await conversation.composer.synchronize()
+    let saved = try await repository.load(.thread(AttachmentFlowFixture.threadID))
+    XCTAssertTrue(
+      saved.draftUserMessage?.parts.contains {
+        $0["type"]?.string == "file" && $0["fileId"]?.string == AttachmentFlowFixture.fileID
+      } == true)
+    XCTAssertEqual(saved.draftAttachments?.first?.id, AttachmentFlowFixture.fileID)
+  }
+
   private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     let window = UIWindow(windowScene: scene)
@@ -355,7 +447,8 @@ final class ChatComposerPasteTests: XCTestCase {
       isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
       error: nil, attachmentURL: URL(string: "https://app.example.invalid")!,
       attachments: conversation.attachmentDraft,
-      supportsAttachments: true, submit: { await conversation.send() }, refresh: nil)
+      supportsAttachments: true, draftState: conversation.composer,
+      submit: { await conversation.send() }, refresh: nil)
   }
 
   private func imageData() -> Data {
@@ -385,5 +478,18 @@ final class ChatComposerPasteTests: XCTestCase {
     attachment.name = name
     attachment.lifetime = .keepAlways
     add(attachment)
+  }
+}
+
+private struct WorkspacePasteComposerHarness: View {
+  let workspace: WorkspaceStore
+
+  var body: some View {
+    @Bindable var composer = workspace.newComposer
+    ChatComposerView(
+      draft: $composer.text,
+      isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
+      error: nil, attachmentURL: workspace.webURL, attachments: composer.attachments,
+      supportsAttachments: true, draftState: composer, submit: {}, refresh: nil)
   }
 }

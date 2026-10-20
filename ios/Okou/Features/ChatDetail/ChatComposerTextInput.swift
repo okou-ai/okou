@@ -8,6 +8,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   @Binding var text: String
   @Binding var isFocused: Bool
   let acceptsImages: Bool
+  let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
   @Environment(\.isEnabled) private var isEnabled
 
@@ -71,13 +72,21 @@ struct ChatComposerTextInput: UIViewRepresentable {
     init(_ input: ChatComposerTextInput) { self.input = input }
 
     func textViewDidChange(_ textView: UITextView) {
+      // A reset retires this editor before SwiftUI dismantles its native view.
+      guard input.isCurrent() else { return }
       input.text = textView.text
       (textView as? ComposerTextView)?.placeholder.isHidden = !textView.text.isEmpty
       textView.invalidateIntrinsicContentSize()
     }
 
-    func textViewDidBeginEditing(_ textView: UITextView) { input.isFocused = true }
-    func textViewDidEndEditing(_ textView: UITextView) { input.isFocused = false }
+    func textViewDidBeginEditing(_ textView: UITextView) {
+      guard input.isCurrent() else { return }
+      input.isFocused = true
+    }
+    func textViewDidEndEditing(_ textView: UITextView) {
+      guard input.isCurrent() else { return }
+      input.isFocused = false
+    }
 
     func textPasteConfigurationSupporting(
       _ textPasteConfigurationSupporting: UITextPasteConfigurationSupporting,

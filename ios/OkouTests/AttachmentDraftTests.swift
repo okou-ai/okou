@@ -292,7 +292,8 @@ final class AttachmentFlowFixture: Sendable {
   init(
     failUpload: Bool = false, failSend: Bool = false, acceptBeforeFailure: Bool = false,
     storage: @escaping @Sendable () async -> Void = {},
-    creation: @escaping @Sendable () async -> Bool = { true }
+    creation: @escaping @Sendable () async -> Bool = { true },
+    draftRead: @escaping @Sendable () async -> Void = {}
   ) {
     let state = self.state
     http = ChatHTTPFixture { request in
@@ -312,6 +313,7 @@ final class AttachmentFlowFixture: Sendable {
       switch path {
       case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
       case "/api/chat-threads/\(Self.threadID)/draft":
+        await draftRead()
         return ChatHTTPResponse(
           body: String(
             decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
