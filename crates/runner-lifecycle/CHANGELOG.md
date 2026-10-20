@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.16.0...runner-lifecycle-v0.16.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **sandbox-firecracker:** retain cancelled unpark custody for terminal saving ([#41740](https://github.com/okou-ai/okou/issues/41740)) ([ddff750](https://github.com/okou-ai/okou/commit/ddff750f5d38696968d518958294b742d22286ad))
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
 ## [0.16.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.13...runner-lifecycle-v0.16.0) (2026-10-20)
 
 

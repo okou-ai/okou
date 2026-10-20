@@ -207,7 +207,6 @@
       "documentTitle": "Protokoll prüfen",
       "errors": {
         "invalid": "Ungültige JSON-Datei. Laden Sie eine exportierte JSON-Aktivitätsprotokolldatei hoch.",
-        "load": "Die JSON-Datei konnte nicht geladen werden. Laden Sie eine exportierte JSON-Aktivitätsprotokolldatei hoch.",
         "oversized": "Die JSON-Datei ist zu groß. Laden Sie eine exportierte Aktivitätsprotokoll-JSON-Datei mit einer Größe von weniger als 25 MB hoch."
       },
       "fallbackName": "Importiertes Protokoll",
@@ -1295,7 +1294,6 @@
       "downgradeScheduledPeriod": "Downgrade geplant. Ihr aktueller Plan bleibt bis zum Ende des Abrechnungszeitraums aktiv.",
       "planRestored": "Plan wiederhergestellt. Ihr Abonnement verlängert sich normal.",
       "preparingReceiptDownload": "Download der Quittung wird vorbereitet...",
-      "receiptDownloadFailed": "Belege konnten nicht heruntergeladen werden",
       "receiptsDownloaded": "Quittungen heruntergeladen",
       "subscriptionChangeConfirmed": "Die Abonnementänderung wurde bestätigt."
     },
@@ -1564,9 +1562,7 @@
       "unavailable": "{{filename}} ist nicht mehr verfügbar. Laden Sie die Datei erneut hoch, um sie zu senden.",
       "unavailableCount_one": "{{count}} Anhang ist nicht mehr verfügbar. Laden Sie ihn erneut hoch, um ihn zu senden.",
       "unavailableCount_other": "{{count}} Anhänge sind nicht mehr verfügbar. Laden Sie sie erneut hoch, um sie zu senden.",
-      "uploadFailed": "Hochladen von {{filename}} fehlgeschlagen",
-      "uploadFailedRetry": "Fehler beim Hochladen von {{filename}}. Versuchen Sie es erneut.",
-      "uploadsFailed": "Einige Anhänge konnten nicht hochgeladen werden. Versuchen Sie es erneut."
+      "uploadFailedRetry": "Fehler beim Hochladen von {{filename}}. Versuchen Sie es erneut."
     },
     "automations": {
       "active": "Aktiv",
@@ -4833,7 +4829,6 @@
           "codeRequired": "Fügen Sie den Claude-Autorisierungscode ein, um fortzufahren.",
           "connectedToast": "Claude verbunden",
           "connectTitle": "Verbinden Sie Claude",
-          "error": "Claude-Verbindung fehlgeschlagen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "expired": "Die Claude-Verbindungssitzung ist abgelaufen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "instructions": "Klicken Sie zunächst auf „Claude-Genehmigungsseite öffnen“. Genehmigen Sie dann {{brandName}} in Claude und kopieren Sie den nach der Genehmigung angezeigten Autorisierungscode. Fügen Sie abschließend den Code hier ein und klicken Sie auf „Verbinden“.",
           "openApproval": "Öffnen Sie die Claude-Genehmigungsseite",
@@ -4848,7 +4843,6 @@
           "connectedToast": "ChatGPT verbunden",
           "connectTitle": "Codex verbinden",
           "deviceCode": "Gerätecode",
-          "error": "Die ChatGPT-Verbindung ist fehlgeschlagen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "expired": "Die Codex-Verbindungssitzung ist abgelaufen. Beginnen Sie erneut, um es erneut zu versuchen.",
           "freePlanRejected": "Kostenlose ChatGPT-Pläne können Codex nicht über {{brandName}} nutzen. Führen Sie ein Upgrade auf Plus oder Pro durch und versuchen Sie es erneut.",
           "instructions": "Kopieren Sie zunächst den Gerätecode mit der Kopierschaltfläche und öffnen Sie dann die Genehmigungsseite. Fügen Sie dann den Gerätecode in OpenAI ein, wenn Sie dazu aufgefordert werden. Genehmigen Sie abschließend den Zugriff und lassen Sie dieses Dialogfeld geöffnet, während {{brandName}} die Verbindung herstellt.",

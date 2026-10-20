@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.4...runner-remote-v0.29.5) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
 ## [0.29.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.3...runner-remote-v0.29.4) (2026-10-20)
 
 

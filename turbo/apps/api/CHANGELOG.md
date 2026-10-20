@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.759.3](https://github.com/okou-ai/okou/compare/api-v1.759.2...api-v1.759.3) (2026-10-20)
+
+
+### Refactoring
+
+* **app:** rely on shared async error handling ([#41838](https://github.com/okou-ai/okou/issues/41838)) ([23116d9](https://github.com/okou-ai/okou/commit/23116d989c109a46f398346802b3981a01b690d4))
+* retire global connector account summaries ([#41847](https://github.com/okou-ai/okou/issues/41847)) ([2f6fdb8](https://github.com/okou-ai/okou/commit/2f6fdb830bf8d476e8a1c935b76896080dc15527))
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+    * @okouai/core bumped to 8.774.4
+    * @okouai/db bumped to 1.352.3
+    * @okouai/pi-agent-runtime bumped to 1.50.34
+
 ## [1.759.2](https://github.com/okou-ai/okou/compare/api-v1.759.1...api-v1.759.2) (2026-10-20)
 
 

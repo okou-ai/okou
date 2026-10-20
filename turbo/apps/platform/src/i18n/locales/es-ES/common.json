@@ -220,7 +220,6 @@
       "documentTitle": "Registro de inspección",
       "errors": {
         "invalid": "Archivo JSON inválido. Sube un archivo JSON exportado del registro de actividad.",
-        "load": "No se pudo cargar el archivo JSON. Sube un archivo JSON del registro de actividad exportado.",
         "oversized": "El archivo JSON es demasiado grande. Sube un archivo JSON de registro de actividad exportado por debajo de 25 MB."
       },
       "fallbackName": "Registro importado",
@@ -1318,7 +1317,6 @@
       "downgradeScheduledPeriod": "Cambio de plan programado. Tu plan actual permanecerá activo hasta que termine el periodo de facturación.",
       "planRestored": "Plan restaurado. Tu suscripción se renovará normalmente.",
       "preparingReceiptDownload": "Preparando la descarga del recibo...",
-      "receiptDownloadFailed": "No se han conseguido descargar los recibos",
       "receiptsDownloaded": "Recibos descargados",
       "subscriptionChangeConfirmed": "Se confirmó el cambio de suscripción."
     },
@@ -1589,9 +1587,7 @@
       "unavailableCount_one": "{{count}} archivo adjunto ya no está disponible. Vuelve a subirlo para enviarlo.",
       "unavailableCount_many": "{{count}} archivos adjuntos ya no están disponibles. Vuelve a subirlos para enviarlos.",
       "unavailableCount_other": "{{count}} archivos adjuntos ya no están disponibles. Vuelve a subirlos para enviarlos.",
-      "uploadFailed": "No se pudo subir {{filename}}",
-      "uploadFailedRetry": "No se pudo subir {{filename}}. Inténtalo de nuevo.",
-      "uploadsFailed": "Algunos archivos adjuntos no se han subido. Inténtalo de nuevo."
+      "uploadFailedRetry": "No se pudo subir {{filename}}. Inténtalo de nuevo."
     },
     "automations": {
       "active": "Activo",
@@ -4893,7 +4889,6 @@
           "codeRequired": "Pega el código de autorización de Claude para continuar.",
           "connectedToast": "Claude conectado",
           "connectTitle": "Conectar Claude",
-          "error": "Falló la conexión con Claude. Empieza de nuevo para reintentarlo.",
           "expired": "La sesión de conexión con Claude ha caducado. Empieza de nuevo para reintentarlo.",
           "instructions": "Primero, haz clic en Abrir la página de aprobación de Claude. Después, aprueba {{brandName}} en Claude y copia el código de autorización que aparecerá. Por último, pega el código aquí y haz clic en Conectar.",
           "openApproval": "Abrir la página de aprobación de Claude",
@@ -4908,7 +4903,6 @@
           "connectedToast": "ChatGPT conectado",
           "connectTitle": "Conectar Codex",
           "deviceCode": "Código del dispositivo",
-          "error": "Falló la conexión con ChatGPT. Empieza de nuevo para reintentarlo.",
           "expired": "La sesión de conexión con Codex ha caducado. Empieza de nuevo para reintentarlo.",
           "freePlanRejected": "Los planes gratuitos de ChatGPT no permiten usar Codex mediante {{brandName}}. Mejora a Plus o Pro e inténtalo de nuevo.",
           "instructions": "Primero copia el código del dispositivo con el botón de copiar y abre la página de aprobación. Luego pega el código del dispositivo en OpenAI cuando te lo pidan. Finalmente, aprueba el acceso y mantén este diálogo abierto mientras {{brandName}} termina la conexión.",

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.774.4](https://github.com/okou-ai/okou/compare/core-v8.774.3...core-v8.774.4) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+
 ## [8.774.3](https://github.com/okou-ai/okou/compare/core-v8.774.2...core-v8.774.3) (2026-10-20)
 
 

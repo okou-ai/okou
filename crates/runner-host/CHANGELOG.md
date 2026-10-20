@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.19](https://github.com/okou-ai/okou/compare/runner-host-v0.9.18...runner-host-v0.9.19) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+* **runner-host:** converge output reader collection retirement ([#41839](https://github.com/okou-ai/okou/issues/41839)) ([16a8d3d](https://github.com/okou-ai/okou/commit/16a8d3d4a19f918486658d0871c1d2e85e64c538))
+
 ## [0.9.18](https://github.com/okou-ai/okou/compare/runner-host-v0.9.17...runner-host-v0.9.18) (2026-10-20)
 
 ## [0.9.17](https://github.com/okou-ai/okou/compare/runner-host-v0.9.16...runner-host-v0.9.17) (2026-10-20)
