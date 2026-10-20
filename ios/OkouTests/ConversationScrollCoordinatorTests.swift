@@ -171,7 +171,7 @@ private struct CoordinatedConversationProbe: View {
       conversation.visibleMessages.map {
         ConversationCollectionRow.message(
           $0, showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
-      } + [.footer(.idle, hasMessages: true)]
+      } + [.footer(.idle)]
     ConversationCollectionView(
       rows: rows, markdown: conversation.messageMarkdown, anchor: coordinator.anchor,
       scroll: coordinator.scroll, followsBottom: coordinator.followsBottom,
