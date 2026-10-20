@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/okou-ai/okou/compare/ios-v0.12.0...ios-v0.12.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ios:** prevent work history toggle scroll flicker ([#41781](https://github.com/okou-ai/okou/issues/41781)) ([9b1180b](https://github.com/okou-ai/okou/commit/9b1180bc0e510b1553a2711c7c310f9b6d5182c9))
+
 ## [0.12.0](https://github.com/okou-ai/okou/compare/ios-v0.11.0...ios-v0.12.0) (2026-10-20)
 
 

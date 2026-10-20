@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.405.0](https://github.com/okou-ai/okou/compare/cli-v9.404.3...cli-v9.405.0) (2026-10-20)
+
+
+### Features
+
+* **computer-use:** require one-hour chat approval for desktop shell ([#41768](https://github.com/okou-ai/okou/issues/41768)) ([d8f366b](https://github.com/okou-ai/okou/commit/d8f366bc5167781907f2a1b1bc8dc250bd380e0a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+    * @okouai/pi-agent-runtime bumped to 1.50.31
+
 ## [9.404.3](https://github.com/okou-ai/okou/compare/cli-v9.404.2...cli-v9.404.3) (2026-10-20)
 
 

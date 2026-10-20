@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.774.1](https://github.com/okou-ai/okou/compare/core-v8.774.0...core-v8.774.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** make delivery format guidance neutral ([#41765](https://github.com/okou-ai/okou/issues/41765)) ([56afa30](https://github.com/okou-ai/okou/commit/56afa30e971e9ce6c84cee03689f0cca74b1f20d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+
 ## [8.774.0](https://github.com/okou-ai/okou/compare/core-v8.773.0...core-v8.774.0) (2026-10-20)
 
 
