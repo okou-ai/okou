@@ -120,17 +120,17 @@ const cancelledRunFields = Object.freeze({
   startedAt: agentRuns.startedAt,
 });
 
-function cancellableRunCondition(
+function cancellableRunConditions(
   run: { readonly id: string; readonly status: string },
   protectThreadlessRuns: boolean,
-) {
-  return and(
+): readonly [SQL, ...SQL[]] {
+  return [
     eq(agentRuns.id, run.id),
     eq(agentRuns.status, run.status),
-    protectThreadlessRuns
-      ? notExists(publishedPiMemoryPhase2RunProtection())
-      : undefined,
-  );
+    ...(protectThreadlessRuns
+      ? [notExists(publishedPiMemoryPhase2RunProtection())]
+      : []),
+  ];
 }
 
 function cancellationOwnerCondition(
@@ -224,17 +224,19 @@ export const cancelRun$ = command(
         run.cancellationRecoveryCompleted === null
           ? "hard"
           : args.runnerCancellationMode;
-      const transitions = await tx
-        .update(agentRuns)
-        .set({
+      // The shared terminal transition also captures billing facts and
+      // removes attached diagnostics and disconnected personal accounts.
+      const transitions = await transitionAgentRunsToTerminal(tx, {
+        values: {
           status: "cancelled",
           completedAt: new Date(apiStartTime),
           runnerCancellationMode,
-        })
-        .where(
-          cancellableRunCondition(run, args.protectThreadlessRuns === true),
-        )
-        .returning(cancelledRunFields);
+        },
+        conditions: cancellableRunConditions(
+          run,
+          args.protectThreadlessRuns === true,
+        ),
+      });
       if (transitions.length === 0) {
         if (args.protectThreadlessRuns) {
           return runNotCancellable(
@@ -242,29 +244,6 @@ export const cancelRun$ = command(
           );
         }
         throw new Error("Locked cancellable run was not updated");
-      }
-      const transitionedRunIds = transitions.map((transition) => {
-        return transition.runId;
-      });
-      await tx.execute(
-        captureBillingRunTerminalSql({
-          condition: inArray(agentRuns.id, transitionedRunIds),
-          status: "cancelled",
-          completedAt: new Date(apiStartTime),
-        }),
-      );
-      await tx
-        .delete(agentRunConnectorDiagnosticRegistrations)
-        .where(
-          inArray(
-            agentRunConnectorDiagnosticRegistrations.runId,
-            transitionedRunIds,
-          ),
-        );
-      for (const statement of disconnectedPersonalAccountCleanupSql(
-        transitions,
-      )) {
-        await tx.execute(statement);
       }
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, run.id));
       // The active-row DELETE is the last SQL statement. A started Run keeps its slot.
@@ -392,31 +371,41 @@ export async function transitionAgentRunsToTerminal(
   tx: Tx,
   args: TransitionAgentRunsToTerminalArgs,
 ): Promise<readonly TerminalRunTransition[]> {
+  const terminal = tx.$with("terminal_runs").as(
+    tx
+      .update(agentRuns)
+      .set(args.values)
+      .where(and(...args.conditions))
+      .returning(cancelledRunFields),
+  );
+  // The terminal UPDATE and its billing capture are one atomic statement.
+  const capturedBilling = tx.$with("terminal_run_billing", {}).as(
+    captureBillingRunTerminalSql({
+      condition: inArray(
+        agentRuns.id,
+        tx.select({ runId: terminal.runId }).from(terminal),
+      ),
+      status: args.values.status,
+      completedAt: args.values.completedAt,
+    }),
+  );
   const transitioned = await tx
-    .update(agentRuns)
-    .set(args.values)
-    .where(and(...args.conditions))
-    .returning({
-      runId: agentRuns.id,
-      orgId: agentRuns.orgId,
-      userId: agentRuns.userId,
-      runnerGroup: agentRuns.runnerGroup,
-      modelProviderId: agentRuns.modelProviderId,
-      startedAt: agentRuns.startedAt,
-    });
+    .with(terminal, capturedBilling)
+    .select({
+      runId: terminal.runId,
+      orgId: terminal.orgId,
+      userId: terminal.userId,
+      runnerGroup: terminal.runnerGroup,
+      modelProviderId: terminal.modelProviderId,
+      startedAt: terminal.startedAt,
+    })
+    .from(terminal);
   if (transitioned.length === 0) {
     return transitioned;
   }
   const runIds = transitioned.map((run) => {
     return run.runId;
   });
-  await tx.execute(
-    captureBillingRunTerminalSql({
-      condition: inArray(agentRuns.id, runIds),
-      status: args.values.status,
-      completedAt: args.values.completedAt,
-    }),
-  );
   await tx
     .delete(agentRunConnectorDiagnosticRegistrations)
     .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds));
