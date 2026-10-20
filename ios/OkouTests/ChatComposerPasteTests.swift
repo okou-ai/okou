@@ -89,7 +89,10 @@ final class ChatComposerPasteTests: XCTestCase {
     let message = try JSONDecoder().decode(
       AttachmentFlowFixture.Message.self, from: XCTUnwrap(requests.first))
     XCTAssertFalse(message.hasTextContent)
-    try await eventually { self.textView(in: host.view)?.isFirstResponder == true }
+    try await eventually {
+      guard let replacement = self.textView(in: host.view) else { return false }
+      return replacement !== input && !replacement.isFirstResponder && replacement.text.isEmpty
+    }
   }
 
   func testPlainTextSelectionUndoAndMarkedTextRemainNative() async throws {
@@ -391,7 +394,7 @@ final class ChatComposerPasteTests: XCTestCase {
         "Replacement: same=\(self.textView(in: host.view) === input), focused=\(self.textView(in: host.view)?.isFirstResponder == true), text=\(self.textView(in: host.view)?.text ?? "<missing>"), key=\(window.isKeyWindow)"
     ) {
       guard let replacement = self.textView(in: host.view) else { return false }
-      return replacement !== input && replacement.isFirstResponder && replacement.text.isEmpty
+      return replacement !== input && !replacement.isFirstResponder && replacement.text.isEmpty
     }
   }
 

@@ -151,6 +151,10 @@ struct ChatComposerView: View {
       }
       .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
         Button {
+          if !showsStop {
+            draftState?.editor.dismissKeyboard()
+            isFocused = false
+          }
           Task { await submit() }
         } label: {
           Group {

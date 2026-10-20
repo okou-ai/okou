@@ -34,6 +34,12 @@ final class ComposerEditor {
 
   func unregister(_ view: ComposerTextView) { inputs.removeValue(forKey: ObjectIdentifier(view)) }
 
+  func dismissKeyboard() {
+    for input in inputs.values where input.isCurrent() {
+      input.view?.setFocused(false)
+    }
+  }
+
   func selectOrAppendText(_ value: String) {
     let prompt = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty else { return }
