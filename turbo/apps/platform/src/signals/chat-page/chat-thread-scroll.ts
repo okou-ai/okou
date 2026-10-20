@@ -1,6 +1,10 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { logger } from "../log.ts";
 import { onDomEventFn, onRef, waitLoopUntil } from "../utils.ts";
+import {
+  isPwaKeyboardViewportEnabled,
+  VIEWPORT_LAYOUT_EVENT,
+} from "../../lib/visual-viewport-keyboard.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
 const L = logger("AutoScroll");
@@ -740,15 +744,28 @@ function createAttachScrollContainer(
     container.addEventListener("scrollend", handleScrollEnd, {
       passive: true,
     });
-    view?.addEventListener("resize", restoreLayout, { signal });
+    // VisualViewport updates are committed by the shell before it notifies
+    // us below. A raw resize would restore against the previous shell height.
+    const restoreUnmanagedViewport = onDomEventFn(() => {
+      if (!view?.visualViewport || !isPwaKeyboardViewportEnabled()) {
+        return set(navigation.restoreScrollPosition$, signal);
+      }
+      return undefined;
+    });
+    view?.addEventListener("resize", restoreUnmanagedViewport, { signal });
+    view?.visualViewport?.addEventListener("resize", restoreUnmanagedViewport, {
+      signal,
+    });
     container.ownerDocument.fonts?.addEventListener(
       "loadingdone",
       restoreLayout,
       { signal },
     );
-    view?.visualViewport?.addEventListener("resize", restoreLayout, {
-      signal,
-    });
+    container.ownerDocument.addEventListener(
+      VIEWPORT_LAYOUT_EVENT,
+      restoreLayout,
+      { signal },
+    );
 
     signal.addEventListener(
       "abort",

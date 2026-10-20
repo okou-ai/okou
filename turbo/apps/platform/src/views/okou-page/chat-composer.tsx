@@ -8980,6 +8980,8 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
 }
 
 function ComposerCard({ signals }: { signals: ComposerSignals }) {
+  const keyboardViewportEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.PwaKeyboardViewport];
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
@@ -8998,7 +9000,8 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
       surface="composer"
       className={cn(
         "z-10",
-        "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
+        !keyboardViewportEnabled &&
+          "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {
