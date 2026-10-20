@@ -32,6 +32,7 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { singleton } from "../../../lib/singleton";
 import {
@@ -1034,6 +1035,26 @@ beforeEach(() => {
 
 afterEach(() => {
   clearMockNow();
+});
+
+describe("connector catalog cron authentication", () => {
+  it("rejects missing and invalid cron credentials", async () => {
+    const response = await accept(
+      setupApp({ context, routes: cronConnectorCatalogRoutes })(
+        cronConnectorCatalogContract,
+      ).sync({ headers: cronHeaders("wrong-secret") }),
+      [401],
+    );
+    expect(response.body).toStrictEqual({
+      error: { message: "Invalid cron secret", code: "UNAUTHORIZED" },
+    });
+
+    const missing = await createApp({
+      signal: context.signal,
+      routes: cronConnectorCatalogRoutes,
+    }).request("/api/cron/sync-connector-catalog", { method: "GET" });
+    expect(missing.status).toBe(401);
+  });
 });
 
 describe("connector catalog valid lifecycle", () => {
