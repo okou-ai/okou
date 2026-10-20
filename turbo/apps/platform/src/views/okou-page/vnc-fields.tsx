@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
@@ -518,24 +519,44 @@ function profileGroup(profile: string) {
   return "certificate";
 }
 
-export function VncSecurityProfileField({
-  profile,
-  disabled,
-}: {
-  readonly profile: VncProfile;
-  readonly disabled: boolean;
-}) {
+function VncProfileGuidance({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
-  const chooseProfile = useSet(chooseRemoteVncProfile$);
-  const allItems = useVncSecurityProfileItems();
   const guided = useGet(remoteControlGuidedEnabled$);
-  const group = profileGroup(profile);
-  const profileItems = guided
-    ? allItems.filter((item) => {
-        return profileGroup(item.value) === group;
-      })
-    : allItems;
-  const groups = [
+  if (!guided) {
+    return <VncSecurityProfileHelp profile={profile} />;
+  }
+  return (
+    <>
+      <div className="flex items-start gap-3 rounded-lg bg-gray-50 p-3 text-sm text-muted-foreground">
+        <Info size={16} className="mt-0.5 shrink-0" aria-hidden />
+        <p>
+          {t(($) => {
+            return $.remoteControlSetup.vncProfileConfirm;
+          })}
+        </p>
+      </div>
+      <details className="border-t border-divider pt-4">
+        <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.vncProfileWhy;
+          })}
+        </summary>
+        <div className="grid gap-3 pt-3 text-sm text-muted-foreground">
+          <p>
+            {t(($) => {
+              return $.remoteControlSetup.serviceHelp;
+            })}
+          </p>
+          <VncSecurityProfileHelp profile={profile} />
+        </div>
+      </details>
+    </>
+  );
+}
+
+function useVncServiceGroups() {
+  const { t } = useTranslation();
+  return [
     {
       value: "apple",
       label: t(($) => {
@@ -561,6 +582,26 @@ export function VncSecurityProfileField({
       }),
     },
   ];
+}
+
+export function VncSecurityProfileField({
+  profile,
+  disabled,
+}: {
+  readonly profile: VncProfile;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const chooseProfile = useSet(chooseRemoteVncProfile$);
+  const allItems = useVncSecurityProfileItems();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const group = profileGroup(profile);
+  const profileItems = guided
+    ? allItems.filter((item) => {
+        return profileGroup(item.value) === group;
+      })
+    : allItems;
+  const groups = useVncServiceGroups();
   return (
     <>
       {guided && (
@@ -600,7 +641,9 @@ export function VncSecurityProfileField({
       )}
       <label htmlFor="vnc-profile" className="text-sm">
         {t(($) => {
-          return $.vnc.security.profileLabel;
+          return guided
+            ? $.remoteControlSetup.vncLoginMethod
+            : $.vnc.security.profileLabel;
         })}
       </label>
       <Select
@@ -641,7 +684,7 @@ export function VncSecurityProfileField({
           })}
         </SelectContent>
       </Select>
-      <VncSecurityProfileHelp profile={profile} />
+      <VncProfileGuidance profile={profile} />
     </>
   );
 }

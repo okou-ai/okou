@@ -4817,8 +4817,12 @@
     "viewConnections": "View saved connections",
     "vncConnectionTitle": "Connect to the target computer",
     "vncDescription": "Operate through the screen, mouse and keyboard.",
-    "vncGroup": "How does the VNC service authenticate?",
+    "vncGroup": "Service type",
+    "vncLoginMethod": "Login method",
+    "vncProfileConfirm": "If unsure, ask the person managing this device to confirm the VNC service type and login method.",
+    "vncProfileDescription": "Match the settings shown by the VNC software or supplied by its administrator.",
     "vncProfileTitle": "Which login settings does the VNC service use?",
+    "vncProfileWhy": "Why confirm these settings?",
     "vncSetup": "Set up VNC connection",
     "windows": "Windows"
   },

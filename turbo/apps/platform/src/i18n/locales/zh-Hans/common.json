@@ -4804,8 +4804,12 @@
     "viewConnections": "查看已添加的连接",
     "vncConnectionTitle": "连接目标电脑",
     "vncDescription": "通过屏幕、鼠标和键盘操作。",
-    "vncGroup": "VNC 服务使用哪种登录方式？",
+    "vncGroup": "服务类型",
+    "vncLoginMethod": "登录方式",
+    "vncProfileConfirm": "不确定时，请向管理这台设备的人确认 VNC 服务类型和登录方式。",
+    "vncProfileDescription": "与 VNC 软件或管理员提供的信息保持一致。",
     "vncProfileTitle": "使用哪种登录设置？",
+    "vncProfileWhy": "为什么需要确认？",
     "vncSetup": "设置 VNC 连接",
     "windows": "Windows"
   },

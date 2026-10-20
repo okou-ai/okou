@@ -358,9 +358,7 @@ test("VNC groups actual service methods and retains the connection step while ad
     name: "Enable screen access on the target computer",
   });
   click(getAction("button", "The service is ready"));
-  const group = await screen.findByLabelText(
-    "How does the VNC service authenticate?",
-  );
+  const group = await screen.findByLabelText("Service type");
   click(group);
   click(await screen.findByRole("option", { name: "Apple screen sharing" }));
   click(getAction("button", "Continue"));
@@ -472,7 +470,7 @@ test("VNC saves only after the separate login and server-identity steps", async 
     name: "Enable screen access on the target computer",
   });
   click(getAction("button", "The service is ready"));
-  click(await screen.findByLabelText("Security profile"));
+  click(await screen.findByLabelText("Login method"));
   click(
     await screen.findByRole("option", {
       name: "Encrypted without a VNC password (X509None)",
@@ -807,7 +805,7 @@ test("VNC reuse offers only login information matching the configured authentica
   expect(picker).not.toHaveTextContent("Office computer");
   await userEvent.keyboard("{Escape}");
   click(screen.getByText("Connection settings", { selector: "summary" }));
-  click(screen.getByLabelText("Security profile"));
+  click(screen.getByLabelText("Login method"));
   click(
     await screen.findByRole("option", {
       name: "Encrypted without a VNC password (X509None)",

@@ -687,6 +687,42 @@ function VncForm({ dialog, saving, save, inline, onCancel }: VncFormProps) {
   );
 }
 
+function useVncPresentation(dialog: VncDialogState | null, inline: boolean) {
+  const { t } = useTranslation();
+  const base = useDialogCopy(dialog?.kind);
+  const setup = useGet(remoteSetup$);
+  if (inline && dialog?.kind === "edit") {
+    return {
+      title: t(($) => {
+        return $.remoteControlSetup.editConnection;
+      }),
+      description: `${dialog.connection?.displayName ?? ""} · ${t(($) => {
+        return $.vnc.label;
+      })}`,
+    };
+  }
+  if (!inline || dialog?.kind !== "create" || setup?.protocol !== "vnc") {
+    return base;
+  }
+  return {
+    title: t(($) => {
+      return setup.vncStep === "profile"
+        ? $.remoteControlSetup.vncProfileTitle
+        : setup.vncStep === "connection"
+          ? $.remoteControlSetup.vncConnectionTitle
+          : setup.vncStep === "login"
+            ? $.remoteControlSetup.loginTitle
+            : $.remoteControlSetup.trustTitle;
+    }),
+    description:
+      setup.vncStep === "profile"
+        ? t(($) => {
+            return $.remoteControlSetup.vncProfileDescription;
+          })
+        : base.description,
+  };
+}
+
 export function VncDialog({
   inline = false,
   saveAction = saveVnc$,
@@ -701,20 +737,7 @@ export function VncDialog({
   const close = useSet(closeVncDialog$);
   const [saving, save] = useLoadableSet(saveAction);
   const dialog = lastDialog?.sessionKey === sessionKey ? lastDialog : null;
-  const { title, description } = useDialogCopy(dialog?.kind);
-  const { t } = useTranslation();
-  const setup = useGet(remoteSetup$);
-  const guided =
-    inline && dialog?.kind === "create" && setup?.protocol === "vnc";
-  const guidedTitle = t(($) => {
-    return setup?.vncStep === "profile"
-      ? $.remoteControlSetup.vncProfileTitle
-      : setup?.vncStep === "connection"
-        ? $.remoteControlSetup.vncConnectionTitle
-        : setup?.vncStep === "login"
-          ? $.remoteControlSetup.loginTitle
-          : $.remoteControlSetup.trustTitle;
-  });
+  const { title, description } = useVncPresentation(dialog, inline);
   if (!dialog) {
     return null;
   }
@@ -723,22 +746,8 @@ export function VncDialog({
     <RemoteEditorFrame
       key={dialog.creationId}
       inline={inline}
-      title={
-        guided
-          ? guidedTitle
-          : inline && dialog.kind === "edit"
-            ? t(($) => {
-                return $.remoteControlSetup.editConnection;
-              })
-            : title
-      }
-      description={
-        inline && dialog.kind === "edit"
-          ? `${dialog.connection?.displayName ?? ""} · ${t(($) => {
-              return $.vnc.label;
-            })}`
-          : description
-      }
+      title={title}
+      description={description}
       busy={busy}
       onClose={onCancel ?? close}
     >
