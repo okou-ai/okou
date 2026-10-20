@@ -1911,7 +1911,6 @@
       "back": "पीछे",
       "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
       "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
-      "defaultAccountFor": "{{connector}} · डिफ़ॉल्ट खाता उपयोग हो रहा है: {{account}}",
       "directory": {
         "allCategories": "सभी",
         "askAdmin": "इसे चालू करने के लिए एडमिन से कहें",
@@ -1928,8 +1927,6 @@
         "emptyCustomTitle": "अभी कोई कस्टम कनेक्टर नहीं है",
         "matchCount_one": "{{count}} परिणाम",
         "matchCount_other": "{{count}} परिणाम",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "ध्यान देने की ज़रूरत",
         "nextCategories": "अगली श्रेणियाँ",
         "noResultsBody": "किसी प्रोडक्ट का नाम आज़माएँ, या API या MCP सर्वर से अपना बनाएँ।",
@@ -1946,6 +1943,7 @@
       },
       "fallsBackTo": "{{account}} पर वापस जाता है",
       "find": "कनेक्टर ढूंढें...",
+      "loadFailed": "कनेक्टर्स लोड नहीं हो सके।",
       "noUsableAccount": "कोई उपयोग योग्य खाता नहीं",
       "remove": "{{connectorName}} हटाएँ",
       "selectedAccountFor": "{{connector}} · चुना गया खाता: {{account}}",
@@ -3091,16 +3089,7 @@
       "rename": "नाम बदलें",
       "setupIncomplete": "सेटअप अधूरा है",
       "setupUnavailable": "खाते की स्थिति उपलब्ध नहीं है",
-      "skipName": "छोड़ें",
-      "summaryMany": "{{value}} खाते",
-      "summaryMany_one": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} खाता",
-      "summaryOne_one": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} पर ध्यान देना आवश्यक है",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_other": ""
+      "skipName": "छोड़ें"
     },
     "actions": {
       "apply": "आवेदन करना",
@@ -3265,7 +3254,6 @@
       },
       "scope": {
         "aria": "कनेक्टर दायरा",
-        "attention": "ध्यान देने की आवश्यकता",
         "connected": "जुड़े हुए",
         "custom": "कस्टम",
         "discover": "खोजें",

@@ -1908,7 +1908,6 @@
       "back": "Kembali",
       "configurePermissions": "Konfigurasikan izin {{connectorName}}",
       "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
-      "defaultAccountFor": "{{connector}} · Menggunakan akun default: {{account}}",
       "directory": {
         "allCategories": "Semua",
         "askAdmin": "Minta admin untuk mengaktifkan",
@@ -1924,7 +1923,6 @@
         "emptyCustomBody": "Buat satu dari API HTTP atau server MCP mana pun, dan Okou dapat menggunakannya seperti konektor lain.",
         "emptyCustomTitle": "Belum ada konektor kustom",
         "matchCount_other": "{{count}} hasil",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Perlu perhatian",
         "nextCategories": "Kategori berikutnya",
         "noResultsBody": "Coba nama produk, atau buat sendiri dari API atau server MCP.",
@@ -1939,6 +1937,7 @@
       },
       "fallsBackTo": "Beralih kembali ke {{account}}",
       "find": "Cari konektor...",
+      "loadFailed": "Gagal memuat konektor.",
       "noUsableAccount": "Tidak ada akun yang dapat digunakan",
       "remove": "Hapus {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Akun terpilih: {{account}}",
@@ -3076,13 +3075,7 @@
       "rename": "Ganti nama",
       "setupIncomplete": "Penyiapan belum lengkap",
       "setupUnavailable": "Status akun tidak tersedia",
-      "skipName": "Lewati",
-      "summaryMany": "{{value}} akun",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} akun",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} memerlukan perhatian",
-      "summaryWithAttention_other": ""
+      "skipName": "Lewati"
     },
     "actions": {
       "apply": "Terapkan",
@@ -3247,7 +3240,6 @@
       },
       "scope": {
         "aria": "Cakupan konektor",
-        "attention": "Perlu perhatian",
         "connected": "Terhubung",
         "custom": "Kustom",
         "discover": "Jelajahi",

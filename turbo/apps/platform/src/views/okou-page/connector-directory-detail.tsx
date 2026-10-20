@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, SlidersHorizontal } from "lucide-react";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Button, buttonVariants } from "@okouai/ui";
 import { Link } from "../router/link.tsx";
 import { DialogTitle } from "@okouai/ui/components/ui/dialog";
@@ -8,7 +7,7 @@ import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector
 import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import {
   ConnectorIconTile,
-  ConnectorAccountSummaryText,
+  ConnectorMembershipText,
 } from "./components/settings/connector-card.tsx";
 import {
   launchConnectorConnect,
@@ -36,34 +35,25 @@ function DetailRow({
 
 function ConnectorDetailHeader({
   connector,
-  accountSummary,
+  hasAccounts,
   busy,
   connect,
   onBack,
 }: {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly accountSummary: ConnectorAccountSummary | undefined;
+  readonly hasAccounts: boolean;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly onBack: () => void;
 }) {
   const { t } = useTranslation();
   const status = builtinConnectorCurrentConnectionStatus(connector);
-  const hasConflictingPresence =
-    connector.connection !== null && (accountSummary?.accountCount ?? 0) === 0;
+  // The directory does not read accounts. Choose or repair a saved account in
+  // the target account manager instead of guessing its default from a brief.
   const needsAccountChoice =
+    hasAccounts ||
     connector.accountProjectionConflict === true ||
-    status === "unavailable" ||
-    hasConflictingPresence ||
-    (accountSummary !== undefined &&
-      accountSummary.accountCount > 0 &&
-      (!accountSummary.defaultConnection ||
-        connector.connection?.id !== accountSummary.defaultConnection.id ||
-        (status === "reconnect-required") !==
-          (accountSummary.defaultConnection.connectionStatus ===
-            "reconnect-required") ||
-        (accountSummary.attentionCount > 0 &&
-          accountSummary.defaultConnection.connectionStatus === "connected")));
+    status === "unavailable";
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-6 pt-6">
@@ -138,7 +128,7 @@ function ConnectorDetailHeader({
  */
 export function ConnectorDetailPanel({
   connector,
-  accountSummary,
+  hasAccounts,
   categoryLabel,
   busy,
   connect,
@@ -146,7 +136,7 @@ export function ConnectorDetailPanel({
   onBack,
 }: {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly accountSummary: ConnectorAccountSummary | undefined;
+  readonly hasAccounts: boolean;
   readonly categoryLabel: string | undefined;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
@@ -160,7 +150,7 @@ export function ConnectorDetailPanel({
     <>
       <ConnectorDetailHeader
         connector={connector}
-        accountSummary={accountSummary}
+        hasAccounts={hasAccounts}
         busy={busy}
         connect={connect}
         onBack={onBack}
@@ -173,11 +163,7 @@ export function ConnectorDetailPanel({
         </h3>
         <div className="mb-5 rounded-xl border border-[hsl(var(--gray-400))]">
           <div className="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <ConnectorAccountSummaryText
-              summary={accountSummary}
-              status="ready"
-              className="min-w-0 flex-1 truncate text-muted-foreground"
-            />
+            <ConnectorMembershipText connected={hasAccounts} status="ready" />
           </div>
         </div>
 

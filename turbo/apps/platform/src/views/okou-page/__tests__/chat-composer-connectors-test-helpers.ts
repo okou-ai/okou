@@ -18,6 +18,7 @@ import {
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import type {
   ConnectorAuthMethodId,
@@ -527,7 +528,7 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
     const summaries = currentAccountSummaries();
     const savedTargets = new Set(
       summaries.flatMap((summary) => {
@@ -564,30 +565,6 @@ export function installComposerConnectorFixture(
             integrationManaged: isIntegrationManagedCustomConnector(connector),
           };
         }),
-      accountSummaries: summaries.map((summary) => {
-        const account = summary.defaultConnection;
-        return {
-          target: summary.target,
-          accountCount: summary.accountCount,
-          attentionCount: summary.attentionCount,
-          defaultConnection: account
-            ? {
-                id: account.id,
-                authMethod: account.authMethod,
-                displayName: account.displayName,
-                externalId: account.externalId,
-                externalUsername: account.externalUsername,
-                externalEmail: account.externalEmail,
-                connectionStatus: account.connectionStatus,
-                setupStatus: account.setupStatus,
-                missingRequiredFields: account.missingRequiredFields,
-                configuredFieldKeys: account.configuredFieldKeys,
-              }
-            : null,
-        };
-      }),
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
     });
   });
   context.mocks.api(
@@ -705,7 +682,16 @@ export function installComposerConnectorFixture(
           return value?.toLowerCase().includes(normalizedSearch);
         });
       });
-      return respond(200, { connections, nextCursor: null });
+      return respond(200, {
+        connections,
+        defaultConnection:
+          accounts.find((connection) => {
+            return (
+              targetMatches(connection.target, query) && connection.isDefault
+            );
+          }) ?? null,
+        nextCursor: null,
+      });
     },
   );
   context.mocks.api(
@@ -1004,6 +990,7 @@ export function builtinConnector(args: {
         }
       : null,
     connected,
+    setupStatus: connected ? "complete" : null,
     connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: authMethod === "oauth",

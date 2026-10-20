@@ -1,4 +1,6 @@
 import { command, computed } from "ccstate";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -11,6 +13,23 @@ import {
   customConnectorAuthorizationReloadVersion$,
   reloadCustomConnectorAuthorizedAgents$,
 } from "../settings/custom-connectors.ts";
+import { requireCustomConnectorAccountReady } from "../settings/connector-accounts.ts";
+
+export const prepareJobCustomConnectorAccess$ = command(
+  async (
+    { get },
+    connector: CustomConnectorReaderResponse,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!isIntegrationManagedCustomConnector(connector)) {
+      await requireCustomConnectorAccountReady(
+        get(apiClient$),
+        connector.id,
+        signal,
+      );
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Per-agent custom connector authorization — mirrors connectors.ts but keyed

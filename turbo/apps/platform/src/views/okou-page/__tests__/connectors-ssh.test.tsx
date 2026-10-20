@@ -1,5 +1,6 @@
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -98,6 +99,85 @@ test("Remote control summarizes SSH hosts that need attention and recovers", asy
     ).toBeNull();
   });
   expect(screen.getByText("Host 1")).toBeInTheDocument();
+});
+
+test("Management scope changes release hidden lists and read current data on return", async () => {
+  mockCatalog();
+  mockSshHosts(1);
+  let hostName = "Original SSH host";
+  let networkName = "Original private network";
+  const reads: string[] = [];
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    reads.push("ssh");
+    return respond(200, {
+      connections: [{ ...sshHost(1), displayName: hostName }],
+    });
+  });
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    reads.push("private-network");
+    return respond(200, {
+      configs: [
+        {
+          id: "f0000000-0000-4000-8000-000000000001",
+          name: networkName,
+          scope: "personal",
+          revision: 1,
+          generation: 1,
+          sshHosts: [],
+          vncHosts: [],
+          createdAt: "2026-09-01T00:00:00Z",
+          updatedAt: "2026-09-01T00:00:00Z",
+        },
+      ],
+    });
+  });
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth: {
+      user: { id: "test-user-123", fullName: "Test User" },
+      organization: {
+        activeOrg: { id: orgId, name: "SSH test organization" },
+        memberships: [{ id: orgId }],
+      },
+    },
+  });
+  await screen.findByText(hostName);
+
+  click(screen.getByTestId("connectors-scope-private-network"));
+  await screen.findByText(networkName);
+  expect(screen.queryByText(hostName)).not.toBeInTheDocument();
+  const sshReads = reads.filter((kind) => {
+    return kind === "ssh";
+  });
+  hostName = "Updated SSH host";
+  networkName = "Network after SSH change";
+  context.mocks.ably.trigger("ssh:changed", { orgId });
+  await screen.findByText(networkName);
+  expect(
+    reads.filter((kind) => {
+      return kind === "ssh";
+    }),
+  ).toStrictEqual(sshReads);
+
+  click(screen.getByTestId("connectors-scope-remote-control"));
+  await screen.findByText(hostName);
+  expect(screen.queryByText(networkName)).not.toBeInTheDocument();
+  const networkReads = reads.filter((kind) => {
+    return kind === "private-network";
+  });
+  hostName = "Latest SSH host";
+  networkName = "Latest private network";
+  context.mocks.ably.trigger("ssh:changed", { orgId });
+  await screen.findByText(hostName);
+  expect(
+    reads.filter((kind) => {
+      return kind === "private-network";
+    }),
+  ).toStrictEqual(networkReads);
+
+  click(screen.getByTestId("connectors-scope-private-network"));
+  await expect(screen.findByText(networkName)).resolves.toBeInTheDocument();
 });
 
 test.each([

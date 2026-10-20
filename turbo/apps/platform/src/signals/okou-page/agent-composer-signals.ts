@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
   sendNewThread$,
@@ -10,15 +9,12 @@ import {
   createAgentDraftSignals,
   type EnsuredAgentDraft,
 } from "./agent-draft.ts";
-import { selectedComputerUseHostId } from "./computer-use-hosts.ts";
 import type { DraftSignals } from "./chat-draft.ts";
-import { connectorOverview$ } from "./connector-overview.ts";
 import {
   createComposerSignals,
   type ComposerSubmission,
 } from "./composer-signals.ts";
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
-import { connectorAccountTargetKey } from "./connector-accounts.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
@@ -109,52 +105,16 @@ function createAgentSubmitMessage(
       if (action !== "send") {
         return false;
       }
-      const access = await get(newThreadComputerAccess$);
+      const access = get(newThreadComputerAccess$);
+      const connectorPreference = await get(
+        connector.accounts.preferenceState$,
+      );
       signal.throwIfAborted();
-      const [overview, connectorPreference] = await Promise.all([
-        get(connectorOverview$),
-        get(connector.accounts.preferenceState$),
-      ]);
-      signal.throwIfAborted();
-      const hosts = overview.computerUseHosts;
-      const hostId =
-        access.kind === "computerUse"
-          ? selectedComputerUseHostId(hosts, access.hostId)
-          : null;
       const send = options.forward
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
-      let connectorSelections: readonly ConnectorAccountSelection[] = [];
-      if (connectorPreference.selections.length > 0) {
-        const connectorAuthorization = await get(
-          connector.connectorAuthorization$,
-        );
-        signal.throwIfAborted();
-        const authorizedTargetKeys = new Set([
-          ...connectorAuthorization.enabledConnectorSlugs.map(
-            (connectorSlug) => {
-              return connectorAccountTargetKey({
-                kind: "builtin",
-                connectorSlug,
-              });
-            },
-          ),
-          ...connectorAuthorization.customConnectorIds.map((connectorId) => {
-            return connectorAccountTargetKey({
-              kind: "custom",
-              customConnectorId: connectorId,
-            });
-          }),
-        ]);
-        connectorSelections = connectorPreference.selections.filter(
-          (selection) => {
-            return authorizedTargetKeys.has(
-              connectorAccountTargetKey(selection.target),
-            );
-          },
-        );
-      }
+      const connectorSelections = connectorPreference.selections;
       const sent = await set(
         send,
         {
@@ -169,12 +129,15 @@ function createAgentSubmitMessage(
           ...(options.forward
             ? {}
             : { composerTask: submission.taskSelection }),
-          ...(access.kind === "computerUse"
-            ? { computerUseHostId: hostId }
-            : {}),
-          ...(access.kind === "cloudBrowser"
-            ? { cloudBrowserEnabled: true }
-            : {}),
+          // Omit untouched draft preferences so the server applies the current
+          // member default. Explicit "none" must also override a true default.
+          ...(access === null
+            ? {}
+            : {
+                computerUseHostId:
+                  access.kind === "computerUse" ? access.hostId : null,
+                cloudBrowserEnabled: access.kind === "cloudBrowser",
+              }),
           ...(options.forward ? { forward: options.forward } : {}),
           ...(options.onOptimisticSend
             ? { onOptimisticSend: options.onOptimisticSend }

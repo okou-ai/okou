@@ -146,7 +146,6 @@ import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
 import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
-import { runChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
@@ -182,6 +181,8 @@ import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
   completeExactReconnectChatAction$,
+  completeCustomConnectorChatAction$,
+  completeCatalogConnectorChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -4602,9 +4603,9 @@ function ChatConnectorActionConnectModal() {
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
-  const runCallback = useSet(runChatActionCallback$);
   const completeExactReconnect = useSet(completeExactReconnectChatAction$);
-  const pageSignal = useGet(pageSignal$);
+  const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
+  const completeCatalogConnector = useSet(completeCatalogConnectorChatAction$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
 
@@ -4620,16 +4621,11 @@ function ActiveChatConnectorActionConnectModal() {
       await completeExactReconnect(active, connectionId, attemptSignal);
       return;
     }
-    if (active.callbackPrompt && active.threadId) {
-      await runCallback(
-        {
-          threadId: active.threadId,
-          agentId: active.agentId,
-          callbackPrompt: active.callbackPrompt,
-        },
-        pageSignal,
-      );
+    if (active.kind === "custom") {
+      await completeCustomConnector(active, attemptSignal);
+      return;
     }
+    await completeCatalogConnector(active, attemptSignal);
   };
 
   if (active.kind === "custom") {

@@ -50,6 +50,8 @@ import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
 import { connectorOverviewRoutes } from "./routes/connector-overview";
+import { connectedConnectorsRoutes } from "./routes/connected-connectors";
+import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
 import { builtinConnectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
@@ -338,6 +340,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
   ...connectorOverviewRoutes,
+  ...connectedConnectorsRoutes,
+  ...remotesRoutes,
   ...connectorCheckRoutes,
   ...builtinConnectorsExternalCodeRoutes,
   ...builtinConnectorsOauthDeviceAuthRoutes,

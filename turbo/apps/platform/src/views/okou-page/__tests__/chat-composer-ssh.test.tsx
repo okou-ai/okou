@@ -1,3 +1,4 @@
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -59,18 +60,18 @@ async function prepareRemoteDefaults(
         overrideEnabled === null ? ("default" as const) : ("override" as const),
     };
   };
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: hostIds.map((connectionId, index) => {
-          const { displayName, defaultEnabled } = host(connectionId, index);
-          return { connectionId, displayName, defaultEnabled };
-        }),
-        vnc: [],
-      });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: hostIds.map((connectionId, index) => {
+        const { displayName, defaultEnabled } = host(connectionId, index);
+        return { connectionId, displayName, defaultEnabled };
+      }),
+      vncHosts: [],
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
@@ -228,15 +229,18 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
     };
   };
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    async ({ respond }) => {
-      if (delayDefaultsRefresh) {
-        await releaseDefaultsRefresh.promise;
-      }
-      return respond(200, { ssh: hosts, vnc: [] });
-    },
-  );
+  context.mocks.api(remotesContract.overview, async ({ respond }) => {
+    if (delayDefaultsRefresh) {
+      await releaseDefaultsRefresh.promise;
+    }
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: hosts,
+      vncHosts: [],
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     async ({ respond }) => {
@@ -328,18 +332,18 @@ test("A chat can enable multiple VNC hosts independently", async () => {
       }),
     });
   });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: [],
-        vnc: hostIds.map((connectionId, index) => {
-          const { displayName, defaultEnabled } = host(connectionId, index);
-          return { connectionId, displayName, defaultEnabled };
-        }),
-      });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: hostIds.map((connectionId, index) => {
+        const { displayName, defaultEnabled } = host(connectionId, index);
+        return { connectionId, displayName, defaultEnabled };
+      }),
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
@@ -385,12 +389,15 @@ test("A chat can enable multiple VNC hosts independently", async () => {
 
 test("Remote access is absent when no SSH or VNC hosts are configured", async () => {
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, { ssh: [], vnc: [] });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
@@ -409,12 +416,15 @@ test("Remote access is absent when no SSH or VNC hosts are configured", async ()
 
 test("A new chat has no remote access menu when no hosts are configured", async () => {
   installComposerConnectorFixture();
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, { ssh: [], vnc: [] });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
@@ -427,21 +437,21 @@ test("A new chat has no remote access menu when no hosts are configured", async 
 
 test("A new chat leaves host defaults untouched when no choice is changed", async () => {
   const fixture = installComposerConnectorFixture();
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: [
-          {
-            connectionId: "b0000000-0000-4000-8000-000000000001",
-            displayName: "SSH host 1",
-            defaultEnabled: true,
-          },
-        ],
-        vnc: [],
-      });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [
+        {
+          connectionId: "b0000000-0000-4000-8000-000000000001",
+          displayName: "SSH host 1",
+          defaultEnabled: true,
+        },
+      ],
+      vncHosts: [],
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
@@ -463,25 +473,25 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
 test("Remote access remains visible and can retry when host discovery fails", async () => {
   installComposerConnectorFixture();
   let failed = true;
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return failed
-        ? respond(500, {
-            error: { code: "INTERNAL_ERROR", message: "private host error" },
-          })
-        : respond(200, {
-            ssh: [
-              {
-                connectionId: "b0000000-0000-4000-8000-000000000001",
-                displayName: "SSH host",
-                defaultEnabled: true,
-              },
-            ],
-            vnc: [],
-          });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return failed
+      ? respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private host error" },
+        })
+      : respond(200, {
+          computerUseHosts: [],
+          cloudBrowserAvailable: true,
+          cloudBrowserEnabledByDefault: true,
+          sshHosts: [
+            {
+              connectionId: "b0000000-0000-4000-8000-000000000001",
+              displayName: "SSH host",
+              defaultEnabled: true,
+            },
+          ],
+          vncHosts: [],
+        });
+  });
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
@@ -511,12 +521,15 @@ test("Remote access can retry a failed chat permission read", async () => {
     defaultEnabled: true,
   };
   let failed = true;
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, { ssh: [host], vnc: [] });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [host],
+      vncHosts: [],
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
@@ -560,26 +573,26 @@ test("Remote access can retry a failed chat permission read", async () => {
 
 async function prepareDraftHostChoices() {
   const fixture = installComposerConnectorFixture();
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: [
-          {
-            connectionId: "b0000000-0000-4000-8000-000000000001",
-            displayName: "SSH host 1",
-            defaultEnabled: true,
-          },
-          {
-            connectionId: "b0000000-0000-4000-8000-000000000002",
-            displayName: "SSH host 2",
-            defaultEnabled: false,
-          },
-        ],
-        vnc: [],
-      });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [
+        {
+          connectionId: "b0000000-0000-4000-8000-000000000001",
+          displayName: "SSH host 1",
+          defaultEnabled: true,
+        },
+        {
+          connectionId: "b0000000-0000-4000-8000-000000000002",
+          displayName: "SSH host 2",
+          defaultEnabled: false,
+        },
+      ],
+      vncHosts: [],
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
@@ -672,21 +685,21 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
         overrideEnabled === null ? ("default" as const) : ("override" as const),
     };
   };
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: [
-          {
-            connectionId,
-            displayName: "Shared SSH host",
-            defaultEnabled: false,
-          },
-        ],
-        vnc: [],
-      });
-    },
-  );
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [
+        {
+          connectionId,
+          displayName: "Shared SSH host",
+          defaultEnabled: false,
+        },
+      ],
+      vncHosts: [],
+    });
+  });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ params, respond }) => {

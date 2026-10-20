@@ -33,12 +33,12 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
-import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
+import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
+import { customConnectorAccountProjectionVersion$ } from "../connector-account-projection.ts";
 import {
   connectorAgentAccess$,
   reloadConnectorAgentAccess$,
 } from "./connector-agent-access.ts";
-import { setAblyLoop$ } from "../../realtime.ts";
 import { waitForOperation, waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
@@ -71,6 +71,7 @@ export const customConnectorAuthorizationReloadVersion$ = computed((get) => {
 export const customConnectors$ = computed(
   async (get): Promise<CustomConnectorResponse[]> => {
     get(internalReload$);
+    get(customConnectorAccountProjectionVersion$);
     const createClient = get(apiClient$);
     const client = createClient(customConnectorsContract);
     const result = await accept(client.list(), [200]);
@@ -190,31 +191,12 @@ const bumpReload$ = command(({ set }) => {
   set(internalReload$, (v) => {
     return v + 1;
   });
-  set(reloadConnectorAccountSummaries$);
+  set(reloadUserConnectedConnectors$);
 });
 
 export const retryCustomConnectors$ = command(({ set }) => {
   set(bumpReload$);
 });
-
-const reloadCustomConnectorsFromRealtime$ = command(({ set }) => {
-  set(bumpReload$);
-  return false;
-});
-
-export const subscribeCustomConnectorListChanged$ = command(
-  ({ set }, signal: AbortSignal) => {
-    set(
-      setAblyLoop$,
-      {
-        topic: "customConnectorListChanged",
-        loopCommand$: reloadCustomConnectorsFromRealtime$,
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
-  },
-);
 
 type CustomConnectorAuthorizationTarget =
   | { readonly kind: "visible-agents" }

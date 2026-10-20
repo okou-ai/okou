@@ -142,6 +142,11 @@ function LoadedCustomConnectorPermissions({
           );
         })}
       </div>
+      {saveLoadable.state === "hasError" && (
+        <p role="alert" className="text-sm text-destructive">
+          {String(saveLoadable.error)}
+        </p>
+      )}
       <SheetFooter>
         <Button variant="outline" onClick={onClose} disabled={saving}>
           {t(($) => {

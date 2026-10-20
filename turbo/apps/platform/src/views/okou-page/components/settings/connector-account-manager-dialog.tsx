@@ -28,8 +28,6 @@ import {
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
   type ConnectorAccountList,
 } from "../../../../signals/okou-page/connector-accounts.ts";
@@ -78,8 +76,7 @@ function accountActionAfterLeave(
   };
 }
 
-// Mirrors the status dot used by ConnectorAccountSummaryText on the connector
-// card, so a row reads the same in the dialog as it does in the grid behind it.
+// Account health is loaded and displayed only inside this target account dialog.
 function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
   const { t } = useTranslation();
   const needsReconnect = account.connectionStatus === "reconnect-required";
@@ -625,6 +622,7 @@ function connectorAccountSearchIsVisible(
   return (
     accounts.state === "hasData" &&
     (accounts.data.connections.length > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
+      accounts.data.hasMultiplePages === true ||
       accounts.data.nextCursor !== null)
   );
 }
@@ -633,25 +631,6 @@ function connectorAccountNextCursor(
   accounts: Loadable<ConnectorAccountList>,
 ): string | null {
   return accounts.state === "hasData" ? accounts.data.nextCursor : null;
-}
-
-function enrichedDefaultConnection(
-  accounts: ConnectorAccountList,
-  summarizedDefault: ConnectorAccountConnection | null,
-): ConnectorAccountConnection | null {
-  if (accounts.defaultConnection !== undefined) {
-    return accounts.defaultConnection;
-  }
-  if (!summarizedDefault) {
-    return null;
-  }
-  // Summaries intentionally omit opt-in list enrichment. Prefer the matching
-  // list row so the pinned default account retains its scope review state.
-  return (
-    accounts.connections.find((account) => {
-      return account.id === summarizedDefault.id;
-    }) ?? summarizedDefault
-  );
 }
 
 function ConnectorAccountManagerHeader({
@@ -696,7 +675,6 @@ export function ConnectorAccountManagerDialog({
 }: ConnectorAccountManagerDialogProps) {
   const { t } = useTranslation();
   const accountsLoadable = useLastLoadable(settingsConnectorAccounts.accounts$);
-  const summariesLoadable = useLastLoadable(connectorAccountSummaryByTarget$);
   const search = useGet(settingsConnectorAccounts.search$);
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     settingsConnectorAccounts.loadMore$,
@@ -706,14 +684,8 @@ export function ConnectorAccountManagerDialog({
   const signal = useGet(pageSignal$);
   const nextCursor = connectorAccountNextCursor(accountsLoadable);
   const defaultConnection =
-    summariesLoadable.state === "hasData" &&
-    accountsLoadable.state === "hasData" &&
-    accountsLoadable.data.available
-      ? enrichedDefaultConnection(
-          accountsLoadable.data,
-          summariesLoadable.data.get(connectorAccountTargetKey(target))
-            ?.defaultConnection ?? null,
-        )
+    accountsLoadable.state === "hasData" && accountsLoadable.data.available
+      ? accountsLoadable.data.defaultConnection
       : null;
   const showSearch = connectorAccountSearchIsVisible(search, accountsLoadable);
   const leave = (next: () => void) => {

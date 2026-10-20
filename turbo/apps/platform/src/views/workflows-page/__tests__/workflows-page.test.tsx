@@ -2908,19 +2908,6 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
   ]);
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: healthyAccount.target,
-          accountCount: 2,
-          attentionCount:
-            reconnectAccount.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: healthyAccount,
-        },
-      ],
-    });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
@@ -2939,6 +2926,7 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
     return respond(200, {
       connections: [healthyAccount, reconnectAccount],
       nextCursor: null,
+      defaultConnection: healthyAccount,
     });
   });
   const submittedAccounts: unknown[] = [];
@@ -2978,7 +2966,7 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
       const manager = await screen.findByRole("dialog", {
         name: "Manage Google Calendar accounts",
       });
-      const healthyRow = within(manager).getByRole("group", {
+      const healthyRow = await within(manager).findByRole("group", {
         name: "Work Calendar",
       });
       const reconnectRow = within(manager).getByRole("group", {

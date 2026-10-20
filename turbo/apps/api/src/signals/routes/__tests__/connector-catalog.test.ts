@@ -556,6 +556,7 @@ describe("GET /api/connector-catalog", () => {
       connection: githubStatus?.connection,
       connected: true,
       connectionStatus: "connected",
+      setupStatus: "complete",
       scopeMismatch: false,
       authMethodSupportsRefresh: githubStatus?.authMethodSupportsRefresh,
       tokenExpiresAt: githubStatus?.tokenExpiresAt,
@@ -631,6 +632,7 @@ describe("GET /api/connector-catalog", () => {
       slug: "github",
       connected: true,
       connectionStatus: "connected",
+      setupStatus: "complete",
       scopeMismatch: false,
       singleAuthCodeAuthMethodId: "oauth",
     });
@@ -775,6 +777,7 @@ describe("GET /api/connector-catalog", () => {
         slug: "stripe",
         connected: true,
         connectionStatus: "reconnect-required",
+        setupStatus: "complete",
         scopeMismatch: false,
         authMethodSupportsRefresh: false,
       });

@@ -11,7 +11,6 @@ import type {
   ConnectorAccountSelection,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { accept } from "../../lib/accept.ts";
@@ -21,7 +20,6 @@ import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
 } from "./connector-accounts.ts";
-import { connectorOverview$ } from "./connector-overview.ts";
 
 export interface ComposerConnectorAccountPreferenceState {
   readonly selections: readonly ConnectorAccountSelection[];
@@ -31,9 +29,6 @@ export interface ComposerConnectorAccountPreferenceState {
 export interface ComposerConnectorAccountSignals {
   readonly preferenceState$: Computed<
     Promise<ComposerConnectorAccountPreferenceState>
-  >;
-  readonly summaryByTarget$: Computed<
-    Promise<ReadonlyMap<string, ConnectorAccountBriefSummary>>
   >;
   readonly menuTarget$: Computed<ConnectorAccountTarget | null>;
   readonly menuOpen$: Computed<boolean>;
@@ -67,17 +62,6 @@ function selectionForConnection(
   connection: ConnectorAccountConnection,
 ): ConnectorAccountSelection {
   return { connectionId: connection.id, target: connection.target };
-}
-
-function createConnectorAccountBriefSummaryByTargetSignal() {
-  return computed(async (get) => {
-    const overview = await get(connectorOverview$);
-    return new Map(
-      overview.accountSummaries.map((summary) => {
-        return [connectorAccountTargetKey(summary.target), summary];
-      }),
-    );
-  });
 }
 
 function createConnectorAccountMutationSignals(args: {
@@ -174,7 +158,6 @@ export function createComposerConnectorAccountSignals(
   threadId?: string,
 ): ComposerConnectorAccountSignals {
   const list = createConnectorAccountListSignals();
-  const summaryByTarget$ = createConnectorAccountBriefSummaryByTargetSignal();
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
   const activeSave$ = state<Promise<void> | null>(null);
@@ -235,7 +218,8 @@ export function createComposerConnectorAccountSignals(
     set(resetSaveSignal$);
     set(activeSave$, null);
     set(menuOpen$, false);
-    set(list.resetSearch$);
+    set(menuTarget$, null);
+    set(list.clearTarget$);
   });
 
   const mutations = createConnectorAccountMutationSignals({
@@ -279,7 +263,6 @@ export function createComposerConnectorAccountSignals(
 
   return {
     preferenceState$,
-    summaryByTarget$,
     menuTarget$: computed((get) => {
       return get(menuTarget$);
     }),
