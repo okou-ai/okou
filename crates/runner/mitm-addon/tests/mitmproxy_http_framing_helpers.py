@@ -3,7 +3,7 @@
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 from mitmproxy import connection
-from mitmproxy.proxy import events
+from mitmproxy.proxy import commands, events
 from mitmproxy.proxy.context import Context
 from mitmproxy.proxy.layers.http import HttpLayer, HTTPMode
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
@@ -21,6 +21,7 @@ def start_http_layer(
     server_host: str | None = None,
     server_port: int = 443,
     mode: HTTPMode = HTTPMode.regular,
+    commands_out: list[commands.Command] | None = None,
 ) -> tuple[connection.Client, HttpLayer]:
     client = connection.Client(
         peername=(CLIENT_IP, 12345),
@@ -35,7 +36,9 @@ def start_http_layer(
     if mode is HTTPMode.transparent:
         context.server.tls = True
     http_layer = HttpLayer(context, mode)
-    list(http_layer.handle_event(events.Start()))
+    initial = list(http_layer.handle_event(events.Start()))
+    if commands_out is not None:
+        commands_out.extend(initial)
     return client, http_layer
 
 

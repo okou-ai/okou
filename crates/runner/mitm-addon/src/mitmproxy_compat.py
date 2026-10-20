@@ -16,11 +16,13 @@ from mitmproxy import http, version
 from mitmproxy.connection import Connection
 from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers import websocket
-from mitmproxy.proxy.layers.http import HttpStream
+from mitmproxy.proxy.layers.http import HttpStream, SendHttp
 from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
 from mitmproxy.proxy.server import ConnectionHandler
 
+import managed_request_body
+import managed_request_transport
 import model_websocket_usage
 import response_streaming
 import websocket_framing
@@ -36,6 +38,10 @@ _SUPPORTED_WSPROTO_VERSION = "1.3.2"
 _BRIDGE_MARKER_ATTRIBUTE = "_request_end_stream_bridge"
 _REQUEST_END_STREAM_METADATA = "_request_end_stream"
 _RESPONSE_INSPECTION_BRIDGE = "_response_inspection_bridge"
+_HEADERS_RESUMED = "_okou_headers_resumed"
+_HEADER_UPLOADS: ContextVar[list[managed_request_body.StreamBody] | None] = ContextVar(
+    "managed_header_uploads", default=None
+)
 _INSPECTION_CHECKPOINTS: ContextVar[list["_InspectionHook"] | None] = ContextVar(
     "response_inspection_checkpoints", default=None
 )
@@ -83,13 +89,30 @@ def _abandon_inspection(checkpoint: _InspectionHook) -> None:
 @dataclass
 class _ReaderInspectionCheckpoints:
     owner: asyncio.Task[object] | None
+    connection: Connection
+    managed_peer: bool = False
     pending: list[_InspectionHook] = field(default_factory=list)
     closed: bool = False
+    uploads: set[managed_request_body.StreamBody] = field(default_factory=set)
 
 
 _READER_INSPECTION: ContextVar[_ReaderInspectionCheckpoints | None] = ContextVar(
     "reader_response_inspection", default=None
 )
+
+
+def register_managed_request(body: managed_request_body.StreamBody) -> None:
+    """Bind public-stream readiness to its current connection reader."""
+    headers = _HEADER_UPLOADS.get()
+    if headers is not None:
+        headers.append(body)
+    reader = _READER_INSPECTION.get()
+    if reader is not None:
+        if reader.closed:
+            body.close()
+        else:
+            body.reader_bound = True
+            reader.uploads.add(body)
 
 
 def install_runtime_compatibility() -> None:
@@ -105,6 +128,7 @@ def install_runtime_compatibility() -> None:
             f"{_SUPPORTED_WSPROTO_VERSION}; found {wsproto.__version__}"
         )
 
+    managed_request_transport.install()
     _install_request_end_stream_bridge()
     _install_response_inspection_bridge()
     websocket_framing.install_websocket_framing()
@@ -135,7 +159,20 @@ def _install_request_end_stream_bridge() -> None:
                 command.flow.metadata[_REQUEST_END_STREAM_METADATA] = event.end_stream
 
             try:
-                completion: object = yield command
+                if isinstance(command, HttpRequestHeadersHook):
+                    try:
+                        completion: object = yield command
+                    finally:
+                        setattr(command, _HEADERS_RESUMED, True)
+                else:
+                    completion = yield command
+                if isinstance(command, SendHttp) and isinstance(command.event, RequestHeaders):
+                    body = managed_request_body.from_request(command.event.request)
+                    if body is not None and not body.protocol_bound:
+                        # Until native acquisition/TLS reaches upstream headers,
+                        # keep the reader from filling its paused event queue.
+                        # H2's capacity observer owns readiness once bound.
+                        body.writable.set()
             except GeneratorExit:
                 command_generator.close()
                 raise
@@ -215,6 +252,13 @@ def _install_response_inspection_bridge() -> None:
 
     async def server_event(self: ConnectionHandler, event: events.Event) -> None:
         checkpoints: list[_InspectionHook] = []
+        reader = _READER_INSPECTION.get()
+        if (
+            reader is not None
+            and reader.owner is asyncio.current_task()
+            and isinstance(event, events.DataReceived)
+        ):
+            reader.managed_peer = managed_request_body.is_uploading_to(event.connection)
         token = _INSPECTION_CHECKPOINTS.set(checkpoints)
         try:
             await current_event(self, event)
@@ -253,13 +297,15 @@ def _install_response_inspection_bridge() -> None:
             raise
 
     async def handle_connection(self: ConnectionHandler, connection: Connection) -> None:
-        reader = _ReaderInspectionCheckpoints(asyncio.current_task())
+        reader = _ReaderInspectionCheckpoints(asyncio.current_task(), connection)
         token = _READER_INSPECTION.set(reader)
         try:
             await current_connection(self, connection)
         finally:
             _READER_INSPECTION.reset(token)
             reader.closed = True
+            for body in reader.uploads:
+                body.close()
             for checkpoint in reader.pending:
                 _abandon_inspection(checkpoint)
 
@@ -281,10 +327,36 @@ def _install_response_inspection_bridge() -> None:
                     # while this layer was paused. Both readers must wait;
                     # otherwise its buffered DataReceived queue can grow.
                     checkpoints.append(active)
-                if not checkpoints:
-                    break
                 await join_checkpoints(checkpoints)
+                for body in tuple(reader.uploads):
+                    if body.closed:
+                        reader.uploads.discard(body)
+                        continue
+                    await body.wait_ready()
+                if not reader.pending:
+                    break
+        if reader is not None and reader.owner is asyncio.current_task() and reader.managed_peer:
+            # Native drains every writer under one lock. An upstream reader
+            # must still receive response/window frames while its upload writer
+            # is blocked; retain downstream socket backpressure independently.
+            for connection, transport in tuple(self.transports.items()):
+                if connection is reader.connection or transport.writer is None:
+                    continue
+                try:
+                    await transport.writer.drain()
+                except OSError as error:
+                    if transport.handler is not None:
+                        transport.handler.cancel(f"Error sending data: {error}")
+            return
         await current_drain(self)
+        if reader is not None and reader.owner is asyncio.current_task():
+            for body in tuple(reader.uploads):
+                if body.closed or (body.validated and body.writable.is_set()):
+                    # Parsed EOF and empty H2 queues do not mean bytes have
+                    # left the TCP writer. Keep the opposite reader independent
+                    # until this drain or terminal cleanup releases ownership.
+                    body.upload_complete(socket_drained=True)
+                    reader.uploads.discard(body)
 
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
         checkpoint = (
@@ -293,7 +365,23 @@ def _install_response_inspection_bridge() -> None:
             else getattr(hook, _WEBSOCKET_CHECKPOINT_ATTRIBUTE, None)
         )
         if not isinstance(checkpoint, (ResponseInspectionHook, _WebsocketInspectionCheckpoint)):
-            await current_hook(self, hook)
+            bodies: list[managed_request_body.StreamBody] = []
+            token = _HEADER_UPLOADS.set(
+                bodies if isinstance(hook, HttpRequestHeadersHook) else None
+            )
+            try:
+                await current_hook(self, hook)
+            except BaseException:
+                if bodies and isinstance(hook, HttpRequestHeadersHook):
+                    for body in bodies:
+                        body.close()
+                    if hook.flow.killable:
+                        hook.flow.kill()
+                    if not getattr(hook, _HEADERS_RESUMED, False):
+                        await self.server_event(events.HookCompleted(hook))
+                raise
+            finally:
+                _HEADER_UPLOADS.reset(token)
             return
         try:
             if isinstance(checkpoint, _WebsocketInspectionCheckpoint):

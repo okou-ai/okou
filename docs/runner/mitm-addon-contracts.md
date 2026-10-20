@@ -716,6 +716,98 @@ their embedded-addon behavior until replaced. Native dependency coverage in
 byte accounting, capture privacy, admission and terminal release; cryptographic
 TLS verification remains covered by the native auth-wait suites.
 
+## Incremental managed request validation through public streaming
+
+Managed OpenRouter uses public `requestheaders`, `request.stream`, `request`
+and terminal addon hooks. Header validation and stream-safe credential resolution
+precede native upstream acquisition. Current run, destination and captured preset
+are rechecked around credential awaits. The public synchronous stream callback
+validates each chunk before returning forwardable bytes; it does not buffer,
+decode or materialize complete prompt strings.
+
+Request headers, credentials and valid content prefixes may reach the provider
+before the complete document is validated. This partial-delivery boundary is
+intentional. A later abort cannot recall delivered content or provider effects,
+and does not guarantee zero provider billing. The final byte remains pending
+until complete JSON syntax, exact declared length, trailers and current
+authorization pass. Successful bytes and Content-Length remain unchanged.
+Duplicate keys, late routing overrides, incomplete/trailing JSON, non-finite
+numbers and unsupported tools stop further body forwarding. The public callback
+discards the failed chunk, subsequent chunks and pending tail, but keeps counting
+received bytes. It returns an empty iterable for discarded chunks; returning
+empty bytes would still enqueue native data events behind H2 backpressure.
+It releases parser state immediately and retains only bounded
+discard/accounting ownership until true EOF or native terminal cleanup. Immediate
+mid-upload reset is not required; a client that never finishes can remain open
+until the existing native timeout or disconnect. Depth (128), document
+work (262,144 units), object keys (4,096 raw bytes) and numeric tokens (4,300 bytes)
+remain parser bounds. Opaque escaped keys preserve JSON duplicate identity.
+Usage path normalization stays separate from policy observation.
+
+The explicit key and numeric bounds can reject unusually long tokens that the
+former buffered validator admitted. Work is charged by the incremental parser,
+rather than the former structural pre-scan. These bounds limit retained parser
+state after removing whole-body admission; they do not reserve declared body
+bytes. Ordinary opaque value strings can exceed the former body limit.
+
+There is no managed-specific 16-request admission, 32 MiB body cap, 128 MiB RAM
+reservation, temporary body file, disk budget, replay lifecycle or body-I/O pool.
+Retention consists of bounded parser state, one pending byte, native socket and
+protocol buffers, and the existing optional 64 KiB diagnostic capture. Parser
+state releases at upload completion or error, independently of SSE duration.
+Native deadlines, framing, verified TLS and resource bounds still apply.
+
+Public mitmproxy 12.2.3 APIs leave three demonstrated gaps. The exact-version
+compatibility layer contains narrowly scoped adaptations:
+
+- Public stream/request hooks do not own native EOF finalization. The native
+  streamed-request state emits EOM after the request hook without checking
+  `flow.kill()`. At true EOF, a small adapter cancels a failed upload upstream
+  and delegates client error, terminal hooks and stream removal to the native
+  protocol-error handler. It does not manually sequence `check_killed` or
+  `DropStream`, and does not force a reset on the failed body event. It also
+  distinguishes empty non-EOS H2 DATA events from the public callback's EOF
+  sentinel, so legal empty frames cannot finish or reject validation early.
+- Native H2 queues retain body data after the peer window or stream slots are
+  exhausted. A capacity observer locates managed ownership through public
+  `request.stream` and pauses the owning reader outside the native event lock.
+  Socket drain alone does not bound protocol queues. Queued cancellation and
+  connection closure also remove unallocated managed headers and release state.
+  Failed uploads bypass further window/slot waits while their input is discarded,
+  so native capacity cannot prevent reaching their EOF cleanup.
+- A complete early response must finish while its upload is blocked. A terminal
+  response adapter cancels the unfinished upload and finalizes its request side,
+  preserving the provider response. The upstream reader must receive response
+  and window frames without waiting on its own blocked upload writer; during
+  managed uploads it drains downstream writers independently of that writer.
+  Validated EOF and empty H2 queues do not establish TCP write completion.
+  Lightweight upload ownership remains until the owning reader's native socket
+  drain completes or terminal cleanup runs, so a response arriving in several
+  reads still progresses while the upload writer is blocked.
+  Ordinary readers retain native draining.
+
+The existing reader/checkpoint bridge also gates reads during managed header
+authorization and native connection/TLS acquisition until upstream request
+headers are dispatched. It resumes a cancelled header hook exactly once with a killed
+flow. Native framing, TLS, connection selection and normal data forwarding stay
+with mitmproxy; there is no alternate HTTP client, transparent retry or replay.
+Terminal usage and network logging preserve received byte counts and optional
+capture privacy. Rejected request bodies are suppressed from persisted capture.
+Repeated cleanup is idempotent. Runner and addon ship together; old Runner
+processes retain their embedded behavior until replaced. No external schema,
+database, dependency pin or deployment configuration changes.
+
+Native regression suites cover both dialects and HTTP versions, >32 MiB original
+bytes, >16 live responses, early prefixes and final-byte holdback, late/last-byte
+policy failures, escaped keys and Unicode partitions, native cancellation,
+EOF rejection after discarded input, timeout/cancellation without EOF,
+H2 windows/stream slots/queued closure, bounded discard-event queues, real TCP
+backpressure and early responses,
+ordinary/eager scheduling, auth-await cancellation and preset changes. Verified
+TLS peers check successful native acquisition and reject untrusted certificates
+or wrong hostnames before credential-bearing HTTP bytes. These are local native
+protocol proofs, not live-provider or production-load performance measurements.
+
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated

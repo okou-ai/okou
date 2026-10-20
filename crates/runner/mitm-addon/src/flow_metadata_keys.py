@@ -128,9 +128,9 @@ Firewall and auth context
 - ``PUBLIC_DESTINATION_BODY_ADMISSION``: opaque count/byte reservation for a
   large body kept buffered for publicDestination authorization. Written before
   buffering; released on request failure/cancellation or terminal response/error.
-- ``MANAGED_OPENROUTER_BODY_ADMISSION``: opaque count/byte reservation owned by
-  managed OpenRouter preset validation. Written before request buffering and
-  retained until cancellation, failure, or terminal flow cleanup releases it.
+- ``MANAGED_OPENROUTER_BODY``: incremental public-stream validator and pending
+  final-byte owner. Parser state releases at upload completion or rejection;
+  a rejected owner discards/counts input until EOF or terminal cleanup.
 - ``AWS_SIGV4_REQUEST_INSPECTION``: opaque bounded request-representation
   inspection written by managed SigV4 auth. Reused by request-header and request
   auth phases while the raw URL/header identity is unchanged, restored with an
@@ -157,15 +157,17 @@ Request streaming
 -----------------
 - ``REQUEST_STREAM_BUFFER``: capped ``bytearray`` written by
   ``requestheaders()`` only when this module installs its callback with body
-  capture or bounded billing inspection enabled. Inspection does not enable
+  capture or bounded billing inspection enabled. Managed validation composes
+  this observer with its public stream callback. Inspection does not enable
   persisted body capture. A setup attempt that finds an externally owned callable
   does not create this buffer; repeated addon setup preserves the existing buffer. Read
   by request body capture and connector billing refinement. Removed by stream
   cleanup after terminal hooks.
 - ``REQUEST_STREAM_BUFFER_STATE``: ``dict`` with at least ``truncated`` and
-  ``total_bytes``. Written only when this module installs its callback and read
-  for request size. A setup attempt that finds an externally owned callable does
-  not create this state; repeated addon setup preserves existing state.
+  ``total_bytes``. Written when this module installs its callback and read
+  for request size. A setup attempt that finds
+  an externally owned callable does not create this state; repeated addon setup
+  preserves existing state.
   Capture/inspection paths also write ``REQUEST_STREAM_BUFFER`` and use this state
   for capture truncation and connector billing refinement. Removed by stream
   cleanup.
@@ -262,8 +264,8 @@ AUTH_URL_REWRITE: Final = "auth_url_rewrite"
 AUTH_BASE_FORWARD_ADMISSION: Final = "auth_base_forward_admission"
 AWS_SIGV4_BODY_ADMISSION: Final = "aws_sigv4_body_admission"
 PUBLIC_DESTINATION_BODY_ADMISSION: Final = "public_destination_body_admission"
-# Owned by managed_openrouter from requestheaders admission until terminal cleanup.
-MANAGED_OPENROUTER_BODY_ADMISSION: Final = "managed_openrouter_body_admission"
+# Owned by managed_openrouter for parser/tail and terminal byte accounting.
+MANAGED_OPENROUTER_BODY: Final = "managed_openrouter_body"
 AWS_SIGV4_REQUEST_INSPECTION: Final = "aws_sigv4_request_inspection"
 TRUSTED_AUTHORITY_HOST: Final = "trusted_authority_host"
 

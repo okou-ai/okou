@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import subprocess
+import textwrap
 import threading
 import time
 from contextlib import contextmanager
@@ -29,6 +30,85 @@ from tests.control_helpers import (
 from tests.pending_helpers import result_data
 from tests.registry_builtin_helpers import write_catalog_cache
 from tests.usage_helpers import UsageWebhookServer
+
+
+def test_packaged_runtime_validates_a_public_request_stream(tmp_path):
+    source = Path(__file__).parents[1] / "src"
+    receipt = tmp_path / "managed-body.json"
+    script = tmp_path / "managed-body.py"
+    script.write_text(
+        textwrap.dedent(
+            f"""\
+            import json
+            import sys
+            from pathlib import Path
+            from mitmproxy import ctx, http
+
+            sys.path.insert(0, {str(source)!r})
+            import managed_request_body
+            from managed_openrouter_json import PolicyJsonValidator
+
+            async def running():
+                raw = (
+                    b'{{"model":"@preset/test","messages":[{{"content":"'
+                    + b'x' * 70000
+                    + b'"}}]}}'
+                )
+                body = managed_request_body.StreamBody(
+                    len(raw),
+                    PolicyJsonValidator(
+                        preset='@preset/test', service_tier=None,
+                        fields=frozenset(('model', 'messages')),
+                        max_depth=128, max_work=262144,
+                    ),
+                )
+                result = {{}}
+                try:
+                    request = http.Request.make('POST', 'https://example.com', b'')
+                    flow = http.HTTPFlow(None, None)
+                    flow.request = request
+                    body.flow = flow
+                    body.revalidate = lambda: True
+                    forwarded = body(raw)
+                    assert forwarded == raw[:-1]
+                    forwarded += body(b'')
+                    result = {{
+
+                        'exact': forwarded == raw,
+                        'validated': body.validated,
+                        'active': managed_request_body.state_for_tests(),
+                    }}
+                except Exception as error:
+                    result = {{'error': type(error).__name__, 'message': str(error)}}
+                finally:
+                    body.close()
+                    managed_request_body.reset_for_tests()
+                    Path({str(receipt)!r}).write_text(json.dumps(result))
+                    ctx.master.shutdown()
+            """
+        )
+    )
+    binary = Path(os.environ["MITMDUMP_CONTROL_TEST_BINARY"]).resolve(strict=True)
+    process = subprocess.run(  # noqa: S603
+        [
+            str(binary),
+            "--listen-host",
+            "127.0.0.1",
+            "--listen-port",
+            "0",
+            "--scripts",
+            str(script),
+            "--set",
+            f"confdir={tmp_path / 'certificates'}",
+        ],
+        env={"PATH": os.defpath, "TMPDIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert process.returncode == 0, process.stdout + process.stderr
+    assert json.loads(receipt.read_text()) == {"exact": True, "validated": True, "active": [0, 0]}
 
 
 @contextmanager

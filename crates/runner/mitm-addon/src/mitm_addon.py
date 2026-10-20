@@ -61,6 +61,7 @@ import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
+import managed_request_body
 import matching
 import mitmproxy_compat
 import model_websocket_usage
@@ -868,7 +869,7 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
             flow, bounded_classification
         ):
-            return None
+            return _start_managed_request_stream(flow, bounded_classification)
         if (
             isinstance(bounded_classification, request_classification.FirewallBlock)
             and bounded_classification.firewall_block.aws_sigv4_body_pending
@@ -898,7 +899,7 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             defer_unresolved_public_destination=True,
         )
     if _admit_managed_openrouter_from_headers(flow, classification):
-        return None
+        return _start_managed_request_stream(flow, classification)
     if (
         isinstance(classification, request_classification.FirewallBlock)
         and classification.firewall_block.aws_sigv4_body_pending
@@ -1077,7 +1078,6 @@ def _reject_managed_openrouter_request(
     terminate: bool = False,
 ) -> None:
     prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
-    flow.request.stream = False
     flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
     flow_metadata.set_firewall_decision(
@@ -1100,6 +1100,11 @@ def _reject_managed_openrouter_request(
         rejection_phase="requestheaders" if terminate else "request",
         **length_diagnostics,
     )
+    body = managed_request_body.get(flow)
+    if body is not None and callable(flow.request.stream):
+        body.failure = str(error)
+        flow.response = None
+        return
     if terminate:
         request_classification.pop_cached_classification(flow)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
@@ -1133,6 +1138,24 @@ def _admit_managed_openrouter_from_headers(
     except managed_openrouter.RequestRejectedError as error:
         _reject_managed_openrouter_request(flow, classification, error, terminate=True)
     return True
+
+
+def _start_managed_request_stream(
+    flow: http.HTTPFlow, classification: request_classification.RequestClassification
+) -> Awaitable[None] | None:
+    body = managed_request_body.get(flow)
+    if body is None or classification.kind != "firewall_allow":
+        return None
+    mitmproxy_compat.register_managed_request(body)
+    return _try_firewall_request_stream_from_headers(
+        flow,
+        classification=classification,
+        metadata_snapshot={},
+        request_end_stream=False,
+        capture_body=classification.sandbox_info.get("captureNetworkBodies") is True,
+        aws_sigv4_buffered_fallback=None,
+        managed_policy=managed_openrouter.policy_for_sandbox(classification.sandbox_info),
+    )
 
 
 def _admit_buffered_public_destination_request(
@@ -1258,6 +1281,7 @@ async def _try_firewall_request_stream_from_headers(
     request_end_stream: bool | None,
     capture_body: bool,
     aws_sigv4_buffered_fallback: _BufferedRequestBodyCheck | None,
+    managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> None:
     allow = classification.firewall_allow
     sandbox_info = classification.sandbox_info
@@ -1270,6 +1294,11 @@ async def _try_firewall_request_stream_from_headers(
 
     def fall_back() -> None:
         restore_request_state()
+        if managed_policy is not None:
+            managed_openrouter.release_from_flow(flow)
+            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+            flow.kill()
+            return
         if aws_sigv4_buffered_fallback is None:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             return
@@ -1306,10 +1335,14 @@ async def _try_firewall_request_stream_from_headers(
                     allow,
                     expected_run_id=expected_run_id,
                     expected_request=expected_request,
+                    expected_managed_policy=managed_policy,
                 )
             ),
         )
     except (asyncio.CancelledError, Exception):
+        if managed_policy is not None:
+            managed_openrouter.release_from_flow(flow)
+            flow.kill()
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         raise
@@ -1318,6 +1351,7 @@ async def _try_firewall_request_stream_from_headers(
         # A local response waits for body EOF. Preserve auth diagnostics, but
         # kill before mitmproxy sends 100 Continue or consumes the rejected body.
         flow.response = None
+        managed_openrouter.release_from_flow(flow)
         release_aws_sigv4_request_inspection(flow)
         request_classification.pop_cached_classification(flow)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
@@ -1347,6 +1381,24 @@ async def _try_firewall_request_stream_from_headers(
                 capture_body=capture_body,
                 inspect_body=usage.needs_connector_request_body_inspection(flow),
             )
+            if managed_policy is not None:
+                body = managed_request_body.get(flow)
+                if body is None or not callable(flow.request.stream):
+                    fall_back()
+                    return
+                body.observe = flow.request.stream
+                body.revalidate = lambda: _revalidate_current_firewall_authorization_for_request(
+                    flow,
+                    allow,
+                    expected_run_id=expected_run_id,
+                    expected_request=expected_request,
+                    expected_managed_policy=managed_policy,
+                )
+                body.reject = lambda reason: _reject_managed_openrouter_request(
+                    flow, classification, managed_openrouter.RequestRejectedError(reason)
+                )
+                flow.request.stream = body
+                body.header_ready.set()
     except (asyncio.CancelledError, Exception):
         _release_terminal_flow_state(flow, release_tracking=True)
         restore_request_state()
@@ -1482,6 +1534,7 @@ def _firewall_authorization_is_current_for_requestheaders(
     *,
     expected_run_id: str,
     expected_request: _FirewallRequestIdentity,
+    expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
         flow, original_authority=expected_request.authority
@@ -1493,6 +1546,11 @@ def _firewall_authorization_is_current_for_requestheaders(
     )
     return (
         current_allow is not None
+        and (
+            allow.name != managed_openrouter.OWNER
+            or managed_openrouter.policy_for_sandbox(current_allow.sandbox_info)
+            == expected_managed_policy
+        )
         and _firewall_request_identity_is_current(flow, expected_request)
         and _connector_auth_destination_is_current(flow, current_allow)
         and _builtin_host_policy_error_for_firewall_allow(flow, current_allow.firewall_allow)
@@ -1921,6 +1979,9 @@ def _request_size(flow: http.HTTPFlow) -> int:
     streamed_size = request_streaming.streamed_request_size(flow)
     if streamed_size is not None:
         return streamed_size
+    body = managed_request_body.get(flow)
+    if body is not None and not flow.request.raw_content:
+        return body.received
     return len(flow.request.raw_content or b"")
 
 
@@ -2304,7 +2365,7 @@ def done():
     out, process shutdown continues with accepted log entries possibly still
     pending.
     Catalog validation and SigV4 hashing close admission and join their bounded
-    off-loop work.
+    off-loop work. Managed request validation releases its in-loop parser/tail state.
     """
     global _runner_control, _registry_control
 
@@ -2336,7 +2397,10 @@ def _drain_addon_workers() -> None:
                 try:
                     aws_sigv4_hash_executor.shutdown()
                 finally:
-                    shutdown_log_writer()
+                    try:
+                        managed_request_body.close_all()
+                    finally:
+                        shutdown_log_writer()
 
 
 # ============================================================================

@@ -151,6 +151,21 @@ forwarded bytes before EOF and terminal network/usage records, and verify
 bounded retention and admission with capture on/off. They do not measure live
 production proxy RSS.
 
+When removing body admission limits, isolate request count, individual body
+size and aggregate declared bytes in separate native acceptance cases. Keep
+responses live after upload to verify that SSE does not retain upload state.
+Generate inputs in bounded chunks and hash received provider bytes incrementally;
+a fixture that retains complete inputs or emitted commands cannot demonstrate
+bounded forwarding. Native HTTP/2 peers must exchange initialization settings
+and window updates, as well as body frames.
+
+Resource comparisons use identical baseline-eligible inputs, capture settings
+and pinned dependencies in fresh processes. Report process peak RSS, Python
+allocations, upload CPU and event-loop progress separately, with retained memory
+sampled while responses stay live. Measure CPU without allocation tracing; its
+overhead can differ between native and Python parsing. Newly accepted oversized
+inputs prove admission behavior, not a like-for-like memory improvement.
+
 Run the same static checks used by CI:
 
 ```bash
