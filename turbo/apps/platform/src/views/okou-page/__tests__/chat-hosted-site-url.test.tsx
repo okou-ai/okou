@@ -150,7 +150,14 @@ async function openHostedSiteShare(preview: HTMLElement, sidebar: boolean) {
     expect(buttonNamed(shareLabel, preview)).toBeEnabled();
   });
   click(buttonNamed(shareLabel, preview));
-  const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
+  const shareMenu = await waitFor(() => {
+    const dialog = buttonNamed("Customize URL").closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Expected the hosted site's Share dialog");
+    }
+    expect(dialog).toHaveAccessibleName(shareLabel);
+    return dialog;
+  });
   await within(shareMenu).findByText("Published");
   return shareMenu;
 }
@@ -172,7 +179,7 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
 }
 
 test.each([false, true])(
-  "consecutive site renames update the preview title, title link, and shared link (sidebar=%s)",
+  "consecutive site renames update the preview title and title link (sidebar=%s)",
   async (sidebar) => {
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
@@ -184,12 +191,27 @@ test.each([false, true])(
         expect(title).toHaveTextContent(`${slug}.okou.app`);
         expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
       });
-      const clipboard = context.mocks.browser.clipboardWriteText();
+    }
+  },
+);
+
+test.each([false, true])(
+  "Share copies each address after consecutive site renames (sidebar=%s)",
+  async (sidebar) => {
+    const preview = await setupHostedSite(sidebar);
+    const shareMenu = await openHostedSiteShare(preview, sidebar);
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    for (const slug of ["renamed-site", "final-site"]) {
+      await renameHostedSite(shareMenu, slug);
       click(buttonNamed("Copy link", shareMenu));
       await waitFor(() => {
         expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
       });
     }
+    expect(clipboard.writes).toStrictEqual([
+      "https://renamed-site.okou.app",
+      "https://final-site.okou.app",
+    ]);
   },
 );
 
