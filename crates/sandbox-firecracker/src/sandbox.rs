@@ -2991,7 +2991,6 @@ impl Sandbox for FirecrackerSandbox {
             self.unpark_attempt = Some(self.make_unpark_attempt(custody.id));
             self.park_attempt = None;
             drop(self.guest_rpc_endpoint.take());
-            drop(self.guest_duplex_endpoint.take());
         }
         let Some(attempt) = self.unpark_attempt.as_ref().map(|attempt| attempt.id) else {
             return self.unpark_ready_for_operations().await;
