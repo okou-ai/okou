@@ -302,11 +302,11 @@ where
 
         let attempt = attempt_index + 1;
         let result = refresh(cancel.clone()).await;
+        if cancel.is_cancelled() {
+            return Err(initial_refresh_cancelled_error());
+        }
         match result {
             Ok(()) => {
-                if cancel.is_cancelled() {
-                    return Err(initial_refresh_cancelled_error());
-                }
                 if attempt > 1 {
                     info!(
                         attempt,
@@ -318,9 +318,6 @@ where
                 return Ok(());
             }
             Err(error) => {
-                if cancel.is_cancelled() {
-                    return Err(initial_refresh_cancelled_error());
-                }
                 let Some(retry_delay) = retry_delays.get(attempt_index) else {
                     error!(
                         error = %error,
@@ -394,11 +391,11 @@ async fn run_periodic_refresh_with_interval<F, Fut>(
             return;
         }
         let result = refresh(cancel.clone()).await;
+        if cancel.is_cancelled() {
+            return;
+        }
         match result {
             Ok(()) => {
-                if cancel.is_cancelled() {
-                    return;
-                }
                 if let Some(recovery) = degradation
                     .recover(tokio::time::Instant::now().into_std())
                     .await
@@ -413,9 +410,6 @@ async fn run_periodic_refresh_with_interval<F, Fut>(
                 }
             }
             Err(error) => {
-                if cancel.is_cancelled() {
-                    return;
-                }
                 log_periodic_refresh_failure(&error, cache_path, cancel, &degradation, interval)
                     .await;
             }
