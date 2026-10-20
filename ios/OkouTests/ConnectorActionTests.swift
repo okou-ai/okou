@@ -11,16 +11,17 @@ private typealias F = ConnectorHTTPFixtures
 
 @MainActor
 final class ConnectorActionTests: XCTestCase {
-  private func descriptor(_ fixture: ChatHTTPFixture, reconnect: Bool = false, custom: Bool = false)
-    throws -> ChatConnectorAction
-  {
+  private func descriptor(
+    _ fixture: ChatHTTPFixture, reconnect: Bool = false, custom: Bool = false,
+    callbackQuery: String = "Continue"
+  ) throws -> ChatConnectorAction {
     let path =
       reconnect
       ? "/connectors/slack/reconnect/\(F.accountID)"
       : "/connectors/\(custom ? "_internal" : "slack")/connect"
     return try XCTUnwrap(
       ChatConnectorAction.parse(
-        path + "?agentId=\(F.agentID)&threadId=\(F.threadID)&callbackPrompt=Continue",
+        path + "?agentId=\(F.agentID)&threadId=\(F.threadID)&callbackPrompt=\(callbackQuery)",
         webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
   }
   private func store(_ fixture: ChatHTTPFixture) -> ConnectorActionStore {
@@ -43,7 +44,9 @@ final class ConnectorActionTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
       }
       if request.url!.path == "/api/chat/events" {
-        prompts.withLock { $0.append(String(decoding: chatRequestBody(request), as: UTF8.self)) }
+        struct Body: Decodable { let prompt: String }
+        let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
+        prompts.withLock { $0.append(body.prompt) }
       }
       XCTAssertNotEqual(request.httpMethod, "DELETE")
       return try XCTUnwrap(
@@ -51,13 +54,12 @@ final class ConnectorActionTests: XCTestCase {
     }
     let store = store(fixture)
     defer { store.close() }
-    let action = try descriptor(fixture)
+    let action = try descriptor(fixture, callbackQuery: "I+connected+Slack%2BChat")
     store.activate(action)
     try await eventually { store.active != nil }
     store.submit()
     try await eventually { store.active == nil }
-    XCTAssertEqual(prompts.withLock { $0.count }, 1)
-    XCTAssertTrue(prompts.withLock { $0[0].contains("\"prompt\":\"Continue\"") })
+    XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
     guard case .ready(let status) = store.states[action.id] else {
       return XCTFail("Missing verified status")
     }

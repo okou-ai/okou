@@ -47,6 +47,16 @@ final class ChatConnectorTests: XCTestCase {
           .kind, .unavailable, value)
     }
   }
+  func testCallbackUsesFormQueryDecodingAndPreservesItsOriginalReference() throws {
+    let value =
+      "/connectors/slack/connect?agentId=\(F.agentID)&threadId=\(F.threadID)"
+      + "&callbackPrompt=I+connected+Slack%2BChat+%26+Docs%2E"
+    let action = try XCTUnwrap(
+      ChatConnectorAction.parse(value, webURL: webURL, agentID: F.agentID, threadID: F.threadID))
+    XCTAssertEqual(action.kind, .connect(slug: "slack"))
+    XCTAssertEqual(action.callbackPrompt, "I connected Slack+Chat & Docs.")
+    XCTAssertEqual(action.id, value)
+  }
   func testAccountConfirmationValidatesExactTargetAndRequiresCallback() throws {
     let path = "/agents/\(F.agentID)/connector-accounts/\(F.accountID)/select"
     let valid =

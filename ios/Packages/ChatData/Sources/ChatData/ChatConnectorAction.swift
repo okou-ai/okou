@@ -38,7 +38,7 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       url.scheme?.lowercased() == webURL.scheme?.lowercased(),
       url.host?.lowercased() == webURL.host?.lowercased(), url.port == webURL.port,
       url.user == nil, url.password == nil,
-      let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+      var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { return nil }
     let path = components.path.split(separator: "/", omittingEmptySubsequences: false)
     let connectorPath =
@@ -48,6 +48,9 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       path.count == 6 && path[1] == "agents"
       && path[3] == "connector-accounts" && path[5] == "select"
     guard connectorPath || accountPath else { return nil }
+    // Match URLSearchParams form decoding without changing percent-encoded literal plus signs.
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
+      of: "+", with: "%20")
     let query = components.queryItems ?? []
     func param(_ key: String) -> String? { query.first { $0.name == key }?.value }
     func invalid() -> Self {
