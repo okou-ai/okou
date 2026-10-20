@@ -446,6 +446,75 @@ describe("CHAT-02: run-level model overrides", () => {
     90_000,
   );
 
+  it("saves a released Run's recovery outputs without replacing a newer native binding", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "fail before native initialization",
+      model: "claude-fable-5-1",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    await failChatRun(
+      first.runId,
+      firstClaim.sandboxHeaders,
+      "Runner fallback",
+    );
+    await waitForRunStatus(actor, first.runId, "failed");
+
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "establish the current native context",
+    });
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
+    const secondSession = randomUUID();
+    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders, {
+      cliAgentType: "claude-code",
+      cliAgentSessionId: secondSession,
+    });
+    await flushWaitUntilForTest();
+
+    const outputs = {
+      runId: first.runId,
+      cliAgentType: "claude-code",
+      cliAgentSessionId: randomUUID(),
+      cliAgentSessionHistoryDisposition: "native_only",
+    } as const;
+    await webhooks.requestAgentRunOutputs(
+      outputs,
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    const recovered = await api.readRun(actor, first.runId);
+    expect(recovered).toMatchObject({
+      status: "failed",
+      result: {
+        frameworkSessionId: expect.any(String),
+        storageOutputs: expect.any(Array),
+      },
+    });
+    await webhooks.requestAgentRunOutputs(
+      outputs,
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    expect((await api.readRun(actor, first.runId)).result).toStrictEqual(
+      recovered.result,
+    );
+
+    const third = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "resume the current context after late recovery",
+    });
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+    expect(thirdClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: secondSession,
+      generationRunId: second.runId,
+    });
+    await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
+  }, 90_000);
+
   it.each(["failed", "cancelled"] as const)(
     "keeps the first native context fresh when initialization arrives after a %s Run released its slot",
     async (status) => {
