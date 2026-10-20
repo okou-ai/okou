@@ -2462,8 +2462,15 @@
     {
       "idx": 1429,
       "version": "7",
-      "when": 1792471702239,
-      "tag": "1429_chat_thread_snapshot_gc_state",
+      "when": 1792468091095,
+      "tag": "1429_atom_subscription_grant_cancellation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1430,
+      "version": "7",
+      "when": 1792472416085,
+      "tag": "1430_chat_thread_snapshot_gc_state",
       "breakpoints": true
     }
   ]

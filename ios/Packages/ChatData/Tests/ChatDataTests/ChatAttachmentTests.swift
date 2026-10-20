@@ -110,7 +110,7 @@ final class ChatAttachmentTests: XCTestCase {
         let body = try JSONDecoder().decode(CompletedParts.self, from: chatRequestBody(request))
         XCTAssertEqual(body.partCount, 2)
         XCTAssertEqual(body.uploadId, "multipart-identity")
-        return ChatHTTPResponse(body: "{\"id\":\"\(fileID)\"}")
+        return ChatHTTPResponse(body: "{\"id\":\"\(fileID)\",\"url\":\"artifact://\(fileID)\"}")
       default: throw URLError(.unsupportedURL)
       }
     }

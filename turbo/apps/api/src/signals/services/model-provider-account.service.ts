@@ -572,6 +572,13 @@ async function writePersonalAccount(
     if ("status" in plan) {
       return plan;
     }
+    const values = {
+      ...plan.values,
+      atomGrantId:
+        args.authSession?.source === "atom-subscription-grant"
+          ? args.authSession.id
+          : null,
+    };
     for (const binding of affectedCodexExpiryBindings({ ...args, accounts })) {
       expiryBindings.add(binding);
     }
@@ -595,13 +602,13 @@ async function writePersonalAccount(
     const [account] = plan.selected
       ? await tx
           .update(modelProviderAccounts)
-          .set(plan.values)
+          .set(values)
           .where(eq(modelProviderAccounts.id, plan.selected.id))
           .returning()
       : await tx
           .insert(modelProviderAccounts)
           .values({
-            ...plan.values,
+            ...values,
             modelProviderId: provider.id,
             orgId: args.orgId,
             userId: args.userId,
@@ -614,7 +621,10 @@ async function writePersonalAccount(
     await tx.execute(
       accountSecretsPublicationStatement(account.id, args.encryptedSecrets),
     );
-    const consent = deviceAuthSessionPublicationSql(args);
+    const consent = deviceAuthSessionPublicationSql({
+      ...args,
+      modelProviderAccountId: account.id,
+    });
     if (consent && (await tx.execute(consent)).rowCount !== 1) {
       throw new Error("Device authorization was cancelled or expired");
     }

@@ -15,6 +15,7 @@ import {
 import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import { mockNow, now } from "../time.ts";
 import { createAblyAuthCallback } from "../ably-auth.ts";
+import { initSharedDatabaseWorkerSentry } from "../../shared-database/worker-sentry.ts";
 import { createAblyRealtime } from "../ably-realtime.ts";
 import {
   createAblyAuthDiagnosticScope,
@@ -131,8 +132,8 @@ function controlledDeadline() {
   const signal = context.store.set(resetDeadline$, context.signal);
   vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(signal);
   return () => {
-    // Deliver the native timeout reason at the observed boundary, without
-    // sleeping or turning an auth deadline into root AbortError cancellation.
+    // Deliver the native timeout reason at the observed boundary without
+    // sleeping or cancelling the connection's root lifetime.
     const abort = AbortController.prototype.abort;
     vi.spyOn(AbortController.prototype, "abort").mockImplementationOnce(
       function (this: AbortController) {
@@ -148,6 +149,8 @@ function controlledDeadline() {
 
 test("Auth deadline rejects the SDK request and ignores a late page token before a fresh renewal", async () => {
   prepare();
+  const sentry = context.mocks.sentry();
+  initSharedDatabaseWorkerSentry();
   const expire = controlledDeadline();
   const tokenStarted = createDeferredPromise<AbortSignal>(context.signal);
   const token = createDeferredPromise<string | null>(context.signal);
@@ -188,7 +191,9 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
     error: { code: 40_170 },
   });
   expect(signal.aborted).toBeTruthy();
-  expect(signal.reason).toMatchObject({ name: "TimeoutError" });
+  expect(signal.reason).toBeInstanceOf(DOMException);
+  expect(signal.reason).toMatchObject({ name: "AbortError" });
+  expect(context.signal.aborted).toBeFalsy();
   expect(apiRequests).toBe(0);
 
   token.resolve("late-clerk-token");
@@ -196,10 +201,13 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
     token: "secret-response-token",
   });
   expect(apiRequests).toBe(1);
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 test("Auth deadline aborts an in-flight platform token HTTP request without exchanging its late response", async () => {
   prepare();
+  const sentry = context.mocks.sentry();
+  initSharedDatabaseWorkerSentry();
   const expire = controlledDeadline();
   const started = createDeferredPromise<AbortSignal>(context.signal);
   const aborted = createDeferredPromise<void>(context.signal);
@@ -243,9 +251,12 @@ test("Auth deadline aborts an in-flight platform token HTTP request without exch
   });
   await aborted.promise;
   expect(signal.aborted).toBeTruthy();
+  expect(signal.reason).toMatchObject({ name: "AbortError" });
+  expect(context.signal.aborted).toBeFalsy();
   release.resolve();
   await finished.promise;
   expect(exchanges).toBe(0);
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 function expectPrivate() {

@@ -24,10 +24,27 @@ final class WorkspaceStore {
       selectedConversation?.reconcileActivitySummary()
     }
   }
-  var selectedAgentID: String?
-  var newChatDraft = ""
-  @ObservationIgnored lazy var newAttachmentDraft = AttachmentDraftStore(
-    commands: commands, didFail: { [weak self] in self?.handle($0) })
+  var selectedAgentID: String? {
+    didSet {
+      guard oldValue != selectedAgentID else { return }
+      if let selectedAgentID {
+        do { try draftStorage?.save(selectedAgentID, key: "active-agent") } catch {
+          self.error = "Cannot save the draft's Agent. " + error.localizedDescription
+        }
+      }
+      activateAgentDraft()
+    }
+  }
+  var newChatDraft: String {
+    get { newComposer.text }
+    set { newComposer.text = newValue }
+  }
+  var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
+  private(set) var newComposer: ComposerDraftStore
+  private let draftStorage: ChatDraftStorage?
+  private let draftRepository: ChatDraftRepository?
+  @ObservationIgnored private var agentDrafts: [String: ComposerDraftStore] = [:]
+  private var agentDraftTask: Task<Void, Never>?
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
   @ObservationIgnored lazy var list = ThreadListStore(
@@ -49,14 +66,27 @@ final class WorkspaceStore {
   private var isForeground = false
   private var startupGeneration = UUID()
 
-  init(client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8) {
+  init(
+    client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
+    draftStorage: ChatDraftStorage? = nil
+  ) {
     self.client = client
+    self.draftStorage = draftStorage
+    draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = ChatSync(client: client, cache: cache)
     self.sync = sync
-    self.commands = ChatCommands(client: client, sync: sync)
+    let commands = ChatCommands(client: client, sync: sync)
+    self.commands = commands
     self.webURL = webURL
     self.messageMarkdown = MessageMarkdownCache(baseURL: webURL)
     self.conversationLimit = max(0, conversationLimit)
+    newComposer = ComposerDraftStore(
+      target: .unassigned, commands: commands, storage: draftStorage,
+      didFail: { _ in })
+    do {
+      selectedAgentID = try draftStorage?.load("active-agent", as: String.self)
+      if selectedAgentID != nil { activateAgentDraft() }
+    } catch { self.error = "Cannot restore the draft's Agent. " + error.localizedDescription }
   }
 
   func start(userID: String, workspaceID: String) async {
@@ -117,7 +147,8 @@ final class WorkspaceStore {
       didMarkRead: { [weak self] in self?.list.markRead(id) },
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
-      didSettle: { [weak self] in self?.requestPrune() })
+      didSettle: { [weak self] in self?.requestPrune() },
+      draftRepository: draftRepository, draftStorage: draftStorage)
     conversations[id] = conversation
     return conversation
   }
@@ -134,12 +165,43 @@ final class WorkspaceStore {
     realtime?.stop()
     realtime = nil
     messageMarkdown.clear()
-    newAttachmentDraft.close()
+    agentDraftTask?.cancel()
+    newComposer.close()
+    for composer in agentDrafts.values { composer.close() }
   }
 
   func setForeground(_ active: Bool) {
     isForeground = active
     selectedConversation?.reconcileActivitySummary()
+    if !active {
+      Task { [weak self] in await self?.synchronizeDrafts() }
+    }
+  }
+
+  func synchronizeDrafts() async {
+    guard !closed else { return }
+    await newComposer.synchronize()
+    for conversation in conversations.values { await conversation.composer.synchronize() }
+  }
+
+  private func activateAgentDraft() {
+    guard !closed, let id = selectedAgentID else { return }
+    if let existing = agentDrafts[id] {
+      newComposer = existing
+    } else {
+      let composer = ComposerDraftStore(
+        target: .agent(id), commands: commands,
+        repository: draftRepository, storage: draftStorage,
+        didFail: { [weak self] in self?.handle($0) })
+      // Preserve input entered before navigation resolves the default Agent.
+      if !isCreating && newComposer.hasContent && agentDrafts.isEmpty {
+        newComposer.move(to: composer)
+      }
+      agentDrafts[id] = composer
+      newComposer = composer
+    }
+    let composer = newComposer
+    agentDraftTask = Task { await composer.synchronize() }
   }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
@@ -188,6 +250,7 @@ final class WorkspaceStore {
         await conversation(for: id)?.refresh()
       }
     }
+    if full { await synchronizeDrafts() }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
   }
@@ -234,8 +297,6 @@ final class WorkspaceStore {
     selectedThreadID = nil
     selectedAgentID =
       agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
-    newChatDraft = ""
-    newAttachmentDraft.reset()
     error = nil
   }
 
@@ -271,8 +332,9 @@ final class WorkspaceStore {
   }
 
   func sendNewChat() async {
-    let text = newChatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || newAttachmentDraft.hasAttachments, newAttachmentDraft.isReady,
+    let sourceComposer = newComposer
+    let wasAwaitingAgent = selectedAgentID == nil
+    guard sourceComposer.hasContent, sourceComposer.canSend, newAttachmentDraft.isReady,
       selectedThreadID == nil, !isCreating, !needsUpgrade, !closed
     else {
       return
@@ -280,9 +342,12 @@ final class WorkspaceStore {
     guard let created = await createChat(agentID: selectedAgentID), !closed,
       let conversation = conversation(for: created.id)
     else { return }
-    conversation.draft = text
-    newAttachmentDraft.moveReadyFiles(to: conversation.attachmentDraft)
-    newChatDraft = ""
+    sourceComposer.move(to: conversation.composer)
+    if wasAwaitingAgent && newComposer !== sourceComposer {
+      newComposer.clear()
+      newComposer.requestSync()
+    }
+    sourceComposer.requestSync()
     await conversation.send()
   }
 

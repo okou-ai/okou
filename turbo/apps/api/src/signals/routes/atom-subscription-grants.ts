@@ -3,7 +3,7 @@ import {
   type atomSubscriptionGrantSchema,
 } from "@okouai/api-contracts/contracts/atom-subscription-grants";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -15,13 +15,15 @@ import {
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { request$, setResHeader$ } from "../context/hono";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, pathParamsOf } from "../context/request";
 import { authenticateClerkMachine, clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { handleCodexAuthJsonPaste } from "../services/codex-auth-json-paste-handler";
+import { cancelAtomSubscriptionGrant$ } from "../services/atom-subscription-grant-cancellation";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { upsertPersonalModelProviderAccount$ } from "../services/model-provider-account.service";
+import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 import { settle } from "../utils";
 
 type Grant = z.infer<typeof atomSubscriptionGrantSchema>;
@@ -54,6 +56,9 @@ function existingGrantResult(
   }
   if (session.status === "imported") {
     return receipt(args.grantId);
+  }
+  if (session.status === "cancelled") {
+    return conflict("Grant was cancelled; start a new authorization in Atom");
   }
   if (session.status !== "completing" || session.expiresAt <= nowDate()) {
     return conflict("Grant expired; start a new authorization in Atom");
@@ -201,6 +206,9 @@ const deliver$ = command(
     if (published?.status === "imported") {
       return receipt(args.grantId);
     }
+    if (published?.status === "cancelled") {
+      return conflict("Grant was cancelled; start a new authorization in Atom");
+    }
     if (result.ok && "status" in result.value && result.value.status >= 400) {
       return badRequestMessage(
         "Subscription could not be added; check the plan and account limit",
@@ -212,31 +220,39 @@ const deliver$ = command(
   },
 );
 
+const authenticateAtom$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const machineSecretKey = optionalEnv("OKOU_MACHINE_SECRET_KEY");
+  if (!machineSecretKey) {
+    return providerUnavailable("Atom subscription grants are not configured");
+  }
+  const authentication = await settle(
+    authenticateClerkMachine(get(request$).raw, machineSecretKey),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!authentication.ok) {
+    return providerUnavailable("Atom M2M authentication is unavailable");
+  }
+  if (!authentication.value) {
+    return {
+      status: 401 as const,
+      body: {
+        error: {
+          message: "Invalid Atom M2M token",
+          code: "UNAUTHORIZED",
+        },
+      },
+    };
+  }
+  return undefined;
+});
+
 const deliverAtomSubscription$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(setResHeader$, "Cache-Control", "no-store");
-    const machineSecretKey = optionalEnv("OKOU_MACHINE_SECRET_KEY");
-    if (!machineSecretKey) {
-      return providerUnavailable("Atom subscription grants are not configured");
-    }
-    const authentication = await settle(
-      authenticateClerkMachine(get(request$).raw, machineSecretKey),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!authentication.ok) {
-      return providerUnavailable("Atom M2M authentication is unavailable");
-    }
-    if (!authentication.value) {
-      return {
-        status: 401 as const,
-        body: {
-          error: {
-            message: "Invalid Atom M2M token",
-            code: "UNAUTHORIZED",
-          },
-        },
-      };
+    const authentication = await set(authenticateAtom$, signal);
+    if (authentication) {
+      return authentication;
     }
     const body = await get(
       bodyResultOf(atomSubscriptionGrantsContract.deliver),
@@ -249,7 +265,51 @@ const deliverAtomSubscription$ = command(
   },
 );
 
+const cancellationSelectionRepair$ = computed(async (get) => {
+  const body = await get(bodyResultOf(atomSubscriptionGrantsContract.cancel));
+  if (!body.ok) {
+    throw new Error("Cancellation selection repair requires a valid request");
+  }
+  const { orgId, userId } = body.data;
+  return resetDisconnectedMemberModelSelection(
+    computed(() => {
+      return { orgId, userId };
+    }),
+  );
+});
+
+const cancelAtomSubscription$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const authentication = await set(authenticateAtom$, signal);
+    if (authentication) {
+      return authentication;
+    }
+    const body = await get(bodyResultOf(atomSubscriptionGrantsContract.cancel));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const params = get(pathParamsOf(atomSubscriptionGrantsContract.cancel));
+    const result = await set(
+      cancelAtomSubscriptionGrant$,
+      { ...body.data, ...params },
+      signal,
+    );
+    if (result.status === 200) {
+      const repair$ = await get(cancellationSelectionRepair$);
+      signal.throwIfAborted();
+      await set(repair$);
+      signal.throwIfAborted();
+    }
+    return result;
+  },
+);
+
 export const atomSubscriptionGrantRoutes: readonly RouteEntry[] = [
+  {
+    route: atomSubscriptionGrantsContract.cancel,
+    handler: cancelAtomSubscription$,
+  },
   {
     route: atomSubscriptionGrantsContract.deliver,
     handler: deliverAtomSubscription$,
