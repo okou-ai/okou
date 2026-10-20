@@ -276,12 +276,7 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadWechatQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "discord": {
-        return await set(
-          loadDiscordQueuedLaunchMaterial$,
-          db,
-          loaderArgs,
-          signal,
-        );
+        return await set(loadDiscordQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "teams": {
         return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);

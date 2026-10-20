@@ -6,7 +6,7 @@ import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection"
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import {
   projectUserMessage,
@@ -35,8 +35,7 @@ export interface DiscordQueuedLaunchMaterial {
 
 export const loadDiscordQueuedLaunchMaterial$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     args: {
       readonly eventId: string;
       readonly chatThreadId: string;
@@ -46,6 +45,7 @@ export const loadDiscordQueuedLaunchMaterial$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordQueuedLaunchMaterial | null> => {
+    const db = get(db$);
     const [context] = await db
       .select({
         connectionId: chatDiscordContext.connectionId,

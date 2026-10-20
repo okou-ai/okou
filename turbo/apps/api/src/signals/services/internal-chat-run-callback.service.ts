@@ -3672,7 +3672,6 @@ const loadQueuedRejectionChannel$ = command(
       case "discord": {
         const material = await set(
           loadDiscordQueuedLaunchMaterial$,
-          db,
           source,
           signal,
         );
