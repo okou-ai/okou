@@ -73,7 +73,9 @@ impl SandboxFactory for CheckpointFactory {
         // Guest observations follow every returned sandbox. The blocking home
         // checkpoint remains exclusive to the explicit-custody path below.
         let checkpoint = self.checkpoint.guest().map(FactoryCheckpoint::Guest);
-        self.inner.create_inner(config, None, None, checkpoint).await
+        self.inner
+            .create_inner(config, None, None, checkpoint)
+            .await
     }
     async fn create_with_observer(
         &self,
