@@ -192,11 +192,13 @@ impl JobFixture {
             factory,
             home_promotion,
         } = job.payload.resources;
+        let home_promotion = home_promotion.unwrap();
         ParkedIdleCandidateBuilder::new(&self.reuse_key, job.budget_lease)
+            .with_source_run_id(home_promotion.run_id())
             .with_sandbox(sandbox)
             .with_factory(factory)
             .with_sandbox_id(self.sandbox_id)
-            .with_home_promotion(home_promotion.unwrap())
+            .with_home_promotion(home_promotion)
             .build()
     }
 

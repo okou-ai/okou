@@ -219,12 +219,13 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let (mut config, env) = mock_run_config_with_overrides(profiles, 2, 8192, 1, overrides.clone());
-    enable_cache(&mut config);
+    let (cache, paths) = enable_cache(&mut config);
+    let key = "thread:peer-expiry";
+    seed_home_cache_state(&cache, &paths, key, "vm0/default", 1024 * 1024).await;
     let budget = config.capacity.budget.clone();
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, WAIT).await;
     let run_id = RunId::new_v4();
-    let key = "thread:peer-expiry";
     env.provider
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
@@ -249,7 +250,8 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
             .as_ref()
             .unwrap()
             .seed_image
-            .is_none()
+            .is_some(),
+        "expiry must preserve compatible-home fallback when its producer differs"
     );
     shutdown(&env, runner).await;
     assert_eq!(budget.allocated(), (0, 0, 0));
@@ -568,15 +570,16 @@ async fn home_published_before_claim_response_is_consumed_without_a_lost_wakeup(
     wait_discover_entered(&env, WAIT).await;
     let run_id = RunId::new_v4();
     let key = "thread:publication-during-claim";
+    let source = RunId::new_v4();
     env.provider
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle.block_claim(run_id);
     env.handle
         .discover_tx
-        .send(peer_candidate(run_id, key, RunId::new_v4()))
+        .send(peer_candidate(run_id, key, source))
         .unwrap();
     assert!(env.handle.wait_run_claim_in_flight(run_id, WAIT).await);
-    seed_home_cache_state(&cache, &paths, key, "vm0/default", 1024 * 1024).await;
+    seed_home_cache_state_for_run(&cache, &paths, key, "vm0/default", 1024 * 1024, source).await;
     env.handle.unblock_claim(run_id);
     execution.wait_entered(1, WAIT).await.unwrap();
     assert!(
@@ -616,19 +619,21 @@ async fn committed_peer_homes_wake_multiple_claimed_waiters() {
     wait_discover_entered(&env, WAIT).await;
     let runs = [RunId::new_v4(), RunId::new_v4()];
     let keys = ["thread:peer-fanout-a", "thread:peer-fanout-b"];
-    for (run_id, key) in runs.into_iter().zip(keys) {
+    let sources = [RunId::new_v4(), RunId::new_v4()];
+    for ((run_id, key), source) in runs.into_iter().zip(keys).zip(sources) {
         env.provider
             .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
         env.handle
             .discover_tx
-            .send(peer_candidate(run_id, key, RunId::new_v4()))
+            .send(peer_candidate(run_id, key, source))
             .unwrap();
         wait_owned_peer(&env, run_id).await;
     }
     assert_eq!(budget.allocated(), (4, 8192, 2));
     assert!(overrides.start_agent_process_calls().is_empty());
-    for key in keys {
-        seed_home_cache_state(&cache, &paths, key, "vm0/default", 1024 * 1024).await;
+    for (key, source) in keys.into_iter().zip(sources) {
+        seed_home_cache_state_for_run(&cache, &paths, key, "vm0/default", 1024 * 1024, source)
+            .await;
     }
     execution.wait_entered(2, WAIT).await.unwrap();
     let created = overrides.create_configs();

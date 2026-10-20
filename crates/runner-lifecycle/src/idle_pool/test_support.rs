@@ -21,6 +21,7 @@ pub struct ParkedIdleCandidateBuilder {
     sandbox: Box<dyn Sandbox>,
     factory: Arc<Box<dyn SandboxFactory>>,
     reuse_key: String,
+    source_run_id: RunId,
     sandbox_id: SandboxId,
     profile_name: String,
     rootfs_hash: String,
@@ -44,6 +45,7 @@ impl ParkedIdleCandidateBuilder {
             sandbox: Box::new(MockSandbox::new(DEFAULT_SANDBOX_NAME)),
             factory: Arc::new(Box::new(MockSandboxFactory::new()) as Box<dyn SandboxFactory>),
             reuse_key: reuse_key.into(),
+            source_run_id: RunId::new_v4(),
             sandbox_id: SandboxId::new_v4(),
             profile_name: DEFAULT_PROFILE_NAME.into(),
             rootfs_hash: "test-rootfs".into(),
@@ -61,6 +63,11 @@ impl ParkedIdleCandidateBuilder {
 
     pub fn with_sandbox(mut self, sandbox: Box<dyn Sandbox>) -> Self {
         self.sandbox = sandbox;
+        self
+    }
+
+    pub fn with_source_run_id(mut self, source_run_id: RunId) -> Self {
+        self.source_run_id = source_run_id;
         self
     }
 
@@ -137,6 +144,7 @@ impl ParkedIdleCandidateBuilder {
             sandbox,
             factory,
             reuse_key,
+            source_run_id,
             sandbox_id,
             profile_name,
             rootfs_hash,
@@ -152,6 +160,7 @@ impl ParkedIdleCandidateBuilder {
         } = self;
         let metadata = IdleSandboxMetadata {
             identity: super::entry::IdleSandboxIdentity::Exact(reuse_key),
+            source_run_id: Some(source_run_id),
             sandbox_id,
             profile_name,
             rootfs_hash,

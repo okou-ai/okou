@@ -509,6 +509,9 @@ function canonicalizeHeldSandboxStates(
       lastCompletedAt: new Date(state.lastCompletedAt).toISOString(),
       reusableSandbox: {
         profile: state.reusableSandbox.profile,
+        ...(state.reusableSandbox.sourceRunId
+          ? { sourceRunId: state.reusableSandbox.sourceRunId }
+          : {}),
         ...(state.reusableSandbox.historyGenerationRunId
           ? {
               historyGenerationRunId:
@@ -535,11 +538,13 @@ function canonicalizeHeldHomeStates(
         {
           profile: first.profile,
           homeAffinityVersion: first.homeAffinityVersion,
+          ...(first.sourceRunId ? { sourceRunId: first.sourceRunId } : {}),
         },
         ...remaining.map((cache) => {
           return {
             profile: cache.profile,
             homeAffinityVersion: cache.homeAffinityVersion,
+            ...(cache.sourceRunId ? { sourceRunId: cache.sourceRunId } : {}),
           };
         }),
       ],

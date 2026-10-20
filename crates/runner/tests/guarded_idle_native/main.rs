@@ -1707,6 +1707,7 @@ async fn exercise_retirement(
         proof.bind_original_lease(&lease)?;
     }
     let candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
+        .with_source_run_id(run_id)
         .with_sandbox(sandbox)
         .with_factory(factory.clone())
         .with_sandbox_id(sandbox_id)

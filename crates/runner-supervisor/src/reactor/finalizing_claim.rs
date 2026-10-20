@@ -387,8 +387,16 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             }
         }
     };
+    let home_source_run_id = (ready.reuse_entry.is_none()
+        && ctx.home_cache_snapshot.contains_source_home(
+            &admission.reuse_key,
+            &profile_name,
+            admission.source_run_id,
+        ))
+    .then_some(admission.source_run_id);
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
+            home_source_run_id,
             claimed,
             rootfs_hash,
             cancellation,
@@ -471,6 +479,16 @@ async fn prepare_finalizing_resource(
     if let Err(error) = validate_resume_session_id(claimed.context()) {
         return Err(ExecutionFailure::from_error(error).into());
     }
+
+    // The provider claim owns native intent; a discovery projection cannot authorize handoff.
+    admission.history_generation_run_id = claimed
+        .context()
+        .native_continuation
+        .as_ref()
+        .filter(|native| native.session_id.is_some())
+        .and_then(|native| native.generation_run_id.as_deref())
+        .filter(|generation| *generation == admission.source_run_id.to_string())
+        .map(|_| admission.source_run_id);
 
     info!(
         run_id = %run_id,

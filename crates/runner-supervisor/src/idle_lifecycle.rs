@@ -482,6 +482,21 @@ pub async fn reserve_reusable_idle_for_spawn(
     Some(ReservedIdleActivation::new(reservation, snapshot))
 }
 
+/// Reserve the actual producing Run and snapshot while holding the pool lock.
+pub async fn reserve_source_idle_for_spawn(
+    idle_pool: &SharedIdlePool,
+    reuse_key: &str,
+    profile_name: &str,
+    device_rate_limits: &Option<DeviceRateLimits>,
+    source_run_id: RunId,
+) -> Result<ReservedIdleActivation, ExactIdleReservationMiss> {
+    let mut pool = idle_pool.lock().await;
+    let reservation =
+        pool.reserve_reusable_source(reuse_key, profile_name, device_rate_limits, source_run_id)?;
+    let snapshot = pool.status_snapshot();
+    Ok(ReservedIdleActivation::new(reservation, snapshot))
+}
+
 /// Reserve exactly the predecessor's generation, retaining a typed miss reason
 /// from the same locked observation when no matching entry can be claimed.
 pub async fn reserve_exact_idle_for_spawn(
@@ -493,7 +508,7 @@ pub async fn reserve_exact_idle_for_spawn(
 ) -> Result<ReservedIdleActivation, ExactIdleReservationMiss> {
     let (reservation, snapshot) = {
         let mut pool = idle_pool.lock().await;
-        let reservation = pool.reserve_reusable_generation_with_reason(
+        let reservation = pool.reserve_reusable_native_source(
             reuse_key,
             profile_name,
             device_rate_limits,
@@ -883,6 +898,7 @@ mod tests {
             pool.park(
                 ParkedIdleCandidateBuilder::new("thread:claimed-idle", lease)
                     .with_sandbox_id(sandbox_id)
+                    .with_source_run_id(history_generation_run_id)
                     .with_history_generation_run_id(history_generation_run_id)
                     .build()
             ),
@@ -993,7 +1009,7 @@ mod tests {
                 "vm0/default",
                 None,
                 RunId::new_v4(),
-                ExactIdleReservationMiss::HistoryGenerationMismatch,
+                ExactIdleReservationMiss::SourceMismatch,
             ),
         ] {
             let miss = reserve_exact_idle_for_spawn(

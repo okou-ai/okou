@@ -111,6 +111,7 @@ pub enum ExactIdleReservationMiss {
     ProfileMismatch,
     DeviceLimitMismatch,
     HistoryGenerationMismatch,
+    SourceMismatch,
 }
 
 /// Result of one blank reservation attempt while the pool lock is held.
@@ -132,6 +133,7 @@ impl ExactIdleReservationMiss {
             Self::ProfileMismatch => "profile_mismatch",
             Self::DeviceLimitMismatch => "device_limit_mismatch",
             Self::HistoryGenerationMismatch => "history_generation_mismatch",
+            Self::SourceMismatch => "source_mismatch",
         }
     }
 }
@@ -258,6 +260,57 @@ impl IdlePool {
         device_rate_limits: &Option<DeviceRateLimits>,
         history_generation_run_id: RunId,
     ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
+        self.reserve_matching_reusable(
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            None,
+            Some(history_generation_run_id),
+        )
+    }
+
+    /// Verify the producing Run and reserve from the same exclusive observation.
+    pub fn reserve_reusable_source(
+        &mut self,
+        reuse_key: &str,
+        profile_name: &str,
+        device_rate_limits: &Option<DeviceRateLimits>,
+        source_run_id: RunId,
+    ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
+        self.reserve_matching_reusable(
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            Some(source_run_id),
+            None,
+        )
+    }
+
+    /// Native finalizing handoff requires both the producing Run and its resume generation.
+    pub fn reserve_reusable_native_source(
+        &mut self,
+        reuse_key: &str,
+        profile_name: &str,
+        device_rate_limits: &Option<DeviceRateLimits>,
+        source_run_id: RunId,
+    ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
+        self.reserve_matching_reusable(
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            Some(source_run_id),
+            Some(source_run_id),
+        )
+    }
+
+    fn reserve_matching_reusable(
+        &mut self,
+        reuse_key: &str,
+        profile_name: &str,
+        device_rate_limits: &Option<DeviceRateLimits>,
+        source_run_id: Option<RunId>,
+        history_generation_run_id: Option<RunId>,
+    ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
         let entry = match self.exact_entries.entry(reuse_key.to_owned()) {
             Entry::Vacant(_) => return Err(ExactIdleReservationMiss::Absent),
             Entry::Occupied(entry) => {
@@ -267,7 +320,11 @@ impl IdlePool {
                 if entry.get().device_rate_limits() != device_rate_limits {
                     return Err(ExactIdleReservationMiss::DeviceLimitMismatch);
                 }
-                if entry.get().metadata.history_generation_run_id != Some(history_generation_run_id)
+                if source_run_id.is_some() && entry.get().metadata.source_run_id != source_run_id {
+                    return Err(ExactIdleReservationMiss::SourceMismatch);
+                }
+                if history_generation_run_id.is_some()
+                    && entry.get().metadata.history_generation_run_id != history_generation_run_id
                 {
                     return Err(ExactIdleReservationMiss::HistoryGenerationMismatch);
                 }
@@ -542,6 +599,8 @@ impl IdlePool {
             .exact_entries
             .iter()
             .filter_map(|(reuse_key, entry)| {
+                // Tenant-free blank capacity has no producer to advertise.
+                let source_run_id = entry.metadata.source_run_id?;
                 entry
                     .metadata
                     .last_completed_at
@@ -551,6 +610,7 @@ impl IdlePool {
                         last_completed_at: last_completed_at.clone(),
                         reusable_sandbox: ReusableSandboxState {
                             profile: entry.metadata.profile_name.clone(),
+                            source_run_id,
                             history_generation_run_id: entry.metadata.history_generation_run_id,
                         },
                     })

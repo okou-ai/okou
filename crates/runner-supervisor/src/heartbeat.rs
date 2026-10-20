@@ -782,6 +782,7 @@ mod tests {
 
     fn home_cache(profile: &str) -> HomeCacheCapability {
         HomeCacheCapability {
+            source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
             profile: profile.to_owned(),
             home_affinity_version: runner_types::types::HOME_AFFINITY_VERSION,
         }
@@ -804,7 +805,7 @@ mod tests {
         paths: &RunnerPaths,
         reuse_key: &str,
         completed_at: &str,
-    ) {
+    ) -> runner_types::ids::RunId {
         let run_id = runner_types::ids::RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let lease = cache
@@ -843,6 +844,7 @@ mod tests {
                 .await
                 .unwrap()
         );
+        run_id
     }
 
     async fn capture_heartbeat_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
@@ -1102,7 +1104,8 @@ mod tests {
         let paths = RunnerPaths::new(dir.path().join("runner"));
         tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
         let cache = HomeImageCache::new(paths.clone());
-        seed_home_cache_state(&cache, &paths, reuse_key, "2026-06-01T00:00:00.000Z").await;
+        let source_run_id =
+            seed_home_cache_state(&cache, &paths, reuse_key, "2026-06-01T00:00:00.000Z").await;
         let profiles = test_profiles();
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
         let active_runs = test_active_runs();
@@ -1161,7 +1164,10 @@ mod tests {
         assert_eq!(cached_states[0].reuse_key, reuse_key);
         assert_eq!(
             cached_states[0].home_caches,
-            vec![home_cache("vm0/default")]
+            vec![HomeCacheCapability {
+                source_run_id,
+                ..home_cache("vm0/default")
+            }]
         );
     }
 
@@ -1505,6 +1511,7 @@ mod tests {
                 reuse_key: "thread-active".into(),
                 last_completed_at: "2026-06-01T00:00:01.000Z".into(),
                 reusable_sandbox: ReusableSandboxState {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/default".into(),
                     history_generation_run_id: None,
                 },
@@ -1513,6 +1520,7 @@ mod tests {
                 reuse_key: "thread-held".into(),
                 last_completed_at: "2026-06-01T00:00:02.000Z".into(),
                 reusable_sandbox: ReusableSandboxState {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/default".into(),
                     history_generation_run_id: None,
                 },

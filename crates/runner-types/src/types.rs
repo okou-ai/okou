@@ -1719,6 +1719,8 @@ impl ExecutionContext {
 #[serde(rename_all = "camelCase")]
 pub struct ReusableSandboxState {
     pub profile: String,
+    /// Run that produced this resource, independent of native history.
+    pub source_run_id: RunId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_generation_run_id: Option<RunId>,
 }
@@ -1737,6 +1739,8 @@ pub struct HeldSandboxState {
 pub struct HomeCacheCapability {
     pub profile: String,
     pub home_affinity_version: u8,
+    /// Producer of this profile's committed home image generation.
+    pub source_run_id: RunId,
 }
 
 /// Canonical home evidence for reusable home images.
@@ -2663,6 +2667,7 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 last_completed_at: "2026-05-28T00:00:00.000Z".into(),
                 reusable_sandbox: ReusableSandboxState {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/default".into(),
                     history_generation_run_id: Some(
                         "11111111-1111-4111-8111-111111111111".parse().unwrap(),
@@ -2673,6 +2678,7 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 last_completed_at: "2026-05-28T00:00:00.000Z".into(),
                 home_caches: vec![HomeCacheCapability {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/large".into(),
                     home_affinity_version: HOME_AFFINITY_VERSION,
                 }],
@@ -2704,6 +2710,7 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "lastCompletedAt": "2026-05-28T00:00:00.000Z",
                     "reusableSandbox": {
+                        "sourceRunId": "33333333-3333-4333-8333-333333333333",
                         "profile": "vm0/default",
                         "historyGenerationRunId": "11111111-1111-4111-8111-111111111111"
                     }
@@ -2712,6 +2719,7 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "lastCompletedAt": "2026-05-28T00:00:00.000Z",
                     "homeCaches": [{
+                        "sourceRunId": "33333333-3333-4333-8333-333333333333",
                         "profile": "vm0/large",
                         "homeAffinityVersion": 1
                     }]
@@ -2732,6 +2740,7 @@ mod tests {
             reuse_key: "thread:thread-current".into(),
             last_completed_at: "2026-05-28T00:00:00.000Z".into(),
             reusable_sandbox: ReusableSandboxState {
+                source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                 profile: "vm0/default".into(),
                 history_generation_run_id: None,
             },

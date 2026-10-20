@@ -76,6 +76,7 @@ fn owner(
     let lease = ResourceBudget::try_reserve_lease(budget, 2, 8)
         .ok_or_else(|| io::Error::other("ordinary fixture full lease unavailable"))?;
     let candidate = ParkedIdleCandidateBuilder::new(&home.reuse_key, lease)
+        .with_source_run_id(home.promotion.run_id())
         .with_sandbox_id(home.sandbox_id)
         .with_sandbox(Box::new(
             MockSandbox::with_overrides(home.sandbox_id.to_string(), overrides)

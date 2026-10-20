@@ -46,7 +46,7 @@
 //! 5. **Speculative rollback.** A reserved exact-generation entry can be
 //!    unparked for claim-time preparation without becoming committed to a job.
 //!    [`SpeculativeIdleSandbox::repark_for_claim_rollback`] re-runs preparation
-//!    against the entry's original history-generation runtime directory, not
+//!    against the entry's original producer runtime directory, not
 //!    the rollback operation's diagnostic run directory. A successful repark
 //!    restores the original `parked_at` and metadata. Every other result
 //!    returns an [`IdleDestroyJob`] with the appropriate promotion policy.
@@ -361,6 +361,7 @@ impl IdleParkRequest {
 
         let metadata = IdleSandboxMetadata {
             identity: super::entry::IdleSandboxIdentity::Exact(reuse_key),
+            source_run_id: Some(run_id),
             sandbox_id,
             profile_name,
             rootfs_hash,
@@ -632,8 +633,8 @@ impl SpeculativeIdleSandbox {
     ///
     /// `operation_run_id` identifies the rollback operation for diagnostics,
     /// but the current runtime directory comes from the entry's original
-    /// `history_generation_run_id`. This preserves the runtime files needed by
-    /// the exact history generation. A reusable result keeps the entry's
+    /// `source_run_id`. This preserves the original producer's runtime files
+    /// even without native history. A reusable result keeps the entry's
     /// original `parked_at`; an unexpected handoff, non-reusable result, or
     /// failure returns an owned [`IdleDestroyJob`] instead of a partially
     /// restored reservation.
@@ -642,12 +643,12 @@ impl SpeculativeIdleSandbox {
         operation_run_id: RunId,
         home_image_size_bytes: u64,
     ) -> SpeculativeReparkResult {
-        let Some(current_runtime_run_id) = self.entry.metadata.history_generation_run_id else {
-            const REASON: &str = "speculative_repark_missing_history_generation";
+        let Some(current_runtime_run_id) = self.entry.metadata.source_run_id else {
+            const REASON: &str = "speculative_repark_missing_source";
             return SpeculativeReparkResult::Destroy {
                 destroy_job: Box::new(self.into_destroy_job(REASON)),
                 reason: REASON,
-                error: "speculative exact-reuse entry is missing a history generation".into(),
+                error: "speculative reusable entry is missing its producer".into(),
                 expected_capacity_rejection: false,
             };
         };

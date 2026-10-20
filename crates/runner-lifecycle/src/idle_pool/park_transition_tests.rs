@@ -576,6 +576,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     request.parts.profile_name = profile_name.into();
     request.parts.device_rate_limits = Some(device_rate_limits.clone());
     request.parts.history_generation_run_id = Some(history_generation_run_id);
+    let source_run_id = request.parts.run_id;
     request.parts.guest_timezone_intent =
         crate::guest_timezone::GuestTimezoneIntent::Configured("Asia/Shanghai".into());
     let candidate = match request.park_for_idle().await {
@@ -612,6 +613,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     assert_eq!(entry.device_rate_limits(), &Some(device_rate_limits));
     assert_eq!(entry.budget_vcpu(), 2);
     assert_eq!(entry.budget_memory_mb(), 2048);
+    assert_eq!(entry.metadata.source_run_id, Some(source_run_id));
     assert_eq!(
         entry.metadata.history_generation_run_id,
         Some(history_generation_run_id)
@@ -634,7 +636,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     assert_eq!(preparation_requests.len(), 2);
     assert_eq!(
         preparation_requests[1].current_runtime_dir,
-        format!("/home/user/.vm0/guest-agent/runs/{history_generation_run_id}")
+        format!("/home/user/.vm0/guest-agent/runs/{source_run_id}")
     );
     assert_ne!(
         preparation_requests[1].current_runtime_dir,
@@ -643,7 +645,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
 }
 
 #[tokio::test]
-async fn speculative_repark_without_history_generation_returns_owned_destroy_job() {
+async fn speculative_repark_without_native_history_preserves_producer() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let request = make_idle_park_request(
         Arc::clone(&overrides),
@@ -651,6 +653,7 @@ async fn speculative_repark_without_history_generation_returns_owned_destroy_job
         make_budget_lease(2, 2048),
     )
     .await;
+    let source_run_id = request.parts.run_id;
     let candidate = match request.park_for_idle().await {
         Ok(outcome) => outcome.expect_reusable(),
         Err(_) => panic!("initial park should succeed"),
@@ -663,28 +666,20 @@ async fn speculative_repark_without_history_generation_returns_owned_destroy_job
         panic!("speculative unpark should succeed");
     };
 
-    let SpeculativeReparkResult::Destroy {
-        destroy_job,
-        reason,
-        error,
-        expected_capacity_rejection,
-    } = speculative
+    let SpeculativeReparkResult::Reparked(restored) = speculative
         .repark_for_claim_rollback(RunId::new_v4(), 0)
         .await
     else {
-        panic!("missing generation should destroy speculative ownership");
+        panic!("producer identity must support rollback without native history");
     };
-
-    assert_eq!(reason, "speculative_repark_missing_history_generation");
-    assert!(!expected_capacity_rejection);
-    assert_eq!(
-        error,
-        "speculative exact-reuse entry is missing a history generation"
-    );
+    let entry = restored
+        .into_restore_entry()
+        .unwrap_or_else(|_| panic!("parked entry"));
+    assert_eq!(entry.metadata.source_run_id, Some(source_run_id));
+    assert_eq!(entry.metadata.history_generation_run_id, None);
     assert_eq!(overrides.unpark_call_count(), 1);
-    assert_eq!(overrides.park_call_count(), 1);
-    destroy_job.run().await;
-    assert_eq!(overrides.destroy_call_count(), 1);
+    assert_eq!(overrides.park_call_count(), 2);
+    assert_eq!(overrides.destroy_call_count(), 0);
 }
 
 #[tokio::test]

@@ -26,8 +26,8 @@ use tracing::info;
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
     ReservedIdleActivation, SharedIdlePool, reserve_exact_idle_for_spawn,
-    reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
-    select_idle_entries_for_pressure, set_idle_status_snapshot,
+    reserve_reusable_idle_for_spawn, reserve_source_idle_for_spawn,
+    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 use runner_executor::executor::{
     ExecutionFailure, FinalizingExactIdleLookup, FinalizingHandoffOutcome, FinalizingHandoffReason,
@@ -153,6 +153,7 @@ struct FinalizingWait<'a> {
 }
 
 struct FinalizingFallback<'a> {
+    source_run_id: RunId,
     run_id: RunId,
     cancellation: &'a RunCancellationRegistration,
     reuse_key: &'a str,
@@ -259,6 +260,7 @@ async fn select_finalizing_resource_inner(
             info!(run_id = %run_id, finalizing_fallback_reason = reason.as_str(), "finalizing successor entering home or cold fallback");
             acquire_fallback_resource(
                 FinalizingFallback {
+                    source_run_id: admission.source_run_id,
                     run_id,
                     cancellation,
                     reuse_key: &admission.reuse_key,
@@ -597,6 +599,7 @@ async fn acquire_fallback_resource(
     #[cfg(any(test, feature = "test-support"))] test_hooks: &FinalizingSelectionTestHooks,
 ) -> Result<FinalizingResource, Box<ExecutionFailure>> {
     let FinalizingFallback {
+        source_run_id,
         run_id,
         cancellation,
         reuse_key,
@@ -611,6 +614,22 @@ async fn acquire_fallback_resource(
     let cancel = cancellation.token();
     let mut retiring_leases = Vec::new();
     let lease = loop {
+        if let Ok(reservation) = reserve_source_idle_for_spawn(
+            ctx.idle_pool,
+            reuse_key,
+            profile_name,
+            device_rate_limits,
+            source_run_id,
+        )
+        .await
+        {
+            let reservation = accept_fallback_idle(cancellation, reservation, ctx).await?;
+            return Ok(fallback_idle_resource(
+                reservation,
+                history_generation_run_id,
+                pre_spawn_timing,
+            ));
+        }
         let IdlePressureOutcome {
             selection,
             blank_pool_selection,
@@ -705,12 +724,18 @@ fn fallback_idle_resource(
     pre_spawn_timing: &mut RunnerPreSpawnTiming,
 ) -> FinalizingResource {
     if let Some(history_generation_run_id) = history_generation_run_id {
-        if reservation.history_generation_run_id() == Some(history_generation_run_id) {
+        if reservation.history_generation_run_id() == Some(history_generation_run_id)
+            && reservation.source_run_id() == Some(history_generation_run_id)
+        {
             pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
             return FinalizingResource::Exact(reservation);
         }
         pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(
-            ExactIdleReservationMiss::HistoryGenerationMismatch,
+            if reservation.source_run_id() == Some(history_generation_run_id) {
+                ExactIdleReservationMiss::HistoryGenerationMismatch
+            } else {
+                ExactIdleReservationMiss::SourceMismatch
+            },
         ));
     }
     FinalizingResource::Reusable(reservation)
@@ -1207,6 +1232,7 @@ mod tests {
         let exact_lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
         let exact_id = sandbox::SandboxId::new_v4();
         let builder = ParkedIdleCandidateBuilder::new(&admission.reuse_key, exact_lease)
+            .with_source_run_id(admission.source_run_id)
             .with_sandbox_id(exact_id);
         let candidate = if exact {
             builder
@@ -1340,6 +1366,7 @@ mod tests {
                 as Box<dyn sandbox::SandboxFactory>,
         );
         let candidate = ParkedIdleCandidateBuilder::new("thread:finalizing-wait-race", lease)
+            .with_source_run_id(predecessor_run_id)
             .with_sandbox(sandbox)
             .with_factory(factory)
             .with_history_generation_run_id(predecessor_run_id)
