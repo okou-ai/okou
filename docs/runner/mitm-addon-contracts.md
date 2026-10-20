@@ -782,6 +782,13 @@ and terminal cleanup is idempotent. Runner and addon ship together; old Runner
 processes retain their embedded limits until replaced. No wire/registry/schema
 or dependency change is required.
 
+Size and capture metadata can describe a validated private spool before any
+upstream bytes have been sent. Reconnection authorization must distinguish that
+retained, unforwarded body from a streamed request whose bytes may have left the
+proxy. Only the complete retained body may continue through normal connection
+acquisition and verified TLS; partial, closed or already-forwarded bodies do not
+gain replay permission from a byte count.
+
 `test_managed_request_streaming.py` and
 `test_mitmproxy_managed_openrouter.py` cover both dialects and HTTP versions,
 large original-byte replay, late overrides, tool/Unicode partitions, storage
@@ -791,6 +798,11 @@ authorization-hook and replay cancellation. Native HTTP/1 error and HTTP/2
 window, stream-slot, reset and early-response tests cover the upstream protocol
 queues. These are native protocol tests,
 not live-provider or production-load acceptance.
+
+`test_managed_request_native_tls.py` covers post-validation native acquisition,
+including an upstream disconnect during auth. Real in-memory TLS peers verify
+both upstream HTTP versions, exact body bytes and the provider response; wrong
+hostnames and untrusted certificates fail before HTTP credentials or body bytes.
 
 ## Header-phase credential-resolution failures
 

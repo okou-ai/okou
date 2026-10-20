@@ -537,8 +537,14 @@ def _connector_auth_destination_is_current(
             flow,
             platform_connector_auth=current.platform_connector_auth,
         )
-    if flow.request.stream or request_streaming.streamed_request_size(flow) is not None:
+    if flow.request.stream:
         return False
+    if request_streaming.streamed_request_size(flow) is not None:
+        body = managed_request_body.get(flow)
+        # A completed private spool records size/capture before any forwarding.
+        # Its retained validated file can still use normal connection acquisition.
+        if body is None or not body.validated or body.closed or body.replayed:
+            return False
     # An unavailable original Server may retain an acquisition error. The current
     # HTTP flow is still pre-forward; normal acquisition owns its transport outcome.
     direct_binding_matches = upstream_destination_binding.flow_matches_direct_bound_destination(

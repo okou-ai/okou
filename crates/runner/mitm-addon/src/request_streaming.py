@@ -62,7 +62,7 @@ def configure_request_stream(
 
 
 def streamed_request_size(flow: http.HTTPFlow) -> int | None:
-    """Return total request bytes observed by the request stream callback."""
+    """Return bytes observed by streaming or a completed private body spool."""
     state = flow.metadata.get(metadata_keys.REQUEST_STREAM_BUFFER_STATE)
     if state is None:
         return None
