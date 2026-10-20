@@ -2256,7 +2256,9 @@ async fn execute_cli_inner(
     })
 }
 
-fn cli_exit_summary_from_status(status: &ExitStatus) -> (i32, Option<CliObservedExitDiagnostic>) {
+pub(crate) fn cli_exit_summary_from_status(
+    status: &ExitStatus,
+) -> (i32, Option<CliObservedExitDiagnostic>) {
     if let Some(code) = status.code() {
         return (code, Some(CliObservedExitDiagnostic::from_exit_code(code)));
     }

@@ -282,8 +282,8 @@ pub enum CodexAppServerError {
     ChildExited {
         /// Pending method or operation label.
         method: String,
-        /// Child exit status formatted for diagnostics.
-        status: String,
+        /// Child exit status observed before process-group cleanup.
+        status: ExitStatus,
     },
     /// The child did not exit within the forced shutdown grace period.
     #[error("codex app-server did not exit after shutdown")]
@@ -303,7 +303,13 @@ impl std::fmt::Display for JsonRpcError {
 
 impl From<CodexAppServerError> for AgentError {
     fn from(value: CodexAppServerError) -> Self {
-        AgentError::Execution(value.to_string())
+        let message = value.to_string();
+        match value {
+            CodexAppServerError::ChildExited { status, .. } => {
+                AgentError::CliProcessExited { message, status }
+            }
+            _ => AgentError::Execution(message),
+        }
     }
 }
 
@@ -892,7 +898,7 @@ impl CodexAppServerClient {
         };
         self.poison_error(CodexAppServerError::ChildExited {
             method: pending_method.to_string(),
-            status: status.to_string(),
+            status,
         })
     }
 

@@ -62,10 +62,15 @@ pub fn cli_execution_error_for_config(
     error: &AgentError,
 ) -> FailureDiagnostic {
     let diagnostic = base_failure_diagnostic_for_config(config, FailureClass::CliExecutionError);
-    if matches!(error, AgentError::CodexInputTooLarge { .. }) {
-        diagnostic.with_failure_reason(FailureReason::InputTooLarge)
-    } else {
-        diagnostic
+    match error {
+        AgentError::CodexInputTooLarge { .. } => {
+            diagnostic.with_failure_reason(FailureReason::InputTooLarge)
+        }
+        AgentError::CliProcessExited { status, .. } => {
+            let (exit_code, observed_exit) = cli::cli_exit_summary_from_status(status);
+            with_cli_observed_exit(diagnostic.with_cli_exit_code(exit_code), observed_exit)
+        }
+        _ => diagnostic,
     }
 }
 
