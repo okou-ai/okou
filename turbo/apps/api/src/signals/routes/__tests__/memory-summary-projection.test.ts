@@ -169,11 +169,14 @@ function canonicalManifest(files: readonly BddStorageFileEntry[]): Buffer {
 
 // Memory ownership and writes come from a real claimed native Run.
 async function publishVersion(args: {
+  readonly isolatePg?: true;
   readonly files: readonly BddStorageFileEntry[];
   readonly archive: Buffer;
 }): Promise<PublishedVersion> {
   const fixture = createChatEventsFixture(context);
-  const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+  const { actor, agentId, runnerGroup } = await fixture.entitledChatActor(
+    args.isolatePg ? { isolatePg: true } : {},
+  );
   const storage = context.mocks.s3.send.getMockImplementation();
   const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
@@ -304,7 +307,10 @@ describe("Runner memory publication", () => {
   it("freezes the exact Unicode summary count after authenticated materialization", async () => {
     const content = "v1\nKeep café notes, 中文记忆 and 👩🏽‍💻 examples exact.\n";
     const summary = Buffer.from(content, "utf8");
+    // Materialization scans across tenants. Bind this case's database on its
+    // first real entitlement webhook, before publishing any memory versions.
     const version = await publishVersion({
+      isolatePg: true,
       files: [declaredFile("memory_summary.md", summary)],
       archive: tarGz([{ path: "memory_summary.md", content: summary }]),
     });
