@@ -90,10 +90,6 @@ protections, compatibility obligations, tests, data, or migration history.
   record that is their own documented contract. A PR that answers a log-noise
   issue by adding another outcome classifier must justify why the record is
   needed at all.
-- For features that change, replace, remove, or reroute an existing flow, require
-  regression coverage for the affected path and appropriate feature/capability/
-  permission containment. A rewritten expectation alone does not prove an
-  intentional, correctly scoped replacement.
 - Apply ccstate ownership rules to both API and Platform where used. Preserve
   callback-ref cleanup, await/signal ownership, and real page initialization.
 - Report concrete practice violations with the rule and source location. Do not
