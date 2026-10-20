@@ -9,7 +9,11 @@ final class ThreadListStore {
   private(set) var threads: [ChatThread] = []
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
+  private(set) var unreadAgentIDs: Set<String> = []
   private(set) var canArchiveChats = false
+  var onlyUnread = false
+  private(set) var markingAgentRead = false
+  private var readRevision = 0
   private(set) var navigationError: String?
   private(set) var error: String?
   private(set) var isLoading = false
@@ -106,10 +110,11 @@ final class ThreadListStore {
     return ids.compactMap { id in agents.first(where: { $0.agentId == id }) }
   }
 
-  func refresh() async {
+  func refresh(waitForCurrent: Bool = false) async {
     guard !closed, !blocked, !Task.isCancelled else { return }
-    if refreshTask != nil {
+    if let refreshTask {
       refreshAgain = true
+      if waitForCurrent { await refreshTask.value }
       return
     }
     isLoading = true
@@ -122,9 +127,22 @@ final class ThreadListStore {
       repeat {
         refreshAgain = false
         do {
-          let result = try await sync.threads()
+          let revision = readRevision
+          let response = try await sync.threadsWithIndicators()
+          var result = response.threads
           try Task.checkCancellation()
           guard !closed else { return }
+          if revision != readRevision {
+            for index in result.indices {
+              let held = threads.first { $0.id == result[index].id }
+              result[index].indicator = held?.indicator
+              result[index].unreadAt = held?.unreadAt
+            }
+            refreshAgain = true
+          } else {
+            unreadAgentIDs = Set(
+              response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
+          }
           if threads != result { threads = result }
           didRefresh(result)
           error = nil
@@ -142,26 +160,98 @@ final class ThreadListStore {
     if !threads.contains(where: { $0.id == thread.id }) { threads.insert(thread, at: 0) }
   }
 
-  func markRead(_ id: String) {
-    if let index = threads.firstIndex(where: { $0.id == id }), threads[index].indicator == .unread {
-      threads[index].indicator = nil
+  func markRead(_ id: String, through watermark: Date?) {
+    guard !closed, let watermark else { return }
+    readRevision += 1
+    if let index = threads.firstIndex(where: { $0.id == id }),
+      let unreadAt = threads[index].unreadAt, unreadAt <= watermark
+    {
+      threads[index].unreadAt = nil
+      if threads[index].indicator == .unread { threads[index].indicator = nil }
+    }
+    didRefresh(threads)
+  }
+
+  func setRead(_ thread: ChatThread, read: Bool) async -> Bool {
+    guard !updatingThreads.contains(thread.id), !closed, !blocked, !markingAgentRead,
+      !Task.isCancelled
+    else {
+      return false
+    }
+    updatingThreads.insert(thread.id)
+    readRevision += 1
+    defer { updatingThreads.remove(thread.id) }
+    var succeeded = false
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer { updateTasks[thread.id] = nil }
+      do {
+        if read {
+          let watermark = try await commands.markRead(threadID: thread.id)
+          try Task.checkCancellation()
+          markRead(thread.id, through: watermark)
+        } else {
+          try await commands.markUnread(threadID: thread.id)
+        }
+        try Task.checkCancellation()
+        readRevision += 1
+        error = nil
+        succeeded = true
+        await refreshIndicators()
+      } catch is CancellationError {
+      } catch { show(error) }
+    }
+    updateTasks[thread.id] = task
+    await task.value
+    return succeeded && !closed && !Task.isCancelled
+  }
+
+  func markAgentRead(_ agentID: String) async {
+    guard !closed, !blocked, !markingAgentRead, updatingThreads.isEmpty, !Task.isCancelled else {
+      return
+    }
+    markingAgentRead = true
+    readRevision += 1
+    defer { markingAgentRead = false }
+    await updateThread("agent-read") { [self, commands] in
+      try await commands.markAgentRead(agentID: agentID)
+      readRevision += 1
+    }
+  }
+
+  func threads(agentID: String?, archived: Bool) -> [ChatThread] {
+    threads.filter {
+      guard $0.agentID == agentID else { return false }
+      if onlyUnread {
+        // PWA's unread list includes archived chats and retains active-indicator precedence.
+        return !$0.isMuted && $0.indicator == .unread
+      }
+      return !canArchiveChats || $0.isArchived == archived
     }
   }
 
   func refreshIndicators() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
     do {
+      let revision = readRevision
       let result = try await sync.indicators()
       try Task.checkCancellation()
       guard !closed else { return }
+      guard revision == readRevision else {
+        await refresh()
+        return
+      }
+      unreadAgentIDs = Set(result.agents.filter { $0.value == .unread }.map(\.key))
       threads = threads.map { thread in
         var updated = thread
         updated.indicator = result.threads[thread.id]
+        updated.unreadAt = result.unreadAt[thread.id]
+        if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
         return updated
       }
       didRefresh(threads)
     } catch is CancellationError {
-    } catch { didFail(error) }
+    } catch { show(error) }
   }
 
   func setPinned(_ thread: ChatThread, pinned: Bool) async {

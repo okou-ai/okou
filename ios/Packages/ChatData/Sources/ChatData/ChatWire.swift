@@ -45,6 +45,7 @@ struct ThreadProjection: Codable, Sendable {
   let pinOrder: String?
   let archived: Bool?
   let hidden: Bool?
+  let muted: Bool?
   let renamedAt: Date?
   let modelSettings: [String: ThreadModelSetting]?
   let serviceTier: String?
@@ -58,7 +59,8 @@ struct ThreadProjection: Codable, Sendable {
       pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
       modelSettings: modelSettings ?? [:], serviceTier: serviceTier,
       computerUseHostId: computerUseHostId, cloudBrowserEnabled: cloudBrowserEnabled ?? false,
-      isArchived: archived ?? false, isHidden: hidden ?? false, indicator: nil)
+      isArchived: archived ?? false, isHidden: hidden ?? false, indicator: nil,
+      isMuted: muted ?? false)
   }
 }
 
@@ -78,6 +80,7 @@ struct ThreadEvent: Codable, Sendable {
   let selectedModel: String?
   let pinOrder: String?
   let hidden: Bool?
+  let muted: Bool?
   let modelSettings: [String: ThreadModelSetting]?
   let modelSettingsPatch: ThreadModelSettingsPatch?
   let serviceTier: String?
@@ -88,7 +91,7 @@ struct ThreadEvent: Codable, Sendable {
     ChatThreadChange(
       kind: kind, chatThreadId: chatThreadId, agentId: agentId,
       reassignedAgentId: reassignedAgentId, title: title, selectedModel: selectedModel,
-      pinOrder: pinOrder, hidden: hidden, modelSettings: modelSettings,
+      pinOrder: pinOrder, hidden: hidden, muted: muted, modelSettings: modelSettings,
       modelSettingsPatch: modelSettingsPatch,
       serviceTier: serviceTier, computerUseHostId: computerUseHostId,
       cloudBrowserEnabled: cloudBrowserEnabled, createdAt: createdAt)
@@ -112,7 +115,13 @@ struct ThreadDetail: Decodable, Sendable {
 }
 
 public struct Indicators: Decodable, Sendable {
+  public let agents: [String: ChatIndicator]
   public let threads: [String: ChatIndicator]
+  public let unreadAt: [String: Date]
+}
+
+struct ThreadReadState: Decodable, Sendable {
+  let lastReadAt: Date?
 }
 
 struct EventCursor: Decodable, Equatable, Sendable {

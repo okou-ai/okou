@@ -18,6 +18,9 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
   public var isArchived = false
   public var isHidden = false
   public var indicator: ChatIndicator?
+  public var unreadAt: Date?
+  public var isMuted: Bool
+  public var isUnread: Bool { unreadAt != nil && !isMuted }
 
   public init(
     id: String,
@@ -36,7 +39,9 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     cloudBrowserEnabled: Bool = false,
     isArchived: Bool = false,
     isHidden: Bool = false,
-    indicator: ChatIndicator? = nil
+    indicator: ChatIndicator? = nil,
+    unreadAt: Date? = nil,
+    isMuted: Bool = false
   ) {
     self.id = id
     self.agentID = agentID
@@ -55,6 +60,8 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     self.isArchived = isArchived
     self.isHidden = isHidden
     self.indicator = indicator
+    self.unreadAt = unreadAt
+    self.isMuted = isMuted
   }
 
   public var displayTitle: String { title.isEmpty ? "New chat" : title }
@@ -144,6 +151,7 @@ public struct ChatHistory: Equatable, Sendable {
   public let activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
+  public let latestRunFinishAt: Date?
 
   public init(
     messages: [ChatMessage],
@@ -152,10 +160,12 @@ public struct ChatHistory: Equatable, Sendable {
     activityRunID: String? = nil,
     queuedEventIDs: [String],
     persistedEventIDs: Set<String> = [],
-    workSections: [ChatWorkSection] = []
+    workSections: [ChatWorkSection] = [],
+    latestRunFinishAt: Date? = nil
   ) {
     self.messages = messages
     self.workSections = workSections
+    self.latestRunFinishAt = latestRunFinishAt
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
     self.activityRunID = activityRunID

@@ -50,6 +50,9 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var modelStore = ChatModelStore(
     client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
+  @ObservationIgnored lazy var search = ChatSearchStore(
+    sync: sync, didFail: { [weak self] in self?.handle($0) })
+
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands,
     didRefresh: { [weak self] in self?.applyThreads($0) },
@@ -147,7 +150,7 @@ final class WorkspaceStore {
       thread: thread, sync: sync, commands: commands, webURL: webURL,
       messageMarkdown: messageMarkdown,
       isVisible: { [weak self] in self?.isForeground == true && self?.selectedThreadID == id },
-      didMarkRead: { [weak self] in self?.list.markRead(id) },
+      didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
       didSettle: { [weak self] in self?.requestPrune() },
@@ -167,6 +170,7 @@ final class WorkspaceStore {
     modelStore.close()
     newModelSelection.close()
     list.close()
+    search.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
     realtime = nil
@@ -251,7 +255,7 @@ final class WorkspaceStore {
       default: break
       }
     }
-    if full, let selectedThreadID { ids.insert(selectedThreadID) }
+    if full || batch.contains(.readCursor), let selectedThreadID { ids.insert(selectedThreadID) }
     for id in ids.sorted() {
       // Dormant conversations read their durable state when opened.
       if let conversation = conversations[id] {
@@ -301,8 +305,38 @@ final class WorkspaceStore {
 
   func selectChat(_ id: String) {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return }
+    let reselected = selectedThreadID == id
     selectedThreadID = id
     selectedAgentID = thread.agentID
+    selectedConversation?.setAutomaticReadSuppressed(false, resetReadWatermark: true)
+    if reselected { requestRefresh(.history(threadID: id)) }
+  }
+
+  func openSearchResult(_ id: String) async -> Bool {
+    guard !closed, !needsUpgrade else { return false }
+    let searchID = search.requestID
+    guard search.ownsPresentation(searchID) else { return false }
+    search.setOpeningError(nil)
+    let needsRefresh = !list.threads.contains(where: { $0.id == id })
+    if needsRefresh { await list.refresh(waitForCurrent: true) }
+    guard !closed, !Task.isCancelled else { return false }
+    guard search.ownsPresentation(searchID) else { return false }
+    guard !needsRefresh || list.error == nil else { return false }
+    guard list.threads.contains(where: { $0.id == id }) else {
+      search.setOpeningError("This chat is no longer available. Refresh and try again.")
+      return false
+    }
+    // Like the PWA, message hits open the chat at its existing reading position.
+    selectChat(id)
+    search.dismiss()
+    return true
+  }
+
+  func setRead(_ thread: ChatThread, read: Bool) async {
+    let conversation = conversations[thread.id]
+    if !read { conversation?.setAutomaticReadSuppressed(true) }
+    let succeeded = await list.setRead(thread, read: read)
+    if read || !succeeded { conversation?.setAutomaticReadSuppressed(false) }
   }
 
   func startNewChat(agentID: String? = nil) {
