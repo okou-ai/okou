@@ -30,4 +30,24 @@ mv "$output_dir/$package_filename" "$output_dir/package.tgz"
 # Installation identity belongs to the actual package, not a second workspace
 # read after packing. Commit provenance and byte integrity remain external.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "$script_dir/finalize-okou-cli-artifact.sh" "$commit_sha" "$output_dir"
+identity="$(python3 "$script_dir/read-okou-cli-package-identity.py" "$output_dir/package.tgz" --verify-package)"
+package_sha256="$(sha256sum "$output_dir/package.tgz" | cut -d ' ' -f 1)"
+package_size="$(wc -c < "$output_dir/package.tgz" | tr -d '[:space:]')"
+
+jq -n \
+  --arg commit_sha "$commit_sha" \
+  --arg package_sha256 "$package_sha256" \
+  --argjson package_size "$package_size" \
+  --argjson identity "$identity" \
+  '{version: 1, commitSha: $commit_sha,
+    package: {path: "package.tgz", sha256: $package_sha256, size: $package_size},
+    versions: $identity.versions}' > "$output_dir/manifest.json"
+
+manifest_sha256="$(sha256sum "$output_dir/manifest.json" | cut -d ' ' -f 1)"
+jq -n \
+  --arg commit_sha "$commit_sha" \
+  --arg manifest_sha256 "$manifest_sha256" \
+  '{version: 1, commitSha: $commit_sha, manifestSha256: $manifest_sha256}' \
+  > "$output_dir/ready.json"
+
+echo "Prepared CLI artifact for $commit_sha"

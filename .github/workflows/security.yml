@@ -284,9 +284,8 @@ jobs:
           # Syntax checks recursively cover the owned directories above.
           # ShellCheck keeps an explicit allowlist, with source-aware checks below.
           shellcheck \
+            .github/scripts/artifacts/build-okou-cli-artifact.sh \
             .github/scripts/artifacts/build-okou-desktop-artifact.sh \
-            .github/scripts/artifacts/cli-build-input-digest.sh \
-            .github/scripts/artifacts/finalize-okou-cli-artifact.sh \
             .github/scripts/cancel-superseded-merge-group-runs.sh \
             .github/scripts/checks/check-release-please-component-releases.sh \
             .github/scripts/checks/check-release-please-workspace-coverage.sh \

@@ -10,38 +10,26 @@ runs:
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: 22
-    - name: Identify CLI build inputs
-      id: inputs
+    - name: Check CLI source revision
       shell: bash
       env:
         SOURCE_SHA: ${{ inputs.source-sha }}
       run: |
         set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
-        digest=$(bash .github/scripts/artifacts/cli-build-input-digest.sh "$SOURCE_SHA")
-        echo "digest=$digest" >> "$GITHUB_OUTPUT"
-    # Cache only packaged bytes. Current-revision manifests are always rebuilt
-    # and the real package smoke checks run on both hits and misses.
-    - name: Cache CLI package
-      id: package
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: runner-cli-intermediate/package.tgz
-        key: runner-cli-package-${{ runner.os }}-${{ runner.arch }}-${{ steps.inputs.outputs.digest }}
+        test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
     - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      if: steps.package.outputs.cache-hit != 'true'
       env:
         npm_config_audit: "false"
       with:
         version: 10.33.4
     - name: Cache CLI dependencies
-      if: steps.package.outputs.cache-hit != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.temp }}/runner-cli-pnpm-store
         key: runner-cli-pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('turbo/pnpm-lock.yaml') }}
     - name: Build CLI package
-      if: steps.package.outputs.cache-hit != 'true'
       shell: bash
       env:
         SOURCE_SHA: ${{ inputs.source-sha }}
@@ -51,12 +39,6 @@ runs:
         (cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli... --store-dir "$RUNNER_TEMP/runner-cli-pnpm-store")
         (cd turbo && pnpm --filter @okouai/cli build)
         bash .github/scripts/artifacts/build-okou-cli-artifact.sh "$SOURCE_SHA" runner-cli-intermediate
-    - name: Bind cached CLI package to source revision
-      if: steps.package.outputs.cache-hit == 'true'
-      shell: bash
-      env:
-        SOURCE_SHA: ${{ inputs.source-sha }}
-      run: bash .github/scripts/artifacts/finalize-okou-cli-artifact.sh "$SOURCE_SHA" runner-cli-intermediate
     - name: Smoke CLI input
       shell: bash
       run: |
