@@ -207,11 +207,7 @@ export const runnerPreferenceSchema = z.union([
     .object({
       kind: z.literal("preference"),
       runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.enum([
-        "exactSandbox",
-        "reusableSandbox",
-        "homeCache",
-      ]),
+      tier: z.enum(["exactSandbox", "reusableSandbox", "homeCache"]),
       expiresAt: z.string().datetime({ offset: true }),
     })
     .strict(),

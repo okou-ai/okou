@@ -25,21 +25,21 @@ describe("independent finalizing source contract", () => {
   it.each(["finalizingPredecessor", "peerFinalizingPredecessor"] as const)(
     "preserves %s source identity without manufacturing native history",
     (tier) => {
-    const runnerPreference = { ...preference, tier };
-    const parsed = jobSchema.parse({ ...job, runnerPreference });
-    expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
-    expect(parsed.historyGenerationRunId).toBeUndefined();
+      const runnerPreference = { ...preference, tier };
+      const parsed = jobSchema.parse({ ...job, runnerPreference });
+      expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
+      expect(parsed.historyGenerationRunId).toBeUndefined();
 
-    const telemetry = {
-      runnerPreference,
-      runnerPreferenceClaimState: "active",
-    };
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        telemetry,
-      }).telemetry,
-    ).toStrictEqual(telemetry);
+      const telemetry = {
+        runnerPreference,
+        runnerPreferenceClaimState: "active",
+      };
+      expect(
+        runnersJobClaimContract.claim.body.parse({
+          capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          telemetry,
+        }).telemetry,
+      ).toStrictEqual(telemetry);
     },
   );
 
