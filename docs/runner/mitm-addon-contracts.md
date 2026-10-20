@@ -789,7 +789,11 @@ HTTP/1 closes the unfinished upload; HTTP/2 resets it through the pinned
 protocol implementation. The complete provider response still follows the native
 response path. A read queued behind filesystem work may resume after the upload
 was stopped; its abandoned read must not replace that response with a local
-storage failure. Unexpected response data queued before upload completion is
+storage failure. Closing a body interrupts its wait for a filesystem slot, so a
+complete final response or reset can finish without waiting for unrelated file
+operations. Slot admission and cancellation release capacity exactly once;
+accepted operations still join before physical file closure.
+Unexpected response data queued before upload completion is
 bounded to one chunk; exceeding that bound aborts the native upstream connection
 or HTTP/2 stream immediately, even while a file read remains blocked. The file
 still stays open until its accepted operation is joined. Normal response

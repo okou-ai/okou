@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from threading import Event
 from unittest.mock import patch
 
+import pytest
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 from h2.events import DataReceived, RequestReceived
@@ -25,9 +26,24 @@ from tests.managed_request_transport_helpers import begin_upload, finish_hooks
 from tests.request_handler_helpers import _write_registry
 
 
-async def test_final_response_preserved_when_replay_read_waits_for_busy_filesystem_workers(
+@pytest.fixture(params=[False, True])
+async def task_factory(request):
+    loop = asyncio.get_running_loop()
+    previous = loop.get_task_factory()
+    if request.param:
+        loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        yield
+    finally:
+        loop.set_task_factory(previous)
+
+
+@pytest.mark.parametrize("terminal", ["upload", "response", "reset", "cancel"])
+async def test_replay_admission_preserves_native_outcome_and_cleanup(
     tmp_path,
     fake_firewall_headers,
+    task_factory,
+    terminal,
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
     body = json.dumps(payload()).encode()
@@ -133,22 +149,46 @@ async def test_final_response_preserved_when_replay_read_waits_for_busy_filesyst
                 assert not received
                 assert stored.worker is None
                 assert spool_file.tell() == 0
-                peer.send_headers(1, [(b":status", b"429"), (b"content-length", b"3")])
-                peer.send_data(1, b"err", end_stream=True)
-                deliver(
-                    upstream.handle_event(
-                        events.DataReceived(flow.server_conn, peer.data_to_send())
+                if terminal == "upload":
+                    release.set()
+                elif terminal == "cancel":
+                    replay.cancel()
+                else:
+                    if terminal == "response":
+                        peer.send_headers(1, [(b":status", b"429"), (b"content-length", b"3")])
+                        peer.send_data(1, b"err", end_stream=True)
+                    else:
+                        peer.reset_stream(1)
+                    deliver(
+                        upstream.handle_event(
+                            events.DataReceived(flow.server_conn, peer.data_to_send())
+                        )
                     )
-                )
+                # A waiting read owns no worker. Terminal progress must not
+                # depend on unrelated writes; normal admission still replays.
+                if terminal == "cancel":
+                    with pytest.raises(asyncio.CancelledError):
+                        await asyncio.wait_for(replay, 5)
+                else:
+                    await asyncio.wait_for(replay, 5)
                 assert spool_file.closed
+                if terminal == "upload":
+                    assert flow.error is None
+                    assert received == body
+                    assert not response
+                elif terminal == "response":
+                    assert flow.error is None
+                    assert flow.response is not None
+                    assert flow.response.status_code == 429
+                    assert response == b"err"
+                else:
+                    assert flow.error is not None
+                    assert not response
+                if terminal != "upload":
+                    assert not received
+                    assert all(not task.done() for task in receiving)
                 release.set()
                 await asyncio.wait_for(asyncio.gather(*receiving), 5)
-                await asyncio.wait_for(replay, 5)
-                assert flow.error is None
-                assert flow.response is not None
-                assert flow.response.status_code == 429
-                assert response == b"err"
-                assert not received
         finally:
             release.set()
             tasks = [*receiving, *([replay] if replay is not None else [])]

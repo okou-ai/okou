@@ -161,15 +161,54 @@ class TemporaryBody:
         self._files = ExitStack()
         self.lease: _Lease | None = None
         self.waiter: asyncio.Future[_Lease] | None = None
+        self._io_waiter: asyncio.Future[None] | None = None
         self.worker: asyncio.Future | None = None
         self.chunk = b""
         _active.add(self)
 
     async def _io(self, operation: Callable[..., _T], *args: object) -> _T:
-        async with _io_slots:
+        if self.closed:
+            raise BodyError("body_interrupted")
+        slots = _io_slots
+        if slots.locked():
+            await self._wait_for_io_slot(slots)
+        else:
+            await slots.acquire()
+        try:
             if self.closed:
                 raise BodyError("body_interrupted")
             return await self._run_io(operation, *args)
+        finally:
+            slots.release()
+
+    async def _wait_for_io_slot(self, slots: asyncio.Semaphore) -> None:
+        # An unsubmitted read owns no worker. Closing this body must resume
+        # its native response without waiting for another body's filesystem I/O.
+        admitted = asyncio.create_task(slots.acquire())
+        interrupted: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._io_waiter = interrupted
+        acquired = False
+        try:
+            await asyncio.wait((admitted, interrupted), return_when=asyncio.FIRST_COMPLETED)
+            if self.closed:
+                raise BodyError("body_interrupted")
+            admitted.result()
+            acquired = True
+        finally:
+            self._io_waiter = None
+            interrupted.cancel()
+            if not acquired:
+                admitted.cancel()
+                try:
+                    await asyncio.gather(admitted, return_exceptions=True)
+                finally:
+                    # Admission may have won the race with close/cancellation.
+                    if (
+                        admitted.done()
+                        and not admitted.cancelled()
+                        and admitted.exception() is None
+                    ):
+                        slots.release()
 
     async def _run_io(self, operation: Callable[..., _T], *args: object) -> _T:
         try:
@@ -286,6 +325,8 @@ class TemporaryBody:
         self.chunk = b""
         if self.waiter is not None:
             self.waiter.cancel()
+        if self._io_waiter is not None and not self._io_waiter.done():
+            self._io_waiter.set_result(None)
         try:
             if self.worker is None:
                 self._close_storage()
