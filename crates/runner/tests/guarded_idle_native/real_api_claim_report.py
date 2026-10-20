@@ -281,6 +281,10 @@ def validate(directory):
                     or observed[0].get("laterClaimStatus") != 404):
                 raise ValueError("public winner attribution or terminal state is unproven")
             unavailable(observed[0].get("laterClaimBody"))
+            claimed_poll = observed[0].get("claimedPollBody")
+            if (observed[0].get("claimedPollStatus") != 200 or not isinstance(claimed_poll, dict)
+                    or "job" not in claimed_poll or claimed_poll["job"] is not None):
+                raise ValueError("running claimed target remains in eligible public polling")
             poll = observed[0].get("laterPollBody")
             if (observed[0].get("laterPollStatus") != 200 or not isinstance(poll, dict)
                     or "job" not in poll or poll["job"] is not None):

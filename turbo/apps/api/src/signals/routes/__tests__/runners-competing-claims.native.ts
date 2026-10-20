@@ -133,6 +133,10 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
           completedAt: predecessor.completedAt,
         });
       }
+      const claimedPolls = new Map<
+        string,
+        { readonly status: number; readonly body: unknown }
+      >();
       const fixture = await startNativeClaimApi(
         context,
         cases,
@@ -140,6 +144,23 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
           const running = await api.readRun(owned.actor, runId);
           expect(running.status).toBe("running");
           expect(running.startedAt).toBeDefined();
+          const poll = await api.requestPollRunner(
+            true,
+            {
+              group: owned.runnerGroup,
+              supportedProfiles: ["vm0/default"],
+              excludedRunIds: prepared
+                .filter((entry) => {
+                  return entry.run.runId !== runId;
+                })
+                .map((entry) => {
+                  return entry.run.runId;
+                }),
+            },
+            [200],
+          );
+          expect(poll.body).toMatchObject({ job: null });
+          claimedPolls.set(runId, poll);
           return running;
         },
       );
@@ -223,6 +244,10 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
             [200],
           );
           expect(laterPoll.body).toMatchObject({ job: null });
+          const claimedPoll = claimedPolls.get(entry.run.runId);
+          if (!claimedPoll) {
+            throw new Error("Native winner has no public running poll");
+          }
           publicObservations.push({
             runId: entry.run.runId,
             runner: attribution.body,
@@ -231,6 +256,8 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
             laterClaimBody: unavailable.body,
             laterPollStatus: laterPoll.status,
             laterPollBody: laterPoll.body,
+            claimedPollStatus: claimedPoll.status,
+            claimedPollBody: claimedPoll.body,
           });
         }
       });
