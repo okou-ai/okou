@@ -472,7 +472,7 @@ test("Keep the agent origin first in the collapsed preview when it is the oldest
   expect(rows[0]).toHaveTextContent("Existing planning chat");
   expect(rows[0]).toHaveTextContent("From");
   expect(within(chats).queryByText("Third child")).not.toBeInTheDocument();
-  click(buttonNamed("Expand", chats));
+  click(buttonNamed("Show more", chats));
   expect(within(chats).getByText("Third child")).toBeInTheDocument();
   expect(within(chats).getAllByRole("listitem")).toHaveLength(4);
 });
@@ -634,7 +634,7 @@ test("Preview three unique chats and expand the complete list", async () => {
     "Running",
   );
   expect(within(chats).queryByText("Created")).not.toBeInTheDocument();
-  click(buttonNamed("Expand", chats));
+  click(buttonNamed("Show more", chats));
   expect(within(chats).getByText("Child 51")).toBeInTheDocument();
   expect(within(chats).getAllByRole("listitem")).toHaveLength(count);
   click(buttonNamed("Collapse", chats));
@@ -660,5 +660,5 @@ test("Show exactly three related chats without an expand control", async () => {
   });
   const chats = await screen.findByRole("region", { name: "Chats" });
   expect(within(chats).getAllByRole("listitem")).toHaveLength(3);
-  expect(within(chats).queryByText("Expand")).not.toBeInTheDocument();
+  expect(within(chats).queryByText("Show more")).not.toBeInTheDocument();
 });

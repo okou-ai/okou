@@ -2164,10 +2164,10 @@
       "collapse": "收合",
       "copyLink": "複製連結",
       "empty": "這個對話的成果和關聯對話會顯示在這裡。",
-      "expand": "展開",
       "loadFailed": "無法載入聊天資源",
       "loading": "正在載入資源",
       "retry": "重試",
+      "showMore": "顯示更多",
       "title": "聊天資源"
     },
     "run": {

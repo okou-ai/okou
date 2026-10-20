@@ -341,24 +341,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
     <div
       data-resource-scroll
       className="isolate mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [overflow-anchor:none]"
-      onScroll={(event) => {
-        if (
-          !expanded.artifacts ||
-          !data?.nextCursor ||
-          paging.state === "loading" ||
-          paging.state === "hasError"
-        ) {
-          return;
-        }
-        const viewport = event.currentTarget;
-        const distanceFromBottom =
-          viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-        // Allow for fractional scroll positions at the bottom.
-        if (distanceFromBottom > 1) {
-          return;
-        }
-        detach(loadMore(pageSignal), Reason.DomCallback);
-      }}
     >
       <ChatOrigin thread={thread} />
       <ChatRelationships thread={thread} />
@@ -391,8 +373,14 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
             data.nextCursor) && (
             <ChatResourceSectionToggle
               expanded={expanded.artifacts}
+              hasMore={Boolean(data.nextCursor)}
+              loading={paging.state === "loading"}
               controls={artifactsId}
               onToggle={(trigger) => {
+                if (expanded.artifacts && data.nextCursor) {
+                  detach(loadMore(pageSignal), Reason.DomCallback);
+                  return;
+                }
                 toggleSection("artifacts", trigger);
               }}
             />
@@ -413,27 +401,14 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
           {expanded.artifacts &&
             data.nextCursor &&
             paging.state === "hasError" && (
-              <div
+              <p
                 role="alert"
-                className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground"
+                className="px-2 py-1 text-xs text-muted-foreground"
               >
-                <p>
-                  {t(($) => {
-                    return $.chat.resources.loadFailed;
-                  })}
-                </p>
-                <Button
-                  variant="quiet"
-                  size="xs"
-                  onClick={() => {
-                    detach(loadMore(pageSignal), Reason.DomCallback);
-                  }}
-                >
-                  {t(($) => {
-                    return $.chat.resources.retry;
-                  })}
-                </Button>
-              </div>
+                {t(($) => {
+                  return $.chat.resources.loadFailed;
+                })}
+              </p>
             )}
         </section>
       )}

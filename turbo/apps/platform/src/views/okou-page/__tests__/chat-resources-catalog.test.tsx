@@ -249,7 +249,7 @@ function resourceViewport(panel: HTMLElement) {
   return viewport;
 }
 
-test("Scroll to load successive resource pages and retain them after collapsing", async () => {
+test("Show more resources until the last page, then collapse with the same control", async () => {
   const { panel } = await setupOverflowResources(125, {
     paginated: true,
     withLinks: false,
@@ -257,33 +257,43 @@ test("Scroll to load successive resource pages and retain them after collapsing"
   const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
   const viewport = resourceViewport(panel);
   fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
-  click(buttonNamed("Expand", artifacts));
+  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);
+  const more = buttonNamed("Show more", artifacts);
+  click(more);
   await within(artifacts).findByText("report-60.pdf");
-  fireEvent.scroll(viewport, { target: { scrollTop: 1000 } });
+  expect(more).toHaveAttribute("aria-expanded", "true");
+  expect(more).toHaveTextContent("Show more");
+  expect(within(artifacts).queryByText("Collapse")).not.toBeInTheDocument();
+  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
+  expect(within(artifacts).queryByRole("status")).not.toBeInTheDocument();
   expect(
     within(artifacts).queryByText("report-61.pdf"),
   ).not.toBeInTheDocument();
   expect(within(artifacts).queryByText("Load more")).not.toBeInTheDocument();
 
-  fireEvent.scroll(viewport, { target: { scrollTop: 1999.5 } });
+  click(more);
   await within(artifacts).findByText("report-120.pdf");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(120);
+  expect(more).toHaveTextContent("Show more");
   expect(
     within(artifacts).queryByText("report-121.pdf"),
   ).not.toBeInTheDocument();
 
-  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
+  click(more);
   await within(artifacts).findByText("report-125.pdf");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(125);
-  fireEvent.scroll(viewport);
-  click(buttonNamed("Collapse", artifacts));
+  expect(more).toHaveTextContent("Collapse");
+  expect(within(artifacts).queryByText("Show more")).not.toBeInTheDocument();
+  click(more);
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);
-  click(buttonNamed("Expand", artifacts));
+  expect(more).toHaveTextContent("Show more");
+  click(more);
   await within(artifacts).findByText("report-125.pdf");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(125);
+  expect(more).toHaveTextContent("Collapse");
 });
 
-test("Keep paging results unique through repeated scrolls and collapse during loading", async () => {
+test("Disable show more while loading and keep resource pages unique", async () => {
   const nextPage = context.mocks.deferred<void>();
   const { panel } = await setupOverflowResources(125, {
     withLinks: false,
@@ -306,32 +316,36 @@ test("Keep paging results unique through repeated scrolls and collapse during lo
   });
   const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
   const viewport = resourceViewport(panel);
-  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
-  click(buttonNamed("Expand", artifacts));
+  const more = buttonNamed("Show more", artifacts);
+  click(more);
   await within(artifacts).findByText("report-60.pdf");
-  fireEvent.scroll(viewport, { target: { scrollTop: 1000 } });
-  expect(within(artifacts).queryByRole("status")).not.toBeInTheDocument();
-  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
+  more.focus();
+  click(more);
   await expect(
     within(artifacts).findByRole("status"),
   ).resolves.toHaveTextContent("Loading resources");
-  fireEvent.scroll(viewport);
-  fireEvent.scroll(viewport);
-  click(buttonNamed("Collapse", artifacts));
-  fireEvent.scroll(viewport);
-  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);
-  expect(within(artifacts).queryByRole("status")).not.toBeInTheDocument();
+  expect(more).toHaveAttribute("aria-disabled", "true");
+  expect(more).toHaveAttribute("aria-busy", "true");
+  expect(more).toHaveFocus();
+  click(more);
+  click(more);
+  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
+  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(60);
+  expect(within(artifacts).queryByText("Collapse")).not.toBeInTheDocument();
 
   nextPage.resolve();
-  click(buttonNamed("Expand", artifacts));
   await within(artifacts).findByText("report-120.pdf");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(120);
+  expect(more).not.toHaveAttribute("aria-disabled", "true");
+  expect(more).toHaveFocus();
+  expect(more).toHaveTextContent("Show more");
+  expect(within(artifacts).queryByRole("status")).not.toBeInTheDocument();
   expect(
     within(artifacts).queryByText("report-121.pdf"),
   ).not.toBeInTheDocument();
 });
 
-test("Retain loaded resources after a paging failure and retry only when requested", async () => {
+test("Retain loaded resources after a paging failure and retry with show more", async () => {
   let failed = true;
   const { panel } = await setupOverflowResources(65, {
     withLinks: false,
@@ -351,20 +365,25 @@ test("Retain loaded resources after a paging failure and retry only when request
   });
   const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
   const viewport = resourceViewport(panel);
-  click(buttonNamed("Expand", artifacts));
+  const more = buttonNamed("Show more", artifacts);
+  click(more);
   await within(artifacts).findByText("report-60.pdf");
-  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
+  click(more);
   await expect(
     within(artifacts).findByRole("alert"),
   ).resolves.toHaveTextContent("Could not load resources");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(60);
+  expect(more).toBeEnabled();
+  expect(more).toHaveTextContent("Show more");
+  expect(within(artifacts).queryByText("Collapse")).not.toBeInTheDocument();
 
   failed = false;
-  fireEvent.scroll(viewport);
+  fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
   expect(within(artifacts).getByRole("alert")).toBeInTheDocument();
-  click(buttonNamed("Try again", artifacts));
+  click(more);
   await within(artifacts).findByText("report-65.pdf");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(65);
   expect(within(artifacts).queryByRole("alert")).not.toBeInTheDocument();
   expect(within(artifacts).queryByText("Load more")).not.toBeInTheDocument();
+  expect(more).toHaveTextContent("Collapse");
 });

@@ -2172,10 +2172,10 @@
       "collapse": "Collapse",
       "copyLink": "Copy link",
       "empty": "Artifacts and related chats from this chat appear here.",
-      "expand": "Expand",
       "loadFailed": "Could not load resources",
       "loading": "Loading resources",
       "retry": "Try again",
+      "showMore": "Show more",
       "title": "Resources"
     },
     "run": {

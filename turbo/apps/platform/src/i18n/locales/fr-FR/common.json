@@ -2213,10 +2213,10 @@
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
       "empty": "Les artefacts et chats associés de ce chat apparaissent ici.",
-      "expand": "Développer",
       "loadFailed": "Impossible de charger les ressources",
       "loading": "Chargement des ressources",
       "retry": "Réessayer",
+      "showMore": "Afficher plus",
       "title": "Ressources du chat"
     },
     "run": {

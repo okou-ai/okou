@@ -2213,10 +2213,10 @@
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
       "empty": "Los artefactos y chats relacionados de este chat aparecen aquí.",
-      "expand": "Expandir",
       "loadFailed": "No se pudieron cargar los recursos",
       "loading": "Cargando recursos",
       "retry": "Reintentar",
+      "showMore": "Mostrar más",
       "title": "Recursos del chat"
     },
     "run": {

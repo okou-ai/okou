@@ -28,14 +28,19 @@ export function ChatResourceSectionHeading({
 
 export function ChatResourceSectionToggle({
   expanded,
+  hasMore = false,
+  loading = false,
   onToggle,
   controls,
 }: {
   readonly expanded: boolean;
+  readonly hasMore?: boolean;
+  readonly loading?: boolean;
   readonly onToggle: (trigger: HTMLElement) => void;
   readonly controls: string;
 }) {
   const { t } = useTranslation();
+  const collapse = expanded && !hasMore;
   return (
     <Button
       variant="quiet"
@@ -43,13 +48,14 @@ export function ChatResourceSectionToggle({
       className="mt-0.5 gap-1.5 px-2 text-xs leading-4.5 font-normal text-muted-foreground hover:bg-state-hover focus-visible:bg-state-hover focus-visible:ring-1 focus-visible:ring-border focus-visible:ring-inset focus-visible:ring-offset-0 [&_svg]:size-3"
       aria-expanded={expanded}
       aria-controls={controls}
+      pending={loading}
       onClick={(event) => {
         onToggle(event.currentTarget);
       }}
     >
-      {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      {collapse ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
       {t(($) => {
-        return expanded ? $.chat.resources.collapse : $.chat.resources.expand;
+        return collapse ? $.chat.resources.collapse : $.chat.resources.showMore;
       })}
     </Button>
   );
