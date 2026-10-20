@@ -17,7 +17,13 @@ import {
   googleMeetAutomationProjectionColumns,
   googleMeetAutomationProjectionCondition,
 } from "./google-meet-automation-account.service";
-import { reprojectNotionAutomationsForOwner } from "./notion-automation-account.service";
+import {
+  notionAutomationProjectionColumns,
+  notionAutomationProjectionCondition,
+  notionAutomationPendingEventsScope,
+  notionAutomationProjectionValues,
+  notionPendingEventsSkipWrite,
+} from "./notion-automation-account.service";
 import { reprojectStripeInvoicePaidAutomationsForOwner } from "./stripe-invoice-paid-workflow-automation.service";
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
 import {
@@ -34,6 +40,24 @@ type ProjectedAutomation =
       typeof workflowAutomations.$inferSelect,
       "id" | "workflowId" | "eventConnectorId"
     >;
+
+function workflowAutomationProjectionValues(
+  automation: ProjectedAutomation,
+  eventConnectorId: string | null,
+  connectorSlug: string,
+) {
+  if ("eventType" in automation && connectorSlug === "notion") {
+    return notionAutomationProjectionValues(automation, eventConnectorId);
+  }
+  if (automation.eventConnectorId === eventConnectorId) {
+    return null;
+  }
+  if ("eventType" in automation) {
+    const eventConfig = gmailAutomationProjectionConfig(automation);
+    return { eventConnectorId, eventConfig };
+  }
+  return { eventConnectorId };
+}
 
 export async function reprojectWorkflowAutomationsForOwner(
   db: Db,
@@ -54,16 +78,25 @@ export async function reprojectWorkflowAutomationsForOwner(
   switch (connectorSlug) {
     case "gmail":
     case "google-calendar":
-    case "google-meet": {
+    case "google-meet":
+    case "notion": {
       const projectionDb = db;
       const projectionArgs = args;
       await (async () => {
         const automations: ProjectedAutomation[] =
-          connectorSlug === "gmail"
+          connectorSlug === "gmail" || connectorSlug === "notion"
             ? await projectionDb
-                .select(gmailAutomationProjectionColumns())
+                .select(
+                  connectorSlug === "gmail"
+                    ? gmailAutomationProjectionColumns()
+                    : notionAutomationProjectionColumns(),
+                )
                 .from(workflowAutomations)
-                .where(gmailAutomationProjectionCondition(projectionArgs))
+                .where(
+                  connectorSlug === "gmail"
+                    ? gmailAutomationProjectionCondition(projectionArgs)
+                    : notionAutomationProjectionCondition(projectionArgs),
+                )
             : await projectionDb
                 .select(
                   connectorSlug === "google-calendar"
@@ -111,20 +144,31 @@ export async function reprojectWorkflowAutomationsForOwner(
               return defaultAccount?.connectorId ?? null;
             })();
           })();
-          if (automation.eventConnectorId === eventConnectorId) {
+          const values = workflowAutomationProjectionValues(
+            automation,
+            eventConnectorId,
+            connectorSlug,
+          );
+          if (values === null) {
             continue;
           }
-          if ("eventType" in automation) {
-            const eventConfig = gmailAutomationProjectionConfig(automation);
-            await projectionDb
-              .update(workflowAutomations)
-              .set({ eventConnectorId, eventConfig })
-              .where(eq(workflowAutomations.id, automation.id));
-          } else {
-            await projectionDb
-              .update(workflowAutomations)
-              .set({ eventConnectorId })
-              .where(eq(workflowAutomations.id, automation.id));
+          await projectionDb
+            .update(workflowAutomations)
+            .set(values)
+            .where(eq(workflowAutomations.id, automation.id));
+          if (connectorSlug === "notion") {
+            const pendingEventDb = projectionDb;
+            const scope = notionAutomationPendingEventsScope(automation.id);
+            await (async () => {
+              const write = notionPendingEventsSkipWrite(
+                scope.condition,
+                scope.reason,
+              );
+              await pendingEventDb
+                .update(write.table)
+                .set(write.values)
+                .where(write.where);
+            })();
           }
         }
       })();
@@ -133,11 +177,6 @@ export async function reprojectWorkflowAutomationsForOwner(
     }
     case "google-forms": {
       await db.execute(googleFormsAccountProjectionStatement(args));
-      signal.throwIfAborted();
-      return;
-    }
-    case "notion": {
-      await reprojectNotionAutomationsForOwner(db, args);
       signal.throwIfAborted();
       return;
     }
