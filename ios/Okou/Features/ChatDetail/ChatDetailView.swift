@@ -7,6 +7,7 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
   private var thread: ChatThread { conversation.thread }
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.openURL) private var openURL
   @Environment(\.openChatSource) private var openChatSource
@@ -80,7 +81,10 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom, sidebar: sidebar,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
-      refresh: { await conversation.refresh() }
+      refresh: {
+        await conversation.refresh()
+        await conversation.connectorActions.refreshKnown()
+      }
     ) { row, anchor in
       rowContent(row, anchor: anchor).environment(\.openURL, openURL)
         .environment(\.openChatSource, openChatSource)
@@ -118,6 +122,7 @@ struct ChatDetailView: View {
       selectionToQuote = nil
       messageToSelect = nil
       scrolling.deactivate()
+      conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
     .sheet(
@@ -142,6 +147,17 @@ struct ChatDetailView: View {
             selectionToQuote = selection
             messageToSelect = nil
           } : nil)
+    }
+    .sheet(
+      item: Binding(
+        get: { conversation.connectorActions.active },
+        set: { if $0 == nil { conversation.connectorActions.cancel() } }
+      )
+    ) { flow in
+      ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(item: $usageDetails) { selection in
@@ -325,7 +341,10 @@ struct ChatDetailView: View {
           .padding(.leading, 6)
       } else if !message.text.isEmpty {
         MessageBodyView(
-          text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
+          text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown,
+          actionContext: message.role == .assistant
+            ? MessageActionContext(agentID: thread.agentID, threadID: thread.id) : nil,
+          connectorActions: conversation.connectorActions, loadsActions: loadsAttachments
         )
         .equatable()
         .foregroundStyle(

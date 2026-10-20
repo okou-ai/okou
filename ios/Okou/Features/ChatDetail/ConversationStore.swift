@@ -42,6 +42,13 @@ final class ConversationStore {
   var attachmentDraft: AttachmentDraftStore { composer.attachments }
   private let draftStorage: ChatDraftStorage?
   private let draftTarget: ChatDraftTarget
+  @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
+    service: commands.connectorActions, commands: commands, thread: thread,
+    didContinue: { [weak self] in
+      guard let self else { return }
+      didSend()
+      await refresh()
+    }, didFail: didFail)
   @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, didFail: didFail)
   private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
@@ -494,6 +501,7 @@ final class ConversationStore {
     measurements.clear()
     composer.close()
     attachmentViewer.close()
+    connectorActions.close()
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {

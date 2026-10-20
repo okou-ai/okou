@@ -1,10 +1,19 @@
+import ChatData
 import SwiftUI
 import Textual
+
+struct MessageActionContext: Equatable {
+  let agentID: String
+  let threadID: String
+}
 
 struct MessageBodyView: View, Equatable {
   let text: String
   let baseURL: URL
   let markdown: MessageMarkdownCache
+  let actionContext: MessageActionContext?
+  let connectorActions: ConnectorActionStore?
+  let loadsActions: Bool
   @Environment(\.openURL) private var openURL
   private struct Prepared {
     let source: String
@@ -12,22 +21,53 @@ struct MessageBodyView: View, Equatable {
   }
   @State private var prepared: Prepared?
 
-  init(text: String, baseURL: URL, markdown: MessageMarkdownCache) {
+  init(
+    text: String, baseURL: URL, markdown: MessageMarkdownCache,
+    actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
+    loadsActions: Bool = false
+  ) {
     self.text = text
     self.baseURL = baseURL
     self.markdown = markdown
+    self.actionContext = actionContext
+    self.connectorActions = connectorActions
+    self.loadsActions = loadsActions
     _prepared = State(
       initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
   }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
+      && lhs.actionContext == rhs.actionContext && lhs.connectorActions === rhs.connectorActions
+      && lhs.loadsActions == rhs.loadsActions
+  }
+
+  @ViewBuilder private func preparedBody(_ content: AttributedString) -> some View {
+    if let context = actionContext, let connectorActions {
+      let blocks = MessageActionBody.blocks(
+        content, webURL: baseURL, agentID: context.agentID, threadID: context.threadID)
+      VStack(alignment: .leading, spacing: 12) {
+        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+          switch block {
+          case .markdown(let fragment):
+            if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+              StructuredText(text, parser: PreparedMessageParser(content: fragment))
+            }
+          case .connector(let action):
+            ConnectorActionCard(action: action, store: connectorActions, loadsState: loadsActions)
+          }
+        }
+      }
+    } else {
+      StructuredText(text, parser: PreparedMessageParser(content: content))
+    }
   }
 
   var body: some View {
     Group {
       if let prepared, prepared.source == text {
-        StructuredText(text, parser: PreparedMessageParser(content: prepared.content))
+        preparedBody(prepared.content)
       } else {
         Text(text).textSelection(.enabled)
       }
