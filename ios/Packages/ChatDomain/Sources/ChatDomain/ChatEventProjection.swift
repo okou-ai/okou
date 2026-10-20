@@ -99,7 +99,12 @@ public enum ChatEventProjection {
           id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
           runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError,
           userMessage: userMessage, inputError: role == .user ? row.payload?.error : nil,
-          modelChange: modelChange))
+          modelChange: modelChange,
+          failure: (row.eventType == .runFailed || row.eventType == .outputError)
+            ? ChatFailure(
+              id: row.id, error: row.payload?.error ?? "",
+              reason: row.payload?.failureReason, isRunFailure: row.eventType == .runFailed)
+            : nil))
     }
 
     let state: ChatExecutionState
@@ -130,9 +135,53 @@ public enum ChatEventProjection {
       activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
       persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
       latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max(),
+      latestFailureID: latestFailure(
+        rows: rows, messages: messages, revoked: revoked,
+        hasQueuedInput: !queuedInputs.isEmpty),
       recommendedFollowups: ChatFollowupProjection.source(
         rows: rows, active: state.isActive),
       usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
+  }
+
+  /// PWA orders a run's events at its first occurrence and places queued inputs last.
+  /// An older run's late failure must not revive actions after a newer turn.
+  private static func latestFailure(
+    rows: [ChatEvent], messages: [ChatMessage], revoked: Set<String>, hasQueuedInput: Bool
+  ) -> String? {
+    guard !hasQueuedInput else { return nil }
+    var turns: [[ChatEvent]] = []
+    var turnByRun: [String: Int] = [:]
+    for row in rows where !revoked.contains(row.id) && row.eventType != .usageRecorded {
+      if let runID = row.runId, let index = turnByRun[runID] {
+        turns[index].append(row)
+      } else {
+        if let runID = row.runId { turnByRun[runID] = turns.count }
+        turns.append([row])
+      }
+    }
+    let visible = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+    var assistantGroup = false
+    var groupRunID: String?
+    var candidate: ChatFailure?
+    for row in turns.joined() {
+      switch row.eventType {
+      case .inputPrompt, .inputAutomation, .inputBudget, .inputRejected, .controlInterrupt,
+        .controlRevoke:
+        assistantGroup = false
+        groupRunID = nil
+        candidate = nil
+      default:
+        if !assistantGroup || (groupRunID != nil && row.runId != nil && groupRunID != row.runId) {
+          candidate = nil
+          groupRunID = row.runId
+        } else if groupRunID == nil {
+          groupRunID = row.runId
+        }
+        assistantGroup = true
+        if let message = visible[row.id] { candidate = message.failure }
+      }
+    }
+    return candidate.flatMap { $0.error.isEmpty ? nil : $0.id }
   }
 
   /// Raw history may contain historical private memory-citation envelopes.

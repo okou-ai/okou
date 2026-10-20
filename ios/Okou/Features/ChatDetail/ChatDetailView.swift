@@ -48,6 +48,10 @@ struct ChatDetailView: View {
         result.append(
           .work(section, expanded: expanded, showsAvatar: true, topSpacing: spacing))
       case .message(let message, let isWorkHistory):
+        if let failure = message.failure {
+          result.append(.failure(message, conversation.failureState(failure), topSpacing: spacing))
+          continue
+        }
         let pendingRetry = conversation.pending.first { $0.id == message.id }?.needsRetry
         result.append(
           .message(
@@ -152,7 +156,9 @@ struct ChatDetailView: View {
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
-        draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
+        draft: $conversation.draft,
+        isBusy: conversation.isSending || conversation.isStopping
+          || conversation.isRecoveringFailure,
         showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
@@ -185,6 +191,12 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .failure(let message, let state, let topSpacing):
+      AssistantFailureCard(state: state, conversation: conversation)
+        .background {
+          if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
+        }
+        .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
     case .followups(let source, let finishedAt):
       RecommendedFollowupList(
         source: source, finishedAt: finishedAt,
