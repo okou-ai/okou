@@ -66,7 +66,11 @@ final class ChatComposerPasteTests: XCTestCase {
     input.becomeFirstResponder()
     // Drive the system paste only after native focus and SwiftUI expansion settle,
     // as the real editing-menu action does. A laid-out compact view is not ready yet.
-    try await eventually {
+    try await eventually(
+      message: "Composer did not focus and expand: firstResponder=\(input.isFirstResponder), "
+        + "bounds=\(input.bounds), attached=\(input.window === window), "
+        + "current=\(self.textView(in: host.view) === input)"
+    ) {
       input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
     }
     UIPasteboard.general.setItems(
@@ -482,6 +486,9 @@ final class ChatComposerPasteTests: XCTestCase {
     window.makeKeyAndVisible()
     host.view.layoutIfNeeded()
     try await eventually { self.textView(in: host.view)?.bounds.isEmpty == false }
+    // SwiftUI can lay out the editor before presenting its initial unfocused state.
+    // Native focus requests belong after that presentation, as with a user's first tap.
+    await hostingPresentationFrame()
     return window
   }
 
