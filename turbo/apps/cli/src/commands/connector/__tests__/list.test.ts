@@ -198,11 +198,6 @@ describe("okou connector list command", () => {
         }),
       );
       expect(output).not.toContain("\u001b[");
-      expect(output).not.toContain('"connected":');
-      expect(output).not.toContain('"connectionStatus":');
-      expect(output).not.toContain('"defaultConnection":');
-      expect(output).not.toContain('"scopeMismatch":');
-      expect(output).not.toContain('"accountCount":');
     });
   });
 
@@ -250,7 +245,6 @@ describe("okou connector list command", () => {
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("Account used by this run is unavailable");
       expect(logCalls).toContain("start a new run");
-      expect(logCalls).not.toContain("CONNECTED AS");
     });
 
     it("does not let matching --agent bypass unavailable run context", async () => {

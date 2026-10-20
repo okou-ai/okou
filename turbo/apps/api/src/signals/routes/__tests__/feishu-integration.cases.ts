@@ -6081,22 +6081,6 @@ export function registerFeishuIntegrationTests(
           "Expected the connected Feishu account in the actual Runner claim",
         );
         mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-        const accountSummaries = await own(() => {
-          return accept(
-            connectorAccountsClient().summaries({
-              headers: { authorization: "Bearer clerk-session" },
-            }),
-            [200],
-          );
-        });
-        expect(accountSummaries.body.summaries).not.toContainEqual(
-          expect.objectContaining({
-            target: {
-              kind: "custom",
-              customConnectorId: customConnector.id,
-            },
-          }),
-        );
         await own(() => {
           return accept(
             connectorAccountsClient().connections({

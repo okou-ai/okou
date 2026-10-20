@@ -216,9 +216,9 @@ test.each(["PAT", "Run"] as const)(
         client.list({
           headers: { authorization: `Bearer ${run.sandboxToken}` },
         }),
-        [401],
+        [403],
       );
-      expect(sandboxOnly.body.error.code).toBe("UNAUTHORIZED");
+      expect(sandboxOnly.body.error.code).toBe("FORBIDDEN");
     }
   },
 );

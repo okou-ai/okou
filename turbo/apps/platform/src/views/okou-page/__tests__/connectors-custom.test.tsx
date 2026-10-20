@@ -46,7 +46,7 @@ import {
   listAgent,
   mcpCustomConnector,
   mockCustomConnectorStory,
-  mockConnectorOverviewAccountSummaries,
+  mockSavedConnectorAccounts,
   mockOAuthCompletions,
   queryConnectorAction,
   mockConnectorAgentAccess,
@@ -104,10 +104,10 @@ function customAccount(
   };
 }
 
-function mockCustomAccountSummary(
+function mockCustomAccounts(
   readConnector: () => CustomConnectorResponse | null,
 ): void {
-  const summaries = () => {
+  const readAccounts = () => {
     const connector = readConnector();
     if (!connector?.connected) {
       return [];
@@ -130,24 +130,14 @@ function mockCustomAccountSummary(
           }),
       },
     );
-    return [
-      {
-        target: account.target,
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: account,
-      },
-    ];
+    return [account];
   };
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: summaries() });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
-      const account = summaries().find((summary) => {
-        return summary.defaultConnection.id === params.connectionId;
-      })?.defaultConnection;
+      const account = readAccounts().find((candidate) => {
+        return candidate.id === params.connectionId;
+      });
       return account
         ? respond(200, account)
         : respond(404, {
@@ -155,7 +145,7 @@ function mockCustomAccountSummary(
           });
     },
   );
-  mockConnectorOverviewAccountSummaries(context, summaries);
+  mockSavedConnectorAccounts(context, readAccounts);
 }
 
 function accountAction(container: ParentNode): HTMLElement {
@@ -235,22 +225,10 @@ test.each([
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
-    const summaries = () => {
-      return account
-        ? [
-            {
-              target: account.target,
-              accountCount: 1,
-              attentionCount: account.setupStatus === undefined ? 0 : 1,
-              defaultConnection: account,
-            },
-          ]
-        : [];
+    const readAccounts = () => {
+      return account ? [account] : [];
     };
-    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-      return respond(200, { summaries: summaries() });
-    });
-    mockConnectorOverviewAccountSummaries(context, summaries);
+    mockSavedConnectorAccounts(context, readAccounts);
     context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
       return account
         ? respond(200, account)
@@ -337,27 +315,8 @@ test("Add and optionally name a custom connector account", async () => {
     return respond(200, { connectors });
   });
   mockCustomAgentAccess();
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [...accounts.values()].map((account) => {
-        return {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        };
-      }),
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [...accounts.values()].map((account) => {
-      return {
-        target: account.target,
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: account,
-      };
-    });
+  mockSavedConnectorAccounts(context, () => {
+    return [...accounts.values()];
   });
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -461,27 +420,8 @@ test("Preserve revoked access when adding another account", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: existing.target,
-          accountCount: accounts.length,
-          attentionCount: 0,
-          defaultConnection: existing,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: existing.target,
-        accountCount: accounts.length,
-        attentionCount: 0,
-        defaultConnection: existing,
-      },
-    ];
+  mockSavedConnectorAccounts(context, () => {
+    return accounts;
   });
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -624,7 +564,7 @@ test("Manage agent access and permissions for a custom connector", async () => {
       return respond(200, grants);
     },
   );
-  mockCustomAccountSummary(() => {
+  mockCustomAccounts(() => {
     return connector;
   });
   await setupCustomPage();
@@ -1113,7 +1053,7 @@ test("Manage custom HTTP OAuth through creation", async () => {
       });
     },
   );
-  mockCustomAccountSummary(() => {
+  mockCustomAccounts(() => {
     return connector;
   });
   await setupCustomPage();
@@ -1302,7 +1242,7 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
       });
     },
   );
-  mockCustomAccountSummary(() => {
+  mockCustomAccounts(() => {
     return connector;
   });
   await setupCustomPage();
@@ -1444,7 +1384,7 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
     };
     return respond(200, connector);
   });
-  mockCustomAccountSummary(() => {
+  mockCustomAccounts(() => {
     return connector;
   });
   await setupCustomPage();
@@ -1632,7 +1572,7 @@ test.each(["legacy", "canonical"] as const)(
       },
     );
 
-    mockCustomAccountSummary(() => {
+    mockCustomAccounts(() => {
       return connector;
     });
     await setupCustomPage();
@@ -1743,24 +1683,13 @@ test("Keep saved custom accounts manageable when only the default needs reconnec
       isDefault: false,
     }),
   ];
-  const summaries = [
-    {
-      target: expired.target,
-      accountCount: 3,
-      attentionCount: 1,
-      defaultConnection: expired,
-    },
-  ];
   context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   mockCustomAgentAccess();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector, empty] });
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return summaries;
+  mockSavedConnectorAccounts(context, () => {
+    return accounts;
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, {
@@ -1848,29 +1777,8 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: work.target,
-          accountCount: 2,
-          attentionCount:
-            personal.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: work,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: work.target,
-        accountCount: 2,
-        attentionCount:
-          personal.connectionStatus === "reconnect-required" ? 1 : 0,
-        defaultConnection: work,
-      },
-    ];
+  mockSavedConnectorAccounts(context, () => {
+    return [work, personal];
   });
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -2146,31 +2054,8 @@ test("Add and optionally name a custom OAuth account", async () => {
     return respond(200, { connectors: [connector] });
   });
   mockCustomAgentAccess();
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: account
-        ? [
-            {
-              target: account.target,
-              accountCount: 1,
-              attentionCount: 0,
-              defaultConnection: account,
-            },
-          ]
-        : [],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return account
-      ? [
-          {
-            target: account.target,
-            accountCount: 1,
-            attentionCount: 0,
-            defaultConnection: account,
-          },
-        ]
-      : [];
+  mockSavedConnectorAccounts(context, () => {
+    return account ? [account] : [];
   });
   context.mocks.api(
     customConnectorOAuth2Contract.start,
@@ -2452,27 +2337,8 @@ test("Validate new and reconnecting custom accounts appropriately", async () => 
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: existing.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: existing,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: existing.target,
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: existing,
-      },
-    ];
+  mockSavedConnectorAccounts(context, () => {
+    return [existing];
   });
   context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
     return respond(200, existing);
@@ -2612,7 +2478,7 @@ test("Preserve custom connector grants when credentials are added", async () => 
       connectionId: "66666666-6666-4666-8666-666666666666",
     });
   });
-  mockCustomAccountSummary(() => {
+  mockCustomAccounts(() => {
     return connected ? { ...connector, connected: true } : null;
   });
   await setupCustomPage();
@@ -2656,18 +2522,8 @@ test("Read a custom target again when its account manager reopens", async () => 
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: account.target,
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: account,
-      },
-    ];
-  });
-  context.mocks.api(connectorAccountsContract.summaries, () => {
-    throw new Error("The page must not read global account summaries");
+  mockSavedConnectorAccounts(context, () => {
+    return [account];
   });
   context.mocks.api(
     connectorAccountsContract.connections,

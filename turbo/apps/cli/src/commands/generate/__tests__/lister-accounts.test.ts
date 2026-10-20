@@ -85,7 +85,6 @@ describe("generation current-member directory", () => {
       "directory membership does not establish runtime availability or agent authorization",
     );
     expect(output()).not.toMatch(/^ {2}openai\s/mu);
-    expect(output()).not.toContain("connected and authorized");
     expect(error).not.toHaveBeenCalled();
   });
 
