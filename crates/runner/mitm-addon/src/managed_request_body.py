@@ -1,7 +1,7 @@
 """Public request.stream validation with a bounded final-byte holdback."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from mitmproxy import connection, http
 
@@ -35,14 +35,14 @@ class StreamBody:
         self.flow: http.HTTPFlow | None = None
         _active.add(self)
 
-    def __call__(self, chunk: bytes) -> bytes:
+    def __call__(self, chunk: bytes) -> bytes | Iterable[bytes]:
         if self.closed:
-            return b""
+            return ()
         self.received += len(chunk)
         if self.observe is not None:
             self.observe(chunk)
         if self.failure is not None:
-            return b""
+            return ()
         try:
             return self._forward(chunk)
         except (PolicyError, BodyError) as error:
@@ -57,7 +57,9 @@ class StreamBody:
             self.writable.set()
             if reject is not None:
                 reject(self.failure)
-            return b""
+            # An empty bytes result still emits a native RequestData event.
+            # No chunks avoids growing blocked H2 queues while discarding.
+            return ()
 
     def _forward(self, chunk: bytes) -> bytes:
         if self.validated:

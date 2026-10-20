@@ -734,7 +734,9 @@ authorization pass. Successful bytes and Content-Length remain unchanged.
 Duplicate keys, late routing overrides, incomplete/trailing JSON, non-finite
 numbers and unsupported tools stop further body forwarding. The public callback
 discards the failed chunk, subsequent chunks and pending tail, but keeps counting
-received bytes. It releases parser state immediately and retains only bounded
+received bytes. It returns an empty iterable for discarded chunks; returning
+empty bytes would still enqueue native data events behind H2 backpressure.
+It releases parser state immediately and retains only bounded
 discard/accounting ownership until true EOF or native terminal cleanup. Immediate
 mid-upload reset is not required; a client that never finishes can remain open
 until the existing native timeout or disconnect. Depth (128), document
@@ -793,7 +795,8 @@ Native regression suites cover both dialects and HTTP versions, >32 MiB original
 bytes, >16 live responses, early prefixes and final-byte holdback, late/last-byte
 policy failures, escaped keys and Unicode partitions, native cancellation,
 EOF rejection after discarded input, timeout/cancellation without EOF,
-H2 windows/stream slots/queued closure, real TCP backpressure and early responses,
+H2 windows/stream slots/queued closure, bounded discard-event queues, real TCP
+backpressure and early responses,
 ordinary/eager scheduling, auth-await cancellation and preset changes. Verified
 TLS peers check successful native acquisition and reject untrusted certificates
 or wrong hostnames before credential-bearing HTTP bytes. These are local native

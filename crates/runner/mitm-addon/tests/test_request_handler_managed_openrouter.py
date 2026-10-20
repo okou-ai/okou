@@ -92,9 +92,9 @@ async def test_invalid_stream_discards_after_accepted_header_auth(
         await prepare_request_headers(flow)
         auth_fetch.assert_awaited_once()
         assert callable(flow.request.stream)
-        assert flow.request.stream(raw) == b""
+        assert not flow.request.stream(raw)
         assert flow.response is None
-        assert flow.request.stream(b"remaining-private-body") == b""
+        assert not flow.request.stream(b"remaining-private-body")
         assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
         assert flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] is True
         mitm_addon.error(flow)
