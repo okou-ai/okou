@@ -89,6 +89,7 @@ import {
   pendingChatQueueEventFromRow,
   pendingChatQueueEventReadPlan,
 } from "./chat-event-queue.service";
+import { notifyBrowserUserActionCallback$ } from "./browser-user-action-callback.service";
 import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
@@ -1737,6 +1738,20 @@ const publishEnqueuedNormalSend$ = command(
       orgId: args.orgId,
     });
     signal.throwIfAborted();
+    if (args.body.clientEventId !== undefined) {
+      await bestEffort(
+        set(
+          notifyBrowserUserActionCallback$,
+          {
+            userId: args.userId,
+            threadId: thread.threadId,
+            eventId: args.body.clientEventId,
+          },
+          signal,
+        ),
+        signal,
+      );
+    }
     if (!picked.ok) {
       throw picked.error;
     }

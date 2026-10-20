@@ -110,6 +110,14 @@ const expired = () => {
     "Browser user-action request expired",
   );
 };
+/**
+ * Expiry is derived from the browser lease, not persisted. A write that finds
+ * it notifies the thread so every open card reads the expired state.
+ */
+const expiredAfterNotify = async (row: RequestRow) => {
+  await publishBrowserUserActionChangedSafely(row.userId, row.chatThreadId);
+  return expired();
+};
 const conflict = (message: string, code = "BROWSER_USER_ACTION_CONFLICT") => {
   return failure(409, code, message);
 };
@@ -174,7 +182,7 @@ export const prepareBrowserUserFileUpload$ = command(
       return conflict("Browser file upload is not available");
     }
     if (!(await set(requestHasLiveBrowser$, row))) {
-      return expired();
+      return await expiredAfterNotify(row);
     }
     const uploadUrl = await get(
       generatePresignedPutUrl(
@@ -193,7 +201,7 @@ export const prepareBrowserUserFileUpload$ = command(
     // The signed PUT and the provider's idle lease use the same duration.
     // Its absolute timeout and request state still gate the subsequent apply.
     if (!(await set(touchExactProvider$, row))) {
-      return expired();
+      return await expiredAfterNotify(row);
     }
     signal.throwIfAborted();
     return { kind: "ok", value: { uploadUrl } };
@@ -1537,7 +1545,7 @@ export const preflightBrowserUserAction$ = command(
     const leased = await set(touchExactProvider$, located);
     signal.throwIfAborted();
     if (!leased) {
-      return expired();
+      return await expiredAfterNotify(located);
     }
     const inspected = await inspectPendingBrowserUserAction(
       located,
@@ -1559,7 +1567,7 @@ export const preflightBrowserUserAction$ = command(
       return conflict("Browser input state changed during preflight");
     }
     if (!(await set(requestHasLiveBrowser$, current))) {
-      return expired();
+      return await expiredAfterNotify(current);
     }
     if (inspection.kind === "stale") {
       const [stale] = await db
@@ -1809,7 +1817,7 @@ export const applyBrowserUserAction$ = command(
 
     if (!(await set(requestHasLiveBrowser$, located))) {
       signal.throwIfAborted();
-      return expired();
+      return await expiredAfterNotify(located);
     }
     if (located.status !== "pending") {
       signal.throwIfAborted();
@@ -1895,7 +1903,7 @@ export const cancelBrowserUserAction$ = command(
     let current = row;
     if (current.status !== "cancelled") {
       if (!(await set(requestHasLiveBrowser$, current))) {
-        return expired();
+        return await expiredAfterNotify(current);
       }
       if (current.status !== "pending") {
         return conflict(

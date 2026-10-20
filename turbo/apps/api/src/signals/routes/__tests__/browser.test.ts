@@ -2714,6 +2714,7 @@ describe("Browser user-action route", () => {
         });
         expect(live.body.state).toBe("pending");
 
+        context.mocks.ably.publish.mockClear();
         const expiredResponses = await withMockNowForTest(
           deadline + offset,
           async () => {
@@ -2736,6 +2737,11 @@ describe("Browser user-action route", () => {
             body: { error: { code: "BROWSER_USER_ACTION_EXPIRED" } },
           });
         }
+        await flushWaitUntilForTest();
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          `browserUserActionChanged:${owned.current.threadId}`,
+          null,
+        );
 
         const pending = await accept(
           userActionClient().get({ headers, params }),
@@ -6334,6 +6340,8 @@ describe("Browser user-action route", () => {
     );
     expect(beforeCallback.body.callbackDelivered).toBeFalsy();
 
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
     await chat.requestSendEvent(
       actor,
       {
@@ -6345,6 +6353,11 @@ describe("Browser user-action route", () => {
           created.body.action.callbackIds.success.chatThreadSortEventId,
       },
       [201],
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `browserUserActionChanged:${current.threadId}`,
+      null,
     );
     const afterCallback = await accept(
       userActionClient().get({

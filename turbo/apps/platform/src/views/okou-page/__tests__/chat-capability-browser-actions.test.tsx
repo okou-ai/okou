@@ -18,6 +18,7 @@ import {
 } from "@testing-library/react";
 import { compile } from "tailwindcss";
 import { HttpResponse } from "msw";
+import { state } from "ccstate";
 import { expect, test } from "vitest";
 
 import {
@@ -59,6 +60,15 @@ const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
 const BROWSER_INPUT_CALLBACK = "Continue after browser input";
 const BROWSER_USER_ACTION_TOPIC = `browserUserActionChanged:${RUN_THREAD_ID}`;
 
+// The fake API reports a callback once it was sent and notifies the thread
+// after persisting it, as the production API does.
+const callbackSent$ = state(false);
+
+function acceptCallback(): void {
+  context.store.set(callbackSent$, true);
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
+}
+
 function browserInputAction(
   state: BrowserUserActionResponse["state"],
   hasTaskContext = true,
@@ -73,6 +83,7 @@ function browserInputAction(
       : {}),
     requestToken: BROWSER_INPUT_TOKEN,
     state,
+    callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
     agentId: CAPABILITY_AGENT_ID,
     threadId: RUN_THREAD_ID,
@@ -616,6 +627,7 @@ test.each([true, false])(
       sentPrompt = body.prompt ?? "";
       expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
       expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+      acceptCallback();
       return respond(201, {
         threadId: RUN_THREAD_ID,
       });
@@ -893,6 +905,7 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -962,6 +975,7 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1052,6 +1066,7 @@ test("An inline Browser slider confirms the observed website position without na
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1129,6 +1144,7 @@ test("An inline Browser color picker confirms the observed website selection wit
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1241,6 +1257,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1350,6 +1367,7 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    acceptCallback();
     return respond(201, {
       threadId: RUN_THREAD_ID,
     });
@@ -1442,6 +1460,7 @@ test.each(["apply", "cancel"] as const)(
           ? BROWSER_INPUT_SUCCESS_SORT_ID
           : BROWSER_INPUT_CANCEL_SORT_ID,
       );
+      acceptCallback();
       return respond(201, {
         threadId: RUN_THREAD_ID,
       });

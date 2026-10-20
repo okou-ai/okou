@@ -1985,7 +1985,6 @@ export function BrowserUserActionCard({
   // dialog is not remounted by an unrelated change in the same thread.
   const requestLoadable = useLastLoadable(signals.request$);
   const subscriptionRef = useSet(signals.subscriptionRef$);
-  const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
@@ -1994,8 +1993,7 @@ export function BrowserUserActionCard({
     requestLoadable.data.kind === "action"
       ? requestLoadable.data.action
       : undefined;
-  const callbackDelivered =
-    locallyDelivered || action?.callbackDelivered === true;
+  const callbackDelivered = action?.callbackDelivered === true;
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);

@@ -118,7 +118,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
-  readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
   readonly entryState$: Computed<
@@ -162,9 +161,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
-  showSettledState$: ReturnType<
-    typeof createRequestSignals
-  >["showSettledState$"],
 ): Pick<
   BrowserUserActionSignals,
   "entryState$" | "entryAction$" | "beginEntry$" | "invalidateEntry$"
@@ -207,20 +203,6 @@ function createEntrySignals(
       return;
     }
     set(internalState$, "unavailable");
-    const status: number = checked.value.status;
-    // An unavailable browser leaves the request itself unchanged.
-    if (status !== 502 && status !== 503) {
-      set(
-        showSettledState$,
-        settledRequestState(
-          checked.value.status,
-          checked.value.status === 200 &&
-            actionMatches(checked.value.body, descriptor)
-            ? checked.value.body
-            : null,
-        ),
-      );
-    }
   });
   const invalidateEntry$ = command(({ set }) => {
     set(internalAction$, null);
@@ -373,20 +355,6 @@ function actionMatches(
   );
 }
 
-/** A conflict yields null: the change behind it has its own notification. */
-function settledRequestState(
-  status: number,
-  action: BrowserUserAction | null,
-): BrowserUserActionRequestState | null {
-  if (status === 410) {
-    return { kind: "expired" };
-  }
-  if (action) {
-    return { kind: "action", action };
-  }
-  return status === 409 ? null : { kind: "unavailable" };
-}
-
 async function readBrowserUserAction(
   client: ApiClientFactory,
   descriptor: BrowserUserActionDescriptor,
@@ -403,14 +371,14 @@ async function readBrowserUserAction(
     { showErrorToast: false },
   );
   signal?.throwIfAborted();
-  return (
-    settledRequestState(
-      result.status,
-      result.status === 200 && actionMatches(result.body, descriptor)
-        ? result.body
-        : null,
-    ) ?? { kind: "unavailable" }
-  );
+  const status: number = result.status;
+  if (status === 410) {
+    return { kind: "expired" };
+  }
+  if (status !== 200 || !actionMatches(result.body, descriptor)) {
+    return { kind: "unavailable" };
+  }
+  return { kind: "action", action: result.body };
 }
 
 function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
@@ -438,17 +406,7 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
       readBrowserUserAction(get(apiClient$), descriptor, signal),
     );
   });
-  // A response settles the state it reports without another read.
-  const showSettledState$ = command(
-    ({ get, set }, next: BrowserUserActionRequestState | null) => {
-      if (!next) {
-        return;
-      }
-      set(resetRead$, get(pageSignal$));
-      set(refreshedRequest$, Promise.resolve(next));
-    },
-  );
-  return { request$, refresh$, showSettledState$ };
+  return { request$, refresh$ };
 }
 
 function createSubscriptionSignals(
@@ -1371,9 +1329,6 @@ function browserInputSubmissionError(error: unknown): Error {
 function createBrowserMutationSignal(
   descriptor: BrowserUserActionDescriptor,
   activeMutation$: State<boolean>,
-  showSettledState$: ReturnType<
-    typeof createRequestSignals
-  >["showSettledState$"],
 ) {
   return command(
     async (
@@ -1395,24 +1350,11 @@ function createBrowserMutationSignal(
         mutation.kind === "apply"
           ? client.apply({ ...options, body: { values: mutation.values } })
           : client.cancel({ ...options, body: {} });
-      const result = await accept(
-        request,
-        [200, 403, 404, 409, 410],
-        signal,
-      ).finally(() => {
-        set(activeMutation$, false);
-      });
-      signal.throwIfAborted();
-      set(
-        showSettledState$,
-        settledRequestState(
-          result.status,
-          result.status === 200 && actionMatches(result.body, descriptor)
-            ? result.body
-            : null,
-        ),
+      return await accept(request, [200, 403, 404, 409, 410], signal).finally(
+        () => {
+          set(activeMutation$, false);
+        },
       );
-      return result;
     },
   );
 }
@@ -1628,7 +1570,6 @@ function createContinueSignal({
 function createMutationSignals({
   descriptor,
   request$,
-  showSettledState$,
   draft$,
   choiceDraft$,
   checkboxDraft$,
@@ -1655,30 +1596,16 @@ function createMutationSignals({
   | "entryAction$"
   | "entryState$"
   | "invalidateEntry$"
-> & {
-  readonly showSettledState$: ReturnType<
-    typeof createRequestSignals
-  >["showSettledState$"];
-}): Pick<
+>): Pick<
   BrowserUserActionSignals,
-  | "callbackDelivered$"
-  | "callbackFailed$"
-  | "busy$"
-  | "submit$"
-  | "cancel$"
-  | "continue$"
+  "callbackFailed$" | "busy$" | "submit$" | "cancel$" | "continue$"
 > {
-  const callbackDeliveredState$ = state(false);
   const callbackFailedState$ = state(false);
   const activeMutation$ = state(false);
   const busy$ = computed((get) => {
     return get(activeMutation$);
   });
-  const write$ = createBrowserMutationSignal(
-    descriptor,
-    activeMutation$,
-    showSettledState$,
-  );
+  const write$ = createBrowserMutationSignal(descriptor, activeMutation$);
   const deliverCallback$ = command(
     async (
       { set },
@@ -1698,7 +1625,6 @@ function createMutationSignals({
         },
       );
       signal.throwIfAborted();
-      set(callbackDeliveredState$, true);
     },
   );
   const context: BrowserUserActionMutationContext = {
@@ -1722,9 +1648,6 @@ function createMutationSignals({
   };
 
   return {
-    callbackDelivered$: computed((get) => {
-      return get(callbackDeliveredState$);
-    }),
     callbackFailed$: computed((get) => {
       return get(callbackFailedState$);
     }),
@@ -1739,10 +1662,7 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
-  const entrySignals = createEntrySignals(
-    descriptor,
-    requestSignals.showSettledState$,
-  );
+  const entrySignals = createEntrySignals(descriptor);
   const subscriptionSignals = createSubscriptionSignals(
     descriptor.threadId,
     requestSignals.refresh$,
@@ -1754,7 +1674,6 @@ export function createBrowserUserActionSignals(
   const mutationSignals = createMutationSignals({
     descriptor,
     request$: requestSignals.request$,
-    showSettledState$: requestSignals.showSettledState$,
     draft$: draftSignals.draft$,
     choiceDraft$: draftSignals.choiceDraft$,
     checkboxDraft$: draftSignals.checkboxDraft$,
