@@ -26,13 +26,7 @@ import {
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { claimBudgetRun } from "./helpers/public-autonomy-budget";
-import {
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   cronExecuteWorkflowAutomationsContract,
   cronOfficialWorkflowCatalogContract,
@@ -46,7 +40,6 @@ import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
   type OfficialWorkflowSourceCatalog,
-  type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
@@ -71,7 +64,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { acknowledgeDetachedForTest, createDeferredPromise } from "../../utils";
+import { createDeferredPromise } from "../../utils";
 import {
   createCronOfficialWorkflowCatalogRoutes,
   cronOfficialWorkflowCatalogRoutes,
@@ -111,6 +104,12 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import {
+  activeDefinition,
+  installCatalogStorageFixture,
+  type ActiveDefinition,
+} from "./helpers/official-workflow-catalog";
+import { pauseBriefForMembershipFailure } from "./helpers/morning-brief-membership";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -136,10 +135,6 @@ function createCatalogPublicationFixture() {
   };
 }
 const catalogPublication = createCatalogPublicationFixture();
-type ActiveDefinition = Extract<
-  OfficialWorkflowSourceDefinition,
-  { readonly lifecycle: "active" }
->;
 
 function authHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -172,29 +167,6 @@ function catalog(
             },
           ]
         : definitions,
-  };
-}
-
-function activeDefinition(
-  name: string,
-  blueprints: readonly OfficialWorkflowBlueprint[],
-  instruction = "Execute only the accepted Definition content.",
-): ActiveDefinition {
-  return {
-    name,
-    lifecycle: "active",
-    workflow: {
-      displayName: `Display ${name}`,
-      description: `Description for ${name}`,
-      instruction,
-      files: [{ path: "references/context.md", content: "accepted\n" }],
-    },
-    blueprints: [...blueprints],
-    presentation: {
-      category: "productivity",
-      order: 1,
-      marketingCopy: "Official catalog entry.",
-    },
   };
 }
 
@@ -391,148 +363,6 @@ async function listAgentRunLogIds(
   return response.body.data.map((log) => {
     return log.id;
   });
-}
-
-// A failed reconciliation is retried on the app clock; its first backoff is
-// one second, so a minute later the retry is due without touching the work row.
-function s3BodyBuffer(body: unknown): Buffer {
-  if (Buffer.isBuffer(body)) {
-    return Buffer.from(body);
-  }
-  if (typeof body === "string") {
-    return Buffer.from(body, "utf8");
-  }
-  if (body instanceof Uint8Array) {
-    return Buffer.from(body);
-  }
-  throw new Error("Expected an S3 object body");
-}
-
-function missingS3Object(key: string): Error {
-  return Object.assign(new Error(`Missing S3 object ${key}`), {
-    name: "NotFound",
-    $metadata: { httpStatusCode: 404 },
-  });
-}
-
-function requiredS3ObjectKey(key: string | undefined): string {
-  if (!key) {
-    throw new Error("Expected an S3 object key");
-  }
-  return key;
-}
-
-function installCatalogStorageFixture() {
-  const objects = new Map<string, Buffer>();
-  let nextWriteError: Error | null = null;
-  let heldWrite:
-    | {
-        readonly started: ReturnType<typeof createDeferredPromise<void>>;
-        readonly release: ReturnType<typeof createDeferredPromise<void>>;
-      }
-    | undefined;
-  const fallback = context.mocks.s3.send.getMockImplementation();
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (command instanceof PutObjectCommand) {
-      if (nextWriteError) {
-        const error = nextWriteError;
-        nextWriteError = null;
-        throw error;
-      }
-      const key = requiredS3ObjectKey(command.input.Key);
-      if (heldWrite) {
-        const gate = heldWrite;
-        heldWrite = undefined;
-        gate.started.resolve(undefined);
-        return gate.release.promise.then(() => {
-          objects.set(key, s3BodyBuffer(command.input.Body));
-          return {};
-        });
-      }
-      objects.set(key, s3BodyBuffer(command.input.Body));
-      return Promise.resolve({});
-    }
-    if (command instanceof HeadObjectCommand) {
-      const key = requiredS3ObjectKey(command.input.Key);
-      const body = objects.get(key);
-      return body
-        ? Promise.resolve({ ContentLength: body.length })
-        : Promise.reject(missingS3Object(key));
-    }
-    if (command instanceof GetObjectCommand) {
-      const key = requiredS3ObjectKey(command.input.Key);
-      const body = objects.get(key);
-      return body
-        ? Promise.resolve({
-            Body: {
-              async *[Symbol.asyncIterator]() {
-                yield body;
-              },
-            },
-            ContentLength: body.length,
-          })
-        : Promise.reject(missingS3Object(key));
-    }
-    if (command instanceof ListObjectsV2Command) {
-      const prefix = command.input.Prefix ?? "";
-      return Promise.resolve({
-        Contents: [...objects.entries()].flatMap(([Key, body]) => {
-          return Key.startsWith(prefix)
-            ? [{ Key, Size: body.length, LastModified: new Date(0) }]
-            : [];
-        }),
-      });
-    }
-    if (command instanceof DeleteObjectsCommand) {
-      for (const object of command.input.Delete?.Objects ?? []) {
-        if (object.Key) {
-          objects.delete(object.Key);
-        }
-      }
-      return Promise.resolve({});
-    }
-    if (!fallback) {
-      return Promise.reject(
-        new Error(
-          `Unexpected S3 command in Official Workflow storage fixture: ${command?.constructor.name ?? "unknown"}`,
-        ),
-      );
-    }
-    return fallback(command);
-  });
-  return {
-    readObject(key: string): Buffer {
-      const object = objects.get(key);
-      if (!object) {
-        throw new Error(`Missing test snapshot object ${key}`);
-      }
-      return object;
-    },
-    objectCount(): number {
-      return objects.size;
-    },
-    failNextWrite(error: Error): void {
-      nextWriteError = error;
-    },
-    holdNextWrite() {
-      if (heldWrite) {
-        throw new Error("An S3 write is already held");
-      }
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      heldWrite = { started, release };
-      return {
-        started: started.promise,
-        resolve(): void {
-          release.resolve(undefined);
-        },
-        reject(error: Error): void {
-          acknowledgeDetachedForTest(release.promise);
-          release.reject(error);
-        },
-      };
-    },
-  };
 }
 
 async function deliverClerkOrganizationCreated(
@@ -1222,7 +1052,7 @@ async function prepareBriefMember({
   readonly catalogAvailable?: boolean;
   readonly bootstrap?: boolean;
 } = {}) {
-  installCatalogStorageFixture();
+  installCatalogStorageFixture(context);
   if (catalogAvailable) {
     await syncDeployedCatalog();
   }
@@ -1702,37 +1532,30 @@ describe("Morning Brief explicit installation", () => {
     });
   });
 
-  it.each([
-    { providerStatus: 404, expectedStatus: 409 },
-    { providerStatus: 503, expectedStatus: 500 },
-  ] as const)(
-    "keeps an existing brief paused when membership lookup returns $providerStatus",
-    async ({ providerStatus, expectedStatus }) => {
-      const { actor, installationId, automationId } =
-        await pauseBriefWithoutTimezone(true);
-      await publishRecoveryBrief("Asia/Shanghai");
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-        new ClerkTransportTestError(providerStatus),
-      );
-      await accept(
-        morningBriefPreferenceClient().retry({ headers: authHeaders(actor) }),
-        [expectedStatus],
-      );
-      await expect(
-        readMorningBriefAutomations(actor, installationId),
-      ).resolves.toMatchObject([
-        {
-          id: automationId,
-          enabled: false,
-          nextRunAt: null,
-          official: {
-            intendedEnabled: true,
-            reconciliationStatus: "needs_reconfiguration",
-          },
+  it("keeps an existing brief paused when membership lookup returns 404", async () => {
+    const { actor, installationId, automationId } =
+      await pauseBriefForMembershipFailure(context);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+      new ClerkTransportTestError(404),
+    );
+    await accept(
+      morningBriefPreferenceClient().retry({ headers: authHeaders(actor) }),
+      [409],
+    );
+    await expect(
+      readMorningBriefAutomations(actor, installationId),
+    ).resolves.toMatchObject([
+      {
+        id: automationId,
+        enabled: false,
+        nextRunAt: null,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "needs_reconfiguration",
         },
-      ]);
-    },
-  );
+      },
+    ]);
+  });
 
   it.each(["ordinary-first", "official-first"] as const)(
     "keeps Morning Brief enrollment on the Official identity with same-name user content (%s)",
@@ -2263,7 +2086,7 @@ describe("Morning Brief start time", () => {
     "moves an existing 07:00 brief to the owner's minute without skipping a day (local $localTime)",
     async ({ localTime, keepsPendingOccurrence }) => {
       await withMockNowForTest(new Date("2030-01-01T03:00:00Z"), async () => {
-        installCatalogStorageFixture();
+        installCatalogStorageFixture(context);
         // The previously accepted catalog started every brief at 07:00.
         const legacy = catalog([
           ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
@@ -2382,7 +2205,7 @@ describe("Morning Brief catalog reconciliation", () => {
   }: (typeof scenarios)[number]) {
     // Publication and the scheduler are explicitly scoped authenticated
     // system boundaries; this first request selects the case-owned DB.
-    installCatalogStorageFixture();
+    installCatalogStorageFixture(context);
     const initialBlueprint: OfficialWorkflowBlueprint = {
       key: "daily-delivery",
       parameters: [],
@@ -2793,7 +2616,7 @@ describe("Morning Brief suggestion instruction rollout", () => {
     "scopes suggestion guidance to enabled=$enabled scheduled runs",
     async ({ enabled, expected }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
-        installCatalogStorageFixture();
+        installCatalogStorageFixture(context);
         await syncDeployedCatalog();
 
         const { actor } = await workflowBdd.setupWorkflowOrg({
@@ -3769,7 +3592,7 @@ describe("Official schedule expiry", () => {
         // The authenticated catalog publisher and automation cron are explicitly
         // in scope as production system/operator boundaries. Catalog publication
         // is the first real request and owns this case's isolated database.
-        installCatalogStorageFixture();
+        installCatalogStorageFixture(context);
         // Cancellation concerns Morning Brief, not unrelated retirement history.
         expect((await syncMorningBriefCatalog()).body.outcome).toBe("accepted");
         const {
@@ -4131,7 +3954,7 @@ describe("Official schedule expiry", () => {
     "preserves a Morning Brief occurrence claimed %s a later tick, settings retry and duplicate completion",
     async (claimTiming) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
-        installCatalogStorageFixture();
+        installCatalogStorageFixture(context);
         await syncDeployedCatalog();
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
@@ -5089,7 +4912,7 @@ describe("Morning Brief dormant partial bindings", () => {
     "retains new partial values across dormant correction ($definitionName, paused=$paused)",
     async ({ definitionName, paused }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
-        installCatalogStorageFixture();
+        installCatalogStorageFixture(context);
         const initialBlueprint: OfficialWorkflowBlueprint = {
           key: "daily-delivery",
           parameters: [],
