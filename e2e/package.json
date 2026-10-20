@@ -9,7 +9,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "tsx --test playwright/lib/*.test.ts scripts/runner-wss.test.ts"
+    "test": "tsx --test playwright/lib/*.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -20,10 +20,7 @@
     "dotenv": "^18.0.8"
   },
   "devDependencies": {
-    "@okouai/api-contracts": "file:../turbo/packages/api-contracts",
-    "@types/ws": "^8.18.1",
     "tsx": "^4.23.15",
-    "typescript": "7.0.2",
-    "ws": "^8.20.0"
+    "typescript": "7.0.2"
   }
 }

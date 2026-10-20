@@ -1138,7 +1138,6 @@ mod tests {
             home.locks_dir(),
             home.live_runner_instances_dir(),
             home.logs_dir(),
-            home.wss_dir(),
             home.root().join("mitmproxy"),
             home.mitmproxy_dir("v1"),
             home.storages_dir(),

@@ -1,20 +1,9 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { URL } from "node:url";
-import { promisify } from "node:util";
-import { runInNewContext } from "node:vm";
 
 import { build, loadConfigFromFile } from "vite";
 
@@ -32,10 +21,6 @@ import { clerkUiAssetPlugin } from "./clerk-ui.ts";
 import { sharedDatabaseWorkerHtmlPlugin } from "./shared-database-worker-html.ts";
 import { dependencyVendorChunks } from "./vendor-chunks.ts";
 import {
-  DOWNLOAD_WORKER_ASSET_PATTERN,
-  sandboxFileDownloadWorkerPlugin,
-} from "./sandbox-file-download-worker.ts";
-import {
   domGlobalUsageCounts,
   workerDomGlobalsMessage,
 } from "./worker-dom-globals.ts";
@@ -44,61 +29,6 @@ const productionConfigPromise = loadConfigFromFile(
   { command: "build", mode: "production" },
   new URL("../vite.config.ts", import.meta.url).pathname,
 );
-
-await test("canonical sourcemap injection preserves content-addressed download workers", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "okou-download-worker-"));
-  try {
-    const output = path.join(root, "dist");
-    const input = path.join(root, "app.js");
-    await writeFile(
-      input,
-      'import workerUrl from "virtual:sandbox-file-download-worker"; globalThis.workerUrl = workerUrl;',
-    );
-    await build({
-      configFile: false,
-      root,
-      base: "https://static.okou.io/okou-app/",
-      logLevel: "silent",
-      plugins: [sandboxFileDownloadWorkerPlugin()],
-      build: {
-        outDir: output,
-        rolldownOptions: {
-          input,
-          output: { entryFileNames: "app.js" },
-        },
-      },
-    });
-    const workerFiles = (await readdir(path.join(output, "assets"))).filter(
-      (name) => {
-        return DOWNLOAD_WORKER_ASSET_PATTERN.test(`assets/${name}`);
-      },
-    );
-    assert.equal(workerFiles.length, 1);
-    const workerFile = workerFiles[0];
-    assert.ok(workerFile);
-    const worker = path.join(output, "assets", workerFile);
-    const source = await readFile(worker);
-    assert.equal(
-      path.basename(worker),
-      `sandbox-file-download-${createHash("sha256").update(source).digest("hex")}.js`,
-    );
-    assert.match(source.toString(), /_sentryDebugIds/u);
-    const app = path.join(output, "app.js");
-    const appSource = await readFile(app, "utf8");
-    const context: { workerUrl?: string } = {};
-    runInNewContext(appSource, context);
-    assert.equal(context.workerUrl, `/okou-app/assets/${workerFile}`);
-    await promisify(execFile)(
-      "pnpm",
-      ["exec", "sentry-cli", "sourcemaps", "inject", output],
-      { timeout: 10_000 },
-    );
-    assert.deepEqual(await readFile(worker), source);
-    assert.match(await readFile(app, "utf8"), /_sentryDebugIds/u);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
 
 await test("production build isolates the configured lazy dependency", async () => {
   const loaded = await productionConfigPromise;

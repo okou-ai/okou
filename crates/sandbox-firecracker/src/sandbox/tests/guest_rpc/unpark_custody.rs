@@ -19,7 +19,7 @@ async fn endpoint_bind_failure_before_resume_keeps_terminal_retry_available() {
     park_rpc_sandbox(&mut sandbox, &mut peer).await;
     api.drain_requests();
     sandbox.bind_run_control("run-b").unwrap();
-    let path = sandbox.sock_paths.guest_duplex();
+    let path = sandbox.sock_paths.guest_rpc();
     let existing = tokio::net::UnixListener::bind(&path).unwrap();
     assert!(sandbox.unpark().await.is_err());
     assert!(sandbox.unpark_attempt.is_none());

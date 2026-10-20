@@ -1,7 +1,6 @@
 import type { Plugin } from "vite";
 import { CLERK_UI_ASSET_PATTERN } from "./clerk-ui.ts";
 import { SHARED_DATABASE_WORKER_FILE_PATTERN } from "./shared-database-worker-html.ts";
-import { DOWNLOAD_WORKER_ASSET_PATTERN } from "./sandbox-file-download-worker.ts";
 
 export const RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES = 8_500_000;
 
@@ -277,7 +276,6 @@ function mermaidLiteVendorViolations(
 export function applicationBundleViolations(
   outputs: readonly GeneratedOutput[],
   vendorChunkCount = 1,
-  downloadWorkerExpected = false,
 ): string[] {
   const uiAssets = outputs.filter((output) => {
     return (
@@ -290,24 +288,12 @@ export function applicationBundleViolations(
   const javaScriptOutputs = outputs.filter((output) => {
     return output.fileName.endsWith(".js") && !uiAssets.includes(output);
   });
-  return eagerApplicationBundleViolations(
-    javaScriptOutputs,
-    vendorChunkCount,
-    downloadWorkerExpected,
-  );
-}
-
-function isDownloadWorkerAsset(output: GeneratedOutput): boolean {
-  return (
-    output.type === "asset" &&
-    DOWNLOAD_WORKER_ASSET_PATTERN.test(output.fileName)
-  );
+  return eagerApplicationBundleViolations(javaScriptOutputs, vendorChunkCount);
 }
 
 function eagerApplicationBundleViolations(
   javaScriptOutputs: readonly GeneratedOutput[],
   vendorChunkCount: number,
-  downloadWorkerExpected: boolean,
 ): string[] {
   const applicationChunks = generatedChunks(javaScriptOutputs);
   const workerAssets = javaScriptOutputs.filter(
@@ -318,7 +304,6 @@ function eagerApplicationBundleViolations(
       );
     },
   );
-  const downloadWorkerAssets = javaScriptOutputs.filter(isDownloadWorkerAsset);
   const vendorChunks = applicationChunks.filter((chunk) => {
     return chunk.isEntry !== true && VENDOR_FILE_PATTERN.test(chunk.fileName);
   });
@@ -338,14 +323,12 @@ function eagerApplicationBundleViolations(
   const runtimeChunk = runtimeChunks[0];
   const workerAsset = workerAssets[0];
   const invalidLayout = [
-    javaScriptOutputs.length !==
-      vendorChunkCount + 4 + Number(downloadWorkerExpected),
+    javaScriptOutputs.length !== vendorChunkCount + 4,
     appChunks.length !== 1,
     vendorChunks.length !== vendorChunkCount,
     lazyChunks.length !== 1,
     runtimeChunks.length !== 1,
     workerAssets.length !== 1,
-    downloadWorkerAssets.length !== Number(downloadWorkerExpected),
   ].some(Boolean);
   if (
     invalidLayout ||
@@ -356,7 +339,7 @@ function eagerApplicationBundleViolations(
     !workerAsset
   ) {
     return [
-      `Expected exactly one app entry, one lazy chunk, ${vendorChunkCount} vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset${downloadWorkerExpected ? ", plus one download service worker asset" : ""}, but generated: ${outputDescription(javaScriptOutputs)}`,
+      `Expected exactly one app entry, one lazy chunk, ${vendorChunkCount} vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset, but generated: ${outputDescription(javaScriptOutputs)}`,
     ];
   }
 
@@ -449,7 +432,6 @@ export function singleWorkerBundleViolations(
 
 export function applicationJavaScriptBundlePlugin(
   vendorChunkCount = 1,
-  downloadWorkerExpected = false,
 ): Plugin {
   return {
     apply: "build",
@@ -459,7 +441,6 @@ export function applicationJavaScriptBundlePlugin(
       const violations = applicationBundleViolations(
         Object.values(bundle),
         vendorChunkCount,
-        downloadWorkerExpected,
       );
       if (violations.length > 0) {
         this.error(violations.join("\n"));

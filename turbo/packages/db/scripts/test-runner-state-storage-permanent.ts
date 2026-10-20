@@ -66,7 +66,6 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
         profile: "vm0/default",
       },
     ],
-    wssIngressServiceActive: true,
     lastSeenAt: new Date("2026-10-12T01:00:00Z"),
   } satisfies typeof runnerState.$inferInsert;
   const order = (generation: number, sequence: number) => {
@@ -123,7 +122,6 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(defaults.heartbeatGeneration, 0);
     assert.equal(defaults.heartbeatSequence, 0);
     assert.equal(defaults.runnerHostname, null);
-    assert.equal(defaults.wssIngressServiceActive, false);
     assert.equal(defaults.mode, "running");
     const [inserted] = await db
       .insert(runnerState)
@@ -140,7 +138,6 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(inserted.totalVcpu, 8);
     assert.equal(inserted.runnerHostname, observation.runnerHostname);
     assert.equal(inserted.allocatedMemoryMb, 4096);
-    assert.equal(inserted.wssIngressServiceActive, true);
     assert.deepEqual(
       await db
         .select()
@@ -150,7 +147,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     );
     assert.deepEqual(
       await db
-        .select()
+        .select(getTableColumns(runnerState))
         .from(physicalRunnerState)
         .where(eq(physicalRunnerState.runnerId, runnerId)),
       [inserted],
@@ -268,7 +265,7 @@ export async function validatePermanentRunnerStateStorage(databaseUrl: string) {
       .sort();
     assert.deepEqual(
       columns,
-      Object.values(getTableColumns(runnerState))
+      Object.values(getTableColumns(physicalRunnerState))
         .map((column) => {
           return column.name;
         })
