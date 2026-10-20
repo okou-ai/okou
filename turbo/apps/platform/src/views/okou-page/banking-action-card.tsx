@@ -64,7 +64,6 @@ interface BankingCardController {
   readonly ui: BankingCardUiState;
   readonly busy: boolean;
   readonly error: string | null;
-  readonly pendingSessionPollerRef: (element: HTMLElement | null) => void;
   readonly updateUi: UpdateBankingUi;
   readonly openConnect: OpenBankingConnect;
   readonly save: () => void;
@@ -100,7 +99,6 @@ function useBankingCardController(
   const action = useLoadable(signals.operation$);
   const runAction = useSet(signals.runAction$);
   const busy = action.state === "loading";
-  const pendingSessionPollerRef = useSet(signals.pendingSessionPollerRef$);
   const activeGrant = status.grant?.status === "active" ? status.grant : null;
   const healthyAccounts =
     status.connection?.accounts.filter((account) => {
@@ -133,7 +131,6 @@ function useBankingCardController(
     ui,
     busy,
     error: action.state === "hasError" ? errorMessage(action.error) : null,
-    pendingSessionPollerRef,
     updateUi,
     openConnect: (mode, institutionLoginId) => {
       if (!busy) {
@@ -279,9 +276,6 @@ function LoadedBankingActionCard({
       data-testid="banking-action-card"
       className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center"
     >
-      {controller.pending ? (
-        <span ref={controller.pendingSessionPollerRef} hidden />
-      ) : null}
       <BankingCardHeader
         agentName={status.agent.name}
         reason={summary}

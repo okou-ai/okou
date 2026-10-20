@@ -42,7 +42,7 @@ const routes = Object.freeze([
 
 test("respects catalog discovery feature switches for saved accounts", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   await accept(
     app(builtinConnectorManualGrantContract).connect({
       headers,
@@ -227,7 +227,7 @@ test("returns only saved connector briefs, independently of account defaults and
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId, "org:admin");
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   const client = app(connectedConnectorsContract);
   const empty = await accept(client.list({ headers }), [200]);
   expect(empty.headers.get("cache-control")).toBe("no-store");

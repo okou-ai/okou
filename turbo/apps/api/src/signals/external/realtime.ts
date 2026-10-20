@@ -411,6 +411,13 @@ export function publishPresentationTemplatesChangedForOrgSafely(
   return Promise.resolve();
 }
 
+/** Re-read shell approval eligibility after a committed thread/run change. */
+export async function publishDesktopShellAuthorizationChangedSafely(
+  userId: string,
+): Promise<void> {
+  await publishUserSignal([userId], "desktopShellAuthorizationChanged");
+}
+
 /**
  * Notify an open chat thread that server-owned detail fields changed without a
  * request from that client. The client re-fetches the authoritative detail.

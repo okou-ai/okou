@@ -170,7 +170,6 @@ async function setupTeamsRoute() {
   const app = await setupApp({
     context,
     routes: onboardingStatusRoutes,
-    isolatePg: true,
   });
   const onboarding = await accept(
     app(onboardingStatusContract).getStatus({ headers: authHeaders() }),

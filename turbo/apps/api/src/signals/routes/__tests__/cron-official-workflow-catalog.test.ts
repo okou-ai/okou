@@ -193,7 +193,10 @@ async function syncDeployedCatalog() {
 
 async function syncCatalogUnauthorized(candidate: unknown) {
   return await accept(
-    (await syncClient(candidate)).sync({
+    setupApp({
+      context,
+      routes: createCronOfficialWorkflowCatalogRoutes(candidate),
+    })(cronOfficialWorkflowCatalogContract).sync({
       headers: cronHeaders("wrong-secret"),
     }),
     [401],

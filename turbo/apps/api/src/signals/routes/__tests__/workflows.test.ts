@@ -1239,9 +1239,9 @@ describe("workflows", () => {
     async (visibility) => {
       const actor = user();
       bdd.acceptAgentStorageWrites();
-      const client = (
-        await setupApp({ context, routes: agentsRoutes, isolatePg: true })
-      )(agentsMainContract);
+      const client = (await setupApp({ context, routes: agentsRoutes }))(
+        agentsMainContract,
+      );
       const createdAgent = await accept(
         client.create({
           headers: authHeaders(actor),

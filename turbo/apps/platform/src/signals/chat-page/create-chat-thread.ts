@@ -1882,21 +1882,23 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       if (next) {
         set(internalEventTrees$, next);
       }
-      if (richPlans.length === 0) {
-        return;
-      }
-
-      const result = await settle(
-        set(parseRichEventTrees$, richPlans, signal),
-        signal,
-      );
-      if (!result.ok) {
-        const pending = get(internalEventTrees$);
-        const failed = markPendingEventTreesFailed(pending, richPlans);
-        if (failed) {
-          set(internalEventTrees$, failed);
+      if (richPlans.length > 0) {
+        const result = await settle(
+          set(parseRichEventTrees$, richPlans, signal),
+          signal,
+        );
+        if (!result.ok) {
+          const pending = get(internalEventTrees$);
+          const failed = markPendingEventTreesFailed(pending, richPlans);
+          if (failed) {
+            set(internalEventTrees$, failed);
+          }
         }
       }
+      // Only prepared cards have registered signals. Start their subscriptions
+      // under the panel owner, including re-entry with already cached trees.
+      set(registries.bankingCardSignals.subscribe$, signal);
+      set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
     },
   );
 

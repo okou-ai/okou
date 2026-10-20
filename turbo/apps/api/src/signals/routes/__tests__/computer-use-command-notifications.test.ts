@@ -58,7 +58,6 @@ async function app() {
   return await setupApp({
     context,
     routes: computerUseRoutes,
-    isolatePg: true,
   });
 }
 

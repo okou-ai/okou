@@ -26,7 +26,6 @@ describe("Billing model reporting", () => {
   it.each(["failed", "cancelled"] as const)(
     "returns settled usage and the captured completion time after a %s Run",
     async (status) => {
-      await setupApp({ context, routes: usageRecordRoutes, isolatePg: true });
       const at = Date.UTC(2026, 2, 1, 12, 15);
       mockNow(at);
       const {
