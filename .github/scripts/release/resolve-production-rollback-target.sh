@@ -100,6 +100,9 @@ readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-onl
 readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resource-split
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
+# Completion now accepts only storageOutputs. The selected Runner must embed
+# #41742's Guest writer even when its paired API still accepts the old field.
+readonly GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT=2eff576ad75d328676834643c1380ff35c2297e2
 readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
@@ -787,6 +790,9 @@ if ! git merge-base --is-ancestor "$BUNDLED_ONLY_CLI_RUNNER_COMMIT" "$runner_tag
 fi
 if ! git merge-base --is-ancestor "$PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the pair-free disk telemetry writer: ${PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the Guest Storage-output completion writer: ${GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$FINALIZING_SOURCE_RUNNER_READER_COMMIT" "$runner_tag_commit"; then

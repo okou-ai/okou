@@ -27,15 +27,10 @@ describe("Genuine Pi maintenance publication results", () => {
       status: "completed",
       result: { storageOutputs: [{ version: first.versionId }] },
     });
-    const { artifactSnapshots, ...metadata } = completed.body.completion;
-    const canonicalReplay = {
-      ...completed.body,
-      completion: { ...metadata, storageOutputs: artifactSnapshots },
-    };
     const recoveryReplay = {
       ...completed.body,
       completion: {
-        ...metadata,
+        ...completed.body.completion,
         storageOutputs: [
           {
             name: run.memory.name,
@@ -78,7 +73,7 @@ describe("Genuine Pi maintenance publication results", () => {
 
     // Recover from the old base before any replay can precede it, then verify
     // that the original publication still replays against the same result.
-    for (const body of [recoveryReplay, canonicalReplay]) {
+    for (const body of [recoveryReplay, completed.body]) {
       const replay = await webhooks.requestAgentComplete(
         body,
         run.headers,

@@ -45,7 +45,7 @@ describe("Genuine Pi maintenance publication results", () => {
         { ...completed.body.completion, cliAgentType: "claude-code" },
         {
           ...completed.body.completion,
-          artifactSnapshots: [
+          storageOutputs: [
             {
               name: run.memory.name,
               mountPath: run.memory.mountPath,
@@ -53,12 +53,12 @@ describe("Genuine Pi maintenance publication results", () => {
             },
           ],
         },
-        { ...completed.body.completion, artifactSnapshots: [] },
+        { ...completed.body.completion, storageOutputs: [] },
         {
           ...completed.body.completion,
-          artifactSnapshots: [
-            ...completed.body.completion.artifactSnapshots,
-            ...completed.body.completion.artifactSnapshots,
+          storageOutputs: [
+            ...completed.body.completion.storageOutputs,
+            ...completed.body.completion.storageOutputs,
           ],
         },
       ].map((completion) => {

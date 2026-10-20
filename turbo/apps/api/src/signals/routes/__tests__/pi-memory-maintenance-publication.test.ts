@@ -158,7 +158,7 @@ describe("Pi maintenance cleanup and active publication", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.runId,
           cliAgentSessionHistoryDisposition: "native_only",
-          artifactSnapshots: [
+          storageOutputs: [
             {
               name: run.memory.name,
               mountPath: run.memory.mountPath,
@@ -322,7 +322,7 @@ describe("Pi maintenance publication ownership", () => {
             cliAgentType: "pi",
             cliAgentSessionId: ordinary.runId,
             cliAgentSessionHistoryDisposition: "native_only",
-            artifactSnapshots: [
+            storageOutputs: [
               {
                 name: run.memory.name,
                 mountPath: run.memory.mountPath,

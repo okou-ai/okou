@@ -724,12 +724,7 @@ export const rustTypeBindings = [
           cliAgentSessionHistoryDisposition: [
             "Native history is retained only in the disposable sandbox/home.",
           ],
-          storageOutputs: [
-            "Canonical writeback Storage outputs; omit while the API reader is being prepared.",
-          ],
-          artifactSnapshots: [
-            "Optional artifact versions captured by the Run output.",
-          ],
+          storageOutputs: ["Writeback Storage versions published by this Run."],
           volumeVersionsSnapshot: [
             "Optional volume versions captured by the Run output.",
           ],
@@ -767,30 +762,6 @@ export const rustTypeBindings = [
         variants: {
           native_only: [
             "Native history is retained only in the disposable sandbox/home.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCompletionArtifactSnapshot",
-        rustDoc: ["Artifact version captured by a final Run output."],
-        fields: {
-          name: ["User-facing artifact name referenced by the run."],
-          version: ["Artifact version selected for the Run output."],
-          mountPath: ["Guest filesystem path where the artifact is mounted."],
-          missingRootPolicy: [
-            "Optional policy retained when the artifact mount root is missing.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCompletionArtifactSnapshotMissingRootPolicy",
-        rustDoc: [
-          "Policy used when a final Run output artifact root is missing.",
-        ],
-        variants: {
-          fail: ["Treat a missing artifact root as an error."],
-          preserveParentVersion: [
-            "Preserve the parent artifact version when the root is missing.",
           ],
         },
       },
