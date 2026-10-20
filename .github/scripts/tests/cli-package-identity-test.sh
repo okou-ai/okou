@@ -9,7 +9,7 @@ mkdir -p "${fixture}/turbo/apps/cli/scripts" "${fixture}/turbo/apps/cli/dist" \
   "${fixture}/turbo/packages/pi-agent-runtime" "${fixture}/turbo/patches" \
   "${fixture}/.github/scripts/artifacts"
 cp "${repo_root}/turbo/apps/cli/scripts/write-dist-package.mjs" "${fixture}/turbo/apps/cli/scripts/"
-for script in build-okou-cli-artifact.sh verify-okou-cli-artifact.sh read-okou-cli-package-identity.py; do
+for script in build-okou-cli-artifact.sh finalize-okou-cli-artifact.sh verify-okou-cli-artifact.sh read-okou-cli-package-identity.py; do
   cp "${repo_root}/.github/scripts/artifacts/${script}" "${fixture}/.github/scripts/artifacts/"
 done
 # The unchanged postbuild projection supplies this dist package; exercise the
@@ -39,6 +39,20 @@ build() {
 }
 build aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "${tmp_dir}/first" >/dev/null
 first_sha="$(jq -r '.package.sha256' "${tmp_dir}/first/manifest.json")"
+
+# A cache hit reuses only packaged bytes and binds fresh metadata to this source.
+(cd "$fixture" && bash .github/scripts/artifacts/finalize-okou-cli-artifact.sh \
+  bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb "${tmp_dir}/first") >/dev/null
+bash "${fixture}/.github/scripts/artifacts/verify-okou-cli-artifact.sh" \
+  "${tmp_dir}/first" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb >/dev/null
+jq -e --arg sha "$first_sha" \
+  '.commitSha == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" and .package.sha256 == $sha' \
+  "${tmp_dir}/first/manifest.json" >/dev/null
+if bash "${fixture}/.github/scripts/artifacts/verify-okou-cli-artifact.sh" \
+  "${tmp_dir}/first" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null 2>&1; then
+  echo 'Rebound CLI package still accepted its old commit' >&2
+  exit 1
+fi
 
 # Packaging must use the already-built package identity, not reread the workspace.
 jq '.version = "1.36.1"' "${fixture}/turbo/packages/pi-agent-runtime/package.json" > "${tmp_dir}/runtime.json"
