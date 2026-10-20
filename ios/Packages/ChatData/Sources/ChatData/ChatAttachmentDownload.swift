@@ -59,8 +59,8 @@ struct ChatAttachmentDownload {
           try? FileManager.default.removeItem(at: directory)
           throw error
         }
-      } catch let error as APIClientError
-        where attempt == 0 && [401, 403].contains(error.statusCode)
+      } catch APIClientError.downloadFailed(let status)
+        where attempt == 0 && [401, 403].contains(status)
       {
         continue
       }

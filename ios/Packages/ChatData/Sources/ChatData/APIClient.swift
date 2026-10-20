@@ -8,6 +8,7 @@ public enum APIClientError: LocalizedError, Sendable {
   case incompatibleData
   case invalidURL
   case uploadFailed(status: Int)
+  case downloadFailed(status: Int)
 
   public var statusCode: Int? {
     if case .http(let status, _, _) = self { return status }
@@ -32,6 +33,7 @@ public enum APIClientError: LocalizedError, Sendable {
       "This app could not read the server response. Please try again or use Okou on the web."
     case .invalidURL: "The app's API address is invalid. Check its configuration."
     case .uploadFailed: "File upload failed. Try again."
+    case .downloadFailed: "File download failed. Try again."
     }
   }
 }
@@ -199,9 +201,7 @@ public struct APIClient: Sendable {
         throw APIClientError.invalidResponse
       }
       guard (200..<300).contains(response.statusCode) else {
-        throw APIClientError.http(
-          status: response.statusCode,
-          message: HTTPURLResponse.localizedString(forStatusCode: response.statusCode))
+        throw APIClientError.downloadFailed(status: response.statusCode)
       }
       let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize
       guard let size, size <= maximumSize else { throw URLError(.dataLengthExceedsMaximum) }

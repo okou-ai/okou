@@ -235,7 +235,9 @@ struct ChatDetailView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .contextMenu {
-      Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+      if !message.text.isEmpty {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+      }
     }
   }
 

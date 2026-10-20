@@ -72,6 +72,24 @@ final class AttachmentDownloadTests: XCTestCase {
     XCTAssertEqual(downloaded?.size, 4)
   }
 
+  func testStorageFailureIsNotAnAPISessionOrPermissionFailure() async throws {
+    let server = try ChatFileHTTPServer { _ in .init(status: 401) }
+    let origin = try await server.start()
+    defer { server.stop() }
+    let fixture = ChatHTTPFixture { _ in
+      ChatHTTPResponse(body: "{\"url\":\"\(origin)/file\",\"downloadUrl\":\"\(origin)/file\"}")
+    }
+    let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
+    do {
+      _ = try await commands.downloadAttachment(attachment)
+      XCTFail("Failed storage responses must not produce a preview file")
+    } catch {
+      guard case APIClientError.downloadFailed(status: 401) = error else { throw error }
+      XCTAssertNil((error as? APIClientError)?.statusCode)
+      XCTAssertEqual(error.localizedDescription, "File download failed. Try again.")
+    }
+  }
+
   func testThumbnailUsesPosterAndRejectsInsecureStorageAddresses() async throws {
     let server = try ChatFileHTTPServer { request in
       XCTAssertEqual(request.url?.path, "/poster")
