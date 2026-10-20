@@ -153,7 +153,7 @@ import {
 import { sendUserPushNotifications } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
-import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
+import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
 import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
@@ -3609,7 +3609,7 @@ const loadQueuedRejectionChannel$ = command(
     );
     switch (contextType) {
       case "slack": {
-        const material = await loadSlackQueuedLaunchMaterial(db, source);
+        const material = await set(loadSlackQueuedLaunchMaterial$, source);
         signal.throwIfAborted();
         return material
           ? { ...delivery, kind: "Slack", target: material.slackDelivery }

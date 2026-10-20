@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -11,7 +12,7 @@ import {
   resolveUserMentions,
 } from "../../lib/slack-webhook-context";
 import type { SlackUserInfo } from "../external/slack-message-client";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
@@ -74,80 +75,83 @@ function requiredSlackLaunchContext(row: SlackLaunchContextRow | undefined) {
   };
 }
 
-async function loadSlackLaunchContext(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-) {
-  const [row] = await db
-    .select({
-      channelId: chatSlackContext.channelId,
-      botUserId: chatSlackContext.botUserId,
-      conversationContext: chatSlackContext.conversationContext,
-      messageText: chatSlackContext.messageText,
-      messageFiles: chatSlackContext.messageFiles,
-      messageAssets: chatSlackContext.messageAssets,
-      mentionDisplayNames: chatSlackContext.mentionDisplayNames,
-      senderDisplayName: chatSlackContext.senderDisplayName,
-      senderUserId: chatSlackContext.senderUserId,
-      channelType: chatSlackContext.channelType,
-      threadTs: chatSlackContext.threadTs,
-      routeThreadTs: chatSlackContext.routeThreadTs,
-    })
-    .from(chatEvents)
-    .innerJoin(
-      chatSlackContext,
-      and(
-        eq(chatSlackContext.id, chatEvents.contextId),
-        eq(chatSlackContext.chatThreadId, chatEvents.chatThreadId),
-      ),
-    )
-    .innerJoin(
-      slackChatThreadRoutes,
-      and(
-        eq(slackChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
-        eq(slackChatThreadRoutes.channelId, chatSlackContext.channelId),
-        or(
-          and(
-            isNull(chatSlackContext.routeThreadTs),
-            eq(slackChatThreadRoutes.threadTs, chatSlackContext.threadTs),
+const loadSlackLaunchContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly eventId: string;
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ) => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        channelId: chatSlackContext.channelId,
+        botUserId: chatSlackContext.botUserId,
+        conversationContext: chatSlackContext.conversationContext,
+        messageText: chatSlackContext.messageText,
+        messageFiles: chatSlackContext.messageFiles,
+        messageAssets: chatSlackContext.messageAssets,
+        mentionDisplayNames: chatSlackContext.mentionDisplayNames,
+        senderDisplayName: chatSlackContext.senderDisplayName,
+        senderUserId: chatSlackContext.senderUserId,
+        channelType: chatSlackContext.channelType,
+        threadTs: chatSlackContext.threadTs,
+        routeThreadTs: chatSlackContext.routeThreadTs,
+      })
+      .from(chatEvents)
+      .innerJoin(
+        chatSlackContext,
+        and(
+          eq(chatSlackContext.id, chatEvents.contextId),
+          eq(chatSlackContext.chatThreadId, chatEvents.chatThreadId),
+        ),
+      )
+      .innerJoin(
+        slackChatThreadRoutes,
+        and(
+          eq(slackChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(slackChatThreadRoutes.channelId, chatSlackContext.channelId),
+          or(
+            and(
+              isNull(chatSlackContext.routeThreadTs),
+              eq(slackChatThreadRoutes.threadTs, chatSlackContext.threadTs),
+            ),
+            eq(slackChatThreadRoutes.threadTs, chatSlackContext.routeThreadTs),
           ),
-          eq(slackChatThreadRoutes.threadTs, chatSlackContext.routeThreadTs),
+          eq(slackChatThreadRoutes.userId, args.userId),
         ),
-        eq(slackChatThreadRoutes.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      slackOrgConnections,
-      and(
-        eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
-        eq(slackOrgConnections.userId, args.userId),
-      ),
-    )
-    .innerJoin(
-      slackOrgInstallations,
-      and(
-        eq(
-          slackOrgInstallations.slackWorkspaceId,
-          slackOrgConnections.slackWorkspaceId,
+      )
+      .innerJoin(
+        slackOrgConnections,
+        and(
+          eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
+          eq(slackOrgConnections.userId, args.userId),
         ),
-        eq(slackOrgInstallations.orgId, args.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "slack"),
-      ),
-    )
-    .limit(1);
-  return requiredSlackLaunchContext(row);
-}
+      )
+      .innerJoin(
+        slackOrgInstallations,
+        and(
+          eq(
+            slackOrgInstallations.slackWorkspaceId,
+            slackOrgConnections.slackWorkspaceId,
+          ),
+          eq(slackOrgInstallations.orgId, args.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatEvents.id, args.eventId),
+          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.contextType, "slack"),
+        ),
+      )
+      .limit(1);
+    return requiredSlackLaunchContext(row);
+  },
+);
 
 function mentionUserInfoMap(
   mentionDisplayNames: Readonly<Record<string, string>>,
@@ -159,58 +163,60 @@ function mentionUserInfoMap(
   );
 }
 
-export async function loadSlackQueuedLaunchMaterial(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-): Promise<SlackQueuedLaunchMaterial | null> {
-  const context = await loadSlackLaunchContext(db, args);
-  if (!context) {
-    return null;
-  }
-  const messagePrompt = resolveUserMentions(
-    context.messageText,
-    mentionUserInfoMap(context.mentionDisplayNames),
-  );
-  return {
-    prompt: canonicalSlackAgentPrompt(
-      messagePrompt,
-      context.messageFiles,
-      context.messageAssets,
-    ),
-    appendSystemPrompt: buildSlackSystemPrompt({
-      botUserId: context.botUserId,
-      channelId: context.channelId,
-      channelType: context.channelType,
-      threadTs: context.threadTs,
-      integrationNote: resolveIntegrationNotePrompt({
-        triggerSource: "slack",
-        featureSwitchContext: args.featureSwitchContext,
-      }),
-      executionContext: context.conversationContext,
-    }),
-    slackDelivery: {
-      channelId: context.channelId,
-      threadTs: context.threadTs,
-      ...(context.routeThreadTs
-        ? { routeThreadTs: context.routeThreadTs }
-        : {}),
+export const loadSlackQueuedLaunchMaterial$ = command(
+  async (
+    { set },
+    args: {
+      readonly eventId: string;
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
     },
-    userInfoExtras:
-      context.senderDisplayName || context.senderUserId
-        ? {
-            ...(context.senderDisplayName
-              ? { slackDisplayName: context.senderDisplayName }
-              : {}),
-            ...(context.senderUserId
-              ? { slackUserId: context.senderUserId }
-              : {}),
-          }
-        : undefined,
-  };
-}
+  ): Promise<SlackQueuedLaunchMaterial | null> => {
+    const context = await set(loadSlackLaunchContext$, args);
+    if (!context) {
+      return null;
+    }
+    const messagePrompt = resolveUserMentions(
+      context.messageText,
+      mentionUserInfoMap(context.mentionDisplayNames),
+    );
+    return {
+      prompt: canonicalSlackAgentPrompt(
+        messagePrompt,
+        context.messageFiles,
+        context.messageAssets,
+      ),
+      appendSystemPrompt: buildSlackSystemPrompt({
+        botUserId: context.botUserId,
+        channelId: context.channelId,
+        channelType: context.channelType,
+        threadTs: context.threadTs,
+        integrationNote: resolveIntegrationNotePrompt({
+          triggerSource: "slack",
+          featureSwitchContext: args.featureSwitchContext,
+        }),
+        executionContext: context.conversationContext,
+      }),
+      slackDelivery: {
+        channelId: context.channelId,
+        threadTs: context.threadTs,
+        ...(context.routeThreadTs
+          ? { routeThreadTs: context.routeThreadTs }
+          : {}),
+      },
+      userInfoExtras:
+        context.senderDisplayName || context.senderUserId
+          ? {
+              ...(context.senderDisplayName
+                ? { slackDisplayName: context.senderDisplayName }
+                : {}),
+              ...(context.senderUserId
+                ? { slackUserId: context.senderUserId }
+                : {}),
+            }
+          : undefined,
+    };
+  },
+);
