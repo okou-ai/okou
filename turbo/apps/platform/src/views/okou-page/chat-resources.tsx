@@ -93,6 +93,15 @@ function ChatResourcesButtonInner({
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
   const visible = open && boundary !== null;
+  const copyTooltip = (
+    <TooltipContent>
+      <p className="text-xs">
+        {t(($) => {
+          return $.chat.resources.copyLink;
+        })}
+      </p>
+    </TooltipContent>
+  );
 
   return (
     <Popover
@@ -144,7 +153,9 @@ function ChatResourcesButtonInner({
             "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        {visible ? <ChatResourcesBody thread={thread} /> : null}
+        {visible ? (
+          <ChatResourcesBody thread={thread} copyTooltip={copyTooltip} />
+        ) : null}
       </PopoverContent>
     </Popover>
   );
@@ -207,9 +218,11 @@ function ChatResourcesTrigger({
 function ResourceOutputRow({
   artifact,
   thread,
+  copyTooltip,
 }: {
   readonly artifact: ArtifactSummary;
   readonly thread: ChatPanelSignals;
+  readonly copyTooltip: ReactNode;
 }) {
   const { t } = useTranslation();
   const openArtifact = useSet(openThreadCatalogArtifact$);
@@ -244,23 +257,35 @@ function ResourceOutputRow({
         </span>
         <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
       </Button>
-      <Button
-        showTooltip
-        variant="quiet"
-        size="icon-xs"
-        aria-label={t(($) => {
-          return $.chat.resources.copyLink;
-        })}
-        className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
-        onClick={() => {
-          return detach(
-            copyArtifact(thread.resources.catalog, artifact.id, pageSignal),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        <Copy size={14} />
-      </Button>
+      <TooltipProvider delay={200}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="quiet"
+                size="icon-xs"
+                aria-label={t(($) => {
+                  return $.chat.resources.copyLink;
+                })}
+                className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+                onClick={() => {
+                  return detach(
+                    copyArtifact(
+                      thread.resources.catalog,
+                      artifact.id,
+                      pageSignal,
+                    ),
+                    Reason.DomCallback,
+                  );
+                }}
+              >
+                <Copy size={14} />
+              </Button>
+            }
+          />
+          {copyTooltip}
+        </Tooltip>
+      </TooltipProvider>
     </li>
   );
 }
@@ -402,7 +427,13 @@ function ChatResourceArtifacts({
   );
 }
 
-function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
+function ChatResourcesBody({
+  thread,
+  copyTooltip,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly copyTooltip: ReactNode;
+}) {
   const artifactsId = `${thread.threadId}-resource-artifacts`;
   const data = useLastResolved(thread.resources.content$);
   const expanded = useGet(thread.resources.expandedSections$);
@@ -430,6 +461,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
                     key={artifact.id}
                     artifact={artifact}
                     thread={thread}
+                    copyTooltip={copyTooltip}
                   />
                 );
               })}
