@@ -18,7 +18,6 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
-import { waitForOperation } from "../utils.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 
 export type { PresentationTemplateDetail, PresentationTemplateSummary };
@@ -88,7 +87,7 @@ const refreshPresentationTemplates$ = command(({ get, set }) => {
 const refreshAndLoadPresentationTemplates$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     set(refreshPresentationTemplates$);
-    await waitForOperation(get(importedPresentationTemplateCatalog$), signal);
+    await get(importedPresentationTemplateCatalog$);
     signal.throwIfAborted();
   },
 );
@@ -105,7 +104,7 @@ const acquirePresentationTemplateSubscriptions$ = command(
     initialization: Promise<SharedDatabaseBridge | null>,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const bridge = await waitForOperation(initialization, signal);
+    const bridge = await initialization;
     signal.throwIfAborted();
     if (!bridge) {
       return false;

@@ -20,13 +20,7 @@ import {
 } from "./attachment-resource-url.ts";
 import { throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
-import {
-  onRef,
-  resetSignal,
-  settle,
-  waitForOperation,
-  withCleanup,
-} from "./utils.ts";
+import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 // Hosted sites are public publications addressed by their own URL, so the
 // viewer offers their link instead of an artifact permission control.
@@ -117,7 +111,7 @@ function createAudienceSignals(
   const draft$ = state<AudienceDraft | null>(null);
   const persist$ = command(
     async ({ get, set }, draft: AudienceDraft, signal: AbortSignal) => {
-      const details = await waitForOperation(get(details$), signal);
+      const details = await get(details$);
       signal.throwIfAborted();
       if (!details?.status) {
         return;
@@ -147,7 +141,7 @@ function createAudienceSignals(
         },
       );
       signal.throwIfAborted();
-      await waitForOperation(get(details$), signal);
+      await get(details$);
       signal.throwIfAborted();
       if (get(draft$) === draft) {
         toast.success(
@@ -198,10 +192,7 @@ function createArtifactShareSession(source: ShareSource) {
     const signal = set(resetOpenSignal$, parentSignal);
     set(open$, true);
     // Errors belong to the popover's retry state, not a toast from opening it.
-    const result = await settle(
-      waitForOperation(get(details$), signal),
-      signal,
-    );
+    const result = await settle(get(details$), signal);
     if (result.ok && !result.value?.status) {
       set(open$, false);
       if (result.value) {
@@ -218,10 +209,10 @@ function createArtifactShareSession(source: ShareSource) {
     set(reload$, (value) => {
       return value + 1;
     });
-    await settle(waitForOperation(get(details$), signal), signal);
+    await settle(get(details$), signal);
   });
   const copy$ = command(async ({ get }, signal: AbortSignal) => {
-    const details = await waitForOperation(get(details$), signal);
+    const details = await get(details$);
     signal.throwIfAborted();
     if (details?.status) {
       await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);

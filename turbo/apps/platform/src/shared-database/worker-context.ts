@@ -11,10 +11,8 @@ import {
   createDeferredPromise,
   isAbortError,
   onRejection,
-  raceWithCancellation,
   resetSignal,
   settle,
-  waitForOperation,
   withCleanup,
 } from "../signals/utils.ts";
 import type {
@@ -295,10 +293,7 @@ function requestConnectionToken(
   return onRejection(
     () => {
       providerSignal.throwIfAborted();
-      return waitForOperation(
-        getToken(diagnostic, providerSignal),
-        providerSignal,
-      );
+      return getToken(diagnostic, providerSignal);
     },
     (error) => {
       signal.throwIfAborted();
@@ -335,25 +330,15 @@ export const requestTokenFromTabs$ = command(
         phase: "preferred",
       };
       const result = await settle(
-        raceWithCancellation<string | null>(
-          [
-            (attemptSignal) => {
-              return requestConnectionToken(
-                preferred.getToken,
-                preferred.signal,
-                attempt,
-                attemptSignal,
-              );
-            },
-            async (attemptSignal) => {
-              await delay(PREFERRED_TOKEN_TIMEOUT_MS, {
-                signal: attemptSignal,
-              });
-              return null;
-            },
-          ],
-          signal,
-        ),
+        Promise.race([
+          requestConnectionToken(
+            preferred.getToken,
+            preferred.signal,
+            attempt,
+            signal,
+          ),
+          delay(PREFERRED_TOKEN_TIMEOUT_MS, { signal }),
+        ]),
         signal,
       );
       signal.throwIfAborted();
@@ -387,20 +372,22 @@ export const requestTokenFromTabs$ = command(
         connectionId,
         phase: "broadcast",
       };
-      attempts.push(async (attemptSignal: AbortSignal) => {
-        return {
-          connectionId,
-          diagnostic: attempt,
-          token: await requestConnectionToken(
-            connection.getToken,
-            connection.signal,
-            attempt,
-            attemptSignal,
-          ),
-        };
-      });
+      attempts.push(
+        (async () => {
+          return {
+            connectionId,
+            diagnostic: attempt,
+            token: await requestConnectionToken(
+              connection.getToken,
+              connection.signal,
+              attempt,
+              signal,
+            ),
+          };
+        })(),
+      );
     }
-    const response = await raceWithCancellation(attempts, signal);
+    const response = await Promise.race(attempts);
     signal.throwIfAborted();
     if (get(connectionsState$).has(response.connectionId)) {
       set(lastTokenConnectionIdState$, response.connectionId);

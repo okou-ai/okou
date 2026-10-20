@@ -31,7 +31,6 @@ import {
   onRejection,
   resetSignal,
   settle,
-  waitForOperation,
   waitLoopUntil,
   withAbortAfter,
 } from "../utils.ts";
@@ -508,10 +507,7 @@ function createRecoverySignals(
               waitLoopUntil(
                 async () => {
                   set(refresh$, recoverySignal);
-                  const result = await settle(
-                    waitForOperation(get(request$), recoverySignal),
-                    recoverySignal,
-                  );
+                  const result = await settle(get(request$), recoverySignal);
                   if (
                     result.ok &&
                     (result.value.kind !== "action" ||

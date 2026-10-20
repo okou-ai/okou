@@ -39,7 +39,7 @@ import {
   connectorAgentAccess$,
   reloadConnectorAgentAccess$,
 } from "./connector-agent-access.ts";
-import { waitForOperation, waitLoopUntil, withCleanup } from "../../utils.ts";
+import { waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
   readConnectorAccountCount,
@@ -732,7 +732,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
     }
     await waitForCustomConnectorAuthorizationWindow(authWindow, signal);
     set(bumpReload$);
-    const connectors = await waitForOperation(get(customConnectors$), signal);
+    const connectors = await get(customConnectors$);
     signal.throwIfAborted();
     const connector = connectors.find((candidate) => {
       return candidate.id === args.id;

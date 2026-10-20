@@ -34,7 +34,6 @@ import {
   settle,
   waitLoopUntil,
   throwIfAbort,
-  waitForOperation,
   withCleanup,
 } from "./utils.ts";
 import { logger } from "./log.ts";
@@ -646,10 +645,7 @@ function createRealtimeSubscriptionChannel(
         // Registering the listener cannot fail on a transport condition;
         // waiting for `attached` is what makes the subscription live.
         async () => {
-          await waitForOperation(
-            subscribeToRealtimeChannel(channel, subscription),
-            subscriptionSignal,
-          );
+          await subscribeToRealtimeChannel(channel, subscription);
           await whenChannelAttached(channel, subscriptionSignal);
         },
         () => {
@@ -717,9 +713,9 @@ function createSessionOutputSubscriptionChannel(
         callback({ name: message.name ?? null, data: message.data });
       };
       entry.callbacks.set(callback, listener);
-      await waitForOperation(Promise.resolve(entry.detaching), signal);
+      await entry.detaching;
       signal.throwIfAborted();
-      await waitForOperation(entry.channel.subscribe(topic, listener), signal);
+      await entry.channel.subscribe(topic, listener);
       await whenChannelAttached(entry.channel, signal);
     },
     async unsubscribe(topic, callback) {
@@ -1029,7 +1025,8 @@ export const setForegroundPresence$ = command(
     if (!initialization) {
       throw new Error("Realtime is not initialized");
     }
-    const session = await waitForOperation(initialization, signal);
+    const session = await initialization;
+    signal.throwIfAborted();
     const identity = await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
     const channel = session.ably.channels.get(
@@ -1060,7 +1057,7 @@ const realtimeChannel$ = command(
 
     const initialization = get(realtimeInitialization$);
     if (initialization) {
-      const session = await waitForOperation(initialization, signal);
+      const session = await initialization;
       signal.throwIfAborted();
       return session.channels[scope];
     }
