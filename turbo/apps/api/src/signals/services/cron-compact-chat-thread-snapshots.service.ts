@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
 import {
@@ -131,6 +131,7 @@ interface SnapshotHead {
   readonly latestEventId: string | null;
   readonly latestEventSeqId: number | null;
   readonly objectKey: string | null;
+  readonly contentDigest: string | null;
   readonly updatedAt: Date;
 }
 
@@ -159,6 +160,7 @@ async function loadSnapshotHeads(
       latestEventId: chatThreadSnapshots.latestEventId,
       latestEventSeqId: chatThreadSnapshots.latestEventSeqId,
       objectKey: chatThreadSnapshots.objectKey,
+      contentDigest: chatThreadSnapshots.contentDigest,
       updatedAt: chatThreadSnapshots.updatedAt,
     })
     .from(chatThreadSnapshots)
@@ -412,11 +414,6 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
   ];
 }
 
-/** The sha256 part of an immutable snapshot object key. */
-function objectKeyDigest(objectKey: string | null): string | null {
-  return objectKey?.match(/-([0-9a-f]{64})\.json\.gz$/u)?.[1] ?? null;
-}
-
 /**
  * Publishes one scope's snapshot head with a single-row compare-and-set on the
  * head the candidate was read from. A lost race is left for the next run.
@@ -425,6 +422,7 @@ async function publishChatThreadSnapshot(
   db: SnapshotRootDb,
   candidate: SnapshotCandidate,
   objectKey: string,
+  contentDigest: string,
 ): Promise<boolean> {
   const updatedAt = nowDate();
   if (candidate.previous === null) {
@@ -436,6 +434,7 @@ async function publishChatThreadSnapshot(
         latestEventId: candidate.latestEventId,
         latestEventSeqId: candidate.latestSeqId,
         objectKey,
+        contentDigest,
         createdAt: updatedAt,
         updatedAt,
       })
@@ -450,6 +449,7 @@ async function publishChatThreadSnapshot(
       latestEventId: candidate.latestEventId,
       latestEventSeqId: candidate.latestSeqId,
       objectKey,
+      contentDigest,
       updatedAt,
     })
     .where(
@@ -479,18 +479,18 @@ async function compactCandidate(
   const compressed = await gzipAsync(
     Buffer.from(JSON.stringify({ chatThreads })),
   );
-  const objectKey = chatThreadSnapshotObjectKey({
-    userId: candidate.userId,
-    orgId: candidate.orgId,
-    latestSeqId: candidate.latestSeqId,
-    body: compressed,
-  });
+  const contentDigest = createHash("sha256").update(compressed).digest("hex");
   const previousKey = candidate.previous?.objectKey ?? null;
   // Only the sequence moved and the projection is byte-identical: keep the
   // existing immutable object and advance the head without another upload.
   const unchanged =
-    previousKey !== null &&
-    objectKeyDigest(previousKey) === objectKeyDigest(objectKey);
+    previousKey !== null && candidate.previous?.contentDigest === contentDigest;
+  const objectKey = unchanged
+    ? previousKey
+    : chatThreadSnapshotObjectKey({
+        userId: candidate.userId,
+        orgId: candidate.orgId,
+      });
   if (!unchanged) {
     await storage.upload(objectKey, compressed);
     signal?.throwIfAborted();
@@ -498,7 +498,8 @@ async function compactCandidate(
   return await publishChatThreadSnapshot(
     db,
     candidate,
-    unchanged && previousKey !== null ? previousKey : objectKey,
+    objectKey,
+    contentDigest,
   );
 }
 

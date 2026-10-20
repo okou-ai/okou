@@ -40,6 +40,7 @@ pub use connection::handle_connection_with_test_dns_readiness_program;
 pub use connection::handle_connection_with_test_guest_agent_program;
 pub use connection::handle_connection_with_test_guest_state_restore_program;
 pub use connection::handle_connection_with_test_home_drive_mount_program;
+pub use connection::handle_connection_with_test_home_drive_mount_timeout_gate;
 pub use connection::handle_connection_with_test_memory_snapshot_path;
 pub use connection::handle_connection_with_test_storage_manifest_program;
 pub use connection::handle_connection_with_test_storage_manifest_timeout_gate;

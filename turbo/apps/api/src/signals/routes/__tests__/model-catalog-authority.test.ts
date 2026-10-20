@@ -41,6 +41,32 @@ describe("fixed Auto catalog authority", () => {
     ]);
   });
 
+  it("projects shared Fast usage and Pi capability for independently shipped clients", async () => {
+    authenticate();
+    const { body } = await accept(catalog().get({ headers }), [200]);
+    const codex = body.models.find((model) => {
+      return model.model === "gpt-6.1-sol";
+    });
+    expect(codex?.runOptions?.fast?.chatGptUsageMultiplier).toBe(2.5);
+    expect(
+      body.routes.find((route) => {
+        return (
+          route.model === "gpt-6.1-sol" &&
+          route.providerType === "codex-oauth-token"
+        );
+      })?.piRuntimeCapable,
+    ).toBeTruthy();
+    expect(
+      body.routes
+        .filter((route) => {
+          return route.providerType === "claude-code-oauth-token";
+        })
+        .every((route) => {
+          return route.piRuntimeCapable === false;
+        }),
+    ).toBeTruthy();
+  });
+
   it("requires an authenticated organization session", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,

@@ -2469,8 +2469,15 @@
     {
       "idx": 1430,
       "version": "7",
-      "when": 1792472416085,
-      "tag": "1430_chat_thread_snapshot_gc_state",
+      "when": 1792472301308,
+      "tag": "1430_chat_thread_snapshot_content_digest",
+      "breakpoints": true
+    },
+    {
+      "idx": 1431,
+      "version": "7",
+      "when": 1792474322484,
+      "tag": "1431_chat_thread_snapshot_gc_state",
       "breakpoints": true
     }
   ]

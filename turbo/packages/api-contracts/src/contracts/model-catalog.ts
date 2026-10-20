@@ -19,6 +19,14 @@ const modelCatalogModelSchema = z.object({
   model: z.string(),
   displayName: z.string(),
   sortOrder: z.number().int(),
+  /** Shared Fast usage metadata for independently shipped native clients. */
+  runOptions: z
+    .object({
+      fast: z
+        .object({ chatGptUsageMultiplier: z.number().positive() })
+        .optional(),
+    })
+    .optional(),
   /** Direct replacement of a retired model; null when the model is active. */
   replacedBy: z.string().nullable(),
   /**
@@ -52,6 +60,8 @@ const modelCatalogRouteSchema = z.object({
   defaultServiceTier: z.string().nullable(),
   efforts: z.array(z.string()),
   defaultEffort: z.string().nullable(),
+  /** Whether this route is supported by the current Pi runtime catalog. */
+  piRuntimeCapable: z.boolean().optional(),
 });
 
 export const modelCatalogResponseSchema = z.object({
