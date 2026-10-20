@@ -197,8 +197,6 @@ export async function setupOverflowResources(
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await within(panel).findByText(
-    options.withLinks === false ? "report-1.pdf" : "Reference 1",
-  );
+  await within(panel).findByText("report-1.pdf");
   return { panel, media, resize };
 }

@@ -1,8 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { marked } from "marked";
-import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
@@ -12,10 +10,8 @@ import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
 } from "../hosted-site-url-changes.ts";
-import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import { userPreferences$ } from "../okou-page/settings/user-preferences.ts";
 import { onRef } from "../utils.ts";
-import type { ChatEventGroup } from "./chat-event.ts";
 
 export const chatResourcePanelEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] === true;
@@ -23,62 +19,10 @@ export const chatResourcePanelEnabled$ = computed((get) => {
 
 const RESOURCE_PANEL_MIN_GUTTER = 408;
 
-/** Whether the resource panel opens on its own in chats with resources. */
+/** Whether the resource panel opens on its own when there is room beside the transcript. */
 export const chatResourcesEnabledByDefault$ = computed(async (get) => {
   return (await get(userPreferences$)).chatResourcesEnabledByDefault;
 });
-
-export interface ChatResourceLink {
-  readonly url: string;
-  readonly title: string;
-}
-
-export interface ChatResourceContent {
-  readonly artifacts: readonly ArtifactSummary[];
-  readonly nextCursor: string | null;
-  readonly links: readonly ChatResourceLink[];
-}
-
-async function messageLinks(content: string): Promise<ChatResourceLink[]> {
-  const links: ChatResourceLink[] = [];
-  await Promise.all(
-    marked.walkTokens(marked.lexer(content), (token) => {
-      if (token.type !== "link" || !URL.canParse(token.href)) {
-        return;
-      }
-      const parsed = new URL(token.href);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        return;
-      }
-      links.push({
-        url: token.href,
-        title: token.text.trim() || parsed.hostname,
-      });
-    }),
-  );
-  return links;
-}
-
-export const copyChatResourceLink$ = command(
-  async ({ get }, url: string, signal: AbortSignal) => {
-    const currentUrl = currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
-    const copied = await writeToClipboard(publicAttachmentUrl(currentUrl));
-    signal.throwIfAborted();
-    if (copied) {
-      toast.success(
-        i18n.t(($) => {
-          return $.chat.sharing.linkCopied;
-        }),
-      );
-    } else {
-      toast.error(
-        i18n.t(($) => {
-          return $.chat.sharing.copyFailed;
-        }),
-      );
-    }
-  },
-);
 
 export const copyChatResourceArtifact$ = command(
   async (
@@ -104,67 +48,24 @@ export const copyChatResourceArtifact$ = command(
       );
       return;
     }
-    await set(copyChatResourceLink$, url, signal);
+    const currentUrl = currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
+    const copied = await writeToClipboard(publicAttachmentUrl(currentUrl));
+    signal.throwIfAborted();
+    if (copied) {
+      toast.success(
+        i18n.t(($) => {
+          return $.chat.sharing.linkCopied;
+        }),
+      );
+    } else {
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.sharing.copyFailed;
+        }),
+      );
+    }
   },
 );
-
-function createChatResourceContentSignals(
-  groups$: Computed<readonly ChatEventGroup[]>,
-  catalog: ArtifactCatalogSignals,
-  initialEventsReady$: Computed<boolean>,
-) {
-  const links$ = computed(async (get) => {
-    // The complete event projection is independent of the transcript render window.
-    const groups = get(groups$);
-    const { artifacts } = await get(catalog.catalog$);
-    const seen = new Set(
-      artifacts.flatMap((artifact) => {
-        // Source/alias URLs are optional metadata: shared snapshots can have
-        // neither. Only known URLs deduplicate links; do not hydrate details.
-        return [artifact.sourceUrl, artifact.aliasUrl].flatMap((url) => {
-          return url ? [publicAttachmentUrl(url)] : [];
-        });
-      }),
-    );
-    const links: ChatResourceLink[] = [];
-    for (const group of [...groups].reverse()) {
-      for (const event of [...group.events].reverse()) {
-        if (event.isQueued) {
-          continue;
-        }
-        const text =
-          event.eventType === "output.message"
-            ? event.content
-            : "userMessage" in event
-              ? messageDocumentToDisplayText(event.userMessage)
-              : "";
-        for (const link of await messageLinks(text ?? "")) {
-          const key = publicAttachmentUrl(link.url);
-          if (!seen.has(key)) {
-            seen.add(key);
-            links.push(link);
-          }
-        }
-      }
-    }
-    return links;
-  });
-
-  const content$ = computed(
-    async (get): Promise<ChatResourceContent | null> => {
-      if (!get(initialEventsReady$)) {
-        return null;
-      }
-      const [page, links] = await Promise.all([
-        get(catalog.catalog$),
-        get(links$),
-      ]);
-      return { artifacts: page.artifacts, nextCursor: page.nextCursor, links };
-    },
-  );
-
-  return { content$, links$ };
-}
 
 function createResourceElementRef() {
   const element$ = state<HTMLElement | null>(null);
@@ -317,26 +218,26 @@ function createChatResourcePanelSignals() {
 }
 
 export function createChatResourceSignals(
-  groups$: Computed<readonly ChatEventGroup[]>,
   catalog: ArtifactCatalogSignals,
   initialEventsReady$: Computed<boolean>,
 ) {
   const panel = createChatResourcePanelSignals();
+  const content$ = computed(async (get) => {
+    if (!get(initialEventsReady$)) {
+      return null;
+    }
+    return await get(catalog.catalog$);
+  });
   const expandedSections$ = state({
     chats: false,
     artifacts: false,
-    links: false,
   });
   return {
     expandedSections$: computed((get) => {
       return get(expandedSections$);
     }),
     toggleSection$: command(
-      (
-        { get, set },
-        section: "chats" | "artifacts" | "links",
-        trigger: HTMLElement,
-      ) => {
+      ({ get, set }, section: "chats" | "artifacts", trigger: HTMLElement) => {
         if (get(expandedSections$)[section]) {
           const group = trigger.closest("section");
           const scroll = trigger.closest<HTMLElement>("[data-resource-scroll]");
@@ -354,7 +255,7 @@ export function createChatResourceSignals(
         });
       },
     ),
-    ...createChatResourceContentSignals(groups$, catalog, initialEventsReady$),
+    content$,
     catalog,
     ...panel,
   };

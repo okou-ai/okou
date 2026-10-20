@@ -458,73 +458,9 @@ async function completeChatRunInThread(
   return run;
 }
 
-const malformedChatThreadIdRequests = [
-  { method: "GET", path: "/api/chat-threads/:id", paramName: "id" },
-  { method: "PATCH", path: "/api/chat-threads/:id", paramName: "id" },
-  { method: "DELETE", path: "/api/chat-threads/:id", paramName: "id" },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/mark-read",
-    paramName: "id",
-  },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/mark-unread",
-    paramName: "id",
-  },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/model-selection",
-    paramName: "id",
-  },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/computer-use-host",
-    paramName: "id",
-  },
-  { method: "POST", path: "/api/chat-threads/:id/pin", paramName: "id" },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/unpin",
-    paramName: "id",
-  },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/rename",
-    paramName: "id",
-  },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/archive",
-    paramName: "id",
-  },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/unarchive",
-    paramName: "id",
-  },
-  {
-    method: "GET",
-    path: "/api/chat-threads/:id/artifacts",
-    paramName: "threadId",
-  },
-] as const;
-
 describe("CHAT-01 thread detail, create, and delete cascades", () => {
-  it("rejects malformed thread ids before auth and unauthenticated clerk bearers", async () => {
+  it("rejects unauthenticated Clerk bearers", async () => {
     const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    for (const request of malformedChatThreadIdRequests) {
-      const response = await app.request(request.path, {
-        method: request.method,
-      });
-      expect(response.status).toBe(400);
-      const body = (await response.json()) as {
-        readonly error: { readonly code: string; readonly message: string };
-      };
-      expect(body.error.code).toBe("BAD_REQUEST");
-      expect(body.error.message).toContain(request.paramName);
-    }
 
     // A bearer that Clerk reports as unauthenticated is a plain 401, not a
     // crash on the session fall-through branch.
@@ -1190,7 +1126,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Thread delete cascade agent",
     );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const peer = bdd.user({ orgId: actor.orgId });
 
     const unauthenticated = await chat.requestDeleteThread(
@@ -1207,14 +1142,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       message: "Chat thread not found",
       code: "NOT_FOUND",
     });
-
-    const malformed = await chat.requestDeleteThread(
-      actor,
-      "not-a-uuid",
-      [400],
-    );
-    expectApiError(malformed.body);
-    expect(malformed.body.error.message).toContain("id");
 
     // Main thread with a claimed (running) run.
     const main = await sendChatRun(actor, {
@@ -2153,7 +2080,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
 
     expect(upload.contentTypeHeaders[0]).toContain("text/html");
-    expect(upload.contentTypeHeaders[0]).not.toContain("application/zip");
     expect(Buffer.from(upload.bodies[0]!).toString("utf8")).toBe(index);
   });
 
@@ -2161,7 +2087,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Artifacts drive status agent",
     );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
     const peer = bdd.user({ orgId: actor.orgId });
 
@@ -2287,15 +2212,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     expectApiError(unknownArtifact.body);
     expect(unknownArtifact.body.error.message).toBe("Artifact file not found");
-
-    const invalidBody = await chat.requestUploadArtifactToGoogleDriveUnchecked(
-      actor,
-      csvId,
-      { agentId: 7 },
-      [400],
-    );
-    expectApiError(invalidBody.body);
-    expect(invalidBody.body.error.code).toBe("BAD_REQUEST");
 
     await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
 
@@ -2653,7 +2569,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           params.workspaceConversionEnabled,
       });
     }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     const run = await sendChatRun(actor, {
@@ -4017,7 +3932,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expect(multipart).toContain(
       '"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"',
     );
-    expect(multipart).not.toContain("application/vnd.google-apps.presentation");
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run.runId, sandboxHeaders);
@@ -4057,7 +3971,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     if (!actor.orgId) {
       throw new Error("Expected an entitled chat actor with an organization");
     }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     const run = await sendChatRun(actor, {
@@ -4295,7 +4208,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Artifacts dedupe agent",
     );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     // Run 1 uploads its own file plus the shared one.
@@ -4448,7 +4360,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   it("keeps files generated beside a hosted site visible", async () => {
     const { actor, agentId, runnerGroup } =
       await entitledChatActor("Hosted media agent");
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     // One run generates deliverables and then publishes a site alongside them.

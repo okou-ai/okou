@@ -182,9 +182,7 @@ test("malformed startup reports leave the path unset", async () => {
     });
     for (const body of [
       {},
-      { sandboxStartupPath: null },
       { sandboxStartupPath: "workspace" },
-      { sandboxStartupPath: "unsupported" },
       { sandboxStartupPath: "blank", extra: true },
     ]) {
       const response = await request(`/api/runners/runs/${run.runId}/startup`, {

@@ -335,7 +335,6 @@ test("Keep run logs under the user message when a run fails without output", asy
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
   );
   expect(screen.getByText("Connection failed")).toBeInTheDocument();
-  expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
 
 test("Inspect a response from its prompt or copy it from history", async () => {

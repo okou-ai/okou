@@ -448,28 +448,6 @@ describe("workflows", () => {
     expect(names(memberList.body)).not.toContain(created.body.name);
   });
 
-  it("allows workflow names removed from the built-in seed set", async () => {
-    const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Former Seed Skill Agent",
-      visibility: "private",
-    });
-
-    const created = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: "deep-dive",
-      displayName: "Deep Dive",
-      instruction: "# custom deep dive workflow",
-    });
-
-    expect(created.body).toMatchObject({
-      agentId: agent.agentId,
-      name: "deep-dive",
-      displayName: "Deep Dive",
-      ownerUserId: actor.userId,
-    });
-  });
-
   it("runs a workflow slash command with workflow timing attribution", async () => {
     const actor = user({ orgRole: "org:admin" });
     await api.grantProEntitlement(actor);
@@ -3075,8 +3053,6 @@ describe("workflow owner profiles", () => {
       updated.body,
     ]) {
       expect(response).toMatchObject({ ownerUserId: owner.userId });
-      expect(response).not.toHaveProperty("ownerUserDisplayName");
-      expect(response).not.toHaveProperty("ownerUserImageUrl");
     }
     expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
     expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();

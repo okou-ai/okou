@@ -74,7 +74,6 @@ test("Integrations show current status and refresh after GitHub connects", async
   const githubCard = getIntegrationCard("GitHub");
   expect(getAction("button", "Connect", githubCard)).toBeInTheDocument();
   expect(screen.queryByText("Feishu")).not.toBeInTheDocument();
-  expect(screen.queryByText("Strapi")).not.toBeInTheDocument();
 
   click(getAction("button", "Connect", githubCard));
 

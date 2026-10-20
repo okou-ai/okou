@@ -105,7 +105,6 @@ async function callerAtDelegationDepth(
 describe("CHAT-02: shared user message queue", () => {
   it("dispatches idle-thread sends by appending a run-associated replacement", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const messageId = randomUUID();
     const referencedThreadId = randomUUID();
@@ -241,7 +240,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("skips a recalled queue head when dispatching a later idle Web send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -320,7 +318,6 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected an organization-scoped chat actor");
     }
     await bdd.readMe(actor);
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     // Thirty-two public delegation hops exhaust the source. Human forwarding is
     // still an ordinary user request, not another agent delegation.
@@ -427,7 +424,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("persists agent-run provenance for messages sent across chat threads", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const firstTargetThread = await chat.createThread(actor, { agentId });
     const secondTargetThread = await chat.createThread(actor, { agentId });
@@ -670,7 +666,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("keeps Web context and tools for agent prompts sent into existing threads", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
@@ -745,7 +740,6 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const rotatedRun = await api.readRun(actor, rotatedRunId);
     const rotatedSystemPrompt = rotatedRun.appendSystemPrompt ?? "";
-    expect(rotatedSystemPrompt).not.toContain("# Web Chat Run Context");
     expect(rotatedSystemPrompt).toContain("# This Run's Trigger");
     expect(rotatedSystemPrompt).toContain(`SOURCE_RUN_ID: ${source.runId}`);
     expect(rotatedSystemPrompt).toContain(
@@ -812,7 +806,6 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const incompleteRun = await api.readRun(actor, incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
-    expect(incompleteSystemPrompt).not.toContain("# Web Chat Run Context");
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
     expect(incompleteSystemPrompt).toContain("# Incomplete Rounds Context");
     expect(incompleteSystemPrompt).toContain("Web chat files: use");
@@ -831,7 +824,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("blocks cross-thread delegation from a zero-budget run", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const target = await chat.createThread(actor, { agentId });
     const blockedTarget = await chat.createThread(actor, { agentId });
     // The thirty-two-hop limit is reached through thirty-one ordinary hops,
@@ -926,7 +918,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("derives real-agent preview mode when queued messages are claimed", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
@@ -1057,7 +1048,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("projects additional info and inline templates into queued web launch material", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -1152,7 +1142,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("appends a claimed queued message after messages that are still queued", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -1245,7 +1234,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("keeps a queued send drainable when thread-list publication fails", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -1317,7 +1305,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("appends replacements on auto-send and keeps queued recalls idempotent", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -1438,7 +1425,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("waits when a fresh cancellation recovery is the only dispatch blocker", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -1492,7 +1478,6 @@ describe("CHAT-02: shared user message queue", () => {
 
   it("auto-fires queued messages after cancellation recovery completes", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,

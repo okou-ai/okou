@@ -61,6 +61,14 @@ async function setupResourceNavigation() {
       });
     }),
   });
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifactSummary(query.chatThreadId ?? current.id, "file", "report.pdf"),
+      ],
+      nextCursor: null,
+    });
+  });
   await setupPage({
     context,
     path: `/chats/${current.id}`,
@@ -187,8 +195,7 @@ test.each(["messages", "artifacts"])(
     const previousPanel = await screen.findByRole("region", {
       name: "Resources",
     });
-    await within(previousPanel).findByText("First resources guide");
-    expect(within(previousPanel).getByText("first.pdf")).toBeInTheDocument();
+    await within(previousPanel).findByText("first.pdf");
     const next = queryAllByRoleFast("link").find((link) => {
       return link.getAttribute("href") === `/chats/${second.id}`;
     });
@@ -215,14 +222,11 @@ test.each(["messages", "artifacts"])(
     resourcesResponse.resolve();
     await waitFor(() => {
       expect(
-        within(resourcePanel()!).getByText("Second resources guide"),
+        within(resourcePanel()!).getByText("second.pdf"),
       ).toBeInTheDocument();
     });
     const nextPanel = resourcePanel()!;
     expect(within(nextPanel).getByText("second.pdf")).toBeInTheDocument();
-    expect(
-      within(nextPanel).queryByText("First resources guide"),
-    ).not.toBeInTheDocument();
     expect(within(nextPanel).queryByText("first.pdf")).not.toBeInTheDocument();
   },
 );
@@ -250,6 +254,14 @@ test("Keep a manual close local to its chat and start each visit from the saved 
         },
       });
     }),
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifactSummary(query.chatThreadId ?? first.id, "file", "report.pdf"),
+      ],
+      nextCursor: null,
+    });
   });
   await setupPage({
     context,

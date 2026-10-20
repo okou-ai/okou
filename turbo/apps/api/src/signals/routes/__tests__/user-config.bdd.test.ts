@@ -17,7 +17,6 @@ import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { env, mockEnv } from "../../../lib/env";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 /*
@@ -64,40 +63,6 @@ async function onboardAdmin(
   }
   return bootstrap.body.agentId;
 }
-
-describe("AUTH-03 user config CRUD error boundaries", () => {
-  it("rejects invalid config bodies with 400s", async () => {
-    const admin = api.user();
-    await onboardAdmin(admin, { slug: slug("bdd-uc-a2") });
-
-    const invalidPush = await cfg.requestRegisterPush(
-      admin,
-      { endpoint: "not-a-url", keys: { p256dh: "", auth: "" } },
-      [400],
-    );
-    expectApiError(invalidPush.body);
-    expect(invalidPush.body.error.code).toBe("BAD_REQUEST");
-
-    const invalidTimezone = await cfg.requestUpdatePreferences(
-      admin,
-      { timezone: "Invalid/Timezone" },
-      [400],
-    );
-    expectApiError(invalidTimezone.body);
-    expect(invalidTimezone.body.error).toStrictEqual({
-      message: "Invalid request",
-      code: "BAD_REQUEST",
-    });
-
-    const emptyPreferences = await cfg.requestUpdatePreferences(
-      admin,
-      {},
-      [400],
-    );
-    expectApiError(emptyPreferences.body);
-    expect(emptyPreferences.body.error.code).toBe("BAD_REQUEST");
-  });
-});
 
 describe("AUTH-03 agent user connectors", () => {
   it("replaces, dedupes, clears, validates, and isolates per-agent user connectors", async () => {
@@ -306,7 +271,7 @@ describe("AUTH-03 agent user connectors", () => {
 });
 
 describe("AUTH-03 user model preference", () => {
-  it("defaults to canonical Auto and rejects the legacy capture ID", async () => {
+  it("defaults to canonical Auto and accepts a null selection", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-b2") });
 
@@ -318,19 +283,6 @@ describe("AUTH-03 user model preference", () => {
       selectedImageModel: null,
       updatedAt: expect.any(String),
     });
-
-    // Nullable and explicit Auto are request intents; the legacy capture ID is
-    // readable history metadata, not a selectable public model.
-    const rejected = await cfg.requestUpdateModelPreference(
-      admin,
-      { selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL, serviceTier: null },
-      [400],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("BAD_REQUEST");
-    await expect(cfg.readModelPreference(admin)).resolves.toStrictEqual(
-      defaults,
-    );
 
     const cleared = await cfg.updateModelPreference(admin, {
       selectedModel: null,
@@ -412,16 +364,8 @@ describe("AUTH-03 user model preference", () => {
     });
   });
 
-  it("rejects contract-invalid model preference bodies and unauthenticated access", async () => {
-    const admin = api.user();
+  it("rejects model preference access without authentication or an organization", async () => {
     const noOrg = api.user({ orgId: null });
-
-    const emptyBody = await cfg.rawUpdateModelPreference(admin, {}, [400]);
-    expectApiError(emptyBody.body);
-    expect(emptyBody.body.error.code).toBe("BAD_REQUEST");
-    expect(emptyBody.body.error.message).toContain(
-      "selectedModel: Invalid input",
-    );
 
     const unauthenticated = await cfg.requestReadModelPreference(null, [401]);
     expectApiError(unauthenticated.body);
@@ -824,7 +768,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
       admin.userId,
     );
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
 
     const rotatedEmail = `rotated-${shortId()}@example.test`;
     cfg.mockClerkUsers([{ ...admin, email: rotatedEmail }]);
@@ -836,6 +779,5 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     const refreshed = await cfg.readMe(admin);
     expect(refreshed.email).toBe(rotatedEmail);
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(2);
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 });

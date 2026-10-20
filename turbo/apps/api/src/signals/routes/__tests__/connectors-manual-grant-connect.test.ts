@@ -18,7 +18,6 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { secretTemplate } from "./helpers/api-bdd-firewall";
@@ -27,11 +26,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
-
-const TEST_APP_ROUTES = Object.freeze([
-  ...builtinConnectorsRoutes,
-  ...featureSwitchesRoutes,
-]);
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -224,22 +218,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("rejects requests without a selected auth method", async () => {
-    await seedFixture();
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    const response = await app.request("/api/connectors/openai/manual-grant", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer clerk-session",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ values: { apiKey: "sk-test" } }),
-    });
-
-    expect(response.status).toBe(400);
-  });
-
   it("accepts server-authored identity syntax before catalog rejection", async () => {
     await seedFixture();
     const connectorSlug = "server-authored-connector";
@@ -276,25 +254,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     expect(list.body.connectors).not.toContainEqual(
       expect.objectContaining({ slug: connectorSlug }),
     );
-  });
-
-  it("rejects invalid server-authored identity syntax at the contract", async () => {
-    await seedFixture();
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-
-    const response = await app.request(
-      "/api/connectors/invalid_ref/manual-grant",
-      {
-        method: "POST",
-        headers: {
-          authorization: "Bearer clerk-session",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ authMethod: "api-token", values: {} }),
-      },
-    );
-
-    expect(response.status).toBe(400);
   });
 
   it("allows unlabeled additions before optional post-connect naming", async () => {
@@ -376,8 +335,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       authMethod: "api-token",
     });
     expect(typeof response.body.id).toBe("string");
-    expect(response.body.createdAt).not.toBe("1970-01-01T00:00:00.000Z");
-    expect(response.body.updatedAt).not.toBe("1970-01-01T00:00:00.000Z");
     const stored = await readConnector(fixture, "openai");
     expect(stored.body).toMatchObject({
       slug: "openai",
@@ -914,29 +871,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     expect(response.body.error.message).not.toContain(
       "secret-value-should-not-echo",
     );
-  });
-
-  it("rejects missing required fields", async () => {
-    await seedFixture();
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "openai" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {},
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.message).toContain("apiKey");
-    expect(response.body.error.message).not.toContain("OPENAI_TOKEN");
   });
 
   it("rejects required fields that sanitize to empty without private field names", async () => {

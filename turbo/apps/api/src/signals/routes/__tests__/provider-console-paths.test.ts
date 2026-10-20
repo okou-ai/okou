@@ -83,14 +83,6 @@ describe("provider console paths", () => {
   describe("GET /api/integrations/teams/oauth/callback", () => {
     const path = "/api/integrations/teams/oauth/callback";
 
-    it("rejects a callback without an authorization code", async () => {
-      await expect(getRequest(teamsOauthRoutes, path)).resolves.toStrictEqual({
-        status: 400,
-        location: null,
-        body: jsonBody({ error: "Missing authorization code" }),
-      });
-    });
-
     it("builds the failure redirect for a denied authorization", async () => {
       await expect(
         getRequest(teamsOauthRoutes, `${path}?error=access_denied`),

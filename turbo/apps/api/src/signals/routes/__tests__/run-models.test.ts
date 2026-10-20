@@ -37,7 +37,6 @@ describe("available run models", () => {
     const member = identity();
     mocks.clerk.session(member.userId, member.orgId);
     const response = await accept(list(), [200]);
-    expect(response.body).not.toHaveProperty("defaultModel");
     expect(response.body.models).toStrictEqual([
       expect.objectContaining({
         model: "auto",

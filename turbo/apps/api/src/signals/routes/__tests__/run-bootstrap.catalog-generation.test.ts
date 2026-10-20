@@ -144,7 +144,6 @@ describe("Run connector selection through normal user changes", () => {
     ).toBeFalsy();
     expect(claim.billableFirewalls).not.toContain("x");
     expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
-    expect(claim).not.toHaveProperty("connectorPermissionBaseline");
     await fixture.cancel(run.runId, claim.sandboxToken);
   });
 

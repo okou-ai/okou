@@ -139,5 +139,4 @@ test("Keep inline feedback tied to the source email", async () => {
   const submittedComment = await screen.findByText(comment);
   expect(submittedComment).toBeInTheDocument();
   expect(screen.getByText("Quoted from an email draft")).toBeInTheDocument();
-  expect(screen.queryByText(new RegExp(MAIL_DRAFT_ID, "u"))).toBeNull();
 });

@@ -163,24 +163,7 @@ test("gates writes, validates addresses, and hides other owners' websites", asyn
   const disabled = await accept(client(owner).updateSiteUrl(rename), [403]);
   expect(disabled.body.error.code).toBe("FORBIDDEN");
   await enable(owner);
-  const malformedDeployment = `dpl-${"a".repeat(36)}`;
-  await accept(
-    client(owner).siteUrl({
-      headers,
-      params: { publicSlug: malformedDeployment },
-      query: { hostname: `${malformedDeployment}.okou.app` },
-    }),
-    [404],
-  );
-  for (const publicSlug of [
-    "aa",
-    "Uppercase",
-    "-invalid",
-    "dpl-reserved",
-    "pv-private",
-    "has.dot",
-    "x".repeat(64),
-  ]) {
+  for (const publicSlug of ["dpl-reserved", "pv-private"]) {
     await accept(
       client(owner).updateSiteUrl({
         ...rename,

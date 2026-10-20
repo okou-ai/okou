@@ -6,7 +6,7 @@ import { Button, FullscreenPanel, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { ThreadResourceTabs } from "./thread-resource-tabs.tsx";
+import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -14,7 +14,6 @@ import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coo
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
-  ThreadResourceSection,
   ThreadSidebarTarget,
 } from "../../signals/chat-page/thread-sidebar.ts";
 import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
@@ -49,17 +48,12 @@ const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
  * Open the thread's artifacts list and refresh its first page. Entry buttons
  * and the detail's Back action share this hook so the list is current on open.
  */
-export function useOpenThreadArtifacts(
-  thread: ChatPanelSignals,
-  section?: ThreadResourceSection,
-): () => void {
+export function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
   const open = useSet(openThreadArtifacts$);
   const reloadArtifacts = useSet(thread.sidebar.artifactCatalog.reload$);
   return () => {
-    open(thread, section);
-    if (section !== "links") {
-      reloadArtifacts();
-    }
+    open(thread);
+    reloadArtifacts();
   };
 }
 
@@ -150,10 +144,8 @@ function ThreadSidebarHeader({
 
 function ThreadArtifactsPanel({
   thread,
-  section,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly section?: ThreadResourceSection;
 }) {
   const { t } = useTranslation();
   const resourcesEnabled =
@@ -187,7 +179,7 @@ function ThreadArtifactsPanel({
     catalogLoadable.data.nextCursor !== null;
 
   const handleScroll = (event: ReactUIEvent<HTMLElement>) => {
-    if (section === "links" || !hasMore) {
+    if (!hasMore) {
       return;
     }
     const viewport = event.currentTarget;
@@ -253,24 +245,30 @@ function ThreadArtifactsPanel({
         onClose={close}
         separated={!resourcesEnabled}
       />
-      {resourcesEnabled ? (
-        <ThreadResourceTabs
-          thread={thread}
-          section={section}
-          artifactCount={artifacts?.length ?? null}
-          hasMore={hasMore}
-          onScroll={handleScroll}
-        >
-          {artifactsContent}
-        </ThreadResourceTabs>
-      ) : (
-        <div
-          onScroll={handleScroll}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
-        >
-          {artifactsContent}
+      {resourcesEnabled && (
+        <div className="shrink-0 border-b border-border/60 px-4 pb-4">
+          <h3 className="flex items-center gap-2 text-sm font-medium">
+            {t(($) => {
+              return $.artifacts.sidebar.panelTitle;
+            })}
+            {artifacts !== null && (
+              <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                {formatLocalizedNumber(artifacts.length)}
+                {hasMore ? "+" : ""}
+              </span>
+            )}
+          </h3>
         </div>
       )}
+      <div
+        onScroll={handleScroll}
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          resourcesEnabled ? "p-4 sm:p-6" : "px-4 py-4",
+        )}
+      >
+        {artifactsContent}
+      </div>
     </FullscreenPanel>
   );
 }
@@ -505,7 +503,7 @@ export function ThreadSidebarSlot({
 }) {
   switch (target.type) {
     case "artifacts": {
-      return <ThreadArtifactsPanel thread={thread} section={target.section} />;
+      return <ThreadArtifactsPanel thread={thread} />;
     }
     case "artifact": {
       return <ThreadArtifactDetail thread={thread} source={target.source} />;

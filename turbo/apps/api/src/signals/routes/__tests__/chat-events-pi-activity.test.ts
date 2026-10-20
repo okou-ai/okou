@@ -133,7 +133,6 @@ describe("CHAT-02: model-first routing", () => {
       provider: "openai-codex",
       model: "gpt-6-luna",
     });
-    expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
     const lunaEnvironment = claimEnvironment(claimed.claim);
     expect(lunaEnvironment.OKOU_TOKEN).toBeTruthy();
@@ -144,7 +143,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(lunaInstructions).toContain("You are currently running inside: Web");
     expect(lunaInstructions).toContain("okou web download-file -h");
     expect(lunaInstructions).toContain("Run commands with: `okou <command>`");
-    expect(lunaInstructions).not.toMatch(/auto.?memory/iu);
     const lunaStorageManifest = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,
     );

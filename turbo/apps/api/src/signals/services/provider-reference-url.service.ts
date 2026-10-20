@@ -21,6 +21,8 @@ import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
+import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
+import { createHostedSiteDownloadGrant$ } from "./hosted-site-download.service";
 
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
@@ -280,6 +282,34 @@ export const resolveProviderReferenceUrls$ = command(
       signal.throwIfAborted();
       if (!deployment?.manifest.files[hostedTarget.path]) {
         resolved.push(url);
+        continue;
+      }
+      if (
+        !(
+          await set(
+            checkHostedSiteAccess$,
+            { siteId: deployment.manifest.siteId, userId: args.userId },
+            signal,
+          )
+        ).allowed
+      ) {
+        return badRequestMessage(
+          "Hosted site reference is not available to the current user",
+        );
+      }
+      const grant = await set(
+        createHostedSiteDownloadGrant$,
+        {
+          manifest: deployment.manifest,
+          prefix: deployment.r2Prefix,
+          viewerId: args.userId,
+        },
+        signal,
+      );
+      if (grant) {
+        const controlledUrl = new URL(grant);
+        controlledUrl.searchParams.set("path", hostedTarget.path);
+        resolved.push(controlledUrl.href);
         continue;
       }
       resolved.push(

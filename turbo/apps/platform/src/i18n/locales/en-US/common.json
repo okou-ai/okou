@@ -2172,13 +2172,10 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "empty": "Artifacts, links, and related chats from this chat appear here.",
-      "emptyLinks": "No links in this chat yet",
+      "empty": "Artifacts and related chats from this chat appear here.",
       "expand": "Expand",
-      "links": "Links",
       "loadFailed": "Could not load resources",
       "loading": "Loading resources",
-      "loadingLinks": "Loading links",
       "retry": "Try again",
       "title": "Resources"
     },
@@ -5077,7 +5074,7 @@
         },
         "description": "Choose defaults for new chats and how messages are sent.",
         "resources": {
-          "description": "Show a chat's artifacts, links, and related chats beside the conversation when there is room.",
+          "description": "Show a chat's artifacts and related chats beside the conversation when there is room.",
           "title": "Open resources automatically"
         },
         "sectionTitle": "Chat"

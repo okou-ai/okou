@@ -2164,13 +2164,10 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "empty": "Artefak, tautan, dan chat terkait dari chat ini muncul di sini.",
-      "emptyLinks": "Belum ada tautan di chat ini",
+      "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
       "expand": "Perluas",
-      "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loading": "Memuat sumber daya",
-      "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
       "title": "Sumber daya chat"
     },
@@ -5065,7 +5062,7 @@
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
         "resources": {
-          "description": "Tampilkan artefak, tautan, dan chat terkait di samping percakapan saat ada ruang.",
+          "description": "Tampilkan artefak dan chat terkait di samping percakapan saat ada ruang.",
           "title": "Buka sumber daya secara otomatis"
         },
         "sectionTitle": "Chat"

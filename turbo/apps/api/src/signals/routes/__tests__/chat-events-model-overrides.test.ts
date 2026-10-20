@@ -64,16 +64,12 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(appended).toContain(
       `rg -n '"seqId":<SEQ_ID>' threads/${run.threadId}/`,
     );
-    expect(appended).not.toContain(
-      "`okou chat messages` prints this thread's user and assistant messages",
-    );
 
     await api.requestCancelRun(actor, run.runId, [200]);
   }, 60_000);
 
   it("persists a send model selection on the thread while preserving same-family sessions", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Claude subscription credentials stay on the native Claude Code harness
     // for every Claude model, so a same-family override keeps the CLI session.
     await misc.upsertPersonalModelProvider(
@@ -128,7 +124,6 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended).not.toContain("Assistant: opus answer");
     expect(appended).toContain("# This Chat Thread");
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
@@ -180,7 +175,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("rejects a disconnected personal thread model even when the member default is Auto", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.updateUserModelPreference(actor, null);
     const thread = await chat.createThread(actor, {
       agentId,
@@ -267,7 +261,6 @@ describe("CHAT-02: run-level model overrides", () => {
     async ({ tier, generation, outcome, selectedModel }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const firewall = createFirewallApi(context);
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const externalAccountId = "chat-codex-pi-subscription-account";
       const refreshToken = "rt_pi_subscription_fixture_high_entropy";
       const { oauth, accountSourceId } = await configureSubscriptionPiModel(

@@ -19,6 +19,8 @@ import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layo
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
+import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
+import { createHostedSiteDownloadGrant$ } from "./hosted-site-download.service";
 
 /** Snapshot authority is independent of the original resource's current state. */
 export const sharedThreadArtifactSnapshot$ = command(
@@ -107,7 +109,7 @@ export const sharedThreadArtifactTarget$ = command(
 export const resolveSharedThreadArtifactReference$ = command(
   async (
     { get, set },
-    reference: SharedThreadArtifactReference,
+    reference: SharedThreadArtifactReference & { readonly viewerId?: string },
     signal: AbortSignal,
   ) => {
     const snapshot = await set(
@@ -149,6 +151,17 @@ export const resolveSharedThreadArtifactReference$ = command(
         target: { kind: target.kind, id: target.id },
       };
     }
+    if (
+      !(
+        await set(
+          checkHostedSiteAccess$,
+          { siteId: target.siteId, userId: reference.viewerId },
+          signal,
+        )
+      ).allowed
+    ) {
+      return null;
+    }
     const file = sharedThreadHostedSnapshotFile(target, reference.previewPath);
     if (!file) {
       return null;
@@ -163,18 +176,28 @@ export const resolveSharedThreadArtifactReference$ = command(
       signal,
     );
     const filename = file.path.slice(file.path.lastIndexOf("/") + 1);
-    const downloadUrl = await get(
-      generateHostedSitesPresignedGetUrl(
-        sharedThreadArtifactsBucket(),
-        `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
-        true,
-        {
-          signingDate: nowDate(),
-          filename,
-          responseCacheControl: "private, no-store",
-        },
-      ),
+    const prefix = `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}`;
+    const grant = await set(
+      createHostedSiteDownloadGrant$,
+      { manifest: target.manifest, prefix, viewerId: reference.viewerId },
+      signal,
     );
+    const controlledUrl = grant ? new URL(grant) : null;
+    controlledUrl?.searchParams.set("path", file.path);
+    const downloadUrl =
+      controlledUrl?.href ??
+      (await get(
+        generateHostedSitesPresignedGetUrl(
+          sharedThreadArtifactsBucket(),
+          `${prefix}${file.path}`,
+          true,
+          {
+            signingDate: nowDate(),
+            filename,
+            responseCacheControl: "private, no-store",
+          },
+        ),
+      ));
     signal.throwIfAborted();
     return {
       ...preview,

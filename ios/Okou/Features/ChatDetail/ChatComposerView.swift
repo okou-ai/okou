@@ -11,7 +11,6 @@ struct ChatComposerView: View {
   let error: String?
   let attachmentURL: URL
   let attachments: AttachmentDraftStore
-  let supportsAttachments: Bool
   var draftState: ComposerDraftStore? = nil
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
@@ -107,12 +106,8 @@ struct ChatComposerView: View {
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: isFocused ? 28 : 30))
       .overlay(alignment: isFocused ? .bottomLeading : .leading) {
         Menu {
-          if supportsAttachments {
-            Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
-            Button("Choose Files", systemImage: "folder") { showsFiles = true }
-          } else {
-            Link("Attach files on the web", destination: attachmentURL)
-          }
+          Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
+          Button("Choose Files", systemImage: "folder") { showsFiles = true }
           if let state = draftState, state.hasContent || state.error != nil {
             Divider()
             Button("Clear draft", role: .destructive) { state.clear() }

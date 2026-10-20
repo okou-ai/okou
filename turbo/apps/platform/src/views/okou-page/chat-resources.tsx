@@ -6,7 +6,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Package } from "lucide-react";
+import { Copy, Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -29,7 +29,7 @@ import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sideb
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
+import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
@@ -209,7 +209,9 @@ function ResourceOutputRow({
   readonly artifact: ArtifactSummary;
   readonly thread: ChatPanelSignals;
 }) {
+  const { t } = useTranslation();
   const openArtifact = useSet(openThreadCatalogArtifact$);
+  const copyArtifact = useSet(copyChatResourceArtifact$);
   const pageSignal = useGet(pageSignal$);
   const changes = useGet(hostedSiteUrlChanges$);
   const titleLink =
@@ -240,10 +242,23 @@ function ResourceOutputRow({
         </span>
         <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
       </Button>
-      <CopyResourceLink
-        artifactId={artifact.id}
-        catalog={thread.resources.catalog}
-      />
+      <Button
+        showTooltip
+        variant="quiet"
+        size="icon-xs"
+        aria-label={t(($) => {
+          return $.chat.resources.copyLink;
+        })}
+        className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+        onClick={() => {
+          return detach(
+            copyArtifact(thread.resources.catalog, artifact.id, pageSignal),
+            Reason.DomCallback,
+          );
+        }}
+      >
+        <Copy size={14} />
+      </Button>
     </li>
   );
 }
@@ -280,7 +295,7 @@ function ChatResourcesStatus({
   }
   const hasContent =
     origin?.kind === "source" ||
-    Boolean(data?.artifacts.length || data?.links.length) ||
+    Boolean(data?.artifacts.length) ||
     (chats.state === "hasData" && chats.data.items.length > 0);
   if (hasContent) {
     return null;
@@ -381,16 +396,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
           )}
         </section>
       )}
-      <ChatResourceLinks
-        thread={thread}
-        preview={{
-          limit: RESOURCE_PREVIEW_LIMIT,
-          expanded: expanded.links,
-          onToggle: (trigger) => {
-            toggleSection("links", trigger);
-          },
-        }}
-      />
       <ChatResourcesStatus thread={thread} />
     </div>
   );

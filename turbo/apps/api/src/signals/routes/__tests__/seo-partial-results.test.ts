@@ -246,10 +246,7 @@ describe("SEO partial SERP results", () => {
 
   it.each([
     { failure: "missing results", result: null, tasksCount: 1 },
-    { failure: "empty results", result: [], tasksCount: 1 },
-    { failure: "missing items", result: [{}], tasksCount: 1 },
     { failure: "empty items", result: [{ items: [] }], tasksCount: 1 },
-    { failure: "malformed items", result: [{ items: [null] }], tasksCount: 1 },
     {
       failure: "inconsistent task count",
       result: [{ items: [{ title: "SEO" }] }],

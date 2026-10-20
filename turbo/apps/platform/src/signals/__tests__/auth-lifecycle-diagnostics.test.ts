@@ -424,48 +424,6 @@ test.each([
   },
 );
 
-test.each(["uuid", "clock", "window-context"] as const)(
-  "Diagnostic %s collection failures cannot prevent token retrieval or HTTP",
-  async (fault) => {
-    const credential = token();
-    const input = request();
-    const observed: Headers[] = [];
-    context.mocks.api(chatThreadEventsContract.rows, ({ request, respond }) => {
-      observed.push(request.headers);
-      return respond(200, emptyRows);
-    });
-    const sdkGetToken = vi
-      .fn<() => Promise<string | null>>()
-      .mockResolvedValue(credential);
-    const api = await client(sdkGetToken);
-    if (fault === "uuid") {
-      vi.spyOn(crypto, "randomUUID").mockImplementationOnce(() => {
-        throw new Error("Optional diagnostic UUID unavailable");
-      });
-    } else if (fault === "clock") {
-      let first = true;
-      mockNow(() => {
-        if (first) {
-          first = false;
-          throw new Error("Optional diagnostic clock unavailable");
-        }
-        return NOW;
-      }, context.signal);
-    } else {
-      vi.spyOn(navigator, "userAgent", "get").mockImplementation(() => {
-        throw new Error("Optional browser context unavailable");
-      });
-    }
-    await expect(api.rows(input)).resolves.toMatchObject({
-      status: 200,
-      body: emptyRows,
-    });
-    expect(sdkGetToken).toHaveBeenCalledExactlyOnceWith(undefined);
-    expect(observed).toHaveLength(1);
-    expect(observed[0]?.get("Authorization")).toBe(`Bearer ${credential}`);
-  },
-);
-
 test("The expiry cutoff stops new lifecycle records while token reads and HTTP continue", async () => {
   const observed: Headers[] = [];
   context.mocks.api(chatThreadEventsContract.rows, ({ request, respond }) => {

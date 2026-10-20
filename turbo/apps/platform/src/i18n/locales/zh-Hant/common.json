@@ -2164,13 +2164,10 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
-      "empty": "這個對話的成果、連結和關聯對話會顯示在這裡。",
-      "emptyLinks": "此聊天中暫無連結",
+      "empty": "這個對話的成果和關聯對話會顯示在這裡。",
       "expand": "展開",
-      "links": "連結",
       "loadFailed": "無法載入聊天資源",
       "loading": "正在載入資源",
-      "loadingLinks": "正在載入連結",
       "retry": "重試",
       "title": "聊天資源"
     },
@@ -5065,7 +5062,7 @@
         },
         "description": "設定新聊天的預設項和訊息傳送方式。",
         "resources": {
-          "description": "空間足夠時，在對話旁顯示該對話的成果、連結和關聯對話。",
+          "description": "空間足夠時，在對話旁顯示該對話的成果和關聯對話。",
           "title": "自動開啟資源面板"
         },
         "sectionTitle": "聊天"

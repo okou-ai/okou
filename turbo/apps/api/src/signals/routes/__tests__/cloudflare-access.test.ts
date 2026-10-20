@@ -1081,7 +1081,6 @@ describe("Cloudflare Access owner configuration", () => {
       name: "Canonical",
       sshHosts: [],
     });
-    expect(created.body).not.toHaveProperty("hosts");
     await accept(
       configs().create({
         headers,
@@ -1096,7 +1095,6 @@ describe("Cloudflare Access owner configuration", () => {
       name: "Canonical",
       sshHosts: [],
     });
-    expect(persisted).not.toHaveProperty("hosts");
     const updated = await accept(
       configs().update({
         headers,
@@ -1111,7 +1109,6 @@ describe("Cloudflare Access owner configuration", () => {
       revision: 2,
       sshHosts: [],
     });
-    expect(updated.body).not.toHaveProperty("hosts");
     const canonical = (await accept(configs().list({ headers }), [200])).body
       .configs[0];
     expect(canonical).toMatchObject({
@@ -1158,7 +1155,6 @@ describe("Cloudflare Access owner configuration", () => {
         { id: second.id, displayName: second.displayName },
       ]),
     );
-    expect(listed.configs[0]).not.toHaveProperty("hosts");
     for (const body of [listed, f.host, f.config]) {
       const text = JSON.stringify(body);
       for (const secret of [

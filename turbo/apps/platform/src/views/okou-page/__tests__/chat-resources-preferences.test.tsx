@@ -2,11 +2,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
 import {
@@ -61,13 +57,9 @@ test("Honor a previously saved off preference on entry", async () => {
 
 test("Keep the existing artifact entry when the rollout switch is off", async () => {
   await setupResources({ enabled: false });
-  expect(
-    screen.queryByRole("switch", { name: "Show resources" }),
-  ).not.toBeInTheDocument();
   click(buttonNamed("Open artifacts"));
   const all = await screen.findByTestId("thread-sidebar-artifacts");
   expect(all).toHaveAccessibleName("Artifacts");
-  expect(queryAllByRoleFast("tab", all)).toHaveLength(0);
 });
 
 test("Turn automatic resources off from Chat settings", async () => {

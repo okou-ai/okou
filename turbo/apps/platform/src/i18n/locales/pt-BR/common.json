@@ -2213,13 +2213,10 @@
     "resources": {
       "collapse": "Recolher",
       "copyLink": "Copiar link",
-      "empty": "Os artefatos, links e chats relacionados deste chat aparecem aqui.",
-      "emptyLinks": "Ainda não há links neste chat",
+      "empty": "Os artefatos e chats relacionados deste chat aparecem aqui.",
       "expand": "Expandir",
-      "links": "Links",
       "loadFailed": "Não foi possível carregar os recursos",
       "loading": "Carregando recursos",
-      "loadingLinks": "Carregando links",
       "retry": "Tentar novamente",
       "title": "Recursos da conversa"
     },
@@ -5151,7 +5148,7 @@
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
         "resources": {
-          "description": "Mostra os artefatos, links e chats relacionados ao lado da conversa quando há espaço.",
+          "description": "Mostra os artefatos e chats relacionados ao lado da conversa quando há espaço.",
           "title": "Abrir recursos automaticamente"
         },
         "sectionTitle": "Chat"

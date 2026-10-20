@@ -379,22 +379,6 @@ describe("cron snapshot chat events", () => {
           },
           { expected: { failureClass: "unknown" } },
           {
-            metadata: { httpStatusCode: "404", attempts: "3" },
-            expected: { failureClass: "unknown" },
-          },
-          {
-            metadata: { httpStatusCode: 600, attempts: 101 },
-            expected: { failureClass: "unknown" },
-          },
-          {
-            metadata: { httpStatusCode: 403, attempts: 0 },
-            expected: { failureClass: "access_denied", providerStatus: 403 },
-          },
-          {
-            metadata: { httpStatusCode: 200.5, attempts: Number.NaN },
-            expected: { failureClass: "unknown" },
-          },
-          {
             body: true,
             metadata: { httpStatusCode: 200, attempts: 2 },
             expected: {

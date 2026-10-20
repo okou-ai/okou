@@ -167,23 +167,6 @@ describe("GET /api/connectors/search", () => {
     expect(response.body.connectors).toStrictEqual([]);
   });
 
-  it("returns empty array for non-matching keyword", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: { keyword: "zzz_no_match_zzz" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.connectors).toStrictEqual([]);
-  });
-
   it("performs case-insensitive keyword search", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 

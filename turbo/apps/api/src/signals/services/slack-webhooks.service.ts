@@ -365,24 +365,6 @@ function buildOfficialSlackHelpMessage(args: {
   });
 }
 
-async function connectionForSlackUser(
-  db: Db,
-  workspaceId: string,
-  slackUserId: string,
-): Promise<SlackConnection | undefined> {
-  const [connection] = await db
-    .select()
-    .from(slackOrgConnections)
-    .where(
-      and(
-        eq(slackOrgConnections.slackUserId, slackUserId),
-        eq(slackOrgConnections.slackWorkspaceId, workspaceId),
-      ),
-    )
-    .limit(1);
-  return connection;
-}
-
 function slackPersistentSecretContext(args: {
   readonly orgId: string | null;
   readonly userId: string | undefined;
@@ -549,11 +531,71 @@ const resolveSlackRouteCompose$ = command(
     },
     signal: AbortSignal,
   ): Promise<ResolvedEffectiveCompose | undefined> => {
-    const effectiveCompose = await resolveEffectiveCompose(
-      args.db,
-      args.connection.userId,
-      args.orgId,
-    );
+    const routeDb = args.db;
+    const routeUser = args.connection.userId;
+    const routeOrg = args.orgId;
+    const effectiveCompose =
+      await (async (): Promise<EffectiveComposeResolution> => {
+        const defaultAgentId = await (async () => {
+          const [row] = await routeDb
+            .select({ defaultAgentId: orgMetadata.defaultAgentId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, routeOrg))
+            .limit(1);
+          return row?.defaultAgentId ?? null;
+        })();
+        if (!defaultAgentId) {
+          return { status: "not_configured" };
+        }
+        const configuredDefaultAgent = await (async () => {
+          const [agent] = await routeDb
+            .select({
+              id: agents.id,
+              name: agents.name,
+              displayName: agents.displayName,
+            })
+            .from(agents)
+            .where(
+              routeOrg
+                ? and(eq(agents.id, defaultAgentId), eq(agents.orgId, routeOrg))
+                : eq(agents.id, defaultAgentId),
+            )
+            .limit(1);
+          return agent;
+        })();
+        if (!configuredDefaultAgent) {
+          return { status: "not_found" };
+        }
+        const visibleDefaultAgent = await (async () => {
+          const [agent] = await routeDb
+            .select({
+              id: agents.id,
+              name: agents.name,
+              displayName: agents.displayName,
+            })
+            .from(agents)
+            .where(
+              and(
+                eq(agents.id, defaultAgentId),
+                eq(agents.orgId, routeOrg),
+                or(
+                  eq(agents.visibility, "public"),
+                  eq(agents.owner, routeUser),
+                ),
+              ),
+            )
+            .limit(1);
+          return agent;
+        })();
+        if (!visibleDefaultAgent) {
+          return { status: "not_accessible" };
+        }
+        return {
+          status: "resolved",
+          composeId: defaultAgentId,
+          agent: visibleDefaultAgent,
+        };
+      })();
     signal.throwIfAborted();
     if (effectiveCompose.status === "resolved") {
       return effectiveCompose;
@@ -852,6 +894,19 @@ const refreshOrgAppHome$ = command(
   },
 );
 
+function slackCommandLoginResponse(payload: SlackCommandPayload): Response {
+  return ephemeral(
+    buildLoginMessage(
+      buildOrgConnectUrl(
+        payload.team_id,
+        payload.user_id,
+        payload.channel_id,
+        undefined,
+      ),
+    ),
+  );
+}
+
 export const handleSlackCommands$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
@@ -891,9 +946,25 @@ export const handleSlackCommands$ = command(
         return installation;
       })();
       signal.throwIfAborted();
-      const connection = installation
-        ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
-        : undefined;
+      let connection: SlackConnection | undefined;
+      if (installation) {
+        const lookupDb = db;
+        const workspaceId = payload.team_id;
+        const slackUserId = payload.user_id;
+        connection = await (async (): Promise<SlackConnection | undefined> => {
+          const [connection] = await lookupDb
+            .select()
+            .from(slackOrgConnections)
+            .where(
+              and(
+                eq(slackOrgConnections.slackUserId, slackUserId),
+                eq(slackOrgConnections.slackWorkspaceId, workspaceId),
+              ),
+            )
+            .limit(1);
+          return connection;
+        })();
+      }
       signal.throwIfAborted();
       return { installation, connection };
     })(signal);
@@ -921,16 +992,7 @@ export const handleSlackCommands$ = command(
           ),
         );
       }
-      return ephemeral(
-        buildLoginMessage(
-          buildOrgConnectUrl(
-            payload.team_id,
-            payload.user_id,
-            payload.channel_id,
-            undefined,
-          ),
-        ),
-      );
+      return slackCommandLoginResponse(payload);
     }
 
     if (!installation) {
@@ -964,16 +1026,7 @@ export const handleSlackCommands$ = command(
     }
 
     if (!connection) {
-      return ephemeral(
-        buildLoginMessage(
-          buildOrgConnectUrl(
-            payload.team_id,
-            payload.user_id,
-            payload.channel_id,
-            undefined,
-          ),
-        ),
-      );
+      return slackCommandLoginResponse(payload);
     }
 
     return ephemeral(

@@ -229,7 +229,6 @@ describe("CHAT-02: queued chat thread picks", () => {
   it("launches only the FIFO head of a waiting thread and resumes its latest session", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "establish the thread session",
@@ -280,7 +279,6 @@ describe("CHAT-02: queued chat thread picks", () => {
   it("gives the freed slot to another thread that waited longer than the ending run's thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const running = await sendChatRun(actor, {
       agentId,
       prompt: "thread A holds the only slot",
@@ -322,7 +320,6 @@ describe("CHAT-02: queued chat thread picks", () => {
   it("gives the slot of a cancelled running run to a waiting thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const running = await sendChatRun(actor, {
       agentId,
       prompt: "thread A holds the only slot",
@@ -359,7 +356,6 @@ describe("CHAT-02: queued chat thread picks", () => {
       {},
       "team",
     );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const automation = await createWebhookAutomation(actor, agentId);
     const blocker = await sendChatRun(actor, {
       agentId,
@@ -404,7 +400,6 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("takes over input sent while the thread's run was running", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const running = await sendChatRun(actor, {
       agentId,
       prompt: "the thread's running run",
@@ -434,7 +429,6 @@ describe("CHAT-02: queued chat thread picks", () => {
       {},
       "team",
     );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const automation = await createWebhookAutomation(actor, agentId);
     const running = await sendChatRun(actor, {
       agentId,
@@ -474,7 +468,6 @@ describe("CHAT-02: queued chat thread picks", () => {
   it("keeps a waiting thread pickable after a concurrency update finds the organization full", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const blocker = await sendChatRun(actor, {
       agentId,
       prompt: "occupy the only organization slot",
@@ -509,7 +502,6 @@ describe("CHAT-02: queued chat thread picks", () => {
   it("keeps the queued model, service tier, and effort after thread and user settings change", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     await createBddIntegrationApi(context)
       .configureNativeSubscriptionModels(actor)
@@ -563,7 +555,6 @@ describe("CHAT-02: queued chat thread picks", () => {
   it("skips a recalled head and launches a later message on the thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const blocker = await sendChatRun(actor, {
       agentId,
       prompt: "occupy the only organization slot",

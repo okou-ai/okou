@@ -1,3 +1,5 @@
+import type { HostedSiteAccessDecision } from "@okouai/api-contracts/contracts/hosted-site-access";
+import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { command } from "ccstate";
 import {
   hostedSiteAssetNameError,
@@ -126,9 +128,10 @@ function publicationIdentityViolation(
 /** R2 references do not carry authority over a deployment's current lifecycle. */
 export const authorizeHostedSiteDelivery$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly siteId: string;
+      readonly viewerUserId?: string;
       readonly deploymentId: string;
       readonly alias: string;
       readonly publicSlug: string;
@@ -137,7 +140,7 @@ export const authorizeHostedSiteDelivery$ = command(
       readonly manifestKey: string;
     },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<HostedSiteAccessDecision> => {
     const db = get(db$);
     const [owned] = await db
       .select({
@@ -179,7 +182,7 @@ export const authorizeHostedSiteDelivery$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!owned) {
-      return false;
+      return { allowed: false, decision: "deny" };
     }
     // Organization-scoped sites (before #23908) let any member publish to a
     // site another member created, so the deployment publisher need not be
@@ -190,14 +193,21 @@ export const authorizeHostedSiteDelivery$ = command(
         `Hosted deployment has an invalid publication identity: ${violation}`,
       );
     }
-    return (
+    const valid =
       !owned.identity.hasAccess &&
       owned.identity.publicSlug === args.publicSlug &&
       owned.prefix === args.prefix &&
       args.manifestKey === `${args.prefix}/manifest.json` &&
       (args.alias === `dpl-${args.deploymentId}` ||
         (args.alias === owned.currentPublicSlug &&
-          owned.activeDeploymentId === args.deploymentId))
+          owned.activeDeploymentId === args.deploymentId));
+    if (!valid) {
+      return { allowed: false, decision: "deny" };
+    }
+    return set(
+      checkHostedSiteAccess$,
+      { siteId: args.siteId, userId: args.viewerUserId },
+      signal,
     );
   },
 );
@@ -1519,6 +1529,54 @@ function isPublicHostedSiteUrl(
   return registeredSite || (!deploymentId && args.hostname !== undefined);
 }
 
+const signAuthorizedHostedFiles$ = command(
+  async (
+    { set },
+    target: Extract<HostedSiteFilesTargetResult, { status: "ok" }>,
+    viewerId: string,
+    signal: AbortSignal,
+  ): Promise<GetHostedSiteFilesResult> => {
+    const { deployment, site } = target;
+    const access = await set(
+      checkHostedSiteAccess$,
+      { siteId: site.id, userId: viewerId },
+      signal,
+    );
+    if (!access.allowed) {
+      return { status: "not_found", message: "Hosted site not found" };
+    }
+    if (deployment.status !== "ready") {
+      return {
+        status: "conflict",
+        message: `Hosted deployment is ${deployment.status}`,
+      };
+    }
+
+    const hostedR2 = hostedR2Config();
+    if (hostedR2.status === "config_error") {
+      return hostedR2;
+    }
+
+    return {
+      status: "ok",
+      body: await set(
+        signHostedSiteFiles$,
+        {
+          metadata: {
+            siteId: site.id,
+            deploymentId: deployment.id,
+            ...hostedSiteResponseAddress(deployment, site.publicSlug),
+          },
+          manifest: deployment.manifest,
+          prefix: deployment.r2Prefix,
+          viewerId: viewerId,
+        },
+        signal,
+      ),
+    };
+  },
+);
+
 export const getHostedSiteFiles$ = command(
   async (
     { set },
@@ -1595,35 +1653,7 @@ export const getHostedSiteFiles$ = command(
     if (target.status !== "ok") {
       return target;
     }
-    const { deployment, site } = target;
-    if (deployment.status !== "ready") {
-      return {
-        status: "conflict",
-        message: `Hosted deployment is ${deployment.status}`,
-      };
-    }
-
-    const hostedR2 = hostedR2Config();
-    if (hostedR2.status === "config_error") {
-      return hostedR2;
-    }
-
-    return {
-      status: "ok",
-      body: await set(
-        signHostedSiteFiles$,
-        {
-          metadata: {
-            siteId: site.id,
-            deploymentId: deployment.id,
-            ...hostedSiteResponseAddress(deployment, site.publicSlug),
-          },
-          manifest: deployment.manifest,
-          prefix: deployment.r2Prefix,
-        },
-        signal,
-      ),
-    };
+    return set(signAuthorizedHostedFiles$, target, args.userId, signal);
   },
 );
 

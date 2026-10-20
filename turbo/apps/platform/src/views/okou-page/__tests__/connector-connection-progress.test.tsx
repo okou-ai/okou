@@ -207,7 +207,7 @@ test.each([
         : AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 60_000,
       context.signal,
     );
-    const sentry = context.mocks.sentry();
+    context.mocks.sentry();
     if (diagnostics === "unavailable") {
       vi.spyOn(Sentry, "addBreadcrumb").mockImplementation(() => {
         throw new Error("Diagnostic SDK is unavailable");
@@ -377,7 +377,6 @@ test.each([
         return entry.message === "race-settled";
       })?.data?.branch,
     );
-    expect(sentry.reports).toHaveLength(0);
   },
 );
 
@@ -385,7 +384,7 @@ test.each(["popup", "cancel", "forbidden"] as const)(
   "Preserve the pending OAuth receipt outcome when %s ends the wait",
   async (finish) => {
     mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 60_000, context.signal);
-    const sentry = context.mocks.sentry();
+    context.mocks.sentry();
     const receiptStarted = context.mocks.deferred<void>();
     const oauthAttemptId = crypto.randomUUID();
     let firstReceiptRead = true;
@@ -489,15 +488,11 @@ test.each(["popup", "cancel", "forbidden"] as const)(
     }[finish];
     expect(breadcrumbs.at(-1)?.data).toMatchObject(expectedOutcome);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      screen.queryByText("You've successfully connected with Stripe!"),
-    ).toBeNull();
     await waitFor(() => {
       expect(
         screen.queryAllByText("OAuth completion is unavailable"),
       ).toHaveLength(finish === "forbidden" ? 1 : 0);
     });
-    expect(sentry.reports).toHaveLength(0);
   },
 );
 

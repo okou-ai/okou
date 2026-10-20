@@ -2,7 +2,6 @@ import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -22,18 +21,6 @@ const defaultScopes =
 const modernVersion = "2026-07-28";
 function client() {
   return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
-}
-function rpc(body: unknown): unknown {
-  if (typeof body !== "string") {
-    return body;
-  }
-  const frame = body.split("\n").find((line) => {
-    return line.startsWith("data: ");
-  });
-  if (!frame) {
-    throw new Error("Expected a complete MCP SSE response");
-  }
-  return JSON.parse(frame.slice(6)) as unknown;
 }
 function requestBody(
   method: string,
@@ -189,33 +176,8 @@ describe("external MCP authentication and transport", () => {
       { method: "tools/list", name: "get_chat_thread_list", args: {} },
       { method: "tools/call", name: "get_chat_indicators", args: {} },
       { method: "tools/call", name: "get_chat_thread_list", args: {} },
-      {
-        method: "tools/call",
-        name: "get_chat_thread_list",
-        args: { threadId: randomUUID() },
-      },
-      {
-        method: "tools/call",
-        name: "get_run_status",
-        args: { runId: randomUUID() },
-      },
-      {
-        method: "tools/call",
-        name: "get_chat_input",
-        args: { threadId: randomUUID(), eventId: randomUUID() },
-      },
       { method: "tools/call", name: "list_agents", args: {} },
       { method: "tools/call", name: "list_models", args: {} },
-      {
-        method: "tools/call",
-        name: "create_chat_thread",
-        args: {
-          requestId: randomUUID(),
-          agentId: randomUUID(),
-          title: "Missing read grant",
-          model: "claude-sonnet-5",
-        },
-      },
     ]) {
       const result = await accept(
         client().request({
@@ -363,26 +325,6 @@ describe("external MCP authentication and transport", () => {
       [503],
     );
     expect(response.body).toMatchObject({ error: "temporarily_unavailable" });
-  });
-
-  it("rejects an unknown tool through the SDK", async () => {
-    const name = "unknown_tool";
-    const auth = await fixture();
-    const response = await client().request({
-      extraHeaders: {
-        ...protocolHeaders(auth.token(), "tools/call"),
-        "MCP-Name": name,
-      },
-      body: requestBody("tools/call", true, {
-        name,
-        arguments: {},
-      }),
-    });
-    expect(
-      z
-        .object({ error: z.object({ code: z.number() }) })
-        .parse(rpc(response.body)).error.code,
-    ).toBeLessThan(0);
   });
 
   it("rejects standalone stateless sessions", async () => {

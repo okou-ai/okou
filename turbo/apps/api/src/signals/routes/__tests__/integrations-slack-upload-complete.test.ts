@@ -2056,7 +2056,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             );
           });
           expect(finalReply).toBeDefined();
-          expect(finalReply).not.toHaveProperty("attachFiles");
 
           const lifecycleMarker = messages.events.find(
             (message): message is CompletedChatEvent => {
@@ -2069,7 +2068,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           );
           expect(lifecycleMarker).toBeDefined();
           expect(lifecycleMarker?.content).toBeNull();
-          expect(lifecycleMarker).not.toHaveProperty("attachFiles");
           return;
         }
 
@@ -2147,15 +2145,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           );
         });
         mocks.clerk.session(userId, orgId);
-        await fixture.run(() => {
-          return accept(
-            uploadClient.upload({
-              ...uploadRequest,
-              params: { artifactId: "not-an-artifact-id" },
-            }),
-            [400],
-          );
-        });
         await fixture.run(() => {
           return accept(
             uploadClient.upload({
@@ -2576,7 +2565,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       );
       expect(lifecycleMarker).toBeDefined();
       expect(lifecycleMarker?.content).toBeNull();
-      expect(lifecycleMarker).not.toHaveProperty("attachFiles");
       expect(
         messages.events.find((message) => {
           return (

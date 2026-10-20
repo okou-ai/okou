@@ -290,7 +290,6 @@ describe("CHAT-02: model-first routing", () => {
         },
       });
       expect(memorySlotMounts[0]).not.toHaveProperty("archiveUrl");
-      expect(memorySlotMounts[0]).not.toHaveProperty("generatedBy");
       await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
     });
   }, 90_000);

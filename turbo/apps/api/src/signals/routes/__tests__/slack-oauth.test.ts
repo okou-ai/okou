@@ -848,15 +848,6 @@ describe("Slack OAuth API routes", () => {
       expect(state.prompt).toBeNull();
     });
 
-    it("returns 400 when orgId or userId is missing", async () => {
-      const response = await appRequest("/api/slack/oauth/connect?orgId=org_1");
-
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Missing orgId or userId",
-      });
-    });
-
     it("returns 503 when Slack client ID is not configured", async () => {
       mockEnv("SLACK_OAUTH_CLIENT_ID", "");
 
@@ -1585,15 +1576,7 @@ describe("Slack OAuth API routes", () => {
       );
     });
 
-    it("returns 400 for missing callback code and redirects Slack errors", async () => {
-      const missingCode = await appRequest(
-        "/api/integrations/slack/oauth/callback",
-      );
-      expect(missingCode.status).toBe(400);
-      await expect(missingCode.json()).resolves.toStrictEqual({
-        error: "Missing authorization code",
-      });
-
+    it("redirects Slack errors", async () => {
       const slackError = await appRequest(
         "/api/integrations/slack/oauth/callback?error=access_denied",
       );

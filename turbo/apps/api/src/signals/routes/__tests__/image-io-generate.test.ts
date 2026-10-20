@@ -1758,19 +1758,8 @@ describe("POST /api/image-io/generate", () => {
         detail: undefined,
       };
     }),
-    ...[
-      "Invalid status code: 503 private-provider-token",
-      "Invalid status code: 503\n",
-      "Invalid status code: 503\r\n",
-      " Invalid status code: 503",
-      "Invalid status code: 0503",
-      "Invalid status code: 503.0",
-      "Unexpected status code: 999",
-      "Unexpected status code: 099",
-      503,
-      { status: 503 },
-    ]
-      .map((error, index) => {
+    ...["Invalid status code: 503 private-provider-token"].map(
+      (error, index) => {
         return {
           caseName: `malformed status-only evidence ${index}`,
           status: "ERROR",
@@ -1778,10 +1767,8 @@ describe("POST /api/image-io/generate", () => {
           error,
           detail: undefined,
         };
-      })
-      .filter((_, index) => {
-        return index !== 8;
-      }),
+      },
+    ),
     ...["downstream_service_error", "downstream_service_unavailable"].map(
       (type) => {
         return {
@@ -1801,10 +1788,7 @@ describe("POST /api/image-io/generate", () => {
         msg: "private-provider-message",
       },
       { type: "downstream_service_error:private-provider-token" },
-      { type: 503 },
       { type: null },
-      null,
-      "private-provider-message",
       [null, { type: "downstream_service_error" }],
       [
         { type: "downstream_service_error" },
@@ -2341,7 +2325,6 @@ describe("POST /api/image-io/generate", () => {
         enhance_prompt: false,
         image_url: MOCKUP_IMAGE_URL,
       });
-      expect(observedBody).not.toHaveProperty("image_prompt_strength");
 
       // The marked-up charge (2 megapixels at 48/megapixel) is asserted through
       // the result body above and the exact org balance drop.

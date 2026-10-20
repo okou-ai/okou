@@ -300,7 +300,7 @@ final class ComposerDraftTests: XCTestCase {
         draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
         isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
         error: nil, attachmentURL: server.http.baseURL, attachments: composer.attachments,
-        supportsAttachments: true, draftState: composer, submit: {}, refresh: nil))
+        draftState: composer, submit: {}, refresh: nil))
     XCTAssertNotNil(composer.conflictingRemote)
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     let window = UIWindow(windowScene: scene)

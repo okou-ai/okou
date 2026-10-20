@@ -53,6 +53,9 @@ function createSiteUrlEditorSignals(
   saved$: State<SiteUrl | null>,
 ) {
   const draft$ = state<string | null>(null);
+  const editing$ = computed((get) => {
+    return get(draft$) !== null;
+  });
   const validation$ = state<Validation>("unchanged");
   const saveConflict$ = state(false);
   const returnFocus$ = state(false);
@@ -134,6 +137,7 @@ function createSiteUrlEditorSignals(
   const save$ = throttleCommand(persist$, 0);
   return {
     draft$,
+    editing$,
     validation$,
     saveConflict$,
     returnFocus$,

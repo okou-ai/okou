@@ -2213,13 +2213,10 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "empty": "Les artefacts, liens et chats associés de ce chat apparaissent ici.",
-      "emptyLinks": "Aucun lien dans ce chat pour le moment",
+      "empty": "Les artefacts et chats associés de ce chat apparaissent ici.",
       "expand": "Développer",
-      "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
       "loading": "Chargement des ressources",
-      "loadingLinks": "Chargement des liens",
       "retry": "Réessayer",
       "title": "Ressources du chat"
     },
@@ -5151,7 +5148,7 @@
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
         "resources": {
-          "description": "Affiche les artefacts, liens et chats associés à côté de la conversation lorsqu’il y a de la place.",
+          "description": "Affiche les artefacts et chats associés à côté de la conversation lorsqu’il y a de la place.",
           "title": "Ouvrir les ressources automatiquement"
         },
         "sectionTitle": "Chat"

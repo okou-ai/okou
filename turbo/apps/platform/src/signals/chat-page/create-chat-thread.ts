@@ -3829,7 +3829,6 @@ export function createChatPanelSignals(
     pin: createChatThreadPinSignals(threadId, threadMeta$),
     locator,
     resources: createChatResourceSignals(
-      messagePipeline.allChatGroups$,
       artifact.resourceCatalog,
       messagePipeline.initialEventsReady$,
     ),

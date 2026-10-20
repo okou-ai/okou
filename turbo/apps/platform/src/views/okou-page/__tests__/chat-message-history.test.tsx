@@ -114,11 +114,4 @@ test("Show a migrated brief as ordinary chat history", async () => {
   const resultElement = screen.getByText(result);
   expect(requestElement.closest('[data-role="user"]')).toBeVisible();
   expect(resultElement.closest('[data-role="assistant"]')).toBeVisible();
-  const morningBriefOccurrences = screen.getAllByText(/Morning Brief/u);
-  expect(morningBriefOccurrences).toStrictEqual([requestElement]);
-  expect(
-    document.querySelector(
-      '[data-morning-brief], [aria-label="Morning Brief"]',
-    ),
-  ).toBeNull();
 });
