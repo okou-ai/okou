@@ -489,6 +489,10 @@ test.each([null, "Close"] as const)(
     await loadComposer();
     await openConnectors(user);
     const catalog = await openAddConnectors(user);
+    await fill(
+      within(catalog).getByPlaceholderText("Find connectors..."),
+      "Google Analytics",
+    );
     await user.click(
       await findFastControl("button", "Connect Google Analytics", catalog),
     );
@@ -537,9 +541,13 @@ test.each([null, "Close"] as const)(
     authWindow.close();
     await authorizationStarted.promise;
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(
-      queryFastControl("button", "Connect Google Analytics", catalog),
-    ).toHaveAttribute("aria-busy", "true");
+    const connectedCard = await findFastControl(
+      "button",
+      "Open Google Analytics details",
+      catalog,
+    );
+    expect(connectedCard).toHaveAttribute("aria-busy", "true");
+    expect(connectedCard).toBeDisabled();
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
