@@ -100,6 +100,11 @@ export const SVG_RENDERER = String.raw`
       const stroke=paint(s.stroke,opacity*Number(s.strokeOpacity));
       const strokeWidth=stroke?parseFloat(s.strokeWidth)*sx:0;
       if(stroke&&s.strokeWidth.includes('%')) {reject('Percentage SVG stroke width');return;}
+      // Element opacity composites fill and stroke together. Applying it to
+      // both paints separately darkens their overlap. SVG lines have no fill.
+      if(Number(s.opacity)<1&&node.localName!=='line'&&fill?.alpha>0&&stroke?.alpha>0&&strokeWidth>0) {
+        reject('Composited SVG fill and stroke opacity');return;
+      }
       if(stroke&&!['miter','round','bevel'].includes(s.strokeLinejoin)) {reject('SVG stroke join');return;}
       const bounds=node.getBoundingClientRect();
       if(rootStyle.overflow!=='visible'&&

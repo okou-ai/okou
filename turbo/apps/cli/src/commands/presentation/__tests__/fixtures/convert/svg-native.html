@@ -187,4 +187,72 @@
       PPTX may include a PNG compatibility preview alongside the original SVG.
     </p>
   </section>
+  <section class="slide">
+    <h1>S03 — element opacity differs from independent paint alpha</h1>
+    <div class="row">
+      <svg id="element-opacity" width="300" height="300" viewBox="0 0 300 300">
+        <rect
+          x="60"
+          y="60"
+          width="180"
+          height="180"
+          fill="red"
+          stroke="blue"
+          stroke-width="40"
+          opacity=".5"
+        />
+      </svg>
+      <svg
+        id="independent-alpha"
+        width="300"
+        height="300"
+        viewBox="0 0 300 300"
+      >
+        <rect
+          x="60"
+          y="60"
+          width="180"
+          height="180"
+          fill="red"
+          stroke="blue"
+          stroke-width="40"
+          fill-opacity=".5"
+          stroke-opacity=".5"
+        />
+      </svg>
+      <svg
+        id="fill-only-opacity"
+        width="300"
+        height="300"
+        viewBox="0 0 300 300"
+      >
+        <rect x="60" y="60" width="180" height="180" fill="red" opacity=".5" />
+      </svg>
+      <svg id="group-opacity" width="300" height="300" viewBox="0 0 300 300">
+        <g opacity=".5">
+          <rect
+            x="60"
+            y="60"
+            width="180"
+            height="180"
+            fill="red"
+            stroke="blue"
+            stroke-width="40"
+          />
+        </g>
+      </svg>
+    </div>
+    <p>
+      Left to right: element opacity, independent paint alpha, fill-only
+      opacity, group opacity.
+    </p>
+    <p>
+      The first and fourth keep the source SVG picture; the middle two stay
+      native.
+    </p>
+    <p>
+      Only the second square has a dark inner stroke: independent fill/stroke
+      alpha overlaps.
+    </p>
+  </section>
 </html>

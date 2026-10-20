@@ -18,9 +18,13 @@ selector waiting, file URLs, and page/occurrence-scoped native-text checks.
   as one vector picture and report `svg-vector-image`. Do not convert only the
   supported children. The renderer may include a PNG compatibility preview
   alongside that SVG; this is not a claim that every viewer renders the SVG.
+- S03: element opacity with overlapping fill/stroke and group opacity retain
+  complete SVG pictures. Independent fill/stroke alpha and fill-only opacity
+  stay native. Only the independent-alpha control has a dark inner stroke;
+  applying element opacity separately to both paints would incorrectly copy it.
 
 Native conversion is deliberately bounded. Paint servers, filters, masks,
-clipping, composited group opacity, markers, dashes, even-odd fills, nested
+clipping, composited group or fill/stroke opacity, markers, dashes, even-odd fills, nested
 viewports, nonuniform stroke transforms and complex text use the same explicit
 source-SVG retention path. External SVG `img` assets remain source pictures.
 Retained SVGs freeze computed paint and keep internal definition references;
@@ -40,7 +44,8 @@ okou presentation convert --input svg-native.html --selector .slide \
 
 Inspect S01 for native `p:grpSp`/`p:sp`/`a:custGeom` and text, with no SVG
 picture objects. Inspect S02 for three complete SVG pictures and three explicit
-diagnostics. Compare the HTML and PPTX renders, then upload this PPTX to Okou
+diagnostics, and S03 for two SVG pictures, two native shapes and two diagnostics.
+Compare the HTML and PPTX renders, then upload this PPTX to Okou
 and use its **Upload to Google Slides** action. Verify ungrouping, recoloring
 and label editing on S01 in Google Slides; compare positions, curves and stroke
 widths against the HTML/PPTX. This external import needs separate acceptance:
