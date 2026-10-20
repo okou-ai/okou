@@ -78,7 +78,7 @@ impl GuestOperationStartGate {
         self.coordinator.ensure_run_control_matches(expected_run_id)
     }
 
-    fn ensure_policy_open(&self) -> Result<(), GuestOperationStartError> {
+    pub(crate) fn ensure_policy_open(&self) -> Result<(), GuestOperationStartError> {
         let admission = match self.terminal_unpark {
             Some(attempt) => self.coordinator.ensure_terminal_unpark_allowed(attempt),
             None => self.coordinator.ensure_operation_start_allowed(),
