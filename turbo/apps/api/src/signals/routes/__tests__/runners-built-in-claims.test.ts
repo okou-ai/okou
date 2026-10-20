@@ -109,7 +109,7 @@ describe("Runner built-in claim authorization", () => {
     });
   });
 
-  it("claims the captured native Codex Auto route after its execution switch changes", async () => {
+  it("keeps Auto on the managed Pi preset when Codex execution is enabled", async () => {
     const owned = await publicChatActor(context, { isolatePg: true });
     owned.ownsFeatureSwitches();
     const { actor, agentId, runnerGroup } = owned;
@@ -123,22 +123,19 @@ describe("Runner built-in claim authorization", () => {
       });
       const queued = await api.createThreadRun(actor, {
         agentId,
-        prompt: "use the captured native Codex Auto route",
+        prompt: "use Auto with Codex execution enabled",
         model: "auto",
-      });
-      await updateFeatureSwitchesForUser(context, switchOwner, {
-        [FeatureSwitchKey.CodexExecution]: false,
       });
       const key = await api.createCliToken(actor);
       await owned.claimPatRun(`Bearer ${key.token}`, queued.runId, [403]);
       const { claim } = await owned.claimChatRun(runnerGroup, queued.runId);
       expect(claim).toMatchObject({
-        cliAgentType: "codex",
-        codexRuntimeConfig: {
-          providerId: "openrouter-codex",
+        cliAgentType: "pi",
+        piModelConfig: {
+          provider: "openrouter",
           baseUrl: "https://openrouter.ai/api/v1",
-          envKey: "OPENAI_API_KEY",
-          wireApi: "responses",
+          model: "@preset/okou-1-0",
+          catalogModel: "auto",
         },
       });
       await expect(api.readRun(actor, queued.runId)).resolves.toMatchObject({

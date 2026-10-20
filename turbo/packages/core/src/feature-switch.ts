@@ -383,7 +383,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     displayName: "Codex execution (test only)",
     description:
-      "Test-only override to use Codex instead of Pi for Auto and supported ChatGPT subscription runs.",
+      "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
   [FeatureSwitchKey.PiMemory]: {
