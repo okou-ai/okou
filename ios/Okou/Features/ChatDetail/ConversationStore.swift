@@ -319,7 +319,12 @@ final class ConversationStore {
       detailOwner = nil
       attachmentViewer.deactivate()
     }
+    reconcileVisibility()
+  }
+
+  func reconcileVisibility() {
     reconcileActivitySummary()
+    reconcileRunUsage()
   }
 
   func reconcileActivitySummary() {
@@ -459,10 +464,11 @@ final class ConversationStore {
 
   private func reconcileRunUsage() {
     runUsage.update(
-      runIDs: visibleItems.compactMap {
-        if case .usage(let runID) = $0 { return runID }
-        return nil
-      }, events: history?.usageEventIDs ?? [:])
+      runIDs: isVisible()
+        ? visibleItems.compactMap {
+          if case .usage(let runID) = $0 { return runID }
+          return nil
+        } : [], events: history?.usageEventIDs ?? [:])
   }
 
   private func persistPending() {

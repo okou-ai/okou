@@ -9,6 +9,63 @@ import XCTest
 
 @MainActor
 final class ConversationRunUsageTests: XCTestCase {
+  func testHiddenResidentConversationOnlyReadsUsageWhenSelected() async throws {
+    let reads = Mutex(0)
+    let total = Mutex(5)
+    let fixture = ConversationHistoryFixture(
+      rows: [
+        try row(1, type: "input.prompt", text: "Question"), try row(2, text: "Answer"),
+        try row(3, type: "run.completed"), try row(4, type: "usage.recorded"),
+      ],
+      usage: { _ in
+        reads.withLock { $0 += 1 }
+        return Self.response(total.withLock { $0 })
+      })
+    var selected = false
+    let conversation = fixture.conversation(isVisible: { selected })
+    defer { conversation.close() }
+    await conversation.refresh()
+    XCTAssertTrue(conversation.runUsage.states.isEmpty)
+    XCTAssertEqual(reads.withLock { $0 }, 0)
+    selected = true
+    conversation.reconcileVisibility()
+    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(5)) }
+    selected = false
+    conversation.reconcileVisibility()
+    fixture.append(try row(5, type: "usage.recorded"))
+    total.withLock { $0 = 9 }
+    await conversation.refresh()
+    XCTAssertEqual(reads.withLock { $0 }, 1)
+    selected = true
+    conversation.reconcileVisibility()
+    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(9)) }
+    XCTAssertEqual(reads.withLock { $0 }, 2)
+  }
+
+  func testHidingUsageCancelsOldReadBeforeSameRunIsShownAgain() async throws {
+    let gate = UsageResponseGate()
+    let reads = Mutex(0)
+    let fixture = ChatHTTPFixture { _ in
+      let count = reads.withLock {
+        $0 += 1
+        return $0
+      }
+      if count == 1 { await gate.wait() }
+      return Self.response(count == 1 ? 999 : 3)
+    }
+    let store = ConversationRunUsageStore(
+      sync: ChatSync(client: fixture.client), threadID: "thread", didFail: { _ in })
+    defer { store.close() }
+    store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
+    await gate.started()
+    store.update(runIDs: [], events: [Self.runID: "event"])
+    store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
+    try await eventually { store.states[Self.runID] == .available(Self.usage(3)) }
+    await gate.release()
+    XCTAssertEqual(store.states[Self.runID], .available(Self.usage(3)))
+    XCTAssertEqual(reads.withLock { $0 }, 2)
+  }
+
   func testSteerAndMultipleOutputsShowOneTotalAfterFinalReplyOutsideFoldedWork() async throws {
     let fixture = ConversationHistoryFixture(
       rows: [

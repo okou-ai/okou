@@ -88,7 +88,9 @@ final class ConversationHistoryFixture: Sendable {
   }
 
   @MainActor
-  func conversation(cache: ChatCache? = nil) -> ConversationStore {
+  func conversation(
+    cache: ChatCache? = nil, isVisible: @escaping @MainActor () -> Bool = { true }
+  ) -> ConversationStore {
     let sync = ChatSync(client: http.client, cache: cache)
     return ConversationStore(
       thread: ChatThread(
@@ -96,7 +98,7 @@ final class ConversationHistoryFixture: Sendable {
         updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
+      isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }
 
   static func id(_ sequence: Int) -> String {

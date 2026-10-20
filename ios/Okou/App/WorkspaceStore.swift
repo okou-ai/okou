@@ -20,8 +20,8 @@ final class WorkspaceStore {
     didSet {
       let previous = selectedConversation
       selectedConversation = selectedThreadID.flatMap { conversation(for: $0) }
-      previous?.reconcileActivitySummary()
-      selectedConversation?.reconcileActivitySummary()
+      previous?.reconcileVisibility()
+      selectedConversation?.reconcileVisibility()
     }
   }
   var selectedAgentID: String? {
@@ -182,7 +182,7 @@ final class WorkspaceStore {
 
   func setForeground(_ active: Bool) {
     isForeground = active
-    selectedConversation?.reconcileActivitySummary()
+    selectedConversation?.reconcileVisibility()
     if !active {
       Task { [weak self] in await self?.synchronizeDrafts() }
     }

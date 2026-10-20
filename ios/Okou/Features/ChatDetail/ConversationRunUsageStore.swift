@@ -42,6 +42,7 @@ final class ConversationRunUsageStore {
     let retained = Set(recentRunIDs)
     states = states.filter { retained.contains($0.key) }
     requestedEvents = requestedEvents.filter { retained.contains($0.key) }
+    if wanted.isEmpty { stopReading() }
     startReading()
   }
 
@@ -54,13 +55,19 @@ final class ConversationRunUsageStore {
 
   func close() {
     closed = true
-    generation = UUID()
-    task?.cancel()
-    task = nil
+    stopReading()
     states = [:]
     requestedEvents = [:]
     wanted = [:]
     recentRunIDs = []
+    readingRunIDs = []
+  }
+
+  private func stopReading() {
+    generation = UUID()
+    task?.cancel()
+    task = nil
+    for id in readingRunIDs { requestedEvents[id] = nil }
     readingRunIDs = []
   }
 
@@ -89,14 +96,22 @@ final class ConversationRunUsageStore {
         let result = try await sync.runUsage(threadID: threadID, runIDs: Array(batch.keys))
         guard !closed, !Task.isCancelled, generation == request else { return }
         for (id, event) in batch
-        where requestedEvents[id] == event && (wanted[id] == nil || wanted[id] == event) {
+        where requestedEvents[id] == event {
+          guard wanted[id] == event else {
+            if wanted[id] == nil { requestedEvents[id] = nil }
+            continue
+          }
           states[id] = result[id].map(ConversationRunUsageState.available) ?? .unavailable
         }
       } catch is CancellationError {
       } catch {
         guard !closed, !Task.isCancelled, generation == request else { return }
         for (id, event) in batch
-        where requestedEvents[id] == event && (wanted[id] == nil || wanted[id] == event) {
+        where requestedEvents[id] == event {
+          guard wanted[id] == event else {
+            if wanted[id] == nil { requestedEvents[id] = nil }
+            continue
+          }
           states[id] = .failed(error.localizedDescription)
         }
         if let status = (error as? APIClientError)?.statusCode, status == 401 || status == 426 {
