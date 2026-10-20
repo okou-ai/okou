@@ -234,7 +234,8 @@ def test_query_action_inspects_form_body_at_most_once(monkeypatch) -> None:
     assert inspection_count == 1
 
 
-def test_form_action_matches_iam_and_uninspectable_body_fails_closed() -> None:
+@pytest.mark.parametrize("indexed", [True, False])
+def test_form_action_matches_iam_and_uninspectable_body_fails_closed(indexed: bool) -> None:
     body = b"Action=ListUsers&Version=2010-05-08"
     permissions = [
         firewall_permission(
@@ -257,6 +258,7 @@ def test_form_action_matches_iam_and_uninspectable_body_fails_closed() -> None:
         headers=headers,
         body=body,
         allow=("list-users",),
+        indexed=indexed,
     )
     missing_body = _match(
         base="https://iam.amazonaws.com",
@@ -265,10 +267,13 @@ def test_form_action_matches_iam_and_uninspectable_body_fails_closed() -> None:
         method="POST",
         headers=headers,
         allow=("list-users",),
+        indexed=indexed,
     )
 
     _assert_allowed(allowed, "list-users")
     _assert_unknown(missing_body)
+    assert isinstance(missing_body, matching.FirewallBlock)
+    assert missing_body.aws_sigv4_body_pending
 
 
 @pytest.mark.parametrize("indexed", [True, False])

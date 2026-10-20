@@ -169,6 +169,39 @@ def test_flow_attachment_transfers_and_releases_once(real_flow) -> None:
     assert budget.state_for_tests() == (0, 0)
 
 
+def test_require_flow_admission_validates_owner_capacity_and_liveness(real_flow) -> None:
+    budget = _budget("admission")
+    other_budget = _budget("other_admission")
+    flow = real_flow(with_response=False)
+    with pytest.raises(RuntimeError, match="admission is missing"):
+        budget.require_from_flow(flow, 0)
+    flow.metadata["admission"] = object()
+    with pytest.raises(TypeError, match="admission has an invalid type"):
+        budget.require_from_flow(flow, 0)
+    del flow.metadata["admission"]
+
+    lease = budget.reserve(4, max_admitted_count=1, max_admitted_body_bytes=4)
+    budget.attach_to_flow(flow, lease)
+    budget.require_from_flow(flow, 4)
+    budget.require_from_flow(flow, 0)
+    assert budget.state_for_tests() == (1, 4)
+    with pytest.raises(RuntimeError, match="exceeds its admission"):
+        budget.require_from_flow(flow, 5)
+    with pytest.raises(ValueError, match="body size cannot be negative"):
+        budget.require_from_flow(flow, -1)
+
+    flow.metadata["other_admission"] = lease
+    with pytest.raises(RuntimeError, match="belongs to another budget"):
+        other_budget.require_from_flow(flow, 4)
+    assert other_budget.state_for_tests() == (0, 0)
+
+    budget.release(lease)
+    with pytest.raises(RuntimeError, match="admission is already released"):
+        budget.require_from_flow(flow, 0)
+    assert budget.take_from_flow(flow) is lease
+    assert budget.state_for_tests() == (0, 0)
+
+
 def test_budget_rejects_lease_from_another_instance(real_flow) -> None:
     first = _budget("first_admission")
     second = _budget("second_admission")

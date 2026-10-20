@@ -1458,6 +1458,9 @@ class FirewallBlock(NamedTuple):
     path: str
     permissions: tuple[str, ...]  # denied/asked permission names only
     reason: FirewallBlockReason
+    # Resource admission only: a missing body can change the final permission
+    # decision. This flag never grants authorization or selects credentials.
+    aws_sigv4_body_pending: bool = False
 
 
 ConnectorRouteAmbiguityReason = Literal[
@@ -2467,6 +2470,22 @@ def _match_compiled_firewall_request_with_api_candidates(
         get_form_action_result=get_form_action_result,
         request_context=request_context,
     )
+    # Missing Content-Length does not prove a bodyless request (HTTP/2). The
+    # header hook owns framing/end-stream validation before admitting capacity.
+    if (
+        isinstance(result, FirewallBlock)
+        and result.reason in ("unknown_endpoint", "permission_denied")
+        and request_context is not None
+        and not request_context.body
+        and any(
+            match.firewall.name == result.name
+            and match.api.base.raw == result.base
+            and not match.api.auth_malformed
+            and _api_auth_uses_aws_sigv4(match.api.raw_api_entry)
+            for match in _relevant_owner_api_matches(collection, selected_name)
+        )
+    ):
+        result = result._replace(aws_sigv4_body_pending=True)
     if is_asterisk_form and isinstance(result, FirewallAllow):
         return FirewallPolicyAllow(result)
     return result
