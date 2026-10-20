@@ -5,6 +5,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { builtinConnectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import {
@@ -19,6 +20,7 @@ import { mockNow, now } from "../../../lib/time";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorOverviewRoutes } from "../connector-overview";
+import { connectedConnectorsRoutes } from "../connected-connectors";
 import { builtinConnectorsOauthDeviceAuthRoutes } from "../connectors-oauth-device-auth";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
@@ -57,6 +59,7 @@ test.each(["builtin", "custom"] as const)(
       isolatePg: true,
       routes: [
         ...connectorOverviewRoutes,
+        ...connectedConnectorsRoutes,
         ...connectorAccountRoutes,
         ...connectorCatalogRoutes,
         ...builtinConnectorsOauthDeviceAuthRoutes,
@@ -185,6 +188,19 @@ test.each(["builtin", "custom"] as const)(
         },
       },
     ]);
+    const savedBriefs = (
+      await accept(app(connectedConnectorsContract).list({ headers }), [200])
+    ).body;
+    expect(savedBriefs).toStrictEqual({
+      builtinConnectors:
+        target.kind === "builtin"
+          ? [expect.objectContaining({ slug: target.connectorSlug })]
+          : [],
+      customConnectors:
+        target.kind === "custom"
+          ? [expect.objectContaining({ id: target.customConnectorId })]
+          : [],
+    });
     const work = await connect("Work");
     const personal = await connect("Personal");
     const mixed = await readOverview();
@@ -288,6 +304,13 @@ test.each(["builtin", "custom"] as const)(
     );
     const empty = await readOverview();
     expect(empty.accountSummaries).toStrictEqual([]);
+    expect(
+      (await accept(app(connectedConnectorsContract).list({ headers }), [200]))
+        .body,
+    ).toStrictEqual({
+      builtinConnectors: [],
+      customConnectors: [],
+    });
     expect(empty.builtinConnectors).toStrictEqual([]);
     expect(empty.customConnectors).toStrictEqual([]);
   },

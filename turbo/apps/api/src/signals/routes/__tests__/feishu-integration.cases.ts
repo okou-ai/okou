@@ -26,6 +26,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   customConnectorByIdContract,
   customConnectorOAuth2Contract,
@@ -92,6 +93,7 @@ import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorOverviewRoutes } from "../connector-overview";
+import { connectedConnectorsRoutes } from "../connected-connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsGetRoutes } from "../custom-connectors-get";
@@ -3406,6 +3408,21 @@ export function registerFeishuIntegrationTests(
           integrationManaged: true,
         });
         expect(connectedOverview.body.accountSummaries).toStrictEqual([]);
+        const briefClient = setupApp({
+          context,
+          routes: connectedConnectorsRoutes,
+        })(connectedConnectorsContract);
+        const briefs = await own(() => {
+          return accept(
+            briefClient.list({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(briefs.body.customConnectors).toStrictEqual(
+          connectedOverview.body.customConnectors,
+        );
         const welcome = fixtureState.outboundMessages.find((message) => {
           return (
             message.kind === "send" &&
@@ -3449,6 +3466,15 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(disconnectedOverview.body.customConnectors).toStrictEqual([]);
+        const disconnectedBriefs = await own(() => {
+          return accept(
+            briefClient.list({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(disconnectedBriefs.body.customConnectors).toStrictEqual([]);
         const disconnectedMemberStatus = await own(() => {
           return accept(
             client.getStatus({

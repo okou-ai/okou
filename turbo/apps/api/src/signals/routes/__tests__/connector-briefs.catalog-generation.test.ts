@@ -2,6 +2,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
@@ -13,6 +14,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import { connectorOverviewRoutes } from "../connector-overview";
+import { connectedConnectorsRoutes } from "../connected-connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -21,6 +23,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const TEST_APP_ROUTES = Object.freeze([
   ...cronConnectorCatalogRoutes,
   ...connectorOverviewRoutes,
+  ...connectedConnectorsRoutes,
 ]);
 const context = testContext();
 const bdd = createBddApi(context);
@@ -131,7 +134,11 @@ describe("connected and curated connector briefs", () => {
       { accessToken: "synthetic-brief-gitlab-key", host: "gitlab.example.com" },
     );
     mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
+    const connected = app(connectedConnectorsContract);
     const initial = await accept(overview.overview({ headers }), [200]);
+    expect(
+      (await accept(connected.list({ headers }), [200])).body.builtinConnectors,
+    ).toStrictEqual(initial.body.builtinConnectors);
     expect(initial.body.builtinConnectors).toContainEqual(
       expect.objectContaining({
         slug: "openai",
@@ -158,6 +165,9 @@ describe("connected and curated connector briefs", () => {
       (await accept(publisher.sync({ headers: cronHeaders }), [200])).body,
     ).toStrictEqual(first.body);
     const replaced = await accept(overview.overview({ headers }), [200]);
+    expect(
+      (await accept(connected.list({ headers }), [200])).body.builtinConnectors,
+    ).toStrictEqual(replaced.body.builtinConnectors);
     expect(replaced.body).toStrictEqual({
       ...initial.body,
       builtinConnectors: initial.body.builtinConnectors.map((brief) => {
@@ -172,6 +182,9 @@ describe("connected and curated connector briefs", () => {
       (await accept(publisher.sync({ headers: cronHeaders }), [200])).body,
     ).toStrictEqual(first.body);
     const removed = await accept(overview.overview({ headers }), [200]);
+    expect(
+      (await accept(connected.list({ headers }), [200])).body.builtinConnectors,
+    ).toStrictEqual(removed.body.builtinConnectors);
     expect(removed.body).toStrictEqual({
       ...initial.body,
       builtinConnectors: initial.body.builtinConnectors.filter((brief) => {
@@ -190,6 +203,9 @@ describe("connected and curated connector briefs", () => {
       (await accept(publisher.sync({ headers: cronHeaders }), [200])).body,
     ).toStrictEqual(first.body);
     const restored = await accept(overview.overview({ headers }), [200]);
+    expect(
+      (await accept(connected.list({ headers }), [200])).body.builtinConnectors,
+    ).toStrictEqual(restored.body.builtinConnectors);
     expect(restored.body).toStrictEqual({
       ...initial.body,
       builtinConnectors: initial.body.builtinConnectors.map((brief) => {
