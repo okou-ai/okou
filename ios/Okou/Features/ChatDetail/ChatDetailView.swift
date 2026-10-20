@@ -7,6 +7,8 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openURL) private var openURL
+  @Environment(\.openChatSource) private var openChatSource
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
@@ -71,8 +73,11 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
-      refresh: { await conversation.refresh() }, content: rowContent
-    )
+      refresh: { await conversation.refresh() }
+    ) { row, anchor in
+      rowContent(row, anchor: anchor).environment(\.openURL, openURL)
+        .environment(\.openChatSource, openChatSource)
+    }
     .ignoresSafeArea(.container, edges: .vertical)
     .onAppear {
       scrolling.activate(reduceMotion: reduceMotion)
@@ -98,6 +103,9 @@ struct ChatDetailView: View {
     .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
     .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
+    }
+    .onChange(of: conversation.navigationRequest) { _, request in
+      if let request { scrolling.reveal(request.position) }
     }
     .onDisappear {
       selectionToQuote = nil

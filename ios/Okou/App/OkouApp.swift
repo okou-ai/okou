@@ -216,6 +216,7 @@ private struct WorkspaceRootView: View {
           })
       )
     }
+    .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .task {
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)

@@ -162,6 +162,7 @@ struct UserMessageInlineText: View {
 private struct UserMessageAnnotation: View {
   let part: ChatUserMessage.Part
   let webURL: URL
+  @Environment(\.openChatSource) private var openChatSource
 
   private var kind: String {
     if part.type == "automation" { return "automation" }
@@ -228,8 +229,18 @@ private struct UserMessageAnnotation: View {
   var body: some View {
     Group {
       if let title {
-        if let destination {
-          Link(destination: destination) { label(title).accessibilityHint("Open source") }
+        if kind == "automation", let id = part.workflowId, UUID(uuidString: id) != nil,
+          let openChatSource
+        {
+          Button {
+            openChatSource(.workflow(id: id))
+          } label: {
+            label(title).accessibilityHint("Open chat")
+          }
+        } else if let destination {
+          Link(destination: destination) {
+            label(title).accessibilityHint(opensChat ? "Open chat" : "Open source")
+          }
         } else {
           label(title)
         }
@@ -238,6 +249,8 @@ private struct UserMessageAnnotation: View {
     .font(.caption).foregroundStyle(.secondary)
     .accessibilityIdentifier("user-message-origin-\(kind)")
   }
+
+  private var opensChat: Bool { kind == "automation" || kind == "agent" }
 
   private func label(_ title: String) -> some View {
     HStack(spacing: 6) {
@@ -251,7 +264,9 @@ private struct UserMessageAnnotation: View {
         Image(systemName: symbol)
       }
       Text(title).lineLimit(1)
-      if destination != nil { Image(systemName: "arrow.up.right").font(.caption2) }
+      if destination != nil {
+        Image(systemName: opensChat ? "chevron.right" : "arrow.up.right").font(.caption2)
+      }
     }
     .padding(.horizontal, 6).padding(.vertical, 4)
   }

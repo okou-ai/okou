@@ -5,6 +5,7 @@ struct MessageBodyView: View, Equatable {
   let text: String
   let baseURL: URL
   let markdown: MessageMarkdownCache
+  @Environment(\.openURL) private var openURL
   private struct Prepared {
     let source: String
     let content: AttributedString
@@ -44,7 +45,8 @@ struct MessageBodyView: View, Equatable {
         guard ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
           return .discarded
         }
-        return .systemAction(url)
+        openURL(url)
+        return .handled
       }
     )
     .task(id: text) {
