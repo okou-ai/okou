@@ -70,14 +70,20 @@ impl SandboxFactory for CheckpointFactory {
         self.inner.config_hash()
     }
     async fn create(&self, config: SandboxConfig) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.inner.create(config).await
+        // Guest observations follow every returned sandbox. The blocking home
+        // checkpoint remains exclusive to the explicit-custody path below.
+        let checkpoint = self.checkpoint.guest().map(FactoryCheckpoint::Guest);
+        self.inner.create_inner(config, None, None, checkpoint).await
     }
     async fn create_with_observer(
         &self,
         config: SandboxConfig,
         observer: &mut dyn SandboxCreateObserver,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.inner.create_with_observer(config, observer).await
+        let checkpoint = self.checkpoint.guest().map(FactoryCheckpoint::Guest);
+        self.inner
+            .create_inner(config, Some(observer), None, checkpoint)
+            .await
     }
     async fn create_with_custody(
         &self,
