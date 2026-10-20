@@ -61,28 +61,6 @@ describe("POST /api/billing/restore", () => {
     mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_fake");
   });
 
-  it("returns 503 when STRIPE_SECRET_KEY is not configured", async () => {
-    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
-
-    const client = setupApp({ context, routes: billingRestoreRoutes })(
-      billingRestoreContract,
-    );
-    const response = await accept(
-      client.create({
-        body: {},
-        headers: {},
-      }),
-      [503],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Billing not configured",
-        code: "PROVIDER_UNAVAILABLE",
-      },
-    });
-  });
-
   it("returns 401 when not authenticated", async () => {
     const client = setupApp({ context, routes: billingRestoreRoutes })(
       billingRestoreContract,

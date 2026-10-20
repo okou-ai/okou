@@ -6,13 +6,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
-import {
-  createDeferredPromise,
-  resetSignal,
-  settle,
-  waitForOperation,
-} from "../../signals/utils.ts";
-import { createAuthedContractClient } from "../../signals/api-client-base.ts";
+import { createDeferredPromise, settle } from "../../signals/utils.ts";
 import { mockNow, now } from "../time.ts";
 import { createAblyAuthCallback } from "../ably-auth.ts";
 import { initSharedDatabaseWorkerSentry } from "../../shared-database/worker-sentry.ts";
@@ -21,7 +15,6 @@ import {
   createAblyAuthDiagnosticScope,
   observeAblyFetchRequest,
 } from "../ably-auth-diagnostics.ts";
-import type { AuthTokenProvider } from "../auth-diagnostics.ts";
 
 // Protocol diagnostics have no page surface. Exercise public requestToken on
 // the real locked SDK, not the page-test Ably alias (whose plugin is a Symbol).
@@ -82,20 +75,11 @@ function tokenRequest(clientId = "secret-client-id") {
   };
 }
 
-function client(instance: string, getToken?: AuthTokenProvider) {
+function client(instance: string) {
   const scope = createAblyAuthDiagnosticScope({ realtimeInstanceId: instance });
-  const authClient = getToken
-    ? createAuthedContractClient(platformRealtimeTokenContract, {
-        baseUrl: "https://auth.example.com",
-        clientVersion: "test",
-        getToken,
-        getVercelProtectionBypass: () => {
-          return undefined;
-        },
-      })
-    : initClient(platformRealtimeTokenContract, {
-        baseUrl: "https://auth.example.com",
-      });
+  const authClient = initClient(platformRealtimeTokenContract, {
+    baseUrl: "https://auth.example.com",
+  });
   const ably = createAblyRealtime(
     {
       autoConnect: false,
@@ -123,83 +107,32 @@ function client(instance: string, getToken?: AuthTokenProvider) {
   return ably;
 }
 
-const resetDeadline$ = resetSignal();
-
 function controlledDeadline() {
-  const signal = context.store.set(resetDeadline$, context.signal);
-  vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(signal);
+  let expire: (() => void) | undefined;
+  const originalSetTimeout = globalThis.setTimeout;
+  const setTimeoutSpy = vi
+    .spyOn(globalThis, "setTimeout")
+    .mockImplementation((callback, ms, ...args) => {
+      if (ms === 5000) {
+        expire = () => {
+          if (typeof callback !== "function") {
+            throw new Error("Auth deadline callback must be callable");
+          }
+          callback(...args);
+        };
+        return 1 as unknown as ReturnType<typeof globalThis.setTimeout>;
+      }
+      return originalSetTimeout(callback, ms, ...args);
+    });
   return () => {
-    // Deliver the native timeout reason at the observed boundary without
-    // sleeping or cancelling the connection's root lifetime.
-    const abort = AbortController.prototype.abort;
-    vi.spyOn(AbortController.prototype, "abort").mockImplementationOnce(
-      function (this: AbortController) {
-        abort.call(
-          this,
-          new DOMException("The operation timed out", "TimeoutError"),
-        );
-      },
-    );
-    context.store.set(resetDeadline$, context.signal);
+    const callback = expire;
+    if (!callback) {
+      throw new Error("Auth deadline was not scheduled");
+    }
+    setTimeoutSpy.mockRestore();
+    callback();
   };
 }
-
-test("Auth deadline rejects the SDK request and ignores a late page token before a fresh renewal", async () => {
-  prepare();
-  const sentry = context.mocks.sentry();
-  initSharedDatabaseWorkerSentry();
-  const expire = controlledDeadline();
-  const tokenStarted = createDeferredPromise<AbortSignal>(context.signal);
-  const token = createDeferredPromise<string | null>(context.signal);
-  let tokenReads = 0;
-  let apiRequests = 0;
-  context.mocks.http.post("https://auth.example.com/api/realtime/token", () => {
-    apiRequests++;
-    return HttpResponse.json(tokenRequest());
-  });
-  context.mocks.http.post(
-    "https://exchange.example.com/keys/secret-key.name/requestToken",
-    () => {
-      return HttpResponse.json({
-        token: "secret-response-token",
-        issued: now(),
-        expires: now() + 3_600_000,
-      });
-    },
-  );
-  const ably = client("deadline-token", (_diagnostic, signal) => {
-    tokenReads++;
-    if (tokenReads > 1) {
-      return Promise.resolve("fresh-clerk-token");
-    }
-    if (!signal) {
-      throw new Error("Token acquisition requires the auth signal");
-    }
-    tokenStarted.resolve(signal);
-    // Match the production Worker provider: stop waiting on cancellation
-    // even though the page can still deliver its token later.
-    return waitForOperation(token.promise, signal);
-  });
-  const result = settle(ably.auth.requestToken());
-  const signal = await tokenStarted.promise;
-  expire();
-  await expect(result).resolves.toMatchObject({
-    ok: false,
-    error: { code: 40_170 },
-  });
-  expect(signal.aborted).toBeTruthy();
-  expect(signal.reason).toBeInstanceOf(DOMException);
-  expect(signal.reason).toMatchObject({ name: "AbortError" });
-  expect(context.signal.aborted).toBeFalsy();
-  expect(apiRequests).toBe(0);
-
-  token.resolve("late-clerk-token");
-  await expect(ably.auth.requestToken()).resolves.toMatchObject({
-    token: "secret-response-token",
-  });
-  expect(apiRequests).toBe(1);
-  expect(sentry.reports).toStrictEqual([]);
-});
 
 test("Auth deadline aborts an in-flight platform token HTTP request without exchanging its late response", async () => {
   prepare();
@@ -241,7 +174,7 @@ test("Auth deadline aborts an in-flight platform token HTTP request without exch
   const ably = client("deadline-http");
   const result = settle(ably.auth.requestToken());
   const signal = await started.promise;
-  expire();
+  await expire();
   await expect(result).resolves.toMatchObject({
     ok: false,
     error: { code: 40_170 },

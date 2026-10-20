@@ -77,12 +77,6 @@ with tempfile.TemporaryDirectory() as temp:
     commit('mixed native')
     expect(False, True)
 
-    branch('sandbox-channel-corpus')
-    write('crates/guest-contracts/tests/fixtures/sandbox-channel.json', '{}')
-    commit('shared sandbox channel corpus')
-    expect(False, True)
-    expect(False, True, event='merge_group')
-
     branch('rename-out')
     git('mv', 'ios/App.swift', 'turbo/App.swift')
     commit('move out of ios')

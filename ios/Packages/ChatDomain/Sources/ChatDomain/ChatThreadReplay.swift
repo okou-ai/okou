@@ -79,6 +79,12 @@ public enum ChatThreadReplay {
       return
     }
 
+    if event.kind == .sortTouched, let muted = event.muted {
+      thread.isMuted = muted
+      threads[event.chatThreadId] = thread
+      return
+    }
+
     // An explicit rank moves a pinned thread without changing activity or
     // updated time. Canonical agent reassignment applies to every thread.
     if event.kind == .sortTouched, let rank = event.pinOrder {

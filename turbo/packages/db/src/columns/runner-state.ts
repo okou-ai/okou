@@ -3,7 +3,6 @@ import {
   varchar,
   integer,
   bigint,
-  boolean,
   jsonb,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -17,6 +16,8 @@ import type {
 export function runnerStateColumns() {
   return {
     runnerId: uuid("runner_id").primaryKey(),
+    /** Official configured host locality; null for omitted or PAT observations. */
+    runnerHostname: varchar("runner_hostname", { length: 255 }),
     runnerGroup: varchar("runner_group", { length: 255 }).notNull(),
     heartbeatGeneration: bigint("heartbeat_generation", {
       mode: "number",
@@ -49,10 +50,6 @@ export function runnerStateColumns() {
       .default([])
       .notNull(),
     mode: varchar("mode", { length: 20 }).notNull().default("running"),
-    /** Host-local WSS ingress service observation; not public DNS/TLS reachability. */
-    wssIngressServiceActive: boolean("wss_ingress_service_active")
-      .notNull()
-      .default(false),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   };
 }

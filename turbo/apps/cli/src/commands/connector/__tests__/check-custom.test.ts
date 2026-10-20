@@ -15,8 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import {
   connectorAccount,
-  connectorAccountSummary,
-  stubConnectorAccountSummaries,
+  stubConnectorAccounts,
 } from "../../__tests__/helpers/connector-accounts";
 import {
   catalogItem,
@@ -255,15 +254,10 @@ describe("custom connector URL diagnostics", () => {
 
   it("uses current organization connection metadata outside a run", async () => {
     server.use(
-      stubConnectorAccountSummaries([
-        connectorAccountSummary(
+      stubConnectorAccounts([
+        connectorAccount(
           { kind: "custom", customConnectorId: CUSTOM_ID },
-          [
-            connectorAccount(
-              { kind: "custom", customConnectorId: CUSTOM_ID },
-              { id: DEFAULT_ACCOUNT_ID },
-            ),
-          ],
+          { id: DEFAULT_ACCOUNT_ID },
         ),
       ]),
     );

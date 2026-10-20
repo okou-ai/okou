@@ -1,14 +1,15 @@
 """AWS SigV4 firewall-auth integration helpers for mitm-addon tests."""
 
 import copy
-from collections.abc import Mapping, Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import Protocol, TypedDict
 
 from mitmproxy import http
 
 import auth
+import aws_sigv4_body_admission
 import firewall_auth_cache as auth_cache
 import firewall_auth_client as auth_client
 import flow_metadata_keys as metadata_keys
@@ -272,6 +273,21 @@ def make_sts_query_sigv4_flow(
     )
 
 
+@contextmanager
+def admitted_aws_sigv4_body(flow: http.HTTPFlow) -> Iterator[None]:
+    """Supply the header-hook resource context for direct auth-boundary tests."""
+    admission = aws_sigv4_body_admission.reserve(len(flow.request.raw_content or b""))
+    try:
+        aws_sigv4_body_admission.attach_to_flow(flow, admission)
+    except BaseException:
+        aws_sigv4_body_admission.release(admission)
+        raise
+    try:
+        yield
+    finally:
+        aws_sigv4_body_admission.release_from_flow(flow)
+
+
 async def handle_firewall_request_with_auth_endpoint(
     flow: http.HTTPFlow,
     tmp_path: Path,
@@ -289,7 +305,11 @@ async def handle_firewall_request_with_auth_endpoint(
     resolved_sandbox_info = aws_sandbox_info(tmp_path) if sandbox_info is None else sandbox_info
     prepare_firewall_request(flow, run_id=resolved_sandbox_info["runId"])
 
-    with resolved_endpoint.run(), mitm_ctx(api_url=resolved_endpoint.api_url):
+    with (
+        resolved_endpoint.run(),
+        mitm_ctx(api_url=resolved_endpoint.api_url),
+        admitted_aws_sigv4_body(flow),
+    ):
         return await handle_firewall_request_without_upstream_admission(
             flow,
             aws_allow() if allow is None else allow,

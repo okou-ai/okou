@@ -33,34 +33,42 @@ public enum ChatEventProjection {
     }.map(\.id)
 
     var messages: [ChatMessage] = []
+    var previousRun: String?
+    var previousModel: ChatUserMessage.Model?
+    var hasPreviousRun = false
     for row in rows where !revoked.contains(row.id) {
       let text: String
       var attachments: [ChatMessageAttachment] = []
       let role: ChatMessage.Role
       let isError: Bool
+      var userMessage: ChatUserMessage?
+      var modelChange: ChatModelChange?
       switch row.eventType {
       case .inputPrompt, .inputRejected, .inputAutomation:
         if row.eventType == .inputAutomation && row.payload?.userMessage == nil { continue }
         guard let document = row.payload?.userMessage, document.version == 1 else {
           throw ChatError.invalidContract("Unsupported user message document.")
         }
-        attachments = try document.parts.filter { $0.type == "file" }.map { part in
-          guard let id = part.fileId, !id.isEmpty,
-            let filename = part.filenameSnapshot, !filename.isEmpty,
-            let contentType = part.contentType, !contentType.isEmpty
-          else { throw ChatError.invalidContract("Attachment identity or metadata is missing.") }
-          return ChatMessageAttachment(id: id, filename: filename, contentType: contentType)
-        }
-        let body = document.parts.compactMap { part -> String? in
-          switch part.type {
-          case "text": part.text
-          case "chat_thread", "source": part.titleSnapshot
-          case "agent": part.nameSnapshot
-          case "automation": part.workflowName
-          default: nil
-          }
-        }.joined(separator: "\n")
+        try document.validate()
+        userMessage = document
+        attachments = try document.attachments()
+        let body = document.displayText
         text = row.payload?.error.map { body + "\n\n" + $0 } ?? body
+        if let run = row.runId.map({ "run:\($0)" })
+          ?? document.model.map({ _ in "event:\(row.id)" }),
+          run != previousRun
+        {
+          if hasPreviousRun, let previousModel, let model = document.model {
+            if !previousModel.selectsSameModel(as: model) {
+              modelChange = .model(model)
+            } else if previousModel.isFast != model.isFast {
+              modelChange = .fastMode(model.isFast)
+            }
+          }
+          previousRun = run
+          previousModel = document.model
+          hasPreviousRun = true
+        }
         role = .user
         isError = row.eventType == .inputRejected
       case .outputMessage:
@@ -81,13 +89,17 @@ public enum ChatEventProjection {
         isError = false
       default: continue
       }
-      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty {
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
+        && userMessage?.annotation == nil
+      {
         continue
       }
       messages.append(
         ChatMessage(
           id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
-          runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError))
+          runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError,
+          userMessage: userMessage, inputError: role == .user ? row.payload?.error : nil,
+          modelChange: modelChange))
     }
 
     let state: ChatExecutionState
@@ -108,11 +120,19 @@ public enum ChatEventProjection {
       }
     }
     let work = ChatWorkProjection.build(rows: rows, messages: messages)
+    var usageEventIDs: [String: String] = [:]
+    for row in rows where row.eventType == .usageRecorded {
+      if let runID = row.runId { usageEventIDs[runID] = row.id }
+    }
     return ChatHistory(
       messages: work.messages, executionState: state,
       activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
       activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
-      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections)
+      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
+      latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max(),
+      recommendedFollowups: ChatFollowupProjection.source(
+        rows: rows, active: state.isActive),
+      usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
   }
 
   /// Raw history may contain historical private memory-citation envelopes.

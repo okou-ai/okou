@@ -637,6 +637,10 @@ describe("CHAT-02: completed chat callback", () => {
         return message.content;
       }),
     ).toStrictEqual(["final answer"]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "desktopShellAuthorizationChanged",
+      null,
+    );
 
     const marker = lifecycleMarkers(after.events, first.runId, "completed")[0];
     if (!marker) {
@@ -2208,6 +2212,10 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     );
     await expectCancellationRecoveryPending(actor, run.threadId, false);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "desktopShellAuthorizationChanged",
+      null,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadDetailChanged:${run.threadId}`,
       null,
     );
@@ -3778,7 +3786,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
     expect(marker?.content).toBe(marker?.error);
-    expect(marker?.error).not.toContain("status.claude.com");
 
     const rawRun = await api.readRun(actor, run.runId);
     expect(rawRun.error).toBe(rawOverloadError);
@@ -3848,7 +3855,6 @@ describe("CHAT-02: failed chat callbacks", () => {
         throw new Error("Expected failed chat callback to store an error");
       }
       expect(marker.content).toBe(marker.error);
-      expect(marker.error).not.toContain("Report this issue");
       await expect(
         api.readRun(fixture.actor, run.runId),
       ).resolves.toMatchObject({

@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { delay } from "signal-timers";
+import { delay, timeout } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
@@ -225,50 +225,44 @@ export async function withCleanup<T>(
   }
 }
 
-/** Add a deadline that cancels with AbortError, preserving the owner's reason. */
-export function abortAfter(ms: number, parentSignal: AbortSignal): AbortSignal {
+/** Add an owner-bound deadline, preserving the owner's reason on cancellation. */
+export function abortAfter(
+  ms: number,
+  parentSignal: AbortSignal,
+  timeoutReason: unknown = new DOMException(
+    "Operation timed out",
+    "AbortError",
+  ),
+): AbortSignal {
   const controller = new AbortController();
-  AbortSignal.timeout(ms).addEventListener(
-    "abort",
+  timeout(
     () => {
-      controller.abort(new DOMException("Operation timed out", "AbortError"));
+      controller.abort(timeoutReason);
     },
-    { once: true, signal: parentSignal },
+    ms,
+    { signal: parentSignal },
   );
   return AbortSignal.any([parentSignal, controller.signal]);
 }
 
-/** Stop waiting for a shared operation without cancelling its other owners. */
-export function waitForOperation<T>(
-  operation: Promise<T>,
-  signal: AbortSignal,
+/** Run finite work under an owner-bound deadline and cancel it when work settles. */
+export function withAbortAfter<T>(
+  ms: number,
+  parentSignal: AbortSignal,
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutReason?: unknown,
 ): Promise<T> {
-  const cancelled = createDeferredPromise<never>(signal);
-  return withCleanup(Promise.race([operation, cancelled.promise]), () => {
-    if (!cancelled.settled()) {
-      cancelled.reject(new DOMException("Operation settled", "AbortError"));
-    }
+  const controller = new AbortController();
+  const signal = abortAfter(
+    ms,
+    AbortSignal.any([parentSignal, controller.signal]),
+    timeoutReason,
+  );
+  return withCleanup(operation(signal), () => {
+    controller.abort();
   });
 }
 
-/** Race independently owned attempts and cancel the losers when one settles. */
-export function raceWithCancellation<T>(
-  operations: readonly ((signal: AbortSignal) => Promise<T>)[],
-  signal: AbortSignal,
-): Promise<T> {
-  signal.throwIfAborted();
-  const controller = new AbortController();
-  const raceSignal = AbortSignal.any([signal, controller.signal]);
-  const attempts = operations.map(async (operation) => {
-    return await operation(raceSignal);
-  });
-  return withCleanup(
-    waitForOperation(Promise.race(attempts), raceSignal),
-    () => {
-      controller.abort();
-    },
-  );
-}
 // ---------------------------------------------------------------------------
 // Polling loop with fibonacci backoff
 // ---------------------------------------------------------------------------

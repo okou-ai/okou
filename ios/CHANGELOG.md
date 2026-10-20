@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/ios-v0.13.0...ios-v0.14.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add native message text selection ([#41848](https://github.com/okou-ai/okou/issues/41848)) ([a77dd33](https://github.com/okou-ai/okou/commit/a77dd33a57f584d60ed24610fa588ce4a5240275))
+* **ios:** add native recommended follow-up suggestions ([#41852](https://github.com/okou-ai/okou/issues/41852)) ([e46045a](https://github.com/okou-ai/okou/commit/e46045a1ec7a30435dc9890774c13b389e8b4b64))
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/ios-v0.12.1...ios-v0.13.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** render structured user messages ([#41810](https://github.com/okou-ai/okou/issues/41810)) ([8ec30fd](https://github.com/okou-ai/okou/commit/8ec30fd1b5c5b197c824dc353a68744d77c657a4))
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/ios-v0.12.0...ios-v0.12.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ios:** prevent work history toggle scroll flicker ([#41781](https://github.com/okou-ai/okou/issues/41781)) ([9b1180b](https://github.com/okou-ai/okou/commit/9b1180bc0e510b1553a2711c7c310f9b6d5182c9))
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/ios-v0.11.0...ios-v0.12.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add workspace chat search and unread controls ([#41660](https://github.com/okou-ai/okou/issues/41660)) ([d709362](https://github.com/okou-ai/okou/commit/d7093621fb92b80f5598635a1f0953157fc2d1f5))
+
+## [0.11.0](https://github.com/okou-ai/okou/compare/ios-v0.10.0...ios-v0.11.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** paste images into chat attachments ([#41652](https://github.com/okou-ai/okou/issues/41652)) ([1a74785](https://github.com/okou-ai/okou/commit/1a74785397fb00f47ba73f39674f00a93b78a363))
+
+
+### Refactoring
+
+* **ios:** remove dedicated feature switches ([#41675](https://github.com/okou-ai/okou/issues/41675)) ([261b88c](https://github.com/okou-ai/okou/commit/261b88cfcbd8edc9073b6ae64863b5d56e7baaa9))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/ios-v0.9.1...ios-v0.10.0) (2026-10-20)
 
 

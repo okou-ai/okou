@@ -15,7 +15,7 @@ import {
   setSharedDatabaseBridgeHostForTest$,
   type SharedDatabaseBridgeHost,
 } from "../signals/shared-database-browser.ts";
-import { onDomEventFn, waitForOperation } from "../signals/utils.ts";
+import { onDomEventFn } from "../signals/utils.ts";
 import type {
   SharedDatabaseBridge,
   SharedDatabaseBridgeEvents,
@@ -302,17 +302,14 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
   ): Promise<ComputedValue<TKey>> {
     const signal = this.requireConnectionSignal();
     signal.throwIfAborted();
-    const value = await waitForOperation(
-      this.workerStore.set(
-        getComputedStoreMessage$,
-        this.connectionId,
-        {
-          type: "get-computed",
-          requestId: "direct-test-bridge",
-          computedKey,
-        },
-        signal,
-      ),
+    const value = await this.workerStore.set(
+      getComputedStoreMessage$,
+      this.connectionId,
+      {
+        type: "get-computed",
+        requestId: "direct-test-bridge",
+        computedKey,
+      },
       signal,
     );
     const cloned: unknown = structuredClone(value);
@@ -334,13 +331,13 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
         structuredClone(this.options.cachedChatThreadEvents),
       );
     }
-    const operation = this.workerStore.set(
+    const result = await this.workerStore.set(
       querySharedDatabaseWorker$,
       this.connectionId,
       query,
       this.requireConnectionSignal(),
     );
-    const result = await waitForOperation(operation, signal);
+    signal.throwIfAborted();
     const cloned: unknown = structuredClone(result);
     return parseSharedDatabaseQueryResult(query.dataKey, cloned);
   }

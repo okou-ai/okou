@@ -5,7 +5,7 @@ import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -39,7 +39,7 @@ const sharedAuthorization = randomUUID();
 
 try {
   await client.connect();
-  await applyPendingMigrations(migrations, { beforeMillis: migration.when });
+  await applyFixtureMigrations(migrations, { beforeMillis: migration.when });
   await client.query(
     "INSERT INTO agents (id, org_id, owner, name) VALUES ($1, 'wallet-org', 'wallet-user', 'wallet-agent')",
     [agentId],
@@ -52,7 +52,7 @@ try {
     "INSERT INTO link_wallet_oauth_attempts (id, state_hash, org_id, user_id, agent_id, encrypted_verifier, expires_at) VALUES ($1, 'legacy-state', 'wallet-org', 'wallet-user', $2, 'legacy-verifier', now() + interval '30 minutes')",
     [legacyAuthorization, agentId],
   );
-  await applyPendingMigrations(migrations);
+  await applyFixtureMigrations(migrations);
   const legacy = z
     .array(
       z.object({

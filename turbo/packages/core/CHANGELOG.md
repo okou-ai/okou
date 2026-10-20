@@ -1,5 +1,95 @@
 # Changelog
 
+## [8.774.4](https://github.com/okou-ai/okou/compare/core-v8.774.3...core-v8.774.4) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+
+## [8.774.3](https://github.com/okou-ai/okou/compare/core-v8.774.2...core-v8.774.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* **app:** fit pwa keyboard viewport behind a targeted rollout ([#41753](https://github.com/okou-ai/okou/issues/41753)) ([244e8ab](https://github.com/okou-ai/okou/commit/244e8ab6447c3de11d805c814969dcf15cb6e39c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+
+## [8.774.2](https://github.com/okou-ai/okou/compare/core-v8.774.1...core-v8.774.2) (2026-10-20)
+
+
+### Refactoring
+
+* **api:** retire delivery format guidance switch ([#41794](https://github.com/okou-ai/okou/issues/41794)) ([d013da9](https://github.com/okou-ai/okou/commit/d013da9a07294cb0f9f24e1fc15228baa55f5888))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+
+## [8.774.1](https://github.com/okou-ai/okou/compare/core-v8.774.0...core-v8.774.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** make delivery format guidance neutral ([#41765](https://github.com/okou-ai/okou/issues/41765)) ([56afa30](https://github.com/okou-ai/okou/commit/56afa30e971e9ce6c84cee03689f0cca74b1f20d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+
+## [8.774.0](https://github.com/okou-ai/okou/compare/core-v8.773.0...core-v8.774.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add workspace chat search and unread controls ([#41660](https://github.com/okou-ai/okou/issues/41660)) ([d709362](https://github.com/okou-ai/okou/commit/d7093621fb92b80f5598635a1f0953157fc2d1f5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+
+## [8.773.0](https://github.com/okou-ai/okou/compare/core-v8.772.0...core-v8.773.0) (2026-10-20)
+
+
+### Features
+
+* **host:** enforce hosted site visibility in the delivery worker ([#41707](https://github.com/okou-ai/okou/issues/41707)) ([15308b6](https://github.com/okou-ai/okou/commit/15308b61db8a86f607f1400363c24449a3d233c2))
+* route document generation through the office skill ([#41735](https://github.com/okou-ai/okou/issues/41735)) ([d5d8560](https://github.com/okou-ai/okou/commit/d5d85600d5beaf338b9d5580b5be0f733814a306))
+
+
+### Refactoring
+
+* **ios:** remove dedicated feature switches ([#41675](https://github.com/okou-ai/okou/issues/41675)) ([261b88c](https://github.com/okou-ai/okou/commit/261b88cfcbd8edc9073b6ae64863b5d56e7baaa9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+
 ## [8.772.0](https://github.com/okou-ai/okou/compare/core-v8.771.0...core-v8.772.0) (2026-10-20)
 
 

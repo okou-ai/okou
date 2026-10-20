@@ -556,7 +556,6 @@ export {
   connectorAccountMutationIntentSchema,
   connectorAccountTargetQuerySchema,
   connectorAccountListQuerySchema,
-  connectorAccountSummarySchema,
   connectorAccountsContract,
   type ConnectorAccountTarget,
   type ConnectorAccountConnection,
@@ -564,7 +563,6 @@ export {
   type ConnectorAccountSelection,
   type ConnectorAccountInspectionResult,
   type ConnectorAccountMutationIntent,
-  type ConnectorAccountSummary,
 } from "./connector-accounts";
 
 export {
@@ -840,18 +838,25 @@ export {
   type UserBuiltinConnectorsContract,
 } from "./user-connectors";
 export {
-  connectorOverviewContract,
-  connectorOverviewSchema,
-  agentConnectorAccessSchema,
-  connectorAccountBriefSummarySchema,
-  connectorDefaultAccountBriefSchema,
-  type ConnectorOverview,
+  remotesContract,
+  remotesOverviewSchema,
+  computerUseHostBriefSchema,
+  type RemotesOverview,
+} from "./remotes";
+export {
+  connectedConnectorsContract,
+  connectedConnectorsSchema,
+  builtinConnectorBriefSchema,
+  customConnectorBriefSchema,
+  type ConnectedConnectors,
   type BuiltinConnectorBrief,
   type CustomConnectorBrief,
+} from "./connected-connectors";
+export {
+  agentConnectorAccessContract,
+  agentConnectorAccessSchema,
   type AgentConnectorAccess,
-  type ConnectorAccountBriefSummary,
-  type ConnectorDefaultAccountBrief,
-} from "./connector-overview";
+} from "./agent-connector-access";
 export {
   connectorAgentAccessContract,
   connectorAgentAccessSchema,
@@ -1673,3 +1678,8 @@ export {
 } from "./chat-input-status";
 
 export { desktopShellContract } from "./desktop-shell";
+export {
+  desktopShellAuthorizationContract,
+  desktopShellAuthorizationSchema,
+  type DesktopShellAuthorization,
+} from "./desktop-shell-authorization";

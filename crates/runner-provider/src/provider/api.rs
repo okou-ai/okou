@@ -2845,6 +2845,7 @@ mod tests {
     fn heartbeat_state_for_test() -> HeartbeatState {
         HeartbeatState {
             runner_id: "runner-heartbeat-test".to_string(),
+            runner_hostname: None,
             group: "vm0/test".to_string(),
             snapshot_generation: 7,
             snapshot_sequence: 42,
@@ -2872,7 +2873,6 @@ mod tests {
                 }],
             }],
             active_reuse_producers: vec![],
-            wss_ingress_service_active: false,
             mode: "running".to_string(),
         }
     }
@@ -4208,7 +4208,7 @@ mod tests {
     fn claim_request_body_serializes_canonical_preference_at_claim_time() {
         let active_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTier::HomeCache,
+            crate::provider::RunnerPreferenceTarget::HomeCache,
             Instant::now() + Duration::from_secs(60),
         );
         let active = JobCandidate::new(
@@ -4236,7 +4236,7 @@ mod tests {
 
         let expired_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTier::ExactSandbox,
+            crate::provider::RunnerPreferenceTarget::ExactSandbox,
             Instant::now() - Duration::from_secs(1),
         );
         let expired = JobCandidate::new(
@@ -4252,7 +4252,7 @@ mod tests {
 
         let cleared_preference = ActiveRunnerPreference::new(
             RunnerProcessIdentity::new(Uuid::from_u128(8), TEST_HEARTBEAT_GENERATION).unwrap(),
-            RunnerPreferenceTier::FinalizingPredecessor,
+            crate::provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4()),
             Instant::now() + Duration::from_secs(60),
         );
         let cleared = JobCandidate::new(
@@ -4552,10 +4552,9 @@ mod tests {
             .expect("canonical preference telemetry");
         assert!(matches!(
             telemetry.runner_preference,
-            RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::ExactSandbox,
-                ..
-            }
+            RunnerPreference::Preference(
+                crate::provider::RunnerPreferenceDecision::ExactSandbox { .. }
+            )
         ));
         assert_eq!(telemetry.state, Some(RunnerPreferenceClaimState::Active));
         assert_eq!(

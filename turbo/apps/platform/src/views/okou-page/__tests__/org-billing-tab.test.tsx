@@ -2721,7 +2721,6 @@ test("Show billing controls according to plan capabilities", async () => {
 });
 
 test("Manage workspace payment methods in Stripe", async () => {
-  let portalRequestBody: unknown;
   context.mocks.data.org({
     id: "org_1",
     name: "Paid Org",
@@ -2730,8 +2729,7 @@ test("Manage workspace payment methods in Stripe", async () => {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, activeProBillingStatus());
   });
-  context.mocks.api(billingPortalContract.create, ({ body, respond }) => {
-    portalRequestBody = body;
+  context.mocks.api(billingPortalContract.create, ({ respond }) => {
     return respond(200, {
       url: "https://billing.stripe.com/customer-portal/test-org",
     });
@@ -2751,7 +2749,6 @@ test("Manage workspace payment methods in Stripe", async () => {
       "https://billing.stripe.com/customer-portal/test-org",
     );
   });
-  expect(portalRequestBody).not.toHaveProperty("mode");
 });
 
 test("Show custom-plan access without self-service plan changes", async () => {

@@ -4,7 +4,7 @@ import { server } from "../../../mocks/server";
 import {
   authCodeMethod,
   catalogStatusItem,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 import {
   customMcpConnector,
@@ -39,7 +39,7 @@ describe("connector oauth start", () => {
     "starts %s using only the member account intent",
     async (grantKind, path) => {
       server.use(
-        stubConnectorCatalogStatus([
+        stubConnectorCatalog([
           catalogStatusItem({
             connectorSlug: "github",
             authMethods: [{ ...authCodeMethod("oauth"), grantKind }],
@@ -93,7 +93,7 @@ describe("connector oauth start", () => {
         queryInjections: [],
       });
       server.use(
-        stubConnectorCatalogStatus([]),
+        stubConnectorCatalog([]),
         stubCustomConnectors([connector]),
         http.post(
           `http://localhost:3000/api/custom-connectors/${connector.id}/oauth2/start`,
@@ -136,7 +136,7 @@ describe("connector oauth start", () => {
 
   it("preserves the explicit builtin automatic account ID without changing its legacy identity", async () => {
     server.use(
-      stubConnectorCatalogStatus([
+      stubConnectorCatalog([
         catalogStatusItem({
           connectorSlug: "github",
           authMethods: [{ ...authCodeMethod("oauth"), grantKind: "automatic" }],

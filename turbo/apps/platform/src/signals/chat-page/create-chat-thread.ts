@@ -41,7 +41,7 @@ import {
   type DraftSignals,
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { onRejection, resetSignal, settle } from "../utils.ts";
+import { resetSignal, settle } from "../utils.ts";
 import {
   chatEventDebugSummaries,
   chatEventTraceTime,
@@ -114,8 +114,6 @@ import {
   type ComposerSignals,
   type ComposerSubmission,
 } from "../okou-page/composer-signals.ts";
-import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
@@ -201,6 +199,7 @@ import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
+import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
 import { createWalletCardSignalsRegistry } from "./wallet-action-block.ts";
@@ -527,7 +526,6 @@ function createComputerUseHostSelection(
         kind: "set";
         computerUseHostId: string | null;
         cloudBrowserEnabled: boolean;
-        dirty: boolean;
       }
   >({ kind: "unset" });
 
@@ -549,7 +547,7 @@ function createComputerUseHostSelection(
 
   const computerUseHostIdExplicit$ = computed((get): boolean => {
     const user = get(internalUserOverride$);
-    return user.kind === "set" && user.dirty;
+    return user.kind === "set";
   });
 
   const setComputerAccess$ = command(
@@ -561,11 +559,12 @@ function createComputerUseHostSelection(
       },
       signal: AbortSignal,
     ) => {
-      set(internalUserOverride$, {
-        kind: "set",
+      signal.throwIfAborted();
+      const draft = {
+        kind: "set" as const,
         ...selection,
-        dirty: true,
-      });
+      };
+      set(internalUserOverride$, draft);
       if (get(optimisticCreateUnsettled$)) {
         L.debug(
           "setComputerUseHostId$ optimistic thread create unsettled, skip",
@@ -574,26 +573,15 @@ function createComputerUseHostSelection(
         return;
       }
 
-      await onRejection(
-        set(
-          patchChatThreadComputerUseHost$,
-          { threadId, ...selection },
-          signal,
-        ),
-        () => {
-          if (!signal.aborted) {
-            set(internalUserOverride$, {
-              kind: "set",
-              ...selection,
-              dirty: false,
-            });
-          }
-        },
+      await set(
+        patchChatThreadComputerUseHost$,
+        { threadId, ...selection },
+        signal,
       );
       signal.throwIfAborted();
-      set(internalUserOverride$, {
-        kind: "unset",
-      });
+      if (get(internalUserOverride$) === draft) {
+        set(internalUserOverride$, { kind: "unset" });
+      }
     },
   );
 
@@ -633,7 +621,7 @@ function createComputerUseHostSelection(
 
   const clearComputerUseHostIdOverride$ = command(({ get, set }) => {
     const user = get(internalUserOverride$);
-    if (user.kind === "set" && user.dirty) {
+    if (user.kind === "set") {
       set(internalUserOverride$, { kind: "unset" });
     }
   });
@@ -1481,6 +1469,9 @@ interface EventTreeRegistries {
   readonly computerUseAuthorizationCardSignals: ReturnType<
     typeof createComputerUseAuthorizationCardSignalsRegistry
   >;
+  readonly desktopShellAuthorizationCardSignals: ReturnType<
+    typeof createDesktopShellAuthorizationCardSignalsRegistry
+  >;
   readonly planUpgradeCardSignals: ReturnType<
     typeof createPlanUpgradeCardSignalsRegistry
   >;
@@ -1501,6 +1492,7 @@ function createCardRefRegistrar({
   walletCardSignals,
   browserUserActionCardSignals,
   computerUseAuthorizationCardSignals,
+  desktopShellAuthorizationCardSignals,
   planUpgradeCardSignals,
   mailDraftCardSignals,
   browserSessionSignals,
@@ -1570,6 +1562,15 @@ function createCardRefRegistrar({
             kind: descriptor.type,
             signals: set(
               computerUseAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "desktop-shell-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              desktopShellAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1881,21 +1882,23 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       if (next) {
         set(internalEventTrees$, next);
       }
-      if (richPlans.length === 0) {
-        return;
-      }
-
-      const result = await settle(
-        set(parseRichEventTrees$, richPlans, signal),
-        signal,
-      );
-      if (!result.ok) {
-        const pending = get(internalEventTrees$);
-        const failed = markPendingEventTreesFailed(pending, richPlans);
-        if (failed) {
-          set(internalEventTrees$, failed);
+      if (richPlans.length > 0) {
+        const result = await settle(
+          set(parseRichEventTrees$, richPlans, signal),
+          signal,
+        );
+        if (!result.ok) {
+          const pending = get(internalEventTrees$);
+          const failed = markPendingEventTreesFailed(pending, richPlans);
+          if (failed) {
+            set(internalEventTrees$, failed);
+          }
         }
       }
+      // Only prepared cards have registered signals. Start their subscriptions
+      // under the panel owner, including re-entry with already cached trees.
+      set(registries.bankingCardSignals.subscribe$, signal);
+      set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
     },
   );
 
@@ -1948,6 +1951,8 @@ function createPagedEventResources({
     createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
+  const desktopShellAuthorizationCardSignals =
+    createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
   const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
   const imageLoads = createImageLoadRegistry();
@@ -1969,6 +1974,7 @@ function createPagedEventResources({
     walletCardSignals,
     browserUserActionCardSignals,
     computerUseAuthorizationCardSignals,
+    desktopShellAuthorizationCardSignals,
     planUpgradeCardSignals,
     mailDraftCardSignals,
     browserSessionSignals,
@@ -2449,7 +2455,6 @@ interface RunTrackingDeps {
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
-  reloadConnectorAccounts$: Command<void, []>;
   reloadConnectorAccountPreference$: Command<void, []>;
 }
 
@@ -2871,18 +2876,13 @@ function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
   cancellationRecovery,
-  reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
-  | "threadId"
-  | "catchUpChatEvents$"
-  | "cancellationRecovery"
-  | "reloadConnectorAccounts$"
+  "threadId" | "catchUpChatEvents$" | "cancellationRecovery"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
     set(cancellationRecovery.reload$);
-    set(reloadConnectorAccounts$);
     await Promise.all([
       get(cancellationRecovery.pending$),
       set(reloadMountedComposerWorkflows$, signal),
@@ -2909,14 +2909,12 @@ function createRunTracking({
   subscribeThinkingSummaries$,
   automationSignals,
   cancellationRecovery,
-  reloadConnectorAccounts$,
   reloadConnectorAccountPreference$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$,
     cancellationRecovery,
-    reloadConnectorAccounts$,
   });
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
@@ -3520,10 +3518,9 @@ function createThreadSubmitMessageSignal(
       signal: AbortSignal,
     ): Promise<boolean> => {
       const explicit = get(computerUseHostSelection.computerUseHostIdExplicit$);
-      const storedHostId = get(computerUseHostSelection.computerUseHostId$);
-      const hosts = (await get(connectorOverview$)).computerUseHosts;
-      signal.throwIfAborted();
-      const computerUseHostId = selectedComputerUseHostId(hosts, storedHostId);
+      const computerUseHostId = get(
+        computerUseHostSelection.computerUseHostId$,
+      );
       const cloudBrowserEnabled = get(
         computerUseHostSelection.cloudBrowserEnabled$,
       );
@@ -3795,7 +3792,6 @@ export function createChatPanelSignals(
     subscribeSessionOutput$: sessionOutput.subscribe$,
     automationSignals: threadOwned,
     cancellationRecovery,
-    reloadConnectorAccounts$: composer.connector.accounts.reload$,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
   });
@@ -3817,7 +3813,6 @@ export function createChatPanelSignals(
     scrollContainer$: messages.scroll.scrollContainer$,
     threadScrollPosition$: messages.scroll.threadScrollPosition$,
     awayFromBottom$: messages.scroll.awayFromBottom$,
-    scrollToEvent$: messages.scroll.scrollToEvent$,
     scrollTo$: messages.scroll.scrollTo$,
     scrollToTop$: messages.scroll.scrollToTop$,
     scrollToBottom$: messages.scroll.scrollToBottom$,

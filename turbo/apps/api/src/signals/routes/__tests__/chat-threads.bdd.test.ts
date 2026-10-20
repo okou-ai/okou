@@ -71,6 +71,8 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import {
   mockSlidesImportFonts,
+  mockSlidesFontRestoration,
+  slidesTextProvenanceFixture,
   slidesImportFixture,
   slidesPictureCropFixture,
   slidesPictureCropNoopFixture,
@@ -3200,7 +3202,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       format === "docx"
         ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         : picturePptxMime;
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     owned.ownsFeatureSwitches();
     await owned.run(() => {
@@ -3633,7 +3635,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
-  it("preserves a slide with transformed obstacles instead of guessing text clearance", async () => {
+  it("keeps rotated text intact while preparing other text on its slide", async () => {
     const archive = new AdmZip(slidesImportFixture());
     const slide = archive.readAsText("ppt/slides/slide1.xml");
     archive.addFile(
@@ -3642,6 +3644,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     const bytes = archive.toBuffer();
     const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+    mockSlidesImportFonts();
     const native = {
       id: "transformed-deck",
       name: "deck",
@@ -3652,9 +3655,209 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     mockGoogleSlidesReadback([{ pageElementCount: 13 }]);
     const response = await fixture.upload("google");
     expect(response.status).toBe(200);
-    expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
+    const text = uploadedSlidesText(uploaded.bodies[0]!);
+    expect(
+      text.find((item) => {
+        return item.id === "2";
+      }),
+    ).toMatchObject({ text: "05", width: 251 });
+    expect(
+      text.find((item) => {
+        return item.id === "3";
+      })?.width,
+    ).toBeCloseTo(300.52, 4);
     await fixture.finish();
   }, 120_000);
+
+  it("uses a rotated group's page bounds when checking text clearance", async () => {
+    const archive = new AdmZip(slidesImportFixture());
+    const group =
+      '<p:grpSp><p:nvGrpSpPr><p:cNvPr id="40" name="obstacle"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm rot="5400000"><a:off x="3365500" y="254000"/><a:ext cx="127000" cy="127000"/><a:chOff x="0" y="0"/><a:chExt cx="127000" cy="127000"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id="41" name="paint"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="127000" cy="127000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="000000"/></a:solidFill></p:spPr></p:sp></p:grpSp>';
+    archive.addFile(
+      "ppt/slides/slide1.xml",
+      Buffer.from(
+        archive
+          .readAsText("ppt/slides/slide1.xml")
+          .replace("</p:spTree>", group + "</p:spTree>"),
+      ),
+    );
+    const fixture = await workspaceSource(
+      "deck.pptx",
+      archive.toBuffer(),
+      false,
+      true,
+    );
+    mockSlidesImportFonts();
+    const native = {
+      id: "group-obstacle-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 14 }]);
+    expect((await fixture.upload("google")).status).toBe(200);
+    const text = uploadedSlidesText(uploaded.bodies[0]!);
+    expect(
+      text.find((item) => {
+        return item.id === "2";
+      })?.width,
+    ).toBe(251);
+    expect(
+      text.find((item) => {
+        return item.id === "3";
+      })?.width,
+    ).toBeCloseTo(300.52, 4);
+    await fixture.finish();
+  }, 120_000);
+
+  it.each([false, true])(
+    "imports a real CLI deck with groups, aliases and numeric weights (alternate relationships: %s)",
+    async (alternateRelationships) => {
+      const archive = new AdmZip(slidesTextProvenanceFixture());
+      if (alternateRelationships) {
+        archive.addFile(
+          "ppt/presentation.xml",
+          Buffer.from(
+            archive
+              .readAsText("ppt/presentation.xml")
+              .replaceAll("xmlns:r=", "xmlns:links=")
+              .replaceAll("r:id=", "links:id="),
+          ),
+        );
+        archive.addFile(
+          "ppt/_rels/presentation.xml.rels",
+          Buffer.from(
+            archive
+              .readAsText("ppt/_rels/presentation.xml.rels")
+              .replace(
+                'Target="slides/slide1.xml"',
+                'Target="/ppt/slides/slide1.xml"',
+              ),
+          ),
+        );
+      }
+      const fixture = await workspaceSource(
+        "deck.pptx",
+        archive.toBuffer(),
+        false,
+        true,
+      );
+      mockSlidesImportFonts();
+      const native = {
+        id: "provenance-deck",
+        name: "deck",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      mockGoogleWorkspaceReadback(native);
+      const restored = mockSlidesFontRestoration(uploaded);
+      const response = await fixture.upload("google");
+      expect(response.status).toBe(200);
+      expect(uploaded.metadata[0]).toContain('"okouTextImport":"pending-v1"');
+      expect(
+        restored.writes.map((item) => {
+          return item.updateTextStyle.style.weightedFontFamily.weight;
+        }),
+      ).toStrictEqual(expect.arrayContaining([500, 600]));
+      expect(restored.completions).toStrictEqual([
+        { appProperties: { okouTextImport: "complete-v1" } },
+      ]);
+      const text = uploadedSlidesText(uploaded.bodies[0]!);
+      expect(
+        text.filter((item) => {
+          return item.text.includes("White");
+        }),
+      ).toHaveLength(1);
+      expect(
+        text.find((item) => {
+          return item.text.includes("White");
+        })?.text,
+      ).toBe("White Green guardrails");
+      expect(
+        text
+          .map((item) => {
+            return item.text;
+          })
+          .join(""),
+      ).toBe("05guardrailsWhite Green guardrails");
+      expect(
+        text
+          .filter((item) => {
+            return item.text;
+          })
+          .every((item) => {
+            return Number.isFinite(item.width) && item.width > 0;
+          }),
+      ).toBeTruthy();
+      expect(
+        new AdmZip(Buffer.from(uploaded.bodies[0]!)).readAsText(
+          "ppt/slides/slide1.xml",
+        ),
+      ).toContain("<p:grpSp>");
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it.each(["write", "ambiguous", "readback", "complete"] as const)(
+    "does not complete or replay an unfinished Slides import after %s failure",
+    async (failure) => {
+      const fixture = await workspaceSource(
+        "deck.pptx",
+        slidesTextProvenanceFixture(),
+        false,
+        true,
+      );
+      mockSlidesImportFonts();
+      const native = {
+        id: "pending-deck",
+        name: "deck",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      mockGoogleWorkspaceReadback(native);
+      const restored = mockSlidesFontRestoration(uploaded, failure);
+      expect((await fixture.upload("google")).status).toBe(400);
+      if (failure !== "complete") {
+        expect(restored.completions).toHaveLength(0);
+      }
+      if (failure === "ambiguous") {
+        expect(restored.writes).toHaveLength(0);
+      }
+      mockGoogleDriveFilesList(() => {
+        return {
+          status: 200,
+          files: [
+            {
+              ...native,
+              appProperties: {
+                vm0Artifact: "true",
+                vm0ThreadId: fixture.run.threadId,
+                vm0RunId: fixture.run.runId,
+                vm0FileId: fixture.deckId,
+                okouTextImport: "pending-v1",
+              },
+            },
+          ],
+        };
+      });
+      const retry = await fixture.upload("google");
+      expect(retry.status).toBe(400);
+      expectApiError(retry.body);
+      expect(retry.body.error.message).toContain("unfinished font restoration");
+      expect(uploaded.bodies).toHaveLength(1);
+      const artifacts = await chat.listThreadArtifacts(
+        fixture.actor,
+        fixture.run.threadId,
+      );
+      expect(artifacts.runs[0]?.files[0]?.googleDriveSync?.status).not.toBe(
+        "synced",
+      );
+      await fixture.finish();
+    },
+    120_000,
+  );
 
   it("reports a font provider outage before uploading a partly prepared deck", async () => {
     const fixture = await workspaceSource(

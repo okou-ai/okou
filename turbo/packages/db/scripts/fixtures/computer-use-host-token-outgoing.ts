@@ -9,6 +9,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type {
+  ComputerUseCommandPayload,
+  ComputerUseCommandResult,
   ComputerUsePermissions,
   ComputerUseSupportedCapabilities,
 } from "../../src/jsonb-contracts/computer-use-host";
@@ -36,6 +38,30 @@ export const outgoingHosts = pgTable("computer_use_hosts", {
   status: text("status").default("online").notNull(),
   lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
   revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Commands observed by the same historical writer. Later additive columns must
+// not enter its implicit INSERT, SELECT or RETURNING lists before their migration.
+export const outgoingCommands = pgTable("computer_use_commands", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: text("org_id").notNull(),
+  userId: text("user_id").notNull(),
+  runId: text("run_id"),
+  hostId: uuid("host_id").notNull(),
+  kind: text("kind").notNull(),
+  status: text("status").default("queued").notNull(),
+  payload: jsonb("payload")
+    .$type<ComputerUseCommandPayload>()
+    .default({})
+    .notNull(),
+  result: jsonb("result").$type<ComputerUseCommandResult>(),
+  error: text("error"),
+  timeoutMs: integer("timeout_ms").notNull(),
+  claimedAt: timestamp("claimed_at"),
+  claimedConnectionGeneration: integer("claimed_connection_generation"),
+  completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -118,11 +118,20 @@ const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 416 } as const;
  * and 3 landscape, so a shared ratio would crop most of them — a 2:3 style
  * keeps only 37% of its height in a 16:9 box. A deck cover, by contrast, is a
  * slide and genuinely is 16:9.
+ *
+ * Documents are not here: every one is a portrait page, so they share one
+ * ratio and keep the row-ordered grid (see `SLASH_DOCUMENT_COVER_ASPECT`).
  */
-const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = [
-  "illustration",
-  "document",
-] as const;
+const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = ["illustration"] as const;
+
+/**
+ * A document cover is the picker's document card at slash size: a 4:3 tile
+ * whose first page stands as a sheet cropped by the tile's bottom edge
+ * (`DocumentTemplateCover`). A whole A4 page scaled into a 170px tile set its
+ * title at about five pixels, and two of them stood 240px tall in a pane the
+ * command list holds near 194px, so not one caption was in view.
+ */
+const SLASH_DOCUMENT_COVER_ASPECT = { width: 4, height: 3 } as const;
 
 export function isSlashTemplateNativeAspectCategory(
   category: SlashTemplatePreviewCategory,
@@ -141,6 +150,11 @@ export interface SlashTemplatePreview {
    * Absent when the category uses the shared 16:9 tile.
    */
   readonly aspect?: { readonly width: number; readonly height: number };
+  /**
+   * Present exactly on document covers, which draw the first page as a sheet
+   * (`DocumentTemplateCover`), over the ones behind it when there are more.
+   */
+  readonly documentPage?: { readonly hasMorePages: boolean };
   readonly template: GenerationTemplateRequest;
   readonly attachment: ComposerTemplateAttachment;
 }
@@ -156,7 +170,10 @@ export function customSlashTemplatePreview(
         ? (template.previewAssets[0]?.url ?? template.coverUrl)
         : template.coverUrl,
     ...(template.kind === "document"
-      ? { aspect: { width: 210, height: 297 } }
+      ? {
+          aspect: SLASH_DOCUMENT_COVER_ASPECT,
+          documentPage: { hasMorePages: template.coverHasMorePages },
+        }
       : template.kind === "illustration"
         ? { aspect: { width: 1, height: 1 } }
         : {}),
@@ -241,7 +258,8 @@ function documentPreview(item: DocumentTemplateItem): SlashTemplatePreview {
     slug: item.slug,
     title: item.title,
     coverUrl: nativeCoverUrl(item.previewImageUrl),
-    aspect: { width: 210, height: 297 },
+    aspect: SLASH_DOCUMENT_COVER_ASPECT,
+    documentPage: { hasMorePages: item.previewPages.length > 1 },
     template: toDocumentGenerationTemplate(item),
     attachment: {
       type: "document",

@@ -1,19 +1,11 @@
 import chalk from "chalk";
-import type {
-  ConnectorAccountSummary,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
-import type {
-  ConnectorCatalogItem,
-  ConnectorCatalogStatus,
-} from "../../lib/api/domains/connectors";
+import type { ConnectorCatalogItem } from "../../lib/api/domains/connectors";
+import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
 import { connectorInspectionType } from "./inspection";
-import {
-  memberConnectorAccountText,
-  memberConnectorFacts,
-} from "./member-status";
 
 interface CatalogConnectorDiscoveryDefinition {
   readonly kind: "catalog";
@@ -27,7 +19,7 @@ interface CatalogConnectorDiscoveryDefinition {
 }
 
 interface CatalogConnectorDiscoveryItem extends CatalogConnectorDiscoveryDefinition {
-  readonly catalogConnector: ConnectorCatalogStatus;
+  readonly catalogConnector: ConnectorCatalogItem;
 }
 
 interface CustomConnectorDiscoveryItem {
@@ -80,7 +72,7 @@ function customDiscoveryItem(
 }
 
 export function connectorDiscoveryItems(
-  catalogConnectors: readonly ConnectorCatalogStatus[],
+  catalogConnectors: readonly ConnectorCatalogItem[],
   customConnectors: readonly CustomConnectorResponse[],
 ): readonly ConnectorDiscoveryItem[] {
   return [
@@ -112,26 +104,35 @@ export function connectorDiscoveryTarget(
     : { kind: "custom", customConnectorId: connector.customConnector.id };
 }
 
+export function connectorHasSavedAccounts(
+  connector: ConnectorDiscoveryDefinition,
+  directory: ConnectedConnectors,
+): boolean {
+  return connector.kind === "catalog"
+    ? directory.builtinConnectors.some((item) => {
+        return item.slug === connector.slug;
+      })
+    : directory.customConnectors.some((item) => {
+        return item.id === connector.customConnector.id;
+      });
+}
+
 export function renderConnectorDiscoveryConnectedAsCell(
   connector: ConnectorDiscoveryItem,
-  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
+  directory: ConnectedConnectors,
 ): string {
-  const definition =
-    connector.kind === "catalog"
-      ? connector.catalogConnector
-      : connector.customConnector;
-  const facts = memberConnectorFacts(definition, summaries);
-  const text = memberConnectorAccountText(definition, facts);
-  return facts.memberStatus === "connected" ? text : chalk.yellow(text);
+  return connectorHasSavedAccounts(connector, directory)
+    ? "saved accounts (inspect status)"
+    : chalk.dim("(no saved accounts)");
 }
 
 export function connectorDiscoveryJson(
   connector: ConnectorDiscoveryItem,
   agentContext: ConnectorDiscoveryAgentContext | null,
-  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
+  directory: ConnectedConnectors,
 ) {
   const target = connectorDiscoveryTarget(connector);
-  const identity = {
+  return {
     target,
     connectorType: connectorInspectionType(
       target,
@@ -139,32 +140,18 @@ export function connectorDiscoveryJson(
     ),
     slug: connector.slug,
     label: connector.label,
-    ...memberConnectorFacts(
-      connector.kind === "catalog"
-        ? connector.catalogConnector
-        : connector.customConnector,
-      summaries,
-    ),
+    kind: connector.kind === "catalog" ? "builtin" : "custom",
+    ...(connector.kind === "custom"
+      ? { id: connector.customConnector.id }
+      : {}),
+    integrationManaged:
+      connector.kind === "custom" &&
+      isIntegrationManagedCustomConnector(connector.customConnector),
+    hasSavedAccounts: connectorHasSavedAccounts(connector, directory),
     authorized: agentContext
       ? isConnectorDiscoveryAuthorized(connector, agentContext)
       : null,
   };
-  return connector.kind === "catalog"
-    ? {
-        ...identity,
-        kind: "builtin" as const,
-        connected: connector.catalogConnector.connected,
-        connectionStatus: connector.catalogConnector.connectionStatus,
-        connection: connector.catalogConnector.connection,
-      }
-    : {
-        ...identity,
-        kind: "custom" as const,
-        id: connector.customConnector.id,
-        connected: connector.customConnector.connected,
-        missingRequiredFields: connector.customConnector.missingRequiredFields,
-        configuredFieldKeys: connector.customConnector.configuredFieldKeys,
-      };
 }
 
 export function isConnectorDiscoveryAuthorized(

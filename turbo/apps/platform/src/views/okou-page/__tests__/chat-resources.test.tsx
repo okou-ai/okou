@@ -29,10 +29,9 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Keep the resource trigger available and show an empty panel", async () => {
+test("Keep the resource trigger in a chat without resources and open its empty panel by default", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, {
     catalog: [],
     artifactRuns: () => {
@@ -47,11 +46,11 @@ test("Keep the resource trigger available and show an empty panel", async () => 
   });
   await screen.findByTestId("chat-thread-header-title");
   expect(resourceButton()).toBeEnabled();
-  expect(resourcePanel()).not.toBeInTheDocument();
-  click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
   await expect(
-    within(panel).findByText("No artifacts found"),
+    within(panel).findByText(
+      "Artifacts and related chats from this chat appear here.",
+    ),
   ).resolves.toBeInTheDocument();
 });
 
@@ -115,12 +114,13 @@ test("Keep chat usable before opening pending artifacts and related chats", asyn
     "Loading",
   );
   expect(
-    within(panel).queryByText("No artifacts found"),
+    within(panel).queryByText(
+      "Artifacts and related chats from this chat appear here.",
+    ),
   ).not.toBeInTheDocument();
   response.resolve();
   await within(panel).findByText("report.pdf");
   await within(panel).findByText("Research child");
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
 test("Retry a resource loading error without showing an empty state", async () => {
@@ -156,12 +156,26 @@ test("Retry a resource loading error without showing an empty state", async () =
   await expect(
     within(panel).findByText("Could not load resources"),
   ).resolves.toBeInTheDocument();
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 
   failed = false;
   click(buttonNamed("Try again", panel));
   await within(panel).findByText("recovered.pdf");
   expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("Name the closed resource trigger in a tooltip until the panel opens", async () => {
+  await setupResources({ preferred: false });
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  const user = userEvent.setup();
+  await user.hover(resourceButton());
+  const tooltip = await screen.findByText("Resources");
+  await user.click(resourceButton());
+  await waitFor(() => {
+    expect(tooltip).not.toBeInTheDocument();
+  });
+  expect(resourceState()).toStrictEqual({ open: true, visible: true });
 });
 
 test("Show all three artifacts without an overflow control at the limit", async () => {
@@ -170,7 +184,7 @@ test("Show all three artifacts without an overflow control at the limit", async 
   expect(within(section).getAllByRole("listitem")).toHaveLength(3);
   expect(
     queryAllByRoleFast("button", section).find((button) => {
-      return button.getAttribute("aria-label") === "Expand";
+      return button.getAttribute("aria-label") === "Show more";
     }),
   ).toBeUndefined();
   expect(within(panel).queryByText("View all")).not.toBeInTheDocument();
@@ -181,7 +195,7 @@ test("Expand and collapse the artifacts list in place", async () => {
   const section = within(panel).getByRole("region", { name: "Artifacts" });
   expect(within(section).getAllByRole("listitem")).toHaveLength(3);
   expect(within(panel).queryByText("report-4.pdf")).not.toBeInTheDocument();
-  const more = buttonNamed("Expand", section);
+  const more = buttonNamed("Show more", section);
   more.focus();
   await userEvent.keyboard("{Enter}");
 
@@ -200,7 +214,7 @@ test("Expand and collapse the artifacts list in place", async () => {
   await userEvent.keyboard("{Enter}");
   expect(within(section).getAllByRole("listitem")).toHaveLength(3);
   expect(within(section).queryByText("report-4.pdf")).not.toBeInTheDocument();
-  expect(buttonNamed("Expand", section)).toHaveAttribute(
+  expect(buttonNamed("Show more", section)).toHaveAttribute(
     "aria-expanded",
     "false",
   );
@@ -228,7 +242,7 @@ test("Show artifacts in the floating panel while links remain in the transcript"
   expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   expect(
     queryAllByRoleFast("button").filter((button) => {
-      return button.getAttribute("aria-label") === "Open artifacts";
+      return button.getAttribute("aria-label") === "Resources";
     }),
   ).toHaveLength(1);
   expect(
@@ -279,7 +293,9 @@ test.each([0, 20])(
     expect(resourcePanel()).not.toBeInTheDocument();
     click(resourceButton());
     const panel = await screen.findByRole("region", { name: "Resources" });
-    await within(panel).findByText("No artifacts found");
+    await within(panel).findByText(
+      "Artifacts and related chats from this chat appear here.",
+    );
     expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   },
 );

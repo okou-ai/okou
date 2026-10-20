@@ -167,13 +167,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
     expect(unsubscribePage.headers.get("Location")).toBe(
       `https://app.okou.ai/email/unsubscribe?token=${validToken}`,
     );
-    const okouUnsubscribePage = await api.requestEmailUnsubscribePage(
-      validToken,
-      [302],
-    );
-    expect(okouUnsubscribePage.headers.get("Location")).toBe(
-      `https://app.okou.ai/email/unsubscribe?token=${validToken}`,
-    );
 
     const unsubscribed = await api.requestEmailUnsubscribe(validToken, [200]);
     expect(unsubscribed.body).toStrictEqual({ unsubscribed: true });

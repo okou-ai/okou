@@ -131,13 +131,13 @@ impl Probe {
         let controller = HeartbeatController::new(HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: pool,
             runner_identity: runner,
+            runner_hostname: None,
             group: "native-foreground",
             profiles: &profiles,
             budget,
             provider: provider.clone(),
             active_runs: &active,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
-            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
             sandbox_op_reporter: None,
         }));
         Ok(Self {

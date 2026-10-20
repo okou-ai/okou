@@ -44,11 +44,14 @@ import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { atomSubscriptionGrantRoutes } from "./routes/atom-subscription-grants";
 import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
+import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authorization";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { connectorOverviewRoutes } from "./routes/connector-overview";
+import { agentConnectorAccessRoutes } from "./routes/agent-connector-access";
+import { connectedConnectorsRoutes } from "./routes/connected-connectors";
+import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
 import { builtinConnectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
@@ -177,7 +180,6 @@ import { runModelsRoutes } from "./routes/run-models";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { runnerVncRoutes } from "./routes/runner-vnc";
-import { runnerWssTicketRoutes } from "./routes/runner-wss-tickets";
 import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
 import { runsCancelRoutes } from "./routes/runs-cancel";
@@ -331,11 +333,14 @@ export const ROUTES: readonly RouteEntry[] = [
   ...sharedThreadRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
+  ...desktopShellAuthorizationRoutes,
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
-  ...connectorOverviewRoutes,
+  ...agentConnectorAccessRoutes,
+  ...connectedConnectorsRoutes,
+  ...remotesRoutes,
   ...connectorCheckRoutes,
   ...builtinConnectorsExternalCodeRoutes,
   ...builtinConnectorsOauthDeviceAuthRoutes,
@@ -370,7 +375,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
   ...runnerVncRoutes,
-  ...runnerWssTicketRoutes,
   ...cloudflareAccessRoutes,
   ...tailscaleRoutes,
   ...sshAccessRoutes,

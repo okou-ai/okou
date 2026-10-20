@@ -54,7 +54,7 @@ test("Complete a custom connector authorization", async () => {
 });
 
 test("Complete a GitHub connector authorization", async () => {
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(401, {
       error: {
         code: "UNAUTHORIZED",

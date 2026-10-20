@@ -94,8 +94,8 @@ export function agentRunColumns() {
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     // Immutable winning official claim attribution. ID/generation is the
-    // authority; hostname/version are diagnostic snapshots. Null covers
-    // historical, rollout-omitting, and non-official claims.
+    // authority; hostname is advisory locality and version is diagnostic.
+    // Null covers historical, rollout-omitting, and non-official claims.
     runnerId: uuid("runner_id"),
     runnerHeartbeatGeneration: bigint("runner_heartbeat_generation", {
       mode: "number",

@@ -192,10 +192,36 @@ test("only the owner changes visibility and stale edits cannot overwrite it", as
       )
     ).body.decision,
   ).toBe("allow");
+  const legacyRequest = {
+    ...request,
+    query: { ...request.query, publicBrand: "vm0" as const },
+  };
+  expect(
+    (await accept(client().deliveryAuthorization(legacyRequest), [200])).body
+      .decision,
+  ).toBe("deny");
   await enable(owner, false);
   expect(
     (await accept(client().deliveryAuthorization(request), [200])).body.allowed,
   ).toBeFalsy();
+  await enable(owner);
+  const restored = await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params,
+      body: { visibility: "public", expectedRevision: changed.body.revision },
+    }),
+    [200],
+  );
+  expect(restored.body.visibility).toBe("public");
+  expect(
+    (await accept(client().deliveryAuthorization(request), [200])).body
+      .decision,
+  ).toBe("allow");
+  expect(
+    (await accept(client().deliveryAuthorization(legacyRequest), [200])).body
+      .decision,
+  ).toBe("deny");
 });
 
 test("organization access follows current membership in the site's organization", async () => {

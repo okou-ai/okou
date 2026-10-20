@@ -10,12 +10,13 @@ fixture_bin="${tmp_dir}/bin"
 package_path="${tmp_dir}/package.tgz"
 fixture_package="${tmp_dir}/fixture/package"
 mkdir -p "$fixture_bin" "$fixture_package"
-printf 'fixture\n' >"${fixture_package}/okou.js"
-tar -czf "$package_path" -C "${tmp_dir}/fixture" package
-
 cat >"${fixture_bin}/node" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == *smoke-okou-cli-image-resize.mjs ]]; then
+  echo "Smoke-tested packaged Pi image resize worker and fallback"
+  exit 0
+fi
 exec "$@"
 EOF
 
@@ -27,44 +28,53 @@ while [[ "${1:-}" == --* ]]; do
   shift
 done
 
-entrypoint="$1"
-shift
-
 if [[ "${npm_config_audit:-}" != "false" ]]; then
   echo "npm audit was not disabled" >&2
   exit 1
 fi
 
 echo "npm notice This endpoint is being retired. Use the bulk advisory endpoint instead. See the following docs for more info: https://api-docs.npmjs.com/#tag/Audit" >&2
-if [[ "${EMIT_UNEXPECTED_STDERR:-false}" == "true" &&
-  "$entrypoint" == "okou" && "${1:-}" == "--version" ]]; then
+if [[ "${EMIT_INSTALL_STDERR:-false}" == true ]]; then
+  echo 'unexpected installation stderr' >&2
+fi
+installed_root="$npm_config_cache/_npx/fixture/node_modules"
+mkdir -p "$installed_root/@okouai/cli" "$installed_root/.bin"
+cp "$SMOKE_FIXTURE_CLI" "$installed_root/@okouai/cli/okou.js"
+chmod +x "$installed_root/@okouai/cli/okou.js"
+ln -s ../@okouai/cli/okou.js "$installed_root/.bin/okou"
+PATH="$installed_root/.bin:$PATH" exec "$@"
+EOF
+
+cat >"${fixture_package}/okou.js" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${EMIT_UNEXPECTED_STDERR:-false}" == true && "${1:-}" == --version ]]; then
   echo "unexpected CLI stderr" >&2
 fi
 
-case "$entrypoint:$*" in
-  node:*smoke-okou-cli-image-resize.mjs)
-    echo "Smoke-tested packaged Pi image resize worker and fallback"
-    ;;
-  "okou:--help")
+case "$*" in
+  --help)
     printf 'Usage: okou\nOkou CLI\n'
     ;;
-  "okou:--version")
+  --version)
     echo "1.2.3"
     ;;
-  "okou:__agent-loop --help")
+  "__agent-loop --help")
     echo "Internal sandbox Pi agent loop"
     ;;
-  "okou:__unsupported-command")
-    exit 1
+  __unsupported-command)
+    if [[ "${ACCEPT_UNSUPPORTED_COMMAND:-false}" == true ]]; then exit 0; else exit 1; fi
     ;;
   *)
-    echo "unexpected invocation: $entrypoint $*" >&2
+    echo "unexpected invocation: $*" >&2
     exit 1
     ;;
 esac
 EOF
 
 chmod +x "${fixture_bin}/node" "${fixture_bin}/npx"
+tar -czf "$package_path" -C "${tmp_dir}/fixture" package
+export SMOKE_FIXTURE_CLI="${fixture_package}/okou.js"
 
 output="$({
   PATH="${fixture_bin}:${PATH}" bash "$smoke_script" "$package_path"
@@ -80,5 +90,19 @@ if PATH="${fixture_bin}:${PATH}" \
 fi
 grep -Fxq "unexpected CLI stderr" "$failure_output"
 grep -Fq "CLI smoke emitted unexpected stderr: okou --version" "$failure_output"
+
+if PATH="${fixture_bin}:${PATH}" EMIT_INSTALL_STDERR=true \
+  bash "$smoke_script" "$package_path" >"$failure_output" 2>&1; then
+  echo "Smoke test unexpectedly ignored installation stderr" >&2
+  exit 1
+fi
+grep -Fxq 'unexpected installation stderr' "$failure_output"
+
+if PATH="${fixture_bin}:${PATH}" ACCEPT_UNSUPPORTED_COMMAND=true \
+  bash "$smoke_script" "$package_path" >"$failure_output" 2>&1; then
+  echo "Smoke test accepted an unsupported command" >&2
+  exit 1
+fi
+grep -Fq 'Unsupported CLI command unexpectedly succeeded' "$failure_output"
 
 echo "smoke-okou-cli-artifact tests passed"

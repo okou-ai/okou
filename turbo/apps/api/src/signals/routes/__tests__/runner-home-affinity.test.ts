@@ -16,7 +16,6 @@ async function setup() {
   onTestFinished(clearMockNow);
   const api = createRunsApi(context);
   const owned = await publicChatActor(context, {
-    isolatePg: true,
     clockTime: now,
   });
   const { actor, agentId, runnerGroup: group } = owned;
@@ -94,8 +93,8 @@ async function cancel(f: Fixture) {
 
 // Construction and observations use normal chat, provider auth and official
 // Runner heartbeat/poll/claim. No DB schemas, private services or fixture routes.
-// Case-owned PGlite isolates all resources; concurrent requests below do not
-// establish native PostgreSQL multi-session scheduling or race guarantees.
+// Unique actor, Runner group and thread IDs own these resources. Concurrent
+// requests exercise the public contract, not a specific database schedule.
 describe("canonical API home affinity", () => {
   it("keeps home affinity advisory when another canonical runner claims the job", async () => {
     const f = await setup();

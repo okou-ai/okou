@@ -198,7 +198,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
   }
 
-  function createUploadFixture(options: { readonly isolatePg?: true } = {}) {
+  function createUploadFixture() {
     const actors = new Map<string, ApiTestUser>();
     const claimed = new Map<
       string,
@@ -299,7 +299,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           orgId: base.orgId,
           installer: scenario.user({ orgId: base.orgId, orgRole: "org:admin" }),
           run: scenario.run,
-          isolatePg: options.isolatePg,
         });
       });
       await restoreMembership(base);
@@ -436,7 +435,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   }
 
   it("returns an in-progress canonical Slack receipt for a mismatched file ID", async () => {
-    const fixture = createUploadFixture({ isolatePg: true });
+    const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
     const materializeClient = setupApp({
       context,
@@ -534,7 +533,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   });
 
   it("records a canonical Slack reconciliation failure and retries materialization", async () => {
-    const fixture = createUploadFixture({ isolatePg: true });
+    const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
     const client = setupApp({
       context,
@@ -627,7 +626,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   });
 
   it("records a canonical Slack preparation failure and retries materialization", async () => {
-    const fixture = createUploadFixture({ isolatePg: true });
+    const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
     context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
       ok: false,
@@ -708,7 +707,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   });
 
   it("returns canonical not found for missing Slack delivery identities", async () => {
-    const fixture = createUploadFixture({ isolatePg: true });
+    const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
     const materialized = await fixture.run(() => {
       return accept(
@@ -758,7 +757,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   });
 
   it("rejects another run's canonical Slack delivery and preserves its owner's receipt", async () => {
-    const fixture = createUploadFixture({ isolatePg: true });
+    const fixture = createUploadFixture();
     const first = await pendingCanonicalUpload(fixture);
     const materializeClient = setupApp({
       context,
@@ -769,9 +768,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
     expect(firstMaterialized.body.delivery.status).toBe("pending");
     const second = await pendingCanonicalUpload(fixture);
-    expect(second.actor.userId).not.toBe(first.actor.userId);
-    expect(second.actor.orgId).not.toBe(first.actor.orgId);
-    expect(second.actor.runId).not.toBe(first.actor.runId);
     const secondMaterialized = await fixture.run(() => {
       return accept(materializeClient.materialize(second.request), [200]);
     });
@@ -831,7 +827,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   });
 
   it("records an authoritative Slack upload error before successful completion and replay", async () => {
-    const fixture = createUploadFixture({ isolatePg: true });
+    const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
     const materialized = await fixture.run(() => {
       return accept(

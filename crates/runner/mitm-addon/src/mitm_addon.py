@@ -870,6 +870,16 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         ):
             return None
         if (
+            isinstance(bounded_classification, request_classification.FirewallBlock)
+            and bounded_classification.firewall_block.aws_sigv4_body_pending
+        ):
+            _admit_buffered_aws_sigv4_request(
+                flow,
+                classification=bounded_classification,
+                body_check=aws_sigv4_body_check,
+            )
+            return None
+        if (
             bounded_classification is None
             or bounded_classification.kind != "firewall_allow"
             or _firewall_allow_auth_base(bounded_classification.firewall_allow)
@@ -888,6 +898,16 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             defer_unresolved_public_destination=True,
         )
     if _admit_managed_openrouter_from_headers(flow, classification):
+        return None
+    if (
+        isinstance(classification, request_classification.FirewallBlock)
+        and classification.firewall_block.aws_sigv4_body_pending
+    ):
+        _admit_buffered_aws_sigv4_request(
+            flow,
+            classification=classification,
+            body_check=aws_sigv4_body_check,
+        )
         return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
@@ -1171,60 +1191,63 @@ def _admit_buffered_public_destination_request(
 def _admit_buffered_aws_sigv4_request(
     flow: http.HTTPFlow,
     *,
-    classification: request_classification.FirewallAllow,
+    classification: request_classification.FirewallAllow | request_classification.FirewallBlock,
     body_check: _BufferedRequestBodyCheck,
 ) -> None:
-    allow = classification.firewall_allow
-    sandbox_info = classification.sandbox_info
-
-    if body_check.kind != "ok":
-        _start_request_timing(flow)
-        prepare_firewall_metadata(flow, allow, sandbox_info)
-        proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-        firewall_base = flow.metadata[metadata_keys.FIREWALL_BASE]
-        if body_check.kind == "too_large":
-            mark_aws_sigv4_request_too_large(
-                flow,
-                proxy_log_path=proxy_log_path,
-                firewall_base=firewall_base,
-                observed_size=body_check.observed_size,
-            )
-        else:
-            mark_aws_sigv4_request_length_required(
-                flow,
-                proxy_log_path=proxy_log_path,
-                firewall_base=firewall_base,
-                reason=body_check.reason,
-            )
-        release_aws_sigv4_request_inspection(flow)
-        request_classification.pop_cached_classification(flow)
-        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-        flow.kill()
+    # Native framing rejection already owns the error and prevents buffering.
+    if flow.error is not None:
         return
+    if body_check.kind == "ok":
+        try:
+            admission = aws_sigv4_body_admission.reserve(body_check.observed_size)
+        except aws_sigv4_body_admission.AwsSigV4BodyAdmissionSaturatedError:
+            pass
+        else:
+            try:
+                aws_sigv4_body_admission.attach_to_flow(flow, admission)
+            except BaseException:
+                aws_sigv4_body_admission.release(admission)
+                raise
+            return
 
-    try:
-        admission = aws_sigv4_body_admission.reserve(body_check.observed_size)
-    except aws_sigv4_body_admission.AwsSigV4BodyAdmissionSaturatedError:
-        _start_request_timing(flow)
-        prepare_firewall_metadata(flow, allow, sandbox_info)
-        proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-        firewall_base = flow.metadata[metadata_keys.FIREWALL_BASE]
+    _start_request_timing(flow)
+    if isinstance(classification, request_classification.FirewallAllow):
+        prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
+        action = "ALLOW"
+    else:
+        # Pending body admission supplies no permission, API identity or auth.
+        flow.metadata[metadata_keys.FIREWALL_BASE] = classification.firewall_block.base
+        flow.metadata[metadata_keys.FIREWALL_NAME] = classification.firewall_block.name
+        action = "BLOCK"
+    proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
+    firewall_base = flow.metadata[metadata_keys.FIREWALL_BASE]
+    if body_check.kind == "too_large":
+        mark_aws_sigv4_request_too_large(
+            flow,
+            proxy_log_path=proxy_log_path,
+            firewall_base=firewall_base,
+            observed_size=body_check.observed_size,
+            action=action,
+        )
+    elif body_check.kind != "ok":
+        mark_aws_sigv4_request_length_required(
+            flow,
+            proxy_log_path=proxy_log_path,
+            firewall_base=firewall_base,
+            reason=body_check.reason,
+            action=action,
+        )
+    else:
         mark_aws_sigv4_request_admission_saturated(
             flow,
             proxy_log_path=proxy_log_path,
             firewall_base=firewall_base,
+            action=action,
         )
-        release_aws_sigv4_request_inspection(flow)
-        request_classification.pop_cached_classification(flow)
-        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-        flow.kill()
-        return
-
-    try:
-        aws_sigv4_body_admission.attach_to_flow(flow, admission)
-    except BaseException:
-        aws_sigv4_body_admission.release(admission)
-        raise
+    release_aws_sigv4_request_inspection(flow)
+    request_classification.pop_cached_classification(flow)
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    flow.kill()
 
 
 async def _try_firewall_request_stream_from_headers(
@@ -2152,41 +2175,64 @@ def _finish_response_handling(
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     websocket_inspection.release(flow)
-    if response_streaming.has_pending_response_inspection(flow):
-        return _complete_error_after_inspection(flow)
     try:
-        _handle_error(flow)
-    finally:
+        if response_streaming.has_pending_response_inspection(flow):
+            return _complete_error(flow, _handle_error_after_inspection(flow))
+        continuation = _handle_error(flow)
+    except BaseException:
         _release_terminal_flow_state(flow, release_tracking=True)
+        raise
+    if continuation is not None:
+        return _complete_error(flow, continuation)
+    _release_terminal_flow_state(flow, release_tracking=True)
     return None
 
 
-async def _complete_error_after_inspection(flow: http.HTTPFlow) -> None:
+async def _handle_error_after_inspection(flow: http.HTTPFlow) -> None:
+    await responseinspection(flow)
+    continuation = _handle_error(flow)
+    if continuation is not None:
+        await continuation
+
+
+async def _complete_error(flow: http.HTTPFlow, continuation: Awaitable[None]) -> None:
     try:
-        await responseinspection(flow)
-        _handle_error(flow)
+        await continuation
     finally:
         _release_terminal_flow_state(flow, release_tracking=True)
 
 
-def _handle_error(flow: http.HTTPFlow) -> None:
+def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     """Handle registered-run terminal work after a connection-level error."""
     start_time = flow.metadata.pop(metadata_keys.HTTP_REQUEST_START_MONOTONIC, None)
     codex_model_catalog_cache.handle_error(flow)
 
+    if not flow_metadata.run_id(flow.metadata):
+        return None
+
+    latency_ms = elapsed_ms(start_time)
+    connector_diagnostics.handle_error(flow)
+
+    # Complete captured model evidence remains observable on errors. Keep the
+    # pre-inspection network timing and connector interruption policy intact.
+    response_streaming.start_buffered_response_inspection(flow, interrupted=True)
+    if response_streaming.has_pending_response_inspection(flow):
+        return _finish_error_after_inspection(flow, latency_ms=latency_ms)
+    _finish_error_handling(flow, latency_ms=latency_ms)
+    return None
+
+
+async def _finish_error_after_inspection(flow: http.HTTPFlow, *, latency_ms: int) -> None:
+    await responseinspection(flow)
+    _finish_error_handling(flow, latency_ms=latency_ms)
+
+
+def _finish_error_handling(flow: http.HTTPFlow, *, latency_ms: int) -> None:
     run_id = flow_metadata.run_id(flow.metadata)
     network_log_path = flow_metadata.network_log_path(flow.metadata)
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-
-    if not run_id:
-        return
-
-    latency_ms = elapsed_ms(start_time)
     original_url = flow.metadata[metadata_keys.ORIGINAL_URL]
     firewall_action = flow_metadata.firewall_action(flow.metadata)
-
-    connector_diagnostics.handle_error(flow)
-
     request_size = _request_size(flow)
     error_msg = flow.error.msg if flow.error else "unknown error"
 

@@ -10,7 +10,6 @@ import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  accountSummary,
   builtinConnector,
   connectorAccount,
   installComposerConnectorFixture,
@@ -24,7 +23,7 @@ import {
 } from "./chat-message-experience-test-helpers.ts";
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
-const DEFAULT_ACCOUNT_LABEL = "GitHub · Using default account: Work";
+const DEFAULT_ACCOUNT_LABEL = "GitHub · Account for this chat";
 
 function target(): ConnectorAccountTarget {
   return { kind: "builtin", connectorSlug: GITHUB_SLUG };
@@ -50,7 +49,6 @@ function installAccounts(
   return installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(target(), connections)],
     accounts: connections,
     threadSelections: selectedConnection
       ? {
@@ -119,16 +117,19 @@ test.each(["pagination", "remote search"] as const)(
           return respond(200, {
             connections: [connections[3]!],
             nextCursor: null,
+            defaultConnection: connections[0]!,
           });
         }
         return query.cursor
           ? respond(200, {
               connections: [connections[1]!, connections[2]!],
               nextCursor: null,
+              defaultConnection: connections[0]!,
             })
           : respond(200, {
               connections: [connections[0]!, connections[1]!],
               nextCursor: "next-accounts",
+              defaultConnection: connections[0]!,
             });
       },
     );
@@ -203,4 +204,31 @@ test("Unavailable selected accounts retain their identity and fallback", async (
   });
   expect(fixture.threadSelectionUpdates).toStrictEqual([]);
   expect(fixture.clearedThreadSelections).toStrictEqual([]);
+});
+
+test("Open a single-account chooser and read fresh target accounts on reopen", async () => {
+  const user = userEvent.setup({ delay: null });
+  const connections = accounts(["Work"]);
+  installAccounts(connections);
+  let displayName = "Work";
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    const account = { ...connections[0]!, displayName };
+    return respond(200, {
+      connections: [account],
+      defaultConnection: account,
+      nextCursor: null,
+    });
+  });
+  const chooser = await setupChooser(user);
+  await within(chooser).findByRole("option", { name: /^Work/u });
+  click(await findFastControl("button", "Back", chooser));
+  await expectClosedWithFocus(DEFAULT_ACCOUNT_LABEL);
+  displayName = "Renamed account";
+  const reopened = await openChooser(user);
+  await expect(
+    within(reopened).findByRole("option", { name: /^Renamed account/u }),
+  ).resolves.toBeVisible();
+  expect(
+    within(reopened).queryByRole("option", { name: /^Work/u }),
+  ).not.toBeInTheDocument();
 });

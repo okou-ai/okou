@@ -1,5 +1,8 @@
-import type { PublicConnectorCatalogAuthMethodDetail } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorCatalogStatus } from "../../lib/api/domains/connectors";
+import type { PublicConnectorCatalogAuthMethodSummary } from "@okouai/api-contracts/contracts/connector-catalog";
+import type {
+  ConnectorCatalogStatus,
+  ConnectorCatalogItem,
+} from "../../lib/api/domains/connectors";
 import { findConnectorBySelector } from "./connector-selector";
 
 export type PublicConnectorStatus = ConnectorCatalogStatus;
@@ -232,10 +235,10 @@ export function searchConnectorCatalog<T extends ConnectorDiscoverySearchItem>(
   };
 }
 
-export function findConnectorStatusItem(
-  connectors: readonly PublicConnectorStatus[],
+export function findConnectorStatusItem<T extends ConnectorCatalogItem>(
+  connectors: readonly T[],
   connectorSlug: string,
-): PublicConnectorStatus | null {
+): T | null {
   return (
     findConnectorBySelector(connectors, connectorSlug, (connector) => {
       return { kind: "builtin", slug: connector.slug, label: connector.label };
@@ -244,7 +247,7 @@ export function findConnectorStatusItem(
 }
 
 export function availableConnectorSlugs(
-  connectors: readonly PublicConnectorStatus[],
+  connectors: readonly ConnectorCatalogItem[],
 ): string {
   return connectors
     .map((connector) => {
@@ -254,9 +257,9 @@ export function availableConnectorSlugs(
 }
 
 export function resolveManualGrantAuthMethod(
-  connector: PublicConnectorStatus,
+  connector: ConnectorCatalogItem,
   rawAuthMethod: string | undefined,
-): PublicConnectorCatalogAuthMethodDetail {
+): PublicConnectorCatalogAuthMethodSummary {
   if (rawAuthMethod) {
     const authMethod = connector.authMethods.find((method) => {
       return method.id === rawAuthMethod;

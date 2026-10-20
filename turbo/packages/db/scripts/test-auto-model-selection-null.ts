@@ -6,7 +6,7 @@ import { z } from "zod";
 import postgres from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 interface ThreadRow {
   id: string;
@@ -64,7 +64,7 @@ assert.ok(migration, "Auto selection migration is required");
 await admin.query(`CREATE DATABASE "${databaseName}"`);
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
 try {
-  await applyPendingMigrations(sql, { beforeMillis: migration.folderMillis });
+  await applyFixtureMigrations(sql, { beforeMillis: migration.folderMillis });
 
   // The catalog facts the fixtures rely on.
   const catalog = await sql`
@@ -227,7 +227,7 @@ try {
 
   const before = await threads();
   const beforePreferences = await preferences();
-  await applyPendingMigrations(sql, {
+  await applyFixtureMigrations(sql, {
     beforeMillis: migration.folderMillis + 1,
   });
   const after = await threads();

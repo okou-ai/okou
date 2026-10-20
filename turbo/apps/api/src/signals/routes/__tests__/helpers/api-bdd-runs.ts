@@ -54,7 +54,6 @@ import type { z } from "zod";
 
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
@@ -169,25 +168,6 @@ function runApp(context: TestContext) {
   });
 }
 
-async function postIsolatedEntitlementWebhook(
-  context: TestContext,
-  payload: string,
-  signature: string,
-) {
-  const app = await setupApp({
-    context,
-    routes: runRoutes,
-    isolatePg: true,
-  });
-  return await accept(
-    app(webhookStripeContract).post({
-      body: payload,
-      extraHeaders: { "stripe-signature": signature },
-    }),
-    [200],
-  );
-}
-
 function clerkUserProfile(actor: ApiTestUser): ClerkUserProfile {
   const emailId = `email_${actor.userId}`;
   return {
@@ -249,6 +229,7 @@ function runnerHeaders(valid: boolean): AuthHeaders {
 function runnerHeartbeatBody(
   args: {
     readonly runnerId?: string;
+    readonly runnerHostname?: RunnerHeartbeatBody["runnerHostname"];
     readonly group?: string;
     readonly snapshotGeneration?: RunnerHeartbeatBody["snapshotGeneration"];
     readonly snapshotSequence?: RunnerHeartbeatBody["snapshotSequence"];
@@ -260,12 +241,14 @@ function runnerHeartbeatBody(
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
-    readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
 ): RunnerHeartbeatBody {
   return {
     runnerId: args.runnerId ?? randomUUID(),
+    ...(args.runnerHostname === undefined
+      ? {}
+      : { runnerHostname: args.runnerHostname }),
     group: args.group ?? "vm0/test",
     snapshotGeneration: args.snapshotGeneration ?? 1,
     snapshotSequence: args.snapshotSequence ?? 1,
@@ -279,9 +262,6 @@ function runnerHeartbeatBody(
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldHomeStates: args.heldHomeStates ?? [],
     activeReuseProducers: args.activeReuseProducers ?? [],
-    ...(args.wssIngressServiceActive === undefined
-      ? {}
-      : { wssIngressServiceActive: args.wssIngressServiceActive }),
     mode: args.mode ?? "running",
   };
 }
@@ -603,7 +583,6 @@ export function createRunsApi(context: TestContext) {
     async grantProEntitlement(
       actor: ApiTestUser,
       options: {
-        readonly isolatePg?: true;
         readonly customerId?: string;
         readonly subscriptionId?: string;
         readonly tier?: "pro" | "team";
@@ -751,9 +730,6 @@ export function createRunsApi(context: TestContext) {
       // Retain the exact provider boundary if accepted setup outlives mock reset.
       options.onExternalStateReady?.(restoreWebhook);
       await run(() => {
-        if (options.isolatePg) {
-          return postIsolatedEntitlementWebhook(context, payload, signature);
-        }
         return accept(
           runApp(context)(webhookStripeContract).post({
             body: payload,
@@ -828,7 +804,7 @@ export function createRunsApi(context: TestContext) {
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(true),
-          extraHeaders,
+          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,
@@ -1001,7 +977,7 @@ export function createRunsApi(context: TestContext) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: authorization === undefined ? {} : { authorization },
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
           body: {
             capabilities: defaultClaimCapabilities(),
@@ -1356,6 +1332,7 @@ export function createRunsApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 500)[],
       args: {
         readonly runnerId?: string;
+        readonly runnerHostname?: RunnerHeartbeatBody["runnerHostname"];
         readonly group?: string;
         readonly snapshotGeneration?: RunnerHeartbeatBody["snapshotGeneration"];
         readonly snapshotSequence?: RunnerHeartbeatBody["snapshotSequence"];
@@ -1367,7 +1344,6 @@ export function createRunsApi(context: TestContext) {
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
-        readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},
     ) {
@@ -1465,7 +1441,7 @@ export function createRunsApi(context: TestContext) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(validAuth),
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,

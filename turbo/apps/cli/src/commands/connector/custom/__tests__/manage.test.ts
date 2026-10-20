@@ -7,7 +7,7 @@ import {
   stubCustomConnectors,
 } from "../../../__tests__/helpers/custom-connectors";
 import { customConnectorCommand } from "../index";
-import { stubConnectorAccountSummaries } from "../../../__tests__/helpers/connector-accounts";
+import { stubConnectorAccounts } from "../../../__tests__/helpers/connector-accounts";
 
 const connector = customConnector();
 const SECRET = "custom-response-secret";
@@ -19,10 +19,7 @@ describe("connector custom show/delete", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     for (const command of customConnectorCommand.commands)
       command.setOptionValue("json", undefined);
-    server.use(
-      stubCustomConnectors([connector]),
-      stubConnectorAccountSummaries([]),
-    );
+    server.use(stubCustomConnectors([connector]), stubConnectorAccounts([]));
   });
   afterEach(() => {
     log.mockClear();

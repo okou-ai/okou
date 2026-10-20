@@ -208,36 +208,48 @@ test.each(["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"])(
   },
 );
 
-test("PR edits cannot enlarge or rewrite the base/main inventory", async () => {
-  const f = await fixture();
-  f.write(
-    transactionBaselinePath,
-    JSON.stringify({
-      ...f.baseline,
-      sites: [{ ...f.baseline.sites[0], owner: "anotherOwner" }],
-    }),
-  );
-  expect(f.check().stderr).toContain("deletion-only");
-  f.write(
-    transactionBaselinePath,
-    JSON.stringify({
-      ...f.baseline,
-      sites: [...f.baseline.sites, { ...f.baseline.sites[0], id: "TX-0002" }],
-    }),
-  );
-  expect(f.check().stderr).toContain("deletion-only");
-});
+test.each(["rewrite", "enlarge"] as const)(
+  "PR edits cannot %s the base/main inventory",
+  async (change) => {
+    const f = await fixture();
+    f.write(
+      transactionBaselinePath,
+      JSON.stringify({
+        ...f.baseline,
+        sites:
+          change === "rewrite"
+            ? [{ ...f.baseline.sites[0], owner: "anotherOwner" }]
+            : [...f.baseline.sites, { ...f.baseline.sites[0], id: "TX-0002" }],
+      }),
+    );
+    const result = f.check();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("deletion-only");
+  },
+);
 
-test("deletion is allowed only with its marker and inventory entry removed", async () => {
-  const f = await fixture();
-  f.write(codeFile, "export const result = 1;");
-  expect(f.check().stderr).toContain("unused legacy inventory entry");
-  f.write(
-    transactionBaselinePath,
-    JSON.stringify({ ...f.baseline, sites: [] }),
-  );
-  expect(f.check().status).toBe(0);
-});
+test.each([true, false])(
+  "deletion requires removing its marker and inventory entry: entry removed %s",
+  async (entryRemoved) => {
+    const f = await fixture();
+    f.write(codeFile, "export const result = 1;");
+    if (entryRemoved) {
+      f.write(
+        transactionBaselinePath,
+        JSON.stringify({ ...f.baseline, sites: [] }),
+      );
+    }
+    const result = f.check();
+    if (entryRemoved) {
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain("0 legacy sites");
+    } else {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("unused legacy inventory entry");
+    }
+  },
+);
 
 test("a legacy ID deleted from main cannot be resurrected", async () => {
   const f = await fixture();

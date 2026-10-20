@@ -18,7 +18,6 @@ mod storage;
 mod version_service_locks;
 mod versions;
 mod workspaces;
-mod wss;
 
 #[cfg(test)]
 mod test_support;
@@ -34,7 +33,6 @@ use storage::gc_storage_cache;
 use version_service_locks::gc_orphaned_version_service_locks;
 use versions::{VersionGcAnalysis, analyze_version_gc, gc_versions_with_analysis};
 use workspaces::gc_workspace_orphans;
-use wss::gc_wss_sockets;
 
 /// Artifacts younger than this are unconditionally kept, regardless of lock
 /// status or `--keep-latest`. This prevents races between `runner build`
@@ -97,8 +95,6 @@ trait GcOperations {
     ) -> RunnerResult<GcReport>;
 
     async fn gc_job_logs(&mut self, home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport>;
-
-    async fn gc_wss_sockets(&mut self, home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport>;
 
     async fn gc_versions(
         &mut self,
@@ -176,10 +172,6 @@ impl GcOperations for RealGcOperations {
 
     async fn gc_job_logs(&mut self, home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport> {
         gc_job_logs(home, dry_run).await
-    }
-
-    async fn gc_wss_sockets(&mut self, home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport> {
-        gc_wss_sockets(home, dry_run).await
     }
 
     async fn gc_versions(
@@ -262,9 +254,6 @@ async fn run_gc_with_operations(
 
     let job_log_report = operations.gc_job_logs(home, args.dry_run).await?;
     record_gc_phase(&mut report, "job logs", job_log_report, args.dry_run);
-
-    let wss_report = operations.gc_wss_sockets(home, args.dry_run).await?;
-    record_gc_phase(&mut report, "WSS endpoints", wss_report, args.dry_run);
 
     let version_report = operations
         .gc_versions(home, args.dry_run, version_analysis)
@@ -426,14 +415,6 @@ mod tests {
             Ok(GcReport::default())
         }
 
-        async fn gc_wss_sockets(
-            &mut self,
-            home: &HomePaths,
-            dry_run: bool,
-        ) -> RunnerResult<GcReport> {
-            gc_wss_sockets(home, dry_run).await
-        }
-
         async fn gc_versions(
             &mut self,
             _home: &HomePaths,
@@ -592,33 +573,6 @@ mod tests {
             .await
             .expect("second GC should acquire the released global lock")
             .unwrap();
-    }
-
-    #[tokio::test]
-    async fn gc_coordinator_reclaims_wss_records_only_outside_dry_run() {
-        let root = tempfile::tempdir().unwrap();
-        let home = test_home(root.path());
-        let directory = home.wss_dir();
-        std::fs::create_dir(&directory).unwrap();
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o710)).unwrap();
-        let record = directory.join(format!("{}.lock", uuid::Uuid::new_v4()));
-        std::fs::write(&record, b"").unwrap();
-        std::fs::set_permissions(&record, std::fs::Permissions::from_mode(0o600)).unwrap();
-        let mut operations = FakeGcOperations::new();
-        let mut args = GcArgs {
-            dry_run: true,
-            keep_latest: None,
-            protect_version: None,
-        };
-        run_gc_with_operations(&args, &home, &mut operations)
-            .await
-            .unwrap();
-        assert!(record.exists());
-        args.dry_run = false;
-        run_gc_with_operations(&args, &home, &mut operations)
-            .await
-            .unwrap();
-        assert!(!record.exists());
     }
 
     #[test]

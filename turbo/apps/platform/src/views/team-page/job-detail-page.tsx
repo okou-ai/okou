@@ -1,3 +1,4 @@
+import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -22,10 +23,6 @@ import {
   Wand,
 } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  ConnectorOverview,
-  ConnectorAccountBriefSummary,
-} from "@okouai/api-contracts/contracts/connector-overview";
 import {
   surfaceVariants,
   Button,
@@ -103,8 +100,8 @@ import {
 } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
 import {
-  connectorOverview$,
-  invalidateConnectorOverview$,
+  userConnectedConnectors$,
+  reloadUserConnectedConnectors$,
 } from "../../signals/okou-page/connector-overview.ts";
 import {
   copyWorkflow$,
@@ -442,7 +439,7 @@ function PermissionGrantsError() {
 
 function ConnectorOverviewError() {
   const { t } = useTranslation();
-  const retry = useSet(invalidateConnectorOverview$);
+  const retry = useSet(reloadUserConnectedConnectors$);
   return (
     <LoadErrorRow
       message={t(($) => {
@@ -497,7 +494,6 @@ function NoConnectedConnectors() {
 interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
   readonly slug: ConnectorSlug;
   readonly hasPermissions: boolean;
-  readonly summary: ConnectorAccountBriefSummary | undefined;
 }
 
 function ConnectedConnectorPermissions({
@@ -607,7 +603,6 @@ function ConnectedConnectorPermissions({
                   key={c.slug}
                   variant="permission"
                   connector={c}
-                  summary={c.summary}
                   enabled={authorizedSet.has(c.slug)}
                   onToggle={onDomEventFn(async (checked) => {
                     await onToggle(c.slug, checked);
@@ -688,25 +683,12 @@ function AgentPermissionsDrawer({
 // ---------------------------------------------------------------------------
 
 function connectedPermissionConnectors(
-  overview: ConnectorOverview,
+  overview: ConnectedConnectors,
 ): readonly ConnectedPermissionConnector[] {
-  const summaries = new Map(
-    overview.accountSummaries.flatMap((summary) => {
-      return summary.target.kind === "builtin"
-        ? [[summary.target.connectorSlug, summary] as const]
-        : [];
-    }),
-  );
   return overview.builtinConnectors.map((connector) => {
     return {
-      slug: connector.slug,
-      label: connector.label,
-      icon: connector.icon,
-      hasPermissions: connector.hasPermissions,
-      externalUsername:
-        summaries.get(connector.slug)?.defaultConnection?.externalUsername ??
-        null,
-      summary: summaries.get(connector.slug),
+      ...connector,
+      externalUsername: null,
     };
   });
 }
@@ -757,7 +739,7 @@ function JobPermissionsTab({
 
   const connectorsLoading = connectorsLoadable.state === "loading";
 
-  const overviewLoadable = useLastLoadable(connectorOverview$);
+  const overviewLoadable = useLastLoadable(userConnectedConnectors$);
   const connectedConnectors =
     overviewLoadable.state === "hasData"
       ? connectedPermissionConnectors(overviewLoadable.data)

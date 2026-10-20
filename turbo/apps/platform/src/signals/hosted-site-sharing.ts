@@ -17,7 +17,7 @@ import {
   hostedSiteUrlChanges$,
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
-import { onRef, resetSignal, waitForOperation } from "./utils.ts";
+import { onRef, resetSignal } from "./utils.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
@@ -67,7 +67,7 @@ function createSiteUrlEditorSignals(
     set(saveConflict$, false);
   });
   const edit$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const details = await waitForOperation(get(details$), signal);
+    const details = await get(details$);
     signal.throwIfAborted();
     if (!details?.isActive) {
       return;
@@ -87,7 +87,7 @@ function createSiteUrlEditorSignals(
         return;
       }
       set(validation$, "unchanged");
-      const details = await waitForOperation(get(details$), checkSignal);
+      const details = await get(details$);
       signal.throwIfAborted();
       checkSignal.throwIfAborted();
       if (!details) {
@@ -101,7 +101,7 @@ function createSiteUrlEditorSignals(
     },
   );
   const persist$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const details = await waitForOperation(get(details$), signal);
+    const details = await get(details$);
     signal.throwIfAborted();
     const draft = get(draft$);
     if (
@@ -198,7 +198,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     });
   });
   const copy$ = command(async ({ get }, signal: AbortSignal) => {
-    const url = await waitForOperation(get(copyUrl$), signal);
+    const url = await get(copyUrl$);
     signal.throwIfAborted();
     await copyAttachmentLinkToClipboard(url, undefined, signal);
   });

@@ -40,11 +40,8 @@ async fn poll_preserves_independent_source_in_claim_request_without_native_histo
     assert_eq!(candidate.run_id(), run_id);
     assert_eq!(candidate.history_generation_run_id(), None);
     assert_eq!(
-        candidate
-            .runner_preference()
-            .unwrap()
-            .finalizing_source_run_id(),
-        Some(source)
+        candidate.runner_preference().unwrap().target(),
+        crate::provider::RunnerPreferenceTarget::FinalizingPredecessor(source)
     );
     assert_eq!(
         claim_request_body_for_test(&candidate)["telemetry"]["runnerPreference"],

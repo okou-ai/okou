@@ -24,11 +24,15 @@ import {
 } from "./chat-resources-test-helpers.ts";
 
 const deploymentId = "00000000-0000-4000-8000-000000000041";
-const deploymentUrl = `https://dpl-${deploymentId}.okou.app/`;
 const siteId = "00000000-0000-4000-8000-000000000042";
 const artifactId = "00000000-0000-4000-8000-000000000043";
 
-async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
+async function setupHostedSite(
+  sidebar: boolean,
+  initialSlug = "launch-site",
+  hostDomain = "okou.app",
+) {
+  const deploymentUrl = `https://dpl-${deploymentId}.${hostDomain}/`;
   let currentSlug = initialSlug;
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
@@ -36,7 +40,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", "launch-site.html"),
     sourceUrl: deploymentUrl,
-    aliasUrl: `https://${initialSlug}.okou.app`,
+    aliasUrl: `https://${initialSlug}.${hostDomain}`,
   };
   const run = artifactRun({
     artifactId,
@@ -52,7 +56,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
         ? hostedSiteArtifactDetail(summary, {
             siteId,
             slug: currentSlug,
-            url: `https://${currentSlug}.okou.app`,
+            url: `https://${currentSlug}.${hostDomain}`,
           })
         : null;
     },
@@ -63,7 +67,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
           files: run.files.map((file) => {
             return {
               ...file,
-              aliasUrl: `https://${currentSlug}.okou.app`,
+              aliasUrl: `https://${currentSlug}.${hostDomain}`,
               artifactKind: "hosted-site" as const,
             };
           }),
@@ -94,7 +98,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
     return respond(200, {
       siteId,
       publicSlug: currentSlug,
-      url: `https://${currentSlug}.okou.app`,
+      url: `https://${currentSlug}.${hostDomain}`,
       isActive: true,
     });
   });
@@ -102,11 +106,12 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
     return respond(200, { available: true });
   });
   context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
+    expect(body.expectedPublicSlug).toBe(currentSlug);
     currentSlug = body.publicSlug;
     return respond(200, {
       siteId,
       publicSlug: currentSlug,
-      url: `https://${currentSlug}.okou.app`,
+      url: `https://${currentSlug}.${hostDomain}`,
       isActive: true,
     });
   });
@@ -139,41 +144,86 @@ async function copyFromResources(slug: string) {
   click(buttonNamed("Copy link", row));
 }
 
+async function openHostedSiteShare(preview: HTMLElement, sidebar: boolean) {
+  const shareLabel = sidebar ? "Share artifact" : "Share";
+  await waitFor(() => {
+    expect(buttonNamed(shareLabel, preview)).toBeEnabled();
+  });
+  click(buttonNamed(shareLabel, preview));
+  const shareMenu = await waitFor(() => {
+    const dialog = buttonNamed("Customize URL").closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Expected the hosted site's Share dialog");
+    }
+    expect(dialog).toHaveAccessibleName(shareLabel);
+    return dialog;
+  });
+  await within(shareMenu).findByText("Published");
+  return shareMenu;
+}
+
+async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
+  await waitFor(() => {
+    expect(buttonNamed("Customize URL", shareMenu)).toBeEnabled();
+  });
+  click(buttonNamed("Customize URL", shareMenu));
+  const input = await within(shareMenu).findByLabelText("Website URL");
+  expect(input).toHaveFocus();
+  fireEvent.change(input, { target: { value: slug } });
+  expect(input).toHaveValue(slug);
+  await within(shareMenu).findByText("Available");
+  expect(buttonNamed("Save", shareMenu)).toBeEnabled();
+  click(buttonNamed("Save", shareMenu));
+  await within(shareMenu).findByText(`${slug}.okou.app`);
+  expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
+}
+
 test.each([false, true])(
-  "renaming a site updates its title, title link, and resource copy link (sidebar=%s)",
+  "consecutive site renames update the preview title and title link (sidebar=%s)",
   async (sidebar) => {
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent("launch-site.okou.app");
-    const shareLabel = sidebar ? "Share artifact" : "Share";
-    await waitFor(() => {
-      expect(buttonNamed(shareLabel, preview)).toBeEnabled();
-    });
-    click(buttonNamed(shareLabel, preview));
-    const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
-    await within(shareMenu).findByText("Published");
+    const shareMenu = await openHostedSiteShare(preview, sidebar);
     for (const slug of ["renamed-site", "final-site"]) {
-      await waitFor(() => {
-        expect(buttonNamed("Customize URL", shareMenu)).toBeEnabled();
-      });
-      click(buttonNamed("Customize URL", shareMenu));
-      const input = await within(shareMenu).findByLabelText("Website URL");
-      expect(input).toHaveFocus();
-      fireEvent.change(input, { target: { value: slug } });
-      expect(input).toHaveValue(slug);
-      await within(shareMenu).findByText("Available");
-      expect(buttonNamed("Save", shareMenu)).toBeEnabled();
-      click(buttonNamed("Save", shareMenu));
+      await renameHostedSite(shareMenu, slug);
       await waitFor(() => {
         expect(title).toHaveTextContent(`${slug}.okou.app`);
         expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
-        expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
       });
-      const clipboard = context.mocks.browser.clipboardWriteText();
+    }
+  },
+);
+
+test.each([false, true])(
+  "Share copies each address after consecutive site renames (sidebar=%s)",
+  async (sidebar) => {
+    const preview = await setupHostedSite(sidebar);
+    const shareMenu = await openHostedSiteShare(preview, sidebar);
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    for (const slug of ["renamed-site", "final-site"]) {
+      await renameHostedSite(shareMenu, slug);
       click(buttonNamed("Copy link", shareMenu));
       await waitFor(() => {
         expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
       });
+    }
+    expect(clipboard.writes).toStrictEqual([
+      "https://renamed-site.okou.app",
+      "https://final-site.okou.app",
+    ]);
+  },
+);
+
+test.each([false, true])(
+  "Resources copies the final address after consecutive site renames (sidebar=%s)",
+  async (sidebar) => {
+    const preview = await setupHostedSite(sidebar);
+    const title = await within(preview).findByTestId("artifact-title-link");
+    expect(title).toHaveTextContent("launch-site.okou.app");
+    const shareMenu = await openHostedSiteShare(preview, sidebar);
+    for (const slug of ["renamed-site", "final-site"]) {
+      await renameHostedSite(shareMenu, slug);
     }
     await userEvent.keyboard("{Escape}");
     click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));
@@ -205,3 +255,34 @@ test("a reopened chat shows and copies the current site address despite the orig
     ]);
   });
 });
+
+test.each([false, true])(
+  "legacy websites keep their share link without URL customization (sidebar=%s)",
+  async (sidebar) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const preview = await setupHostedSite(
+      sidebar,
+      "legacy-site",
+      "sites.vm0.io",
+    );
+    const title = await within(preview).findByTestId("artifact-title-link");
+    expect(title).toHaveTextContent("legacy-site.sites.vm0.io");
+    expect(title).toHaveAttribute("href", "https://legacy-site.sites.vm0.io/");
+    const shareLabel = sidebar ? "Share artifact" : "Share";
+    await waitFor(() => {
+      expect(buttonNamed(shareLabel, preview)).toBeEnabled();
+    });
+    click(buttonNamed(shareLabel, preview));
+    const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
+    await within(shareMenu).findByText("legacy-site.sites.vm0.io");
+    expect(
+      queryAllByRoleFast("button", shareMenu).find((button) => {
+        return button.textContent?.trim() === "Customize URL";
+      }),
+    ).toBeUndefined();
+    click(buttonNamed("Copy link", shareMenu));
+    await waitFor(() => {
+      expect(clipboard.writes.at(-1)).toBe("https://legacy-site.sites.vm0.io");
+    });
+  },
+);

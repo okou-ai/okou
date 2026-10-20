@@ -196,12 +196,6 @@ describe("connector account lifecycle routes", () => {
 
   it("exposes canonical account resources without feature setup", async () => {
     await seedFixture();
-    const response = await accept(
-      accountClient().summaries({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body.summaries).toStrictEqual([]);
     const exact = await accept(
       accountClient().connection({
         headers: authHeaders(),
@@ -313,24 +307,24 @@ describe("connector account lifecycle routes", () => {
       { baseUrl: "https://api.okou.ai" },
     );
     const response = await accept(
-      accountClient().summaries({ headers: authHeaders() }),
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { kind: "custom", customConnectorId: definition.id },
+      }),
       [200],
     );
-    expect(response.body.summaries).toStrictEqual([
-      expect.objectContaining({
-        target: { kind: "custom", customConnectorId: definition.id },
-        accountCount: 1,
-        attentionCount: 1,
-        defaultConnection: expect.objectContaining({
-          connectionStatus: "connected",
-          setupStatus: "incomplete",
-          missingRequiredFields: ["access_token", "refresh_token", "region"],
-          configuredFieldKeys: [],
-        }),
-      }),
+    expect(response.body.defaultConnection).toMatchObject({
+      target: { kind: "custom", customConnectorId: definition.id },
+      connectionStatus: "connected",
+      setupStatus: "incomplete",
+      missingRequiredFields: ["access_token", "refresh_token", "region"],
+      configuredFieldKeys: [],
+    });
+    expect(response.body.connections).toStrictEqual([
+      response.body.defaultConnection,
     ]);
     expect(JSON.stringify(response.body)).not.toContain("setup-client-secret");
-    const accountId = response.body.summaries[0]?.defaultConnection?.id;
+    const accountId = response.body.defaultConnection?.id;
     if (!accountId) {
       throw new Error("Expected the exact OAuth account");
     }
@@ -425,24 +419,6 @@ describe("connector account lifecycle routes", () => {
     if (!defaultAccount.body.connectionId || !healthy.body.connectionId) {
       throw new Error("Expected exact operated account IDs");
     }
-    const before = await accept(
-      accountClient().summaries({ headers: authHeaders() }),
-      [200],
-    );
-    expect(before.body.summaries).toStrictEqual([
-      expect.objectContaining({
-        target,
-        accountCount: 2,
-        attentionCount: 0,
-        defaultConnection: expect.objectContaining({
-          id: defaultAccount.body.connectionId,
-          connectionStatus: "connected",
-          setupStatus: "complete",
-          missingRequiredFields: [],
-          configuredFieldKeys: ["api_key", "region"],
-        }),
-      }),
-    ]);
     const sibling = await accept(
       accountClient().connection({
         headers: authHeaders(),
@@ -501,33 +477,34 @@ describe("connector account lifecycle routes", () => {
     );
     expect(repaired.body.connectionId).toBe(healthy.body.connectionId);
     const after = await accept(
-      accountClient().summaries({ headers: authHeaders() }),
+      accountClient().connections({ headers: authHeaders(), query: target }),
       [200],
     );
-    expect(after.body.summaries).toStrictEqual([
+    expect(after.body.defaultConnection).toMatchObject({
+      id: defaultAccount.body.connectionId,
+      target,
+      isDefault: true,
+      setupStatus: "invalid",
+    });
+    expect(after.body.connections).toHaveLength(2);
+    expect(after.body.connections).toContainEqual(
       expect.objectContaining({
+        id: healthy.body.connectionId,
         target,
-        accountCount: 2,
-        attentionCount: 1,
-        defaultConnection: expect.objectContaining({
-          id: defaultAccount.body.connectionId,
-          setupStatus: "invalid",
-        }),
+        isDefault: false,
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["api_key", "region"],
       }),
-    ]);
-    const visible = JSON.stringify([
-      before.body,
-      sibling.body,
-      stale.body,
-      after.body,
-    ]);
+    );
+    const visible = JSON.stringify([sibling.body, stale.body, after.body]);
     expect(visible).not.toMatch(
       /first-secret-must-not-leak|second-secret-must-not-leak|private-region-value|repaired-secret|repaired-region/u,
     );
   });
 
   it("inspects exact account duplicates in request order after rename and deletion without leaking credentials", async () => {
-    const app = await setupApp({ context, routes, isolatePg: true });
+    const app = setupApp({ context, routes });
     const accounts = app(connectorAccountsContract);
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const connected = await accept(
@@ -823,6 +800,21 @@ describe("connector account lifecycle routes", () => {
           return account.id;
         }),
     ).toStrictEqual([workId]);
+    const filteredCustomPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...primary.target, limit: 1, search: "Personal" },
+      }),
+      [200],
+    );
+    expect(filteredCustomPage.body.connections).toMatchObject([
+      { id: personalId, isDefault: false },
+    ]);
+    expect(filteredCustomPage.body.defaultConnection).toMatchObject({
+      id: workId,
+      target: primary.target,
+      isDefault: true,
+    });
     for (let selection = 0; selection < 2; selection += 1) {
       const selected = await accept(
         accountClient().setDefault({
@@ -866,6 +858,11 @@ describe("connector account lifecycle routes", () => {
             return account.id;
           }),
       ).toStrictEqual([defaultId]);
+      expect(listed.body.defaultConnection).toMatchObject({
+        id: defaultId,
+        target: group.target,
+        isDefault: true,
+      });
       for (const account of listed.body.connections) {
         expect(account.target).toStrictEqual(group.target);
       }
@@ -1010,7 +1007,10 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(next.body.connections).toHaveLength(1);
-    expect(next.body).not.toHaveProperty("defaultConnection");
+    expect(next.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
     expect(
       new Set([listed.body.connections[0]!.id, next.body.connections[0]!.id]),
     ).toStrictEqual(new Set([first.body.id, second.body.id]));
@@ -1029,7 +1029,10 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(beforeRename.body.connections).toStrictEqual([]);
-    expect(beforeRename.body).not.toHaveProperty("defaultConnection");
+    expect(beforeRename.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
 
     const renamed = await accept(
       accountClient().rename({
@@ -1088,7 +1091,11 @@ describe("connector account lifecycle routes", () => {
       { id: second.body.id, displayName: "Personal renamed", isDefault: true },
     ]);
     expect(afterRename.body.nextCursor).toBeNull();
-    expect(afterRename.body).not.toHaveProperty("defaultConnection");
+    expect(afterRename.body.defaultConnection).toMatchObject({
+      id: second.body.id,
+      displayName: "Personal renamed",
+      isDefault: true,
+    });
 
     const [currentFirst, currentSecond, currentFirstImpact] = await Promise.all(
       [
@@ -1142,19 +1149,6 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(legacyProjection.body.id).toBe(second.body.id);
-
-    const summary = await accept(
-      accountClient().summaries({ headers: authHeaders() }),
-      [200],
-    );
-    expect(summary.body.summaries).toContainEqual(
-      expect.objectContaining({
-        target: { kind: "builtin", connectorSlug: "openai" },
-        accountCount: 2,
-        attentionCount: 0,
-        defaultConnection: expect.objectContaining({ id: second.body.id }),
-      }),
-    );
 
     const impact = await accept(
       accountClient().deletionImpact({
@@ -1217,6 +1211,11 @@ describe("connector account lifecycle routes", () => {
     );
     expect(remaining.body.connections).toHaveLength(1);
     expect(remaining.body.connections[0]).toMatchObject({
+      id: first.body.id,
+      displayName: "Work",
+      isDefault: true,
+    });
+    expect(remaining.body.defaultConnection).toMatchObject({
       id: first.body.id,
       displayName: "Work",
       isDefault: true,
@@ -1566,22 +1565,18 @@ describe("connector account lifecycle routes", () => {
   });
 
   async function createAccounts(accountCount: number): Promise<string[]> {
-    // The case owns this database, so central teardown closes it without
-    // listing and deleting each temporary account through the API.
+    // A unique user and organization own every account created by this case.
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
     const createdAccountIds: string[] = [];
     // Account pagination does not depend on credential storage. Connect real
     // public accounts instead of provisioning an API key for every row.
-    const connectorsApi = (
-      await setupApp({
-        context,
-        routes: builtinConnectorsRoutes.filter(({ route }) => {
-          return route === builtinConnectorNoAuthGrantContract.connect;
-        }),
-        isolatePg: true,
-      })
-    )(builtinConnectorNoAuthGrantContract);
+    const connectorsApi = setupApp({
+      context,
+      routes: builtinConnectorsRoutes.filter(({ route }) => {
+        return route === builtinConnectorNoAuthGrantContract.connect;
+      }),
+    })(builtinConnectorNoAuthGrantContract);
     // Up to sixteen owned streams keep requests moving without unbounded
     // fan-out. Wait for every stream before fixture cleanup after a failure.
     const created = await Promise.allSettled(
@@ -1695,19 +1690,6 @@ describe("connector account lifecycle routes", () => {
       } while (cursor);
       expect(ids.size).toBe(101);
       expect(ids).toStrictEqual(new Set(createdAccountIds));
-    });
-
-    it("summarizes more than one hundred accounts", async () => {
-      const summary = await accept(
-        accountClient().summaries({ headers: authHeaders() }),
-        [200],
-      );
-      expect(summary.body.summaries).toContainEqual(
-        expect.objectContaining({
-          target: { kind: "builtin", connectorSlug: "public-mcp" },
-          accountCount: 101,
-        }),
-      );
     });
 
     it("searches display names across more than one hundred accounts", async () => {
@@ -1967,19 +1949,7 @@ describe("connector account lifecycle routes", () => {
         reconnectReason: null,
       });
 
-      const summaries = await accept(
-        accountClient().summaries({ headers: authHeaders() }),
-        [200],
-      );
-      expect(summaries.body.summaries).toContainEqual({
-        target: {
-          kind: "custom",
-          customConnectorId: definition.body.id,
-        },
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: exact.body,
-      });
+      expect(accounts.body.defaultConnection).toStrictEqual(exact.body);
     },
   );
 

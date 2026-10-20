@@ -24,7 +24,6 @@ mod create_custody;
 mod dns_readiness;
 mod error;
 mod factory;
-mod guest_duplex;
 mod guest_rpc;
 pub mod helper_exec;
 mod home_drive_pressure;
@@ -55,7 +54,6 @@ pub use factory::{
     SandboxCreateObserver, SandboxCreateStage, SandboxFactory, SandboxNbdCowCreateOutcome,
     SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage,
 };
-pub use guest_duplex::{AcceptedGuestDuplex, GuestDuplexAcceptor, GuestDuplexStream};
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
 pub use home_drive_pressure::{
     HOME_DRIVE_RECLAIM_OBSERVATION, HomeDrivePressureFuture, HomeDrivePressurePolicy,

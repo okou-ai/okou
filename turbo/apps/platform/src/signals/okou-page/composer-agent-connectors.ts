@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { composerAgentConnectorsChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 
 import { accept } from "../../lib/accept.ts";
@@ -23,7 +23,7 @@ export function composerAgentConnectors(agentId: string) {
     get(revisions$).get(agentId);
     const createClient = get(apiClient$);
     const result = await accept(
-      createClient(connectorOverviewContract).agent({
+      createClient(agentConnectorAccessContract).agent({
         params: { id: agentId },
       }),
       [200],

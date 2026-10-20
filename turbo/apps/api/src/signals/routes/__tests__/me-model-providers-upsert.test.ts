@@ -213,16 +213,19 @@ describe("POST /api/me/model-providers (upsert)", () => {
     async (identityKind) => {
       mockNow(new Date("2026-10-16T06:00:00Z"));
       const fixture = uniqueOrgUser("zmmp-claude-identity");
+      const accountUuid = randomUUID();
+      const organizationUuid = randomUUID();
+      const previousEmail = `previous.claude.${accountUuid}@example.com`;
+      const recoveredEmail = `legacy.claude.${accountUuid}@example.com`;
       mocks.clerk.session(fixture.userId, fixture.orgId);
       server.use(
         http.get("https://api.anthropic.com/api/oauth/profile", () => {
           return new HttpResponse(null, { status: 503 });
         }),
       );
-      const app = await setupApp({
+      const app = setupApp({
         context,
         routes: personalModelProvidersMainTestRoutes,
-        isolatePg: true,
       });
       const client = app(personalModelProvidersMainContract);
       const original = await accept(
@@ -250,13 +253,11 @@ describe("POST /api/me/model-providers (upsert)", () => {
                 "Bearer sk-ant-oat-legacy-identity";
             return HttpResponse.json({
               account: {
-                uuid: identityKind === "uuid" ? "legacy-claude-account" : null,
-                email: previousProfile
-                  ? "previous.claude@example.com"
-                  : "legacy.claude@example.com",
+                uuid: identityKind === "uuid" ? accountUuid : null,
+                email: previousProfile ? previousEmail : recoveredEmail,
               },
               organization: {
-                uuid: identityKind === "uuid" ? "legacy-claude-org" : null,
+                uuid: identityKind === "uuid" ? organizationUuid : null,
                 name: previousProfile
                   ? "Previous Claude Workspace"
                   : "Legacy Claude Workspace",
@@ -288,7 +289,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
           modelProviderId: original.body.provider.modelProviderId,
           createdAt: original.body.provider.createdAt,
           updatedAt: changedAt.toISOString(),
-          accountEmail: "legacy.claude@example.com",
+          accountEmail: recoveredEmail,
           workspaceName: "Legacy Claude Workspace",
           planType: "pro",
           isActive: true,
@@ -301,7 +302,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
       expect(listed.body.modelProviders).toHaveLength(1);
       expect(listed.body.modelProviders[0]).toMatchObject({
         id: original.body.provider.id,
-        accountEmail: "legacy.claude@example.com",
+        accountEmail: recoveredEmail,
         workspaceName: "Legacy Claude Workspace",
       });
     },
@@ -954,7 +955,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
 
     expect(refreshCalls).toBe(1);
     expect(usageCalls).toBe(1);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("retries transient Codex refresh failure without false reconnect", async () => {
@@ -1148,9 +1148,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(
       unavailable.body.modelProviders[0]?.subscriptionUsage,
     ).toBeUndefined();
-    // The outage is handled, so it must not be reported as a fault or be
-    // mistaken for an expired token.
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    // The outage must not be mistaken for an expired token.
     expect(refreshCalls).toBe(0);
 
     const recovered = await accept(

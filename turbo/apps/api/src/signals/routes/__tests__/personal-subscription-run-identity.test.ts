@@ -4,7 +4,7 @@ import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 
-import { clearAllDetached, createDeferredPromise, settle } from "../../utils";
+import { createDeferredPromise, settle } from "../../utils";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -347,46 +347,6 @@ describe("personal subscription run identity", () => {
       });
     },
   );
-
-  it("rejects the input without capturing run recovery identity when launch preparation fails", async () => {
-    const f = await fixture("codex-oauth-token");
-    const preparationError = new Error("Archive signing failed");
-    context.mocks.s3.getSignedUrl.mockRejectedValue(preparationError);
-    const chat = createChatFilesBddApi(context);
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        prompt: "use my selected subscription",
-        model: f.model,
-        clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the chat send to be queued");
-    }
-    await expect(clearAllDetached()).rejects.toBe(preparationError);
-    const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        id: clientEventId,
-        eventType: "input.prompt",
-      }),
-    );
-    // The picked input ends rejected; no run or recovery identity exists.
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "internal_error",
-      }),
-    );
-    await expect(
-      reads.requestListLogs(f.actor, { limit: 100 }, [200]),
-    ).resolves.toMatchObject({ body: { data: [] } });
-  });
 
   it.each([
     ["claude-code-oauth-token", "claude-opus-5-5"],

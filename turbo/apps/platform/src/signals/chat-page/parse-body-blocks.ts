@@ -31,6 +31,10 @@ import {
   type ComputerUseAuthorizationDescriptor,
 } from "./computer-use-authorization-block.ts";
 import {
+  parseDesktopShellAuthorizationUrl,
+  type DesktopShellAuthorizationDescriptor,
+} from "./desktop-shell-authorization-block.ts";
+import {
   parsePlanUpgradeUrl,
   type PlanUpgradeDescriptor,
 } from "./plan-upgrade-block.ts";
@@ -113,6 +117,11 @@ export type ParsedBodyBlock =
       descriptor: ComputerUseAuthorizationDescriptor;
     }
   | {
+      type: "desktop-shell-authorization";
+      resourceKey: string;
+      descriptor: DesktopShellAuthorizationDescriptor;
+    }
+  | {
       type: "plan-upgrade";
       resourceKey: string;
       descriptor: PlanUpgradeDescriptor;
@@ -173,7 +182,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers)\/|\/browser\/actions\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers|computer-use)\/|\/browser\/actions\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
@@ -752,6 +761,30 @@ class WalletActionTokenizer extends Tokenizer {
   }
 }
 
+function createComputerAuthorizationBlock(
+  url: string,
+): CardDescriptorBlock | null {
+  const desktopShellAuthorization = parseDesktopShellAuthorizationUrl(url);
+  if (desktopShellAuthorization) {
+    return {
+      type: "desktop-shell-authorization",
+      resourceKey: desktopShellAuthorization.id,
+      descriptor: desktopShellAuthorization,
+    };
+  }
+
+  const computerUseAuthorization = parseComputerUseAuthorizationUrl(url);
+  if (computerUseAuthorization) {
+    return {
+      type: "computer-use-authorization",
+      resourceKey: computerUseAuthorization.href,
+      descriptor: computerUseAuthorization,
+    };
+  }
+
+  return null;
+}
+
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
@@ -848,13 +881,9 @@ function createActionBlockFromUrl(
     return browserUserAction;
   }
 
-  const computerUseAuthorization = parseComputerUseAuthorizationUrl(url);
-  if (computerUseAuthorization) {
-    return {
-      type: "computer-use-authorization",
-      resourceKey: computerUseAuthorization.href,
-      descriptor: computerUseAuthorization,
-    };
+  const computerAuthorization = createComputerAuthorizationBlock(url);
+  if (computerAuthorization) {
+    return computerAuthorization;
   }
 
   const planUpgrade = parsePlanUpgradeUrl(url);
@@ -1463,6 +1492,9 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
       return block.descriptor.originalUrl;
     }
     case "computer-use-authorization": {
+      return block.descriptor.originalUrl;
+    }
+    case "desktop-shell-authorization": {
       return block.descriptor.originalUrl;
     }
     case "plan-upgrade": {

@@ -2493,6 +2493,34 @@
       "when": 1792477220904,
       "tag": "1433_handy_dexter_bennett",
       "breakpoints": true
+    },
+    {
+      "idx": 1434,
+      "version": "7",
+      "when": 1792479231270,
+      "tag": "1434_runner_hostname",
+      "breakpoints": true
+    },
+    {
+      "idx": 1435,
+      "version": "7",
+      "when": 1792484538085,
+      "tag": "1435_nice_karnak",
+      "breakpoints": true
+    },
+    {
+      "idx": 1436,
+      "version": "7",
+      "when": 1792486883859,
+      "tag": "1436_agent_runs_chat_executed_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 1437,
+      "version": "7",
+      "when": 1792493713596,
+      "tag": "1437_finalize_agent_instructions",
+      "breakpoints": true
     }
   ]
 }

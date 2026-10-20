@@ -12,8 +12,6 @@ import {
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
-import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-access";
-import { setAblyPayloadLoop$ } from "./realtime.ts";
 import {
   invalidateRemoteAccess$,
   invalidateVncObservationConfiguration$,
@@ -34,12 +32,7 @@ import {
   updateSshConnectionRequestSchema,
   SSH_PRIVATE_KEY_MAX_LENGTH,
 } from "@okouai/api-contracts/contracts/ssh-connections";
-import {
-  authenticatedSessionKey$,
-  clerk$,
-  currentOrgInfo$,
-  user$,
-} from "./auth.ts";
+import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
@@ -55,7 +48,6 @@ import {
   Reason,
   resetSignal,
   settle,
-  waitForOperation,
   withCleanup,
 } from "./utils.ts";
 
@@ -503,15 +495,12 @@ const initializeSshSelection$ = command(
     if (!dialog || (dialog.kind !== "create" && dialog.kind !== "edit")) {
       return;
     }
-    const result = await settle(
-      waitForOperation<readonly { readonly id: string }[] | null>(
-        resource === "credential"
-          ? get(sshCredentials$)
-          : resource === "tailscale"
-            ? get(tailscaleConfigs$)
-            : get(cloudflareAccessConfigs$),
-        signal,
-      ),
+    const result = await settle<readonly { readonly id: string }[] | null>(
+      resource === "credential"
+        ? get(sshCredentials$)
+        : resource === "tailscale"
+          ? get(tailscaleConfigs$)
+          : get(cloudflareAccessConfigs$),
       signal,
     );
     const identity = await get(sshIdentity$);
@@ -565,38 +554,6 @@ export const retrySsh$ = command(async ({ set }, signal: AbortSignal) => {
   await set(initializeSshSelections$, signal);
 });
 
-const catchUpSsh$ = command(({ set }) => {
-  set(invalidateSsh$);
-  return false;
-});
-const onSshChanged$ = command(
-  async ({ get, set }, payload: unknown, signal: AbortSignal) => {
-    const parsed = sshChangedPayloadSchema.safeParse(payload);
-    if (!parsed.success) {
-      return false;
-    }
-    const org = await get(currentOrgInfo$);
-    signal.throwIfAborted();
-    if (org?.id === parsed.data.orgId) {
-      set(invalidateSsh$);
-      set(invalidateCloudflareAccess$);
-      set(invalidateTailscale$);
-    }
-    return false;
-  },
-);
-export const subscribeSshChanged$ = command(({ set }, signal: AbortSignal) => {
-  set(
-    setAblyPayloadLoop$,
-    {
-      topic: "ssh:changed",
-      loopCommand$: onSshChanged$,
-      initializeCommand$: catchUpSsh$,
-      options: { runOnSubscribe: true },
-    },
-    signal,
-  );
-});
 export function usesTailscaleNetwork(
   connection: SshConnectionResponse | null | undefined,
 ) {

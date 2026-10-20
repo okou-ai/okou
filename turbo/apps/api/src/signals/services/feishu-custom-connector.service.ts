@@ -26,12 +26,8 @@ import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-con
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { nowDate } from "../../lib/time";
-import { clerk$ } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
-import {
-  publishCustomConnectorOrganizationInvalidationAfterCommit,
-  type CapturedConnectorClientInvalidationAbort,
-} from "./connector-client-invalidation.service";
+import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import { deleteConnectorCredentialStorageConnection } from "./connector-credential-storage-write.service";
 import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import {
@@ -87,7 +83,6 @@ interface ExistingFeishuCustomConnector {
 
 interface ReconciledFeishuCustomConnector {
   readonly connectorId: string;
-  readonly definitionChanged: boolean;
   readonly runtimeChanged: boolean;
 }
 
@@ -311,7 +306,6 @@ async function createFeishuCustomConnector(
       signal.throwIfAborted();
       return {
         connectorId: connector.id,
-        definitionChanged: true,
         runtimeChanged: false,
       };
     })();
@@ -382,7 +376,6 @@ async function repairFeishuCustomConnector(
       signal.throwIfAborted();
       return {
         connectorId: existing.connector.id,
-        definitionChanged: true,
         runtimeChanged: true,
       };
     })();
@@ -509,7 +502,6 @@ async function reconcileFeishuCustomConnector(
       !args.configurationChanged && !needsRepair
         ? {
             connectorId: existing.connector.id,
-            definitionChanged: false,
             runtimeChanged: false,
           }
         : await repairFeishuCustomConnector(
@@ -543,7 +535,7 @@ async function reconcileFeishuCustomConnector(
 
 export const ensureFeishuCustomConnector$ = command(
   async (
-    { get, set },
+    { set },
     args: EnsureFeishuCustomConnectorArgs,
     signal: AbortSignal,
   ): Promise<string | null> => {
@@ -658,16 +650,10 @@ export const ensureFeishuCustomConnector$ = command(
       }
 
       const connector = result.connector;
-      if (connector.definitionChanged) {
-        await publishCustomConnectorOrganizationInvalidationAfterCommit(
-          args.orgId,
-          get(clerk$).organizations,
-          signal,
-          postCommitAbort,
-        );
-      } else {
-        signal.throwIfAborted();
+      if (postCommitAbort) {
+        throw postCommitAbort.reason;
       }
+      signal.throwIfAborted();
       return connector.connectorId;
     }
     return null;
@@ -676,7 +662,7 @@ export const ensureFeishuCustomConnector$ = command(
 
 export const deleteFeishuInstallationAndCustomConnector$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly installationId: string;
@@ -766,16 +752,10 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
       signal.throwIfAborted();
       return false;
     }
-    if (deleted.connectorId) {
-      await publishCustomConnectorOrganizationInvalidationAfterCommit(
-        args.orgId,
-        get(clerk$).organizations,
-        signal,
-        postCommitAbort,
-      );
-    } else {
-      signal.throwIfAborted();
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
     }
+    signal.throwIfAborted();
     return true;
   },
 );

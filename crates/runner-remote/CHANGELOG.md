@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.29.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.4...runner-remote-v0.29.5) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+## [0.29.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.3...runner-remote-v0.29.4) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-remote:** share ssh authority entry construction ([#41803](https://github.com/okou-ai/okou/issues/41803)) ([d7e5f7b](https://github.com/okou-ai/okou/commit/d7e5f7b3d31cd7969cd9e7c4e5b2f88750634683))
+
+## [0.29.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.2...runner-remote-v0.29.3) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-remote:** own tcp opening completion ([#41760](https://github.com/okou-ai/okou/issues/41760)) ([032c8bd](https://github.com/okou-ai/okou/commit/032c8bd64d45b32b020a17bd98c2edeb11a04eaf))
+
+## [0.29.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.1...runner-remote-v0.29.2) (2026-10-20)
+
 ## [0.29.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.0...runner-remote-v0.29.1) (2026-10-20)
 
 

@@ -1,8 +1,14 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { animationFrame } from "signal-timers";
 
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -12,6 +18,7 @@ import {
 } from "./chat-event-test-helpers.ts";
 import {
   chatScrollContainer,
+  chatComposerTextarea,
   context,
   mockChatLifecycleWithoutBrowserSession,
   setupPage,
@@ -64,12 +71,19 @@ function renderedAnchors(container: HTMLElement): HTMLElement[] {
   );
 }
 
-function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
+function installChatScrollGeometry(
+  container: HTMLElement,
+  viewportHeight = () => {
+    return INITIAL_VIEWPORT_HEIGHT_PX;
+  },
+  viewportTop = () => {
+    return 0;
+  },
+): ChatScrollGeometry {
   const prototypeRectDescriptor = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
     "getBoundingClientRect",
   );
-  const clientHeight = INITIAL_VIEWPORT_HEIGHT_PX;
   let scrollTop = 0;
   let heightBeforeMessages = 0;
 
@@ -81,14 +95,14 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
     );
   };
   const clampScrollTop = (top: number): number => {
-    return Math.max(0, Math.min(top, scrollHeight() - clientHeight));
+    return Math.max(0, Math.min(top, scrollHeight() - viewportHeight()));
   };
 
   Object.defineProperties(container, {
     clientHeight: {
       configurable: true,
       get: () => {
-        return clientHeight;
+        return viewportHeight();
       },
     },
     scrollHeight: {
@@ -109,13 +123,16 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
     configurable: true,
     value(this: HTMLElement): DOMRect {
       if (this === container) {
-        return rect(0, clientHeight);
+        return rect(viewportTop(), viewportHeight());
       }
       if (Object.hasOwn(this.dataset, "chatScrollAnchorEventId")) {
         const index = renderedAnchors(container).indexOf(this);
         if (index !== -1) {
           return rect(
-            heightBeforeMessages + index * ROW_HEIGHT_PX - scrollTop,
+            viewportTop() +
+              heightBeforeMessages +
+              index * ROW_HEIGHT_PX -
+              scrollTop,
             ROW_CONTENT_HEIGHT_PX,
           );
         }
@@ -142,12 +159,15 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
 
   return {
     bottomScrollTop: () => {
-      return scrollHeight() - clientHeight;
+      return scrollHeight() - viewportHeight();
     },
     firstVisibleAnchor: () => {
       const anchor = renderedAnchors(container).find((candidate) => {
         const candidateRect = candidate.getBoundingClientRect();
-        return candidateRect.bottom > 0 && candidateRect.top < clientHeight;
+        return (
+          candidateRect.bottom > viewportTop() &&
+          candidateRect.top < viewportTop() + viewportHeight()
+        );
       });
       if (!anchor) {
         throw new Error("No chat message is visible in the mocked viewport");
@@ -268,11 +288,13 @@ function mockMutableConversation(
 async function openConversation(
   threadId: string,
   loadedText: string,
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${threadId}`,
     host: "app.okou.ai",
+    featureSwitches,
   });
   const loadedMessage = await screen.findByText(loadedText);
   expect(loadedMessage).toBeVisible();
@@ -328,6 +350,167 @@ async function expectHistoryPositionHeld(): Promise<void> {
     expect(queryButtonByLabel("Scroll to bottom")).toBeVisible();
   });
 }
+
+class KeyboardViewport extends EventTarget {
+  height = 844;
+  offsetTop = 0;
+  pageTop = 0;
+  scale = 1;
+
+  resize(height: number, pageTop: number): void {
+    this.height = height;
+    this.offsetTop = pageTop;
+    this.pageTop = pageTop;
+    this.dispatchEvent(new Event("resize"));
+  }
+}
+
+function installKeyboardViewport(): KeyboardViewport {
+  context.mocks.browser.standaloneDisplayMode(true);
+  const viewport = new KeyboardViewport();
+  vi.stubGlobal("innerHeight", viewport.height);
+  vi.stubGlobal("visualViewport", viewport);
+  return viewport;
+}
+
+function installKeyboardChatGeometry(
+  container: HTMLElement,
+  viewport: KeyboardViewport,
+): ChatScrollGeometry {
+  // happy-dom has no layout engine. Model only the browser's projection of
+  // the shell styles into DOM geometry; bootstrap, editor, viewport manager
+  // and transcript scroll ownership all run unchanged.
+  const shellStyle = document.documentElement.style;
+  return installChatScrollGeometry(
+    container,
+    () => {
+      const height = shellStyle.getPropertyValue(
+        "--okou-keyboard-viewport-height",
+      );
+      return (height ? Number.parseFloat(height) : window.innerHeight) - 200;
+    },
+    () => {
+      const top = shellStyle.getPropertyValue("--okou-keyboard-viewport-top");
+      return (top ? Number.parseFloat(top) : 0) - viewport.pageTop + 64;
+    },
+  );
+}
+
+test.each([
+  { enabled: true, position: "tail" },
+  { enabled: true, position: "history" },
+  { enabled: false, position: "tail" },
+  { enabled: false, position: "history" },
+])(
+  "Keep $position through PWA keyboard cycles with rollout $enabled",
+  async ({ enabled, position }) => {
+    const viewport = installKeyboardViewport();
+    const threadId = THREAD_IDS.growingHistory;
+    mockMutableConversation(threadId, completedHistoryEvents(8));
+    const container = await openConversation(threadId, "History answer 8", {
+      [FeatureSwitchKey.PwaKeyboardViewport]: enabled,
+    });
+    const geometry = installKeyboardChatGeometry(container, viewport);
+    const editor = chatComposerTextarea();
+    await fill(editor, "Keep this multiline draft\nand its second line");
+    editor.focus();
+    if (position === "history") {
+      scrollFromUser(container, 240);
+      await expectHistoryPositionHeld();
+    }
+    const readingId = anchorId(geometry.firstVisibleAnchor());
+    const readingOffset = () => {
+      return (
+        anchorById(container, readingId).getBoundingClientRect().top -
+        container.getBoundingClientRect().top
+      );
+    };
+    const initialOffset = readingOffset();
+    const initialScrollTop = container.scrollTop;
+    const expectPosition = () => {
+      const expectedScrollTop =
+        position === "tail" ? geometry.bottomScrollTop() : initialScrollTop;
+      expect(container.scrollTop).toBe(expectedScrollTop);
+      expect(readingOffset()).toBe(
+        initialOffset - (expectedScrollTop - initialScrollTop),
+      );
+    };
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      editor.focus();
+      act(() => {
+        viewport.resize(420, 180);
+        // WebKit can expose its final pan without a second viewport event.
+        viewport.pageTop = 240;
+        vi.stubGlobal("scrollY", 240);
+      });
+      await waitFor(() => {
+        expect(container.clientHeight).toBe(enabled ? 220 : 644);
+        expect(container.getBoundingClientRect().top).toBe(
+          enabled ? 64 : 64 - viewport.pageTop,
+        );
+        expectPosition();
+      });
+
+      act(() => {
+        viewport.pageTop = 280;
+        // Document scrolling and offsetTop are not additive on iOS.
+        vi.stubGlobal("scrollY", 280);
+        fireEvent.scroll(window);
+        viewport.dispatchEvent(new Event("scroll"));
+      });
+      await waitFor(() => {
+        expect(container.getBoundingClientRect().top).toBe(
+          enabled ? 64 : 64 - viewport.pageTop,
+        );
+        expectPosition();
+      });
+      expect(editor).toHaveFocus();
+      expect(editor).toHaveTextContent("Keep this multiline draft");
+      expect(editor).toHaveTextContent("and its second line");
+
+      if (enabled) {
+        await act(async () => {
+          viewport.scale = 2;
+          viewport.resize(210, 280);
+          const painted = context.mocks.deferred<void>();
+          animationFrame(
+            () => {
+              painted.resolve();
+            },
+            { signal: context.signal },
+          );
+          await painted.promise;
+        });
+        viewport.scale = 1;
+      }
+      expect(container.clientHeight).toBe(enabled ? 220 : 644);
+      expectPosition();
+
+      act(() => {
+        editor.blur();
+        viewport.resize(844, 0);
+        vi.stubGlobal("scrollY", 0);
+      });
+      await waitFor(() => {
+        expect(container.clientHeight).toBe(644);
+        expect(container.getBoundingClientRect().top).toBe(64);
+        expectPosition();
+      });
+    }
+
+    // A real layout-viewport resize must still restore the legacy path too.
+    act(() => {
+      vi.stubGlobal("innerHeight", 740);
+      viewport.resize(740, 0);
+      fireEvent.resize(window);
+    });
+    await waitFor(() => {
+      expect(container.clientHeight).toBe(540);
+      expectPosition();
+    });
+  },
+);
 
 test("Preserve the visible message when earlier content grows", async () => {
   mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));

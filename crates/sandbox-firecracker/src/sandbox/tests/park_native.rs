@@ -157,6 +157,7 @@ async fn physical_park_reclaims_before_pause_and_hands_off_without_pause() -> Na
             &socket,
             "native-park",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 state_rx: state_rx.clone(),
                 handoff: (scenario != Scenario::Normal).then_some(&handoff),

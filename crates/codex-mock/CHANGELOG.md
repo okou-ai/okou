@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.13](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.12...codex-mock-v0.12.13) (2026-10-20)
+
+## [0.12.12](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.11...codex-mock-v0.12.12) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** preserve codex notifications while awaiting rpc replies ([#41728](https://github.com/okou-ai/okou/issues/41728)) ([956877b](https://github.com/okou-ai/okou/commit/956877b64cf51f613872d3f15d05f5ec6ca0ed77))
+
 ## [0.12.11](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.10...codex-mock-v0.12.11) (2026-10-20)
 
 

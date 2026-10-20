@@ -14,6 +14,7 @@ fail() {
 }
 
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -22,12 +23,20 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "6060606060606060606060606060606060606060" ]; then
+    if [ "${3:-}" = "$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_TARGET_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "6060606060606060606060606060606060606060" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "2eff576ad75d328676834643c1380ff35c2297e2" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+      [ "${MOCK_GUEST_STORAGE_COMPLETION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_RUN_STORAGE_OUTPUT_READER_ON_MAIN:-1}" = "1" ]
@@ -38,6 +47,10 @@ case "${1:-}" in
       [ "${MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "968063848aea8cf54acd6f56facdf7cdcbd79051" ]; then
+      [ "${MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
+      [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
       [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
@@ -102,6 +115,10 @@ case "${1:-}" in
       [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12" ]; then
+      [ "${MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29" ]; then
+      [ "${MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
       [ "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
@@ -219,6 +236,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_COMMIT-5151515151515151515151515151515151515151}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *agent-instructions-claim.service.ts* ]]; then
+      printf '%s\n' "${MOCK_AGENT_INSTRUCTIONS_API_COMMIT-ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
       printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -237,6 +256,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/connector-resource-split" ]; then
+      [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT-$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/guest-storage-output-completion-reader" ]; then
       [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_GUEST_STORAGE_COMPLETION_READER_COMMIT-6060606060606060606060606060606060606060}"
@@ -314,6 +338,7 @@ run_resolver() {
     GITHUB_REPOSITORY=okou-ai/okou \
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
+    MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -330,6 +355,23 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# Current-main policy must reject pre-preparation APIs before provider or host
+# access. Valid descendants still resolve through the existing success case.
+for connector_case in \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE=0|Cannot read the Connector resource split rollback floor from main" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT=|Missing or invalid Connector resource split rollback floor" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT=not-a-commit|Missing or invalid Connector resource split rollback floor" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_ON_MAIN=0|Connector resource split rollback floor is not on main" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_TARGET_VALID=0|Rollback target predates the Connector resource split"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${connector_case#*|}" \
+    run_resolver "${tmp_dir}/connector-resource-split.output" "${connector_case%%|*}"
+  [ ! -s "${tmp_dir}/connector-resource-split.output" ] || fail "incompatible Connector API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Connector resource split policy must reject before artifact or host access"
+  fi
+done
 
 # A compatible API target must resolve its independently compatible Runner tag.
 : >"${tmp_dir}/boundaries.log"
@@ -388,6 +430,8 @@ grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
+grep -Fxq "git merge-base --is-ancestor 968063848aea8cf54acd6f56facdf7cdcbd79051 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "API target must include the independent finalizing source writer"
+grep -Fxq "git merge-base --is-ancestor b610ff61043274157618e3925b13a66dc56ef84b bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "selected Runner tag must independently include the finalizing source reader"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
 
@@ -408,6 +452,22 @@ grep -Fq 'e01702c7d762b5d2a76d557db77ccaf19c4f95c8' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/structured-disk-reader-floor.output" ] || fail "required-pair API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "required-pair API must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the independent finalizing source writer" \
+  run_resolver "${tmp_dir}/finalizing-source-api-floor.output" MOCK_FINALIZING_SOURCE_API_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/finalizing-source-api-floor.output" ] || fail "old-source API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "old-source API must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the independent finalizing source reader" \
+  run_resolver "${tmp_dir}/finalizing-source-runner-floor.output" MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/finalizing-source-runner-floor.output" ] || fail "strict old Runner must not publish rollback outputs"
+if grep -Eq '^curl .*releases/tags/|^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "strict old Runner must fail before Runner artifact or host access"
 fi
 
 for storage_reader_commit in "" invalid; do
@@ -432,6 +492,14 @@ for storage_reader_case in \
     fail "unsupported Storage reader must fail before artifact or host access"
   fi
 done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the Guest Storage-output completion writer" \
+  run_resolver "${tmp_dir}/completion-writer-floor.output" MOCK_GUEST_STORAGE_COMPLETION_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/completion-writer-floor.output" ] || fail "old Guest writer must not publish rollback outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "old Guest writer must fail before Runner artifact or host access"
+fi
 
 for completion_reader_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
@@ -759,6 +827,22 @@ assert_failure "Rollback target predates the chat thread provenance runtime remo
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "chat thread provenance floor must fail before artifact or host access"
 fi
+
+for reader_commit in "" invalid; do
+  assert_failure "Cannot resolve the merged Agent instructions DB reader" \
+    run_resolver "${tmp_dir}/agent-instructions-api-history.output" "MOCK_AGENT_INSTRUCTIONS_API_COMMIT=${reader_commit}"
+  [ ! -s "${tmp_dir}/agent-instructions-api-history.output" ] || fail "invalid instruction reader history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Agent instructions DB reader" \
+  run_resolver "${tmp_dir}/agent-instructions-api-floor.output" MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/agent-instructions-api-floor.output" ] || fail "Storage instruction reader must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+  fail "Agent instruction API floor must fail before artifact or host access"
+fi
+assert_failure "predates inline Agent instructions" \
+  run_resolver "${tmp_dir}/agent-instructions-runner-floor.output" MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/agent-instructions-runner-floor.output" ] || fail "old instruction Runner must not publish rollback outputs"
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

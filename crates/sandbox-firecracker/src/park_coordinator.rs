@@ -49,6 +49,20 @@ impl ParkCoordinator {
         }
     }
 
+    /// Authorize only the original Sandbox's joined terminal recovery.
+    /// Ordinary controls never receive this attempt capability.
+    pub(crate) fn ensure_terminal_unpark_allowed(
+        &self,
+        attempt: uuid::Uuid,
+    ) -> Result<(), OperationStartRejection> {
+        match self.inner().state.clone() {
+            CoordinatorState::Dirty { ref reason } if reason.terminal_unpark == Some(attempt) => {
+                Ok(())
+            }
+            state => Err(OperationStartRejection::GateClosed { state }),
+        }
+    }
+
     /// Bind the full run identity before this assignment can admit controls.
     pub(crate) fn bind_run_control(&self, run_id: &str) -> Result<(), RunControlBindError> {
         let mut inner = self.inner();
@@ -252,12 +266,24 @@ pub(crate) enum CoordinatorState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DirtyReason {
     message: String,
+    terminal_unpark: Option<uuid::Uuid>,
 }
 
 impl DirtyReason {
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            terminal_unpark: None,
+        }
+    }
+
+    pub(crate) fn abandoned_native_transition(
+        message: impl Into<String>,
+        attempt: Option<uuid::Uuid>,
+    ) -> Self {
+        Self {
+            message: message.into(),
+            terminal_unpark: attempt,
         }
     }
 }
@@ -358,10 +384,15 @@ impl Inner {
     }
 
     fn mark_dirty(&mut self, reason: DirtyReason) {
-        if matches!(
-            self.state,
-            CoordinatorState::Dirty { .. } | CoordinatorState::Terminating
-        ) {
+        if let CoordinatorState::Dirty { reason: first } = &mut self.state {
+            // Preserve the first diagnostic, but an unrelated failure revokes
+            // the narrowly scoped terminal recovery authority.
+            if first.terminal_unpark != reason.terminal_unpark {
+                first.terminal_unpark = None;
+            }
+            return;
+        }
+        if matches!(self.state, CoordinatorState::Terminating) {
             return;
         }
 

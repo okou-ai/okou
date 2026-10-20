@@ -19,6 +19,7 @@ use runner_provider::{
 };
 
 mod independent_source;
+mod peer_home;
 mod terminal_reuse;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
@@ -27,7 +28,7 @@ const FINALIZING_TEST_PREFERENCE_LIFETIME: Duration = Duration::from_secs(30);
 fn ranked_candidate(
     run_id: RunId,
     reuse_key: Option<&str>,
-    tier: RunnerPreferenceTier,
+    tier: runner_provider::RunnerPreferenceTarget,
     runner_id: &str,
     heartbeat_generation: u64,
 ) -> runner_provider::JobCandidate {
@@ -44,7 +45,7 @@ fn ranked_candidate(
 fn ranked_candidate_until(
     run_id: RunId,
     reuse_key: Option<&str>,
-    tier: RunnerPreferenceTier,
+    tier: runner_provider::RunnerPreferenceTarget,
     runner_id: &str,
     heartbeat_generation: u64,
     deadline: std::time::Instant,
@@ -62,7 +63,7 @@ fn matching_preference_candidate(run_id: RunId, session_id: &str) -> runner_prov
     ranked_candidate(
         run_id,
         Some(session_id),
-        RunnerPreferenceTier::ReusableSandbox,
+        runner_provider::RunnerPreferenceTarget::ReusableSandbox,
         TEST_RUNNER_ID,
         TEST_HEARTBEAT_GENERATION,
     )
@@ -76,7 +77,7 @@ fn exact_generation_preference_candidate(
     ranked_candidate(
         run_id,
         Some(session_id),
-        RunnerPreferenceTier::ExactSandbox,
+        runner_provider::RunnerPreferenceTarget::ExactSandbox,
         TEST_RUNNER_ID,
         TEST_HEARTBEAT_GENERATION,
     )
@@ -113,7 +114,9 @@ fn finalizing_candidate_until(
         .with_history_generation_run_id(Some(history_generation_run_id))
         .with_runner_preference(ActiveRunnerPreference::new(
             RunnerProcessIdentity::new(runner_id.parse().unwrap(), heartbeat_generation).unwrap(),
-            RunnerPreferenceTier::FinalizingPredecessor,
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                history_generation_run_id,
+            ),
             deadline,
         ))
 }
@@ -359,7 +362,7 @@ async fn exact_idle_reservation_is_restored_after_claim_conflict() {
             ranked_candidate(
                 conflict_run_id,
                 Some(session_id),
-                RunnerPreferenceTier::ExactSandbox,
+                runner_provider::RunnerPreferenceTarget::ExactSandbox,
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
             )
@@ -466,7 +469,7 @@ async fn unselected_reusable_sandbox_preempts_home_preference() {
         .send(ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::HomeCache,
+            runner_provider::RunnerPreferenceTarget::HomeCache,
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ))
@@ -500,7 +503,7 @@ async fn equal_unselected_reusable_sandbox_defers() {
         .send(ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::ReusableSandbox,
+            runner_provider::RunnerPreferenceTarget::ReusableSandbox,
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ))
@@ -1499,10 +1502,9 @@ async fn selected_finalizing_candidate_claims_while_predecessor_is_running() {
         .expect("finalizing observation should be recorded at claim");
     assert!(matches!(
         preference_telemetry.runner_preference,
-        RunnerPreference::Preference {
-            tier: RunnerPreferenceTier::FinalizingPredecessor,
-            ..
-        }
+        RunnerPreference::Preference(
+            runner_provider::RunnerPreferenceDecision::FinalizingPredecessor { .. }
+        )
     ));
     assert_eq!(
         preference_telemetry.state,
@@ -2244,7 +2246,9 @@ async fn cancelled_finalizing_capacity_wait_releases_retiring_leases_but_keeps_c
                         TEST_HEARTBEAT_GENERATION,
                     )
                     .unwrap(),
-                    RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        history_generation_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -2297,7 +2301,9 @@ async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
             ranked_candidate_until(
                 run_id,
                 Some(reuse_key),
-                RunnerPreferenceTier::FinalizingPredecessor,
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                    history_generation_run_id,
+                ),
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
                 deadline,
@@ -2451,7 +2457,9 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
             ranked_candidate(
                 run_id,
                 Some(reuse_key),
-                RunnerPreferenceTier::FinalizingPredecessor,
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                    history_generation_run_id,
+                ),
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
             )
@@ -2544,7 +2552,9 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
             ranked_candidate_until(
                 run_id,
                 Some(reuse_key),
-                RunnerPreferenceTier::FinalizingPredecessor,
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                    history_generation_run_id,
+                ),
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
                 std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
@@ -2978,7 +2988,9 @@ async fn unselected_exact_sandbox_preempts_finalizing_preference() {
             ranked_candidate(
                 run_id,
                 Some(reuse_key),
-                RunnerPreferenceTier::FinalizingPredecessor,
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                    history_generation_run_id,
+                ),
                 &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
                 1,
             )
@@ -3326,7 +3338,7 @@ async fn preference_without_reuse_key_uses_ordinary_admission() {
         .send(ranked_candidate(
             run_id,
             None,
-            RunnerPreferenceTier::ReusableSandbox,
+            runner_provider::RunnerPreferenceTarget::ReusableSandbox,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3366,7 +3378,7 @@ async fn selected_finalizing_candidate_without_reuse_key_uses_ordinary_admission
                         TEST_HEARTBEAT_GENERATION,
                     )
                     .unwrap(),
-                    RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4()),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -3395,10 +3407,9 @@ async fn selected_finalizing_candidate_without_reuse_key_uses_ordinary_admission
         .expect("incomplete finalizing metadata should preserve its observation");
     assert!(matches!(
         preference_telemetry.runner_preference,
-        RunnerPreference::Preference {
-            tier: RunnerPreferenceTier::FinalizingPredecessor,
-            ..
-        }
+        RunnerPreference::Preference(
+            runner_provider::RunnerPreferenceDecision::FinalizingPredecessor { .. }
+        )
     ));
     assert_eq!(
         preference_telemetry.state,
@@ -3619,7 +3630,7 @@ async fn expired_generation_protection_preserves_local_session_claim() {
             ranked_candidate_until(
                 run_id,
                 Some("sess-held-local"),
-                RunnerPreferenceTier::ExactSandbox,
+                runner_provider::RunnerPreferenceTarget::ExactSandbox,
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
                 std::time::Instant::now() - Duration::from_secs(1),
@@ -3690,7 +3701,7 @@ async fn selected_reusable_defers_for_cache_then_selected_home_claims_it() {
         .send(ranked_candidate(
             reusable_run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::ReusableSandbox,
+            runner_provider::RunnerPreferenceTarget::ReusableSandbox,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3711,7 +3722,7 @@ async fn selected_reusable_defers_for_cache_then_selected_home_claims_it() {
         .send(ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::HomeCache,
+            runner_provider::RunnerPreferenceTarget::HomeCache,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3893,7 +3904,7 @@ async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home
         ranked_candidate(
             run_id,
             Some(reuse_key),
-            RunnerPreferenceTier::HomeCache,
+            runner_provider::RunnerPreferenceTarget::HomeCache,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         )

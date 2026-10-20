@@ -1,4 +1,7 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import {
+  artifactCatalogContract,
+  type ArtifactSummary,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
@@ -116,7 +119,7 @@ export async function setupResources(
 }
 
 export function resourceButton() {
-  return buttonNamed("Open artifacts");
+  return buttonNamed("Resources");
 }
 export function resourcePanel() {
   return screen.queryByRole("region", { name: "Resources" });
@@ -133,14 +136,18 @@ export function composer() {
 
 export function resourceState() {
   return {
-    open: resourceButton().getAttribute("aria-pressed") === "true",
+    open: resourceButton().getAttribute("aria-expanded") === "true",
     visible: resourcePanel() !== null,
   };
 }
 
 export async function setupOverflowResources(
   count: number,
-  options: { readonly paginated?: boolean; readonly withLinks?: boolean } = {},
+  options: {
+    readonly paginated?: boolean;
+    readonly withLinks?: boolean;
+    readonly mock?: (catalog: readonly ArtifactSummary[]) => void;
+  } = {},
 ) {
   const resize = installResourceGeometry(480);
   const media = context.mocks.browser.matchMedia(true);
@@ -185,12 +192,15 @@ export async function setupOverflowResources(
   });
   if (options.paginated) {
     context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+      const offset = query.cursor ? Number(query.cursor) : 0;
+      const end = offset + 60;
       return respond(200, {
-        artifacts: query.cursor ? catalog.slice(60) : catalog.slice(0, 60),
-        nextCursor: query.cursor ? null : "resources-next-page",
+        artifacts: catalog.slice(offset, end),
+        nextCursor: end < catalog.length ? String(end) : null,
       });
     });
   }
+  options.mock?.(catalog);
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,

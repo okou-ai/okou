@@ -22,7 +22,7 @@ import {
   privateHostedDeployments,
 } from "../src/runtime/hosted-site";
 import type { HostedSiteManifest } from "../src/jsonb-contracts/hosted-site";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // The entire transition runs against one newly created database. The configured
 // DATABASE_URL supplies only the connection to create/drop that isolated fixture.
@@ -86,7 +86,7 @@ async function apply() {
   const sql = postgres(fixtureUrl.toString(), { max: 1, onnotice: () => {} });
   process.chdir(fixture);
   try {
-    await applyPendingMigrations(sql);
+    await applyFixtureMigrations(sql);
   } finally {
     process.chdir(originalDirectory);
     await sql.end();

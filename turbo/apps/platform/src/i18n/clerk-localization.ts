@@ -12,15 +12,12 @@ import koKRUrl from "./clerk-localizations/ko-KR.json?url";
 import ptBRUrl from "./clerk-localizations/pt-BR.json?url";
 import zhHansUrl from "./clerk-localizations/zh-Hans.json?url";
 import zhHantUrl from "./clerk-localizations/zh-Hant.json?url";
-import { logger } from "../signals/log.ts";
-import { tapError } from "../signals/utils.ts";
 import { DEFAULT_LOCALE, type SupportedLocale } from "./resources.ts";
 
 type ClerkLocalization = typeof enUS;
 type ClerkLocalizationCache = ReadonlyMap<SupportedLocale, ClerkLocalization>;
 type NonDefaultLocale = Exclude<SupportedLocale, typeof DEFAULT_LOCALE>;
 
-const L = logger("ClerkLocalization");
 const internalClerkLocalizations$ = state<ClerkLocalizationCache>(
   new Map([[DEFAULT_LOCALE, enUS]]),
 );
@@ -118,7 +115,7 @@ export const loadClerkLocalization$ = command(
     { get },
     locale: SupportedLocale,
     signal: AbortSignal,
-  ): Promise<ClerkLocalization | undefined> => {
+  ): Promise<ClerkLocalization> => {
     signal.throwIfAborted();
     if (locale === DEFAULT_LOCALE) {
       return enUS;
@@ -128,27 +125,13 @@ export const loadClerkLocalization$ = command(
       return loaded;
     }
 
-    const localization = await tapError(
-      fetchClerkLocalization(locale, signal),
-      (error) => {
-        L.error(
-          `Failed to load ${locale} Clerk localization; falling back to ${DEFAULT_LOCALE}`,
-          error,
-        );
-      },
-    );
-    signal.throwIfAborted();
-    return localization;
+    return await fetchClerkLocalization(locale, signal);
   },
 );
 
 export const cacheClerkLocalization$ = command(
-  (
-    { get, set },
-    locale: SupportedLocale,
-    localization: ClerkLocalization | undefined,
-  ) => {
-    if (!localization || get(internalClerkLocalizations$).has(locale)) {
+  ({ get, set }, locale: SupportedLocale, localization: ClerkLocalization) => {
+    if (get(internalClerkLocalizations$).has(locale)) {
       return;
     }
     const next = new Map(get(internalClerkLocalizations$));
@@ -161,8 +144,12 @@ export function clerkLocalizationForLocale(
   localizations: ClerkLocalizationCache,
   locale: SupportedLocale,
 ): ClerkLocalization {
+  const localization = localizations.get(locale);
+  if (!localization) {
+    throw new Error(`Clerk localization for ${locale} has not been loaded`);
+  }
   return {
-    ...(localizations.get(locale) ?? enUS),
+    ...localization,
     // Clerk uses this string as the email input's native title. An empty
     // public localization override suppresses hover hints in every locale.
     formFieldInput__emailAddress_format: "",

@@ -19,7 +19,10 @@ import { env } from "../../lib/env";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { publishThreadListChanged } from "../external/realtime";
+import {
+  publishDesktopShellAuthorizationChangedSafely,
+  publishThreadListChanged,
+} from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
   computerUseHostIsOnline,
@@ -710,6 +713,8 @@ export const applyComputerUseAuthorizationRequest$ = command(
       userId: args.userId,
       orgId: args.orgId,
     });
+    signal.throwIfAborted();
+    await publishDesktopShellAuthorizationChangedSafely(args.userId);
     signal.throwIfAborted();
 
     return {

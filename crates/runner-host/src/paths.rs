@@ -218,8 +218,6 @@ shared_home_dirs! {
     pub fn locks_dir => "locks";
     pub fn live_runner_instances_dir => "live-runner-instances";
     pub fn logs_dir => "logs";
-    /// Persistent, host-shared Runner-ID Unix socket namespace.
-    pub fn wss_dir => "wss";
     fn mitmproxy_root_dir => "mitmproxy";
     /// Root directory for the runner-side storage archive cache.
     ///

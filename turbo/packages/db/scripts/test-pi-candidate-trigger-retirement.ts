@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // Infrastructure boundary: only PostgreSQL can construct catalog drift, corrupt
 // historical ownership, DDL wait snapshots and a failing migration journal.
@@ -97,7 +97,7 @@ async function apply(
   const sql = postgres(url, { max: 1, onnotice: () => {}, ...options });
   process.chdir(fixtureDirectory);
   try {
-    await applyPendingMigrations(sql);
+    await applyFixtureMigrations(sql);
   } finally {
     process.chdir(originalDirectory);
     await sql.end();

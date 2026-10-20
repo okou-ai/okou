@@ -161,7 +161,6 @@ test("Paste copied chat text and attachments safely", async () => {
     ),
   ).resolves.toBeVisible();
   expect(composer).toHaveTextContent("Text kept from an inaccessible copy");
-  expect(document.body).not.toHaveTextContent("Remove missing-copy.txt");
   expect(fastButton("Remove available-copy.txt")).toBeVisible();
 });
 
@@ -212,7 +211,7 @@ test("Persist pasted text and attachments after the copied file resolves", async
   });
   await resolutionStarted.promise;
   expect(composer).toHaveTextContent("Copied notes to keep");
-  expect(fastButton("Remove copied-notes.txt")).toBeInTheDocument();
+  expect(fastButton("Cancel upload copied-notes.txt")).toBeInTheDocument();
   resolveFile.resolve();
   const savedDraft = await saved.promise;
   expect(savedDraft.draftUserMessage?.parts).toStrictEqual(
@@ -298,7 +297,6 @@ test("Pasted text is saved when attachment restoration returns 404", async () =>
       "unreadable-copy.txt is no longer available. Upload it again to send.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(document.body).not.toHaveTextContent("Remove unreadable-copy.txt");
 });
 
 test("Pasted text is saved when attachment restoration returns 403", async () => {

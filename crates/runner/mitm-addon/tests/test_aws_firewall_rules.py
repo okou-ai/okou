@@ -234,7 +234,8 @@ def test_query_action_inspects_form_body_at_most_once(monkeypatch) -> None:
     assert inspection_count == 1
 
 
-def test_form_action_matches_iam_and_uninspectable_body_fails_closed() -> None:
+@pytest.mark.parametrize("indexed", [True, False])
+def test_form_action_matches_iam_and_uninspectable_body_fails_closed(indexed: bool) -> None:
     body = b"Action=ListUsers&Version=2010-05-08"
     permissions = [
         firewall_permission(
@@ -257,6 +258,7 @@ def test_form_action_matches_iam_and_uninspectable_body_fails_closed() -> None:
         headers=headers,
         body=body,
         allow=("list-users",),
+        indexed=indexed,
     )
     missing_body = _match(
         base="https://iam.amazonaws.com",
@@ -265,10 +267,67 @@ def test_form_action_matches_iam_and_uninspectable_body_fails_closed() -> None:
         method="POST",
         headers=headers,
         allow=("list-users",),
+        indexed=indexed,
     )
 
     _assert_allowed(allowed, "list-users")
     _assert_unknown(missing_body)
+    assert isinstance(missing_body, matching.FirewallBlock)
+    assert missing_body.aws_sigv4_body_pending
+
+
+@pytest.mark.parametrize("indexed", [True, False])
+@pytest.mark.parametrize("body", [None, b""], ids=["unavailable", "empty"])
+@pytest.mark.parametrize(
+    ("lengths", "allowed"),
+    [
+        pytest.param((), True, id="missing"),
+        pytest.param(("0",), True, id="zero"),
+        pytest.param((" \t000\t ",), True, id="zero-with-optional-whitespace"),
+        pytest.param(("0, 000", "00"), True, id="repeated-zero"),
+        pytest.param(("1",), False, id="positive"),
+        pytest.param(("001",), False, id="leading-zero-positive"),
+        pytest.param(("1, 01", "001"), False, id="repeated-positive"),
+        pytest.param(("0, 1",), False, id="conflicting-comma-list"),
+        pytest.param(("0", "1"), False, id="conflicting-fields"),
+        pytest.param(("",), False, id="empty-field"),
+        pytest.param(("0,",), False, id="empty-list-part"),
+        pytest.param(("+0",), False, id="signed-zero"),
+        pytest.param(("-1",), False, id="negative"),
+        pytest.param(("\u0660",), False, id="unicode-zero"),
+        pytest.param(("\v0",), False, id="non-http-whitespace"),
+        pytest.param(("9" * 5000,), False, id="long-positive"),
+        pytest.param(("0" * 5000,), True, id="long-zero"),
+        pytest.param(("0" * 5000 + "1",), False, id="long-leading-zero-positive"),
+    ],
+)
+def test_query_action_requires_no_declared_body(
+    indexed: bool,
+    body: bytes | None,
+    lengths: tuple[str, ...],
+    allowed: bool,
+) -> None:
+    result = _match(
+        base="https://sts.amazonaws.com",
+        permissions=[
+            firewall_permission("identity", "POST / AWS sigv4=sts action=GetCallerIdentity")
+        ],
+        url="https://sts.amazonaws.com/?Action=GetCallerIdentity",
+        method="POST",
+        headers=_headers(
+            host="sts.amazonaws.com",
+            service="sts",
+            extra=tuple(("cOnTeNt-LeNgTh", value) for value in lengths),
+        ),
+        body=body,
+        allow=("identity",),
+        indexed=indexed,
+    )
+
+    if allowed:
+        _assert_allowed(result, "identity")
+    else:
+        _assert_unknown(result)
 
 
 def test_conflicting_query_and_form_actions_fail_closed() -> None:

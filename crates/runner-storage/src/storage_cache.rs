@@ -4400,8 +4400,6 @@ mod tests {
     };
     use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
 
-    const CACHE_TEST_RUNTIME_DIR: &str = "/tmp/storage-cache-test-runtime";
-
     // Cache tests observe selection at its join boundary. Executor tests use
     // the production entry point directly to verify pre-create overlap.
     async fn prepare_fresh_archive_delivery(
@@ -4617,7 +4615,6 @@ mod tests {
             archive_url: url,
             vas_storage_name: name.to_string(),
             vas_version_id: version.to_string(),
-            instructions_target_filename: None,
             archive_size: None,
         }
     }
@@ -4657,7 +4654,6 @@ mod tests {
                 storages,
                 artifacts,
             },
-            CACHE_TEST_RUNTIME_DIR,
             previous,
         )
         .unwrap()
@@ -4870,55 +4866,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn instruction_delivery_never_reads_or_warms_decoded_entries() {
-        for corrupt in [false, true] {
-            let temp = tempfile::tempdir().unwrap();
-            let home = home_at(&temp);
-            let sandbox = MockSandbox::new("decoded-ineligible");
-            let cache = decoded::DecodedCache::new(home.clone());
-            write_cached_archive(&home, "name", "v1", &tarball_bytes());
-            write_storage_lock(&home, "name", "v1");
-            if corrupt {
-                cache.warm_from_archive("name", "v1").await.unwrap();
-                let entry = home
-                    .storages_dir()
-                    .join(runner_host::paths::short_digest("name"))
-                    .join(format!(
-                        "decoded-v1-{}",
-                        runner_host::paths::short_digest("v1")
-                    ));
-                std::fs::write(entry.join("index.json"), b"{").unwrap();
-            }
-            let url = "https://storage.example/a";
-            let mut instruction =
-                storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
-            instruction.instructions_target_filename = Some("AGENTS.md".into());
-            let mut plan = plan_from_entries(vec![instruction], Vec::new(), None);
-            let deferred = populate_cache_with_fresh_delivery(
-                &mut plan,
-                &sandbox,
-                &home,
-                &mut new_telemetry(),
-                None,
-                Some(&cache),
-            )
-            .await
-            .unwrap();
-            assert!(deferred.is_none(), "irrelevant decoded fill was selected");
-            assert!(plan.take_decoded().is_empty());
-            assert!(
-                storage_archive_url(&plan, 0)
-                    .unwrap()
-                    .starts_with("file://")
-            );
-            if !corrupt {
-                assert!(cache.get_ready("name", "v1").await.unwrap().is_none());
-            }
-            cache.shutdown().await;
-        }
-    }
-
-    #[tokio::test]
     async fn artifact_delivery_reads_validated_decoded_entries_and_rejects_corruption() {
         for corrupt in [false, true] {
             let temp = tempfile::tempdir().unwrap();
@@ -5036,8 +4983,6 @@ mod tests {
             "{url}?{}",
             "a".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
         );
-        let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
-        instruction.instructions_target_filename = Some("AGENTS.md".into());
         let plans = [
             plan_from_entries(
                 vec![storage_entry(
@@ -5054,7 +4999,6 @@ mod tests {
                 )],
                 None,
             ),
-            plan_from_entries(vec![instruction], Vec::new(), None),
             fresh_storage_plan(long_url, "name", "v1"),
         ];
         for mut plan in plans {

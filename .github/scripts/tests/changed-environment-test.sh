@@ -54,10 +54,11 @@ git -C "$repo" commit -qm base
 base=$(git -C "$repo" rev-parse HEAD)
 npm_cache="$test_dir/npm-cache"
 npm_offline=false
+tool_dir=""
 
 compare() {
   local revision=$1 expected=$2
-  if ! (cd "$repo" && npm_config_cache="$npm_cache" npm_config_prefer_offline=true \
+  if ! (cd "$repo" && TURBO_TOOL_DIR="$tool_dir" npm_config_cache="$npm_cache" npm_config_prefer_offline=true \
     npm_config_offline="$npm_offline" bash "$script" "$revision") \
     >"$test_dir/result.json" 2>"$test_dir/stderr"; then
     cat "$test_dir/stderr" >&2
@@ -79,6 +80,17 @@ restored_cache="$test_dir/restored-npm-cache"
 mkdir -p "$restored_cache"
 cp -a "$npm_cache/_cacache" "$npm_cache/_npx" "$restored_cache/"
 npm_cache="$restored_cache"
+npm_offline=true
+compare "$base" '{"shared":false,"web":false,"unrelated":false}'
+
+# A directly cached installation must also preserve PATH-based hashes and work
+# without a registry cache after its tool directory is restored elsewhere.
+tool_dir="$test_dir/turbo-tool"
+npm_offline=false
+compare "$base" '{"shared":false,"web":false,"unrelated":false}'
+cp -a "$tool_dir" "$test_dir/restored-turbo-tool"
+tool_dir="$test_dir/restored-turbo-tool"
+npm_cache="$test_dir/empty-direct-cache"
 npm_offline=true
 compare "$base" '{"shared":false,"web":false,"unrelated":false}'
 printf '// iOS-only edit\n' >>"$repo/ios/App.swift"
@@ -105,5 +117,14 @@ status=0
 }
 grep -q 'Turbo executable resolution failed' "$test_dir/stderr"
 [[ $(git -C "$repo" worktree list --porcelain | grep -c '^worktree ') == 1 ]]
+
+# A wrong-version tool must fail rather than silently hash with another Turbo.
+jq '.version = "0.0.0"' "$tool_dir/node_modules/turbo/package.json" >"$test_dir/wrong-version.json"
+mv "$test_dir/wrong-version.json" "$tool_dir/node_modules/turbo/package.json"
+status=0
+(cd "$repo" && TURBO_TOOL_DIR="$tool_dir" npm_config_offline=true bash "$script" "$base") \
+  >"$test_dir/result.json" 2>"$test_dir/stderr" || status=$?
+[[ "$status" == 2 && ! -s "$test_dir/result.json" ]]
+grep -q 'does not match the pinned version' "$test_dir/stderr"
 
 echo 'changed-environment-test: ok'

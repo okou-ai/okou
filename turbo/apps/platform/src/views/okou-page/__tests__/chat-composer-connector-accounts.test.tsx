@@ -6,7 +6,6 @@ import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  accountSummary,
   builtinConnector,
   connectorAccount,
   DEEPWIKI_CONNECTOR_ID,
@@ -168,7 +167,6 @@ test("Carry a connector account choice into a new chat", async () => {
   const fixture = installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(githubTarget(), accounts)],
     accounts,
   });
 
@@ -182,12 +180,21 @@ test("Carry a connector account choice into a new chat", async () => {
   await openConnectors();
   const chooser = await openAccountChooser(
     user,
-    "GitHub · Using default account: Work",
+    "GitHub · Account for this chat",
   );
   await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
   await expect(
     findFastControl("button", "GitHub · Selected account: Personal"),
   ).resolves.toBeVisible();
+  click(await findFastControl("button", "Connectors"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+  });
+  await openConnectors();
+  await expect(
+    findFastControl("button", "GitHub · Selected account: Personal"),
+  ).resolves.toBeVisible();
+  await user.keyboard("{Escape}");
   const composer = await findComposer();
   await fill(composer, "Use my personal GitHub account");
   await user.keyboard("{Enter}");
@@ -240,7 +247,6 @@ test("Choose an account for a custom MCP connector", async () => {
         { customConnectorId: DEEPWIKI_CONNECTOR_ID, permissionNames: [] },
       ],
     },
-    accountSummaries: [accountSummary(deepWikiTarget(), accounts)],
     accounts,
     threadId: SCOUT_THREAD_ID,
   });
@@ -255,7 +261,7 @@ test("Choose an account for a custom MCP connector", async () => {
   await openConnectors();
   const chooser = await openAccountChooser(
     user,
-    "DeepWiki · Using default account: Team",
+    "DeepWiki · Account for this chat",
   );
   await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
   await waitFor(() => {
@@ -281,7 +287,6 @@ test("Choose which connector account a chat uses", async () => {
   const fixture = installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(githubTarget(), accounts)],
     accounts,
     threadId: SCOUT_THREAD_ID,
   });
@@ -296,7 +301,7 @@ test("Choose which connector account a chat uses", async () => {
   await openConnectors();
   let chooser = await openAccountChooser(
     user,
-    "GitHub · Using default account: Work",
+    "GitHub · Account for this chat",
   );
   await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
   await expect(
@@ -314,7 +319,7 @@ test("Choose which connector account a chat uses", async () => {
     within(chooser).getByRole("option", { name: /Use default/u }),
   );
   await expect(
-    findFastControl("button", "GitHub · Using default account: Work"),
+    findFastControl("button", "GitHub · Account for this chat"),
   ).resolves.toBeVisible();
   expect(fixture.builtinAuthorizationUpdates).toHaveLength(0);
   expect(fixture.clearedThreadSelections).toStrictEqual([

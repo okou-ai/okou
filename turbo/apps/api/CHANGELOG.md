@@ -9,6 +9,161 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.759.3](https://github.com/okou-ai/okou/compare/api-v1.759.2...api-v1.759.3) (2026-10-20)
+
+
+### Refactoring
+
+* **app:** rely on shared async error handling ([#41838](https://github.com/okou-ai/okou/issues/41838)) ([23116d9](https://github.com/okou-ai/okou/commit/23116d989c109a46f398346802b3981a01b690d4))
+* retire global connector account summaries ([#41847](https://github.com/okou-ai/okou/issues/41847)) ([2f6fdb8](https://github.com/okou-ai/okou/commit/2f6fdb830bf8d476e8a1c935b76896080dc15527))
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+    * @okouai/core bumped to 8.774.4
+    * @okouai/db bumped to 1.352.3
+    * @okouai/pi-agent-runtime bumped to 1.50.34
+
+## [1.759.2](https://github.com/okou-ai/okou/compare/api-v1.759.1...api-v1.759.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** prefer same-host runners for draining predecessor homes ([#41799](https://github.com/okou-ai/okou/issues/41799)) ([ca63626](https://github.com/okou-ai/okou/commit/ca6362664686066960a89b36b4c99c2beee508d0))
+* **api:** preserve text layout and weights in google slides imports ([#41818](https://github.com/okou-ai/okou/issues/41818)) ([da32537](https://github.com/okou-ai/okou/commit/da32537d3f8aecb5a8c3cde90ecd6aa69d76ef23))
+* recover existing morning brief schedules from preferences ([#41806](https://github.com/okou-ai/okou/issues/41806)) ([f0f3ad2](https://github.com/okou-ai/okou/commit/f0f3ad29bc70943f5865b225e288e6d061cc217f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+    * @okouai/core bumped to 8.774.3
+    * @okouai/db bumped to 1.352.2
+    * @okouai/pi-agent-runtime bumped to 1.50.33
+
+## [1.759.1](https://github.com/okou-ai/okou/compare/api-v1.759.0...api-v1.759.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** select finalizing sources independently of native history ([#41730](https://github.com/okou-ai/okou/issues/41730)) ([9680638](https://github.com/okou-ai/okou/commit/968063848aea8cf54acd6f56facdf7cdcbd79051))
+
+
+### Refactoring
+
+* **api:** keep official telegram command db local ([#41795](https://github.com/okou-ai/okou/issues/41795)) ([192607e](https://github.com/okou-ai/okou/commit/192607e62e23393f80b0f2a4cea2e0fc23254a9e))
+* **api:** retire delivery format guidance switch ([#41794](https://github.com/okou-ai/okou/issues/41794)) ([d013da9](https://github.com/okou-ai/okou/commit/d013da9a07294cb0f9f24e1fc15228baa55f5888))
+
+
+### Performance Improvements
+
+* load connector and remote directories on demand ([#41709](https://github.com/okou-ai/okou/issues/41709)) ([8e16d76](https://github.com/okou-ai/okou/commit/8e16d761b4f269b9a71c1a9c2d990ad6dbc55188))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+    * @okouai/core bumped to 8.774.2
+    * @okouai/db bumped to 1.352.1
+    * @okouai/pi-agent-runtime bumped to 1.50.32
+
+## [1.759.0](https://github.com/okou-ai/okou/compare/api-v1.758.0...api-v1.759.0) (2026-10-20)
+
+
+### Features
+
+* **computer-use:** require one-hour chat approval for desktop shell ([#41768](https://github.com/okou-ai/okou/issues/41768)) ([d8f366b](https://github.com/okou-ai/okou/commit/d8f366bc5167781907f2a1b1bc8dc250bd380e0a))
+
+
+### Bug Fixes
+
+* **api:** make delivery format guidance neutral ([#41765](https://github.com/okou-ai/okou/issues/41765)) ([56afa30](https://github.com/okou-ai/okou/commit/56afa30e971e9ce6c84cee03689f0cca74b1f20d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+    * @okouai/db bumped to 1.352.0
+    * @okouai/pi-agent-runtime bumped to 1.50.31
+
+## [1.758.0](https://github.com/okou-ai/okou/compare/api-v1.757.0...api-v1.758.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+
+### Bug Fixes
+
+* **host:** prepare okou.app visibility and clerk deployment ([#41745](https://github.com/okou-ai/okou/issues/41745)) ([5d1c5b6](https://github.com/okou-ai/okou/commit/5d1c5b667eafb9a95cb1bf96a2aa254add2a776a))
+
+
+### Refactoring
+
+* **api:** localize gmail account projection ([#41761](https://github.com/okou-ai/okou/issues/41761)) ([37de7ca](https://github.com/okou-ai/okou/commit/37de7cac4b8fddd0e08a9f9f012c75c6bd4f7b71))
+* **api:** localize official telegram link database access ([#41759](https://github.com/okou-ai/okou/issues/41759)) ([1c5c055](https://github.com/okou-ai/okou/commit/1c5c055e5b7910e23760c2a78d5771219cd24216))
+* **api:** resolve native continuation from thread bindings ([#41762](https://github.com/okou-ai/okou/issues/41762)) ([32986a1](https://github.com/okou-ai/okou/commit/32986a17a2469dfa758d8b6684c63943777e19b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+    * @okouai/db bumped to 1.351.0
+    * @okouai/pi-agent-runtime bumped to 1.50.30
+
+## [1.757.0](https://github.com/okou-ai/okou/compare/api-v1.756.0...api-v1.757.0) (2026-10-20)
+
+
+### Features
+
+* **api:** stagger morning brief starts per owner before 07:00 ([#41703](https://github.com/okou-ai/okou/issues/41703)) ([6f5b51f](https://github.com/okou-ai/okou/commit/6f5b51fd5c08f4065a66eeec687feb97efd0879c))
+* **host:** enforce hosted site visibility in the delivery worker ([#41707](https://github.com/okou-ai/okou/issues/41707)) ([15308b6](https://github.com/okou-ai/okou/commit/15308b61db8a86f607f1400363c24449a3d233c2))
+* route document generation through the office skill ([#41735](https://github.com/okou-ai/okou/issues/41735)) ([d5d8560](https://github.com/okou-ai/okou/commit/d5d85600d5beaf338b9d5580b5be0f733814a306))
+
+
+### Bug Fixes
+
+* **api:** resume bounded chat thread snapshot garbage collection ([#41711](https://github.com/okou-ai/okou/issues/41711)) ([f80becf](https://github.com/okou-ai/okou/commit/f80becf373467006e7cc2e48527ad0132bc0779c))
+
+
+### Refactoring
+
+* **api:** inline the slack command connection read ([#41733](https://github.com/okou-ai/okou/issues/41733)) ([60aa5ff](https://github.com/okou-ai/okou/commit/60aa5ff530f42f5162014ad92738dd6bd5ad22d4))
+* **api:** localize calendar account projection ([#41696](https://github.com/okou-ai/okou/issues/41696)) ([a60f034](https://github.com/okou-ai/okou/commit/a60f0348713d62f45cc94e78d208a1114820f961))
+* **api:** localize slack route compose reads ([#41736](https://github.com/okou-ai/okou/issues/41736)) ([89e2c7e](https://github.com/okou-ai/okou/commit/89e2c7ef9f4a91d88c78b46d95e6ead953109ac3))
+* prepare connector projection and runtime readers ([#41715](https://github.com/okou-ai/okou/issues/41715)) ([7500d09](https://github.com/okou-ai/okou/commit/7500d0902eb219e3a2c190a8b0057308e3db8aa9))
+
+
+### Performance Improvements
+
+* **api:** optimize chat maintenance scans and simplify thread artifacts ([#41710](https://github.com/okou-ai/okou/issues/41710)) ([3b63fc5](https://github.com/okou-ai/okou/commit/3b63fc53448127fcb2fd559ae9589d79ad3b6913))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/connectors bumped to 3.16.12
+    * @okouai/core bumped to 8.773.0
+    * @okouai/db bumped to 1.350.0
+    * @okouai/pi-agent-runtime bumped to 1.50.29
+
 ## [1.756.0](https://github.com/okou-ai/okou/compare/api-v1.755.0...api-v1.756.0) (2026-10-20)
 
 

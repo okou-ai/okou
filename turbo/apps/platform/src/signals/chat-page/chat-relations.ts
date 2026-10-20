@@ -1,8 +1,8 @@
 import { command, computed, state, type Computed } from "ccstate";
 import {
   chatRelationsContract,
-  type ChatRelationMessage,
   type ChatCommunication,
+  type ChatRelationMessage,
   type CreatedChatRelation,
   type RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
@@ -68,6 +68,8 @@ function chatOrigin(events: ChatEvent[]): ChatOrigin {
 
 export interface ResourceChat extends RelatedChat {
   readonly lastActivityAt: string;
+  /** Messages were sent or received, so the chat has a message history. */
+  readonly exchanged: boolean;
 }
 
 function createResourceChats(
@@ -85,7 +87,11 @@ function createResourceChats(
     const chats = new Map<string, ResourceChat>();
     if (created.status === "fulfilled") {
       for (const chat of created.value.items) {
-        chats.set(chat.threadId, { ...chat, lastActivityAt: chat.createdAt });
+        chats.set(chat.threadId, {
+          ...chat,
+          lastActivityAt: chat.createdAt,
+          exchanged: false,
+        });
       }
     }
     if (exchanged.status === "fulfilled") {
@@ -93,6 +99,7 @@ function createResourceChats(
         chats.set(chat.threadId, {
           ...chat,
           lastActivityAt: chat.lastMessageAt,
+          exchanged: chat.sentCount + chat.receivedCount > 0,
         });
       }
     }
@@ -109,62 +116,23 @@ function createResourceChats(
   return { data$ };
 }
 
+// One related chat's message history is open at a time.
 function createPeerMessages(threadId: string, revision$: Computed<unknown>) {
   const selectedPeer$ = state<string | null>(null);
-  const emptyPeers$ = state<{
-    readonly revision: unknown;
-    readonly ids: readonly string[];
-  } | null>(null);
-  const confirmedEmptyPeers$ = computed((get) => {
-    const empty = get(emptyPeers$);
-    return empty && empty.revision === get(revision$) ? empty.ids : [];
-  });
-  const messages$ = computed((get) => {
-    const peerId = get(selectedPeer$);
-    return peerId ? createMessages(threadId, peerId, revision$) : null;
-  });
   return {
     selectedPeer$: computed((get) => {
       return get(selectedPeer$);
     }),
-    messages$,
+    messages$: computed((get) => {
+      const peerId = get(selectedPeer$);
+      return peerId ? createMessages(threadId, peerId, revision$) : null;
+    }),
+    togglePeer$: command(({ get, set }, peerId: string) => {
+      set(selectedPeer$, get(selectedPeer$) === peerId ? null : peerId);
+    }),
     closeMessages$: command(({ set }) => {
       set(selectedPeer$, null);
     }),
-    confirmedEmptyPeers$,
-    togglePeer$: command(
-      async (
-        { get, set },
-        peerId: string,
-        trigger: HTMLElement,
-        signal: AbortSignal,
-      ) => {
-        if (get(selectedPeer$) === peerId) {
-          set(selectedPeer$, null);
-          return;
-        }
-        set(selectedPeer$, peerId);
-        const revision = get(revision$);
-        const list = get(messages$);
-        if (!list) {
-          return;
-        }
-        const page = await get(list.data$);
-        signal.throwIfAborted();
-        if (revision === get(revision$) && page.items.length === 0) {
-          if (document.activeElement === trigger) {
-            // The confirmed-empty toggle disappears; keep keyboard focus on its chat.
-            trigger.parentElement
-              ?.querySelector<HTMLElement>("a")
-              ?.focus({ preventScroll: true });
-          }
-          set(emptyPeers$, {
-            revision,
-            ids: [...get(confirmedEmptyPeers$), peerId],
-          });
-        }
-      },
-    ),
   };
 }
 

@@ -37,7 +37,6 @@ import {
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { addUserCustomConnector } from "../services/user-connectors.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
-import { publishCustomConnectorUserInvalidationAfterCommit as publishCustomUserInvalidation } from "../services/connector-client-invalidation.service";
 import {
   getCustomConnectorById,
   type CustomConnectorOAuthConfigRow,
@@ -303,7 +302,7 @@ async function persistCustomConnectorOAuth2Connection(
       message: connectorConnectionWriteFailureMessage(status),
     };
   }
-  await publishCustomUserInvalidation(args.userId, signal);
+  signal.throwIfAborted();
   return { ok: true, connectionId: result.connectionId };
 }
 

@@ -18,7 +18,7 @@ import {
   type PublicConnectorCatalogStatusItem,
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -900,6 +900,8 @@ function connectorCatalogConnectionFields(
     connection: connectionForCatalogStatus(connector),
     connected: connector !== null,
     connectionStatus,
+    setupStatus:
+      connector === null ? null : (args.connection?.setupStatus ?? null),
     scopeMismatch,
     authMethodSupportsRefresh:
       connector !== null && facts?.supportsRefresh === true,

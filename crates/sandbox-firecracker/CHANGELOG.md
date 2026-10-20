@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.53.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.12...sandbox-firecracker-v0.53.13) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+## [0.53.12](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.11...sandbox-firecracker-v0.53.12) (2026-10-20)
+
+## [0.53.11](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.10...sandbox-firecracker-v0.53.11) (2026-10-20)
+
+## [0.53.10](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.9...sandbox-firecracker-v0.53.10) (2026-10-20)
+
 ## [0.53.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.8...sandbox-firecracker-v0.53.9) (2026-10-20)
 
 ## [0.53.8](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.7...sandbox-firecracker-v0.53.8) (2026-10-19)

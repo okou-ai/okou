@@ -9,20 +9,17 @@ import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
 import { subscribeAgentConnectorAccess$ } from "./okou-page/composer-agent-connectors.ts";
-import { subscribeConnectorOverview$ } from "./okou-page/connector-overview.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
-import { subscribeCustomConnectorListChanged$ } from "./okou-page/settings/custom-connectors.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
 import { setSharedWorkerRealtimeBridge$, setupRealtime$ } from "./realtime.ts";
 import {
   bridgeConnected$,
   installedSharedDatabaseBridge$,
 } from "./shared-database-bridge-state.ts";
-import { subscribeSshChanged$ } from "./ssh.ts";
 import { subscribeVncObservations$ } from "./vnc.ts";
-import { detach, Reason, waitForOperation } from "./utils.ts";
+import { detach, Reason } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
   async (
@@ -30,7 +27,7 @@ const runAppRealtimeDaemons$ = command(
     initialization: Promise<SharedDatabaseBridge | null>,
     signal: AbortSignal,
   ): Promise<void> => {
-    const bridge = await waitForOperation(initialization, signal);
+    const bridge = await initialization;
     signal.throwIfAborted();
     if (!bridge) {
       return;
@@ -40,11 +37,8 @@ const runAppRealtimeDaemons$ = command(
     set(setupBillingRealtime$, signal);
     set(setupUserPreferenceRealtime$, signal);
     set(setupRunModelRealtime$, signal);
-    set(subscribeCustomConnectorListChanged$, signal);
-    set(subscribeConnectorOverview$, signal);
     set(subscribeAgentConnectorAccess$, signal);
     set(subscribeCustomTemplatesChanged$, signal);
-    set(subscribeSshChanged$, signal);
     set(subscribeVncObservations$, signal);
     set(subscribeCloudflareAccessChanged$, signal);
     set(subscribeTailscaleChanged$, signal);
@@ -56,10 +50,10 @@ const initializeAuthenticatedRealtime$ = command(
     { get, set },
     signal: AbortSignal,
   ): Promise<SharedDatabaseBridge | null> => {
-    const [, user] = await waitForOperation(
-      Promise.all([set(setupClerk$, signal), get(clerkUser$)]),
-      signal,
-    );
+    const [, user] = await Promise.all([
+      set(setupClerk$, signal),
+      get(clerkUser$),
+    ]);
     signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();

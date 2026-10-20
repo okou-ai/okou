@@ -111,47 +111,6 @@
         "status": "Stato",
         "time": "Data e ora"
       },
-      "files": {
-        "connecting": "Connessione ai file…",
-        "currentFolder": "Cartella attuale",
-        "download": "Scarica {{name}}",
-        "downloadChanged": "Il file è cambiato durante il download. Scaricalo di nuovo.",
-        "downloadFailed": "Download non riuscito. Riprova.",
-        "downloadFrame": "Download del file",
-        "downloadUnsupported": "Questo browser non supporta il download dei file.",
-        "downloadUpdateRequired": "Aggiorna la pagina e riprova. Se i download non sono ancora disponibili, avvia una nuova esecuzione.",
-        "empty": "Questa cartella è vuota.",
-        "enterFolder": "Apri la cartella {{name}}",
-        "goHome": "Vai alla cartella home",
-        "limit": "Alcuni file non sono stati caricati perché è stato raggiunto il limite del pannello. Comprimi le cartelle o aggiorna per continuare.",
-        "link": "Collegamento",
-        "loading": "Caricamento…",
-        "more": "Carica altro",
-        "navigationFailed": "Impossibile aprire {{path}}. Riprova.",
-        "noRun": "I file sono disponibili durante un’esecuzione attiva.",
-        "other": "Altro",
-        "parentFolders": "Cartelle superiori",
-        "pending": "I file saranno disponibili all’avvio dell’esecuzione in coda.",
-        "preview": "Anteprima di {{name}}",
-        "previewChanged": "Questo file è cambiato. Chiudi l’anteprima e riaprila.",
-        "previewDecode": "Impossibile decodificare questo file. Puoi comunque scaricarlo.",
-        "previewEmpty": "Questo file è vuoto.",
-        "previewInvalid": "Impossibile visualizzare questo file. Puoi comunque scaricarlo.",
-        "previewLoading": "Caricamento dell’anteprima…",
-        "previewSize": "Questo file è troppo grande per l’anteprima. Puoi comunque scaricarlo.",
-        "previewTruncated": "Sono mostrati i primi 64 KiB. Scarica il file per vedere il contenuto completo.",
-        "previewUnavailable": "Anteprima non disponibile. Chiudila e riprova oppure scarica il file.",
-        "previewUnsupported": "Anteprima non disponibile per questo tipo di file. Puoi comunque scaricarlo.",
-        "previewUpdateRequired": "Aggiorna la pagina e riprova. Se l’anteprima non è ancora disponibile, avvia una nuova esecuzione.",
-        "readonly": "File di sola lettura dell’esecuzione corrente.",
-        "refresh": "Aggiorna",
-        "retry": "Riprova",
-        "root": "Cartella radice",
-        "stale": "Questo elenco è cambiato o è scaduto. Aggiorna per continuare.",
-        "title": "File",
-        "unavailable": "File non disponibili. Riprova.",
-        "updateRequired": "Questa esecuzione non supporta i file. Avvia una nuova esecuzione dopo l’aggiornamento della sandbox."
-      },
       "log": "Log",
       "manualReloadNotice": "I registri non si aggiornano automaticamente.",
       "modelProvidedBy": "{{model}} fornito da {{provider}}",
@@ -261,7 +220,6 @@
       "documentTitle": "Ispeziona registro",
       "errors": {
         "invalid": "File JSON non valido. Carica un file JSON del registro delle attività esportato.",
-        "load": "Impossibile caricare il file JSON. Carica un file JSON del registro delle attività esportato.",
         "oversized": "Il file JSON è troppo grande. Carica un file di registro attività esportato JSON inferiore a 25 MB."
       },
       "fallbackName": "Registro importato",
@@ -569,7 +527,6 @@
       },
       "kindIcon": "{{kind}} artefatto",
       "loading": "Caricamento degli artefatti",
-      "loadMore": "Carica altro",
       "retry": "Riprova"
     },
     "fileBadges": {
@@ -1360,7 +1317,6 @@
       "downgradeScheduledPeriod": "Downgrade programmato. Il tuo piano attuale rimane attivo fino al termine del periodo di fatturazione.",
       "planRestored": "Piano ripristinato. Il tuo abbonamento si rinnoverà normalmente.",
       "preparingReceiptDownload": "Preparazione download ricevuta...",
-      "receiptDownloadFailed": "Impossibile scaricare le ricevute",
       "receiptsDownloaded": "Ricevute scaricate",
       "subscriptionChangeConfirmed": "La modifica dell'abbonamento è stata confermata."
     },
@@ -1631,9 +1587,7 @@
       "unavailableCount_one": "{{count}} allegato non è più disponibile. Caricalo di nuovo per inviarlo.",
       "unavailableCount_many": "{{count}} allegati non sono più disponibili. Caricali di nuovo per inviarli.",
       "unavailableCount_other": "{{count}} allegati non sono più disponibili. Caricali di nuovo per inviarli.",
-      "uploadFailed": "Impossibile caricare {{filename}}",
-      "uploadFailedRetry": "Impossibile caricare {{filename}}. Riprova.",
-      "uploadsFailed": "Impossibile caricare alcuni allegati. Riprova."
+      "uploadFailedRetry": "Impossibile caricare {{filename}}. Riprova."
     },
     "automations": {
       "active": "Attivo",
@@ -1940,7 +1894,6 @@
       "back": "Indietro",
       "configurePermissions": "Configura le autorizzazioni {{connectorName}}",
       "customAuthorizeDescription": "Esamina, connetti e autorizza questo connettore personalizzato per l'agente.",
-      "defaultAccountFor": "{{connector}} · Account predefinito in uso: {{account}}",
       "directory": {
         "allCategories": "Tutti",
         "askAdmin": "Chiedi a un amministratore di abilitarlo",
@@ -1958,9 +1911,6 @@
         "matchCount_one": "{{count}} risultato",
         "matchCount_many": "{{count}} risultati",
         "matchCount_other": "{{count}} risultati",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_many": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Richiede attenzione",
         "nextCategories": "Categorie successive",
         "noResultsBody": "Prova con il nome di un prodotto oppure creane uno da un'API o da un server MCP.",
@@ -1979,6 +1929,7 @@
       },
       "fallsBackTo": "Passa a {{account}} come alternativa",
       "find": "Trova connettori...",
+      "loadFailed": "Impossibile caricare i connettori.",
       "noUsableAccount": "Nessun account utilizzabile",
       "remove": "Rimuovi {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Account selezionato: {{account}}",
@@ -2185,8 +2136,7 @@
       "skipAutomationEvent": "Salta evento di automazione"
     },
     "relations": {
-      "communications": "Chat",
-      "idle": "Inattiva",
+      "chats": "Chat",
       "loadFailed": "Caricamento non riuscito",
       "messageUnavailable": "Messaggio non disponibile",
       "origin": "Da",
@@ -2194,7 +2144,6 @@
       "received": "Ricevuto",
       "running": "In esecuzione",
       "sent": "Inviato",
-      "toggleMessages": "Messaggi con {{title}}",
       "unavailable": "Non disponibile",
       "untitled": "Senza titolo"
     },
@@ -2218,9 +2167,11 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "expand": "Espandi",
+      "empty": "Artefatti e chat correlate di questa chat compaiono qui.",
       "loadFailed": "Impossibile caricare le risorse",
+      "loading": "Caricamento risorse",
       "retry": "Riprova",
+      "showMore": "Mostra altro",
       "title": "Risorse della chat"
     },
     "run": {
@@ -3146,19 +3097,7 @@
       "rename": "Rinomina",
       "setupIncomplete": "Configurazione incompleta",
       "setupUnavailable": "Stato dell'account non disponibile",
-      "skipName": "Salta",
-      "summaryMany": "{{value}} account",
-      "summaryMany_one": "",
-      "summaryMany_many": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} account",
-      "summaryOne_one": "",
-      "summaryOne_many": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} richiedono attenzione",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_many": "",
-      "summaryWithAttention_other": ""
+      "skipName": "Salta"
     },
     "actions": {
       "apply": "Applicare",
@@ -3323,7 +3262,6 @@
       },
       "scope": {
         "aria": "Ambito dei connettori",
-        "attention": "Richiede attenzione",
         "connected": "Connesso",
         "custom": "Personalizzati",
         "discover": "Esplora",
@@ -4023,9 +3961,28 @@
       "connected": "{{connector}} connesso"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Impossibile aggiornare l’autorizzazione. Aggiorna e riprova.",
+    "allow": "Consenti per 1 ora",
+    "approved": "Accesso a Shell consentito",
+    "deadline": "Scade il {{date}}",
+    "denied": "Richiesta rifiutata",
+    "deny": "Rifiuta",
+    "description": "L’agente richiede il permesso di utilizzare Shell sul tuo computer.",
+    "details": "Apri dettagli",
+    "expired": "Autorizzazione scaduta",
+    "loading": "Caricamento autorizzazione…",
+    "pending": "Pronta per l’approvazione",
+    "refresh": "Aggiorna",
+    "revoke": "Revoca accesso",
+    "revoked": "Accesso a Shell revocato",
+    "scope": "Solo questa chat e questo computer. I terminali esistenti restano aperti al termine dell’accesso.",
+    "title": "Accesso a Desktop Shell",
+    "unavailable": "Autorizzazione non disponibile",
+    "waiting": "Non è possibile approvare mentre un Run è attivo o se il computer selezionato è cambiato."
+  },
   "documentTemplates": {
     "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
-    "back": "Torna ai modelli",
     "categories": {
       "all": "Tutti",
       "business-record": "Documenti commerciali",
@@ -4076,7 +4033,6 @@
     "preview": "Anteprima di {{title}}",
     "previousPage": "Pagina di esempio precedente",
     "retry": "Riprova",
-    "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
     "useNamed": "Usa {{title}}"
   },
@@ -4933,7 +4889,6 @@
           "codeRequired": "Incolla il codice di autorizzazione Claude per continuare.",
           "connectedToast": "Claude connesso",
           "connectTitle": "Connetti Claude",
-          "error": "Connessione a Claude non riuscita. Ricomincia per riprovare.",
           "expired": "La sessione di connessione a Claude è scaduta. Ricomincia per riprovare.",
           "instructions": "Per prima cosa fai clic su Apri la pagina di approvazione Claude. Quindi approva {{brandName}} in Claude e copia il codice di autorizzazione mostrato dopo l'approvazione. Infine incolla il codice qui e fai clic su Connetti.",
           "openApproval": "Apri la pagina di approvazione Claude",
@@ -4948,7 +4903,6 @@
           "connectedToast": "ChatGPT connesso",
           "connectTitle": "Connetti Codex",
           "deviceCode": "Codice dispositivo",
-          "error": "Connessione ChatGPT non riuscita. Ricomincia per riprovare.",
           "expired": "La sessione di connessione Codex è scaduta. Ricomincia per riprovare.",
           "freePlanRejected": "I piani gratuiti ChatGPT non possono utilizzare Codex tramite {{brandName}}. Passa a Plus o Pro e riprova.",
           "instructions": "Per prima cosa copia il codice del dispositivo con il pulsante di copia, quindi apri la pagina di approvazione. Quindi incolla il codice del dispositivo in OpenAI quando richiesto. Infine, approva l'accesso e mantieni aperta questa finestra di dialogo mentre {{brandName}} termina la connessione.",
@@ -5150,6 +5104,10 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
+        "resources": {
+          "description": "Mostra artefatti e chat correlate accanto alla conversazione quando c’è spazio.",
+          "title": "Apri risorse automaticamente"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5244,7 +5202,7 @@
         "description": "Priorità quotidiane entro le 7:00 nel tuo fuso orario.",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
-        "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",
+        "preparationFailed": "Temporaneamente non disponibile. Okou riproverà automaticamente.",
         "preparing": "Preparazione del primo riepilogo mattutino. Puoi disattivarlo in qualsiasi momento.",
         "retry": "Riprova",
         "retryMessage": "Non è stato possibile caricare o aggiornare le impostazioni di Morning Brief. Riprova per continuare.",
@@ -5253,7 +5211,7 @@
       "proactiveSuggestions": {
         "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
         "missingDefaultAgent": "Scegli un Agent predefinito disponibile per ricevere suggerimenti proattivi.",
-        "preparationFailed": "Impossibile completare la configurazione. Riprova.",
+        "preparationFailed": "Temporaneamente non disponibile. Okou riproverà automaticamente.",
         "preparing": "Preparazione dei suggerimenti orari. Puoi disattivarli in qualsiasi momento.",
         "retry": "Riprova",
         "retryMessage": "Impossibile caricare o aggiornare le impostazioni. Riprova.",

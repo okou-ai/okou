@@ -9,6 +9,8 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     isWorkHistory: Bool = false)
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState, hasMessages: Bool)
+  case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
+  case usage(runID: String, state: ConversationRunUsageState)
 
   var id: String {
     switch self {
@@ -16,6 +18,8 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .message(let message, _, _, _, _, _): message.id
     case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
+    case .followups: "conversation-followups"
+    case .usage(let runID, _): "usage:\(runID)"
     }
   }
 
@@ -157,7 +161,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    collection.topEdgeEffect.style = .soft
+    // The header owns its translucent material; a second edge effect obscures the history.
+    collection.topEdgeEffect.isHidden = true
     collection.bottomEdgeEffect.style = .soft
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
@@ -285,7 +290,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     var ancestor = marker.superview
     while let view = ancestor {
       if view === cell {
-        return marker.convert(marker.bounds, to: cell).intersects(cell.bounds)
+        // Reused SwiftUI content can briefly wrap at a near-zero width and overflow
+        // its measured cell. That temporary box must not become a reading anchor.
+        let rect = marker.convert(marker.bounds, to: cell)
+        let pixel = 1 / traitCollection.displayScale
+        return rect.width > 0 && rect.height > 0
+          && cell.bounds.insetBy(dx: -pixel, dy: -pixel).contains(rect)
       }
       ancestor = view.superview
     }

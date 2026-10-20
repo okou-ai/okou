@@ -895,6 +895,23 @@ describe("runner storage manifest contract", () => {
     );
   });
 
+  it("preserves the current-Agent marker for supported API rollback readers", () => {
+    expect(
+      storedExecutionContextSchema.parse({
+        ...storedContext,
+        agentInstructionsSource: "agent",
+      }),
+    ).toEqual({ ...storedContext, agentInstructionsSource: "agent" });
+    for (const agentInstructionsSource of [null, "storage", "", 1]) {
+      expect(
+        storedExecutionContextSchema.safeParse({
+          ...storedContext,
+          agentInstructionsSource,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("requires canonical mounts while ignoring previous stored fields", () => {
     expect(
       storedExecutionContextSchema.parse({
@@ -972,14 +989,6 @@ describe("runner storage manifest contract", () => {
         ...base,
         archiveUrl: "https://storage.example/workspace.tar.gz",
         missingRootPolicy: "fail",
-      }).success,
-    ).toBe(false);
-    expect(
-      storageMountEntrySchema.safeParse({
-        ...base,
-        archiveUrl: "https://storage.example/workspace.tar.gz",
-        instructionsTargetFilename: "AGENTS.md",
-        writeback: true,
       }).success,
     ).toBe(false);
   });
@@ -1071,15 +1080,24 @@ describe("runner reuse preference contract", () => {
     for (const tier of [
       "exactSandbox",
       "finalizingPredecessor",
+      "peerFinalizingPredecessor",
       "reusableSandbox",
       "homeCache",
     ] as const) {
+      const preference = {
+        ...runnerPreference,
+        tier,
+        ...(tier === "finalizingPredecessor" ||
+        tier === "peerFinalizingPredecessor"
+          ? { finalizingSourceRunId: "11111111-1111-4111-8111-111111111111" }
+          : {}),
+      };
       expect(
         jobSchema.parse({
           ...jobInput,
-          runnerPreference: { ...runnerPreference, tier },
+          runnerPreference: preference,
         }).runnerPreference,
-      ).toStrictEqual({ ...runnerPreference, tier });
+      ).toStrictEqual(preference);
     }
     expect(
       jobSchema.safeParse({

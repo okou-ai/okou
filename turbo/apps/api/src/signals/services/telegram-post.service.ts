@@ -751,14 +751,14 @@ const resolveOfficialUserLink$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly telegramUserId: string;
       readonly telegramUsername?: string | null;
       readonly telegramDisplayName?: string | null;
     },
     signal: AbortSignal,
   ): Promise<OfficialTelegramUserLink | null> => {
-    const [direct] = await args.db
+    const db = set(writeDb$);
+    const [direct] = await db
       .select()
       .from(telegramOfficialUserLinks)
       .where(eq(telegramOfficialUserLinks.telegramUserId, args.telegramUserId))
@@ -1490,7 +1490,6 @@ const handleOfficialCommand$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly botToken: string;
       readonly botUsername: string | null;
       readonly command: string;
@@ -1498,6 +1497,7 @@ const handleOfficialCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    const db = set(writeDb$);
     const chatId = String(args.message.chat.id);
     const fromUserId = String(args.message.from?.id ?? 0);
     const displayName = formatTelegramUserDisplayName(args.message.from ?? {});
@@ -1508,7 +1508,6 @@ const handleOfficialCommand$ = command(
     const userLink = await set(
       resolveOfficialUserLink$,
       {
-        db: args.db,
         telegramUserId: fromUserId,
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,
@@ -1574,7 +1573,7 @@ const handleOfficialCommand$ = command(
     }
 
     if (args.command === "disconnect") {
-      await args.db
+      await db
         .delete(telegramOfficialUserLinks)
         .where(eq(telegramOfficialUserLinks.id, userLink.id));
       signal.throwIfAborted();
@@ -1655,7 +1654,6 @@ const processOfficialWebhookMessage$ = command(
       await set(
         handleOfficialCommand$,
         {
-          db,
           botToken: config.botToken,
           botUsername: config.botUsername,
           command: commandName,
@@ -1671,7 +1669,6 @@ const processOfficialWebhookMessage$ = command(
     const userLink = await set(
       resolveOfficialUserLink$,
       {
-        db,
         telegramUserId: String(args.message.from?.id ?? 0),
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,

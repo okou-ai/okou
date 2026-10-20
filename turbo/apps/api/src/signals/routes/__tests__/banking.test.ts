@@ -668,14 +668,10 @@ describe("banking access request lifecycle", () => {
       if (!owner.orgId) {
         throw new Error("Banking requires an org-scoped actor");
       }
-      const agent = await bdd.createAgent(
-        owner,
-        {
-          displayName: "Banking Connection Owner",
-          visibility: "private",
-        },
-        { isolatePg: true },
-      );
+      const agent = await bdd.createAgent(owner, {
+        displayName: "Banking Connection Owner",
+        visibility: "private",
+      });
       await updateFeatureSwitchesForUser(
         context,
         { userId: owner.userId, orgId: owner.orgId },
@@ -755,14 +751,10 @@ describe("banking access request lifecycle", () => {
       throw new Error("Banking requires an org-scoped actor");
     }
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(
-      owner,
-      {
-        displayName: "Banking Connection Retry",
-        visibility: "private",
-      },
-      { isolatePg: true },
-    );
+    const agent = await bdd.createAgent(owner, {
+      displayName: "Banking Connection Retry",
+      visibility: "private",
+    });
     await updateFeatureSwitchesForUser(
       context,
       { userId: owner.userId, orgId: owner.orgId },
@@ -926,10 +918,6 @@ describe("banking access request lifecycle", () => {
       bankingUserContract,
     );
     const brandCases = [
-      {
-        origin: "https://app.okou.ai",
-        redirectUri: "https://app.okou.ai/banking/connect/return",
-      },
       {
         origin: "https://app.okou.ai",
         redirectUri: "https://app.okou.ai/banking/connect/return",

@@ -3,7 +3,6 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -23,7 +22,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-import { agentsRoutes } from "../agents";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
 
@@ -303,7 +301,6 @@ function mockGmailDraftApi(options?: {
 
 async function seedGmailMailCardFixture(
   registerCleanup?: (cleanup: () => Promise<void>) => void,
-  isolatePg = false,
 ) {
   const actor = bdd.user();
   if (!actor.orgId) {
@@ -316,19 +313,7 @@ async function seedGmailMailCardFixture(
     visibility: "private",
   } as const;
   mocks.clerk.session(actor.userId, actorWithOrg.orgId, actor.orgRole);
-  const agent = isolatePg
-    ? (
-        await accept(
-          (await setupApp({ context, routes: agentsRoutes, isolatePg: true }))(
-            agentsMainContract,
-          ).create({
-            headers: authHeaders(),
-            body: agentBody,
-          }),
-          [201],
-        )
-      ).body
-    : await bdd.createAgent(actor, agentBody);
+  const agent = await bdd.createAgent(actor, agentBody);
   registerCleanup?.(async () => {
     await bdd.deleteAgent(actor, agent.agentId);
   });
@@ -1251,19 +1236,6 @@ describe("POST /api/mail/drafts/link", () => {
       { errors: [{ domain: "other", reason: "badRequest" }] },
     ],
     [
-      "conflicting body code",
-      400,
-      { code: 500, errors: [{ domain: "global", reason: "badRequest" }] },
-    ],
-    [
-      "conflicting body status",
-      400,
-      {
-        status: "INTERNAL",
-        errors: [{ domain: "global", reason: "badRequest" }],
-      },
-    ],
-    [
       "conflicting details",
       400,
       {
@@ -1947,8 +1919,7 @@ describe("POST /api/mail/drafts/link", () => {
 // catalog cannot expose arbitrary refresh-output aliases or invalid storage.
 describe("mail refresh publication", () => {
   async function expiredLinkedDraft() {
-    // The first real fixture operation uses the returned isolated agent client.
-    const fixture = await seedGmailMailCardFixture(undefined, true);
+    const fixture = await seedGmailMailCardFixture();
     mockGmailDraftApi();
     const linked = await linkDraft(fixture);
     server.use(

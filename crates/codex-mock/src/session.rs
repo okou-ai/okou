@@ -56,6 +56,8 @@ pub(crate) fn persist_resume_session(
         build_session_path(codex_home, timestamp, &thread_id)
     };
     let mut existing = read_session_bytes_for_append_in_store(codex_home, &path)?;
+    #[cfg(unix)]
+    wait_for_resume_persistence_release()?;
     if existing.is_empty() {
         append_events_to_jsonl_bytes(
             &mut existing,
@@ -64,6 +66,29 @@ pub(crate) fn persist_resume_session(
     }
     append_events_to_jsonl_bytes(&mut existing, events)?;
     write_session_bytes_in_store(codex_home, &path, existing)
+}
+
+#[cfg(unix)]
+fn wait_for_resume_persistence_release() -> io::Result<()> {
+    let Some(socket_path) = std::env::var_os("MOCK_CODEX_RESUME_PERSISTENCE_SOCKET") else {
+        return Ok(());
+    };
+    // Pause after reading history, with the session lock still owned, so a
+    // test can probe real lock contention before allowing publication.
+    let mut gate = std::os::unix::net::UnixStream::connect(socket_path)?;
+    let timeout = std::time::Duration::from_secs(5);
+    gate.set_read_timeout(Some(timeout))?;
+    gate.set_write_timeout(Some(timeout))?;
+    gate.write_all(b"R")?;
+    let mut release = [0];
+    gate.read_exact(&mut release)?;
+    if release != *b"C" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid resume persistence release",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_thread_id(thread_id: &str) -> io::Result<CodexThreadId> {

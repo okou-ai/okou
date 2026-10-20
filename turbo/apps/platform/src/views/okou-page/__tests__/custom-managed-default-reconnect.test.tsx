@@ -51,11 +51,11 @@ test.each(["feishu", "lark"] as const)(
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
-    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
       return respond(403, {
         error: {
           code: "FORBIDDEN",
-          message: "Ordinary account summaries unavailable",
+          message: "Ordinary account list unavailable",
         },
       });
     });
@@ -102,8 +102,6 @@ test.each(["feishu", "lark"] as const)(
     expect(
       screen.queryByText(/Managed accounts are not ordinary accounts/u),
     ).toBeNull();
-    expect(
-      screen.queryByText(/Ordinary account summaries unavailable/u),
-    ).toBeNull();
+    expect(screen.queryByText(/Ordinary account list unavailable/u)).toBeNull();
   },
 );

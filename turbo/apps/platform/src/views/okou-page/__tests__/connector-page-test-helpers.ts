@@ -3,10 +3,10 @@ import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import {
   type ConnectorAccountConnection,
-  type ConnectorAccountSummary,
   connectorAccountsContract,
+  connectorAccountTargetKey,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   type PublicConnectorCatalogStatusItem,
   connectorCatalogContract,
@@ -219,43 +219,71 @@ export function mockConnectors(
   return responses;
 }
 
-export function mockConnectorOverviewAccountSummaries(
+export function mockSavedConnectorAccounts(
   context: TestContext,
-  summaries: () =>
-    | readonly ConnectorAccountSummary[]
-    | Promise<readonly ConnectorAccountSummary[]>,
+  readAccounts: () =>
+    | readonly ConnectorAccountConnection[]
+    | Promise<readonly ConnectorAccountConnection[]>,
 ): void {
-  context.mocks.api(connectorOverviewContract.overview, async ({ respond }) => {
-    const accountSummaries = await summaries();
-    return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: accountSummaries.map((summary) => {
-        const account = summary.defaultConnection;
-        return {
-          target: summary.target,
-          accountCount: summary.accountCount,
-          attentionCount: summary.attentionCount,
-          defaultConnection: account
-            ? {
-                id: account.id,
-                authMethod: account.authMethod,
-                displayName: account.displayName,
-                externalId: account.externalId,
-                externalUsername: account.externalUsername,
-                externalEmail: account.externalEmail,
-                connectionStatus: account.connectionStatus,
-                setupStatus: account.setupStatus,
-                missingRequiredFields: account.missingRequiredFields,
-                configuredFieldKeys: account.configuredFieldKeys,
-              }
-            : null,
-        };
+  context.mocks.api(connectedConnectorsContract.list, async ({ respond }) => {
+    const targets = new Map(
+      (await readAccounts()).map((account) => {
+        return [
+          connectorAccountTargetKey(account.target),
+          account.target,
+        ] as const;
       }),
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
+    );
+    return respond(200, {
+      builtinConnectors: [...targets.values()].flatMap((target) => {
+        return target.kind === "builtin"
+          ? [
+              {
+                slug: target.connectorSlug,
+                label: target.connectorSlug,
+                icon: {
+                  url: "https://example.com/connector.svg",
+                  invertInDarkMode: false,
+                },
+                hasPermissions: true,
+              },
+            ]
+          : [];
+      }),
+      customConnectors: [...targets.values()].flatMap((target) => {
+        return target.kind === "custom"
+          ? [
+              {
+                id: target.customConnectorId,
+                slug: "custom",
+                displayName: "Custom connector",
+                permissionBundleRef: null,
+                integrationManaged: false,
+              },
+            ]
+          : [];
+      }),
     });
   });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ query, respond }) => {
+      const connections = (await readAccounts()).filter((account) => {
+        return (
+          connectorAccountTargetKey(account.target) ===
+          connectorAccountTargetKey(query)
+        );
+      });
+      return respond(200, {
+        connections,
+        nextCursor: null,
+        defaultConnection:
+          connections.find((account) => {
+            return account.isDefault;
+          }) ?? null,
+      });
+    },
+  );
 }
 
 export function publicStatusItem(args: {
@@ -299,6 +327,7 @@ export function publicStatusItem(args: {
     },
     connection: args.connection ?? null,
     connected: args.connected ?? false,
+    setupStatus: args.connected ? "complete" : null,
     connectionStatus: args.connectionStatus ?? "not-connected",
     scopeMismatch: args.scopeMismatch ?? false,
     authMethodSupportsRefresh: args.authMethodSupportsRefresh ?? false,
@@ -441,27 +470,8 @@ export function mockCustomConnectorStory(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors });
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [...accounts.values()].map((account) => {
-        return {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        };
-      }),
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [...accounts.values()].map((account) => {
-      return {
-        target: account.target,
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: account,
-      };
-    });
+  mockSavedConnectorAccounts(context, () => {
+    return [...accounts.values()];
   });
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -628,33 +638,8 @@ export function mockGithubAccounts(
       updatedAt: "2026-01-01T00:00:00.000Z",
     } satisfies ConnectorAccountConnection;
   }).reverse();
-  const defaultAccount = accounts.find((account) => {
-    return account.isDefault;
-  });
-  if (!defaultAccount) {
-    throw new Error("Expected default account fixture");
-  }
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: { kind: "builtin", connectorSlug: "github" },
-          accountCount: accounts.length,
-          attentionCount: 1,
-          defaultConnection: defaultAccount,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: { kind: "builtin", connectorSlug: "github" },
-        accountCount: accounts.length,
-        attentionCount: 1,
-        defaultConnection: defaultAccount,
-      },
-    ];
+  mockSavedConnectorAccounts(context, () => {
+    return accounts;
   });
   return accounts;
 }

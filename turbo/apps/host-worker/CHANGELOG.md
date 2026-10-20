@@ -1,5 +1,75 @@
 # Changelog
 
+## [1.7.5](https://github.com/okou-ai/okou/compare/host-worker-v1.7.4...host-worker-v1.7.5) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+    * @okouai/core bumped to 8.774.4
+
+## [1.7.4](https://github.com/okou-ai/okou/compare/host-worker-v1.7.3...host-worker-v1.7.4) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+    * @okouai/core bumped to 8.774.3
+
+## [1.7.3](https://github.com/okou-ai/okou/compare/host-worker-v1.7.2...host-worker-v1.7.3) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+    * @okouai/core bumped to 8.774.2
+
+## [1.7.2](https://github.com/okou-ai/okou/compare/host-worker-v1.7.1...host-worker-v1.7.2) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+
+## [1.7.1](https://github.com/okou-ai/okou/compare/host-worker-v1.7.0...host-worker-v1.7.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **host:** prepare okou.app visibility and clerk deployment ([#41745](https://github.com/okou-ai/okou/issues/41745)) ([5d1c5b6](https://github.com/okou-ai/okou/commit/5d1c5b667eafb9a95cb1bf96a2aa254add2a776a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+
+## [1.7.0](https://github.com/okou-ai/okou/compare/host-worker-v1.6.65...host-worker-v1.7.0) (2026-10-20)
+
+
+### Features
+
+* **host:** enforce hosted site visibility in the delivery worker ([#41707](https://github.com/okou-ai/okou/issues/41707)) ([15308b6](https://github.com/okou-ai/okou/commit/15308b61db8a86f607f1400363c24449a3d233c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/core bumped to 8.773.0
+
 ## [1.6.65](https://github.com/okou-ai/okou/compare/host-worker-v1.6.64...host-worker-v1.6.65) (2026-10-20)
 
 

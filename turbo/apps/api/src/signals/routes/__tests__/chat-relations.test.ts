@@ -44,8 +44,8 @@ async function enable(actor: ApiTestUser, enabled = true) {
     { [FeatureSwitchKey.ChatResourcePanel]: enabled },
   );
 }
-async function sourceFixture(options: { isolatePg?: true } = {}) {
-  const fixture = await publicChatActor(context, options);
+async function sourceFixture() {
+  const fixture = await publicChatActor(context);
   await fixture.run(() => {
     return api.ensurePersonalSubscriptionModel(fixture.actor, {
       model: "claude-fable-5-1",
@@ -318,7 +318,7 @@ describe("chat relationships", () => {
       claimed,
       token,
       requestSendEventWithBearer,
-    } = await sourceFixture({ isolatePg: true });
+    } = await sourceFixture();
     const peerIds: string[] = [];
     const messageIds: string[] = [];
     for (let index = 0; index < peerCount; index++) {
@@ -340,11 +340,19 @@ describe("chat relationships", () => {
         );
         return clientEventId;
       };
-      const sentMessageIds = await Promise.all(
-        Array.from({ length: messageCount - 1 }, (_, messageIndex) => {
-          return sendMessage(messageIndex);
-        }),
-      );
+      const sentMessageIds: string[] = [];
+      const batchSize = 4;
+      for (let offset = 0; offset < messageCount - 1; offset += batchSize) {
+        const batch = await Promise.all(
+          Array.from(
+            { length: Math.min(batchSize, messageCount - 1 - offset) },
+            (_, messageIndex) => {
+              return sendMessage(offset + messageIndex);
+            },
+          ),
+        );
+        sentMessageIds.push(...batch);
+      }
       // Keep a later accepted message so timestamp ordering remains meaningful.
       sentMessageIds.push(await sendMessage(messageCount - 1));
       if (index === 0) {

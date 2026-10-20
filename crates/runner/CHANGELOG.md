@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.235.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.3...runner-rs-v0.235.4) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.2...runner-rs-v0.235.3) (2026-10-20)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.1...runner-rs-v0.235.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** admit aws action bodies before buffering ([#41786](https://github.com/okou-ai/okou/issues/41786)) ([0679752](https://github.com/okou-ai/okou/commit/0679752dbea1177504d59e53e0565cd4b9a44f53))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.0...runner-rs-v0.235.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** bound content-length parsing for aws body detection ([#41779](https://github.com/okou-ai/okou/issues/41779)) ([e153871](https://github.com/okou-ai/okou/commit/e153871ce905e645ae1fc4e6916ce7d13ca58df4))
+
+
+### Performance Improvements
+
+* **python:** yield during buffered model json inspection ([#41784](https://github.com/okou-ai/okou/issues/41784)) ([ab24d10](https://github.com/okou-ai/okou/commit/ab24d108b0311e80434f58b3cd486262c7033e08))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.20...runner-rs-v0.235.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.234.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.19...runner-rs-v0.234.20) (2026-10-20)
+
+
+### Bug Fixes
+
+* align variable-completed hostname escape validation ([#41695](https://github.com/okou-ai/okou/issues/41695)) ([dbddea1](https://github.com/okou-ai/okou/commit/dbddea157414522c6d102bd829176f56516f382a))
+
+
+### Performance Improvements
+
+* **runner:** make buffered x json inspection cooperative ([#41688](https://github.com/okou-ai/okou/issues/41688)) ([1954365](https://github.com/okou-ai/okou/commit/19543651b1c55d261ba6158a0f4254b0561019da))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.18...runner-rs-v0.234.19) (2026-10-20)
 
 

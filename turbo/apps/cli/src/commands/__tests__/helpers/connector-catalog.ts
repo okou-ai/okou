@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import type { PublicConnectorCatalogStatusReaderItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogAuthMethodSummary,
@@ -158,13 +159,29 @@ export function stubConnectorCatalog(
   });
 }
 
-export function stubConnectorCatalogStatus(
-  connectors: readonly PublicConnectorCatalogStatusItem[],
+export function stubConnectorCatalogDetail(
+  connectors: readonly PublicConnectorCatalogStatusReaderItem[],
   origin = "http://localhost:3000",
 ) {
-  return http.get(`${origin}/api/connector-catalog/status`, () => {
-    return HttpResponse.json({ connectors });
-  });
+  return http.get(
+    `${origin}/api/connector-catalog/:connectorSlug`,
+    ({ params }) => {
+      const connector = connectors.find((item) => {
+        return item.slug === params.connectorSlug;
+      });
+      return connector
+        ? HttpResponse.json({ connector })
+        : HttpResponse.json(
+            {
+              error: {
+                code: "NOT_FOUND",
+                message: "Connector catalog item not found",
+              },
+            },
+            { status: 404 },
+          );
+    },
+  );
 }
 
 export function stubConnectorCatalogPermissions(

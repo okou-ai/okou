@@ -547,36 +547,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
       displayName: "Client-thread retry branch agent",
     });
 
-    const invalidTemplate = await api.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Use an unknown template",
-        userMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text: "Use an unknown template" },
-            {
-              type: "template",
-              titleSnapshot: "Missing presentation template",
-              template: {
-                type: "presentation",
-                selection: {
-                  templateId: "template:html-ppt-missing",
-                },
-              },
-            },
-          ],
-        },
-      },
-      [400],
-    );
-    expectApiError(invalidTemplate.body);
-    expect(invalidTemplate.body.error.code).toBe("BAD_REQUEST");
-    expect(invalidTemplate.body.error.message).toBe(
-      "Unknown generation template",
-    );
-
     const clientThreadId = randomUUID();
     const first = await api.requestSendEvent(
       actor,

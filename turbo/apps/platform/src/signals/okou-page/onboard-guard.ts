@@ -4,7 +4,6 @@ import { clerk$, clerkUser$, resolveAppAuthUrl } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
 import { isLegacyDiscordCallback } from "../integration-continuation.ts";
 import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
-import { tapError } from "../utils.ts";
 import { onboardingStatus$ } from "./onboarding.ts";
 import {
   clearSourcesFirstDraft$,
@@ -26,6 +25,7 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.browserUserAction,
   ROUTES.chat,
   ROUTES.computerUseAuthorize,
+  ROUTES.desktopShellAuthorize,
   ROUTES.connectors,
   ROUTES.directedAuthorize,
   ROUTES.directedConnect,
@@ -119,10 +119,9 @@ export const bootstrapOnboardingGuard$ = command(
       return;
     }
 
-    const status = await tapError(get(onboardingStatus$));
+    const status = await get(onboardingStatus$);
     signal.throwIfAborted();
     if (
-      !status ||
       clerk.session?.id !== session.id ||
       clerk.user?.id !== user.id ||
       clerk.organization?.id !== organization.id ||

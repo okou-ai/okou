@@ -24,7 +24,11 @@ final class ConversationStore {
           ChatMessageAttachment(
             id: $0.id, filename: $0.filename, contentType: $0.contentType, size: $0.size)
         }, createdAt: createdAt,
-        runID: nil, isQueued: false, isError: false)
+        runID: nil, isQueued: false, isError: false,
+        userMessage: document.flatMap { draft in
+          guard let data = try? JSONEncoder().encode(draft) else { return nil }
+          return try? JSONDecoder().decode(ChatUserMessage.self, from: data)
+        })
     }
   }
 
@@ -59,12 +63,13 @@ final class ConversationStore {
   let messageMarkdown: MessageMarkdownCache
   let measurements = ConversationMeasurementCache()
   let activitySummary: ConversationActivitySummary
+  let runUsage: ConversationRunUsageStore
   private var detailOwner: UUID?
 
   private let sync: ChatSync
   private let commands: ChatCommands
   private let isVisible: @MainActor () -> Bool
-  private let didMarkRead: @MainActor () -> Void
+  private let didMarkRead: @MainActor (Date?) -> Void
   private let didSend: @MainActor () -> Void
   private let didFail: @MainActor (Error) -> Void
   private let didSettle: @MainActor () -> Void
@@ -77,12 +82,15 @@ final class ConversationStore {
   private var items: [ConversationItem] = []
   private var expandedWorkSections: Set<String> = []
   private var closed = false
+  private var suppressAutomaticRead = false
+  private var manualUnreadThrough: Date?
+  private var locallyReadThrough: Date?
 
   init(
     thread: ChatThread, sync: ChatSync, commands: ChatCommands,
     webURL: URL, messageMarkdown: MessageMarkdownCache,
     isVisible: @escaping @MainActor () -> Bool,
-    didMarkRead: @escaping @MainActor () -> Void,
+    didMarkRead: @escaping @MainActor (Date?) -> Void,
     didSend: @escaping @MainActor () -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     didSettle: @escaping @MainActor () -> Void,
@@ -93,6 +101,7 @@ final class ConversationStore {
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil
   ) {
     self.modelSelection = modelSelection
+    self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
@@ -162,11 +171,27 @@ final class ConversationStore {
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
           if !pending.contains(where: \.needsRetry) { error = nil }
-          if isVisible(), thread.indicator == .unread {
-            try await commands.markRead(threadID: thread.id)
+          let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
+          if suppressAutomaticRead, let unreadThrough {
+            if let manualUnreadThrough {
+              // Preserve the explicitly unread delivery; a later delivery can be read normally.
+              if unreadThrough > manualUnreadThrough { suppressAutomaticRead = false }
+            } else {
+              manualUnreadThrough = unreadThrough
+            }
+          }
+          if isVisible(), !suppressAutomaticRead, let unreadThrough,
+            locallyReadThrough.map({ $0 < unreadThrough }) ?? true
+          {
+            let watermark = try await commands.markRead(threadID: thread.id)
             guard !closed, !Task.isCancelled else { return }
-            thread.indicator = nil
-            didMarkRead()
+            if let watermark {
+              locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
+              if suppressAutomaticRead {
+                manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+              }
+            }
+            if !suppressAutomaticRead { didMarkRead(watermark) }
           }
         } catch is CancellationError {
           return
@@ -177,6 +202,27 @@ final class ConversationStore {
     }
     refreshTask = task
     await task.value
+  }
+
+  func setAutomaticReadSuppressed(_ suppressed: Bool, resetReadWatermark: Bool = false) {
+    guard !closed else { return }
+    if suppressed {
+      manualUnreadThrough = [history?.latestRunFinishAt, thread.unreadAt, locallyReadThrough]
+        .compactMap { $0 }.max()
+    } else {
+      if resetReadWatermark { locallyReadThrough = nil }
+      manualUnreadThrough = nil
+    }
+    suppressAutomaticRead = suppressed
+  }
+
+  func quote(_ selection: ChatFeedbackSelection) {
+    guard !closed, !needsUpgrade,
+      let message = messages.first(where: { $0.id == selection.eventID }),
+      message.text.utf16.elementsEqual(selection.text.utf16),
+      message.role == .assistant, !message.isError
+    else { return }
+    composer.addFeedback(selection)
   }
 
   /// A first send carries the selection acknowledged by thread creation. It must not
@@ -282,7 +328,12 @@ final class ConversationStore {
       detailOwner = nil
       attachmentViewer.deactivate()
     }
+    reconcileVisibility()
+  }
+
+  func reconcileVisibility() {
     reconcileActivitySummary()
+    reconcileRunUsage()
   }
 
   func reconcileActivitySummary() {
@@ -295,6 +346,7 @@ final class ConversationStore {
   func close() {
     closed = true
     activitySummary.stop()
+    runUsage.close()
     modelSelection?.close()
     refreshTask?.cancel()
     sendTask?.cancel()
@@ -373,6 +425,7 @@ final class ConversationStore {
         section.hiddenMessageIDs.map { ($0, section) }
       })
     var nextItems: [ConversationItem] = []
+    let usageAnchors = history?.runUsageAnchors ?? [:]
     for message in next {
       if let section = headers[message.id] {
         nextItems.append(.work(section, expanded: expandedWorkSections.contains(section.id)))
@@ -383,8 +436,16 @@ final class ConversationStore {
       } else {
         nextItems.append(.message(message))
       }
+      if let runID = message.runID, usageAnchors[runID] == message.id,
+        history?.usageEventIDs[runID] != nil
+      {
+        nextItems.append(.usage(runID: runID))
+      }
     }
-    guard items != nextItems else { return }
+    guard items != nextItems else {
+      reconcileRunUsage()
+      return
+    }
     if let position = readingPosition, !nextItems.contains(where: { $0.id == position.messageID }) {
       let surviving = Set(nextItems.map(\.id))
       if let index = items.firstIndex(where: { $0.id == position.messageID }),
@@ -407,6 +468,16 @@ final class ConversationStore {
     let next = Array(items[renderWindow.range])
     if visibleItems != next { visibleItems = next }
     hasEarlierMessages = renderWindow.hasEarlierMessages
+    reconcileRunUsage()
+  }
+
+  private func reconcileRunUsage() {
+    runUsage.update(
+      runIDs: isVisible()
+        ? visibleItems.compactMap {
+          if case .usage(let runID) = $0 { return runID }
+          return nil
+        } : [], events: history?.usageEventIDs ?? [:])
   }
 
   private func persistPending() {

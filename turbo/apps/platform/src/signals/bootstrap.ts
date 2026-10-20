@@ -26,7 +26,8 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { bestEffort, onDomEventFn } from "./utils.ts";
+import { bestEffort, onDomEventFn, resetSignal } from "./utils.ts";
+import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
@@ -65,6 +66,7 @@ import {
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
+import { setupDesktopShellAuthorizationPage$ } from "./desktop-shell-authorization/desktop-shell-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
 import { setupBrowserSessionPage$ } from "./browser-session/browser-session-page-setup.ts";
 import { setupMailDraftPage$ } from "./mail-draft/mail-draft-page-setup.ts";
@@ -246,6 +248,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.computerUseAuthorize,
     setup: setupAuthPageWrapper(setupComputerUseAuthorizationPage$),
+  },
+  {
+    path: ROUTES.desktopShellAuthorize,
+    setup: setupAuthPageWrapper(setupDesktopShellAuthorizationPage$),
   },
   {
     path: ROUTES.browserAuthorize,
@@ -592,6 +598,8 @@ const completeBootstrap$ = command(
   },
 );
 
+const resetViewportSettleSignal$ = resetSignal();
+
 export const bootstrap$ = command(
   async (
     { get, set },
@@ -599,6 +607,9 @@ export const bootstrap$ = command(
     render: () => void,
     signal: AbortSignal,
   ): Promise<void> => {
+    setupVisualViewportKeyboardState(signal, () => {
+      return set(resetViewportSettleSignal$, signal);
+    });
     set(captureDiscordApprovalFragment$, signal);
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);

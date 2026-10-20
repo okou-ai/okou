@@ -37,6 +37,7 @@ import {
   CANONICAL_CODEX_SESSIONS_DIR,
   CANONICAL_GUEST_HOME_DIR,
   CANONICAL_PI_SESSION_DIR,
+  PI_AGENT_DIR,
   CANONICAL_WORKING_DIR,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
@@ -58,7 +59,6 @@ import {
   STORAGE_MANIFEST_MAX_FILES,
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../contracts/storages";
-import { sandboxChannelConstantBindings } from "./sandbox-channel-constants";
 
 export type RustConstantValue =
   | {
@@ -127,18 +127,6 @@ export const rustConstantRootDoc = [
 ] as const;
 
 export const rustConstantModuleDocs = [
-  {
-    rustModulePath: ["sandbox_channel"],
-    rustDoc: ["Sandbox application schema and finite resource policies."],
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustDoc: ["Readonly filesystem category version and finite policies."],
-  },
-  {
-    rustModulePath: ["sandbox_channel", "diagnostics"],
-    rustDoc: ["Diagnostic category version and payload budget."],
-  },
   {
     rustModulePath: ["codex_oauth_token"],
     rustDoc: [
@@ -245,7 +233,6 @@ function rustU64(value: number): RustConstantValue {
 }
 
 export const rustConstantBindings = [
-  ...sandboxChannelConstantBindings,
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",
@@ -615,6 +602,14 @@ export const rustConstantBindings = [
     rustDoc: [
       "Canonical working directory path expected inside runner guests.",
       "Rust and TypeScript components use this shared contract value when building runner commands and paths.",
+    ],
+  },
+  {
+    rustModulePath: runnerPathsModule,
+    rustConstName: "PI_AGENT_DIR",
+    value: rustString(PI_AGENT_DIR),
+    rustDoc: [
+      "Canonical Pi agent directory containing instructions, skills and native state.",
     ],
   },
   {

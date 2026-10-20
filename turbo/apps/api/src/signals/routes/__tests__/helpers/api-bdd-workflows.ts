@@ -148,7 +148,6 @@ export function createWorkflowsBddApi(context: TestContext) {
      */
     async setupWorkflowOrg(
       options: {
-        readonly isolatePg?: true;
         readonly timezone?: string;
         readonly tier?: "pro" | "team";
         readonly model?: RunModel;
@@ -170,7 +169,6 @@ export function createWorkflowsBddApi(context: TestContext) {
       const actor = bdd.user();
       const entitlement = await runs.grantProEntitlement(actor, {
         tier: options.tier,
-        isolatePg: options.isolatePg,
       });
       if (options.timezone) {
         await bdd.updateUserTimezone(actor, options.timezone);

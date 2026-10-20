@@ -38,7 +38,8 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
@@ -392,6 +393,7 @@ function mockConnectorCatalogStatusItem(
     permissionSummary: definition.permissionSummary,
     connection: mockConnectionForCatalogStatus(connector),
     connected: connector !== null,
+    setupStatus: connector === null ? null : "complete",
     connectionStatus,
     scopeMismatch,
     authMethodSupportsRefresh:
@@ -432,7 +434,7 @@ export function connectorCatalogConnectItem(
 }
 
 export const apiConnectorsHandlers = [
-  mockApi(connectorOverviewContract.overview, ({ respond }) => {
+  mockApi(connectedConnectorsContract.list, ({ respond }) => {
     const connected = mockConnectorCatalogStatus().filter((connector) => {
       return connector.connected;
     });
@@ -446,26 +448,15 @@ export const apiConnectorsHandlers = [
         };
       }),
       customConnectors: [],
-      accountSummaries: mockConnectors.map((connector) => {
-        const account = mockAccountForConnector(connector);
-        return {
-          target: account.target,
-          accountCount: 1,
-          attentionCount:
-            account.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: {
-            id: account.id,
-            authMethod: account.authMethod,
-            displayName: account.displayName,
-            externalId: account.externalId,
-            externalUsername: account.externalUsername,
-            externalEmail: account.externalEmail,
-            connectionStatus: account.connectionStatus,
-          },
-        };
-      }),
+    });
+  }),
+  mockApi(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
       computerUseHosts: [],
+      cloudBrowserAvailable: true,
       cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
     });
   }),
   mockApi(sshConnectionsContract.list, ({ respond }) => {
@@ -568,33 +559,6 @@ export const apiConnectorsHandlers = [
     return respond(200, { permissions });
   }),
 
-  mockApi(connectorAccountsContract.summaries, ({ query, respond }) => {
-    return respond(200, {
-      summaries: mockConnectors.map((connector) => {
-        const account = mockAccountForConnector(connector);
-        const definition = testConnectorCatalogDefinitions.find((candidate) => {
-          return candidate.connectorSlug === connector.slug;
-        });
-        return {
-          target: account.target,
-          accountCount: 1,
-          attentionCount:
-            account.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection:
-            query?.includeScopeMismatch === "true" && definition
-              ? {
-                  ...account,
-                  scopeMismatch: !mockConnectorHasRequestedScopes(
-                    definition,
-                    connector,
-                  ),
-                }
-              : account,
-        };
-      }),
-    });
-  }),
-
   mockApi(connectorAccountsContract.connections, ({ query, respond }) => {
     const allAccounts = mockConnectors.map((connector) => {
       const account = mockAccountForConnector(connector);
@@ -639,9 +603,7 @@ export const apiConnectorsHandlers = [
     return respond(200, {
       connections: page,
       nextCursor: next < accounts.length ? String(next) : null,
-      ...(query.kind === "builtin" && query.includeScopeMismatch === "true"
-        ? { defaultConnection: defaultConnection ?? null }
-        : {}),
+      defaultConnection: defaultConnection ?? null,
     });
   }),
 

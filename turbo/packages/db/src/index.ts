@@ -19,7 +19,6 @@ import * as blobSchema from "./schema/blob";
 import * as sandboxTelemetrySchema from "./schema/sandbox-telemetry";
 import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./runtime/runner-state";
-import * as runnerWssTicketSchema from "./schema/runner-wss-ticket";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
 import * as chatRelationSchema from "./schema/chat-relation";
 import * as chatNetworkBodyCaptureSchema from "./schema/chat-network-body-capture";
@@ -109,6 +108,7 @@ import * as workflowSchema from "./schema/workflow";
 import * as workflowAutomationRuntime from "./runtime/workflow-automation";
 import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
+import * as desktopShellAuthorizationSchema from "./schema/desktop-shell-authorization";
 import * as computerUseHostRuntime from "./runtime/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
@@ -184,7 +184,6 @@ export const schema = {
   ...sandboxTelemetrySchema,
   ...runnerSchema,
   ...runnerStateSchema,
-  ...runnerWssTicketSchema,
   ...chatAgentRunContextSchema,
   ...chatRelationSchema,
   ...chatNetworkBodyCaptureSchema,
@@ -275,6 +274,7 @@ export const schema = {
   ...workflowAutomationRuntime,
   ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
+  ...desktopShellAuthorizationSchema,
   ...computerUseHostRuntime,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,

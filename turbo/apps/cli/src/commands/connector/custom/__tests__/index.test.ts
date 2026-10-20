@@ -12,8 +12,9 @@ import {
 } from "../../../__tests__/helpers/custom-connectors";
 import { customConnectorCommand } from "../index";
 import {
-  customAccountSummaries,
-  stubConnectorAccountSummaries,
+  customAccountConnections,
+  stubConnectorAccounts,
+  stubConnectedConnectors,
 } from "../../../__tests__/helpers/connector-accounts";
 
 const CONNECTOR_ID = "33333333-3333-4333-8333-333333333333";
@@ -26,7 +27,7 @@ describe("okou connector custom readers", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    server.use(stubConnectorAccountSummaries([]));
+    server.use(stubConnectorAccounts([]), stubConnectedConnectors());
     for (const command of customConnectorCommand.commands) {
       command.setOptionValue("agent", undefined);
       command.setOptionValue("json", false);
@@ -46,7 +47,7 @@ describe("okou connector custom readers", () => {
     const mcp = customMcpConnector();
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     server.use(
-      stubConnectorAccountSummaries(customAccountSummaries([connector, mcp])),
+      stubConnectedConnectors([], [connector]),
       stubCustomConnectors([connector, mcp]),
       http.get(`http://localhost:3000/api/agents/${AGENT_ID}`, () => {
         return HttpResponse.json({
@@ -74,7 +75,7 @@ describe("okou connector custom readers", () => {
           kind: "http",
           connectorType: "custom-http",
           target: { kind: "custom", customConnectorId: connector.id },
-          connectionId: connector.connectedAccountId,
+          hasSavedAccounts: true,
           connected: false,
           authorized: true,
         },
@@ -125,38 +126,38 @@ describe("okou connector custom readers", () => {
         }),
       );
       server.use(
-        stubConnectorAccountSummaries(
-          customAccountSummaries([accountDefinition]),
+        stubConnectorAccounts(customAccountConnections([accountDefinition])),
+        http.get(
+          `http://localhost:3000/api/custom-connectors/${definition.id}`,
+          () => {
+            return HttpResponse.json(canonical);
+          },
         ),
-        http.get("http://localhost:3000/api/custom-connectors", () => {
-          return HttpResponse.json({ connectors: [canonical] });
-        }),
       );
 
       await customConnectorCommand.parseAsync([
         "node",
         "okou",
-        "list",
+        "status",
+        definition.id,
         "--json",
       ]);
 
       const json: unknown = JSON.parse(consoleLog.mock.calls.flat().join("\n"));
       expect(json).toMatchObject({
         context: "current",
-        connectors: [
-          {
-            id: definition.id,
-            kind: definition.kind,
-            target: { kind: "custom", customConnectorId: definition.id },
-            integrationManaged: false,
-            connectionId: accountId,
-            memberStatus: "connected",
-            accountSummary: {
-              accountCount: 1,
-              defaultConnection: { id: accountId, setupStatus: "complete" },
-            },
+        connector: {
+          id: definition.id,
+          kind: definition.kind,
+          target: { kind: "custom", customConnectorId: definition.id },
+          integrationManaged: false,
+          connectionId: accountId,
+          memberStatus: "connected",
+          accountSummary: {
+            accountCount: 1,
+            defaultConnection: { id: accountId, setupStatus: "complete" },
           },
-        ],
+        },
       });
     },
   );

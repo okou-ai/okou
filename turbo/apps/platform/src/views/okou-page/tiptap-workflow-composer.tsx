@@ -2,7 +2,6 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
-  useLoadable,
   useSet,
 } from "ccstate-react";
 import type { ReactNode } from "react";
@@ -501,7 +500,7 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const recentIds = useLoadable(composer.suggestion.recentWorkflowIds$);
+  const recentIds = useGet(composer.suggestion.recentWorkflowIds$);
   // Null means the list is not requested yet; the last loadable keeps that
   // null while the first request is in flight.
   const requested =
@@ -514,15 +513,8 @@ function useComposerWorkflowSuggestions(
     workflows:
       query === undefined
         ? []
-        : findWorkflowQueryMatches(
-            workflows,
-            query,
-            recentIds.state === "hasData" ? recentIds.data : [],
-          ),
-    loading:
-      workflowsLoadable.state === "loading" ||
-      requested === null ||
-      (query !== undefined && recentIds.state === "loading"),
+        : findWorkflowQueryMatches(workflows, query, recentIds),
+    loading: workflowsLoadable.state === "loading" || requested === null,
   };
 }
 

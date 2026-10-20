@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import { agentRuns } from "../src/runtime/agent-run";
 import { chatThreads } from "../src/runtime/chat-thread";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -154,7 +154,7 @@ async function withPausedCopy(
 }
 
 try {
-  await applyPendingMigrations(sql, { beforeMillis: contraction.when });
+  await applyFixtureMigrations(sql, { beforeMillis: contraction.when });
   await client.connect();
   const db = drizzle(client);
   await sql`INSERT INTO agents (id, org_id, owner, name) VALUES (${agentId}, 'org-contraction', 'user-contraction', 'retained-agent')`;
@@ -213,19 +213,19 @@ try {
     );
   };
   const rejectWithoutMutation = async (expected: RegExp) => {
-    await assert.rejects(applyPendingMigrations(sql), expected);
+    await assert.rejects(applyFixtureMigrations(sql), expected);
     await assertUnchanged();
   };
 
   await sql`UPDATE agent_runs SET launch_snapshot = ${sql.json({ ...snapshot, schemaVersion: 3 })} WHERE id = ${activeRunId}`;
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyFixtureMigrations(sql),
     /requires legacy Run drain/,
   );
   await sql`UPDATE agent_runs SET launch_snapshot = ${sql.json(snapshot)} WHERE id = ${activeRunId}`;
   await sql`UPDATE agent_runs SET framework = NULL WHERE id = ${runId}`;
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyFixtureMigrations(sql),
     /native facts were not transferred/,
   );
   await sql`UPDATE agent_runs SET framework = 'pi' WHERE id = ${runId}`;
@@ -342,7 +342,7 @@ try {
   }
 
   const startedAt = performance.now();
-  await applyPendingMigrations(sql);
+  await applyFixtureMigrations(sql);
   const elapsedMs = performance.now() - startedAt;
   assert.deepEqual(await retainedState(), baseline);
   assert.deepEqual(
@@ -388,7 +388,7 @@ try {
   const acceptedJournal = Array.from(
     await sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`,
   );
-  await applyPendingMigrations(sql);
+  await applyFixtureMigrations(sql);
   assert.deepEqual(
     Array.from(
       await sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`,

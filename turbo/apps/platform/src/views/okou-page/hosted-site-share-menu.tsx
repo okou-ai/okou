@@ -11,6 +11,7 @@ import {
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import {
   getHostedSiteShareScope,
   type HostedSiteShareSession,
@@ -229,21 +230,25 @@ function HostedSiteShareActions({
           detach(copy(signal), Reason.DomCallback);
         }}
       />
-      {details.state === "hasData" && details.data?.isActive && (
-        <Button
-          autoFocus={returnFocus}
-          variant="quiet"
-          className="mt-1 w-full justify-between px-2"
-          onClick={() => {
-            detach(edit(signal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.siteUrl.customize;
-          })}
-          <ChevronRight size={14} className="text-muted-foreground" />
-        </Button>
-      )}
+      {details.state === "hasData" &&
+        details.data?.isActive &&
+        new URL(details.data.url).hostname.endsWith(
+          `.${resolveEditableHostedSiteDomain()}`,
+        ) && (
+          <Button
+            autoFocus={returnFocus}
+            variant="quiet"
+            className="mt-1 w-full justify-between px-2"
+            onClick={() => {
+              detach(edit(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.siteUrl.customize;
+            })}
+            <ChevronRight size={14} className="text-muted-foreground" />
+          </Button>
+        )}
       {details.state === "hasError" && (
         <div className="flex items-center justify-between gap-2 px-2 py-1">
           <span role="status" className="text-xs text-muted-foreground">

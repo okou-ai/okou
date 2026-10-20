@@ -82,17 +82,15 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod maintenance;
+mod peer_home_claim;
 mod pending_candidate;
 mod prune_idle;
-mod runner_wss;
 pub(crate) mod signals;
 mod soft_drain;
 mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
-use crate::heartbeat::{
-    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, WssIngressServiceProbe,
-};
+use crate::heartbeat::{HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit};
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
@@ -243,50 +241,17 @@ pub struct RunConfig {
     pub capacity: CapacityPolicy,
     pub shared: RunnerSharedState,
     pub provider: ProviderState,
-    pub wss_ingress_service_probe: WssIngressServiceProbe,
     pub sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
     pub proxy: ProxyState,
     pub exec_config: Arc<ExecutorConfig>,
     pub shutdown: ShutdownHandles,
     pub usage_flush_tx: mpsc::Sender<()>,
     pub usage_flush_rx: mpsc::Receiver<()>,
-    pub wss: Option<WssConfig>,
     pub signals: SignalState,
     pub orphan_reap: OrphanReapState,
     pub diagnostic_error_tail_max_bytes: usize,
     #[cfg(test)]
     test_hooks: RunTestHooks,
-}
-
-/// Mandatory listener configuration for official Runners. Optional Caddy
-/// availability affects new ticket issuance, never this reactor's startup.
-/// Guest authority comes only from `RunConfig::exec_config.guest_duplex`;
-/// callers cannot install a separate registry through this configuration.
-pub struct WssConfig {
-    socket_dir: PathBuf,
-    hostname: Option<String>,
-    consumer: Arc<dyn runner_wss::TicketConsumer>,
-    #[cfg(test)]
-    fail_accept: Option<tokio::sync::oneshot::Receiver<()>>,
-}
-
-impl WssConfig {
-    /// Compose the existing official API client, credential and exact hostname.
-    /// The protected host namespace is fixed, not a second readiness authority.
-    pub fn official(
-        home: &HomePaths,
-        http: runner_provider::http::HttpClient,
-        token: String,
-        hostname: Option<String>,
-    ) -> Self {
-        Self {
-            socket_dir: home.wss_dir(),
-            hostname,
-            consumer: Arc::new(runner_wss::ApiTicketConsumer::new(http, token)),
-            #[cfg(test)]
-            fail_accept: None,
-        }
-    }
 }
 
 /// Only the per-profile data actually consumed by runtime orchestration.
@@ -988,14 +953,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         capacity,
         shared,
         provider: provider_state,
-        wss_ingress_service_probe,
         sandbox_op_reporter,
         proxy,
         exec_config,
         shutdown,
         usage_flush_tx,
         mut usage_flush_rx,
-        wss,
         signals,
         orphan_reap,
         diagnostic_error_tail_max_bytes,
@@ -1007,6 +970,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
+        runner_hostname: exec_config.runner_hostname.as_deref(),
         runner_identity: runner.identity,
         group: &runner.group,
         profiles: &projected_heartbeat_profiles,
@@ -1014,7 +978,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         provider: Arc::clone(&provider_state.provider),
         active_runs: &active_runs,
         home_cache_snapshot: home_cache_snapshot.clone(),
-        wss_ingress_service_probe,
         sandbox_op_reporter: sandbox_op_reporter.clone(),
     });
     let Some(started) = startup::start(
@@ -1031,7 +994,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             exec_config: &exec_config,
         },
         signals,
-        wss,
         startup::StartupInventory {
             heartbeat: hb_ctx,
             snapshot: &home_cache_snapshot,
@@ -1067,7 +1029,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 lifecycle,
                 handler_task: mut signal_handler_task,
             },
-        mut wss_task,
         mut factories,
         prune_listener,
         prune_admission,
@@ -1219,15 +1180,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
-        if wss_task
-            .as_ref()
-            .is_some_and(runner_wss::AcceptTask::has_failed)
-        {
-            terminal_error = Some(RunnerError::Internal(
-                "required Runner WSS accept loop failed".into(),
-            ));
-            break;
-        }
         let mode = *mode_rx.borrow_and_update();
         if mode != current_mode {
             current_mode = mode;
@@ -1348,17 +1300,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     });
                 }
             }
-            result = async {
-                match wss_task.as_mut() {
-                    Some(task) => task.wait().await,
-                    None => std::future::pending().await,
-                }
-            }, if wss_task.is_some() => {
-                handle_stopping_signal("wss-accept-failure", &provider_state.cancel,
-                    &provider_state.cancel_tokens, &lifecycle).await;
-                terminal_error = Some(RunnerError::Internal(format!("required Runner WSS accept loop stopped: {result:?}")));
-                break;
-            }
             connection = prune_listener.accept() => {
                 match connection {
                     Ok(stream) => {
@@ -1401,10 +1342,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // The future is pinned outside the loop so other reactor branches
             // do not cancel and restart its internal wait timer. See #8747.
             discovered = &mut discover_fut, if can_discover => {
-                if wss_task.as_ref().is_some_and(runner_wss::AcceptTask::has_failed) {
-                    terminal_error = Some(RunnerError::Internal("required Runner WSS accept loop failed".into()));
-                    break;
-                }
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
@@ -1669,20 +1606,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // -----------------------------------------------------------------------
     // Shutdown — drain idle pool, release discovery resources, then drain running jobs
     // -----------------------------------------------------------------------
-    // Discovery may observe listener-triggered cancellation before its join.
-    if wss_task
-        .as_ref()
-        .is_some_and(runner_wss::AcceptTask::has_failed)
-    {
-        terminal_error.get_or_insert_with(|| {
-            RunnerError::Internal("required Runner WSS accept loop failed".into())
-        });
-    }
     let teardown = TeardownTimer::start();
     drop(prune_listener);
-    if let Some(task) = wss_task.take() {
-        task.stop().await;
-    }
     memory_prefetch.cancel();
     teardown.event("memory_prefetch_cancelled");
 

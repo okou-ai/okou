@@ -81,6 +81,7 @@ public struct ModelCatalog: Decodable, Sendable {
   }
   public struct Route: Decodable, Sendable {
     public let model: String
+    public let upstreamModel: String
     public let providerType: String
     public let concreteProviderType: String
     public let enabled: Bool
@@ -198,6 +199,10 @@ public struct ChatModelConfiguration: Sendable {
 public struct ChatModelService: Sendable {
   private let client: APIClient
   public init(client: APIClient) { self.client = client }
+
+  public func catalog() async throws -> ModelCatalog {
+    try await client.request("/api/model-catalog")
+  }
 
   public func load() async throws -> ChatModelConfiguration {
     async let preference: ModelPreference = client.request("/api/user-model-preference")

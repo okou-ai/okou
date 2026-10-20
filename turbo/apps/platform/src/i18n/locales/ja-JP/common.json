@@ -109,47 +109,6 @@
         "status": "ステータス",
         "time": "時間"
       },
-      "files": {
-        "connecting": "ファイルに接続中…",
-        "currentFolder": "現在のフォルダー",
-        "download": "{{name}} をダウンロード",
-        "downloadChanged": "ダウンロード中にファイルが変更されました。もう一度ダウンロードしてください。",
-        "downloadFailed": "ダウンロードに失敗しました。もう一度お試しください。",
-        "downloadFrame": "ファイルのダウンロード",
-        "downloadUnsupported": "このブラウザーはファイルのダウンロードに対応していません。",
-        "downloadUpdateRequired": "ページを再読み込みしてお試しください。引き続き利用できない場合は、新しい実行を開始してください。",
-        "empty": "このフォルダーは空です。",
-        "enterFolder": "{{name}} を開く",
-        "goHome": "ホームフォルダーに戻る",
-        "limit": "パネルの上限に達したため、一部のファイルを読み込めませんでした。フォルダーを閉じるか更新してください。",
-        "link": "リンク",
-        "loading": "読み込み中…",
-        "more": "さらに読み込む",
-        "navigationFailed": "{{path}} を開けませんでした。再試行してください。",
-        "noRun": "実行中はファイルを閲覧できます。",
-        "other": "その他",
-        "parentFolders": "親フォルダー",
-        "pending": "待機中の実行が開始するとファイルを閲覧できます。",
-        "preview": "{{name}} をプレビュー",
-        "previewChanged": "ファイルが変更されました。プレビューを閉じて開き直してください。",
-        "previewDecode": "このファイルを読み取れません。ダウンロードは可能です。",
-        "previewEmpty": "このファイルは空です。",
-        "previewInvalid": "このファイルはプレビューできません。ダウンロードは可能です。",
-        "previewLoading": "プレビューを読み込み中…",
-        "previewSize": "ファイルが大きすぎるためプレビューできません。ダウンロードは可能です。",
-        "previewTruncated": "先頭の 64 KiB を表示しています。全内容を見るにはダウンロードしてください。",
-        "previewUnavailable": "プレビューを利用できません。閉じて再試行するか、ダウンロードしてください。",
-        "previewUnsupported": "このファイル形式はプレビューに対応していません。ダウンロードは可能です。",
-        "previewUpdateRequired": "ページを再読み込みして再試行してください。それでもプレビューできない場合は、新しい実行を開始してください。",
-        "readonly": "現在の実行のファイルを読み取り専用で表示します。",
-        "refresh": "更新",
-        "retry": "再試行",
-        "root": "ルートフォルダー",
-        "stale": "一覧が変更されたか期限切れです。更新して続行してください。",
-        "title": "ファイル",
-        "unavailable": "ファイルを利用できません。再試行してください。",
-        "updateRequired": "この実行はファイル閲覧に対応していません。サンドボックスの更新後に新しい実行を開始してください。"
-      },
       "log": "ログ",
       "manualReloadNotice": "ログは自動更新されません。",
       "modelProvidedBy": "{{model}} は {{provider}} によって提供されます",
@@ -248,7 +207,6 @@
       "documentTitle": "ログを検査",
       "errors": {
         "invalid": "無効な JSON ファイルです。エクスポートされたアクティビティ ログ JSON ファイルをアップロードします。",
-        "load": "JSONファイルを読み込めませんでした。エクスポートされたアクティビティ ログ JSON ファイルをアップロードします。",
         "oversized": "JSON ファイルが大きすぎます。エクスポートされた 25 MB 未満のアクティビティ ログ JSON ファイルをアップロードします。"
       },
       "fallbackName": "インポートされたログ",
@@ -553,7 +511,6 @@
       },
       "kindIcon": "{{kind}} アーティファクト",
       "loading": "アーティファクトをロードしています",
-      "loadMore": "さらに読み込む",
       "retry": "再試行"
     },
     "fileBadges": {
@@ -1336,7 +1293,6 @@
       "downgradeScheduledPeriod": "ダウングレードが予定されています。現在のプランは、請求期間が終了するまで有効のままです。",
       "planRestored": "計画が復元されました。サブスクリプションは通常どおり更新されます。",
       "preparingReceiptDownload": "領収書のダウンロードを準備しています...",
-      "receiptDownloadFailed": "領収書のダウンロードに失敗しました",
       "receiptsDownloaded": "領収書をダウンロードしました",
       "subscriptionChangeConfirmed": "サブスクリプションの変更が確認されました。"
     },
@@ -1604,9 +1560,7 @@
       "title": "添付ファイル",
       "unavailable": "{{filename}} は利用できなくなりました。送信するにはもう一度アップロードしてください。",
       "unavailableCount_other": "{{count}} 件の添付ファイルは利用できなくなりました。送信するにはもう一度アップロードしてください。",
-      "uploadFailed": "{{filename}} のアップロードに失敗しました",
-      "uploadFailedRetry": "{{filename}} のアップロードに失敗しました。もう一度やり直してください。",
-      "uploadsFailed": "一部の添付ファイルのアップロードに失敗しました。もう一度やり直してください。"
+      "uploadFailedRetry": "{{filename}} のアップロードに失敗しました。もう一度やり直してください。"
     },
     "automations": {
       "active": "アクティブ",
@@ -1908,7 +1862,6 @@
       "back": "戻る",
       "configurePermissions": "{{connectorName}} 権限を構成する",
       "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
-      "defaultAccountFor": "{{connector}} · デフォルトアカウントを使用中: {{account}}",
       "directory": {
         "allCategories": "すべて",
         "askAdmin": "管理者に有効化を依頼してください",
@@ -1924,7 +1877,6 @@
         "emptyCustomBody": "HTTP API や MCP サーバーから作成すると、Okou は他のコネクターと同じように使えます。",
         "emptyCustomTitle": "カスタムコネクターはまだありません",
         "matchCount_other": "{{count}} 件の一致",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "対応が必要",
         "nextCategories": "次のカテゴリ",
         "noResultsBody": "製品名で検索するか、API や MCP サーバーから自分で作成してください。",
@@ -1939,6 +1891,7 @@
       },
       "fallsBackTo": "{{account}} にフォールバック",
       "find": "コネクタを検索...",
+      "loadFailed": "コネクターを読み込めませんでした。",
       "noUsableAccount": "使用可能なアカウントがありません",
       "remove": "{{connectorName}} を削除します",
       "selectedAccountFor": "{{connector}} · 選択中のアカウント: {{account}}",
@@ -2138,8 +2091,7 @@
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
     "relations": {
-      "communications": "チャット",
-      "idle": "待機",
+      "chats": "チャット",
       "loadFailed": "読み込み失敗",
       "messageUnavailable": "メッセージ取得不可",
       "origin": "開始元",
@@ -2147,7 +2099,6 @@
       "received": "受信",
       "running": "実行中",
       "sent": "送信",
-      "toggleMessages": "{{title}} とのメッセージ",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
@@ -2169,9 +2120,11 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "expand": "展開",
+      "empty": "このチャットの成果物と関連チャットがここに表示されます。",
       "loadFailed": "リソースを読み込めませんでした",
+      "loading": "リソースを読み込み中",
       "retry": "再試行",
+      "showMore": "もっと見る",
       "title": "チャットのリソース"
     },
     "run": {
@@ -3079,13 +3032,7 @@
       "rename": "名前を変更",
       "setupIncomplete": "設定が未完了",
       "setupUnavailable": "アカウントの状態を取得できません",
-      "skipName": "スキップ",
-      "summaryMany": "{{value}} 件のアカウント",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} 件のアカウント",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} 件に対応が必要",
-      "summaryWithAttention_other": ""
+      "skipName": "スキップ"
     },
     "actions": {
       "apply": "申し込む",
@@ -3250,7 +3197,6 @@
       },
       "scope": {
         "aria": "コネクタの表示範囲",
-        "attention": "対応が必要",
         "connected": "接続済み",
         "custom": "カスタム",
         "discover": "探す",
@@ -3946,9 +3892,28 @@
       "connected": "{{connector}} が接続されました"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "承認を更新できませんでした。更新してもう一度お試しください。",
+    "allow": "1 時間許可",
+    "approved": "Shell へのアクセスを許可しました",
+    "deadline": "有効期限：{{date}}",
+    "denied": "リクエストを拒否しました",
+    "deny": "拒否",
+    "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
+    "details": "詳細を開く",
+    "expired": "承認の有効期限が切れました",
+    "loading": "承認を読み込み中…",
+    "pending": "承認待ち",
+    "refresh": "更新",
+    "revoke": "アクセスを取り消す",
+    "revoked": "Shell へのアクセスを取り消しました",
+    "scope": "このチャットとコンピュータのみ。アクセス終了後も既存のターミナルは開いたままです。",
+    "title": "Desktop Shell へのアクセス",
+    "unavailable": "承認を利用できません",
+    "waiting": "Run の実行中、または選択したコンピュータが変更された場合は承認できません。"
+  },
   "documentTemplates": {
     "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
-    "back": "テンプレートに戻る",
     "categories": {
       "all": "すべて",
       "business-record": "業務記録",
@@ -3999,7 +3964,6 @@
     "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
     "retry": "再試行",
-    "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
   },
@@ -4850,7 +4814,6 @@
           "codeRequired": "Claudeの認証コードを貼り付けて続行します。",
           "connectedToast": "Claudeが接続されました",
           "connectTitle": "Claudeを接続する",
-          "error": "Claudeの接続に失敗しました。もう一度やり直してください。",
           "expired": "Claudeの接続セッションの有効期限が切れました。もう一度やり直してください。",
           "instructions": "まず、[Claude 承認ページを開く] をクリックします。次に、Claude の {{brandName}} を承認し、承認後に表示される認証コードをコピーします。最後にそのコードをここに貼り付けて、「接続」をクリックします。",
           "openApproval": "Claude 承認ページを開く",
@@ -4865,7 +4828,6 @@
           "connectedToast": "ChatGPT が接続されました",
           "connectTitle": "Codex を接続します",
           "deviceCode": "デバイスコード",
-          "error": "ChatGPT 接続に失敗しました。もう一度やり直してください。",
           "expired": "Codex 接続セッションの有効期限が切れました。もう一度やり直してください。",
           "freePlanRejected": "無料の ChatGPT プランでは、{{brandName}} 経由で Codex を使用できません。 Plus または Pro にアップグレードして、もう一度試してください。",
           "instructions": "まず、コピーボタンでデバイス コードをコピーし、承認ページを開きます。次に、プロンプトが表示されたら、デバイス コードを OpenAI に貼り付けます。最後にアクセスを承認し、{{brandName}} が接続を完了するまでこのダイアログを開いたままにします。",
@@ -5064,6 +5026,10 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "resources": {
+          "description": "余白があるときは、チャットの成果物と関連チャットを会話の横に表示します。",
+          "title": "リソースを自動で開く"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {
@@ -5157,7 +5123,7 @@
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
+        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
         "retry": "再試行",
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
@@ -5166,7 +5132,7 @@
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
         "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
-        "preparationFailed": "提案の設定を完了できませんでした。再試行してください。",
+        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
         "retry": "再試行",
         "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",

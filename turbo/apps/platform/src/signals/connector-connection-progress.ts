@@ -1,5 +1,5 @@
 import { command, computed, state, type Command } from "ccstate";
-import { onRef, resetSignal, waitForOperation, withCleanup } from "./utils.ts";
+import { onRef, resetSignal, withCleanup } from "./utils.ts";
 
 const pendingConnections$ = state<ReadonlySet<symbol>>(new Set());
 const progressDismissed$ = state(false);
@@ -148,10 +148,7 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
       return await withCleanup(
         (async () => {
           // Invoke synchronously so window.open retains the click's user activation.
-          return await waitForOperation(
-            set(source$, ...attemptArgs),
-            attemptSignal,
-          );
+          return await set(source$, ...attemptArgs);
         })(),
         () => {
           attemptSignal.removeEventListener("abort", release);

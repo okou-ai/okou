@@ -42,9 +42,8 @@ import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCa
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   BuiltinConnectorBrief,
-  ConnectorDefaultAccountBrief,
   CustomConnectorBrief,
-} from "@okouai/api-contracts/contracts/connector-overview";
+} from "@okouai/api-contracts/contracts/connected-connectors";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   UserTemplateCatalogEntry,
@@ -196,7 +195,6 @@ import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
   connectorAccountTargetKey,
 } from "../../signals/okou-page/connector-accounts.ts";
-import { connectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
 import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
 import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
 import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
@@ -243,7 +241,6 @@ import {
   bestEffort,
   detach,
   onDomEventFn,
-  tapError,
 } from "../../signals/utils.ts";
 import {
   audioInputAvailable$,
@@ -336,12 +333,6 @@ import {
 const COMPOSER_CONTROL_FOCUS_CLASS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
-function isHappyDomTestEnvironment(): boolean {
-  return (
-    typeof globalThis.window !== "undefined" && "happyDOM" in globalThis.window
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -365,6 +356,9 @@ interface ComposerTemplatePicker {
 interface ComposerComputerUse {
   readonly hosts: readonly ComposerComputerUseHost[];
   readonly loading: boolean;
+  readonly failed: boolean;
+  readonly retry: () => void;
+  readonly cloudBrowserAvailable: boolean;
   readonly selectedHostId: string | null;
   readonly onChange: (hostId: string | null) => void;
   readonly cloudBrowserEnabled: boolean;
@@ -393,10 +387,7 @@ const PRESENTATION_GALLERY_PREVIEW_BASE_URL =
 const PRESENTATION_GALLERY_SLIDE_COUNT = 15;
 const TEMPLATE_PREWARM_IMAGE_COUNT = 15;
 const IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT = 16;
-const ILLUSTRATION_PREWARM_IMAGE_COUNT = 24;
 const ILLUSTRATION_EAGER_IMAGE_COUNT = 24;
-const ILLUSTRATION_SCROLL_PREWARM_LOOKAHEAD_COUNT = 12;
-const ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT = 24;
 const ILLUSTRATION_CARD_PREVIEW_SIZE = {
   width: 1024,
   quality: 72,
@@ -1269,9 +1260,11 @@ function prewarmTemplatePreviewImage(
 function prewarmTemplatePreviewImages(
   runtime: TemplatePreviewRuntime,
   imageUrls: readonly string[],
-  count = TEMPLATE_PREWARM_IMAGE_COUNT,
 ): void {
-  for (const imageUrl of [...new Set(imageUrls)].slice(0, count)) {
+  for (const imageUrl of [...new Set(imageUrls)].slice(
+    0,
+    TEMPLATE_PREWARM_IMAGE_COUNT,
+  )) {
     prewarmTemplatePreviewImage(runtime, imageUrl);
   }
 }
@@ -1285,23 +1278,6 @@ function presentationPreviewImageUrlsForItems(
       themeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
     );
     return presentationTemplateCardSlideImage(item, 0, theme);
-  });
-}
-
-function illustrationPreviewImageUrlsForItems({
-  items,
-  variantIndexBySlug,
-}: {
-  items: readonly IllustrationTemplateItem[];
-  variantIndexBySlug: Readonly<Record<string, number>>;
-}): string[] {
-  return items.map((item) => {
-    const images = item.previewImages;
-    const activeIndex = Math.max(
-      0,
-      Math.min(variantIndexBySlug[item.slug] ?? 0, images.length - 1),
-    );
-    return illustrationHeroImageUrl(images[activeIndex] ?? item.previewImage);
   });
 }
 
@@ -1326,81 +1302,10 @@ function initialTemplatePreviewImageUrlsForCategory({
       presentationThemeIdBySlug,
     );
   }
-  if (category === "illustration") {
-    return illustrationPreviewImageUrlsForItems({
-      items: ILLUSTRATION_TEMPLATE_ITEMS,
-      variantIndexBySlug: {},
-    });
-  }
   if (category === "website") {
     return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
   }
   return [];
-}
-
-function templatePreviewPrewarmImageCountForCategory(category: string): number {
-  if (category === "illustration") {
-    return ILLUSTRATION_PREWARM_IMAGE_COUNT;
-  }
-  return TEMPLATE_PREWARM_IMAGE_COUNT;
-}
-
-function prewarmIllustrationPreviewImagesNearScroll({
-  items,
-  runtime,
-  scrollContainer,
-  variantIndexBySlug,
-}: {
-  items: readonly IllustrationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
-  scrollContainer: HTMLElement;
-  variantIndexBySlug: Readonly<Record<string, number>>;
-}): void {
-  const scrollableHeight =
-    scrollContainer.scrollHeight - scrollContainer.clientHeight;
-  if (items.length === 0 || scrollableHeight <= 0) {
-    return;
-  }
-
-  const progress = Math.min(
-    1,
-    Math.max(0, scrollContainer.scrollTop / scrollableHeight),
-  );
-  const lookaheadIndex =
-    Math.floor(progress * items.length) +
-    ILLUSTRATION_SCROLL_PREWARM_LOOKAHEAD_COUNT;
-  const bucket = Math.floor(
-    lookaheadIndex / ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-  );
-  const startIndex = Math.min(
-    items.length,
-    Math.max(
-      ILLUSTRATION_PREWARM_IMAGE_COUNT,
-      bucket * ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-    ),
-  );
-  const firstPrewarmItem = items[startIndex];
-  const key = [
-    String(items.length),
-    String(bucket),
-    firstPrewarmItem?.slug ?? "",
-  ].join(":");
-  if (scrollContainer.dataset.illustrationPreviewPrewarmBucket === key) {
-    return;
-  }
-  scrollContainer.dataset.illustrationPreviewPrewarmBucket = key;
-
-  prewarmTemplatePreviewImages(
-    runtime,
-    illustrationPreviewImageUrlsForItems({
-      items: items.slice(
-        startIndex,
-        startIndex + ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-      ),
-      variantIndexBySlug,
-    }),
-    ILLUSTRATION_SCROLL_PREWARM_IMAGE_COUNT,
-  );
 }
 
 interface PresentationTemplateThemeOption {
@@ -2736,7 +2641,6 @@ function IllustrationTemplateHero({
   priority = false,
   source,
   onVariantChange,
-  runtime,
 }: {
   item: IllustrationTemplateItem;
   images: readonly string[];
@@ -2744,17 +2648,12 @@ function IllustrationTemplateHero({
   priority?: boolean;
   source: string;
   onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
 }) {
   const { t } = useTranslation();
   const heroImage = illustrationHeroImageUrl(source);
   const navigable = images.length > 1;
   const variantAt = (direction: -1 | 1): number => {
     return (activeIndex + direction + images.length) % images.length;
-  };
-  const preloadNeighbors = (): void => {
-    preloadIllustrationVariant(runtime, images, variantAt(1));
-    preloadIllustrationVariant(runtime, images, variantAt(-1));
   };
 
   return (
@@ -2774,7 +2673,7 @@ function IllustrationTemplateHero({
           },
         )}
         className={cn(
-          "absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-150 data-[loaded=true]:opacity-100",
+          "absolute inset-0 h-full w-full object-cover",
           // Same affordance the detail preview uses for slide paging: the
           // cursor points at the half that will be navigated to.
           navigable &&
@@ -2783,7 +2682,6 @@ function IllustrationTemplateHero({
         loading={priority ? "eager" : "lazy"}
         decoding="async"
         fetchPriority={priority ? "high" : "low"}
-        onMouseEnter={navigable ? preloadNeighbors : undefined}
         onMouseMove={
           navigable
             ? (event) => {
@@ -2808,24 +2706,14 @@ function IllustrationTemplateHero({
                 const rect = event.currentTarget.getBoundingClientRect();
                 const direction =
                   event.clientX - rect.left < rect.width / 2 ? -1 : 1;
-                selectIllustrationVariant({
-                  card: event.currentTarget.closest<HTMLElement>(
-                    "[data-illustration-template-card]",
-                  ),
-                  index: variantAt(direction),
-                  item,
-                  onVariantChange,
-                  runtime,
-                });
+                onVariantChange(item.slug, variantAt(direction));
               }
             : undefined
         }
         onLoad={(event) => {
-          const image = event.currentTarget;
-          detach(
-            markIllustrationPreviewImageLoaded(runtime, heroImage, image),
-            Reason.DomCallback,
-          );
+          event.currentTarget.parentElement
+            ?.querySelector<HTMLElement>("[data-illustration-preview-error]")
+            ?.setAttribute("hidden", "");
         }}
         onError={(event) => {
           event.currentTarget.parentElement
@@ -2846,184 +2734,6 @@ function IllustrationTemplateHero({
 
 function illustrationHeroImageUrl(source: string): string {
   return r2ImageTransformUrl(source, ILLUSTRATION_CARD_PREVIEW_SIZE);
-}
-
-function preloadIllustrationPreviewImage(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): HTMLImageElement | undefined {
-  if (typeof Image === "undefined") {
-    return undefined;
-  }
-
-  const cache = runtime.illustration;
-  const cachedImage = cache.preloads.get(url);
-  if (cachedImage !== undefined) {
-    return cachedImage;
-  }
-
-  const image = new Image();
-  image.decoding = "async";
-  image.loading = "eager";
-  image.fetchPriority = "high";
-  image.src = url;
-  cache.preloads.set(url, image);
-  return image;
-}
-
-async function decodeIllustrationPreviewImage(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): Promise<void> {
-  const cache = runtime.illustration;
-  if (cache.decoded.has(url)) {
-    return;
-  }
-
-  if (isHappyDomTestEnvironment()) {
-    cache.decoded.add(url);
-    return;
-  }
-
-  const pendingDecode = cache.pendingDecodes.get(url);
-  if (pendingDecode !== undefined) {
-    await pendingDecode;
-    return;
-  }
-
-  const image = preloadIllustrationPreviewImage(runtime, url);
-  if (image === undefined) {
-    return;
-  }
-
-  if (image.decode === undefined) {
-    if (image.complete && image.naturalWidth > 0) {
-      cache.decoded.add(url);
-    }
-    return;
-  }
-
-  const decode = markIllustrationPreviewImageDecoded(runtime, url, image);
-  cache.pendingDecodes.set(url, decode);
-  await decode;
-}
-
-async function markIllustrationPreviewImageDecoded(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-  image: HTMLImageElement,
-): Promise<void> {
-  const cache = runtime.illustration;
-  await tapError(image.decode(), () => {});
-  if (image.complete && image.naturalWidth > 0) {
-    cache.decoded.add(url);
-  }
-  cache.pendingDecodes.delete(url);
-}
-
-async function markIllustrationPreviewImageLoaded(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-  image: HTMLImageElement,
-): Promise<void> {
-  const cache = runtime.illustration;
-  if (image.decode !== undefined) {
-    await tapError(image.decode(), () => {});
-  }
-  if (image.complete && image.naturalWidth > 0) {
-    cache.decoded.add(url);
-  }
-  image.dataset.loaded = "true";
-  image.parentElement
-    ?.querySelector<HTMLElement>("[data-illustration-preview-error]")
-    ?.setAttribute("hidden", "");
-}
-
-function illustrationPreviewImageDecoded(
-  runtime: TemplatePreviewRuntime,
-  url: string,
-): boolean {
-  return runtime.illustration.decoded.has(url);
-}
-
-async function selectDecodedIllustrationVariant({
-  card,
-  imageUrl,
-  index,
-  item,
-  onVariantChange,
-  runtime,
-}: {
-  card: HTMLElement;
-  imageUrl: string;
-  index: number;
-  item: IllustrationTemplateItem;
-  onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
-}): Promise<void> {
-  await decodeIllustrationPreviewImage(runtime, imageUrl);
-  if (
-    card.dataset.targetVariantIndex === String(index) &&
-    illustrationPreviewImageDecoded(runtime, imageUrl)
-  ) {
-    onVariantChange(item.slug, index);
-  }
-}
-
-function selectIllustrationVariant({
-  card,
-  index,
-  item,
-  onVariantChange,
-  runtime,
-}: {
-  card: HTMLElement | null;
-  index: number;
-  item: IllustrationTemplateItem;
-  onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
-}): void {
-  const image = item.previewImages[index];
-  if (image === undefined) {
-    return;
-  }
-
-  const imageUrl = illustrationHeroImageUrl(image);
-  // Swap immediately only when the target hero is already decoded; otherwise
-  // decode it off-screen first so the hero never flashes a blank/loading frame.
-  if (card === null || illustrationPreviewImageDecoded(runtime, imageUrl)) {
-    onVariantChange(item.slug, index);
-    return;
-  }
-
-  card.dataset.targetVariantIndex = String(index);
-  detach(
-    selectDecodedIllustrationVariant({
-      card,
-      imageUrl,
-      index,
-      item,
-      onVariantChange,
-      runtime,
-    }),
-    Reason.DomCallback,
-  );
-}
-
-function preloadIllustrationVariant(
-  runtime: TemplatePreviewRuntime,
-  images: readonly string[],
-  index: number,
-): void {
-  const image = images[index];
-  if (image === undefined) {
-    return;
-  }
-
-  detach(
-    decodeIllustrationPreviewImage(runtime, illustrationHeroImageUrl(image)),
-    Reason.DomCallback,
-  );
 }
 
 type IllustrationThumbnailScrollDirection = -1 | 1;
@@ -3167,7 +2877,6 @@ function IllustrationTemplateCard({
   priority = false,
   onSelect,
   onVariantChange,
-  runtime,
 }: {
   item: IllustrationTemplateItem;
   selected: boolean;
@@ -3175,7 +2884,6 @@ function IllustrationTemplateCard({
   priority?: boolean;
   onSelect: (item: IllustrationTemplateItem) => void;
   onVariantChange: (slug: string, index: number) => void;
-  runtime: TemplatePreviewRuntime;
 }) {
   const { t } = useTranslation();
   const images = item.previewImages;
@@ -3192,7 +2900,6 @@ function IllustrationTemplateCard({
       )}
     >
       <div
-        data-illustration-template-card=""
         className={cn(
           "group/tile overflow-hidden rounded-xl border border-border bg-card",
           TEMPLATE_CARD_SHADOW,
@@ -3205,7 +2912,6 @@ function IllustrationTemplateCard({
           priority={priority}
           source={heroSource}
           onVariantChange={onVariantChange}
-          runtime={runtime}
         />
         {hasMultipleVariants && (
           <div
@@ -3235,28 +2941,8 @@ function IllustrationTemplateCard({
                     "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     active ? "border-primary" : "border-border",
                   )}
-                  onFocus={() => {
-                    preloadIllustrationPreviewImage(
-                      runtime,
-                      illustrationHeroImageUrl(image),
-                    );
-                  }}
-                  onMouseEnter={() => {
-                    preloadIllustrationPreviewImage(
-                      runtime,
-                      illustrationHeroImageUrl(image),
-                    );
-                  }}
                   onClick={(event) => {
-                    selectIllustrationVariant({
-                      card: event.currentTarget.closest<HTMLElement>(
-                        "[data-illustration-template-card]",
-                      ),
-                      index,
-                      item,
-                      onVariantChange,
-                      runtime,
-                    });
+                    onVariantChange(item.slug, index);
                     const scrollDirection = active
                       ? activeIllustrationThumbnailScrollDirection(
                           event.currentTarget,
@@ -3511,14 +3197,12 @@ function TemplatePickerSearch({
 
 function IllustrationTemplateGrid({
   items,
-  runtime,
   value,
   variantIndexBySlug,
   onSelect,
   onVariantChange,
 }: {
   items: readonly IllustrationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
   value: GenerationTemplateRequest | undefined;
   variantIndexBySlug: Readonly<Record<string, number>>;
   onSelect: (item: IllustrationTemplateItem) => void;
@@ -3538,7 +3222,6 @@ function IllustrationTemplateGrid({
             priority={index < ILLUSTRATION_EAGER_IMAGE_COUNT}
             onSelect={onSelect}
             onVariantChange={onVariantChange}
-            runtime={runtime}
           />
         );
       })}
@@ -3615,18 +3298,26 @@ export function TemplateImportCard({
           kind === "illustration"
             ? "aspect-[4/5]"
             : kind === "document"
-              ? compact
-                ? "aspect-[210/297]"
-                : "aspect-[4/3]"
+              ? "aspect-[4/3]"
               : "aspect-video",
-          compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
       >
-        <Plus
-          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
+        {compact ? (
+          // On a shelf the accepted formats sit inside the tile, under the
+          // plus, so the caption below stays one line like every cover's --
+          // and the member still sees what the tile takes before choosing a
+          // file.
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
+            <Plus className="size-8" strokeWidth={1.5} aria-hidden />
+            <span className="max-w-full truncate text-xs">{hints[kind]}</span>
+          </span>
+        ) : (
+          <Plus
+            className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
+            strokeWidth={1.5}
+            aria-hidden
+          />
+        )}
         <input
           type="file"
           className="sr-only"
@@ -3647,34 +3338,42 @@ export function TemplateImportCard({
           }}
         />
       </span>
-      <span
-        className={cn(
-          TEMPLATE_TILE_CAPTION,
-          // On a shelf the import tile is one cover among many, so its caption
-          // takes the shelf's metrics rather than the picker dialog's.
-          compact
-            ? "flex-col items-stretch gap-0 px-0 pb-0 pt-0"
-            : "flex-col items-stretch gap-0.5",
-        )}
-      >
+      {compact ? (
+        // On a shelf the import tile is one cover among many, so its caption
+        // is one line in the shelf's metrics and ink, like every cover beside
+        // it. A second line made this tile 32px taller than its row, and on
+        // the document shelf -- where it shows under Custom only -- switching
+        // filters grew and shrank the shelf, which moved the whole centred
+        // page under the pointer.
         <span
           className={cn(
-            compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
-            (kind === "illustration" || kind === "document") &&
-              "whitespace-normal",
+            RAIL_TILE_CAPTION,
+            "text-muted-foreground transition-colors group-hover/tile:text-foreground",
           )}
         >
           {label}
         </span>
+      ) : (
         <span
           className={cn(
-            "shrink-0 truncate text-muted-foreground",
-            compact ? "text-[12px] leading-4" : "text-xs",
+            TEMPLATE_TILE_CAPTION,
+            "flex-col items-stretch gap-0.5",
           )}
         >
-          {hints[kind]}
+          <span
+            className={cn(
+              TEMPLATE_TILE_NAME,
+              (kind === "illustration" || kind === "document") &&
+                "whitespace-normal",
+            )}
+          >
+            {label}
+          </span>
+          <span className="shrink-0 truncate text-xs text-muted-foreground">
+            {hints[kind]}
+          </span>
         </span>
-      </span>
+      )}
     </label>
   );
 }
@@ -4686,8 +4385,8 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const realtime = useLoadable(
-    signals.template.presentationTemplatesRealtimeReady$,
+  const initialization = useLoadable(
+    signals.template.presentationTemplatesInitialized$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
@@ -4697,7 +4396,7 @@ function ImportedPresentationTemplateLibraryStatus({
   }
   let message: string;
   let retry: (() => void) | undefined;
-  if (realtime.state === "hasError") {
+  if (initialization.state === "hasError") {
     message = t(($) => {
       return $.chat.templates.importedUnavailable;
     });
@@ -5178,12 +4877,6 @@ function TemplatePickerDialog({
         cardThemeIdBySlug,
       );
     }
-    if (targetCategory === "illustration") {
-      return illustrationPreviewImageUrlsForItems({
-        items: ILLUSTRATION_TEMPLATE_ITEMS,
-        variantIndexBySlug: illustrationVariantIndex,
-      });
-    }
     if (targetCategory === "website") {
       return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
     }
@@ -5194,7 +4887,6 @@ function TemplatePickerDialog({
     prewarmTemplatePreviewImages(
       runtime,
       previewImageUrlsForCategory(targetCategory),
-      templatePreviewPrewarmImageCountForCategory(targetCategory),
     );
   };
 
@@ -5411,7 +5103,6 @@ function TemplatePickerDialog({
                   onIllustrationVariantChange={setIllustrationVariantIndex}
                   onWorkflowCategoryChange={setWorkflowCategoryFilter}
                   onSelectWorkflow={handleSelectWorkflow}
-                  runtime={runtime}
                 />
               </TabsContent>
             </Tabs>
@@ -5447,7 +5138,6 @@ function TemplatePickerCategoryContent({
   onIllustrationVariantChange,
   onWorkflowCategoryChange,
   onSelectWorkflow,
-  runtime,
 }: {
   signals: ComposerSignals;
   selectedCategory: string;
@@ -5479,7 +5169,6 @@ function TemplatePickerCategoryContent({
   onIllustrationVariantChange: (slug: string, index: number) => void;
   onWorkflowCategoryChange: (category: string) => void;
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
-  runtime: TemplatePreviewRuntime;
 }) {
   const customSection = (kind: UserTemplateKind) => {
     return customTemplatesEnabled ? (
@@ -5502,6 +5191,7 @@ function TemplatePickerCategoryContent({
     return (
       <DocumentTemplatePickerPane
         signals={signals}
+        value={value}
         onSelect={onSelectDocument}
         customTemplates={customSection("document")}
       />
@@ -5549,18 +5239,7 @@ function TemplatePickerCategoryContent({
 
   if (selectedCategory === "illustration") {
     return (
-      <div
-        data-illustration-template-grid-scroll=""
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5"
-        onScroll={(event) => {
-          prewarmIllustrationPreviewImagesNearScroll({
-            items: illustrationItems,
-            runtime,
-            scrollContainer: event.currentTarget,
-            variantIndexBySlug: illustrationVariantIndex,
-          });
-        }}
-      >
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
         {customSection("illustration")}
         {customTemplatesEnabled ? (
           <TemplateSourceSection source="builtIn">
@@ -5570,7 +5249,6 @@ function TemplatePickerCategoryContent({
               variantIndexBySlug={illustrationVariantIndex}
               onSelect={onSelectIllustration}
               onVariantChange={onIllustrationVariantChange}
-              runtime={runtime}
             />
           </TemplateSourceSection>
         ) : (
@@ -5580,7 +5258,6 @@ function TemplatePickerCategoryContent({
             variantIndexBySlug={illustrationVariantIndex}
             onSelect={onSelectIllustration}
             onVariantChange={onIllustrationVariantChange}
-            runtime={runtime}
           />
         )}
       </div>
@@ -5715,7 +5392,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
         category: selectedCategory,
         presentationThemeIdBySlug: cardThemeIdBySlug,
       }),
-      templatePreviewPrewarmImageCountForCategory(selectedCategory),
     );
   };
   const open = () => {
@@ -5803,6 +5479,7 @@ function ComputerUseConnectorMenuSection({
         <span className="flex shrink-0 items-center">
           <LoadingSwitch
             checked={computerUse.cloudBrowserEnabled}
+            disabled={!computerUse.cloudBrowserAvailable}
             onCheckedChange={onDomEventFn((enabled) => {
               computerUse.onCloudBrowserChange(enabled);
             })}
@@ -5818,7 +5495,23 @@ function ComputerUseConnectorMenuSection({
           return $.chat.computerUse.yourComputer;
         })}
       </div>
-      {computerUse.loading ? (
+      {computerUse.failed ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 p-2 text-sm text-destructive"
+        >
+          <span>
+            {t(($) => {
+              return $.chat.remoteAccess.loadFailed;
+            })}
+          </span>
+          <Button variant="outline" size="sm" onClick={computerUse.retry}>
+            {t(($) => {
+              return $.chat.remoteAccess.retry;
+            })}
+          </Button>
+        </div>
+      ) : computerUse.loading ? (
         <div className="flex flex-col animate-pulse">
           {Array.from({ length: 2 }, (_, i) => {
             return (
@@ -5917,6 +5610,8 @@ function ComposerRemoteAccessMenu({
     <ThreadRemoteAccessSection
       threadId={signals.threadId}
       remoteAccess$={signals.remoteAccess$}
+      defaults$={signals.connector.resources.remoteHostDefaults$}
+      reloadRemotes$={signals.connector.resources.reloadRemotes$}
       pendingRemoteAccess={signals.pendingRemoteAccess}
       open={remoteMenuOpen}
       onOpenChange={onRemoteMenuOpenChange}
@@ -6086,7 +5781,6 @@ function ComposerConnectorAccountMenu({
   target,
   connectorLabel,
   selectedConnection,
-  defaultConnection,
   explicit,
 }: {
   readonly signals: ComposerSignals;
@@ -6094,7 +5788,6 @@ function ComposerConnectorAccountMenu({
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly selectedConnection: ConnectorAccountConnection | undefined;
-  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
   readonly explicit: boolean;
 }) {
   const { t } = useTranslation();
@@ -6108,12 +5801,12 @@ function ComposerConnectorAccountMenu({
     menuTarget &&
     connectorAccountTargetKey(menuTarget) === connectorAccountTargetKey(target),
   );
-  const effectiveConnection = explicit ? selectedConnection : defaultConnection;
+  const effectiveConnection = selectedConnection;
   const resolveAccountLabel = useConnectorAccountLabel();
   const accountLabel = effectiveConnection
     ? resolveAccountLabel(effectiveConnection)
     : t(($) => {
-        return $.chat.connectors.noUsableAccount;
+        return $.chat.connectors.useDefault;
       });
   const accessibleLabel = explicit
     ? t(
@@ -6122,12 +5815,9 @@ function ComposerConnectorAccountMenu({
         },
         { connector: connectorLabel, account: accountLabel },
       )
-    : t(
-        ($) => {
-          return $.chat.connectors.defaultAccountFor;
-        },
-        { connector: connectorLabel, account: accountLabel },
-      );
+    : `${connectorLabel} · ${t(($) => {
+        return $.chat.connectors.accountForThread;
+      })}`;
   return (
     <Popover
       open={open}
@@ -6169,12 +5859,14 @@ function ComposerConnectorAccountMenu({
           return $.chat.connectors.accountForThread;
         })}
       >
-        <ComposerConnectorAccountMenuContent
-          signals={signals}
-          actions={actions}
-          target={target}
-          connectorLabel={connectorLabel}
-        />
+        {open && (
+          <ComposerConnectorAccountMenuContent
+            signals={signals}
+            actions={actions}
+            target={target}
+            connectorLabel={connectorLabel}
+          />
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -6196,7 +5888,7 @@ function ComposerConnectorAccountChoices({
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
   readonly selection: ConnectorAccountSelection | undefined;
-  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
   readonly saving: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;
@@ -6358,9 +6050,6 @@ function ComposerConnectorAccountMenuContent({
   const preferenceLoadable = useLastLoadable(
     signals.connector.accounts.preferenceState$,
   );
-  const summariesLoadable = useLastLoadable(
-    signals.connector.accounts.summaryByTarget$,
-  );
   const accountsLoadable = useLastLoadable(
     signals.connector.accounts.accounts$,
   );
@@ -6385,15 +6074,16 @@ function ComposerConnectorAccountMenuContent({
         return connection.id === selection.connectionId;
       })
     : undefined;
-  const summary =
-    summariesLoadable.state === "hasData"
-      ? summariesLoadable.data.get(targetKey)
-      : undefined;
-  const defaultConnection = summary ? summary.defaultConnection : null;
   const accountList =
     accountsLoadable.state === "hasData"
       ? accountsLoadable.data
-      : { connections: [], nextCursor: null, available: true };
+      : {
+          connections: [],
+          nextCursor: null,
+          available: true,
+          defaultConnection: null,
+        };
+  const defaultConnection = accountList.defaultConnection;
   const connections = selectedConnection
     ? [
         selectedConnection,
@@ -6404,7 +6094,8 @@ function ComposerConnectorAccountMenuContent({
     : accountList.connections;
   const showSearch =
     search.length > 0 ||
-    (summary?.accountCount ?? 0) > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
+    accountList.connections.length > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
+    accountList.hasMultiplePages === true ||
     accountList.nextCursor !== null;
   const saving = actions.savingAccount;
   return (
@@ -6499,7 +6190,7 @@ function ComposerConnectorAccountMenuContent({
             resultCount: accountList.connections.length,
             search,
           })}
-          loadingAccountCount={summary?.accountCount ?? 0}
+          loadingAccountCount={2}
         />
         {accountList.nextCursor ? (
           <div className="shrink-0 border-t border-border/50 p-2">
@@ -6590,17 +6281,11 @@ function ComposerConnectorAccountAction({
   const preference = useLastResolved(
     signals.connector.accounts.preferenceState$,
   );
-  const summaries = useLastResolved(
-    signals.connector.accounts.summaryByTarget$,
-  );
   const target = composerPopoverConnectorTarget(item);
   const targetKey = connectorAccountTargetKey(target);
-  const summary = summaries?.get(targetKey);
   if (
     !item.connector.authorized ||
-    (item.kind === "custom" && item.connector.integrationManaged) ||
-    !summary ||
-    summary.accountCount <= 1
+    (item.kind === "custom" && item.connector.integrationManaged)
   ) {
     return null;
   }
@@ -6621,7 +6306,6 @@ function ComposerConnectorAccountAction({
       selectedConnection={preference?.selectedConnections.find((connection) => {
         return connection.id === selection?.connectionId;
       })}
-      defaultConnection={summary.defaultConnection}
     />
   );
 }
@@ -6683,19 +6367,16 @@ function resolveComposerAgentConnectors(
 function ConnectorsPopoverButton({
   signals,
   actions,
-  computerUse,
   onOpenAddDialog,
 }: {
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
-  computerUse: ComposerComputerUse | undefined;
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const remoteMenuOpen = useGet(
-    signals.connector.connectorUiState$,
-  ).remoteMenuOpen;
+  const connectorUi = useGet(signals.connector.connectorUiState$);
+  const remoteMenuOpen = connectorUi.remoteMenuOpen;
   const setRemoteMenuOpen = (open: boolean) => {
     updateConnectorUi({ remoteMenuOpen: open });
   };
@@ -6709,7 +6390,7 @@ function ConnectorsPopoverButton({
   );
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      updateConnectorUi({ popoverOpen: true, popoverHasOpened: true });
+      updateConnectorUi({ popoverOpen: true });
     } else {
       updateConnectorUi({
         popoverOpen: false,
@@ -6723,6 +6404,7 @@ function ConnectorsPopoverButton({
 
   return (
     <Popover
+      open={connectorUi.popoverOpen}
       onOpenChange={(open, eventDetails) => {
         if (!open && eventDetails.reason === "outside-press") {
           if (accountMenuOpen) {
@@ -6778,23 +6460,26 @@ function ConnectorsPopoverButton({
         collisionAvoidance={{ fallbackAxisSide: "none" }}
         className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
       >
-        <ComposerConnectorsPopoverBody
-          signals={signals}
-          actions={actions}
-          computerUse={computerUse}
-          remoteMenuOpen={remoteMenuOpen}
-          onRemoteMenuOpenChange={setRemoteMenuOpen}
-          onOpenAddDialog={onOpenAddDialog}
-          onOpenDownloadDialog={() => {
-            setDownloadDialogOpen(true);
-          }}
-        />
+        {connectorUi.popoverOpen && (
+          <ComposerConnectorsPopoverBody
+            signals={signals}
+            actions={actions}
+            remoteMenuOpen={remoteMenuOpen}
+            onRemoteMenuOpenChange={setRemoteMenuOpen}
+            onOpenAddDialog={onOpenAddDialog}
+            onOpenDownloadDialog={() => {
+              setDownloadDialogOpen(true);
+            }}
+          />
+        )}
       </PopoverContent>
-      <OptionalComputerUseDownloadDialog
-        computerUse={computerUse}
-        open={downloadDialogOpen}
-        onOpenChange={setDownloadDialogOpen}
-      />
+      {downloadDialogOpen && (
+        <ComputerUseDownloadDialog
+          downloadUrl={OKOU_DESKTOP_DOWNLOAD_URL}
+          open={downloadDialogOpen}
+          onOpenChange={setDownloadDialogOpen}
+        />
+      )}
     </Popover>
   );
 }
@@ -6819,7 +6504,6 @@ function focusComposerConnectorSearch(element: HTMLElement | null) {
 function ComposerConnectorsPopoverBody({
   signals,
   actions,
-  computerUse,
   remoteMenuOpen,
   onRemoteMenuOpenChange,
   onOpenAddDialog,
@@ -6827,7 +6511,6 @@ function ComposerConnectorsPopoverBody({
 }: {
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
-  computerUse: ComposerComputerUse | undefined;
   remoteMenuOpen: boolean;
   onRemoteMenuOpenChange: (open: boolean) => void;
   onOpenAddDialog: () => void;
@@ -6835,8 +6518,18 @@ function ComposerConnectorsPopoverBody({
 }) {
   const { t } = useTranslation();
   const agentId = signals.agentId;
-  const connectorData = useLastResolved(signals.connector.data$);
-  const connectorsLoading = connectorData === undefined;
+  const computerUse = useComposerComputerUse(signals);
+  const connectorState = useLoadable(signals.connector.data$);
+  const previousConnectorData = useLastResolved(signals.connector.data$);
+  const connectorData =
+    connectorState.state === "hasData"
+      ? connectorState.data
+      : connectorState.state === "loading"
+        ? previousConnectorData
+        : undefined;
+  const connectorsLoading =
+    connectorState.state === "loading" && connectorData === undefined;
+  const retryConnectors = useSet(signals.connector.resources.reloadConnected$);
   const { agentConnectors, agentCustomConnectors } =
     resolveComposerAgentConnectors(connectorData);
   const connectorUi = useGet(signals.connector.connectorUiState$);
@@ -6908,6 +6601,23 @@ function ComposerConnectorsPopoverBody({
         showSearch && "h-100",
       )}
     >
+      {connectorState.state === "hasError" && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 p-3 text-sm text-destructive"
+        >
+          <span>
+            {t(($) => {
+              return $.chat.connectors.loadFailed;
+            })}
+          </span>
+          <Button variant="outline" size="sm" onClick={retryConnectors}>
+            {t(($) => {
+              return $.chat.remoteAccess.retry;
+            })}
+          </Button>
+        </div>
+      )}
       {(connectorItems.length > 0 || connectorsLoading) && (
         <div className="flex min-h-0 flex-1 flex-col">
           {showSearch && (
@@ -7041,6 +6751,7 @@ function ComposerConnectorsPopoverBody({
                                   onClick={() => {
                                     updateConnectorUi({
                                       permissionConnectorSlug: connector.slug,
+                                      permissionConnector: connector,
                                     });
                                   }}
                                   aria-label={t(
@@ -7126,8 +6837,8 @@ function ComposerConnectorsPopoverBody({
 }
 
 /**
- * The permission dialog a connector row opens. It outlives the popover that
- * opened it, so it reads the agent's connectors itself.
+ * The permission dialog retains its selected brief and loads only the target's
+ * permission metadata and agent grants after the resource menu closes.
  */
 function ComposerConnectorPermissionDialogSlot({
   signals,
@@ -7138,13 +6849,10 @@ function ComposerConnectorPermissionDialogSlot({
 }) {
   const agentId = signals.agentId;
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const connectorData = useLastResolved(signals.connector.data$);
+  const connectorUi = useGet(signals.connector.connectorUiState$);
   const agents = useLastResolved(agents$) ?? [];
-  const { agentConnectors } = resolveComposerAgentConnectors(connectorData);
-  const permissionConnector = agentConnectors.find((connector) => {
-    return connector.slug === connectorSlug;
-  });
-  if (!permissionConnector) {
+  const permissionConnector = connectorUi.permissionConnector;
+  if (!permissionConnector || permissionConnector.slug !== connectorSlug) {
     return null;
   }
   return (
@@ -7156,30 +6864,15 @@ function ComposerConnectorPermissionDialogSlot({
           return agent.agentId === agentId;
         })?.displayName ?? ""
       }
-      connector={permissionConnector}
+      connector={{ ...permissionConnector, authorized: true }}
       onClose={() => {
-        updateConnectorUi({ permissionConnectorSlug: null });
+        updateConnectorUi({
+          permissionConnectorSlug: null,
+          permissionConnector: null,
+        });
       }}
     />
   );
-}
-
-function OptionalComputerUseDownloadDialog({
-  computerUse,
-  open,
-  onOpenChange,
-}: {
-  computerUse: ComposerComputerUse | undefined;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return computerUse ? (
-    <ComputerUseDownloadDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      downloadUrl={computerUse.downloadUrl}
-    />
-  ) : null;
 }
 
 function ComputerUseDownloadDialog({
@@ -8509,20 +8202,19 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   const cloudBrowserEnabled =
     cloudBrowserState.state === "hasData"
       ? cloudBrowserState.data
-      : (lastCloudBrowserEnabled ?? true);
+      : lastCloudBrowserEnabled;
   const setComputerUseHostId = useSet(signals.computer.setComputerUseHostId$);
   const setCloudBrowserEnabled = useSet(
     signals.computer.setCloudBrowserEnabled$,
   );
-  const computerUseHostsState = useLastLoadable(connectorOverview$);
-  const lastComputerUseHosts =
-    useLastResolved(connectorOverview$)?.computerUseHosts ?? [];
+  const computerUseHostsState = useLoadable(
+    signals.connector.resources.remotes$,
+  );
+  const retry = useSet(signals.connector.resources.reloadRemotes$);
   const computerUseHosts =
     computerUseHostsState.state === "hasData"
       ? computerUseHostsState.data.computerUseHosts
-      : computerUseHostsState.state === "hasError"
-        ? []
-        : lastComputerUseHosts;
+      : [];
   const resolvedComputerUseHostId = selectedComputerUseHostId(
     computerUseHosts,
     storedComputerUseHostId,
@@ -8540,7 +8232,15 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
         Reason.DomCallback,
       );
     },
-    cloudBrowserEnabled,
+    failed: computerUseHostsState.state === "hasError",
+    retry,
+    cloudBrowserAvailable:
+      computerUseHostsState.state === "hasData" &&
+      computerUseHostsState.data.cloudBrowserAvailable,
+    cloudBrowserEnabled:
+      cloudBrowserEnabled ??
+      (computerUseHostsState.state === "hasData" &&
+        computerUseHostsState.data.cloudBrowserEnabledByDefault),
     cloudBrowserLoading:
       cloudBrowserState.state === "loading" &&
       lastCloudBrowserEnabled === undefined,
@@ -8571,7 +8271,6 @@ function ComposerConnectorsSlot({
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
 }) {
-  const computerUse = useComposerComputerUse(signals);
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
@@ -8585,7 +8284,6 @@ function ComposerConnectorsSlot({
       <ConnectorsPopoverButton
         signals={signals}
         actions={actions}
-        computerUse={computerUse}
         onOpenAddDialog={openAddConnectorsDialog}
       />
       {connectorUi.permissionConnectorSlug !== null && (
@@ -8613,10 +8311,12 @@ function ComposerConnectorDialogsSlot({
   actions: ComposerConnectorActions;
 }) {
   const { t } = useTranslation();
-  const lastConnectorData = useLastResolved(signals.connector.data$);
-  const connectorData =
-    lastConnectorData?.authorization.agentId === signals.agentId
-      ? lastConnectorData
+  const lastAuthorization = useLastResolved(
+    signals.connector.connectorAuthorization$,
+  );
+  const authorization =
+    lastAuthorization?.agentId === signals.agentId
+      ? lastAuthorization
       : undefined;
   const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
   const addDialogBrowseCatalog = useLastResolved(
@@ -8656,8 +8356,7 @@ function ComposerConnectorDialogsSlot({
     resolveComposerConnectorCollections({
       addDialogCatalogItems,
       addDialogCustomConnectors,
-      authorizedConnectorSlugs:
-        connectorData?.authorization.enabledConnectorSlugs ?? null,
+      authorizedConnectorSlugs: authorization?.enabledConnectorSlugs ?? null,
       selectedCustomConnectorId,
     });
   const selectedConnector = connectorUi.selectedConnector ?? undefined;
@@ -8690,7 +8389,7 @@ function ComposerConnectorDialogsSlot({
   ): Promise<void> => {
     const newlyAuthorized = await completeAddition(
       connectorSlug,
-      connectorData?.authorization.agentId === agentRecordId &&
+      authorization?.agentId === agentRecordId &&
         authorizedSet.has(connectorSlug),
       signal,
     );
@@ -8818,9 +8517,21 @@ function ComposerConnectorDialogsSlot({
             });
           }}
           onConfigurePermissions={(connectorSlug) => {
+            const connector = addDialogCatalogItems.find((item) => {
+              return item.slug === connectorSlug;
+            });
+            if (!connector) {
+              return;
+            }
             updateConnectorUi({
               showAddDialog: false,
               permissionConnectorSlug: connectorSlug,
+              permissionConnector: {
+                slug: connector.slug,
+                label: connector.label,
+                icon: connector.icon,
+                hasPermissions: connector.permissionSummary.hasPermissions,
+              },
             });
           }}
           onClose={() => {
@@ -8926,6 +8637,8 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
 }
 
 function ComposerCard({ signals }: { signals: ComposerSignals }) {
+  const keyboardViewportEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.PwaKeyboardViewport];
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
@@ -8944,7 +8657,8 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
       surface="composer"
       className={cn(
         "z-10",
-        "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
+        !keyboardViewportEnabled &&
+          "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {

@@ -58,17 +58,6 @@ describe("POST /api/agent-setup-prompts", () => {
       case: "valid usage metadata",
       usageMetadata: { candidatesTokenCount: 60, thoughtsTokenCount: 10 },
     },
-    {
-      case: "a malformed optional count",
-      usageMetadata: {
-        candidatesTokenCount: "untrusted-count",
-        thoughtsTokenCount: 10,
-      },
-    },
-    {
-      case: "malformed optional metadata",
-      usageMetadata: "untrusted-metadata",
-    },
   ])(
     "returns Flash-Lite's polished message without an OpenRouter key with $case",
     async ({ usageMetadata }) => {

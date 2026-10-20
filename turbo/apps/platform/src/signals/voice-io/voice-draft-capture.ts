@@ -1,6 +1,6 @@
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type State } from "ccstate";
 import { now } from "../../lib/time.ts";
-import { resetSignal, settle, withCleanup } from "../utils.ts";
+import { detach, Reason, resetSignal, settle, withCleanup } from "../utils.ts";
 import {
   openMedia,
   startAudioActivityMonitor,
@@ -36,6 +36,21 @@ interface VoiceDraftAcquisition {
   readonly capture: VoiceDraftCapture | null;
 }
 
+function createCaptureCompletionCommand(
+  acquisition$: State<VoiceDraftAcquisition | null>,
+  resetAcquisition$: ReturnType<typeof resetSignal>,
+) {
+  return command(
+    ({ get, set }, pcm: VoiceDraftCapture["pcm"], signal: AbortSignal) => {
+      return withCleanup(pcm.completed, () => {
+        if (get(acquisition$)?.signal === signal) {
+          set(resetAcquisition$);
+        }
+      });
+    },
+  );
+}
+
 export function createVoiceDraftCaptureSignals() {
   const samples$ = state<readonly VoiceLevelSample[]>([]);
   const acquisition$ = state<VoiceDraftAcquisition | null>(null);
@@ -51,6 +66,11 @@ export function createVoiceDraftCaptureSignals() {
     set(resetAcquisition$);
     set(acquisition$, null);
   });
+
+  const ownCapture$ = createCaptureCompletionCommand(
+    acquisition$,
+    resetAcquisition$,
+  );
 
   const start$ = command(
     async (
@@ -89,6 +109,11 @@ export function createVoiceDraftCaptureSignals() {
             signal,
           );
           signal.throwIfAborted();
+          detach(
+            set(ownCapture$, pcm, signal),
+            Reason.Daemon,
+            "voice draft recording",
+          );
           const startedAt = now();
           const monitored = await settle(
             startAudioActivityMonitor(

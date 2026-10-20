@@ -9,6 +9,21 @@ import XCTest
 
 @MainActor
 final class ChatModelStoreTests: XCTestCase {
+  func testUsageLoadsSharedCatalogWithoutActivatingModelSelectionOrQuotaReads() async throws {
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.url?.path, "/api/model-catalog")
+      return modelCatalogResponse()
+    }
+    let models = ChatModelStore(client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    defer { models.close() }
+    await models.loadUsageCatalog()
+    XCTAssertFalse(models.active)
+    XCTAssertNil(models.configuration)
+    XCTAssertEqual(models.usageCatalog?.name("claude-opus-4-8"), "Claude Opus 4.8")
+    await models.loadUsageCatalog()
+    XCTAssertEqual(models.usageCatalog?.name("claude-opus-4-8"), "Claude Opus 4.8")
+  }
+
   func testNewChatKeepsEachModelsEffortAndSavesDefaultOnlyOnExplicitAction() async throws {
     let writes = Mutex<[URLRequest]>([])
     let savedPreference = Mutex<String?>(nil)
@@ -117,7 +132,7 @@ final class ChatModelStoreTests: XCTestCase {
       return ConversationStore(
         thread: thread(), sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
         webURL: fixture.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL),
-        isVisible: { false }, didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {},
+        isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
         modelSelection: selection, draftRepository: ChatDraftRepository(client: fixture.client),
         draftStorage: storage)
     }
@@ -278,7 +293,8 @@ final class ChatModelStoreTests: XCTestCase {
       thread: thread(), sync: sync,
       commands: ChatCommands(client: fixture.client, sync: sync), webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: { false },
-      didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {}, modelSelection: selection)
+      didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
+      modelSelection: selection)
     defer { conversation.close() }
     conversation.draft = "Keep this draft until model settings are confirmed"
     await conversation.send()

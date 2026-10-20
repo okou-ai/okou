@@ -216,7 +216,7 @@ async function syncArtifactFileToGoogleDrive(
 }
 
 const internalGoogleDriveSyncPending$ = state<
-  ReadonlyMap<string, GoogleDriveUploadMode>
+  ReadonlyMap<string, ReadonlySet<GoogleDriveUploadMode>>
 >(new Map());
 export const googleDriveSyncPending$ = computed((get) => {
   return get(internalGoogleDriveSyncPending$);
@@ -231,21 +231,28 @@ const syncArtifactFileToGoogleDrive$ = command(
     signal: AbortSignal,
   ): Promise<GoogleDriveUploadedFile | undefined> => {
     signal.throwIfAborted();
-    if (get(internalGoogleDriveSyncPending$).has(params.artifactId)) {
+    const modes = get(internalGoogleDriveSyncPending$).get(params.artifactId);
+    if (modes?.has(params.mode)) {
       return undefined;
     }
     set(
       internalGoogleDriveSyncPending$,
       new Map(get(internalGoogleDriveSyncPending$)).set(
         params.artifactId,
-        params.mode,
+        new Set(modes).add(params.mode),
       ),
     );
     return await withCleanup(
       syncArtifactFileToGoogleDrive(params, signal),
       () => {
         const pending = new Map(get(internalGoogleDriveSyncPending$));
-        pending.delete(params.artifactId);
+        const remaining = new Set(pending.get(params.artifactId));
+        remaining.delete(params.mode);
+        if (remaining.size > 0) {
+          pending.set(params.artifactId, remaining);
+        } else {
+          pending.delete(params.artifactId);
+        }
         set(internalGoogleDriveSyncPending$, pending);
       },
     );
@@ -311,6 +318,12 @@ export const syncArtifactAndRefresh$ = command(
       signal,
     );
     signal.throwIfAborted();
+    // Another upload mode may have completed while this request was pending.
+    const account = get(account$);
+    const sameCurrentAccount =
+      account?.artifactId === params.artifactId &&
+      account.agentId === params.agentId &&
+      account.connectionId === params.connectionId;
     if (uploaded) {
       set(account$, {
         artifactId: params.artifactId,
@@ -320,19 +333,12 @@ export const syncArtifactAndRefresh$ = command(
         googleImport:
           params.mode === "google"
             ? uploaded
-            : sameAccount
-              ? previous.googleImport
+            : sameCurrentAccount
+              ? account.googleImport
               : undefined,
       });
-    } else {
-      const account = get(account$);
-      if (
-        account?.artifactId === params.artifactId &&
-        account.agentId === params.agentId &&
-        account.connectionId === params.connectionId
-      ) {
-        set(account$, { ...account, ready: false });
-      }
+    } else if (sameCurrentAccount) {
+      set(account$, { ...account, ready: false });
     }
     if (uploaded) {
       params.onSyncSuccess?.();

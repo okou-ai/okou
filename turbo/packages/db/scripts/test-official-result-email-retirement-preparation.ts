@@ -16,7 +16,7 @@ import {
   outgoingOfficialAutomationResultEmailClaims,
   outgoingWorkflowAutomations,
 } from "./fixtures/official-result-email-outgoing";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 
 // Keep through release 3 of #39378's physical contraction and its
@@ -117,7 +117,7 @@ try {
   await admin.query(`CREATE DATABASE "${name}"`);
   created = true;
   await client.connect();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: retirement.when,
   });
 
@@ -248,7 +248,7 @@ try {
   };
   const beforeRetirement = await storedRows();
 
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: retirement.when + 1,
   });
   assert.deepEqual(
@@ -670,7 +670,7 @@ try {
     };
   };
   const beforeContraction = await runtimeSnapshot();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when,
   });
   const appliedMigrations = async () => {
@@ -711,7 +711,7 @@ try {
   );
   try {
     await assert.rejects(
-      applyPendingMigrations(migrationSql, {
+      applyFixtureMigrations(migrationSql, {
         beforeMillis: contraction.when + 1,
       }),
       (error: unknown) => {
@@ -731,7 +731,7 @@ try {
     await client.query('DROP VIEW "result_email_source_view"');
   }
 
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
   assert.deepEqual(

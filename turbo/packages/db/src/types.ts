@@ -31,7 +31,6 @@ export interface PersistedStorageMount {
   mountPath: string;
   optional?: boolean;
   writeback?: boolean;
-  instructionsTargetFilename?: string;
   missingRootPolicy?: ArtifactMissingRootPolicy;
   /** Frozen Pi prompt epoch; API-only metadata, never part of the mount wire. */
   piMemoryRecall?: PersistedPiMemoryRecallSelection;

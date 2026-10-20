@@ -18,7 +18,7 @@ import {
 } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { bestEffort, onRef } from "../utils.ts";
+import { onRef, settle } from "../utils.ts";
 import {
   prepareRecentWorkflowUse$,
   recordRecentWorkflowUse$,
@@ -165,7 +165,7 @@ interface ComposerDraftSignals extends ReturnType<
   readonly seed$: DraftSignals["seed$"];
   readonly setDraftInput$: Command<void, [string]>;
   readonly attachments$: Computed<ChatAttachment[]>;
-  readonly attachmentUploadsReady$: Computed<boolean>;
+  readonly attachmentUploadsReady$: Computed<Promise<boolean>>;
   readonly uploadAttachment$: Command<Promise<void>, [File, AbortSignal]>;
   readonly restoreAttachments$: DraftSignals["restoreAttachments$"];
   readonly removeAttachment$: Command<void, [ChatAttachment]>;
@@ -196,7 +196,9 @@ interface ComposerModelSignals extends ComposerModelUiSignals {
 
 interface ComposerComputerSignals {
   readonly computerUseHostId$: Computed<string | null>;
-  readonly cloudBrowserEnabled$: Computed<boolean | Promise<boolean>>;
+  readonly cloudBrowserEnabled$: Computed<
+    boolean | undefined | Promise<boolean | undefined>
+  >;
   readonly setComputerUseHostId$: Command<
     Promise<void>,
     [string | null, AbortSignal]
@@ -505,9 +507,15 @@ function createPaidToolHints(
   });
 }
 
-function composerRemoteAccessSignals(options: CreateComposerSignalsOptions) {
+function composerRemoteAccessSignals(
+  options: CreateComposerSignalsOptions,
+  connector: ComposerConnectorSignals,
+) {
   return {
-    remoteAccess$: threadRemoteAccess$(options.threadId ?? ""),
+    remoteAccess$: threadRemoteAccess$(
+      options.threadId ?? "",
+      connector.resources.openedVersion$,
+    ),
     pendingRemoteAccess:
       options.pendingRemoteAccess ?? createPendingRemoteAccessSignals(),
   };
@@ -584,7 +592,7 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     threadId: options.threadId,
-    ...composerRemoteAccessSignals(options),
+    ...composerRemoteAccessSignals(options, connector),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
@@ -747,8 +755,8 @@ function createComposerPrimaryActionSignal(args: {
       return "disabled";
     }
 
-    const uploadsReady = get(draft.attachmentUploadsReady$);
-    const attachments = get(draft.attachments$);
+    const uploadsReady = await get(draft.attachmentUploadsReady$);
+    const attachments = await get(draft.usableAttachments$);
     const hasContent =
       get(workflowComposer.hasInput$) || attachments.length > 0;
     const canSend = uploadsReady && hasContent;
@@ -808,9 +816,10 @@ function createSubmitCurrentInput({
       if (action !== "send" && action !== "queue") {
         return false;
       }
-      if (!get(draft.attachmentUploadsReady$)) {
+      if (!(await get(draft.attachmentUploadsReady$))) {
         return false;
       }
+      signal.throwIfAborted();
       const voiceState = await get(voiceState$);
       signal.throwIfAborted();
       if (voiceState.status !== "idle") {
@@ -822,12 +831,15 @@ function createSubmitCurrentInput({
       );
       signal.throwIfAborted();
       const visiblePrompt = submission.prompt.trim();
-      if (visiblePrompt.length === 0 && get(draft.attachments$).length === 0) {
+      const attachments = await get(draft.usableAttachments$);
+      signal.throwIfAborted();
+      if (visiblePrompt.length === 0 && attachments.length === 0) {
         return false;
       }
-      if (!get(draft.attachmentUploadsReady$)) {
+      if (!(await get(draft.attachmentUploadsReady$))) {
         return false;
       }
+      signal.throwIfAborted();
       const mode = get(create.mode$);
       const selectedTask = get(taskChips.task$);
       const composerAdditionalInfo = buildComposerAdditionalInfo(
@@ -877,7 +889,9 @@ function createSubmitCurrentInput({
       );
       if (submitted && workflowUse) {
         // Browser history must never turn an accepted send into a send error.
-        await bestEffort(set(recordRecentWorkflowUse$, workflowUse, signal));
+        await settle(() => {
+          set(recordRecentWorkflowUse$, workflowUse, signal);
+        }, signal);
       }
       return submitted;
     },

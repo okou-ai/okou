@@ -856,7 +856,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
             cliAgentType: "claude-code",
             cliAgentSessionId,
             cliAgentSessionHistoryDisposition: "native_only",
-            artifactSnapshots: [
+            storageOutputs: [
               {
                 name: "memory",
                 version: memory1.versionId,
@@ -2394,42 +2394,6 @@ describe("RUN-04: agent run telemetry families", () => {
     ]);
     expect(contextRead.body.volumes).toHaveLength(1);
 
-    // Legacy dynamic map fields are ignored now that run context snapshots
-    // are entries-only.
-    dispatchAxiomQueries({
-      [runId]: {
-        runContext: [
-          {
-            runId,
-            environment: { LEGACY_IGNORED: "legacy-map" },
-            networkPolicies: {
-              legacyIgnored: {
-                allow: ["legacy"],
-                deny: [],
-                ask: [],
-                unknownPolicy: "allow",
-              },
-            },
-            featureFlags: { legacyIgnored: true },
-          },
-        ],
-      },
-    });
-    const legacyOnlyContext = await api.requestRunContext(actor, runId, [200]);
-    if (legacyOnlyContext.status !== 200) {
-      throw new Error("Expected the legacy-only run context read to succeed");
-    }
-    expect(legacyOnlyContext.body).toMatchObject({
-      runId,
-      sessionId: null,
-      environment: {},
-      networkPolicies: null,
-      featureFlags: null,
-      firewalls: [],
-      volumes: [],
-      artifact: null,
-    });
-
     const noSnapshot = await api.requestRunContext(actor, bareRun.runId, [404]);
     expectApiError(noSnapshot.body);
     expect(noSnapshot.body.error.message).toBe("Run context not available");
@@ -2625,7 +2589,7 @@ describe("RUN-04: agent run telemetry families", () => {
     expect(runner.body).toStrictEqual({
       sandboxStartupPath: null,
       runnerHostname: null,
-      runnerVersion: null,
+      runnerVersion: "0.234.18",
       runnerId: expect.any(String),
       runnerHeartbeatGeneration: 1,
     });

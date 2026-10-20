@@ -1,4 +1,3 @@
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   customConnectorOAuth2Contract,
@@ -14,7 +13,7 @@ import {
   getConnectorAction,
   getConnectorCard,
   mcpCustomConnector,
-  mockConnectorOverviewAccountSummaries,
+  mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -65,10 +64,7 @@ test.each([
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
-    context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-      return respond(200, { summaries: [] });
-    });
-    mockConnectorOverviewAccountSummaries(context, () => {
+    mockSavedConnectorAccounts(context, () => {
       return [];
     });
     context.mocks.api(customConnectorOAuth2Contract.start, ({ respond }) => {

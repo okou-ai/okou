@@ -6,6 +6,7 @@ use serde_json::json;
 fn heartbeat() -> HeartbeatState {
     HeartbeatState {
         runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+        runner_hostname: None,
         group: "vm0/test".into(),
         snapshot_generation: 7,
         snapshot_sequence: 42,
@@ -19,7 +20,6 @@ fn heartbeat() -> HeartbeatState {
         held_sandbox_states: vec![],
         held_home_states: vec![],
         active_reuse_producers: Vec::<ActiveReuseProducer>::new(),
-        wss_ingress_service_active: false,
         mode: "running".into(),
     }
 }

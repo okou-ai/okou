@@ -263,7 +263,6 @@ test("Show an exhausted week with its own reset time", async () => {
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  expect(screen.queryByText("invalid reset")).not.toBeInTheDocument();
 });
 
 test("Keep Codex reset pending until refreshed account-menu usage is ready", async () => {

@@ -94,10 +94,6 @@ const {
   createPublicBillingOrg,
 } = createBillingCheckoutFixture();
 
-beforeEach(async () => {
-  await setupApp({ context, routes: billingCheckoutRoutes, isolatePg: true });
-});
-
 describe("legacy subscription usage pack migration", () => {
   interface LegacyMigrationFixture extends SubscriptionFixture {
     readonly tier: "pro" | "team";
@@ -2361,7 +2357,7 @@ describe("usage pack allocation management", () => {
           },
         );
         lifecycle?.captureExternalState();
-        const checkoutApp = await setupApp({
+        const checkoutApp = setupApp({
           context,
           routes: billingCheckoutRoutes,
         });
@@ -4103,7 +4099,7 @@ describe("usage pack allocation management", () => {
         );
         lifecycle?.captureExternalState();
         mockUsagePackChangePreviews(0, 2000);
-        const scheduleId = "sub_sched_usage_pack_restore";
+        const scheduleId = `sub_sched_usage_pack_restore_${randomUUID()}`;
         context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
           id: scheduleId,
         });
@@ -5698,9 +5694,9 @@ describe("usage pack allocation management", () => {
       post_payment_amount: 2000,
       refunds: [],
     });
-    const invoicePaymentIntentId = "pi_last_usage_pack_removal";
+    const invoicePaymentIntentId = `pi_last_usage_pack_removal_${randomUUID()}`;
     context.mocks.stripe.invoices.retrieve.mockResolvedValue({
-      id: "in_last_usage_pack_removal",
+      id: `in_last_usage_pack_removal_${randomUUID()}`,
       payments: {
         data: [
           {
@@ -5714,19 +5710,21 @@ describe("usage pack allocation management", () => {
         ],
       },
     });
+    const refundId = `re_last_usage_pack_removal_${randomUUID()}`;
+    const creditNoteId = `cn_last_usage_pack_removal_${randomUUID()}`;
     context.mocks.stripe.refunds.create.mockResolvedValue({
-      id: "re_last_usage_pack_removal",
+      id: refundId,
       status: "succeeded",
     });
     context.mocks.stripe.creditNotes.create.mockResolvedValue({
-      id: "cn_last_usage_pack_removal",
+      id: creditNoteId,
       status: "issued",
       pre_payment_amount: 0,
       post_payment_amount: 2000,
       refunds: [
         {
           amount_refunded: 2000,
-          refund: "re_last_usage_pack_removal",
+          refund: refundId,
         },
       ],
     });
@@ -5765,7 +5763,7 @@ describe("usage pack allocation management", () => {
         ],
         refunds: [
           {
-            refund: "re_last_usage_pack_removal",
+            refund: refundId,
             amount_refunded: 2000,
           },
         ],
@@ -5940,6 +5938,7 @@ describe("usage pack allocation management", () => {
       createOrgFixture(),
       purchaseManagedUsagePack,
     );
+    const previewInvoiceId = `in_paginated_invitation_preview_${randomUUID()}`;
     let prorationTimestamp: number | null = null;
     context.mocks.stripe.invoices.createPreview.mockImplementation((input) => {
       const details = previewSubscriptionDetails(input);
@@ -5948,7 +5947,7 @@ describe("usage pack allocation management", () => {
       }
       prorationTimestamp = details.proration_date;
       return Promise.resolve({
-        id: "in_paginated_invitation_preview",
+        id: previewInvoiceId,
         amount_due: 1000,
         currency: "usd",
         lines: { has_more: true, data: [] },
@@ -6024,12 +6023,12 @@ describe("usage pack allocation management", () => {
     );
     expect(context.mocks.stripe.invoices.listLineItems).toHaveBeenNthCalledWith(
       1,
-      "in_paginated_invitation_preview",
+      previewInvoiceId,
       { limit: 100 },
     );
     expect(context.mocks.stripe.invoices.listLineItems).toHaveBeenNthCalledWith(
       2,
-      "in_paginated_invitation_preview",
+      previewInvoiceId,
       { limit: 100, starting_after: "il_unrelated" },
     );
   });

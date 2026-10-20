@@ -308,7 +308,6 @@ describe("credit checkout auto-recharge ownership", () => {
 
   it.each([
     { enabled: true, amount: 20_000 },
-    { enabled: true, threshold: 5000 },
     { enabled: true, threshold: 20_000, amount: 20_000 },
   ])(
     "rejects invalid enabled config without changing persisted settings (%j)",

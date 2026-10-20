@@ -109,47 +109,6 @@
         "status": "Status",
         "time": "Waktu"
       },
-      "files": {
-        "connecting": "Menghubungkan ke file…",
-        "currentFolder": "Folder saat ini",
-        "download": "Unduh {{name}}",
-        "downloadChanged": "File berubah saat diunduh. Unduh kembali.",
-        "downloadFailed": "Unduhan gagal. Coba lagi.",
-        "downloadFrame": "Unduhan file",
-        "downloadUnsupported": "Browser ini tidak mendukung unduhan file.",
-        "downloadUpdateRequired": "Muat ulang halaman dan coba lagi. Jika unduhan tetap tidak tersedia, mulai proses baru.",
-        "empty": "Folder ini kosong.",
-        "enterFolder": "Buka folder {{name}}",
-        "goHome": "Buka folder home",
-        "limit": "Beberapa file tidak dimuat karena batas panel tercapai. Tutup folder atau segarkan untuk melanjutkan.",
-        "link": "Tautan",
-        "loading": "Memuat…",
-        "more": "Muat lebih banyak",
-        "navigationFailed": "Tidak dapat membuka {{path}}. Coba lagi.",
-        "noRun": "File tersedia selama proses berjalan aktif.",
-        "other": "Lainnya",
-        "parentFolders": "Folder induk",
-        "pending": "File tersedia saat proses dalam antrean dimulai.",
-        "preview": "Pratinjau {{name}}",
-        "previewChanged": "File ini berubah. Tutup pratinjau lalu buka kembali.",
-        "previewDecode": "File ini tidak dapat didekode. Anda masih dapat mengunduhnya.",
-        "previewEmpty": "File ini kosong.",
-        "previewInvalid": "File ini tidak dapat dipratinjau. Anda masih dapat mengunduhnya.",
-        "previewLoading": "Memuat pratinjau…",
-        "previewSize": "File ini terlalu besar untuk pratinjau. Anda masih dapat mengunduhnya.",
-        "previewTruncated": "Menampilkan 64 KiB pertama. Unduh file untuk melihat seluruh isinya.",
-        "previewUnavailable": "Pratinjau tidak tersedia. Tutup dan coba lagi, atau unduh file.",
-        "previewUnsupported": "Pratinjau tidak tersedia untuk jenis file ini. Anda masih dapat mengunduhnya.",
-        "previewUpdateRequired": "Muat ulang halaman ini dan coba lagi. Jika pratinjau masih tidak tersedia, mulai proses baru.",
-        "readonly": "File hanya baca dari proses saat ini.",
-        "refresh": "Segarkan",
-        "retry": "Coba lagi",
-        "root": "Folder akar",
-        "stale": "Daftar ini berubah atau kedaluwarsa. Segarkan untuk melanjutkan.",
-        "title": "File",
-        "unavailable": "File tidak tersedia. Coba lagi.",
-        "updateRequired": "Proses ini tidak mendukung file. Mulai proses baru setelah sandbox diperbarui."
-      },
       "log": "Log",
       "manualReloadNotice": "Log tidak diperbarui secara otomatis.",
       "modelProvidedBy": "{{model}} disediakan oleh {{provider}}",
@@ -248,7 +207,6 @@
       "documentTitle": "Inspeksi Log",
       "errors": {
         "invalid": "File JSON tidak valid. Unggah file JSON log aktivitas yang diekspor.",
-        "load": "Tidak dapat memuat file JSON. Unggah file JSON log aktivitas yang diekspor.",
         "oversized": "File JSON terlalu besar. Unggah file JSON log aktivitas yang diekspor di bawah 25 MB."
       },
       "fallbackName": "Log Impor",
@@ -553,7 +511,6 @@
       },
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak",
-      "loadMore": "Muat lebih banyak",
       "retry": "Coba lagi"
     },
     "fileBadges": {
@@ -1336,7 +1293,6 @@
       "downgradeScheduledPeriod": "Penurunan paket dijadwalkan. Paket Anda saat ini tetap aktif hingga periode tagihan berakhir.",
       "planRestored": "Paket dipulihkan. Langganan Anda akan diperbarui seperti biasa.",
       "preparingReceiptDownload": "Menyiapkan unduhan struk...",
-      "receiptDownloadFailed": "Gagal mengunduh struk",
       "receiptsDownloaded": "Struk diunduh",
       "subscriptionChangeConfirmed": "Perubahan langganan dikonfirmasi."
     },
@@ -1604,9 +1560,7 @@
       "title": "Lampiran",
       "unavailable": "{{filename}} tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
       "unavailableCount_other": "{{count}} lampiran tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
-      "uploadFailed": "Gagal mengunggah {{filename}}",
-      "uploadFailedRetry": "Gagal mengunggah {{filename}}. Coba lagi.",
-      "uploadsFailed": "Beberapa lampiran gagal diunggah. Coba lagi."
+      "uploadFailedRetry": "Gagal mengunggah {{filename}}. Coba lagi."
     },
     "automations": {
       "active": "Aktif",
@@ -1908,7 +1862,6 @@
       "back": "Kembali",
       "configurePermissions": "Konfigurasikan izin {{connectorName}}",
       "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
-      "defaultAccountFor": "{{connector}} · Menggunakan akun default: {{account}}",
       "directory": {
         "allCategories": "Semua",
         "askAdmin": "Minta admin untuk mengaktifkan",
@@ -1924,7 +1877,6 @@
         "emptyCustomBody": "Buat satu dari API HTTP atau server MCP mana pun, dan Okou dapat menggunakannya seperti konektor lain.",
         "emptyCustomTitle": "Belum ada konektor kustom",
         "matchCount_other": "{{count}} hasil",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Perlu perhatian",
         "nextCategories": "Kategori berikutnya",
         "noResultsBody": "Coba nama produk, atau buat sendiri dari API atau server MCP.",
@@ -1939,6 +1891,7 @@
       },
       "fallsBackTo": "Beralih kembali ke {{account}}",
       "find": "Cari konektor...",
+      "loadFailed": "Gagal memuat konektor.",
       "noUsableAccount": "Tidak ada akun yang dapat digunakan",
       "remove": "Hapus {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Akun terpilih: {{account}}",
@@ -2138,8 +2091,7 @@
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },
     "relations": {
-      "communications": "Obrolan",
-      "idle": "Tidak aktif",
+      "chats": "Obrolan",
       "loadFailed": "Gagal memuat",
       "messageUnavailable": "Pesan tidak tersedia",
       "origin": "Dari",
@@ -2147,7 +2099,6 @@
       "received": "Diterima",
       "running": "Berjalan",
       "sent": "Dikirim",
-      "toggleMessages": "Pesan dengan {{title}}",
       "unavailable": "Tidak tersedia",
       "untitled": "Tanpa judul"
     },
@@ -2169,9 +2120,11 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "expand": "Perluas",
+      "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
       "loadFailed": "Tidak dapat memuat sumber daya",
+      "loading": "Memuat sumber daya",
       "retry": "Coba lagi",
+      "showMore": "Tampilkan lebih banyak",
       "title": "Sumber daya chat"
     },
     "run": {
@@ -3079,13 +3032,7 @@
       "rename": "Ganti nama",
       "setupIncomplete": "Penyiapan belum lengkap",
       "setupUnavailable": "Status akun tidak tersedia",
-      "skipName": "Lewati",
-      "summaryMany": "{{value}} akun",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} akun",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} memerlukan perhatian",
-      "summaryWithAttention_other": ""
+      "skipName": "Lewati"
     },
     "actions": {
       "apply": "Terapkan",
@@ -3250,7 +3197,6 @@
       },
       "scope": {
         "aria": "Cakupan konektor",
-        "attention": "Perlu perhatian",
         "connected": "Terhubung",
         "custom": "Kustom",
         "discover": "Jelajahi",
@@ -3946,9 +3892,28 @@
       "connected": "{{connector}} terhubung"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Tidak dapat memperbarui otorisasi. Muat ulang dan coba lagi.",
+    "allow": "Izinkan selama 1 jam",
+    "approved": "Akses Shell diizinkan",
+    "deadline": "Berakhir {{date}}",
+    "denied": "Permintaan ditolak",
+    "deny": "Tolak",
+    "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
+    "details": "Buka detail",
+    "expired": "Otorisasi kedaluwarsa",
+    "loading": "Memuat otorisasi…",
+    "pending": "Siap disetujui",
+    "refresh": "Muat ulang",
+    "revoke": "Cabut akses",
+    "revoked": "Akses Shell dicabut",
+    "scope": "Hanya chat dan komputer ini. Terminal yang ada tetap terbuka saat akses berakhir.",
+    "title": "Akses Desktop Shell",
+    "unavailable": "Otorisasi tidak tersedia",
+    "waiting": "Persetujuan tidak tersedia saat Run aktif atau komputer yang dipilih telah berubah."
+  },
   "documentTemplates": {
     "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
-    "back": "Kembali ke templat",
     "categories": {
       "all": "Semua",
       "business-record": "Catatan bisnis",
@@ -3999,7 +3964,6 @@
     "preview": "Pratinjau {{title}}",
     "previousPage": "Halaman contoh sebelumnya",
     "retry": "Coba lagi",
-    "samplePages": "Halaman contoh: {{total}}",
     "title": "Dokumen",
     "useNamed": "Gunakan {{title}}"
   },
@@ -4850,7 +4814,6 @@
           "codeRequired": "Tempel kode otorisasi Claude untuk melanjutkan.",
           "connectedToast": "Claude terhubung",
           "connectTitle": "Hubungkan Claude",
-          "error": "Koneksi Claude gagal. Mulai lagi untuk mencoba ulang.",
           "expired": "Sesi koneksi Claude kedaluwarsa. Mulai lagi untuk mencoba ulang.",
           "instructions": "Pertama klik Buka halaman persetujuan Claude. Lalu setujui {{brandName}} di Claude dan salin kode otorisasi yang ditampilkan setelah persetujuan. Terakhir, tempel kode itu di sini dan klik Hubungkan.",
           "openApproval": "Buka halaman persetujuan Claude",
@@ -4865,7 +4828,6 @@
           "connectedToast": "ChatGPT terhubung",
           "connectTitle": "Hubungkan Codex",
           "deviceCode": "Kode perangkat",
-          "error": "Koneksi ChatGPT gagal. Mulai lagi untuk mencoba kembali.",
           "expired": "Sesi koneksi Codex kedaluwarsa. Mulai lagi untuk mencoba kembali.",
           "freePlanRejected": "Paket ChatGPT gratis tidak dapat menggunakan Codex melalui {{brandName}}. Tingkatkan ke Plus atau Pro lalu coba lagi.",
           "instructions": "Salin dulu kode perangkat dengan tombol salin, lalu buka halaman persetujuan. Lalu tempel kode perangkat ke OpenAI saat diminta. Terakhir, setujui akses dan biarkan dialog ini tetap terbuka sampai {{brandName}} selesai menyambungkan.",
@@ -5064,6 +5026,10 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
+        "resources": {
+          "description": "Tampilkan artefak dan chat terkait di samping percakapan saat ada ruang.",
+          "title": "Buka sumber daya secara otomatis"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5157,7 +5123,7 @@
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
+        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
@@ -5166,7 +5132,7 @@
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
-        "preparationFailed": "Penyiapan tidak dapat diselesaikan. Coba lagi.",
+        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",

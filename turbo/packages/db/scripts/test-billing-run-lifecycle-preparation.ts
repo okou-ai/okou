@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 
 // Retain through preparation deployment, outgoing-writer drain and reader cutover (#37796).
@@ -38,7 +38,7 @@ try {
     return item.tag.endsWith("_prepare_billing_run_lifecycle");
   });
   assert.ok(entry);
-  await applyPendingMigrations(migrationClient, { beforeMillis: entry.when });
+  await applyFixtureMigrations(migrationClient, { beforeMillis: entry.when });
   await client.connect();
   const id = randomUUID();
   const outgoingInsert = `INSERT INTO billing_run_attribution
@@ -49,7 +49,7 @@ try {
     "SELECT to_jsonb(a)::text AS fact FROM billing_run_attribution a WHERE run_id = $1",
     [id],
   );
-  await applyPendingMigrations(migrationClient, {
+  await applyFixtureMigrations(migrationClient, {
     beforeMillis: entry.when + 1,
   });
   const after = await client.query(
@@ -93,7 +93,7 @@ try {
   ]);
   // Historical SQL is verified above; current Drizzle writers require the
   // complete current schema, including later additive billing columns.
-  await applyPendingMigrations(migrationClient);
+  await applyFixtureMigrations(migrationClient);
   await validateBillingRunLifecycle(url.toString());
   console.log(
     "Billing lifecycle preparation preserves outgoing SQL and independent completion facts",

@@ -10,8 +10,10 @@
 //! not a positive join. This fixture never adopts or replaces a live socket.
 
 mod framing;
+mod response;
 mod routing;
 
+pub use response::{BackendResponse, ResponseControl, ResponseDisposition};
 pub use routing::RequestRoute;
 pub(crate) use routing::request_socket;
 
@@ -77,6 +79,18 @@ pub struct RequestFailure {
     pub error: io::Error,
 }
 
+impl RequestFailure {
+    /// Distinguish an actual joined task unwind from transport or reuse errors.
+    pub fn producer_panicked(&self) -> bool {
+        self.stage == FailureStage::Producer
+            && self
+                .error
+                .get_ref()
+                .and_then(|error| error.downcast_ref::<tokio::task::JoinError>())
+                .is_some_and(tokio::task::JoinError::is_panic)
+    }
+}
+
 /// A joined transport result; neither variant grants lifecycle authority.
 #[derive(Debug)]
 pub enum RequestOutcome {
@@ -137,10 +151,42 @@ pub fn gate_request(
     backend: PathBuf,
     transition: Transition,
 ) -> (RequestControl, RequestProducer) {
+    start_gate(listener, backend, transition, None)
+}
+
+/// Hold an actual complete backend response before original client delivery.
+///
+/// Backend success is acceptance evidence for the API-wait boundary, not proof
+/// that a VMM command is internally unfinished or that saving/reuse is safe.
+pub fn gate_request_with_response_control(
+    listener: UnixListener,
+    backend: PathBuf,
+    transition: Transition,
+) -> (RequestControl, ResponseControl, RequestProducer) {
+    let (arrived_tx, arrived) = oneshot::channel();
+    let (release, release_rx) = oneshot::channel();
+    let (request, producer) = start_gate(
+        listener,
+        backend,
+        transition,
+        Some(response::PendingResponse {
+            arrived: arrived_tx,
+            release: release_rx,
+        }),
+    );
+    (request, ResponseControl { arrived, release }, producer)
+}
+
+fn start_gate(
+    listener: UnixListener,
+    backend: PathBuf,
+    transition: Transition,
+    response: Option<response::PendingResponse>,
+) -> (RequestControl, RequestProducer) {
     let (arrival_tx, arrived) = oneshot::channel();
     let (release, release_rx) = oneshot::channel();
     let task = tokio::spawn(run_gate(
-        listener, backend, transition, arrival_tx, release_rx,
+        listener, backend, transition, arrival_tx, release_rx, response,
     ));
     (
         RequestControl { arrived, release },
@@ -154,6 +200,7 @@ async fn run_gate(
     transition: Transition,
     arrival: oneshot::Sender<CapturedRequest>,
     mut release: oneshot::Receiver<()>,
+    response_control: Option<response::PendingResponse>,
 ) -> Result<RequestOutcome, RequestFailure> {
     let capture = async {
         let (mut client, _) = listener.accept().await.map_err(capture_failure)?;
@@ -200,11 +247,28 @@ async fn run_gate(
         .map_err(|error| failure(FailureStage::BackendResponse, error))?;
     let status = framing::response_status(&response)
         .map_err(|error| failure(FailureStage::BackendResponse, error))?;
+    let disposition = match response_control {
+        Some(control) => {
+            control
+                .hold(BackendResponse {
+                    request: request.clone(),
+                    status,
+                    raw: response.clone(),
+                })
+                .await
+        }
+        None => ResponseDisposition::Deliver,
+    };
     let delivery = async {
         client.write_all(&response).await?;
         client.shutdown().await
     }
     .await;
+    if disposition == ResponseDisposition::UnwindAfterDelivery && delivery.is_ok() {
+        std::panic::resume_unwind(Box::new(
+            "owned request producer unwound after real delivery",
+        ));
+    }
     Ok(RequestOutcome::ResponseDrained {
         request,
         status,

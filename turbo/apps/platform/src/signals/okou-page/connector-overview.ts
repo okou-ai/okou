@@ -1,60 +1,88 @@
 import { command, computed, state } from "ccstate";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { userPreferenceChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 
 import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
-import { setAblyLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { resetSignal } from "../utils.ts";
 
-const reloadVersion$ = state(0);
-export const invalidateConnectorOverview$ = command(({ set }) => {
-  set(reloadVersion$, (version) => {
-    return version + 1;
+function resourceRequests(signal?: AbortSignal) {
+  return {
+    connected: async (createClient: ApiClientFactory) => {
+      const result = await accept(
+        createClient(connectedConnectorsContract).list({
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.body;
+    },
+    remotes: async (createClient: ApiClientFactory) => {
+      const result = await accept(
+        createClient(remotesContract).overview({ fetchOptions: { signal } }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.body;
+    },
+  };
+}
+
+/** Resource snapshots belong to their visible consumer, never to an Ably loop. */
+export function createConnectorResourceSignals() {
+  const connectedVersion$ = state(0);
+  const remotesVersion$ = state(0);
+  const requests$ = state(resourceRequests());
+  const openedVersion$ = state(0);
+  const resetRequests$ = resetSignal();
+  const connected$ = computed(async (get) => {
+    get(connectedVersion$);
+    return await get(requests$).connected(get(apiClient$));
   });
-});
-const reloadFromRealtime$ = command(({ set }): boolean => {
-  set(invalidateConnectorOverview$);
-  return false;
-});
-const reloadAfterPreferenceChange$ = command(
-  ({ set }, payload: unknown): boolean => {
-    const parsed = userPreferenceChangedPayloadSchema.safeParse(payload);
-    if (
-      parsed.success &&
-      parsed.data.kinds.includes("cloudBrowserEnabledByDefault")
-    ) {
-      set(invalidateConnectorOverview$);
-    }
-    return false;
-  },
-);
+  const remotes$ = computed(async (get) => {
+    get(remotesVersion$);
+    return await get(requests$).remotes(get(apiClient$));
+  });
+  const open$ = command(({ set }, signal: AbortSignal) => {
+    set(requests$, resourceRequests(set(resetRequests$, signal)));
+    set(openedVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  const close$ = command(({ set }) => {
+    set(resetRequests$);
+  });
+  const remoteHostDefaults$ = computed(async (get) => {
+    const remotes = await get(remotes$);
+    return { ssh: remotes.sshHosts, vnc: remotes.vncHosts };
+  });
+  const reloadConnected$ = command(({ set }) => {
+    set(connectedVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  const reloadRemotes$ = command(({ set }) => {
+    set(remotesVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  return {
+    connected$,
+    remotes$,
+    open$,
+    close$,
+    openedVersion$: computed((get) => {
+      return get(openedVersion$);
+    }),
+    remoteHostDefaults$,
+    reloadConnected$,
+    reloadRemotes$,
+  };
+}
 
-export const connectorOverview$ = computed(async (get) => {
-  get(reloadVersion$);
-  const createClient = get(apiClient$);
-  const result = await accept(
-    createClient(connectorOverviewContract).overview(),
-    [200],
-  );
-  return result.body;
-});
-
-export const subscribeConnectorOverview$ = command(
-  ({ set }, signal: AbortSignal) => {
-    for (const topic of [
-      "connector:changed",
-      "customConnectorListChanged",
-      "computerUseHostsChanged",
-    ]) {
-      set(setAblyLoop$, { topic, loopCommand$: reloadFromRealtime$ }, signal);
-    }
-    set(
-      setAblyPayloadLoop$,
-      {
-        topic: "userPreferenceChanged",
-        loopCommand$: reloadAfterPreferenceChange$,
-      },
-      signal,
-    );
-  },
-);
+const directory = createConnectorResourceSignals();
+export const userConnectedConnectors$ = directory.connected$;
+export const reloadUserConnectedConnectors$ = directory.reloadConnected$;

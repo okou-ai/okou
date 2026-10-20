@@ -37,6 +37,73 @@ afterEach(() => {
 });
 
 describe("computer-use shell", () => {
+  it("requests access once and returns the trusted approval link without dispatching Shell input", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(`${base}/shell/authorizations`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({
+          id: session.id,
+          status: "pending",
+          computerName: "Work Mac",
+          requestExpiresAt: "2099-10-20T11:00:00.000Z",
+          authorizationUrl: `https://app.okou.ai/computer-use/shell/authorize/${session.id}`,
+        });
+      }),
+    );
+    await createShellCommand().parseAsync([
+      "node",
+      "okou",
+      "request-access",
+      "--reason",
+      "Run project tests",
+    ]);
+    expect(requests).toStrictEqual([{ reason: "Run project tests" }]);
+    expect(log.mock.calls.flat().join("\n")).toContain(
+      `https://app.okou.ai/computer-use/shell/authorize/${session.id}`,
+    );
+    expect(log.mock.calls.flat().join("\n")).toContain("end the current Run");
+  });
+
+  it("preserves structured access state in JSON and gives recovery guidance for a rejected command", async () => {
+    const approved = {
+      id: session.id,
+      status: "approved",
+      computerName: "Work Mac",
+      grantExpiresAt: "2099-10-20T11:00:00.000Z",
+    };
+    server.use(
+      http.post(`${base}/shell/authorizations`, () => {
+        return HttpResponse.json(approved);
+      }),
+      http.post(`${base}/shell/commands`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SHELL_AUTHORIZATION_REQUIRED",
+              message:
+                "Run okou computer-use shell request-access --reason <reason>, share its link, and end this Run.",
+            },
+          },
+          { status: 403 },
+        );
+      }),
+    );
+    await createShellCommand().parseAsync([
+      "node",
+      "okou",
+      "request-access",
+      "--reason",
+      "Run tests",
+      "--json",
+    ]);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toStrictEqual(approved);
+    await expect(
+      createShellCommand().parseAsync(["node", "okou", "cmd", "pwd"]),
+    ).rejects.toThrow("process.exit called");
+    expect(error.mock.calls.flat().join("\n")).toContain("request-access");
+  });
+
   it("supports positional status/close and closes all without a session ID", async () => {
     const requests: unknown[] = [];
     server.use(

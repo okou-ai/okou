@@ -8,7 +8,7 @@ import postgres from "postgres";
 import { schema } from "../src/index";
 import { agentRuns } from "../src/runtime/agent-run";
 import { agentRuns as physicalRuns } from "../src/schema/agent-run";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // Keep this transition contract through #40886's physical release and its
 // drain/rollback gate. A disposable DROP proves SQL compatibility, not rollout.
@@ -63,7 +63,7 @@ try {
   await admin.connect();
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   created = true;
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
   await client.connect();
 
   const historical = await db

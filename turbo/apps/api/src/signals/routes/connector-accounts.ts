@@ -17,7 +17,6 @@ import { bestEffort, settle } from "../utils";
 import {
   connectorAccount,
   connectorAccountDeletionImpact,
-  connectorAccountSummaries,
   connectorAccountsForTarget,
   isConnectorAccountDefaultConflict,
   connectorAccountsByIds,
@@ -146,24 +145,6 @@ const inspectInner$ = computed(async (get) => {
   };
 });
 
-const accountSummaryScope$ = computed((get) => {
-  const auth = get(organizationAuthContext$);
-  const query = get(queryOf(connectorAccountsContract.summaries));
-  return {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    ...(query?.includeScopeMismatch === "true"
-      ? { includeScopeMismatch: true as const }
-      : {}),
-  };
-});
-const accountSummaries$ = connectorAccountSummaries(accountSummaryScope$);
-
-const summariesInner$ = computed(async (get) => {
-  const summaries = await get(accountSummaries$);
-  return { status: 200 as const, body: { summaries: [...summaries] } };
-});
-
 const connectionsScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(connectorAccountsContract.connections));
@@ -194,9 +175,7 @@ const connectionsInner$ = computed(async (get) => {
     body: {
       connections: [...result.connections],
       nextCursor: result.nextCursor,
-      ...(result.defaultConnection !== undefined
-        ? { defaultConnection: result.defaultConnection }
-        : {}),
+      defaultConnection: result.defaultConnection,
     },
   };
 });
@@ -535,10 +514,6 @@ export const connectorAccountRoutes: readonly RouteEntry[] = [
   {
     route: connectorAccountsContract.inspect,
     handler: authRoute(readAuth, inspectInner$),
-  },
-  {
-    route: connectorAccountsContract.summaries,
-    handler: authRoute(readAuth, summariesInner$),
   },
   {
     route: connectorAccountsContract.connections,

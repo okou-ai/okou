@@ -13,18 +13,7 @@ import type {
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
-import {
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
-  reloadConnectorAccountSummaries$,
-} from "../connector-accounts.ts";
-import {
-  onRef,
-  onRejection,
-  resetSignal,
-  waitForOperation,
-  waitLoopUntil,
-} from "../../utils.ts";
+import { onRef, resetSignal, waitLoopUntil } from "../../utils.ts";
 import {
   connectorAccountDeletionImpact$,
   readConnectorAccount$,
@@ -263,7 +252,7 @@ const finishConnectorAccountConnectionCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    set(reloadConnectorAccountSummaries$);
+    set(settingsConnectorAccounts.reload$, signal);
     if (args.mode.kind !== "add" || !args.connectionId) {
       return;
     }
@@ -412,33 +401,21 @@ const saveConnectorAccountRenameCommand$ = command(
     await waitLoopUntil(
       async (loopSignal) => {
         const accountsPromise = get(settingsConnectorAccounts.accounts$);
-        const summariesPromise = get(connectorAccountSummaryByTarget$);
-        const [refresh] = await waitForOperation(
-          Promise.allSettled([
-            Promise.all([accountsPromise, summariesPromise]),
-          ]),
-          loopSignal,
-        );
+        const [refresh] = await Promise.allSettled([accountsPromise]);
         loopSignal.throwIfAborted();
         // Search or pagination may change while the mutation refresh is pending.
         // A superseded debounced search can also reject with its own cancellation.
         // Only the currently rendered query can determine the return destination.
-        if (
-          accountsPromise !== get(settingsConnectorAccounts.accounts$) ||
-          summariesPromise !== get(connectorAccountSummaryByTarget$)
-        ) {
+        if (accountsPromise !== get(settingsConnectorAccounts.accounts$)) {
           return false;
         }
         if (refresh.status === "rejected") {
           throw refresh.reason;
         }
-        const [accounts, summaries] = refresh.value;
+        const accounts = refresh.value;
         const pinnedDefault =
           !get(settingsConnectorAccounts.search$).trim() &&
-          (accounts.defaultConnection !== undefined
-            ? accounts.defaultConnection
-            : summaries.get(connectorAccountTargetKey(target))
-                ?.defaultConnection);
+          accounts.defaultConnection;
         const restoreAccount =
           accounts.available &&
           ((pinnedDefault && pinnedDefault.id === draft.account.id) ||
@@ -460,14 +437,7 @@ export const saveConnectorAccountRename$ = command(
     const signal = set(resetConnectorAccountRenameSave$, pageSignal);
     // Save becomes disabled while pending; keep its focus in the mounted form.
     get(internalAccountRenameInput$)?.focus();
-    return onRejection(
-      set(saveConnectorAccountRenameCommand$, target, signal),
-      () => {
-        if (!signal.aborted) {
-          get(internalAccountRenameInput$)?.focus();
-        }
-      },
-    );
+    return set(saveConnectorAccountRenameCommand$, target, signal);
   },
 );
 

@@ -1,5 +1,7 @@
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -7,11 +9,13 @@ import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { nowDate } from "../../../lib/time.ts";
 import {
   builtinConnector,
   installComposerConnectorFixture,
   OTHER_AGENT_ID,
   SCOUT_AGENT_ID,
+  SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
   context,
@@ -20,22 +24,18 @@ import {
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
 const SLACK_SLUG = "slack" as ConnectorSlug;
-const GMAIL_SLUG = "gmail" as ConnectorSlug;
 
-test("Read composer summaries without fetching the connector directory or old authorization endpoints", async () => {
+test("Read connected inventory without fetching the connector directory or old authorization endpoints", async () => {
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
-  const reads = { discovery: 0, custom: 0 };
   context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
-    reads.discovery += 1;
     return respond(503, {
       error: { code: "PROVIDER_UNAVAILABLE", message: "Directory unavailable" },
     });
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    reads.custom += 1;
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Directory unavailable" },
     });
@@ -46,69 +46,208 @@ test("Read composer summaries without fetching the connector directory or old au
   await expect(
     screen.findByLabelText("Remove GitHub"),
   ).resolves.toBeInTheDocument();
-  expect(reads).toStrictEqual({
-    discovery: 0,
-    custom: 0,
-  });
 });
 
-test("Load the Agent's connector access only when the Connectors menu opens", async () => {
-  const catalog = [
-    builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" }),
-    builtinConnector({ slug: SLACK_SLUG, label: "Slack" }),
-    builtinConnector({ slug: GMAIL_SLUG, label: "Gmail", connected: false }),
-  ];
+test("Refresh both independent resource domains every time the menu opens", async () => {
   installComposerConnectorFixture({
-    catalog,
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG, GMAIL_SLUG] },
+    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
-  const requests = { overview: 0, agent: 0 };
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
-    requests.overview += 1;
+  let connectorLabel = "First GitHub";
+  let computerLabel = "First computer";
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
     return respond(200, {
-      builtinConnectors: catalog
-        .filter((connector) => {
-          return connector.connected;
-        })
-        .map((connector) => {
-          return {
-            slug: connector.slug,
-            label: connector.label,
-            icon: connector.icon,
-            hasPermissions: connector.permissionSummary.hasPermissions,
-          };
-        }),
+      builtinConnectors: [
+        {
+          slug: GITHUB_SLUG,
+          label: connectorLabel,
+          icon: {
+            url: "https://icons.example.test/github.svg",
+            invertInDarkMode: false,
+          },
+          hasPermissions: false,
+        },
+      ],
       customConnectors: [],
-      accountSummaries: [],
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
     });
   });
-  context.mocks.api(connectorOverviewContract.agent, ({ params, respond }) => {
-    requests.agent += 1;
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
-      enabledConnectorSlugs:
-        params.id === SCOUT_AGENT_ID ? [GITHUB_SLUG, GMAIL_SLUG] : [],
-      customConnectorIds: [],
+      computerUseHosts: [
+        {
+          id: "f0000000-0000-4000-a000-000000000001",
+          hostName: "desktop",
+          displayName: computerLabel,
+          status: "online",
+          lastSeenAt: nowDate().toISOString(),
+        },
+      ],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
     });
   });
-
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   const trigger = await findFastControl("button", "Connectors");
-  // The composer still reads the overview for computer-use hosts at mount.
+  expect(screen.queryByText("First computer")).not.toBeInTheDocument();
+  click(trigger);
+  await screen.findByLabelText("Remove First GitHub");
+  await screen.findByText("First computer");
+  click(trigger);
   await waitFor(() => {
-    expect(requests.overview).toBeGreaterThan(0);
+    return expect(screen.queryByText("First computer")).not.toBeInTheDocument();
   });
-  expect(requests.agent).toBe(0);
-  expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-
+  connectorLabel = "Renamed GitHub";
+  computerLabel = "Renamed computer";
   click(trigger);
   await expect(
-    screen.findByLabelText("Remove GitHub"),
-  ).resolves.toBeInTheDocument();
-  expect(requests.agent).toBeGreaterThan(0);
-  expect(screen.getByLabelText("Add Slack")).toBeInTheDocument();
-  expect(screen.queryByText("Gmail")).toBeNull();
+    screen.findByLabelText("Remove Renamed GitHub"),
+  ).resolves.toBeVisible();
+  await expect(screen.findByText("Renamed computer")).resolves.toBeVisible();
+  expect(screen.queryByText("First computer")).not.toBeInTheDocument();
+});
+
+test("Render connected connectors while remote resources are unavailable", async () => {
+  installComposerConnectorFixture({
+    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
+  });
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Remote resources unavailable" },
+    });
+  });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  click(await findFastControl("button", "Connectors"));
+  await expect(screen.findByLabelText("Remove GitHub")).resolves.toBeVisible();
+  await expect(screen.findByRole("alert")).resolves.toBeVisible();
+});
+
+test("Closing a pending menu releases its snapshot before reopening", async () => {
+  installComposerConnectorFixture({
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
+  });
+  const started = context.mocks.deferred<AbortSignal>();
+  const release = context.mocks.deferred<void>();
+  let pending = true;
+  context.mocks.api(
+    connectedConnectorsContract.list,
+    async ({ request, respond }) => {
+      const stale = pending;
+      if (stale) {
+        started.resolve(request.signal);
+        await release.promise;
+      }
+      return respond(200, {
+        builtinConnectors: [
+          {
+            slug: GITHUB_SLUG,
+            label: stale ? "Stale GitHub" : "Fresh GitHub",
+            icon: {
+              url: "https://icons.example.test/github.svg",
+              invertInDarkMode: false,
+            },
+            hasPermissions: false,
+          },
+        ],
+        customConnectors: [],
+      });
+    },
+  );
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  const trigger = await findFastControl("button", "Connectors");
+  click(trigger);
+  await screen.findByRole("dialog", { name: "Connectors" });
+  const requestSignal = await started.promise;
+  click(trigger);
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+    expect(requestSignal.aborted).toBeTruthy();
+  });
+  pending = false;
+  click(trigger);
+  await expect(
+    screen.findByLabelText("Remove Fresh GitHub"),
+  ).resolves.toBeVisible();
+  release.resolve(undefined);
+  expect(screen.queryByLabelText("Remove Stale GitHub")).toBeNull();
+});
+
+test("Render remote resources while connected connectors are unavailable", async () => {
+  installComposerConnectorFixture();
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+    return respond(503, {
+      error: {
+        code: "PROVIDER_UNAVAILABLE",
+        message: "Connected inventory unavailable",
+      },
+    });
+  });
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [
+        {
+          id: "f0000000-0000-4000-a000-000000000001",
+          hostName: "desktop",
+          displayName: "Available computer",
+          status: "online",
+          lastSeenAt: nowDate().toISOString(),
+        },
+      ],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: false,
+      sshHosts: [],
+      vncHosts: [],
+    });
+  });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  click(await findFastControl("button", "Connectors"));
+  await expect(screen.findByText("Available computer")).resolves.toBeVisible();
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Couldn't load connectors.",
+  );
+});
+
+test("Reopening an existing chat refreshes its effective host choices", async () => {
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const host = {
+    connectionId: "f0000000-0000-4000-a000-000000000001",
+    displayName: "SSH host",
+    defaultEnabled: true,
+  };
+  let enabled = true;
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [host],
+      vncHosts: [],
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          { ...host, enabled, overrideEnabled: enabled, source: "override" },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  await setupPage({ context, path: `/chats/${SCOUT_THREAD_ID}` });
+  const trigger = await findFastControl("button", "Connectors");
+  click(trigger);
+  await expect(screen.findByText("1 enabled")).resolves.toBeVisible();
+  click(trigger);
+  await waitFor(() => {
+    expect(screen.queryByText("Remote access")).not.toBeInTheDocument();
+  });
+  enabled = false;
+  click(trigger);
+  await expect(screen.findByText("0 enabled")).resolves.toBeVisible();
 });
 
 test("Do not show the previous Agent's connectors while the next Agent loads", async () => {

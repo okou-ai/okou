@@ -109,47 +109,6 @@
         "status": "Status",
         "time": "Time"
       },
-      "files": {
-        "connecting": "Connecting to files…",
-        "currentFolder": "Current folder",
-        "download": "Download {{name}}",
-        "downloadChanged": "This file changed during download. Download it again.",
-        "downloadFailed": "Download failed. Try again.",
-        "downloadFrame": "File download",
-        "downloadUnsupported": "File downloads aren't supported in this browser.",
-        "downloadUpdateRequired": "Refresh this page and try again. If downloads remain unavailable, start a new run.",
-        "empty": "This folder is empty.",
-        "enterFolder": "Open {{name}} as current folder",
-        "goHome": "Go to home folder",
-        "limit": "Some files could not be loaded because the panel limit was reached. Collapse folders or refresh to continue.",
-        "link": "Link",
-        "loading": "Loading…",
-        "more": "Load more",
-        "navigationFailed": "Couldn't open {{path}}. Retry.",
-        "noRun": "Files are available while a run is active.",
-        "other": "Other",
-        "parentFolders": "Parent folders",
-        "pending": "Files will be available when the queued run starts.",
-        "preview": "Preview {{name}}",
-        "previewChanged": "This file changed. Close the preview and open it again.",
-        "previewDecode": "This file couldn't be decoded. You can still download it.",
-        "previewEmpty": "This file is empty.",
-        "previewInvalid": "This file isn't a valid preview. You can still download it.",
-        "previewLoading": "Loading preview…",
-        "previewSize": "This file is too large to preview. You can still download it.",
-        "previewTruncated": "Showing the first 64 KiB. Download the file for its full contents.",
-        "previewUnavailable": "Preview unavailable. Close it and try again, or download the file.",
-        "previewUnsupported": "Preview isn't available for this file type. You can still download it.",
-        "previewUpdateRequired": "Refresh this page and try again. If previews remain unavailable, start a new run.",
-        "readonly": "Read-only files from the current run.",
-        "refresh": "Refresh",
-        "retry": "Retry",
-        "root": "Root folder",
-        "stale": "This listing changed or expired. Refresh to continue.",
-        "title": "Files",
-        "unavailable": "Files are unavailable. Try again.",
-        "updateRequired": "This run does not support files. Start a new run after the sandbox is updated."
-      },
       "log": "Log",
       "manualReloadNotice": "Logs do not update automatically.",
       "modelProvidedBy": "{{model}} provided by {{provider}}",
@@ -248,7 +207,6 @@
       "documentTitle": "Inspect Log",
       "errors": {
         "invalid": "Invalid JSON file. Upload an exported activity log JSON file.",
-        "load": "Could not load JSON file. Upload an exported activity log JSON file.",
         "oversized": "JSON file is too large. Upload an exported activity log JSON file under 25 MB."
       },
       "fallbackName": "Imported Log",
@@ -554,7 +512,6 @@
       },
       "kindIcon": "{{kind}} artifact",
       "loading": "Loading artifacts",
-      "loadMore": "Load more",
       "retry": "Try again"
     },
     "fileBadges": {
@@ -1337,7 +1294,6 @@
       "downgradeScheduledPeriod": "Downgrade scheduled. Your current plan stays active until the billing period ends.",
       "planRestored": "Plan restored. Your subscription will renew normally.",
       "preparingReceiptDownload": "Preparing receipt download...",
-      "receiptDownloadFailed": "Failed to download receipts",
       "receiptsDownloaded": "Receipts downloaded",
       "subscriptionChangeConfirmed": "Subscription change confirmed."
     },
@@ -1606,9 +1562,7 @@
       "unavailable": "{{filename}} is no longer available. Upload it again to send.",
       "unavailableCount_one": "{{count}} attachment is no longer available. Upload it again to send.",
       "unavailableCount_other": "{{count}} attachments are no longer available. Upload them again to send.",
-      "uploadFailed": "Failed to upload {{filename}}",
-      "uploadFailedRetry": "Failed to upload {{filename}}. Try again.",
-      "uploadsFailed": "Some attachments failed to upload. Try again."
+      "uploadFailedRetry": "Failed to upload {{filename}}. Try again."
     },
     "automations": {
       "active": "Active",
@@ -1911,7 +1865,6 @@
       "back": "Back",
       "configurePermissions": "Configure {{connectorName}} permissions",
       "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
-      "defaultAccountFor": "{{connector}} · Using default account: {{account}}",
       "directory": {
         "allCategories": "All",
         "askAdmin": "Ask an admin to enable",
@@ -1928,8 +1881,6 @@
         "emptyCustomTitle": "No custom connectors yet",
         "matchCount_one": "{{count}} match",
         "matchCount_other": "{{count}} matches",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Needs attention",
         "nextCategories": "Next categories",
         "noResultsBody": "Try a product name, or build your own from an API or MCP server.",
@@ -1946,6 +1897,7 @@
       },
       "fallsBackTo": "Falls back to {{account}}",
       "find": "Find connectors...",
+      "loadFailed": "Couldn't load connectors.",
       "noUsableAccount": "No usable account",
       "remove": "Remove {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Selected account: {{account}}",
@@ -2145,8 +2097,7 @@
       "skipAutomationEvent": "Skip automation event"
     },
     "relations": {
-      "communications": "Chats",
-      "idle": "Idle",
+      "chats": "Chats",
       "loadFailed": "Could not load",
       "messageUnavailable": "Message unavailable",
       "origin": "From",
@@ -2154,7 +2105,6 @@
       "received": "Received",
       "running": "Running",
       "sent": "Sent",
-      "toggleMessages": "Messages with {{title}}",
       "unavailable": "Unavailable",
       "untitled": "Untitled"
     },
@@ -2177,9 +2127,11 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "expand": "Expand",
+      "empty": "Artifacts and related chats from this chat appear here.",
       "loadFailed": "Could not load resources",
+      "loading": "Loading resources",
       "retry": "Try again",
+      "showMore": "Show more",
       "title": "Resources"
     },
     "run": {
@@ -3092,10 +3044,7 @@
       "rename": "Rename",
       "setupIncomplete": "Setup incomplete",
       "setupUnavailable": "Account status unavailable",
-      "skipName": "Skip",
-      "summaryMany": "{{value}} accounts",
-      "summaryOne": "{{value}} account",
-      "summaryWithAttention": "{{value}}/{{total}} need attention"
+      "skipName": "Skip"
     },
     "actions": {
       "apply": "Apply",
@@ -3260,7 +3209,6 @@
       },
       "scope": {
         "aria": "Connector scope",
-        "attention": "Needs attention",
         "connected": "Connected",
         "custom": "Custom",
         "discover": "Discover",
@@ -3956,9 +3904,28 @@
       "connected": "{{connector}} connected"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Could not update authorization. Refresh and try again.",
+    "allow": "Allow for 1 hour",
+    "approved": "Shell access allowed",
+    "deadline": "Expires {{date}}",
+    "denied": "Request denied",
+    "deny": "Deny",
+    "description": "The agent needs permission to use Shell on your computer.",
+    "details": "Open details",
+    "expired": "Authorization expired",
+    "loading": "Loading authorization…",
+    "pending": "Ready for approval",
+    "refresh": "Refresh",
+    "revoke": "Revoke access",
+    "revoked": "Shell access revoked",
+    "scope": "Only this chat and computer. Existing terminals stay open when access ends.",
+    "title": "Desktop Shell access",
+    "unavailable": "Authorization unavailable",
+    "waiting": "Approval is unavailable while a Run is active or the selected computer has changed."
+  },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
-    "back": "Back to templates",
     "categories": {
       "all": "All",
       "business-record": "Business records",
@@ -4009,7 +3976,6 @@
     "preview": "Preview {{title}}",
     "previousPage": "Previous sample page",
     "retry": "Retry",
-    "samplePages": "Sample pages: {{total}}",
     "title": "Document",
     "useNamed": "Use {{title}}"
   },
@@ -4861,7 +4827,6 @@
           "codeRequired": "Paste the Claude authorization code to continue.",
           "connectedToast": "Claude connected",
           "connectTitle": "Connect Claude",
-          "error": "Claude connection failed. Start again to retry.",
           "expired": "Claude connection session expired. Start again to retry.",
           "instructions": "First click Open Claude approval page. Then approve {{brandName}} in Claude and copy the authorization code shown after approval. Finally paste that code here and click Connect.",
           "openApproval": "Open Claude approval page",
@@ -4876,7 +4841,6 @@
           "connectedToast": "ChatGPT connected",
           "connectTitle": "Connect Codex",
           "deviceCode": "Device code",
-          "error": "ChatGPT connection failed. Start again to retry.",
           "expired": "Codex connection session expired. Start again to retry.",
           "freePlanRejected": "Free ChatGPT plans cannot use Codex via {{brandName}}. Upgrade to Plus or Pro and try again.",
           "instructions": "First copy the device code using the copy button, then open the approval page. Then paste the device code into OpenAI when prompted. Finally approve access and keep this dialog open while {{brandName}} finishes the connection.",
@@ -5076,6 +5040,10 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
+        "resources": {
+          "description": "Show a chat's artifacts and related chats beside the conversation when there is room.",
+          "title": "Open resources automatically"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -5169,7 +5137,7 @@
         "description": "Daily priorities by 7:00 AM in your time zone.",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
-        "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",
+        "preparationFailed": "Temporarily unavailable. Okou will retry automatically.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
         "retry": "Retry",
         "retryMessage": "Morning Brief settings could not be loaded or updated. Retry to continue.",
@@ -5178,7 +5146,7 @@
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
         "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
-        "preparationFailed": "Proactive Suggestions setup could not finish. Retry to continue.",
+        "preparationFailed": "Temporarily unavailable. Okou will retry automatically.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Proactive Suggestions settings could not be loaded or updated. Retry to continue.",

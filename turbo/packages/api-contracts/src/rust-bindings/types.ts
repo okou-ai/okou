@@ -13,8 +13,6 @@ import {
 } from "../contracts/runners";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
-import { sandboxChannelTypeBindings } from "./sandbox-channel-types";
-import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
@@ -58,22 +56,6 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["runners", "runs", "startup"],
     rustDoc: ["Run-authenticated actual sandbox startup reporting DTOs."],
-  },
-  {
-    rustModulePath: ["sandbox_channel"],
-    rustDoc: ["Shared sandbox application schema and role contracts."],
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustDoc: ["Readonly filesystem listing and regular-file contracts."],
-  },
-  {
-    rustModulePath: ["sandbox_channel", "diagnostics"],
-    rustDoc: ["Bidirectional diagnostic category contracts."],
-  },
-  {
-    rustModulePath: ["runners", "wss"],
-    rustDoc: ["Official Runner one-use WSS ticket redemption."],
   },
   {
     rustModulePath: ["runners", "runs", "cancellation"],
@@ -183,30 +165,6 @@ export const rustTypeBindings = [
           home: ["A new sandbox with a cached home image."],
           blank: ["A prepared tenant-free sandbox with a fresh home."],
           cold: ["A new sandbox with a fresh home."],
-        },
-      },
-    ],
-  },
-  {
-    schema: runnerWssTicketsContract.consume.responses[200],
-    rustModulePath: ["runners", "wss"],
-    rustTypeName: "ConsumeResponse",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "ConsumeResponse",
-        rustDoc: [
-          "Exact redeemed ticket digest, audience and owner; not Run cancellation.",
-        ],
-        fields: {
-          runId: ["Exact redeemed Run."],
-          runnerId: ["Exact destination Runner."],
-          orgId: ["Verified owning organization."],
-          userId: ["Verified owning user."],
-          origin: ["Exact canonical WSS origin."],
-          digest: [
-            "SHA-256 of the one-use redeemed ticket; never the credential.",
-          ],
         },
       },
     ],
@@ -679,9 +637,6 @@ export const rustTypeBindings = [
           ],
           archiveSize: ["Optional exact encoded archive size in bytes."],
           empty: ["Whether the resolved Storage version is explicitly empty."],
-          instructionsTargetFilename: [
-            "Optional filename used when Storage instructions are normalized.",
-          ],
           missingRootPolicy: [
             "Optional behavior when a writeback mount root is missing.",
           ],
@@ -766,12 +721,7 @@ export const rustTypeBindings = [
           cliAgentSessionHistoryDisposition: [
             "Native history is retained only in the disposable sandbox/home.",
           ],
-          storageOutputs: [
-            "Canonical writeback Storage outputs; omit while the API reader is being prepared.",
-          ],
-          artifactSnapshots: [
-            "Optional artifact versions captured by the Run output.",
-          ],
+          storageOutputs: ["Writeback Storage versions published by this Run."],
           volumeVersionsSnapshot: [
             "Optional volume versions captured by the Run output.",
           ],
@@ -809,30 +759,6 @@ export const rustTypeBindings = [
         variants: {
           native_only: [
             "Native history is retained only in the disposable sandbox/home.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCompletionArtifactSnapshot",
-        rustDoc: ["Artifact version captured by a final Run output."],
-        fields: {
-          name: ["User-facing artifact name referenced by the run."],
-          version: ["Artifact version selected for the Run output."],
-          mountPath: ["Guest filesystem path where the artifact is mounted."],
-          missingRootPolicy: [
-            "Optional policy retained when the artifact mount root is missing.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "RequestCompletionArtifactSnapshotMissingRootPolicy",
-        rustDoc: [
-          "Policy used when a final Run output artifact root is missing.",
-        ],
-        variants: {
-          fail: ["Treat a missing artifact root as an error."],
-          preserveParentVersion: [
-            "Preserve the parent artifact version when the root is missing.",
           ],
         },
       },
@@ -1064,5 +990,4 @@ export const rustTypeBindings = [
       },
     ],
   },
-  ...sandboxChannelTypeBindings,
 ] as const satisfies readonly RustTypeBinding[];

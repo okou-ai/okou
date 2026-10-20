@@ -34,6 +34,7 @@ from tests.firewall_auth_helpers import (
     firewall_auth_success,
     handle_firewall_request_without_upstream_admission,
 )
+from tests.firewall_aws_sigv4_helpers import admitted_aws_sigv4_body
 from tests.firewall_helpers import cancel_pending_task
 from tests.jsonl_log_helpers import read_jsonl_text_after_flush
 
@@ -632,6 +633,7 @@ class TestHandleFirewallRequest:
         with (
             patch.object(auth, "get_firewall_headers", AsyncMock(return_value=token_meta)),
             mitm_ctx(),
+            admitted_aws_sigv4_body(flow),
         ):
             result = await handle_firewall_request_without_upstream_admission(
                 flow, allow, sandbox_info

@@ -255,56 +255,45 @@ impl ChildOutputTasks {
 
     async fn collect(&mut self, program: &str) -> Result<(Vec<u8>, Vec<u8>), BoundedCommandError> {
         let deadline = Instant::now() + COMMAND_CLEANUP_TIMEOUT;
-        match self {
-            Self::Stderr(stderr_task) => {
-                let result = tokio::time::timeout_at(
-                    deadline,
-                    wait_child_output_task(program, "stderr", stderr_task),
-                )
-                .await;
-                match result {
-                    Ok(stderr) => Ok((Vec::new(), captured_child_output_bytes("stderr", stderr?)?)),
-                    Err(_) => {
-                        stderr_task.abort();
-                        Err(output_task_timeout(program, "stderr"))
-                    }
+        let result = tokio::time::timeout_at(deadline, async {
+            match self {
+                Self::Stderr(stderr_task) => {
+                    let stderr = wait_child_output_task(program, "stderr", stderr_task).await?;
+                    Ok((Vec::new(), captured_child_output_bytes("stderr", stderr)?))
                 }
-            }
-            Self::StdoutAndStderr {
-                stdout: stdout_task,
-                stderr: stderr_task,
-                ..
-            } => {
-                let result = tokio::time::timeout_at(deadline, async {
-                    tokio::try_join!(
+                Self::StdoutAndStderr {
+                    stdout: stdout_task,
+                    stderr: stderr_task,
+                    ..
+                } => {
+                    let (stdout, stderr) = tokio::try_join!(
                         wait_child_output_task(program, "stdout", stdout_task),
                         wait_child_output_task(program, "stderr", stderr_task),
-                    )
-                })
-                .await;
-                match result {
-                    Ok(Ok((stdout, stderr))) => Ok((
+                    )?;
+                    Ok((
                         captured_child_output_bytes("stdout", stdout)?,
                         captured_child_output_bytes("stderr", stderr)?,
-                    )),
-                    Ok(Err(error)) => {
-                        stdout_task.abort();
-                        stderr_task.abort();
-                        Err(error)
-                    }
-                    Err(_) => {
-                        let stream = if stdout_task.is_finished() {
-                            "stderr"
-                        } else {
-                            "stdout"
-                        };
-                        stdout_task.abort();
-                        stderr_task.abort();
-                        Err(output_task_timeout(program, stream))
-                    }
+                    ))
                 }
             }
+        })
+        .await;
+
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                let stream = match self {
+                    Self::Stderr(_) => "stderr",
+                    Self::StdoutAndStderr { stdout, .. } if stdout.is_finished() => "stderr",
+                    Self::StdoutAndStderr { .. } => "stdout",
+                };
+                Err(output_task_timeout(program, stream))
+            }
+        };
+        if result.is_err() {
+            self.abort();
         }
+        result
     }
 
     fn abort(&self) {

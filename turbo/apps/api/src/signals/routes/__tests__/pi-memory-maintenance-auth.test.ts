@@ -14,7 +14,6 @@ test("rejects extraction without the operator credential", async () => {
   const app = await setupApp({
     context,
     routes: cronExtractPiMemoryStage1Routes,
-    isolatePg: true,
   });
   const client = app(cronExtractPiMemoryStage1Contract);
   const response = await client.extract({
@@ -27,7 +26,6 @@ test("rejects consolidation without the operator credential", async () => {
   const app = await setupApp({
     context,
     routes: cronConsolidatePiMemoryPhase2Routes,
-    isolatePg: true,
   });
   const client = app(cronConsolidatePiMemoryPhase2Contract);
   const response = await client.consolidate({

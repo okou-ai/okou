@@ -9,7 +9,6 @@ import {
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
   type ConnectorAccountSelection,
-  type ConnectorAccountSummary,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -18,7 +17,8 @@ import {
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -82,7 +82,6 @@ interface ConnectorFixtureOptions {
     Record<string, readonly AgentCustomConnectorGrant[]>
   >;
   readonly authorizationGates?: Readonly<Record<string, Promise<void>>>;
-  readonly accountSummaries?: readonly ConnectorAccountSummary[];
   readonly accounts?: readonly ConnectorAccountConnection[];
   readonly threadSelections?: Readonly<
     Record<string, readonly ConnectorAccountSelection[]>
@@ -256,18 +255,11 @@ function browseSlice<
   });
 }
 
-function savedAccountSummaries(
+function savedConnectorAccounts(
   catalog: readonly PublicConnectorCatalogStatusItem[],
   customConnectors: readonly CustomConnectorResponse[],
-  accounts: readonly ConnectorAccountConnection[],
-): readonly ConnectorAccountSummary[] {
+): ConnectorAccountConnection[] {
   const byTarget = new Map<string, ConnectorAccountConnection[]>();
-  for (const account of accounts) {
-    const key = connectorAccountTargetKey(account.target);
-    const group = byTarget.get(key) ?? [];
-    group.push(account);
-    byTarget.set(key, group);
-  }
   for (const connector of catalog) {
     const target = { kind: "builtin", connectorSlug: connector.slug } as const;
     const key = connectorAccountTargetKey(target);
@@ -313,9 +305,7 @@ function savedAccountSummaries(
       ]);
     }
   }
-  return [...byTarget.values()].map((group) => {
-    return accountSummary(group[0]!.target, group);
-  });
+  return [...byTarget.values()].flat();
 }
 
 export function installComposerConnectorFixture(
@@ -331,29 +321,9 @@ export function installComposerConnectorFixture(
     options.customAuthorizations,
   );
   const threadSelections = copyAuthorizationRecord(options.threadSelections);
-  const accounts = [...(options.accounts ?? [])];
-  const summaries = new Map(
-    (
-      options.accountSummaries ??
-      savedAccountSummaries(catalog, customConnectors, accounts)
-    ).map((summary) => {
-      return [connectorAccountTargetKey(summary.target), summary];
-    }),
-  );
-  for (const summary of summaries.values()) {
-    const account = summary.defaultConnection;
-    if (
-      account &&
-      !accounts.some((candidate) => {
-        return candidate.id === account.id;
-      })
-    ) {
-      accounts.push(account);
-    }
-  }
-  const currentAccountSummaries = () => {
-    return [...summaries.values()];
-  };
+  const accounts = [
+    ...(options.accounts ?? savedConnectorAccounts(catalog, customConnectors)),
+  ];
   const completeAccount = (
     target: ConnectorAccountTarget,
     id: string,
@@ -364,13 +334,14 @@ export function installComposerConnectorFixture(
       return account.id === id;
     });
     const previous = accounts[index];
-    const key = connectorAccountTargetKey(target);
     const account = {
       ...connectorAccount({
         id,
         target,
         displayName: "",
-        isDefault: (summaries.get(key)?.accountCount ?? 0) === 0,
+        isDefault: !accounts.some((candidate) => {
+          return targetMatches(candidate.target, target);
+        }),
       }),
       ...previous,
       displayName: previous?.displayName ?? null,
@@ -391,15 +362,6 @@ export function installComposerConnectorFixture(
     } else {
       accounts[index] = account;
     }
-    summaries.set(
-      key,
-      accountSummary(
-        target,
-        accounts.filter((candidate) => {
-          return targetMatches(candidate.target, target);
-        }),
-      ),
-    );
     return account;
   };
   const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
@@ -527,13 +489,10 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
-    const summaries = currentAccountSummaries();
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
     const savedTargets = new Set(
-      summaries.flatMap((summary) => {
-        return summary.accountCount > 0
-          ? [connectorAccountTargetKey(summary.target)]
-          : [];
+      accounts.map((account) => {
+        return connectorAccountTargetKey(account.target);
       }),
     );
     return respond(200, {
@@ -552,7 +511,9 @@ export function installComposerConnectorFixture(
       customConnectors: customConnectors
         .filter((connector) => {
           return (
-            connector.connected || savedTargets.has(`custom:${connector.id}`)
+            (isIntegrationManagedCustomConnector(connector) &&
+              connector.connected) ||
+            savedTargets.has(`custom:${connector.id}`)
           );
         })
         .map((connector) => {
@@ -564,34 +525,10 @@ export function installComposerConnectorFixture(
             integrationManaged: isIntegrationManagedCustomConnector(connector),
           };
         }),
-      accountSummaries: summaries.map((summary) => {
-        const account = summary.defaultConnection;
-        return {
-          target: summary.target,
-          accountCount: summary.accountCount,
-          attentionCount: summary.attentionCount,
-          defaultConnection: account
-            ? {
-                id: account.id,
-                authMethod: account.authMethod,
-                displayName: account.displayName,
-                externalId: account.externalId,
-                externalUsername: account.externalUsername,
-                externalEmail: account.externalEmail,
-                connectionStatus: account.connectionStatus,
-                setupStatus: account.setupStatus,
-                missingRequiredFields: account.missingRequiredFields,
-                configuredFieldKeys: account.configuredFieldKeys,
-              }
-            : null,
-        };
-      }),
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
     });
   });
   context.mocks.api(
-    connectorOverviewContract.agent,
+    agentConnectorAccessContract.agent,
     async ({ params, respond }) => {
       await options.authorizationGates?.[params.id];
       return respond(200, {
@@ -666,9 +603,6 @@ export function installComposerConnectorFixture(
       return respond(200, { grants: next });
     },
   );
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [...currentAccountSummaries()] });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, query, respond }) => {
@@ -705,7 +639,16 @@ export function installComposerConnectorFixture(
           return value?.toLowerCase().includes(normalizedSearch);
         });
       });
-      return respond(200, { connections, nextCursor: null });
+      return respond(200, {
+        connections,
+        defaultConnection:
+          accounts.find((connection) => {
+            return (
+              targetMatches(connection.target, query) && connection.isDefault
+            );
+          }) ?? null,
+        nextCursor: null,
+      });
     },
   );
   context.mocks.api(
@@ -1004,6 +947,7 @@ export function builtinConnector(args: {
         }
       : null,
     connected,
+    setupStatus: connected ? "complete" : null,
     connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: authMethod === "oauth",
@@ -1167,22 +1111,5 @@ export function connectorAccount(args: {
     tokenExpiresAt: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
-  };
-}
-
-export function accountSummary(
-  target: ConnectorAccountTarget,
-  accounts: readonly ConnectorAccountConnection[],
-): ConnectorAccountSummary {
-  return {
-    target,
-    accountCount: accounts.length,
-    attentionCount: accounts.filter((account) => {
-      return account.connectionStatus === "reconnect-required";
-    }).length,
-    defaultConnection:
-      accounts.find((account) => {
-        return account.isDefault;
-      }) ?? null,
   };
 }

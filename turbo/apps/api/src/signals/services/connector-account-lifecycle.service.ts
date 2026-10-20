@@ -1,11 +1,9 @@
 import { Buffer } from "node:buffer";
 import { command, computed, type Computed } from "ccstate";
 
-import {
-  connectorAccountTargetKey,
-  type ConnectorAccountConnection,
-  type ConnectorAccountSummary,
-  type ConnectorAccountTarget,
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   connectorSlugSchema,
@@ -42,10 +40,8 @@ import {
   exists,
   ilike,
   inArray,
-  isNotNull,
   isNull,
   lt,
-  lte,
   ne,
   notInArray,
   or,
@@ -55,11 +51,7 @@ import {
 import { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
-import {
-  pgBooleanDecoder,
-  pgTextDecoder,
-  zodDriverValueDecoder,
-} from "../../lib/db-structured-result";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
@@ -355,118 +347,6 @@ function connectorAccountBatchRows(
   });
 }
 
-function connectorAccountSummaryGroups(
-  owner$: Computed<{ readonly orgId: string; readonly userId: string }>,
-) {
-  return computed(async (get) => {
-    const args = get(owner$);
-    const db = get(db$);
-    const tokenExpired = sql`CASE WHEN ${and(
-      isNotNull(connectors.tokenExpiresAt),
-      lte(connectors.tokenExpiresAt, sql`clock_timestamp()`),
-    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-    const hasAccessToken = sql`CASE WHEN ${isNotNull(
-      accessTokenSecret.id,
-    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-    const hasRefreshToken = sql`CASE WHEN ${isNotNull(
-      refreshTokenSecret.id,
-    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-    const hasAutomaticOAuthBinding = sql`CASE WHEN ${isNotNull(
-      customConnectorAccountOauthBindings.connectorAccountId,
-    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-    return await db
-      .select({
-        connectorSlug: connectors.connectorSlug,
-        customConnectorId: connectors.customConnectorId,
-        authMethod: connectors.authMethod,
-        automaticAuthType: connectors.automaticAuthType,
-        storageVersion: connectors.storageVersion,
-        needsReconnect: connectors.needsReconnect,
-        definitionAuthMode: orgCustomConnectors.authMode,
-        definitionMcpTransport: orgCustomConnectors.mcpTransport,
-        definitionStorageVersion: orgCustomConnectors.storageVersion,
-        definitionFields: orgCustomConnectors.fields,
-        providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-        tokenExpired,
-        hasAccessToken,
-        hasRefreshToken,
-        hasAutomaticOAuthBinding,
-        accountCount: count(),
-        accountIds: sql`array_agg(${connectors.id})`.mapWith(
-          zodDriverValueDecoder(z.array(z.uuid())),
-        ),
-      })
-      .from(connectors)
-      .leftJoin(
-        orgCustomConnectors,
-        and(
-          eq(orgCustomConnectors.id, connectors.customConnectorId),
-          eq(orgCustomConnectors.orgId, connectors.orgId),
-        ),
-      )
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .leftJoin(
-        accessTokenSecret,
-        and(
-          eq(accessTokenSecret.connectorId, connectors.id),
-          eq(accessTokenSecret.name, "access_token"),
-        ),
-      )
-      .leftJoin(
-        refreshTokenSecret,
-        and(
-          eq(refreshTokenSecret.connectorId, connectors.id),
-          eq(refreshTokenSecret.name, "refresh_token"),
-        ),
-      )
-      .leftJoin(
-        customConnectorAccountOauthBindings,
-        and(
-          eq(
-            customConnectorAccountOauthBindings.connectorAccountId,
-            connectors.id,
-          ),
-          eq(
-            customConnectorAccountOauthBindings.customConnectorId,
-            orgCustomConnectors.id,
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-        ),
-      )
-      .groupBy(
-        connectors.connectorSlug,
-        connectors.customConnectorId,
-        connectors.authMethod,
-        connectors.automaticAuthType,
-        connectors.storageVersion,
-        connectors.needsReconnect,
-        orgCustomConnectors.authMode,
-        orgCustomConnectors.mcpTransport,
-        orgCustomConnectors.storageVersion,
-        orgCustomConnectors.fields,
-        orgCustomConnectorOauthConfigs.providerAdapter,
-        tokenExpired,
-        hasAccessToken,
-        hasRefreshToken,
-        hasAutomaticOAuthBinding,
-      );
-  });
-}
-
 function builtinConnection(
   row: ConnectorAccountRow,
   snapshot: ConnectorRuntimeAuthLookup | null,
@@ -646,103 +526,6 @@ function projectConnection(
   return connection ? { ...connection, ...setup } : null;
 }
 
-type ConnectorAccountSummaryGroup = Awaited<
-  ReturnType<ReturnType<typeof connectorAccountSummaryGroups>["read"]>
->[number];
-
-function projectSummaryGroup(
-  row: ConnectorAccountSummaryGroup,
-  snapshot: ConnectorRuntimeAuthLookup | null,
-  now: Date,
-): {
-  readonly target: ConnectorAccountTarget;
-  readonly needsAttention: boolean;
-} | null {
-  if (row.connectorSlug !== null) {
-    const parsedSlug = connectorSlugSchema.safeParse(row.connectorSlug);
-    if (!parsedSlug.success) {
-      throw new Error(
-        "Stored connector account has an invalid builtin identity",
-      );
-    }
-    if (!snapshot) {
-      throw new Error("Builtin connector account metadata is unavailable");
-    }
-    const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
-      snapshot,
-      stored: {
-        authMethodId: row.authMethod,
-        connectorId: `summary:${parsedSlug.data}:${row.authMethod}`,
-        connectorSlug: parsedSlug.data,
-      },
-    });
-    const storageCompatible =
-      runtimeMethod !== undefined &&
-      builtinConnectorCredentialStorageIsCompatible({
-        runtimeMethod,
-        automaticAuthType: row.automaticAuthType,
-        storageVersion: row.storageVersion,
-      });
-    const credentialStatus = runtimeMethod
-      ? builtinConnectorCredentialStatusWithMethod({
-          method: runtimeMethod.method,
-          automaticAuthType: row.automaticAuthType,
-          storedNeedsReconnect: row.needsReconnect,
-          tokenExpiresAt: row.tokenExpired ? now : null,
-          now,
-        })
-      : "reconnect-required";
-    return {
-      target: { kind: "builtin", connectorSlug: parsedSlug.data },
-      needsAttention:
-        !storageCompatible || credentialStatus === "reconnect-required",
-    };
-  }
-  if (
-    row.customConnectorId === null ||
-    row.definitionAuthMode === null ||
-    row.definitionStorageVersion === null ||
-    isIntegrationManagedCustomConnectorProviderAdapter(row.providerAdapter)
-  ) {
-    return null;
-  }
-  const contractCurrent =
-    customConnectorAccountAuthMethodIsCompatible(
-      row.definitionAuthMode,
-      row.authMethod,
-    ) &&
-    customConnectorAccountStorageIsCompatible({
-      authMethod: row.authMethod,
-      mcpTransport: row.definitionMcpTransport,
-      storageVersion: row.storageVersion,
-      definitionStorageVersion: row.definitionStorageVersion,
-    });
-  const credentialStatus =
-    row.authMethod === "none"
-      ? "available"
-      : connectorCredentialStatusForAccess({
-          storedNeedsReconnect: row.needsReconnect,
-          tokenExpiresAt:
-            row.authMethod === "oauth" && row.tokenExpired ? now : null,
-          now,
-          isRefreshable: row.hasRefreshToken,
-        });
-  const hasRequiredCredentialMaterial =
-    customConnectorAccountHasRequiredCredentialMaterial({
-      definitionAuthMode: row.definitionAuthMode,
-      storedAuthMethod: row.authMethod,
-      hasAccessToken: row.hasAccessToken,
-      hasAutomaticOAuthBinding: row.hasAutomaticOAuthBinding,
-    });
-  return {
-    target: { kind: "custom", customConnectorId: row.customConnectorId },
-    needsAttention:
-      !contractCurrent ||
-      credentialStatus === "reconnect-required" ||
-      !hasRequiredCredentialMaterial,
-  };
-}
-
 function accountAuthLookupFromCatalogRows(
   rows: readonly {
     readonly current: { readonly schemaVersion: number; readonly hash: string };
@@ -801,158 +584,6 @@ function connectorAccountAuthLookup(
   });
 }
 
-function setupAttentionCount(
-  group: ConnectorAccountSummaryGroup,
-  snapshot: ConnectorRuntimeAuthLookup | null,
-  markers: ReadonlyMap<string, ReadonlySet<string>>,
-) {
-  return group.accountIds.filter((id) => {
-    const account = { ...group, id };
-    return (
-      connectorAccountSetup(
-        account,
-        snapshot,
-        markers.get(connectorAccountSetupMarkerKey(account)) ?? new Set(),
-      ).setupStatus !== "complete"
-    );
-  }).length;
-}
-
-interface ConnectorAccountSummaryScope {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly includeScopeMismatch?: true;
-}
-
-export function connectorAccountSummaries(
-  owner$: Computed<ConnectorAccountSummaryScope>,
-): Computed<Promise<readonly ConnectorAccountSummary[]>> {
-  const groups$ = connectorAccountSummaryGroups(owner$);
-  const authLookup$ = connectorAccountAuthLookup(groups$);
-  const markerScope$ = computed(async (get) => {
-    return {
-      ...get(owner$),
-      connectionIds: (await get(groups$)).flatMap((group) => {
-        return group.accountIds;
-      }),
-    };
-  });
-  const markers$ = connectorAccountFieldMarkers(markerScope$);
-
-  return computed(async (get) => {
-    const args = get(owner$);
-    const db = get(db$);
-    const now = nowDate();
-    const [groups, defaultRows] = await Promise.all([
-      get(groups$),
-      db
-        .select(accountSelection())
-        .from(connectors)
-        .leftJoin(
-          orgCustomConnectors,
-          and(
-            eq(orgCustomConnectors.id, connectors.customConnectorId),
-            eq(orgCustomConnectors.orgId, connectors.orgId),
-          ),
-        )
-        .leftJoin(
-          orgCustomConnectorOauthConfigs,
-          and(
-            eq(
-              orgCustomConnectorOauthConfigs.connectorId,
-              orgCustomConnectors.id,
-            ),
-            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-          ),
-        )
-        .leftJoin(
-          accessTokenSecret,
-          and(
-            eq(accessTokenSecret.connectorId, connectors.id),
-            eq(accessTokenSecret.name, "access_token"),
-          ),
-        )
-        .leftJoin(
-          refreshTokenSecret,
-          and(
-            eq(refreshTokenSecret.connectorId, connectors.id),
-            eq(refreshTokenSecret.name, "refresh_token"),
-          ),
-        )
-        .leftJoin(
-          customConnectorAccountOauthBindings,
-          and(
-            eq(
-              customConnectorAccountOauthBindings.connectorAccountId,
-              connectors.id,
-            ),
-            eq(
-              customConnectorAccountOauthBindings.customConnectorId,
-              orgCustomConnectors.id,
-            ),
-          ),
-        )
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            eq(connectors.isDefault, true),
-          ),
-        )
-        .orderBy(desc(connectors.createdAt), desc(connectors.id))
-        .limit(2_147_483_647),
-    ]);
-    // Every default account belongs to a group, so the groups name every
-    // builtin connector this projection reads.
-    const snapshot = await get(authLookup$);
-    const markers = await get(markers$);
-    const defaultConnections = new Map<string, ConnectorAccountConnection>();
-    for (const row of defaultRows) {
-      const connection = projectConnection(
-        row,
-        snapshot,
-        now,
-        args.includeScopeMismatch === true,
-        markers.get(connectorAccountSetupMarkerKey(row)),
-      );
-      if (connection) {
-        defaultConnections.set(
-          connectorAccountTargetKey(connection.target),
-          connection,
-        );
-      }
-    }
-    const summaries = new Map<string, ConnectorAccountSummary>();
-    for (const group of groups) {
-      const projected = projectSummaryGroup(group, snapshot, now);
-      if (!projected) {
-        continue;
-      }
-      const targetKey = connectorAccountTargetKey(projected.target);
-      const current = summaries.get(targetKey) ?? {
-        target: projected.target,
-        accountCount: 0,
-        attentionCount: 0,
-        defaultConnection: defaultConnections.get(targetKey) ?? null,
-      };
-      summaries.set(targetKey, {
-        ...current,
-        accountCount: current.accountCount + group.accountCount,
-        attentionCount:
-          current.attentionCount +
-          (projected.needsAttention
-            ? group.accountCount
-            : setupAttentionCount(group, snapshot, markers)),
-      });
-    }
-    return [...summaries.values()].sort((left, right) => {
-      const leftKey = JSON.stringify(left.target);
-      const rightKey = JSON.stringify(right.target);
-      return leftKey.localeCompare(rightKey);
-    });
-  });
-}
-
 interface ConnectorAccountListScope {
   readonly orgId: string;
   readonly userId: string;
@@ -968,7 +599,7 @@ type ConnectorAccountListResult =
       readonly kind: "ok";
       readonly connections: readonly ConnectorAccountConnection[];
       readonly nextCursor: string | null;
-      readonly defaultConnection?: ConnectorAccountConnection | null;
+      readonly defaultConnection: ConnectorAccountConnection | null;
     }
   | { readonly kind: "invalid-cursor" }
   | { readonly kind: "missing" };
@@ -1151,17 +782,11 @@ export function connectorAccountsForTarget(
   const markerScope$ = computed(async (get) => {
     const args = get(scope$);
     const rows = await get(rows$);
-    const includeDefault =
-      args.includeScopeMismatch === true &&
-      args.cursor === undefined &&
-      args.search === undefined;
-    const defaults =
-      includeDefault &&
-      !rows.some((row) => {
-        return row.isDefault;
-      })
-        ? await get(defaultRows$)
-        : [];
+    const defaults = !rows.some((row) => {
+      return row.isDefault;
+    })
+      ? await get(defaultRows$)
+      : [];
     return {
       ...args,
       connectionIds: [...rows, ...defaults].map((row) => {
@@ -1200,21 +825,16 @@ export function connectorAccountsForTarget(
       );
       return connection ? [connection] : [];
     });
-    const includeDefaultConnection =
-      args.includeScopeMismatch === true &&
-      args.cursor === undefined &&
-      args.search === undefined;
-    const defaultRow = includeDefaultConnection
-      ? (rows.find((row) => {
-          return row.isDefault;
-        }) ?? (await get(defaultRows$))[0])
-      : undefined;
+    const defaultRow =
+      rows.find((row) => {
+        return row.isDefault;
+      }) ?? (await get(defaultRows$))[0];
     const defaultConnection = defaultRow
       ? projectConnection(
           defaultRow,
           snapshot,
           now,
-          true,
+          args.includeScopeMismatch === true,
           markers.get(connectorAccountSetupMarkerKey(defaultRow)),
         )
       : null;
@@ -1230,7 +850,7 @@ export function connectorAccountsForTarget(
       kind: "ok",
       connections: projected.slice(0, args.limit),
       nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
-      ...(includeDefaultConnection ? { defaultConnection } : {}),
+      defaultConnection,
     };
   });
 }

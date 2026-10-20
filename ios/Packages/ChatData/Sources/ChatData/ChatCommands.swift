@@ -6,6 +6,8 @@ public actor ChatCommands {
   private let client: APIClient
   private let sync: ChatSync
   private var sendingThreads = Set<String>()
+  private var writingReadState = false
+  private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(client: APIClient, sync: ChatSync) {
     self.client = client
@@ -97,7 +99,9 @@ public actor ChatCommands {
     let metadata = try await normalizeMobileSettings(threadID: thread.id)
     let body = SendBody(
       agentId: metadata.agentId, threadId: thread.id,
-      prompt: prompt.isEmpty ? "(see attached files)" : prompt,
+      prompt: prompt.isEmpty
+        ? (document?.hasFeedback == true ? "(see quoted passages)" : "(see attached files)")
+        : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
       userMessage: document
         ?? ChatDraftDocument(
@@ -109,7 +113,8 @@ public actor ChatCommands {
                 "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
               ])
             }),
-      hasTextContent: !prompt.isEmpty, modelSelection: modelSelection,
+      hasTextContent: !prompt.isEmpty || document?.hasFeedback == true,
+      modelSelection: modelSelection,
       reasoningEffort: reasoningEffort)
     do {
       let result: ChatSendResponse = try await client.request(
@@ -144,8 +149,48 @@ public actor ChatCommands {
     }
   }
 
-  public func markRead(threadID: String) async throws {
-    try await client.data("/api/chat-threads/\(threadID)/mark-read", method: "POST")
+  @discardableResult
+  public func markRead(threadID: String) async throws -> Date? {
+    await acquireReadState()
+    defer { releaseReadState() }
+    try Task.checkCancellation()
+    let state: ThreadReadState = try await client.request(
+      "/api/chat-threads/\(threadID)/mark-read", method: "POST")
+    return state.lastReadAt
+  }
+
+  public func markUnread(threadID: String) async throws {
+    await acquireReadState()
+    defer { releaseReadState() }
+    try Task.checkCancellation()
+    let _: ThreadReadState = try await client.request(
+      "/api/chat-threads/\(threadID)/mark-unread", method: "POST")
+  }
+
+  public func markAgentRead(agentID: String) async throws {
+    await acquireReadState()
+    defer { releaseReadState() }
+    try Task.checkCancellation()
+    try await client.data(
+      "/api/chat-thread-unreads/mark-read", method: "POST",
+      body: JSONEncoder().encode(["agentId": agentID]))
+  }
+
+  // Actor reentrancy must not let an automatic read finish after a manual unread.
+  private func acquireReadState() async {
+    if writingReadState {
+      await withCheckedContinuation { readStateWaiters.append($0) }
+    } else {
+      writingReadState = true
+    }
+  }
+
+  private func releaseReadState() {
+    if readStateWaiters.isEmpty {
+      writingReadState = false
+    } else {
+      readStateWaiters.removeFirst().resume()
+    }
   }
 
   public func setPinned(threadID: String, pinned: Bool) async throws {

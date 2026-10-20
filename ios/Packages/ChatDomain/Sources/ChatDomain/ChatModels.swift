@@ -18,6 +18,9 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
   public var isArchived = false
   public var isHidden = false
   public var indicator: ChatIndicator?
+  public var unreadAt: Date?
+  public var isMuted: Bool
+  public var isUnread: Bool { unreadAt != nil && !isMuted }
 
   public init(
     id: String,
@@ -36,7 +39,9 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     cloudBrowserEnabled: Bool = false,
     isArchived: Bool = false,
     isHidden: Bool = false,
-    indicator: ChatIndicator? = nil
+    indicator: ChatIndicator? = nil,
+    unreadAt: Date? = nil,
+    isMuted: Bool = false
   ) {
     self.id = id
     self.agentID = agentID
@@ -55,6 +60,8 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
     self.isArchived = isArchived
     self.isHidden = isHidden
     self.indicator = indicator
+    self.unreadAt = unreadAt
+    self.isMuted = isMuted
   }
 
   public var displayTitle: String { title.isEmpty ? "New chat" : title }
@@ -70,12 +77,18 @@ public struct ChatMessageAttachment: Equatable, Identifiable, Sendable {
   public let filename: String
   public let contentType: String
   public let size: Int?
+  public let renderedFileID: String?
+  public var downloadID: String { renderedFileID ?? id }
 
-  public init(id: String, filename: String, contentType: String, size: Int? = nil) {
+  public init(
+    id: String, filename: String, contentType: String, size: Int? = nil,
+    renderedFileID: String? = nil
+  ) {
     self.id = id
     self.filename = filename
     self.contentType = contentType
     self.size = size
+    self.renderedFileID = renderedFileID
   }
 }
 
@@ -90,6 +103,10 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
   public let runID: String?
   public let isQueued: Bool
   public let isError: Bool
+  public let userMessage: ChatUserMessage?
+  public let inputError: String?
+  public let modelChange: ChatModelChange?
+  public var copyText: String { userMessage?.displayText ?? text }
 
   public init(
     id: String,
@@ -99,7 +116,9 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     createdAt: Date,
     runID: String? = nil,
     isQueued: Bool,
-    isError: Bool
+    isError: Bool,
+    userMessage: ChatUserMessage? = nil, inputError: String? = nil,
+    modelChange: ChatModelChange? = nil
   ) {
     self.id = id
     self.role = role
@@ -109,6 +128,9 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     self.runID = runID
     self.isQueued = isQueued
     self.isError = isError
+    self.userMessage = userMessage
+    self.inputError = inputError
+    self.modelChange = modelChange
   }
 }
 
@@ -144,6 +166,10 @@ public struct ChatHistory: Equatable, Sendable {
   public let activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
+  public let latestRunFinishAt: Date?
+  public let recommendedFollowups: ChatRecommendedFollowupSource?
+  public let usageEventIDs: [String: String]
+  public let runUsageAnchors: [String: String]
 
   public init(
     messages: [ChatMessage],
@@ -152,10 +178,18 @@ public struct ChatHistory: Equatable, Sendable {
     activityRunID: String? = nil,
     queuedEventIDs: [String],
     persistedEventIDs: Set<String> = [],
-    workSections: [ChatWorkSection] = []
+    workSections: [ChatWorkSection] = [],
+    latestRunFinishAt: Date? = nil,
+    recommendedFollowups: ChatRecommendedFollowupSource? = nil,
+    usageEventIDs: [String: String] = [:],
+    runUsageAnchors: [String: String] = [:]
   ) {
     self.messages = messages
     self.workSections = workSections
+    self.latestRunFinishAt = latestRunFinishAt
+    self.recommendedFollowups = recommendedFollowups
+    self.usageEventIDs = usageEventIDs
+    self.runUsageAnchors = runUsageAnchors
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
     self.activityRunID = activityRunID

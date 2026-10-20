@@ -7,7 +7,7 @@ import { performance } from "node:perf_hooks";
 
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { encode } from "gpt-tokenizer/encoding/o200k_base";
+import { encode } from "./memory-tokenizer";
 
 import type {
   PiMemoryRecallSelection,

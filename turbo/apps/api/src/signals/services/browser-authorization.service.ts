@@ -9,7 +9,10 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { publishThreadListChanged } from "../external/realtime";
+import {
+  publishDesktopShellAuthorizationChangedSafely,
+  publishThreadListChanged,
+} from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
 const BROWSER_AUTHORIZATION_REQUEST_TTL_MS = 60 * 60 * 1000;
@@ -301,6 +304,8 @@ export const applyBrowserAuthorizationRequest$ = command(
       userId: args.userId,
       orgId: args.orgId,
     });
+    signal.throwIfAborted();
+    await publishDesktopShellAuthorizationChangedSafely(args.userId);
     signal.throwIfAborted();
     return { status: "applied" };
   },

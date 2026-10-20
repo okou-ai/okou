@@ -22,7 +22,6 @@ import {
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
@@ -196,19 +195,12 @@ export function createBddApi(context: TestContext) {
     user,
     acceptAgentStorageWrites,
 
-    async readMe(
-      nextUser: ApiTestUser,
-      options: { readonly isolatePg?: true } = {},
-    ): Promise<{
+    async readMe(nextUser: ApiTestUser): Promise<{
       readonly userId: string;
       readonly email: string;
       readonly orgId: string | null;
     }> {
-      const client = options.isolatePg
-        ? (await setupApp({ context, routes: authMeRoutes, isolatePg: true }))(
-            authContract,
-          )
-        : authClient();
+      const client = authClient();
       const response = await accept(
         client.me({ headers: authenticate(nextUser) }),
         [200],
@@ -253,17 +245,8 @@ export function createBddApi(context: TestContext) {
     async completeOnboarding(
       nextUser: ApiTestUser,
       body: { readonly timezone?: string } = {},
-      options: { readonly isolatePg?: true } = {},
     ) {
-      const client = options.isolatePg
-        ? (
-            await setupApp({
-              context,
-              routes: onboardingCompleteRoutes,
-              isolatePg: true,
-            })
-          )(onboardingCompleteContract)
-        : onboardingCompleteClient();
+      const client = onboardingCompleteClient();
       return await accept(
         client.complete({
           headers: authenticate(nextUser),
@@ -301,19 +284,10 @@ export function createBddApi(context: TestContext) {
 
     async bootstrapLimitedFreeOnboarding(
       nextUser: ApiTestUser,
-      options: OnboardingBootstrapOptions & { readonly isolatePg?: boolean },
+      options: OnboardingBootstrapOptions,
     ): Promise<string> {
       const headers = authenticate(nextUser);
-      if (options.isolatePg) {
-        const app = await setupApp({
-          context,
-          routes: agentsRoutes,
-          isolatePg: true,
-        });
-        await accept(app(agentsMainContract).list({ headers }), [200]);
-      } else {
-        await accept(agentsClient().list({ headers }), [200]);
-      }
+      await accept(agentsClient().list({ headers }), [200]);
       const statusResponse = await accept(
         onboardingStatusClient().getStatus({
           headers,
@@ -368,13 +342,8 @@ export function createBddApi(context: TestContext) {
     async createAgent(
       nextUser: ApiTestUser,
       body: AgentRequest = {},
-      options: { readonly isolatePg?: true } = {},
     ): Promise<AgentResponse> {
-      const client = options.isolatePg
-        ? (await setupApp({ context, routes: agentsRoutes, isolatePg: true }))(
-            agentsMainContract,
-          )
-        : agentsClient();
+      const client = agentsClient();
       const response = await accept(
         client.create({
           headers: authenticate(nextUser),

@@ -193,21 +193,22 @@ export const runnerInstalledVersionsSchema = z
  * runner is not an exclusive assignee; another runner with a better compatible
  * local resource remains eligible to claim.
  */
-export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
+export const runnerPreferenceSchema = z.union([
   z
     .object({
       kind: z.literal("preference"),
       runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.enum([
-        "exactSandbox",
-        "finalizingPredecessor",
-        "reusableSandbox",
-        "homeCache",
-      ]),
+      tier: z.enum(["finalizingPredecessor", "peerFinalizingPredecessor"]),
       expiresAt: z.string().datetime({ offset: true }),
-      // Reader preparation only; API discovery writers enable this separately.
-      // Require it for finalizing preferences after the rollout gates in #41657.
-      finalizingSourceRunId: z.uuid().optional(),
+      finalizingSourceRunId: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("preference"),
+      runnerIdentity: runnerProcessIdentitySchema,
+      tier: z.enum(["exactSandbox", "reusableSandbox", "homeCache"]),
+      expiresAt: z.string().datetime({ offset: true }),
     })
     .strict(),
   z
@@ -549,7 +550,6 @@ export const storageMountEntrySchema = z
     archiveUrl: z.string().optional(),
     archiveSize: archiveSizeSchema.optional(),
     empty: z.boolean().optional(),
-    instructionsTargetFilename: z.string().optional(),
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
     writeback: z.boolean().optional(),
   })
@@ -571,13 +571,6 @@ export const storageMountEntrySchema = z
         code: z.ZodIssueCode.custom,
         path: ["empty"],
         message: "empty is only valid for writeback mounts",
-      });
-    }
-    if (writeback && mount.instructionsTargetFilename !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["instructionsTargetFilename"],
-        message: "instructionsTargetFilename is not valid for writeback mounts",
       });
     }
     if (!writeback && mount.missingRootPolicy !== undefined) {
@@ -1068,6 +1061,9 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
+  // Keep emitting this marker for supported DB-reader API rollback artifacts.
+  // Current claims select instructions through the Run's Agent association.
+  agentInstructionsSource: z.literal("agent").optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),
@@ -1175,7 +1171,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
-  // Release 1 prepares the reader; producers omit this until DB cutover (#41367).
+  // Claim-only current Agent body; absent for jobs without an Agent.
   agentInstructions: z.string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: z.boolean().optional(),
@@ -1499,6 +1495,8 @@ export const runnersBuiltinFirewallsResolveContract = c.router({
 export const heartbeatBodySchema = z
   .object({
     runnerId: z.uuid(),
+    // Advisory locality, using the same configured identity as winning claims.
+    runnerHostname: runnerHostnameSchema.optional(),
     group: runnerGroupSchema,
     snapshotGeneration: runnerHeartbeatGenerationSchema,
     snapshotSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -1512,9 +1510,6 @@ export const heartbeatBodySchema = z
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldHomeStates: z.array(heldHomeStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
-    // This shared endpoint also accepts PAT and older Runner heartbeats without
-    // a host observation. Absence is a first-class unknown, never WSS-eligible.
-    wssIngressServiceActive: z.boolean().optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {

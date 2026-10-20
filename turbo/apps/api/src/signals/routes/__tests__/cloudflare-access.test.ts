@@ -493,6 +493,7 @@ function useClaimedFixture() {
         runnersJobClaimContract,
       ).claim({
         headers: runnerHeaders,
+        extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: runId },
         body: {
           runnerIdentity,
@@ -1282,16 +1283,6 @@ describe("Cloudflare Access owner configuration", () => {
       await accept(Promise.resolve(result), [404]);
     },
   );
-
-  it("does not configure SSH hosts when only Access configs are created", async () => {
-    const o = owner();
-    await config();
-    await ordinary.runtime(o);
-    await config("Second");
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([]);
-  });
 
   it("preserves chat host authority across Access config updates", async () => {
     const f = await claimedFixture();

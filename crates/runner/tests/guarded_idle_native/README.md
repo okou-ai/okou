@@ -1,5 +1,110 @@
 # Guarded idle terminal fixture
 
+## Accepted physical pause with public repark awaiting HTTP
+
+`native_pause::native_accepted_physical_pause_loss_preserves_required_saving`
+exercises borrowed drop, observer unwind and post-delivery response-relay unwind
+for fresh and newly restored matching-snapshot Guests. Actual unpark, production
+Guest restore and complete original private/home/64 KiB payload verification
+precede the public speculative repark. Its real final exec, Guest quiesce and
+balloon work precede an exact pause-only gate. Complete original PATCH /vm bytes
+are captured before dispatch; only the actual Firecracker 204 establishes pause
+acceptance while the public repark is still Pending on response delivery. This
+does not claim unfinished internal VMM execution.
+
+The original Sandbox retains the actual pause producer/result and operation fence;
+the external GuardedSpeculativeIdleOwner retains backing, history, promotion and
+the full lease. Observer loss leaves Uncertain and refuses commit/repark/incoming.
+Earlier Guest/balloon cancellation and unrelated dirtiness grant no pause recovery.
+Terminal recovery joins that exact pause, then the original native/Guest resume
+readiness, and grants only original terminal data operations. Shared ordinary
+policy remains Dirty, keeping controls, assignment, RPC admission and reuse closed.
+Normal successful physical park and exact-successor handoff keep their behavior.
+
+While the actual response is held, cancelled terminal observations retain the same
+work; memory observation and an acknowledged heartbeat progress under held pool
+contention and the complete allocation refuses another full profile. Release and
+join the actual relay before positively joining terminal readiness. Producer unwind
+is injected only after actual HTTP delivery. A separate readiness witness precedes
+required cleanup; it never publishes ordinary inventory or proves data saving.
+
+The common saving path then holds real 64 MiB post-exit IO and proves complete
+original home/payload recovery, private-runtime removal, positive exit, full
+lease/growth through late IO, independent pool/status/IO progress and final zero
+accounting/status with all producers joined. Failed or unknown work keeps original
+unresolved custody; emergency Drop and P1 intervention cannot establish success.
+Existing unpark and C8 witnesses retain their own formats and regression coverage.
+
+Freeze committed Host/all canonical Guests, verify owned RootFS installed bytes
+and create a new actual matching snapshot. Keep unchanged supplied policy/P1 and
+original files, including raw `native_pause_policy_json`, `native_terminal_artifacts`
+and `snapshot-preparation.json`. Run the exact ignored entry and original reader:
+
+```sh
+<native-test-binary> native_pause::native_accepted_physical_pause_loss_preserves_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/native_pause_report.py <p1-directory>
+```
+
+The strict reader requires actual pause bytes, original owner/data/phase/clock
+bindings, separate pause/resume readiness and complete saving/progress/joins.
+Synthetic original-file/CLI negatives are ordinary consumer checks, not native
+proof. Guest RPC cancellation, full Supervisor shutdown, claim/API arbitration,
+D/E and calibrated or production P4 memory relief remain separate.
+
+## Accepted native resume with public unpark awaiting HTTP
+
+`native_unpark::native_accepted_unpark_loss_preserves_required_saving` runs
+drop, observer unwind and response-relay producer unwind with genuine fresh and
+new matching-snapshot Guests. The real public Sandbox unpark enters the exact
+owned socket route. Complete request capture precedes dispatch; only a complete
+actual Firecracker 204 response establishes accepted resume. That response
+waits before original client delivery while unpark is polled Pending, then its
+borrowed observation is dropped or unwound. This proves the accepted API wait;
+it does not claim that the internal VMM command is still unfinished.
+
+The original guarded capsule remains Uncertain, retaining its backing,
+promotion, history and full lease and refusing commit/repark/incoming. The
+Sandbox retains its original readiness producers across cancelled observations.
+A borrowed real terminal-unpark observation also remains Pending before delivery
+while observation and an acknowledged heartbeat progress through held pool
+contention; the original full profile prevents another full-profile reservation.
+Cancel that terminal observation, release and join the independently owned
+response producer, then invoke ordinary covered required cleanup. A producer
+unwind is injected only after real response delivery; it is a relay task failure,
+not an invented Firecracker error. Terminal readiness still requires positive
+joining of the original API and Guest readiness producers.
+
+Only the original Sandbox receives terminal data-operation authority. Its shared
+ordinary coordinator stays Dirty, and ordinary controls, assignment and RPC
+publication remain fenced. Other dirty causes revoke terminal recovery. Unknown
+or failed readiness retains original custody; it never authorizes reuse or
+required-data deletion. Emergency Drop is not successful cleanup.
+
+The shared original saving fixture holds actual 64 MiB post-exit IO, preserves
+full lease/growth ownership, and verifies independent pool/status/IO progress,
+positive original exit, complete original home/64 KiB payload recovery, private
+runtime removal, final status/accounting and producer joins. C8 keeps its separate
+callback boundary and original witness format. Native errors retain owners and
+original files; P1 intervention always fails.
+
+Freeze the committed Host and all current canonical Guests, verify owned RootFS
+bytes and create a new actual matching snapshot. Keep the original supplied
+policy/P1 guards. Include exact raw `native_unpark_policy_json`,
+`native_terminal_artifacts` and `snapshot-preparation.json` in original evidence:
+
+```sh
+<native-test-binary> native_unpark::native_accepted_unpark_loss_preserves_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/native_unpark_report.py <p1-directory>
+```
+
+The strict reader checks original HTTP bytes/socket identity, real acceptance
+before cancellation, clock/owner/uncertainty/progress/producer attribution and
+complete saving. Synthetic real-file/CLI negatives are ordinary consumer tests,
+not native proof. Guest RPC cancellation, physical pause, full Supervisor
+shutdown, D/E and production P4 remain separate.
+
 ## Cancelled or panicked speculative restore callbacks
 
 `native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving`
@@ -1435,3 +1540,64 @@ opt-in. This phased sequence does not claim simultaneous promotion leases,
 permanent retention of two cache generations, an actual API claim-loss race,
 calibrated physical relief, full residency, bootstrap provenance or production
 activation. Parent aggregate acceptance remains separate.
+
+## Real API competing claims (#41467)
+
+`native_real_api_competing_claims_preserve_both_owners` composes two independent
+native guarded preparations with the production authenticated claim route and
+invocation-owned PostgreSQL. The explicit API entry constructs synthetic actors,
+predecessors and candidates through public onboarding/chat/Runner/callback
+interfaces. Its loopback listener mounts existing production routes only. The
+canonical external-provider registry supplies synthetic external services.
+No development server or production account/database is used.
+
+The transport waits for both actual requests and both positively observed native
+owners, then forwards A first, B first, or both concurrently. It never selects a
+status. Each order covers fresh and newly matching-snapshot Guests. Concurrent
+release observes overlapping HTTP lifetimes; it does not establish an internal
+database schedule. Before releasing a successful response, the bridge records
+the actor's public running state. Each pending native owner also records an
+independent host observation while its pool blocks heartbeat publication, then
+joins the acknowledged heartbeat after releasing that pool. The winner keeps its original returned context and token,
+executes one exclusive synthetic GuestRPC task, and completes through the public
+protocol. The loser reparks through production guarded rollback. Both complete
+the existing full home/data, 64 MiB required saving, private-runtime removal,
+physical-exit and full-lease/accounting checks. The independent heartbeat peer
+checks acknowledged HTTP progress; it is distinct from the real claim API.
+This seam does not run the complete Executor/framework CLI or certify CLI session
+history, calibrated host envelopes, bootstrap provenance or production protection.
+
+Freeze the source, actual Host and all eleven canonical Guest binaries. Verify
+the installed Guest bytes in an owned rootfs and create a new matching snapshot
+with this Host. Keep the original snapshot preparation record. Start an owned
+loopback PostgreSQL cluster in UTC and apply normal migrations; the ordinary API
+global setup supplies canonical baseline catalog seeds. Retain the producer's
+cluster system identifier, binary/version, data directory, migration receipt,
+source manifest and native input hashes in an owner-only `producer.json` with
+format `native-real-api-producer-v1`.
+
+From the API workspace, under an owned private mount namespace with native
+privileges, run `pnpm test:native-competing-claims`. Supply
+`OKOU_TEST_REAL_API_INPUTS` pointing to a bounded owned JSON containing `root`
+(a new results directory with `producer.json`), `driver` (the frozen
+`real_api_driver.py` here), `sourceSha`, `databaseUrl` (the owned cluster), and
+`producerFile` (the same producer receipt). The driver documents its frozen input
+paths in code and refuses source/input changes. It uses unchanged P1 duration,
+sampling, headroom, log and cleanup guards. Failed cases retain original evidence
+and uncertain ownership; diagnose them before starting a new invocation.
+Disk preflight reserves four complete profile-sized Home images for the two
+original owners and their saved-home verification; existing rootfs and snapshot
+inputs are already allocated. This is a fixture capacity check, not a measured
+production storage envelope.
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/real_api_claim_report.py <results-root>
+python3 crates/runner/tests/guarded_idle_native/real_api_claim_report_test.py
+```
+
+The original-file reader requires all six scenarios/twelve owner paths, genuine
+200/404 results, original authority, public winner/completion, exact source and
+producer/snapshot/policy bindings, complete data/full leases and joined owners.
+Its ordinary synthetic CLI mutation tests do not supply native acceptance. Keep
+evidence private because original synthetic authorization is deliberately
+retained. Missing native evidence blocks readiness; #39998 stays open.

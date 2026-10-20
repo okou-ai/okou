@@ -30,6 +30,7 @@ export const INSTALL_FONTS = String.raw`
     ].join("|");
   const faces = new Map(),
     aliases = new Map(),
+    provenance = new Map(),
     resolved = new Map();
   state.fontStyle = (s) =>
     faces.get(key(s))?.[0].style || {
@@ -37,6 +38,10 @@ export const INSTALL_FONTS = String.raw`
       bold: Number(s.fontWeight) >= 600,
       italic: s.fontStyle === "italic",
     };
+  state.fontProvenance = (parts, style) => parts.map(part => {
+    const alias=(part.options?.fontFace || '').replace(/__spc_-?\d+$/, '');
+    return {text:part.text,...(provenance.get(alias) || {family:alias || family(style),weight:Number(style.fontWeight),italic:part.options?.italic ?? style.fontStyle==='italic'})};
+  });
   state.hasResolvedFont = (s, meta) =>
     faces.has(key(s)) || meta.fontFamilies?.length === 1;
   state.fontRuns = (parts, meta, style) =>
@@ -320,6 +325,7 @@ export const INSTALL_FONTS = String.raw`
           const url = URL.createObjectURL(new Blob([eot]));
           urls.push(url);
           fonts.push({ name: alias, url, weight: 400, style: "normal" });
+          provenance.set(alias,{family:name,weight,italic:s.fontStyle === "italic"});
           const style = {
               fontFace: alias,
               bold:

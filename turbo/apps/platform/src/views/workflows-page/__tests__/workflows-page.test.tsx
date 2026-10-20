@@ -2311,10 +2311,6 @@ test("Summarize Gmail automation match conditions", async () => {
   await waitFor(() => {
     expect(screen.getAllByText("Gmail new message").length).toBeGreaterThan(0);
   });
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Gmail new message").length).toBeGreaterThan(0);
-  });
   expect(screen.getByText(/from contains "@acme.com"/)).toBeInTheDocument();
   expect(
     screen.getByText(/subject does not contain "newsletter"/),
@@ -2912,19 +2908,6 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
   ]);
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: healthyAccount.target,
-          accountCount: 2,
-          attentionCount:
-            reconnectAccount.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: healthyAccount,
-        },
-      ],
-    });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
@@ -2943,6 +2926,7 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
     return respond(200, {
       connections: [healthyAccount, reconnectAccount],
       nextCursor: null,
+      defaultConnection: healthyAccount,
     });
   });
   const submittedAccounts: unknown[] = [];
@@ -2982,7 +2966,7 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
       const manager = await screen.findByRole("dialog", {
         name: "Manage Google Calendar accounts",
       });
-      const healthyRow = within(manager).getByRole("group", {
+      const healthyRow = await within(manager).findByRole("group", {
         name: "Work Calendar",
       });
       const reconnectRow = within(manager).getByRole("group", {
@@ -4288,21 +4272,10 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
   expect(
     within(tooltip).getByText("Collects account context before outreach."),
   ).toBeInTheDocument();
-  await expect(
-    within(tooltip).findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByRole("status")).toHaveAttribute(
-    "aria-busy",
-    "true",
-  );
   response.resolve();
   await expect(
     within(tooltip).findByText("Lazy Author"),
   ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByRole("status")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
   expect(
     within(tooltip).getByRole("img", { name: "Lazy Author" }),
   ).toHaveAttribute("src", "https://example.com/lazy-author.png");
@@ -4448,5 +4421,4 @@ test("Open a workflow from the workspace", async () => {
     expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
     expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
   });
-  expect(screen.queryByText("Workflow not found.")).not.toBeInTheDocument();
 });

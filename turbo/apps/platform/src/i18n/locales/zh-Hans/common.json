@@ -109,47 +109,6 @@
         "status": "状态",
         "time": "时间"
       },
-      "files": {
-        "connecting": "正在连接文件…",
-        "currentFolder": "当前文件夹",
-        "download": "下载 {{name}}",
-        "downloadChanged": "文件在下载时发生变化，请重新下载。",
-        "downloadFailed": "下载失败，请重试。",
-        "downloadFrame": "文件下载",
-        "downloadUnsupported": "此浏览器不支持文件下载。",
-        "downloadUpdateRequired": "请刷新页面后重试。如果仍无法下载，请开始新的运行。",
-        "empty": "此文件夹为空。",
-        "enterFolder": "进入 {{name}}",
-        "goHome": "返回主目录",
-        "limit": "已达到面板加载上限，部分文件未加载。请折叠文件夹或刷新后继续。",
-        "link": "链接",
-        "loading": "正在加载…",
-        "more": "加载更多",
-        "navigationFailed": "无法进入 {{path}}，请重试。",
-        "noRun": "运行进行中时可浏览文件。",
-        "other": "其他",
-        "parentFolders": "上级文件夹",
-        "pending": "排队中的运行开始后即可浏览文件。",
-        "preview": "预览 {{name}}",
-        "previewChanged": "文件发生变化，请关闭预览后重新打开。",
-        "previewDecode": "无法解码此文件，你仍可下载它。",
-        "previewEmpty": "此文件为空。",
-        "previewInvalid": "无法预览此文件，你仍可下载它。",
-        "previewLoading": "正在加载预览…",
-        "previewSize": "文件过大，无法预览，你仍可下载它。",
-        "previewTruncated": "仅显示前 64 KiB，下载文件可查看完整内容。",
-        "previewUnavailable": "预览不可用，请关闭后重试，或下载文件。",
-        "previewUnsupported": "此文件类型暂不支持预览，你仍可下载它。",
-        "previewUpdateRequired": "请刷新页面后重试。如果仍无法预览，请开始新的运行。",
-        "readonly": "仅浏览当前运行的文件。",
-        "refresh": "刷新",
-        "retry": "重试",
-        "root": "根目录",
-        "stale": "此列表已变化或过期，请刷新后继续。",
-        "title": "文件",
-        "unavailable": "文件暂不可用，请重试。",
-        "updateRequired": "此运行不支持文件浏览。请在沙箱更新后开始新的运行。"
-      },
       "log": "日志",
       "manualReloadNotice": "日志不会自动更新。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
@@ -248,7 +207,6 @@
       "documentTitle": "检查日志",
       "errors": {
         "invalid": "JSON 文件无效。请上传导出的活动日志 JSON 文件。",
-        "load": "无法加载 JSON 文件。请上传导出的活动日志 JSON 文件。",
         "oversized": "JSON 文件太大。请上传小于 25 MB 的活动日志 JSON 文件。"
       },
       "fallbackName": "导入的日志",
@@ -553,7 +511,6 @@
       },
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果",
-      "loadMore": "加载更多",
       "retry": "重试"
     },
     "fileBadges": {
@@ -1336,7 +1293,6 @@
       "downgradeScheduledPeriod": "降级已安排。当前套餐在本个账单周期结束前仍然有效。",
       "planRestored": "套餐已恢复，订阅将正常续费。",
       "preparingReceiptDownload": "正在准备下载收据…",
-      "receiptDownloadFailed": "收据下载失败",
       "receiptsDownloaded": "收据已下载",
       "subscriptionChangeConfirmed": "订阅变更已确认。"
     },
@@ -1604,9 +1560,7 @@
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上传后才能发送。",
       "unavailableCount_other": "有 {{count}} 个附件已不可用。重新上传后才能发送。",
-      "uploadFailed": "{{filename}} 上传失败",
-      "uploadFailedRetry": "{{filename}} 上传失败，请重试。",
-      "uploadsFailed": "部分附件上传失败，请重试。"
+      "uploadFailedRetry": "{{filename}} 上传失败，请重试。"
     },
     "automations": {
       "active": "已启用",
@@ -1908,7 +1862,6 @@
       "back": "返回",
       "configurePermissions": "配置 {{connectorName}} 权限",
       "customAuthorizeDescription": "查看并连接这个自定义连接器，然后授权给智能体。",
-      "defaultAccountFor": "{{connector}} · 使用默认账户：{{account}}",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "请管理员开启",
@@ -1924,7 +1877,6 @@
         "emptyCustomBody": "用任意 HTTP API 或 MCP 服务器搭一个，Okou 就能像用其他连接器一样使用它。",
         "emptyCustomTitle": "还没有自定义连接器",
         "matchCount_other": "{{count}} 个匹配",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "需要处理",
         "nextCategories": "下一组分类",
         "noResultsBody": "换个产品名称试试，或者用 API、MCP 服务器自己搭一个。",
@@ -1939,6 +1891,7 @@
       },
       "fallsBackTo": "回退到 {{account}}",
       "find": "查找连接器…",
+      "loadFailed": "无法加载连接器。",
       "noUsableAccount": "没有可用账户",
       "remove": "移除 {{connectorName}}",
       "selectedAccountFor": "{{connector}} · 已选账户：{{account}}",
@@ -2138,8 +2091,7 @@
       "skipAutomationEvent": "跳过自动化事件"
     },
     "relations": {
-      "communications": "聊天",
-      "idle": "空闲",
+      "chats": "聊天",
       "loadFailed": "加载失败",
       "messageUnavailable": "消息不可用",
       "origin": "发起自",
@@ -2147,7 +2099,6 @@
       "received": "收到",
       "running": "运行中",
       "sent": "发出",
-      "toggleMessages": "与 {{title}} 的消息往来",
       "unavailable": "不可访问",
       "untitled": "未命名"
     },
@@ -2169,9 +2120,11 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "expand": "展开",
+      "empty": "这个对话的成果和关联对话会显示在这里。",
       "loadFailed": "无法加载聊天资源",
+      "loading": "正在加载资源",
       "retry": "重试",
+      "showMore": "查看更多",
       "title": "聊天资源"
     },
     "run": {
@@ -3079,13 +3032,7 @@
       "rename": "重命名",
       "setupIncomplete": "配置未完成",
       "setupUnavailable": "账号状态暂不可用",
-      "skipName": "跳过",
-      "summaryMany": "{{value}} 个账号",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} 个账号",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} 需要处理",
-      "summaryWithAttention_other": ""
+      "skipName": "跳过"
     },
     "actions": {
       "apply": "应用",
@@ -3250,7 +3197,6 @@
       },
       "scope": {
         "aria": "连接器范围",
-        "attention": "需要处理",
         "connected": "已连接",
         "custom": "自定义",
         "discover": "发现",
@@ -3946,9 +3892,28 @@
       "connected": "{{connector}}已连接"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "无法更新授权，请刷新后重试。",
+    "allow": "允许 1 小时",
+    "approved": "已允许使用 Shell",
+    "deadline": "到期时间：{{date}}",
+    "denied": "已拒绝申请",
+    "deny": "拒绝",
+    "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
+    "details": "查看详情",
+    "expired": "授权已到期",
+    "loading": "正在加载授权…",
+    "pending": "等待批准",
+    "refresh": "刷新",
+    "revoke": "撤销授权",
+    "revoked": "已撤销 Shell 授权",
+    "scope": "仅限当前 Chat 和电脑。授权结束后，已有终端仍保持打开。",
+    "title": "Desktop Shell 授权",
+    "unavailable": "授权不可用",
+    "waiting": "Run 仍在运行或已切换电脑，暂时无法批准。"
+  },
   "documentTemplates": {
     "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
-    "back": "返回模板列表",
     "categories": {
       "all": "全部",
       "business-record": "收据与报价",
@@ -3999,7 +3964,6 @@
     "preview": "预览 {{title}}",
     "previousPage": "上一页样张",
     "retry": "重试",
-    "samplePages": "样张页数：{{total}}",
     "title": "文档",
     "useNamed": "使用 {{title}}"
   },
@@ -4850,7 +4814,6 @@
           "codeRequired": "请粘贴 Claude 授权码后继续。",
           "connectedToast": "Claude 已连接",
           "connectTitle": "连接 Claude",
-          "error": "Claude 连接失败。请重新开始并重试。",
           "expired": "Claude 连接会话已过期。请重新开始并重试。",
           "instructions": "先点击「打开 Claude 授权页面」。然后在 Claude 中为 {{brandName}} 授权，并复制授权后显示的授权码。最后把授权码粘贴到这里，点击「连接」。",
           "openApproval": "打开 Claude 授权页面",
@@ -4865,7 +4828,6 @@
           "connectedToast": "ChatGPT 已连接",
           "connectTitle": "连接 Codex",
           "deviceCode": "设备码",
-          "error": "ChatGPT 连接失败。请重新开始并重试。",
           "expired": "Codex 连接会话已过期。请重新开始并重试。",
           "freePlanRejected": "免费版 ChatGPT 套餐无法通过 {{brandName}} 使用 Codex。请升级到 Plus 或 Pro 后重试。",
           "instructions": "先使用复制按钮复制设备码，再打开授权页面。然后按 OpenAI 的提示粘贴设备码。最后确认授权，并在 {{brandName}} 完成连接前保持这个对话框打开。",
@@ -5064,6 +5026,10 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
+        "resources": {
+          "description": "有足够空间时，在对话旁显示该对话的成果和关联对话。",
+          "title": "自动打开资源面板"
+        },
         "sectionTitle": "聊天"
       },
       "debug": {
@@ -5157,7 +5123,7 @@
         "description": "每天早上 7:00 前（按你的时区）接收当日重点。",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
-        "preparationFailed": "晨报设置会自动重试，你也可以现在就重试。",
+        "preparationFailed": "暂时无法运行，Okou 会自动重试。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
         "retry": "重试",
         "retryMessage": "晨报设置无法加载或更新，请重试以继续。",
@@ -5166,7 +5132,7 @@
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
         "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
-        "preparationFailed": "主动建议设置未能完成，请重试。",
+        "preparationFailed": "暂时无法运行，Okou 会自动重试。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",
         "retry": "重试",
         "retryMessage": "无法加载或更新主动建议设置，请重试。",

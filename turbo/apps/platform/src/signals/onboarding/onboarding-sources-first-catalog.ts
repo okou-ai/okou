@@ -5,11 +5,9 @@ import { apiClient$ } from "../api-client.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../connector-domain.ts";
 import {
   builtinConnectorsReloadVersion$,
-  withMemberAccountStatus,
+  withConnectorCompletion,
 } from "../external/connectors.ts";
-import { connectorAccountSummaryByTarget$ } from "../okou-page/connector-accounts.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { waitForOperation } from "../utils.ts";
 
 /**
  * The onboarding sources with what their cards draw and what connecting one
@@ -21,17 +19,14 @@ export const onboardingSourceConnectors$ = computed(
     get(featureSwitch$);
     const client = get(apiClient$)(onboardingSourcesContract);
     const result = await accept(client.list(), [200]);
-    const summaries = await get(connectorAccountSummaryByTarget$);
-    return result.body.connectors.map((item) => {
-      return withMemberAccountStatus(item, summaries);
-    });
+    return result.body.connectors.map(withConnectorCompletion);
   },
 );
 
 /** Wait for the sources already requested by the first onboarding step. */
 export const waitForSourcesFirstCatalog$ = command(
   async ({ get }, signal: AbortSignal): Promise<void> => {
-    await waitForOperation(get(onboardingSourceConnectors$), signal);
+    await get(onboardingSourceConnectors$);
     signal.throwIfAborted();
   },
 );

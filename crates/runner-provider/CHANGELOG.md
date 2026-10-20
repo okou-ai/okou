@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.0...runner-provider-v0.10.1) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+* **runner:** require explicit finalizing resource sources ([#41825](https://github.com/okou-ai/okou/issues/41825)) ([52e13a4](https://github.com/okou-ai/okou/commit/52e13a4346eb63d84ef247820acd8f09c709619c))
+
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.9.1...runner-provider-v0.10.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
+## [0.9.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.9.0...runner-provider-v0.9.1) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-provider:** own ordinary runtime registration retirement ([#41732](https://github.com/okou-ai/okou/issues/41732)) ([fd843da](https://github.com/okou-ai/okou/commit/fd843dad1317261c35419c425cd3f1d9d578e94a))
+
 ## [0.9.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.21...runner-provider-v0.9.0) (2026-10-20)
 
 

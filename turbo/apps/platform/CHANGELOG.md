@@ -12,6 +12,136 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1048.1](https://github.com/okou-ai/okou/compare/app-v0.1048.0...app-v0.1048.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **app:** unify chat resource expansion and paging ([#41805](https://github.com/okou-ai/okou/issues/41805)) ([6487cf2](https://github.com/okou-ai/okou/commit/6487cf2094ac15912531b4102fb075749af04a51))
+
+
+### Refactoring
+
+* **app:** rely on shared async error handling ([#41838](https://github.com/okou-ai/okou/issues/41838)) ([23116d9](https://github.com/okou-ai/okou/commit/23116d989c109a46f398346802b3981a01b690d4))
+* retire global connector account summaries ([#41847](https://github.com/okou-ai/okou/issues/41847)) ([2f6fdb8](https://github.com/okou-ai/okou/commit/2f6fdb830bf8d476e8a1c935b76896080dc15527))
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+    * @okouai/core bumped to 8.774.4
+
+## [0.1048.0](https://github.com/okou-ai/okou/compare/app-v0.1047.1...app-v0.1048.0) (2026-10-20)
+
+
+### Features
+
+* **app:** open a related chat's messages and jump to their runs ([#41809](https://github.com/okou-ai/okou/issues/41809)) ([35186aa](https://github.com/okou-ai/okou/commit/35186aaa6e57bc5343a59cbbc0f022ac94d83895))
+
+
+### Bug Fixes
+
+* **app:** fit pwa keyboard viewport behind a targeted rollout ([#41753](https://github.com/okou-ai/okou/issues/41753)) ([244e8ab](https://github.com/okou-ai/okou/commit/244e8ab6447c3de11d805c814969dcf15cb6e39c))
+* **app:** size message bubbles to truncated inline references ([#41807](https://github.com/okou-ai/okou/issues/41807)) ([200317c](https://github.com/okou-ai/okou/commit/200317cc6b83528c1c2e9449d216e0af26b191c6))
+* recover existing morning brief schedules from preferences ([#41806](https://github.com/okou-ai/okou/issues/41806)) ([f0f3ad2](https://github.com/okou-ai/okou/commit/f0f3ad29bc70943f5865b225e288e6d061cc217f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+    * @okouai/core bumped to 8.774.3
+
+## [0.1047.1](https://github.com/okou-ai/okou/compare/app-v0.1047.0...app-v0.1047.1) (2026-10-20)
+
+
+### Performance Improvements
+
+* load connector and remote directories on demand ([#41709](https://github.com/okou-ai/okou/issues/41709)) ([8e16d76](https://github.com/okou-ai/okou/commit/8e16d761b4f269b9a71c1a9c2d990ad6dbc55188))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+    * @okouai/core bumped to 8.774.2
+
+## [0.1047.0](https://github.com/okou-ai/okou/compare/app-v0.1046.1...app-v0.1047.0) (2026-10-20)
+
+
+### Features
+
+* **computer-use:** require one-hour chat approval for desktop shell ([#41768](https://github.com/okou-ai/okou/issues/41768)) ([d8f366b](https://github.com/okou-ai/okou/commit/d8f366bc5167781907f2a1b1bc8dc250bd380e0a))
+
+
+### Bug Fixes
+
+* **app:** keep artifact upload actions independent ([#41775](https://github.com/okou-ai/okou/issues/41775)) ([84330ba](https://github.com/okou-ai/okou/commit/84330ba4ca058397de0d76d0e9fb3ed63408c746))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.0
+    * @okouai/core bumped to 8.774.1
+
+## [0.1046.1](https://github.com/okou-ai/okou/compare/app-v0.1046.0...app-v0.1046.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **app:** make the chat resources panel predictable and quieter ([#41659](https://github.com/okou-ai/okou/issues/41659)) ([47e9684](https://github.com/okou-ai/okou/commit/47e9684b5b468a36764d62df55dc5f5c24645a39))
+* **app:** polish document template surfaces ([#41734](https://github.com/okou-ai/okou/issues/41734)) ([f85cbd2](https://github.com/okou-ai/okou/commit/f85cbd2998bc2baadb3e0f9bce6524fd047cbe48))
+* **app:** scroll chat links to the referenced run ([#41748](https://github.com/okou-ai/okou/issues/41748)) ([43341b3](https://github.com/okou-ai/okou/commit/43341b39b443440dcbfcc6f1b4b204f4c2143d8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.580.0
+    * @okouai/core bumped to 8.774.0
+    * @okouai/ui bumped to 1.16.2
+
+## [0.1046.0](https://github.com/okou-ai/okou/compare/app-v0.1045.0...app-v0.1046.0) (2026-10-20)
+
+
+### Features
+
+* **api:** stagger morning brief starts per owner before 07:00 ([#41703](https://github.com/okou-ai/okou/issues/41703)) ([6f5b51f](https://github.com/okou-ai/okou/commit/6f5b51fd5c08f4065a66eeec687feb97efd0879c))
+
+
+### Bug Fixes
+
+* **app:** rename the resources messages section to chats ([#41726](https://github.com/okou-ai/okou/issues/41726)) ([d28fc7d](https://github.com/okou-ai/okou/commit/d28fc7d61ddb6e62ae6896f12e2375e99b6fe6e8))
+
+
+### Refactoring
+
+* prepare connector projection and runtime readers ([#41715](https://github.com/okou-ai/okou/issues/41715)) ([7500d09](https://github.com/okou-ai/okou/commit/7500d0902eb219e3a2c190a8b0057308e3db8aa9))
+
+
+### Performance Improvements
+
+* **app:** localize hosted site share subscriptions ([#41737](https://github.com/okou-ai/okou/issues/41737)) ([0d7f6c8](https://github.com/okou-ai/okou/commit/0d7f6c8c8d6088d5b3c01f749854f8550ec4d947))
+* **platform:** defer chat resources until visible ([#41722](https://github.com/okou-ai/okou/issues/41722)) ([fb43646](https://github.com/okou-ai/okou/commit/fb43646d42f3ab1617c6f63566933e6126663b10))
+* **platform:** remove links from chat resources ([#41721](https://github.com/okou-ai/okou/issues/41721)) ([48e332a](https://github.com/okou-ai/okou/commit/48e332a080ebfd9f219561f393cb098f5935bda8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+    * @okouai/connectors bumped to 3.16.12
+    * @okouai/core bumped to 8.773.0
+
 ## [0.1045.0](https://github.com/okou-ai/okou/compare/app-v0.1044.0...app-v0.1045.0) (2026-10-20)
 
 

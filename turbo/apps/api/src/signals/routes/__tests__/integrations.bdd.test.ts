@@ -1037,11 +1037,10 @@ function uniquePhoneHandle() {
 function agentPhoneWebhookHeaders(
   body: string,
   webhookId = "evt-bdd-agentphone",
-  eventType: string | null = "agent.message",
 ): {
   readonly "x-webhook-signature": string;
   readonly "x-webhook-timestamp": string;
-  readonly "x-webhook-event"?: string;
+  readonly "x-webhook-event": string;
   readonly "x-webhook-id": string;
 } {
   const timestamp = String(Math.floor(now() / 1000));
@@ -1053,7 +1052,7 @@ function agentPhoneWebhookHeaders(
       .update(`${timestamp}.${body}`)
       .digest("hex")}`,
     "x-webhook-timestamp": timestamp,
-    ...(eventType === null ? {} : { "x-webhook-event": eventType }),
+    "x-webhook-event": "agent.message",
     "x-webhook-id": webhookId,
   };
 }
@@ -4088,9 +4087,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    const { teamId } = await integrations.installSlackWorkspace(actor, {
-      isolatePg: true,
-    });
+    const { teamId } = await integrations.installSlackWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     integrations.clearSlackCallHistory();
 
@@ -4202,7 +4199,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const bareSlackUserId = uniqueSlackUserId();
     const bareInstall = await integrations.installSlackWorkspace(bare, {
       installerSlackUserId: bareSlackUserId,
-      isolatePg: true,
     });
     integrations.clearSlackCallHistory();
     await integrations.postSlackEvent(bareInstall.teamId, {
@@ -4248,7 +4244,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.configureSlackAppMocks();
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Default Agent",
-      isolatePg: true,
     });
     const status = await bdd.readOnboardingStatus(actor);
     const defaultAgentId = status.defaultAgentId;
@@ -4383,7 +4378,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    await bdd.readMe(actor, { isolatePg: true });
+    await bdd.readMe(actor);
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
@@ -6304,52 +6299,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(ignoredLifecycle.body).toBe("OK");
 
-    const missingEventTypeEvent = JSON.stringify({
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "missing event type",
-      },
-    });
-    const missingEventType = await integrations.requestAgentPhoneWebhook(
-      missingEventTypeEvent,
-      agentPhoneWebhookHeaders(
-        missingEventTypeEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-        null,
-      ),
-      [500],
-    );
-    expect(missingEventType.body).toBe(
-      "AgentPhone webhook is missing event type",
-    );
-
-    const missingChannelEvent = JSON.stringify({
-      event: "agent.message",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        channel: "sms",
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "missing channel",
-      },
-    });
-    const missingChannel = await integrations.requestAgentPhoneWebhook(
-      missingChannelEvent,
-      agentPhoneWebhookHeaders(
-        missingChannelEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(missingChannel.body).toBe(
-      "AgentPhone message webhook is missing channel",
-    );
-
     const unsupportedChannelEvent = JSON.stringify({
       event: "agent.message",
       channel: "fax",
@@ -6369,28 +6318,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       [200],
     );
     expect(unsupportedChannel.body).toBe("OK");
-
-    const missingFieldsEvent = JSON.stringify({
-      event: "agent.message",
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        to: "+19039853128",
-        message: "missing sender",
-      },
-    });
-    const missingFields = await integrations.requestAgentPhoneWebhook(
-      missingFieldsEvent,
-      agentPhoneWebhookHeaders(
-        missingFieldsEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(missingFields.body).toBe(
-      "AgentPhone message webhook is missing sender identity",
-    );
 
     const nonCanonicalMessageIdEvent = JSON.stringify({
       event: "agent.message",

@@ -11,7 +11,6 @@ import {
   rustTypeBindings,
 } from "../types";
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
-import { runnerWssTicketsContract } from "../../contracts/runner-wss-tickets";
 import {
   piLaunchConfigSchema,
   piModelConfigV2Schema,
@@ -26,36 +25,6 @@ import {
 
 const expectedBindings = [
   {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "OpenParams",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "OpenResult",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ReadParams",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ReadResult",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "HandleParams",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ReleaseResult",
-    direction: "response",
-  },
-  {
     rustModulePath: ["runners", "runs", "startup"],
     rustTypeName: "Request",
     direction: "request",
@@ -64,51 +33,6 @@ const expectedBindings = [
     rustModulePath: ["runners"],
     rustTypeName: "SandboxStartupPath",
     direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel"],
-    rustTypeName: "Message",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel"],
-    rustTypeName: "HelloResult",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListParams",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListResult",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListCloseParams",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "fs"],
-    rustTypeName: "ListCloseResult",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "diagnostics"],
-    rustTypeName: "Echo",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["sandbox_channel", "diagnostics"],
-    rustTypeName: "Notice",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["runners", "wss"],
-    rustTypeName: "ConsumeResponse",
-    direction: "response",
   },
   {
     rustModulePath: ["runners", "vnc"],
@@ -424,39 +348,6 @@ describe("Rust type bindings", () => {
     );
   });
 
-  it("retains the complete WSS consume proof with the existing ticket digest", () => {
-    const binding = rustTypeBindings.find((entry) => {
-      return (
-        entry.rustModulePath.join("/") === "runners/wss" &&
-        entry.rustTypeName === "ConsumeResponse"
-      );
-    });
-    expect(binding?.schema).toBe(
-      runnerWssTicketsContract.consume.responses[200],
-    );
-    expect(
-      z.toJSONSchema(runnerWssTicketsContract.consume.responses[200]),
-    ).toMatchObject({
-      required: ["runId", "runnerId", "orgId", "userId", "origin", "digest"],
-      properties: { digest: { type: "string", pattern: "^[0-9a-f]{64}$" } },
-    });
-    const rendered = renderRustTypes(rustTypeBindings);
-    const body = rendered.match(
-      /pub struct ConsumeResponse \{([\s\S]*?)\n\s+\}/u,
-    )?.[1];
-    for (const field of [
-      "run_id",
-      "runner_id",
-      "org_id",
-      "user_id",
-      "origin",
-      "digest",
-    ]) {
-      expect(body).toContain(`pub ${field}: String,`);
-    }
-    expect(body).not.toContain("Option<");
-  });
-
   it("renders deterministic Rust DTOs for the supported registry", () => {
     const firstRender = renderRustTypes(rustTypeBindings);
     const secondRender = renderRustTypes(rustTypeBindings);
@@ -522,14 +413,14 @@ describe("Rust type bindings", () => {
       "/// Final Run output metadata included with completion.",
     );
     expect(firstRender).toContain(
-      "pub struct RequestCompletionArtifactSnapshot {",
+      "pub struct RequestCompletionStorageOutput {",
     );
     expect(firstRender).toContain(
-      "pub artifact_snapshots: Option<Vec<RequestCompletionArtifactSnapshot>>,",
+      "pub storage_outputs: Option<Vec<RequestCompletionStorageOutput>>,",
     );
     expect(firstRender).toContain("pub completion: Option<RequestCompletion>,");
     expect(firstRender).toMatch(
-      /pub missing_root_policy:\s+Option<RequestCompletionArtifactSnapshotMissingRootPolicy>,/,
+      /pub missing_root_policy:\s+Option<RequestCompletionStorageOutputMissingRootPolicy>,/,
     );
     expect(firstRender).toContain(
       "pub volume_versions_snapshot: Option<RequestCompletionVolumeVersionsSnapshot>,",
@@ -680,7 +571,7 @@ describe("Rust type bindings", () => {
       storageMountEntrySchema.shape.missingRootPolicy,
     );
     const completionPolicySchema = z.toJSONSchema(
-      runCompletionMetadataSchema.shape.artifactSnapshots.unwrap().element.shape
+      runCompletionMetadataSchema.shape.storageOutputs.unwrap().element.shape
         .missingRootPolicy,
     );
     expect(completionPolicySchema).toEqual(runnerPolicySchema);

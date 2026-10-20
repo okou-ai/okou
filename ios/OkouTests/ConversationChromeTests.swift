@@ -16,14 +16,12 @@ final class ConversationChromeTests: XCTestCase {
     conversation.rememberReadingPosition(
       ConversationReadingPosition(messageID: ConversationHistoryFixture.id(1), offset: 0))
     let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation, topContentInset: 60)
-        .safeAreaBar(edge: .top, spacing: 0) {
-          Text("Chat").frame(height: 60)
-        })
+      rootView: ConversationHeaderTestView(conversation: conversation))
     let window = try await mountConversationHost(host)
     defer { unmount(window) }
     let collection = try XCTUnwrap(
       markers(in: host.view).first?.enclosingScrollView as? UICollectionView)
+    XCTAssertTrue(collection.topEdgeEffect.isHidden)
     await stableHostingGeometry(host.view)
     let viewport = collection.convert(collection.bounds, to: window)
     XCTAssertEqual(viewport.minY, 0, accuracy: 1)
@@ -70,7 +68,8 @@ final class ConversationChromeTests: XCTestCase {
           body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -97,6 +96,43 @@ final class ConversationChromeTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(scroll.adjustedContentInset.top, window.safeAreaInsets.top + 58)
     XCTAssertGreaterThanOrEqual(
       scroll.adjustedContentInset.bottom, window.safeAreaInsets.bottom + 66)
+  }
+}
+
+private struct ConversationHeaderTestView: View {
+  let conversation: ConversationStore
+
+  var body: some View {
+    ChatDetailView(conversation: conversation, topContentInset: 60)
+      .safeAreaBar(edge: .top, spacing: 0) {
+        ConversationHeaderBar { headerContent }
+          .frame(height: 60)
+      }
+      .compositingGroup()
+  }
+
+  private var headerContent: some View {
+    ZStack {
+      Text("✅ #41703 Morning Brief 按…")
+        .font(.system(size: 17, weight: .semibold)).lineLimit(1)
+        .padding(.horizontal, 66)
+      HStack {
+        Button {
+        } label: {
+          Image(systemName: "line.3.horizontal").frame(width: 32, height: 32)
+        }
+        .buttonStyle(.glass).buttonBorderShape(.circle)
+        .accessibilityLabel("Open sidebar")
+        Spacer()
+        Button {
+        } label: {
+          Image(systemName: "pin.fill").frame(width: 32, height: 32)
+        }
+        .buttonStyle(.glass).buttonBorderShape(.circle)
+        .accessibilityLabel("Unpin chat")
+      }
+    }
+    .buttonStyle(.plain).padding(.horizontal, 16).frame(height: 60)
   }
 }
 

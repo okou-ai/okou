@@ -87,6 +87,7 @@ export function catalogConnector(args: {
         }
       : null,
     connected,
+    setupStatus: connected ? "complete" : null,
     connectionStatus: connected
       ? reconnectRequired
         ? "reconnect-required"

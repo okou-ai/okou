@@ -12,15 +12,12 @@ import {
 import { resolveInitialLocaleFallbackFromBrowser } from "../i18n/locale-fallback.ts";
 import { DEFAULT_LOCALE, type SupportedLocale } from "../i18n/resources.ts";
 import { clerk$ } from "./auth.ts";
-import { logger } from "./log.ts";
 import {
   updateUserPreference$,
   userPreferences$,
 } from "./okou-page/settings/user-preferences.ts";
-import { settle } from "./utils.ts";
 
 const internalLocale$ = state<SupportedLocale>(DEFAULT_LOCALE);
-const L = logger("Locale");
 
 export const locale$ = computed((get) => {
   return get(internalLocale$);
@@ -31,31 +28,13 @@ export const availableLocalePreferences$ = computed(async (get) => {
   return preferences.supportedLocales;
 });
 
-const loadInitialLocale$ = command(
-  async ({ set }, locale: SupportedLocale, signal: AbortSignal) => {
-    return await Promise.all([
-      loadInitialLocaleResources(locale, signal),
-      set(loadClerkLocalization$, locale, signal),
-    ]);
-  },
-);
-
 export const initLocale$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     const requestedLocale = resolveInitialLocaleFallbackFromBrowser();
-    const initialResult = await settle(
-      set(loadInitialLocale$, requestedLocale, signal),
-      signal,
-    );
-    if (!initialResult.ok) {
-      L.error(
-        `Failed to initialize ${requestedLocale}; falling back to ${DEFAULT_LOCALE}`,
-        initialResult.error,
-      );
-    }
-    const [initial, clerkLocalization] = initialResult.ok
-      ? initialResult.value
-      : await set(loadInitialLocale$, DEFAULT_LOCALE, signal);
+    const [initial, clerkLocalization] = await Promise.all([
+      loadInitialLocaleResources(requestedLocale, signal),
+      set(loadClerkLocalization$, requestedLocale, signal),
+    ]);
     signal.throwIfAborted();
     const locale = await initializeI18nWithResources(initial, signal);
     signal.throwIfAborted();

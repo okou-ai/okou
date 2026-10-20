@@ -1,20 +1,16 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
   connectorAccountTargetKey,
   connectorAccountsContract,
   type ConnectorAccountConnection,
-  type ConnectorAccountSummary,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { onRejection, resetSignal } from "../utils.ts";
-import {
-  connectorOverview$,
-  invalidateConnectorOverview$,
-} from "./connector-overview.ts";
+import { resetSignal } from "../utils.ts";
+import { userConnectedConnectors$ } from "./connector-overview.ts";
 
 const CONNECTOR_ACCOUNT_PAGE_SIZE = 50;
 /** Keep account search responsive while coalescing normal typing bursts. */
@@ -23,97 +19,53 @@ export const CONNECTOR_ACCOUNT_SEARCH_THRESHOLD = 6;
 
 export { connectorAccountTargetKey };
 
-const internalSummariesReload$ = state(0);
+/** Saved connector membership only; account facts are loaded for an open target. */
+export const connectedConnectorTargetKeys$ = computed(async (get) => {
+  const connected = await get(userConnectedConnectors$);
+  return new Set([
+    ...connected.builtinConnectors.map((connector) => {
+      return `builtin:${connector.slug}`;
+    }),
+    ...connected.customConnectors.map((connector) => {
+      return `custom:${connector.id}`;
+    }),
+  ]);
+});
 
-const connectorAccountSummaries$ = computed(
-  async (get): Promise<readonly ConnectorAccountSummary[]> => {
-    get(internalSummariesReload$);
-    const result = await accept(
-      get(apiClient$)(connectorAccountsContract).summaries({
-        query: { includeScopeMismatch: "true" },
-      }),
-      [200],
-    );
-    return result.body.summaries;
-  },
-);
-
-export const connectorAccountSummaryByTarget$ = computed(
-  async (get): Promise<ReadonlyMap<string, ConnectorAccountSummary>> => {
-    const summaries = await get(connectorAccountSummaries$);
-    return new Map(
-      summaries.map((summary) => {
-        return [connectorAccountTargetKey(summary.target), summary];
-      }),
-    );
-  },
-);
-
-/** Shared brief summaries of saved accounts, including those needing reconnect. */
-export const connectorOverviewAccountSummaryByTarget$ = computed(
-  async (get) => {
-    const { accountSummaries } = await get(connectorOverview$);
-    return new Map(
-      accountSummaries.map((summary) => {
-        return [connectorAccountTargetKey(summary.target), summary];
-      }),
-    );
-  },
-);
-
-/**
- * What the Connected segment says about the list behind it: how many have an
- * account, and whether any of them stopped working. The count comes from the
- * account summaries rather than from the catalog response, because that
- * response narrows to whatever is being searched for and this number must not
- * move while someone browses another scope.
- */
-export const connectedConnectorsBadge$ = computed(
-  async (
-    get,
-  ): Promise<{ readonly count: number; readonly needsAttention: boolean }> => {
-    const { accountSummaries: summaries } = await get(connectorOverview$);
-    // Every kind counts, because the scope this number stands for holds every
-    // kind: a custom connector with an account is connected like any other.
-    const connected = summaries.filter((summary) => {
-      return summary.accountCount > 0;
-    });
-    return {
-      count: connected.length,
-      needsAttention: connected.some((summary) => {
-        return summary.attentionCount > 0;
-      }),
-    };
-  },
-);
-
-export const reloadConnectorAccountSummaries$ = command(({ set }) => {
-  set(internalSummariesReload$, (version) => {
-    return version + 1;
-  });
-  set(invalidateConnectorOverview$);
+export const connectedConnectorsBadge$ = computed(async (get) => {
+  const connected = await get(userConnectedConnectors$);
+  return {
+    count:
+      connected.builtinConnectors.length + connected.customConnectors.length,
+  };
 });
 
 interface ConnectorAccountPage {
   readonly connections: readonly ConnectorAccountConnection[];
   readonly nextCursor: string | null;
   readonly available: boolean;
-  readonly defaultConnection?: ConnectorAccountConnection | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
 }
 
 function emptyConnectorAccountPage(): ConnectorAccountPage {
-  return { connections: [], nextCursor: null, available: false };
+  return {
+    connections: [],
+    nextCursor: null,
+    available: false,
+    defaultConnection: null,
+  };
 }
 
 export interface ConnectorAccountList {
   readonly connections: readonly ConnectorAccountConnection[];
   readonly nextCursor: string | null;
   readonly available: boolean;
-  readonly defaultConnection?: ConnectorAccountConnection | null;
+  readonly defaultConnection: ConnectorAccountConnection | null;
+  readonly hasMultiplePages?: boolean;
 }
 
 function mergeConnectorAccountPages(
-  firstPage: ConnectorAccountPage,
+  firstPage: ConnectorAccountList,
   pages: readonly ConnectorAccountPage[],
 ): ConnectorAccountList {
   return {
@@ -127,10 +79,10 @@ function mergeConnectorAccountPages(
     // with a null cursor. Falling back to the first page's cursor there would
     // keep "Load more" alive and re-request the page after the first one.
     nextCursor: (pages.at(-1) ?? firstPage).nextCursor,
+    hasMultiplePages:
+      firstPage.hasMultiplePages === true || firstPage.nextCursor !== null,
     available: firstPage.available,
-    ...(firstPage.defaultConnection !== undefined
-      ? { defaultConnection: firstPage.defaultConnection }
-      : {}),
+    defaultConnection: firstPage.defaultConnection,
   };
 }
 
@@ -161,34 +113,65 @@ function targetListQuery(
       };
 }
 
-async function fetchConnectorAccountPage(args: {
+interface ConnectorAccountPageRequest {
   readonly createClient: ApiClientFactory;
   readonly target: ConnectorAccountTarget;
   readonly search: string;
   readonly cursor?: string;
   readonly includeBuiltinScopeMismatch: boolean;
-}): Promise<ConnectorAccountPage> {
+}
+
+async function fetchConnectorAccountPage(
+  args: ConnectorAccountPageRequest,
+  signal: AbortSignal,
+): Promise<ConnectorAccountPage> {
   const enriched =
     args.includeBuiltinScopeMismatch && args.target.kind === "builtin";
   const result = await accept(
     args.createClient(connectorAccountsContract).connections({
       query: targetListQuery(args.target, args.search, args.cursor, enriched),
+      fetchOptions: { signal },
     }),
     [200, 404],
   );
-  return result.status === 404
-    ? emptyConnectorAccountPage()
-    : { ...result.body, available: true };
+  if (result.status === 404) {
+    return emptyConnectorAccountPage();
+  }
+  return { ...requireConnectorAccountDefault(result.body), available: true };
+}
+
+/** This App ships after the API that supplies the target's canonical default. */
+export function requireConnectorAccountDefault<
+  T extends { readonly defaultConnection?: ConnectorAccountConnection | null },
+>(
+  page: T,
+): T & { readonly defaultConnection: ConnectorAccountConnection | null } {
+  if (page.defaultConnection === undefined) {
+    throw new Error(
+      "Connector account default information is unavailable. Refresh and try again.",
+    );
+  }
+  return { ...page, defaultConnection: page.defaultConnection };
 }
 
 interface ConnectorAccountQuery {
   readonly target: ConnectorAccountTarget;
   readonly search: string;
   readonly debounce: boolean;
+  readonly request: (
+    args: ConnectorAccountPageRequest,
+  ) => Promise<ConnectorAccountPage>;
+}
+
+function accountPageRequest(signal: AbortSignal) {
+  return (args: ConnectorAccountPageRequest) => {
+    return fetchConnectorAccountPage(args, signal);
+  };
 }
 
 function createConnectorAccountQuerySignals() {
   const query$ = state<ConnectorAccountQuery | null>(null);
+  const resetQuerySignal$ = resetSignal();
   const search$ = state("");
   const debouncedSearch$ = state(Promise.resolve(""));
   const resetSearchDebounceSignal$ = resetSignal();
@@ -199,9 +182,13 @@ function createConnectorAccountQuerySignals() {
     readSearch$,
     CONNECTOR_ACCOUNT_SEARCH_DEBOUNCE_MS,
   );
-  const lastPage$ = state<Computed<Promise<ConnectorAccountList>> | null>(null);
+  const lastPage$ = state<ConnectorAccountList | null>(null);
   const setTarget$ = command(
-    ({ get, set }, target: ConnectorAccountTarget, _signal: AbortSignal) => {
+    (
+      { get, set },
+      target: ConnectorAccountTarget,
+      ownerSignal: AbortSignal,
+    ) => {
       const current = get(query$);
       if (
         current &&
@@ -218,10 +205,12 @@ function createConnectorAccountQuerySignals() {
         target,
         search: "",
         debounce: false,
+        request: accountPageRequest(set(resetQuerySignal$, ownerSignal)),
       });
     },
   );
   const clearTarget$ = command(({ set }) => {
+    set(resetQuerySignal$);
     set(resetSearchDebounceSignal$);
     set(debouncedSearch$, Promise.resolve(""));
     set(query$, null);
@@ -251,6 +240,7 @@ function createConnectorAccountQuerySignals() {
         target: current.target,
         search: normalized,
         debounce: normalized.length > 0,
+        request: current.request,
       });
     },
   );
@@ -271,6 +261,7 @@ function createConnectorAccountQuerySignals() {
       target: current.target,
       search: get(search$),
       debounce: false,
+      request: current.request,
     });
   });
   return {
@@ -310,7 +301,7 @@ export function createConnectorAccountListSignals(
         return emptyConnectorAccountPage();
       }
     }
-    return fetchConnectorAccountPage({
+    return query.request({
       createClient: get(apiClient$),
       target: query.target,
       search: query.search,
@@ -318,7 +309,7 @@ export function createConnectorAccountListSignals(
     });
   });
   const accounts$ = computed(async (get): Promise<ConnectorAccountList> => {
-    return await get(get(querySignals.lastPage$) ?? firstPage$);
+    return get(querySignals.lastPage$) ?? (await get(firstPage$));
   });
   const loadMore$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
@@ -326,53 +317,34 @@ export function createConnectorAccountListSignals(
       if (!query) {
         return;
       }
-      const previousPage$ = get(querySignals.lastPage$) ?? firstPage$;
-      const previousPage = await get(previousPage$);
+      const previous = get(querySignals.lastPage$);
+      const previousPage = previous ?? (await get(firstPage$));
       signal.throwIfAborted();
       if (get(querySignals.query$) !== query) {
-        return;
-      }
-      // Another caller already requested this cursor. Await that same page.
-      if ((get(querySignals.lastPage$) ?? firstPage$) !== previousPage$) {
-        await get(accounts$);
-        signal.throwIfAborted();
         return;
       }
       const cursor = previousPage.nextCursor;
       if (!cursor) {
         return;
       }
-      const nextPage$ = computed(async (get): Promise<ConnectorAccountList> => {
-        const [previous, page] = await Promise.all([
-          get(previousPage$),
-          fetchConnectorAccountPage({
-            createClient: get(apiClient$),
-            target: query.target,
-            search: query.search,
-            cursor,
-            includeBuiltinScopeMismatch,
-          }),
-        ]);
-        return page.available
-          ? mergeConnectorAccountPages(previous, [page])
-          : page;
-      });
-      set(querySignals.lastPage$, nextPage$);
-      const result = await onRejection(get(nextPage$), () => {
-        if (
-          get(querySignals.query$) === query &&
-          get(querySignals.lastPage$) === nextPage$
-        ) {
-          set(
-            querySignals.lastPage$,
-            previousPage$ === firstPage$ ? null : previousPage$,
-          );
-        }
+      const page = await query.request({
+        createClient: get(apiClient$),
+        target: query.target,
+        search: query.search,
+        cursor,
+        includeBuiltinScopeMismatch,
       });
       signal.throwIfAborted();
-      if (get(querySignals.query$) !== query) {
+      if (
+        get(querySignals.query$) !== query ||
+        get(querySignals.lastPage$) !== previous
+      ) {
         return;
       }
+      const result = page.available
+        ? mergeConnectorAccountPages(previousPage, [page])
+        : page;
+      set(querySignals.lastPage$, result);
       if (!result.available) {
         set(querySignals.reload$, signal);
         await get(accounts$);

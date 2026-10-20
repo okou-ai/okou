@@ -3,7 +3,6 @@ import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  PI_AGENT_DIR,
   PI_MEMORY_ROOT,
   PI_SKILLS_ROOT,
   type PiModelConfig,
@@ -31,10 +30,7 @@ import {
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
-import {
-  getInstructionsFilename,
-  type SupportedFramework,
-} from "@okouai/core/frameworks";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import {
   MEMORY_ARTIFACT_NAME,
   SYSTEM_ORG_ID,
@@ -80,7 +76,6 @@ interface AdditionalVolume {
 
 interface PrepareAgentRunStorageManifestArgs {
   readonly db: ReadonlyDb;
-  readonly instructionsStorageName: string;
   readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
@@ -98,7 +93,6 @@ interface ResolvedVolume {
   readonly mountPath: string;
   readonly vasStorageName: string;
   readonly vasVersion: string;
-  readonly instructionsTargetFilename?: string;
   readonly optional?: boolean;
   readonly system?: boolean;
 }
@@ -173,7 +167,6 @@ interface ResolvedManifestStorageInput {
   readonly name: string;
   readonly mountPath: string;
   readonly vasStorageName: string;
-  readonly instructionsTargetFilename?: string;
   readonly optional?: boolean;
   readonly resolved: StorageResolution;
 }
@@ -278,32 +271,6 @@ class StorageManifestEntryPhaseTiming {
       dimensions,
     );
   }
-}
-
-function instructionsMountPath(framework: SupportedFramework | "pi"): string {
-  if (framework === "pi") {
-    return PI_AGENT_DIR;
-  }
-  return framework === "codex"
-    ? CANONICAL_CODEX_HOME_DIR
-    : CANONICAL_CLAUDE_CONFIG_DIR;
-}
-
-function instructionsFilename(framework: SupportedFramework | "pi"): string {
-  return framework === "pi" ? "AGENTS.md" : getInstructionsFilename(framework);
-}
-
-function runInstructionsVolume(args: {
-  readonly instructionsStorageName: string;
-  readonly framework: SupportedFramework | "pi";
-}): ResolvedVolume {
-  return {
-    name: args.instructionsStorageName,
-    mountPath: instructionsMountPath(args.framework),
-    vasStorageName: args.instructionsStorageName,
-    vasVersion: "latest",
-    instructionsTargetFilename: instructionsFilename(args.framework),
-  };
 }
 
 function dedupArtifacts(
@@ -610,7 +577,6 @@ function resolveComposeStorageInput(args: {
     name: args.volume.name,
     mountPath: args.volume.mountPath,
     vasStorageName: args.volume.vasStorageName,
-    instructionsTargetFilename: args.volume.instructionsTargetFilename,
     optional: args.volume.optional,
     resolved: resolvedResult.ok,
   };
@@ -805,11 +771,6 @@ function readOnlyStorageEntryMetadata(args: {
       versionId: args.plan.resolved.versionId,
       mountPath: args.plan.mountPath,
       ...(archiveSize === undefined ? {} : { archiveSize }),
-      ...(args.plan.instructionsTargetFilename
-        ? {
-            instructionsTargetFilename: args.plan.instructionsTargetFilename,
-          }
-        : {}),
     },
     persistedMount: {
       orgId: args.plan.resolved.resolvedOrgId,
@@ -821,11 +782,6 @@ function readOnlyStorageEntryMetadata(args: {
       ...(args.plan.optional === undefined
         ? {}
         : { optional: args.plan.optional }),
-      ...(args.plan.instructionsTargetFilename === undefined
-        ? {}
-        : {
-            instructionsTargetFilename: args.plan.instructionsTargetFilename,
-          }),
     },
     runContextVolume: {
       name: args.plan.name,
@@ -905,7 +861,6 @@ function normalizeAdditionalVolumeSources(args: {
 }
 
 export async function resolveStorageManifestInputs(args: {
-  readonly instructionsStorageName: string;
   readonly framework: SupportedFramework | "pi";
   readonly artifacts: readonly ContextArtifact[];
   readonly timing?: ApiDispatchTimingCollector;
@@ -917,7 +872,7 @@ export async function resolveStorageManifestInputs(args: {
     () => {
       return {
         artifacts: dedupArtifacts(args.artifacts),
-        composeVolumes: [runInstructionsVolume(args)],
+        composeVolumes: [],
       };
     },
   );
@@ -1255,11 +1210,6 @@ function resolvePersistedStorageMounts(args: {
       vasStorageName: mount.name,
       mountPath: mount.mountPath,
       ...(mount.optional === undefined ? {} : { optional: mount.optional }),
-      ...(mount.instructionsTargetFilename === undefined
-        ? {}
-        : {
-            instructionsTargetFilename: mount.instructionsTargetFilename,
-          }),
       resolved,
       entryKind: "additional",
       source: "unknown",
@@ -1408,7 +1358,7 @@ function skillsRootForRun(
 
 type RunStorageExecution = Pick<
   ResolvedRunExecution,
-  "orgId" | "instructionsStorageName" | "additionalVolumes"
+  "orgId" | "additionalVolumes"
 >;
 
 /**
@@ -1506,7 +1456,6 @@ export type AdditionalVolumeSources =
   readonly StorageManifestSource[] | undefined;
 
 export interface ResolvedAgentExecution {
-  readonly instructionsStorageName: string;
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly orgId: string;
@@ -2356,8 +2305,5 @@ export function storedMountFromPrepared(
     ...identity,
     archiveUrl: prepared.archiveUrl,
     ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
-    ...(prepared.instructionsTargetFilename === undefined
-      ? {}
-      : { instructionsTargetFilename: prepared.instructionsTargetFilename }),
   };
 }

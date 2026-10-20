@@ -2,12 +2,9 @@ import type {
   ConnectorCheckRequestBody,
   ConnectorCheckTargetAwareDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
-import {
-  connectorAccountTargetKey,
-  type ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import { memberAccountStatus } from "./member-status";
+import { memberAccountStatus, memberAccountSummary } from "./member-status";
 
 import {
   getAgentCustomConnectorGrants,
@@ -16,7 +13,7 @@ import {
 import {
   getBuiltinConnector,
   getCustomConnector,
-  listConnectorAccountSummaries,
+  listConnectorAccountConnections,
 } from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
@@ -187,15 +184,16 @@ async function loadCheckEvidence(
   if (account === undefined) {
     throw new Error("Missing run account lookup for connector");
   }
-  const summaries =
+  const memberAccounts =
     !runBound &&
     !(definition && isIntegrationManagedCustomConnector(definition))
-      ? await listConnectorAccountSummaries()
+      ? await listConnectorAccountConnections(target, undefined, {
+          includeScopeMismatch: target.kind === "builtin",
+        })
       : null;
-  const accountSummary =
-    summaries?.get(connectorAccountTargetKey(target)) ?? null;
+  const accountSummary = memberAccountSummary(target, memberAccounts);
   const memberStatus =
-    summaries === null ? null : memberAccountStatus(accountSummary);
+    memberAccounts === null ? null : memberAccountStatus(memberAccounts);
   return {
     definition,
     currentConnection,

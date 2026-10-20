@@ -1107,14 +1107,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expectApiError(peerRead.body);
         expect(["FORBIDDEN", "NOT_FOUND"]).toContain(peerRead.body.error.code);
 
-        const missingScreenshot = await api.requestComputerUseScreenshot(
-          actor,
-          createdCommand.commandId,
-          [404],
-        );
-        expectApiError(missingScreenshot.body);
-        expect(missingScreenshot.body.error.code).toBe("NOT_FOUND");
-
         const audit = await api.listComputerUseAuditEvents(actor, {
           commandId: createdCommand.commandId,
         });

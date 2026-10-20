@@ -1,4 +1,3 @@
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
 import { computed, type Computed } from "ccstate";
 import { env } from "../../lib/env";
 import { db$ } from "../external/db";
@@ -188,7 +187,6 @@ function createStorageInputSignal(
     }
     const resolved = {
       orgId: agent.orgId,
-      instructionsStorageName: getInstructionsStorageName(agent.name),
     };
     const piSandbox = resolvePreparedPiModelConfig({
       input: {
@@ -213,7 +211,6 @@ function createStorageInputSignal(
       kind: "requested",
       args: {
         db: get(db$),
-        instructionsStorageName: resolved.instructionsStorageName,
         agentOrgId: resolved.orgId,
         runtimeOrgId: bootstrap.orgId,
         userId: bootstrap.userId,
@@ -258,7 +255,6 @@ function createStorageIndexSignals(
         };
       }
       const { artifacts, composeVolumes } = await resolveStorageManifestInputs({
-        instructionsStorageName: input.args.instructionsStorageName,
         framework: input.args.framework,
         artifacts: input.args.artifacts,
         timing: input.args.timing,
@@ -446,12 +442,6 @@ function createStorageObjectSignals(
           : {
               ...identity,
               mode: "readonly",
-              ...(mount.instructionsTargetFilename === undefined
-                ? {}
-                : {
-                    instructionsTargetFilename:
-                      mount.instructionsTargetFilename,
-                  }),
             };
       },
     );

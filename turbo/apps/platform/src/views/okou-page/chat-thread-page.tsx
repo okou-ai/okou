@@ -146,7 +146,6 @@ import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
 import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
-import { runChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
@@ -182,6 +181,8 @@ import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
   completeExactReconnectChatAction$,
+  completeCustomConnectorChatAction$,
+  completeCatalogConnectorChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -282,6 +283,7 @@ import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import {
   ChatThreadLinkChip,
+  STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS,
   STRUCTURED_INLINE_REFERENCE_CLASS,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
@@ -4267,6 +4269,9 @@ function splitQueuedEventsForThinkingIndicator(groups: ChatEventGroup[]): {
 function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
+  const keyboardViewportEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.PwaKeyboardViewport] &&
+    standalonePwa;
 
   // The pane's canvas runs behind the composer the way it runs behind the
   // header. A fill of its own can only match a flat canvas, and a gradient
@@ -4276,11 +4281,15 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0"
+      className={cn(
+        "relative",
+        keyboardViewportEnabled ? "flex min-h-0 flex-col" : "shrink-0",
+      )}
     >
       <div
         className={cn(
           "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-4 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          keyboardViewportEnabled && "min-h-0",
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -4602,9 +4611,9 @@ function ChatConnectorActionConnectModal() {
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
-  const runCallback = useSet(runChatActionCallback$);
   const completeExactReconnect = useSet(completeExactReconnectChatAction$);
-  const pageSignal = useGet(pageSignal$);
+  const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
+  const completeCatalogConnector = useSet(completeCatalogConnectorChatAction$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
 
@@ -4620,16 +4629,11 @@ function ActiveChatConnectorActionConnectModal() {
       await completeExactReconnect(active, connectionId, attemptSignal);
       return;
     }
-    if (active.callbackPrompt && active.threadId) {
-      await runCallback(
-        {
-          threadId: active.threadId,
-          agentId: active.agentId,
-          callbackPrompt: active.callbackPrompt,
-        },
-        pageSignal,
-      );
+    if (active.kind === "custom") {
+      await completeCustomConnector(active, attemptSignal);
+      return;
     }
+    await completeCatalogConnector(active, attemptSignal);
   };
 
   if (active.kind === "custom") {
@@ -6919,13 +6923,15 @@ function UserMessageTemplateReference({
   const typeLabel = generationTemplateTypeLabel(part.template);
   const label = `${typeLabel ?? part.template.type} · ${part.titleSnapshot}`;
   return (
-    <span
-      data-structured-template-reference=""
-      aria-description={label}
-      className={STRUCTURED_INLINE_REFERENCE_CLASS}
-    >
-      <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
-      <span className="min-w-0 truncate">{part.titleSnapshot}</span>
+    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
+      <span
+        data-structured-template-reference=""
+        aria-description={label}
+        className={STRUCTURED_INLINE_REFERENCE_CLASS}
+      >
+        <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
+        <span className="min-w-0 truncate">{part.titleSnapshot}</span>
+      </span>
     </span>
   );
 }
@@ -7033,25 +7039,27 @@ function UserMessageAgentReference({
   const { t } = useTranslation();
   const agent = useLastResolved(signals.agent$);
   return (
-    <Link
-      pathname={ROUTES.agentChat}
-      options={{ pathParams: { agentId } }}
-      aria-label={t(
-        ($) => {
-          return $.chat.thread.openNamedAgent;
-        },
-        { name },
-      )}
-      className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-    >
-      <AvatarFromUrl
-        avatarUrl={agent?.avatarUrl}
-        alt=""
-        className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
-        size={16}
-      />
-      <span className="min-w-0 truncate">{name}</span>
-    </Link>
+    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
+      <Link
+        pathname={ROUTES.agentChat}
+        options={{ pathParams: { agentId } }}
+        aria-label={t(
+          ($) => {
+            return $.chat.thread.openNamedAgent;
+          },
+          { name },
+        )}
+        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
+      >
+        <AvatarFromUrl
+          avatarUrl={agent?.avatarUrl}
+          alt=""
+          className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
+          size={16}
+        />
+        <span className="min-w-0 truncate">{name}</span>
+      </Link>
+    </span>
   );
 }
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.107.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.20...guest-agent-v0.107.21) (2026-10-20)
+
+## [0.107.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.19...guest-agent-v0.107.20) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** preserve codex notifications while awaiting rpc replies ([#41728](https://github.com/okou-ai/okou/issues/41728)) ([956877b](https://github.com/okou-ai/okou/commit/956877b64cf51f613872d3f15d05f5ec6ca0ed77))
+
+
+### Refactoring
+
+* **runner:** send canonical storage outputs on completion ([#41742](https://github.com/okou-ai/okou/issues/41742)) ([2eff576](https://github.com/okou-ai/okou/commit/2eff576ad75d328676834643c1380ff35c2297e2))
+
 ## [0.107.19](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.18...guest-agent-v0.107.19) (2026-10-20)
 
 

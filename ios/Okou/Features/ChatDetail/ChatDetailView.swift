@@ -10,6 +10,11 @@ struct ChatDetailView: View {
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
+  @State private var messageToSelect: ChatMessage?
+  @State private var usageDetails: UsageDetails?
+  @State private var selectionToQuote: ChatFeedbackSelection?
+
+  private struct UsageDetails: Identifiable { let id: String }
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0
@@ -29,6 +34,9 @@ struct ChatDetailView: View {
     for (index, item) in items.enumerated() {
       let continuesGroup =
         index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
+        && item.message?.modelChange == nil
+        && item.message?.userMessage?.annotation?.type != "automation"
+        && items[index - 1].message?.userMessage?.annotation?.type != "automation"
       let spacing: CGFloat = index == 0 ? 20 : (continuesGroup ? 8 : 24)
       switch item {
       case .work(let section, let expanded):
@@ -42,7 +50,12 @@ struct ChatDetailView: View {
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory)
         )
+      case .usage(let runID):
+        result.append(.usage(runID: runID, state: conversation.runUsage.states[runID] ?? .loading))
       }
+    }
+    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
     result.append(.footer(history.executionState, hasMessages: !items.isEmpty))
     return result
@@ -87,6 +100,8 @@ struct ChatDetailView: View {
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
     .onDisappear {
+      selectionToQuote = nil
+      messageToSelect = nil
       scrolling.deactivate()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
@@ -98,7 +113,32 @@ struct ChatDetailView: View {
     ) {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
+    .sheet(
+      item: $messageToSelect,
+      onDismiss: {
+        if let selection = selectionToQuote { conversation.quote(selection) }
+        selectionToQuote = nil
+      }
+    ) { message in
+      MessageTextSelectionSheet(
+        text: message.copyText, message: message,
+        quote: message.role == .assistant
+          ? { selection in
+            selectionToQuote = selection
+            messageToSelect = nil
+          } : nil)
+    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
+    .sheet(item: $usageDetails) { selection in
+      ConversationRunUsageDetails(
+        state: conversation.runUsage.states[selection.id] ?? .loading,
+        catalog: conversation.modelSelection?.models.usageCatalog,
+        retry: { conversation.runUsage.retry(selection.id) }
+      )
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
+      .task { await conversation.modelSelection?.models.loadUsageCatalog() }
+    }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
         draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
@@ -134,6 +174,12 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .followups(let source, let finishedAt):
+      RecommendedFollowupList(
+        source: source, finishedAt: finishedAt,
+        select: conversation.composer.editor.selectOrAppendText
+      )
+      .padding(EdgeInsets(top: 24, leading: 26, bottom: 0, trailing: 20))
     case .earlier(let isLoading):
       Button {
         scrolling.loadEarlierMessages()
@@ -190,6 +236,15 @@ struct ChatDetailView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
+    case .usage(let runID, let state):
+      ConversationRunUsageView(
+        runID: runID, state: state, showDetails: { usageDetails = UsageDetails(id: runID) }
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: "usage:\(runID)", anchor: anchor) }
+      }
+      .padding(.horizontal, 26)
     }
   }
 
@@ -199,13 +254,14 @@ struct ChatDetailView: View {
   ) -> some View {
     Group {
       if message.role == .user {
-        UserMessageBubbleLayout {
-          messageContent(
-            message, showsAvatar: false, pendingRetry: pendingRetry, isSending: isSending,
-            loadsAttachments: loadsAttachments
-          )
-          .padding(14)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        VStack(alignment: .trailing, spacing: 8) {
+          if let change = message.modelChange {
+            modelChangeLabel(change)
+          }
+          UserMessageView(
+            message: message, webURL: conversation.webURL,
+            viewer: conversation.attachmentViewer, loadsAttachments: loadsAttachments)
+          deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
         }
       } else {
         messageContent(
@@ -224,8 +280,9 @@ struct ChatDetailView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .contextMenu {
-      if !message.text.isEmpty {
-        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+      if !message.copyText.isEmpty {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
+        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
       }
     }
   }
@@ -265,23 +322,43 @@ struct ChatDetailView: View {
           attachment: attachment, viewer: conversation.attachmentViewer,
           loadsThumbnail: loadsAttachments)
       }
-      if let pendingRetry {
-        HStack {
-          Text(pendingRetry ? "Delivery not confirmed" : "Sending…")
-            .font(.caption).foregroundStyle(.secondary)
-          if pendingRetry {
-            Button("Check and retry") {
-              guard let pending = conversation.pending.first(where: { $0.id == message.id }) else {
-                return
-              }
-              Task { await conversation.retry(pending) }
+      deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
+    }
+  }
+
+  @ViewBuilder
+  private func deliveryStatus(_ message: ChatMessage, pendingRetry: Bool?, isSending: Bool)
+    -> some View
+  {
+    if let pendingRetry {
+      HStack {
+        Text(pendingRetry ? "Delivery not confirmed" : "Sending…")
+          .font(.caption).foregroundStyle(.secondary)
+        if pendingRetry {
+          Button("Check and retry") {
+            guard let pending = conversation.pending.first(where: { $0.id == message.id }) else {
+              return
             }
-            .font(.caption)
-            .disabled(isSending)
+            Task { await conversation.retry(pending) }
           }
+          .font(.caption)
+          .disabled(isSending)
         }
       }
     }
+  }
+
+  private func modelChangeLabel(_ change: ChatModelChange) -> some View {
+    let label: String
+    switch change {
+    case .model(let model):
+      let name =
+        conversation.modelSelection?.models.configuration?.catalog.name(model.id) ?? model.id
+      label = "Model: \(name)" + (model.isFast ? " · Fast" : "")
+    case .fastMode(let enabled): label = enabled ? "Fast mode on" : "Fast mode off"
+    }
+    return Label(label, systemImage: "slider.horizontal.3")
+      .font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity)
   }
 
 }

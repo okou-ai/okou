@@ -7,16 +7,6 @@
       "owner": "insertBenchmarkRunBatch$"
     },
     {
-      "id": "TX-0007",
-      "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
-      "owner": "publishPreparedAgentInstructions$"
-    },
-    {
-      "id": "TX-0008",
-      "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
-      "owner": "reserveAgentInstructionPublication$"
-    },
-    {
       "id": "TX-0011",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentInner$"
@@ -412,11 +402,6 @@
       "owner": "discardDormantMaterialization$"
     },
     {
-      "id": "TX-0216",
-      "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
-      "owner": "cleanupBootstrapCandidate$"
-    },
-    {
       "id": "TX-0218",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
@@ -465,11 +450,6 @@
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
-    },
-    {
-      "id": "TX-0240",
-      "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
-      "owner": "issueRunnerWssTicket$"
     },
     {
       "id": "TX-0246",

@@ -79,7 +79,7 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
-    /// Absent for captured Storage instructions; empty explicitly replaces the managed file.
+    /// Absent for agentless jobs; empty explicitly replaces the managed file.
     #[serde(
         default,
         deserialize_with = "deserialize_agent_instructions",
@@ -1763,6 +1763,9 @@ pub struct ActiveReuseProducer {
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatState {
     pub runner_id: String,
+    /// Configured advisory host identity, independent of cache contents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_hostname: Option<String>,
     pub group: String,
     pub snapshot_generation: u64,
     pub snapshot_sequence: u64,
@@ -1780,8 +1783,6 @@ pub struct HeartbeatState {
     /// Inventory updates use the shared snapshot order.
     pub held_home_states: Vec<HeldHomeState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
-    /// Host-local WSS ingress service state, not public WSS reachability.
-    pub wss_ingress_service_active: bool,
     pub mode: String,
 }
 
@@ -2017,8 +2018,8 @@ mod tests {
             "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "codex",
             "platformEnvironment": {}, "connectorRuntimeTargets": []
         });
-        let legacy: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
-        assert_eq!(legacy.agent_instructions, None);
+        let agentless: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
+        assert_eq!(agentless.agent_instructions, None);
         for body in ["", "  指令\n\n"] {
             let mut current = claim.clone();
             current["agentInstructions"] = json!(body);
@@ -2525,12 +2526,11 @@ mod tests {
         let json = execution_context_with_storage_manifest(json!({
             "storageMounts": [
                 {
-                    "name": "instructions",
+                    "name": "workflow",
                     "storageId": "storage-read-only",
                     "versionId": "version-1",
-                    "mountPath": "/home/user/.claude",
-                    "archiveUrl": "https://example.com/instructions.tar.gz",
-                    "instructionsTargetFilename": "CLAUDE.md",
+                    "mountPath": "/home/user/.claude/skills/workflow",
+                    "archiveUrl": "https://example.com/workflow.tar.gz",
                     "futureMountField": true
                 },
                 {
@@ -2550,8 +2550,8 @@ mod tests {
         let manifest = context.storage_manifest.unwrap();
 
         assert_eq!(manifest.storages.len(), 1);
-        assert_eq!(manifest.storages[0].name, "instructions");
-        assert_eq!(manifest.storages[0].vas_storage_name, "instructions");
+        assert_eq!(manifest.storages[0].name, "workflow");
+        assert_eq!(manifest.storages[0].vas_storage_name, "workflow");
         assert_eq!(manifest.storages[0].vas_version_id, "version-1");
         assert_eq!(manifest.artifacts.len(), 1);
         assert_eq!(manifest.artifacts[0].vas_storage_name, "memory");
@@ -2628,15 +2628,6 @@ mod tests {
                 "missingRootPolicy": "preserveParentVersion"
             }),
             json!({
-                "name": "writeback-instructions",
-                "storageId": "storage-4",
-                "versionId": "version-4",
-                "mountPath": "/writeback-instructions",
-                "archiveUrl": "https://example.com/instructions.tar.gz",
-                "instructionsTargetFilename": "AGENTS.md",
-                "writeback": true
-            }),
-            json!({
                 "name": "writeback-without-archive",
                 "storageId": "storage-5",
                 "versionId": "version-5",
@@ -2657,6 +2648,7 @@ mod tests {
     fn heartbeat_state_serializes_camel_case() {
         let state = HeartbeatState {
             runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+            runner_hostname: Some("prod-wire.example.test".into()),
             group: "vm0/production".into(),
             snapshot_generation: 7,
             snapshot_sequence: 42,
@@ -2690,7 +2682,6 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 profile: "vm0/default".into(),
             }],
-            wss_ingress_service_active: true,
             mode: "running".into(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
@@ -2698,6 +2689,7 @@ mod tests {
             json,
             json!({
                 "runnerId": "550e8400-e29b-41d4-a716-446655440000",
+                "runnerHostname": "prod-wire.example.test",
                 "group": "vm0/production",
                 "snapshotGeneration": 7,
                 "snapshotSequence": 42,
@@ -2729,7 +2721,6 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "profile": "vm0/default"
                 }],
-                "wssIngressServiceActive": true,
                 "mode": "running"
             })
         );
@@ -2758,6 +2749,7 @@ mod tests {
     fn heartbeat_state_serializes_empty_held_state_arrays() {
         let state = HeartbeatState {
             runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+            runner_hostname: None,
             group: "vm0/production".into(),
             snapshot_generation: 7,
             snapshot_sequence: 42,
@@ -2771,11 +2763,11 @@ mod tests {
             held_sandbox_states: Vec::new(),
             held_home_states: Vec::new(),
             active_reuse_producers: Vec::new(),
-            wss_ingress_service_active: false,
             mode: "running".into(),
         };
 
         let serialized = serde_json::to_value(state).unwrap();
+        assert!(serialized.get("runnerHostname").is_none());
         assert_eq!(serialized["heldSandboxStates"], json!([]));
         assert_eq!(serialized["heldHomeStates"], json!([]));
         assert_eq!(serialized["activeReuseProducers"], json!([]));

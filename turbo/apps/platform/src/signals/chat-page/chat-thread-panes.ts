@@ -153,16 +153,7 @@ const resolvePaneThread$ = command(
       set(thread.composer.draft.load$, signal),
       set(thread.subscribeChatThread$, signal),
       initialEventId
-        ? set(
-            thread.scrollToEvent$,
-            initialEventId,
-            {
-              behavior: "instant",
-              viewportOffsetTop: 0,
-              preloadPreviousRenderWindow: false,
-            },
-            signal,
-          )
+        ? set(thread.locator.landOnLinkedEvent$, initialEventId, signal)
         : Promise.resolve(),
     ]);
     signal.throwIfAborted();

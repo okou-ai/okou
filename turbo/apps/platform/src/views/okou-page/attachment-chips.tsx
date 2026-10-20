@@ -1944,7 +1944,9 @@ function AttachmentChip({
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
   const preview = useLastResolved(attachment.preview$) ?? null;
-  const uploading = useGet(attachment.uploadPending$);
+  const annotationStatus = useGet(attachment.annotationUploadStatus$);
+  const uploading =
+    infoLoadable.state === "loading" || annotationStatus === "pending";
   const url =
     infoLoadable.state === "hasData" && infoLoadable.data
       ? canonicalUserMessageFileUrl(infoLoadable.data.id)
@@ -1956,6 +1958,12 @@ function AttachmentChip({
   );
   const annotations = useGet(attachment.annotations$);
   const isImage = attachment.contentType.startsWith("image/");
+  if (
+    infoLoadable.state === "hasError" ||
+    (infoLoadable.state === "hasData" && infoLoadable.data === null)
+  ) {
+    return null;
+  }
   return (
     <div className="relative inline-flex items-center">
       {isImage ? (
@@ -2062,7 +2070,7 @@ export function AttachmentChips({
   onRemove: (attachment: ChatAttachment) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2 px-4 pt-3">
+    <div className="flex flex-wrap gap-2 px-4 pt-3 empty:hidden">
       {attachments.map((a) => {
         return (
           <AttachmentChip

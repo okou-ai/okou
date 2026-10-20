@@ -373,7 +373,7 @@ final class ChatClientTests: XCTestCase {
             """)
       case "/api/indicators":
         return ChatHTTPResponse(
-          body: "{\"agents\":{},\"threads\":{\"\(fixtureThread)\":\"unread\"}}")
+          body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{\"\(fixtureThread)\":\"unread\"}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -397,7 +397,7 @@ final class ChatClientTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -415,7 +415,7 @@ final class ChatClientTests: XCTestCase {
             "{\"events\":[\(threadEventJSON(seq: 11, kind: "unarchived", thread: fixtureThread))],\"hasMore\":false}"
         )
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -449,7 +449,7 @@ final class ChatClientTests: XCTestCase {
         guard since == "11" else { throw URLError(.badServerResponse) }
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-threads/\(fixtureThread)/event-snapshot":
         return ChatHTTPResponse(
           body: """
@@ -541,7 +541,7 @@ final class ChatClientTests: XCTestCase {
         }
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-threads/\(fixtureThread)/event-snapshot":
         let sequence = current == 1 ? 1 : 3
         return ChatHTTPResponse(
@@ -660,7 +660,7 @@ final class ChatClientTests: XCTestCase {
         default: throw URLError(.badServerResponse)
         }
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -755,14 +755,13 @@ final class ChatClientTests: XCTestCase {
     XCTAssertNil(state.withLock { $0.snapshotAuthorization })
   }
 
-  func testOldHistoryPreservesAgentMentionNamesAndOtherPartLabels() async throws {
+  func testOldHistoryPreservesStructuredAgentMentionsAndSourceContext() async throws {
     let mixedMessage = """
       {"userMessage":{"version":1,"parts":[
         {"type":"text","text":"Ask"},
         {"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Release Scout"},
         {"type":"chat_thread","threadId":"\(fixtureThread)","titleSnapshot":"Release chat"},
         {"type":"source","kind":"agent","runId":"\(fixtureRun)","threadId":"\(fixtureThread)","agentId":"\(fixtureAgent)","titleSnapshot":"Earlier run","href":"https://app.okou.ai/chats/\(fixtureThread)"},
-        {"type":"automation","workflowName":"Nightly review"},
         {"type":"file","fileId":"historical-file","filenameSnapshot":"plan.md","contentType":"text/markdown"}
       ]}}
       """.replacingOccurrences(of: "\n", with: "")
@@ -799,10 +798,14 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(
       history.messages.map(\.text),
       [
-        "Ask\nRelease Scout\nRelease chat\nEarlier run\nNightly review",
+        "AskRelease ScoutRelease chat",
         "Planner",
       ])
     XCTAssertEqual(history.messages.map(\.role), [.user, .user])
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.kind, "agent")
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.titleSnapshot, "Earlier run")
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.runId, fixtureRun)
+    XCTAssertEqual(history.messages.first?.userMessage?.bodyParts[1].agentId, fixtureAgent)
     XCTAssertEqual(
       history.messages.first?.attachments,
       [

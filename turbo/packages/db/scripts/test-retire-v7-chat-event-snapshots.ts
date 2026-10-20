@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import postgres from "postgres";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // The contraction is tested on a random, test-owned database, never DATABASE_URL.
 const databaseUrl = process.env.DATABASE_URL;
@@ -44,7 +44,7 @@ const agentId = randomUUID();
 async function migrate(beforeMillis?: number): Promise<void> {
   const sql = postgres(fixtureUrl.toString(), { max: 1, onnotice: () => {} });
   try {
-    await applyPendingMigrations(sql, { beforeMillis });
+    await applyFixtureMigrations(sql, { beforeMillis });
   } finally {
     await sql.end();
   }

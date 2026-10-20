@@ -1057,9 +1057,6 @@ importers:
       htmlparser2:
         specifier: ^10.1.0
         version: 10.1.0
-      signal-timers:
-        specifier: ^1.0.5
-        version: 1.0.5
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -1097,9 +1094,6 @@ importers:
 
   packages/db:
     dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1152.0
-        version: 3.1152.0
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -1115,9 +1109,6 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
-      tar:
-        specifier: '>=7.5.21'
-        version: 7.5.22
     devDependencies:
       '@okouai/eslint-config':
         specifier: workspace:*
