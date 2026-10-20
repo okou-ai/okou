@@ -153,11 +153,6 @@ export async function listConnectorAccountConnections(
     if (result.status !== 200) {
       handleError(result, "Failed to list connector accounts");
     }
-    if (result.body.defaultConnection === undefined) {
-      throw new Error(
-        "Connector account response is missing the default account selection.",
-      );
-    }
     if (cursor === null) defaultConnection = result.body.defaultConnection;
     connections.push(...result.body.connections);
     cursor = result.body.nextCursor;

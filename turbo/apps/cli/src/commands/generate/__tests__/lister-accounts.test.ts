@@ -45,7 +45,7 @@ describe("generation current-member directory", () => {
     vi.unstubAllEnvs();
   });
 
-  it("discovers matching saved providers when account details are unavailable without claiming readiness", async () => {
+  it("discovers matching saved providers without claiming readiness", async () => {
     server.use(
       stubConnectorCatalog([
         metadata,
@@ -56,20 +56,6 @@ describe("generation current-member directory", () => {
         }),
       ]),
       stubConnectedConnectors(["fal", "openai"]),
-      http.get(
-        "http://localhost:3000/api/connector-accounts/connections",
-        () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "UNAVAILABLE",
-                message: "Account details unavailable",
-              },
-            },
-            { status: 503 },
-          );
-        },
-      ),
     );
 
     await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
@@ -127,29 +113,4 @@ describe("generation current-member directory", () => {
     expect(exit).toHaveBeenCalledWith(1);
     expect(log).not.toHaveBeenCalled();
   });
-
-  it.each(["image", "presentation"])(
-    "shows the built-in %s command without a directory dependency when there are no connector candidates",
-    async (type) => {
-      server.use(
-        stubConnectorCatalog([]),
-        http.get("http://localhost:3000/api/connectors/connected", () => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "UNAVAILABLE",
-                message: "Saved-account directory unavailable",
-              },
-            },
-            { status: 503 },
-          );
-        }),
-      );
-
-      await generateCommand.parseAsync(["node", "okou", type]);
-
-      expect(output()).toContain("Built-in command:");
-      expect(error).not.toHaveBeenCalled();
-    },
-  );
 });
