@@ -46,7 +46,7 @@ def _observe_response(
     if isinstance(event, ResponseProtocolError) or (
         isinstance(event, ResponseEndOfMessage)
         and body.early_response_status is not None
-        and body.early_response_status >= HTTPStatus.BAD_REQUEST
+        and body.early_response_status >= HTTPStatus.OK
     ):
         body.stop()
         return True
@@ -130,6 +130,22 @@ class _Http2Uploads:
             else:
                 body.replay_ready.set()
 
+    def close_queued(self, client: Http2Client) -> layer.CommandGenerator[None]:
+        # Native close_connection notifies allocated streams only. A managed
+        # upload waiting for a stream slot still owns storage and a replay hook.
+        for stream_id, body in tuple(self.bodies.items()):
+            if stream_id not in client.our_stream_id:
+                client.stream_queue.pop(stream_id, None)
+                if not body.closed:
+                    body.stop()
+                    yield ReceiveHttp(
+                        ResponseProtocolError(
+                            stream_id,
+                            "upstream closed before managed upload admission",
+                            ErrorCode.CONNECT_FAILED,
+                        )
+                    )
+
 
 def _install_http2_upload_progress() -> None:
     current = Http2Client._handle_event
@@ -146,15 +162,22 @@ def _install_http2_upload_progress() -> None:
                 uploads = _Http2Uploads()
                 setattr(self, _HTTP2_UPLOADS, uploads)
             uploads.bodies[event.stream_id] = body
+        closed = False
         try:
 
             def observe(command):
+                nonlocal closed
+                if (
+                    isinstance(command, commands.CloseConnection)
+                    and command.connection == self.conn
+                ):
+                    closed = True
                 if isinstance(uploads, _Http2Uploads) and isinstance(command, ReceiveHttp):
                     body = uploads.bodies.get(command.event.stream_id)
                     if _observe_response(body, command):
                         upstream_id = self.our_stream_id.get(command.event.stream_id)
                         if upstream_id is not None and not self.is_closed(upstream_id):
-                            # The complete error response can still reach the
+                            # The complete final response can still reach the
                             # client. Reset only the unfinished outbound body.
                             self.h2_conn.reset_stream(upstream_id)
 
@@ -162,6 +185,8 @@ def _install_http2_upload_progress() -> None:
                 yield from _observe_commands(current(self, event), observe)
             else:
                 yield from current(self, event)
+            if closed and isinstance(uploads, _Http2Uploads):
+                yield from uploads.close_queued(self)
         finally:
             if isinstance(uploads, _Http2Uploads):
                 uploads.update(self)

@@ -1,4 +1,4 @@
-"""Early native HTTP/1 errors abort upload without losing the provider response."""
+"""Early native HTTP/1 responses abort upload without losing the provider response."""
 
 from unittest.mock import patch
 
@@ -22,7 +22,9 @@ from tests.managed_request_transport_helpers import begin_upload, finish_hooks
 from tests.request_handler_helpers import _write_registry
 
 
-@pytest.mark.parametrize("case", ["early-error", "disconnect", "early-data"])
+@pytest.mark.parametrize(
+    "case", ["early-error", "early-success", "early-redirect", "disconnect", "early-data"]
+)
 async def test_upstream_early_response_or_disconnect_releases_spooled_upload(
     tmp_path,
     fake_firewall_headers,
@@ -32,6 +34,7 @@ async def test_upstream_early_response_or_disconnect_releases_spooled_upload(
     body = (
         b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"' + b"x" * 200_000 + b'"}]}'
     )
+    early_status = {"early-error": 429, "early-success": 200, "early-redirect": 302}.get(case)
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as context,
@@ -75,10 +78,10 @@ async def test_upstream_early_response_or_disconnect_releases_spooled_upload(
                     bytes_sent += len(command.event.data)
                     if not injected:
                         injected = True
-                        if case == "early-error":
+                        if early_status is not None:
                             response = (
-                                b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 3\r\n\r\nerr"
-                            )
+                                f"HTTP/1.1 {early_status} Final\r\nContent-Length: 3\r\n\r\nerr"
+                            ).encode()
                             receive_response(events.DataReceived(flow.server_conn, response))
                         elif case == "early-data":
                             response = (
@@ -89,11 +92,11 @@ async def test_upstream_early_response_or_disconnect_releases_spooled_upload(
                             receive_response(events.ConnectionClosed(flow.server_conn))
         assert bytes_sent == 64 * 1024
         assert managed.admission_state_for_tests() == (0, 0)
-        if case == "early-error":
+        if early_status is not None:
             assert closed
             assert flow.error is None
             assert flow.response is not None
-            assert flow.response.status_code == 429
+            assert flow.response.status_code == early_status
             assert response_body == b"err"
         else:
             assert flow.error is not None

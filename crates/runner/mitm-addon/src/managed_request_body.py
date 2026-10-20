@@ -206,7 +206,16 @@ class TemporaryBody:
         if self.replayed == self.length:
             self.close()
             return
-        self.chunk = await self._io(self.file.read, min(CHUNK_BYTES, self.length - self.replayed))
+        try:
+            self.chunk = await self._io(
+                self.file.read, min(CHUNK_BYTES, self.length - self.replayed)
+            )
+        except (BodyError, OSError):
+            # A final upstream response may close storage while this read
+            # waits for an I/O slot or worker. Preserve that native outcome.
+            if self.stopped:
+                return
+            raise
         if self.closed:
             self.chunk = b""
             if self.stopped:
@@ -216,7 +225,7 @@ class TemporaryBody:
             raise BodyError("body_storage_read")
 
     def stop(self) -> None:
-        """Let an upstream final error/reset resume the native response path."""
+        """Let an upstream final response/reset resume the native response path."""
         self.stopped = True
         self.close()
 

@@ -29,7 +29,19 @@ from tests.request_handler_helpers import _write_registry
 
 
 @pytest.mark.parametrize(
-    "blocked_by", ["window", "stream-slots", "reset", "early-error", "early-data"]
+    "blocked_by",
+    [
+        "window",
+        "stream-slots",
+        "reset",
+        "early-error",
+        "early-success",
+        "early-redirect",
+        "early-data",
+        "disconnect",
+        "queued-disconnect",
+        "queued-goaway",
+    ],
 )
 async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body(
     tmp_path,
@@ -40,6 +52,7 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
     body = (
         b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"' + b"x" * 200_000 + b'"}]}'
     )
+    early_status = {"early-error": 429, "early-success": 200, "early-redirect": 302}.get(blocked_by)
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as context,
@@ -58,7 +71,8 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
         upstream = Http2Client(stream.context.fork())
         peer = H2Connection(H2Configuration(client_side=False, header_encoding=None))
         peer.initiate_connection()
-        if blocked_by == "stream-slots":
+        queued = blocked_by in {"stream-slots", "queued-disconnect", "queued-goaway"}
+        if queued:
             peer.update_settings(
                 {
                     SettingCodes.MAX_CONCURRENT_STREAMS: 0,
@@ -117,9 +131,10 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
             stored = managed_request_body.get(flow)
             assert stored is not None
             assert stored.file is not None
+            spool_file = stored.file
             assert stored.worker is None
             assert managed.admission_state_for_tests() == (1, len(body))
-            if blocked_by in {"window", "reset", "early-error", "early-data"}:
+            if not queued:
                 assert stored.file.tell() == 64 * 1024
                 assert len(received) == 65535
                 buffered = sum(
@@ -130,13 +145,15 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
                 assert buffered <= 64 * 1024
                 if blocked_by == "reset":
                     peer.reset_stream(1)
-                elif blocked_by == "early-error":
-                    peer.send_headers(1, [(b":status", b"429")], end_stream=True)
+                elif early_status is not None:
+                    peer.send_headers(
+                        1, [(b":status", str(early_status).encode())], end_stream=True
+                    )
                 elif blocked_by == "early-data":
                     peer.send_headers(1, [(b":status", b"200")])
                     for _ in range(5):
                         peer.send_data(1, b"e" * 16384)
-                else:
+                elif blocked_by == "window":
                     peer.increment_flow_control_window(1_000_000)
                     peer.increment_flow_control_window(1_000_000, stream_id=1)
             else:
@@ -144,26 +161,42 @@ async def test_http2_replay_waits_for_protocol_capacity_without_queuing_the_body
                 assert not received
                 assert not headers
                 assert sum(len(queue) for queue in upstream.stream_queue.values()) == 1
-                peer.update_settings({SettingCodes.MAX_CONCURRENT_STREAMS: 1})
-            deliver(
-                upstream.handle_event(events.DataReceived(flow.server_conn, peer.data_to_send()))
-            )
+                if blocked_by == "stream-slots":
+                    peer.update_settings({SettingCodes.MAX_CONCURRENT_STREAMS: 1})
+                elif blocked_by == "queued-goaway":
+                    peer.close_connection()
+            if blocked_by in {"disconnect", "queued-disconnect"}:
+                deliver(upstream.handle_event(events.ConnectionClosed(flow.server_conn)))
+            else:
+                deliver(
+                    upstream.handle_event(
+                        events.DataReceived(flow.server_conn, peer.data_to_send())
+                    )
+                )
             await asyncio.wait_for(replay, 5)
-            if blocked_by in {"reset", "early-error", "early-data"}:
+            if blocked_by in {"queued-disconnect", "queued-goaway"}:
+                assert not received
+                assert not headers
+                assert flow.error is not None
+                assert not upstream.stream_queue
+            elif early_status is not None or blocked_by in {"reset", "early-data", "disconnect"}:
                 assert len(received) == 65535
                 assert not ended
-                if blocked_by == "early-error":
+                if early_status is not None:
                     assert flow.response is not None
-                    assert flow.response.status_code == 429
+                    assert flow.response.status_code == early_status
                     assert flow.error is None
                 else:
                     assert flow.error is not None
             else:
                 assert received == body
                 assert ended == [1]
-            assert len(headers) == 1
+            if not blocked_by.startswith("queued-"):
+                assert len(headers) == 1
             assert not upstream.h2_conn.stream_buffers
             assert managed.admission_state_for_tests() == (0, 0)
+            assert spool_file.closed
+            assert stored.upload_done.is_set()
         finally:
             replay.cancel()
             await asyncio.gather(replay, return_exceptions=True)

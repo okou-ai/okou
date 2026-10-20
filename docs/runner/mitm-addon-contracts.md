@@ -757,10 +757,15 @@ does not bound those internal queues. Only the receive and finish checkpoints jo
 replay hooks do not accumulate a document-sized checkpoint history. There is no
 managed-specific request-count, 32 MiB body or 128 MiB retained-RAM admission.
 Filesystem space, parser bounds and native connection deadlines still apply.
-Upstream resets and complete early error responses stop replay and release the
-file. HTTP/1 closes the unfinished upload; HTTP/2 resets it through the pinned
-protocol implementation. The complete provider error still follows the native
-response path. Unexpected response data queued before upload completion is
+Upstream resets and complete early final responses stop replay and release the
+file. HTTP/2 connection closure also terminates managed uploads still waiting
+for stream admission: remove their queued native headers and deliver a terminal
+error even though no upstream stream ID has been allocated yet.
+HTTP/1 closes the unfinished upload; HTTP/2 resets it through the pinned
+protocol implementation. The complete provider response still follows the native
+response path. A read queued behind filesystem work may resume after the upload
+was stopped; its abandoned read must not replace that response with a local
+storage failure. Unexpected response data queued before upload completion is
 bounded to one chunk; exceeding that bound terminates the flow. Normal response
 streaming after upload has no new response-size limit.
 
