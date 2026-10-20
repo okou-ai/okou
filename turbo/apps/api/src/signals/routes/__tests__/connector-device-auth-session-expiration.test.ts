@@ -149,7 +149,7 @@ describe("Builtin device-auth session expiration", () => {
         { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       await expect(completeSession(actor, recovery)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connectionId },
+        connectionId: siblingAccount.connectionId,
       });
       await expectExpiredSession(actor, reconnect);
       const afterRecovery = await connectors.listBuiltinConnectorAccounts(

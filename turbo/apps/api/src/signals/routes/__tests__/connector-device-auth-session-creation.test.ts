@@ -155,7 +155,7 @@ describe("Builtin device-auth session creation", () => {
         await expect(
           completeSession(actor, defaultSession),
         ).resolves.toMatchObject({
-          connector: { id: defaultAccount.connectionId },
+          connectionId: defaultAccount.connectionId,
         });
         const foreignAccount = await completeSession(
           foreign.actor,
@@ -175,7 +175,7 @@ describe("Builtin device-auth session creation", () => {
         await expect(
           completeSession(actor, replacement),
         ).resolves.toMatchObject({
-          connector: { id: siblingAccount.connectionId },
+          connectionId: siblingAccount.connectionId,
         });
         await expectAccounts(actor, [
           { id: defaultAccount.connectionId, isDefault: true },
@@ -234,7 +234,7 @@ describe("Builtin device-auth session creation", () => {
         error: { code: "NOT_FOUND", message: "Connector account not found" },
       });
       await expect(completeSession(actor, pending)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connectionId },
+        connectionId: siblingAccount.connectionId,
       });
       await expectAccounts(actor, [
         { id: defaultAccount.connectionId, isDefault: true },
@@ -307,7 +307,7 @@ describe("Builtin device-auth session creation", () => {
       ]);
       mockTestOAuthDeviceConnectorProvider();
       await expect(completeSession(actor, replacement)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connectionId },
+        connectionId: siblingAccount.connectionId,
       });
       await expectSuperseded(actor, pending);
       await expectAccounts(actor, [

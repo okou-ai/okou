@@ -134,7 +134,8 @@ describe("Builtin device-auth owned-session reads", () => {
       );
     }
     await expect(completeSession(actor, session)).resolves.toMatchObject({
-      connector: { id: completed.connectionId, authMethod: "oauth" },
+      connectionId: completed.connectionId,
+      account: { id: completed.connectionId, authMethod: "oauth" },
     });
   });
 
@@ -174,10 +175,12 @@ describe("Builtin device-auth owned-session reads", () => {
     expect(oauthCompleted.account.authMethod).toBe("oauth");
     expect(apiCompleted.connectionId).not.toBe(oauthCompleted.connectionId);
     await expect(completeSession(actor, api)).resolves.toMatchObject({
-      connector: { id: apiCompleted.connectionId, authMethod: "api" },
+      connectionId: apiCompleted.connectionId,
+      account: { id: apiCompleted.connectionId, authMethod: "api" },
     });
     await expect(completeSession(actor, oauth)).resolves.toMatchObject({
-      connector: { id: oauthCompleted.connectionId, authMethod: "oauth" },
+      connectionId: oauthCompleted.connectionId,
+      account: { id: oauthCompleted.connectionId, authMethod: "oauth" },
     });
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,

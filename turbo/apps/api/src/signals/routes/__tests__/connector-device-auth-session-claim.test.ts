@@ -133,10 +133,10 @@ describe("Builtin device-auth initial poll claims", () => {
 
       mockTestOAuthDeviceConnectorProvider();
       await expect(completeSession(actor, reconnect)).resolves.toMatchObject({
-        connector: { id: siblingAccount.account.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expect(completeSession(actor, reconnect)).resolves.toMatchObject({
-        connector: { id: siblingAccount.account.id },
+        connectionId: siblingAccount.connectionId,
       });
       const afterRecovery = await connectors.listBuiltinConnectorAccounts(
         actor,

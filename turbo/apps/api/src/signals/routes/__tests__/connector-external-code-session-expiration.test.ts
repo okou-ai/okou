@@ -203,12 +203,12 @@ describe("Builtin external-code session expiration", () => {
         connectionId: siblingAccount.connectionId,
       });
       await expect(completeSession(actor, recovery)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connectionId },
+        connectionId: siblingAccount.connectionId,
       });
       await expectExpiredSession(actor, reconnect);
       mockNow(recoveredAt + recovery.expiresIn * 1000 + 1);
       await expect(completeSession(actor, recovery)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connectionId },
+        connectionId: siblingAccount.connectionId,
       });
       await expectAccounts(actor, expected);
       await expect(
