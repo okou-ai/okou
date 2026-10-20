@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   getAgent,
   getAgentCustomConnectorGrants,
@@ -9,6 +9,7 @@ import {
 import {
   getCustomConnector,
   listCustomConnectors,
+  listConnectedConnectors,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { resolveConnectorAgentId } from "../agent-context";
@@ -19,9 +20,9 @@ import { connectorInspectionType } from "../inspection";
 import { customConnectorMetadata } from "../management";
 import {
   memberConnectorAccountText,
-  memberConnectorFacts,
+  readMemberConnectorFacts,
   memberConnectorStatusText,
-  customMemberAccountSummaries,
+  type MemberConnectorFacts,
 } from "../member-status";
 import {
   showCustomConnectorCommand,
@@ -33,14 +34,19 @@ const LABEL_WIDTH = 18;
 function customConnectorJson(
   connector: CustomConnectorResponse,
   agent: Awaited<ReturnType<typeof resolveCustomAgentContext>>,
-  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
+  facts:
+    | MemberConnectorFacts
+    | {
+        readonly hasSavedAccounts: boolean;
+        readonly integrationManaged: boolean;
+      },
 ) {
   const target = { kind: "custom", customConnectorId: connector.id } as const;
   return {
     ...customConnectorMetadata(connector),
     target,
     connectorType: connectorInspectionType(target, connector),
-    ...memberConnectorFacts(connector, summaries),
+    ...facts,
     authorized: agent ? agent.authorizedIds.has(connector.id) : null,
   };
 }
@@ -72,7 +78,7 @@ const listCommand = new Command()
   .name("list")
   .alias("ls")
   .description(
-    "List org custom HTTP/MCP definitions and member connection status",
+    "List org custom HTTP/MCP definitions and member saved-account presence",
   )
   .option(
     "--agent <id>",
@@ -82,20 +88,26 @@ const listCommand = new Command()
   .addHelpText(
     "after",
     `
-Lists org definitions with the current member's connection status, including
+Lists org definitions with the current member's saved-account directory, including
 inside a run. This is separate from the accounts admitted to the current run;
 use connector list for that view. The ID column contains UUIDs for custom
 status/update and custom:<uuid> diagnostic selectors.
+Saved-account presence does not establish health, defaults, or runtime availability.
 Omit --agent inside a run to inspect the current Agent's access.`,
   )
   .action(
     withErrorHandler(async (options: { agent?: string; json?: boolean }) => {
       const agentId = resolveConnectorAgentId(options.agent);
-      const [connectors, agentCtx] = await Promise.all([
+      const [connectors, agentCtx, connected] = await Promise.all([
         listCustomConnectors(),
         resolveCustomAgentContext(agentId),
+        listConnectedConnectors(),
       ]);
-      const summaries = await customMemberAccountSummaries(connectors);
+      const connectedIds = new Set(
+        connected.customConnectors.map((connector) => {
+          return connector.id;
+        }),
+      );
       if (options.json) {
         console.log(
           JSON.stringify(
@@ -108,7 +120,11 @@ Omit --agent inside a run to inspect the current Agent's access.`,
                   }
                 : null,
               connectors: connectors.map((connector) => {
-                return customConnectorJson(connector, agentCtx, summaries);
+                return customConnectorJson(connector, agentCtx, {
+                  hasSavedAccounts: connectedIds.has(connector.id),
+                  integrationManaged:
+                    isIntegrationManagedCustomConnector(connector),
+                });
               }),
             },
             null,
@@ -140,7 +156,7 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         "SLUG".padEnd(slugWidth),
         "NAME".padEnd(nameWidth),
         "KIND",
-        "STATUS",
+        "SAVED ACCOUNTS",
       ];
       if (agentCtx) {
         header.push(`AUTHORIZED FOR ${agentCtx.displayName}`);
@@ -152,10 +168,9 @@ Omit --agent inside a run to inspect the current Agent's access.`,
           connector.slug.padEnd(slugWidth),
           connector.displayName.padEnd(nameWidth),
           connector.kind,
-          memberConnectorAccountText(
-            connector,
-            memberConnectorFacts(connector, summaries),
-          ),
+          connectedIds.has(connector.id)
+            ? "saved accounts (inspect status)"
+            : "no saved accounts",
         ];
         if (agentCtx) {
           row.push(
@@ -202,9 +217,9 @@ Omit --agent inside a run to inspect the current Agent's access.`,
           getCustomConnector(connectorId),
           resolveCustomAgentContext(agentId),
         ]);
-        const summaries = await customMemberAccountSummaries(
-          connector ? [connector] : [],
-        );
+        const facts = connector
+          ? await readMemberConnectorFacts(connector)
+          : null;
         if (options.json) {
           console.log(
             JSON.stringify(
@@ -219,9 +234,9 @@ Omit --agent inside a run to inspect the current Agent's access.`,
                     }
                   : null,
                 connector:
-                  connector === null
+                  connector === null || facts === null
                     ? null
-                    : customConnectorJson(connector, agentCtx, summaries),
+                    : customConnectorJson(connector, agentCtx, facts),
               },
               null,
               2,
@@ -242,7 +257,8 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         console.log(`${"ID:".padEnd(LABEL_WIDTH)}${connector.id}`);
         console.log(`${"Slug:".padEnd(LABEL_WIDTH)}${connector.slug}`);
         console.log(`${"Kind:".padEnd(LABEL_WIDTH)}${connector.kind}`);
-        const facts = memberConnectorFacts(connector, summaries);
+        if (!facts)
+          throw new Error("Custom connector account status is unavailable.");
         console.log(
           `${"Status:".padEnd(LABEL_WIDTH)}${memberConnectorStatusText(facts)}`,
         );
@@ -323,8 +339,9 @@ Types and authentication:
 
 Definitions and access:
   create/update manage org definitions; list/status show current-member metadata.
-  JSON accountSummary/memberStatus report saved accounts and local status separately
-  from existing connected/configuration metadata and Agent authorization.
+  List JSON hasSavedAccounts reports directory membership only.
+  Status/show JSON accountSummary/memberStatus report target account details and
+  local status separately from definition metadata and Agent authorization.
   Creating a definition is separate from connecting a member account, granting
   Agent access, and selecting any fine-grained permissions. This also applies
   to none/automatic definitions. Members finish connection in the web flow.

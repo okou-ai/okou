@@ -11,6 +11,7 @@ final class ConversationHistoryFixture: Sendable {
   static let threadID = "60000000-0000-4000-8000-000000000001"
   static let agentID = "60000000-0000-4000-8000-000000000002"
   let http: ChatHTTPFixture
+  let requests = HistoryRequests()
   private let rows: HistoryRows
 
   convenience init(count: Int = 100) {
@@ -20,7 +21,11 @@ final class ConversationHistoryFixture: Sendable {
   init(rows initial: [String], fileOrigin: URL? = nil) {
     let rows = HistoryRows(initial)
     self.rows = rows
+    let requests = requests
     http = ChatHTTPFixture { request in
+      requests.values.withLock {
+        $0.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
+      }
       let path = "/api/chat-threads/\(Self.threadID)"
       switch request.url?.path {
       case "/api/web/file-url":
@@ -130,4 +135,8 @@ final class ConversationHistoryFixture: Sendable {
 private final class HistoryRows: Sendable {
   let values: Mutex<[String]>
   init(_ rows: [String]) { values = Mutex(rows) }
+}
+
+final class HistoryRequests: Sendable {
+  let values = Mutex<[String]>([])
 }

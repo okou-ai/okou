@@ -13,7 +13,7 @@ import {
   getConnectorAction,
   getConnectorCard,
   mcpCustomConnector,
-  mockConnectorOverviewAccountSummaries,
+  mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -64,7 +64,7 @@ test.each([
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
-    mockConnectorOverviewAccountSummaries(context, () => {
+    mockSavedConnectorAccounts(context, () => {
       return [];
     });
     context.mocks.api(customConnectorOAuth2Contract.start, ({ respond }) => {

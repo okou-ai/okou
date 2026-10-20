@@ -10,7 +10,6 @@ import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  accountSummary,
   builtinConnector,
   connectorAccount,
   installComposerConnectorFixture,
@@ -50,7 +49,6 @@ function installAccounts(
   return installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-    accountSummaries: [accountSummary(target(), connections)],
     accounts: connections,
     threadSelections: selectedConnection
       ? {

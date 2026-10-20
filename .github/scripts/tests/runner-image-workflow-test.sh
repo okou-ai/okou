@@ -67,11 +67,9 @@ grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
 
 # Imported host dependencies must invalidate stable image reuse on their own.
 for path in \
-  ansible/tasks/provision-runner-caddy.yml \
-  ansible/files/validate-runner-wss-namespace.py \
-  ansible/templates/runner-caddy.Caddyfile.j2 \
-  ansible/templates/okou-runner-caddy.service.j2 \
-  ansible/playbooks/host_vars/runner-wss.example.org.yml; do
+  ansible/playbooks/provision-runner.yml \
+  ansible/tasks/retire-runner-ingress.yml \
+  ansible/playbooks/host_vars/runner.example.org.yml; do
   base_ref=$(fixture_git rev-parse HEAD)
   mkdir -p "${test_root}/$(dirname "$path")"
   printf 'host dependency fixture\n' >"${test_root}/${path}"

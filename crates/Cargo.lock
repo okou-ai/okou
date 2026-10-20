@@ -2117,24 +2117,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-channel-server"
-version = "0.5.4"
-dependencies = [
- "api-contracts",
- "base64 0.23.1",
- "futures-util",
- "getrandom 0.4.3",
- "guest-contracts",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "uuid",
-]
-
-[[package]]
 name = "guest-contracts"
 version = "0.26.4"
 dependencies = [
@@ -2228,7 +2210,6 @@ dependencies = [
 name = "guest-init"
 version = "0.20.11"
 dependencies = [
- "guest-channel-server",
  "guest-contracts",
  "guest-control-server",
  "guest-home-mount",
@@ -4369,7 +4350,6 @@ dependencies = [
  "chrono",
  "crypto_box",
  "futures-util",
- "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "hex",
@@ -4520,7 +4500,6 @@ dependencies = [
  "runner-lifecycle",
  "runner-network",
  "runner-provider",
- "runner-remote",
  "runner-storage",
  "runner-types",
  "sandbox",
@@ -4531,12 +4510,10 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
  "tracing-test-support",
- "url",
  "uuid",
  "zstd",
 ]
@@ -4845,7 +4822,6 @@ dependencies = [
  "process-launch",
  "proptest",
  "reqwest",
- "runner-remote",
  "runner-rpc-proto",
  "runner-types",
  "rustix",

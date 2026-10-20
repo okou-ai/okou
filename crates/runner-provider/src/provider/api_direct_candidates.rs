@@ -364,7 +364,7 @@ fn snapshot(depth: usize, capacity: usize) -> DirectCandidateInboxSnapshot {
 mod tests {
     use std::time::Duration;
 
-    use super::super::{RunnerNoPreferenceReason, RunnerPreference, RunnerPreferenceTier};
+    use super::super::{RunnerNoPreferenceReason, RunnerPreference, RunnerPreferenceTarget};
     use super::*;
     use runner_host::runner_process_identity::RunnerProcessIdentity;
 
@@ -385,7 +385,7 @@ mod tests {
 
     fn ranked_preference_context(
         runner_id: u128,
-        tier: RunnerPreferenceTier,
+        tier: RunnerPreferenceTarget,
         deadline: StdInstant,
     ) -> RunnerPreferenceContext {
         RunnerPreferenceContext::from_active_preference(ActiveRunnerPreference::new(
@@ -440,7 +440,7 @@ mod tests {
                     Some("session:sess-2".to_string()),
                     Some(ranked_preference_context(
                         20,
-                        RunnerPreferenceTier::ExactSandbox,
+                        RunnerPreferenceTarget::ExactSandbox,
                         exact_deadline,
                     )),
                 )
@@ -466,7 +466,7 @@ mod tests {
                 Some("session:must-not-renew".to_string()),
                 Some(ranked_preference_context(
                     30,
-                    RunnerPreferenceTier::HomeCache,
+                    RunnerPreferenceTarget::HomeCache,
                     StdInstant::now() + Duration::from_secs(30),
                 )),
             ))
@@ -488,7 +488,7 @@ mod tests {
         let preference = candidate
             .runner_preference()
             .expect("updated canonical preference");
-        assert_eq!(preference.tier(), RunnerPreferenceTier::ExactSandbox);
+        assert_eq!(preference.target(), RunnerPreferenceTarget::ExactSandbox);
         assert_eq!(preference.deadline(), exact_deadline);
         assert!(
             preference.targets(RunnerProcessIdentity::new(uuid::Uuid::from_u128(20), 7).unwrap())
@@ -498,10 +498,9 @@ mod tests {
             .expect("canonical preference telemetry");
         assert!(matches!(
             telemetry.runner_preference,
-            RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::ExactSandbox,
-                ..
-            }
+            RunnerPreference::Preference(
+                crate::provider::RunnerPreferenceDecision::ExactSandbox { .. }
+            )
         ));
         assert_eq!(
             telemetry.state,
@@ -531,7 +530,7 @@ mod tests {
                     Some("session:first-decision".to_string()),
                     Some(ranked_preference_context(
                         10,
-                        RunnerPreferenceTier::HomeCache,
+                        RunnerPreferenceTarget::HomeCache,
                         first_deadline,
                     )),
                 )
@@ -548,7 +547,7 @@ mod tests {
                     Some("session:must-not-replace".to_string()),
                     Some(ranked_preference_context(
                         20,
-                        RunnerPreferenceTier::ExactSandbox,
+                        RunnerPreferenceTarget::ExactSandbox,
                         StdInstant::now() + Duration::from_secs(30),
                     )),
                 )
@@ -579,7 +578,7 @@ mod tests {
             Some(first_history_generation)
         );
         let preference = candidate.runner_preference().expect("runner preference");
-        assert_eq!(preference.tier(), RunnerPreferenceTier::HomeCache);
+        assert_eq!(preference.target(), RunnerPreferenceTarget::HomeCache);
         assert_eq!(preference.deadline(), first_deadline);
         assert!(
             preference.targets(RunnerProcessIdentity::new(uuid::Uuid::from_u128(10), 7).unwrap())
@@ -589,10 +588,9 @@ mod tests {
             .expect("retained canonical preference telemetry");
         assert!(matches!(
             telemetry.runner_preference,
-            RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::HomeCache,
-                ..
-            }
+            RunnerPreference::Preference(
+                crate::provider::RunnerPreferenceDecision::HomeCache { .. }
+            )
         ));
         assert_eq!(
             telemetry.state,

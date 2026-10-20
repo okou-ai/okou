@@ -166,7 +166,7 @@ export const connectedConnectorsRoutes: readonly RouteEntry[] = [
       {
         requireOrganization: true,
         missingOrganizationStatus: 401,
-        accept: ["session"],
+        requiredCapability: "connector:read",
       },
       list$,
     ),

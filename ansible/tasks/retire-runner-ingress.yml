@@ -1,0 +1,29 @@
+# Host-installed services outlive Runner releases. Keep this cleanup until every
+# host has applied it and supported provisioning/rollback artifacts cannot
+# reinstall the retired ingress. Preserve caches, certificate state and Runner
+# data, including the numeric account/group identities that still own them.
+- name: Gather installed host services
+  ansible.builtin.service_facts:
+
+- name: Stop and disable retired Runner ingress
+  ansible.builtin.systemd_service:
+    name: okou-runner-caddy.service
+    state: stopped
+    enabled: false
+  when: "'okou-runner-caddy.service' in ansible_facts.services"
+
+- name: Remove retired Runner ingress unit and executable assets
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/okou-runner-caddy.service
+    - /etc/okou-runner-caddy/Caddyfile
+    - /etc/okou-runner-caddy/applied-state.json
+    - /usr/local/lib/okou-runner-caddy
+
+# Always reload: an earlier attempt may have removed the unit but stopped before
+# systemd forgot it. No other service is stopped, disabled or restarted.
+- name: Reload systemd after retiring Runner ingress
+  ansible.builtin.systemd_service:
+    daemon_reload: true

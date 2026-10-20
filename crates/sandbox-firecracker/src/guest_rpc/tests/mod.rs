@@ -162,10 +162,6 @@ async fn repeated_fake_handler_requests_hold_the_real_park_reservation() {
 
 #[tokio::test]
 async fn rpc_request_remains_byte_for_byte_on_its_dedicated_port() {
-    assert_ne!(
-        guest_contracts::private_duplex::VSOCK_PORT,
-        runner_rpc_proto::VSOCK_PORT
-    );
     let fixture = Fixture::new().await;
     let mut peer = UnixStream::connect(&fixture.path).await.unwrap();
     let body = br#"{"version":1,"method":"run.usage","params":{}}"#;

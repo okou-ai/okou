@@ -452,11 +452,6 @@
       "owner": "startRunBuiltInAdmission$"
     },
     {
-      "id": "TX-0240",
-      "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
-      "owner": "issueRunnerWssTicket$"
-    },
-    {
       "id": "TX-0246",
       "file": "turbo/apps/api/src/signals/services/slack-installation-reward.ts",
       "owner": "settleSlackRewardClaim"

@@ -36,18 +36,15 @@ async fn independent_source_requires_matching_local_process_key_and_profile() {
         let deadline = std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME;
         let mut candidate = generic_finalizing_candidate(successor, reuse_key, source, deadline);
         if case == "process" {
-            candidate = candidate.with_runner_preference(
-                ActiveRunnerPreference::new(
-                    RunnerProcessIdentity::new(
-                        TEST_RUNNER_ID.parse().unwrap(),
-                        TEST_HEARTBEAT_GENERATION + 1,
-                    )
-                    .unwrap(),
-                    RunnerPreferenceTier::FinalizingPredecessor,
-                    deadline,
+            candidate = candidate.with_runner_preference(ActiveRunnerPreference::new(
+                RunnerProcessIdentity::new(
+                    TEST_RUNNER_ID.parse().unwrap(),
+                    TEST_HEARTBEAT_GENERATION + 1,
                 )
-                .with_finalizing_source_run_id(source),
-            );
+                .unwrap(),
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source),
+                deadline,
+            ));
         }
         env.handle.discover_tx.send(candidate).unwrap();
         assert!(
@@ -103,7 +100,10 @@ async fn duplicate_generic_source_does_not_extend_wait_even_after_finalization_s
         .collect();
     assert_eq!(claimed.len(), 1);
     let preference = claimed[0].runner_preference().unwrap();
-    assert_eq!(preference.finalizing_source_run_id(), Some(source));
+    assert_eq!(
+        preference.target(),
+        runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source)
+    );
     assert_eq!(preference.deadline(), deadline);
     assert!(
         guard

@@ -96,7 +96,9 @@ async fn outer_job_panic_after_handoff_keeps_successor_owned_sandbox() {
                         TEST_HEARTBEAT_GENERATION,
                     )
                     .unwrap(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )

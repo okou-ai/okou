@@ -13,13 +13,14 @@ import { server } from "../../../mocks/server";
 import { statusCommand } from "../status";
 import chalk from "chalk";
 import {
-  catalogAccountSummaries,
-  stubConnectorAccountSummaries,
+  catalogAccountConnections,
+  stubConnectorAccounts,
 } from "../../__tests__/helpers/connector-accounts";
 import {
   authCodeMethod,
   catalogStatusItem,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
+  stubConnectorCatalogDetail,
 } from "../../__tests__/helpers/connector-catalog";
 
 const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
@@ -54,6 +55,14 @@ function statusItemFromConnector(connector: Record<string, unknown>) {
   });
 }
 
+function stubStatus(
+  connectors: Parameters<typeof stubConnectorCatalogDetail>[0],
+  origin = "http://localhost:3000",
+) {
+  server.use(stubConnectorCatalog(connectors, origin));
+  return stubConnectorCatalogDetail(connectors, origin);
+}
+
 function stubConnector(
   body: Record<string, unknown>,
   status = 200,
@@ -61,21 +70,21 @@ function stubConnector(
 ) {
   if (status === 200) {
     server.use(
-      stubConnectorAccountSummaries(
-        catalogAccountSummaries([statusItemFromConnector(body)]),
+      stubConnectorAccounts(
+        catalogAccountConnections([statusItemFromConnector(body)]),
       ),
     );
-    return stubConnectorCatalogStatus([statusItemFromConnector(body)]);
+    return stubStatus([statusItemFromConnector(body)]);
   }
   if (status === 404) {
-    return stubConnectorCatalogStatus([
+    return stubStatus([
       catalogStatusItem({
         connectorSlug,
         authMethods: [authCodeMethod("oauth")],
       }),
     ]);
   }
-  return http.get("http://localhost:3000/api/connector-catalog/status", () => {
+  return http.get("http://localhost:3000/api/connector-catalog", () => {
     return HttpResponse.json(body, { status });
   });
 }
@@ -108,7 +117,7 @@ function stubUserConnectors(
 }
 
 function stubAvailableConnectors(connectorSlugs: string[]) {
-  return stubConnectorCatalogStatus(
+  return stubStatus(
     connectorSlugs.map((connectorSlug) => {
       return catalogStatusItem({
         connectorSlug,
@@ -137,7 +146,7 @@ describe("okou connector status command", () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     statusCommand.setOptionValue("agent", undefined);
     statusCommand.setOptionValue("json", false);
-    server.use(stubConnectorAccountSummaries([]));
+    server.use(stubConnectorAccounts([]));
   });
 
   afterEach(() => {
@@ -331,12 +340,9 @@ describe("okou connector status command", () => {
       vi.stubEnv("APP_URL", "https://unrelated.example.test");
       vi.stubEnv("OKOU_API_BACKEND_URL", apiOrigin);
       server.use(
-        stubConnectorCatalogStatus(
-          [statusItemFromConnector(connectedGithub)],
-          apiOrigin,
-        ),
-        stubConnectorAccountSummaries(
-          catalogAccountSummaries([statusItemFromConnector(connectedGithub)]),
+        stubStatus([statusItemFromConnector(connectedGithub)], apiOrigin),
+        stubConnectorAccounts(
+          catalogAccountConnections([statusItemFromConnector(connectedGithub)]),
           apiOrigin,
         ),
         stubAgent(AGENT_UUID, "maya", apiOrigin),
@@ -363,12 +369,9 @@ describe("okou connector status command", () => {
       vi.stubEnv("OKOU_API_BACKEND_URL", apiOrigin);
       vi.stubEnv("OKOU_APP_URL", `${appOrigin}/ignored-path`);
       server.use(
-        stubConnectorCatalogStatus(
-          [statusItemFromConnector(connectedGithub)],
-          apiOrigin,
-        ),
-        stubConnectorAccountSummaries(
-          catalogAccountSummaries([statusItemFromConnector(connectedGithub)]),
+        stubStatus([statusItemFromConnector(connectedGithub)], apiOrigin),
+        stubConnectorAccounts(
+          catalogAccountConnections([statusItemFromConnector(connectedGithub)]),
           apiOrigin,
         ),
         stubAgent(AGENT_UUID, "maya", apiOrigin),

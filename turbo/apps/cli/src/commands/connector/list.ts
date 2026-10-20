@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import {
-  listConnectorCatalogStatus,
-  listConnectorAccountSummaries,
+  listConnectorCatalog,
+  listConnectedConnectors,
   listCustomConnectors,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -80,9 +80,10 @@ Scope:
   This is not the full connector catalog. Omit --agent or match the current
   Agent; the flag does not select another Agent's run or accounts.
   Outside a run, lists the builtin catalog and org custom definitions with the
-  current member's connection status and optional --agent authorization.
-  JSON accountSummary and memberStatus describe saved accounts and local status;
-  connected retains its existing catalog/definition meaning. Authorization is separate.
+  current member's saved-account directory and optional --agent authorization.
+  JSON hasSavedAccounts describes directory membership, including accounts needing
+  reconnect. It does not establish health, defaults, scopes, or runtime availability.
+  Authorization is separate.
 
 Examples:
   okou connector list --json
@@ -95,12 +96,12 @@ Examples:
         await printRunConnectorList(options.json ?? false);
         return;
       }
-      const [{ connectors }, customConnectors, agentCtx, summaries] =
+      const [{ connectors }, customConnectors, agentCtx, directory] =
         await Promise.all([
-          listConnectorCatalogStatus(),
+          listConnectorCatalog(),
           listCustomConnectors(),
           resolveConnectorDiscoveryAgentContext(agentId),
-          listConnectorAccountSummaries(),
+          listConnectedConnectors(),
         ]);
       const discoveredConnectors = connectorDiscoveryItems(
         connectors,
@@ -119,7 +120,7 @@ Examples:
                   }
                 : null,
               connectors: discoveredConnectors.map((connector) => {
-                return connectorDiscoveryJson(connector, agentCtx, summaries);
+                return connectorDiscoveryJson(connector, agentCtx, directory);
               }),
             },
             null,
@@ -140,9 +141,9 @@ Examples:
         }),
       );
 
-      const connectedAsHeader = "CONNECTED AS";
+      const connectedAsHeader = "SAVED ACCOUNTS";
       const connectedCells = discoveredConnectors.map((connector) => {
-        return renderConnectorDiscoveryConnectedAsCell(connector, summaries);
+        return renderConnectorDiscoveryConnectedAsCell(connector, directory);
       });
       const connectedAsWidth = Math.max(
         connectedAsHeader.length,

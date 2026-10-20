@@ -13,7 +13,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   ACME_CONNECTOR_ID,
-  accountSummary,
   builtinConnector,
   connectorAccount,
   DEEPWIKI_CONNECTOR_ID,
@@ -270,9 +269,6 @@ test("Reconnect the expired custom default from the composer with healthy siblin
       }),
     ],
     accounts: [expired, sibling],
-    accountSummaries: [
-      { ...accountSummary(target, [expired, sibling]), attentionCount: 1 },
-    ],
   });
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   await loadComposer();
@@ -341,10 +337,6 @@ test("Show only the connector actions that are useful in chat", async () => {
     builtinAuthorizations: {
       [SCOUT_AGENT_ID]: [AXIOM_SLUG, GITHUB_SLUG],
     },
-    accountSummaries: [
-      accountSummary(axiomTarget, axiomAccounts),
-      accountSummary(githubTarget, [githubAccount]),
-    ],
     accounts: [...axiomAccounts, githubAccount],
   });
 
@@ -592,7 +584,6 @@ test("Respect integration-managed connector availability in chat", async () => {
         { customConnectorId: FEISHU_CONNECTOR_ID, permissionNames: [] },
       ],
     },
-    accountSummaries: [accountSummary(target, accounts)],
     accounts,
   });
 

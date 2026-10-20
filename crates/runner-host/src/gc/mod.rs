@@ -4,8 +4,6 @@ mod filesystem;
 mod lock_file;
 pub mod workspaces;
 
-pub use crate::runner_wss_socket::gc::{WSS_GC_MAX_IDS, gc_wss_sockets};
-
 pub use filesystem::{
     DirStats, GcDirEntryReader, GcDirStatus, collect_dir_stats, dir_stats, gc_entry_is_real_dir,
     gc_path_dir_status, next_entry_warn_or_stop, read_dir_or_missing,
