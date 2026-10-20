@@ -9,11 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
@@ -351,11 +347,6 @@ test("Show the first source and created chats with their status", async () => {
   expect(peer).toHaveTextContent("Running");
   expect(child.closest("a")).not.toHaveTextContent("Running");
   expect(panel.querySelector("[title]")).toBeNull();
-  expect(
-    queryAllByRoleFast("button", panel).filter((button) => {
-      return button.getAttribute("aria-expanded") !== null;
-    }),
-  ).toHaveLength(0);
 });
 
 test("Keep an unknown first-run origin when a later run has a Slack source", async () => {
@@ -444,6 +435,45 @@ test("List an agent origin once when it is also a related chat", async () => {
   expect(
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
+});
+
+test("Keep the agent origin first in the collapsed preview when it is the oldest related chat", async () => {
+  await setupRelations({
+    events: [
+      prompt({
+        type: "source",
+        kind: "agent",
+        threadId: PEER,
+        runId: OTHER_RUN,
+        titleSnapshot: "Parent planning chat",
+        agentId: "c0000000-0000-4000-a000-000000000001",
+        href: `https://app.okou.ai/chats/${PEER}#run-${OTHER_RUN}`,
+      }),
+    ],
+    mock: () => {
+      context.mocks.api(chatRelationsContract.children, ({ respond }) => {
+        return respond(200, {
+          items: [
+            createdChat(CHILD, "First child"),
+            // Equal creation times sort by thread ID: CHILD, RELATION, EVENT.
+            { ...createdChat(RELATION, "Second child"), id: RUN },
+            { ...createdChat(EVENT, "Third child"), id: OTHER_RUN },
+          ],
+        });
+      });
+      mockCommunications(1, { lastMessageAt: "2026-08-01T10:00:00.000Z" });
+    },
+  });
+  const chats = await screen.findByRole("region", { name: "Chats" });
+  await within(chats).findByText("First child");
+  const rows = within(chats).getAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveTextContent("Existing planning chat");
+  expect(rows[0]).toHaveTextContent("From");
+  expect(within(chats).queryByText("Third child")).not.toBeInTheDocument();
+  click(buttonNamed("Expand", chats));
+  expect(within(chats).getByText("Third child")).toBeInTheDocument();
+  expect(within(chats).getAllByRole("listitem")).toHaveLength(4);
 });
 
 test("Show empty chats and unavailable relationship targets without inventing an origin", async () => {

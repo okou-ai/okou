@@ -209,14 +209,17 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
   }
   const data = chats.state === "hasData" ? chats.data : null;
   const items = data?.items ?? [];
-  const originListed =
-    origin !== null &&
-    items.some((chat) => {
-      return chat.threadId === origin.threadId;
-    });
   if (data && items.length === 0 && !data.failed && origin === null) {
     return null;
   }
+  // The origin always leads the list, so the preview never hides it.
+  const listedOrigin = items.find((chat) => {
+    return chat.threadId === origin?.threadId;
+  });
+  const others = items.filter((chat) => {
+    return chat !== listedOrigin;
+  });
+  const originRows = origin ? 1 : 0;
   return (
     <section
       className={RESOURCE_SECTION_CLASS}
@@ -247,20 +250,20 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
         </div>
       )}
       <ul id={chatsId} className="m-0 list-none p-0">
-        {origin && !originListed && <UnlistedOriginRow part={origin} />}
-        {items
-          .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT)
+        {listedOrigin ? (
+          <ResourceChatRow chat={listedOrigin} origin />
+        ) : (
+          origin && <UnlistedOriginRow part={origin} />
+        )}
+        {others
+          .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT - originRows)
           .map((chat) => {
             return (
-              <ResourceChatRow
-                key={chat.threadId}
-                chat={chat}
-                origin={chat.threadId === origin?.threadId}
-              />
+              <ResourceChatRow key={chat.threadId} chat={chat} origin={false} />
             );
           })}
       </ul>
-      {items.length > RESOURCE_PREVIEW_LIMIT && (
+      {others.length + originRows > RESOURCE_PREVIEW_LIMIT && (
         <ChatResourceSectionToggle
           expanded={expanded}
           controls={chatsId}
