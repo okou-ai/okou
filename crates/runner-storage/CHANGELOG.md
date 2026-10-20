@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.23...runner-storage-v0.5.24) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
 ## [0.5.23](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.22...runner-storage-v0.5.23) (2026-10-20)
 
 ## [0.5.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.21...runner-storage-v0.5.22) (2026-10-20)

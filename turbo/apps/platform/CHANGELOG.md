@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1048.2](https://github.com/okou-ai/okou/compare/app-v0.1048.1...app-v0.1048.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* update chat cards through owned realtime subscriptions ([#41829](https://github.com/okou-ai/okou/issues/41829)) ([18692b6](https://github.com/okou-ai/okou/commit/18692b6b59b22e9771aa87e64681b75d42efcab2))
+
+
+### Refactoring
+
+* **app:** remove promise cancellation wrappers ([#41846](https://github.com/okou-ai/okou/issues/41846)) ([671ecee](https://github.com/okou-ai/okou/commit/671ecee39892e129700d0a14854bb51ea181634c))
+* require connector account default selection ([#41863](https://github.com/okou-ai/okou/issues/41863)) ([8324bc6](https://github.com/okou-ai/okou/commit/8324bc6bba77fe6626a44297f261d3beef0a29f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.2
+    * @okouai/core bumped to 8.774.5
+
 ## [0.1048.1](https://github.com/okou-ai/okou/compare/app-v0.1048.0...app-v0.1048.1) (2026-10-20)
 
 

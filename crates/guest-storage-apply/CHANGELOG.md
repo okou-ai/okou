@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.29](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.28...guest-storage-apply-v0.25.29) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
 ## [0.25.28](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.27...guest-storage-apply-v0.25.28) (2026-10-20)
 
 ## [0.25.27](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.26...guest-storage-apply-v0.25.27) (2026-10-20)

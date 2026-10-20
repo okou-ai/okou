@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.21...guest-agent-v0.107.22) (2026-10-20)
+
+
+### Refactoring
+
+* **storage:** retire legacy guest completion snapshots ([#41842](https://github.com/okou-ai/okou/issues/41842)) ([5a9059b](https://github.com/okou-ai/okou/commit/5a9059b34f1190baeb2eeed71165e91009d2679f))
+
 ## [0.107.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.20...guest-agent-v0.107.21) (2026-10-20)
 
 ## [0.107.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.19...guest-agent-v0.107.20) (2026-10-20)

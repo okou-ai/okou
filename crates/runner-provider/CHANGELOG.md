@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.1...runner-provider-v0.10.2) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-provider:** converge local completion cleanup ([#41870](https://github.com/okou-ai/okou/issues/41870)) ([12efe2a](https://github.com/okou-ai/okou/commit/12efe2aeb72a20ca0284c13b3e126e589be2a6f0))
+
 ## [0.10.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.0...runner-provider-v0.10.1) (2026-10-20)
 
 

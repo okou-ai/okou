@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.774.5](https://github.com/okou-ai/okou/compare/core-v8.774.4...core-v8.774.5) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.2
+
 ## [8.774.4](https://github.com/okou-ai/okou/compare/core-v8.774.3...core-v8.774.4) (2026-10-20)
 
 
