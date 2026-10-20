@@ -105,13 +105,14 @@ describe("cron snapshot chat events", () => {
       isolatePg: true,
     });
     mockOptionalEnv("CHAT_EVENT_SNAPSHOT_BATCH_SIZE", "1");
-    mockSnapshotStorage();
     const bdd = createBddApi(context);
+    bdd.acceptAgentStorageWrites();
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {
       displayName: "Snapshot pagination agent",
     });
+    mockSnapshotStorage();
     const threadIds: string[] = [];
     for (let index = 0; index < 8; index += 1) {
       const sent = await chat.requestSendEvent(
