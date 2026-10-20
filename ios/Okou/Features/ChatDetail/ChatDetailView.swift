@@ -29,6 +29,9 @@ struct ChatDetailView: View {
     for (index, item) in items.enumerated() {
       let continuesGroup =
         index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
+        && item.message?.modelChange == nil
+        && item.message?.userMessage?.annotation?.type != "automation"
+        && items[index - 1].message?.userMessage?.annotation?.type != "automation"
       let spacing: CGFloat = index == 0 ? 20 : (continuesGroup ? 8 : 24)
       switch item {
       case .work(let section, let expanded):
@@ -199,13 +202,14 @@ struct ChatDetailView: View {
   ) -> some View {
     Group {
       if message.role == .user {
-        UserMessageBubbleLayout {
-          messageContent(
-            message, showsAvatar: false, pendingRetry: pendingRetry, isSending: isSending,
-            loadsAttachments: loadsAttachments
-          )
-          .padding(14)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        VStack(alignment: .trailing, spacing: 8) {
+          if let change = message.modelChange {
+            modelChangeLabel(change)
+          }
+          UserMessageView(
+            message: message, webURL: conversation.webURL,
+            viewer: conversation.attachmentViewer, loadsAttachments: loadsAttachments)
+          deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
         }
       } else {
         messageContent(
@@ -224,8 +228,8 @@ struct ChatDetailView: View {
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     .contextMenu {
-      if !message.text.isEmpty {
-        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+      if !message.copyText.isEmpty {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
       }
     }
   }
@@ -265,23 +269,43 @@ struct ChatDetailView: View {
           attachment: attachment, viewer: conversation.attachmentViewer,
           loadsThumbnail: loadsAttachments)
       }
-      if let pendingRetry {
-        HStack {
-          Text(pendingRetry ? "Delivery not confirmed" : "Sending…")
-            .font(.caption).foregroundStyle(.secondary)
-          if pendingRetry {
-            Button("Check and retry") {
-              guard let pending = conversation.pending.first(where: { $0.id == message.id }) else {
-                return
-              }
-              Task { await conversation.retry(pending) }
+      deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
+    }
+  }
+
+  @ViewBuilder
+  private func deliveryStatus(_ message: ChatMessage, pendingRetry: Bool?, isSending: Bool)
+    -> some View
+  {
+    if let pendingRetry {
+      HStack {
+        Text(pendingRetry ? "Delivery not confirmed" : "Sending…")
+          .font(.caption).foregroundStyle(.secondary)
+        if pendingRetry {
+          Button("Check and retry") {
+            guard let pending = conversation.pending.first(where: { $0.id == message.id }) else {
+              return
             }
-            .font(.caption)
-            .disabled(isSending)
+            Task { await conversation.retry(pending) }
           }
+          .font(.caption)
+          .disabled(isSending)
         }
       }
     }
+  }
+
+  private func modelChangeLabel(_ change: ChatModelChange) -> some View {
+    let label: String
+    switch change {
+    case .model(let model):
+      let name =
+        conversation.modelSelection?.models.configuration?.catalog.name(model.id) ?? model.id
+      label = "Model: \(name)" + (model.isFast ? " · Fast" : "")
+    case .fastMode(let enabled): label = enabled ? "Fast mode on" : "Fast mode off"
+    }
+    return Label(label, systemImage: "slider.horizontal.3")
+      .font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity)
   }
 
 }

@@ -2139,9 +2139,12 @@
     "relations": {
       "chats": "チャット",
       "loadFailed": "読み込み失敗",
+      "messageUnavailable": "メッセージ取得不可",
       "origin": "開始元",
       "queued": "待機中",
+      "received": "受信",
       "running": "実行中",
+      "sent": "送信",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
@@ -5168,7 +5171,7 @@
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
+        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
         "retry": "再試行",
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
@@ -5177,7 +5180,7 @@
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
         "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
-        "preparationFailed": "提案の設定を完了できませんでした。再試行してください。",
+        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
         "retry": "再試行",
         "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",

@@ -37,7 +37,7 @@ function buildIntegrationToolsPrompt(): readonly string[] {
     "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     "For file delivery, use the current integration's `upload-file` command.",
-    "For Word documents, PDFs, or spreadsheets, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",
+    "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",
     "Duplicate delivery channels give the user multiple copies of the same artifact; they are useful when they serve different user needs, such as sharing both a live view and a source file.",
   ];
   const localFileContextLines = localFileContext.map((line) => {

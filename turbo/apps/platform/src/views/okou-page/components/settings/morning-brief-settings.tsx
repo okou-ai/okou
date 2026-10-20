@@ -102,7 +102,9 @@ export function MorningBriefSettings() {
   const [mutationLoadable, updatePreference] = useLoadableSet(
     updateMorningBriefPreference$,
   );
-  const retryPreference = useSet(retryMorningBriefPreference$);
+  const [retryLoadable, retryPreference] = useLoadableSet(
+    retryMorningBriefPreference$,
+  );
   const cardRef = useSet(morningBriefPreferenceCardRef$);
   const pageSignal = useGet(pageSignal$);
   const state =
@@ -111,9 +113,11 @@ export function MorningBriefSettings() {
       : undefined;
   const preference = state?.kind === "ready" ? state.preference : undefined;
   const loading = preferenceLoadable.state === "loading";
-  const mutating = mutationLoadable.state === "loading";
+  const mutating =
+    mutationLoadable.state === "loading" || retryLoadable.state === "loading";
   const loadFailed = preferenceLoadable.state === "hasError";
-  const mutationFailed = mutationLoadable.state === "hasError";
+  const mutationFailed =
+    mutationLoadable.state === "hasError" || retryLoadable.state === "hasError";
   const conflicted = state?.kind === "error";
   const enabled = preference?.enabled ?? false;
 
@@ -122,25 +126,17 @@ export function MorningBriefSettings() {
   };
 
   const handleRetry = () => {
-    if (preference?.status === "error") {
-      detach(updatePreference(true, pageSignal), Reason.DomCallback);
-      return;
-    }
-    if (mutationFailed && preference) {
+    if (mutationLoadable.state === "hasError" && preference) {
       detach(
         updatePreference(!preference.enabled, pageSignal),
         Reason.DomCallback,
       );
       return;
     }
-    retryPreference();
+    detach(retryPreference(pageSignal), Reason.DomCallback);
   };
 
-  const showRetry =
-    loadFailed ||
-    mutationFailed ||
-    conflicted ||
-    preference?.status === "error";
+  const showRetry = loadFailed || mutationFailed || conflicted;
 
   return (
     <div

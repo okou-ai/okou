@@ -842,26 +842,23 @@ export {
 export {
   remotesContract,
   remotesOverviewSchema,
+  computerUseHostBriefSchema,
   type RemotesOverview,
 } from "./remotes";
 export {
   connectedConnectorsContract,
   connectedConnectorsSchema,
+  builtinConnectorBriefSchema,
+  customConnectorBriefSchema,
   type ConnectedConnectors,
-} from "./connected-connectors";
-export {
-  connectorOverviewContract,
-  connectorOverviewSchema,
-  agentConnectorAccessSchema,
-  connectorAccountBriefSummarySchema,
-  connectorDefaultAccountBriefSchema,
-  type ConnectorOverview,
   type BuiltinConnectorBrief,
   type CustomConnectorBrief,
+} from "./connected-connectors";
+export {
+  agentConnectorAccessContract,
+  agentConnectorAccessSchema,
   type AgentConnectorAccess,
-  type ConnectorAccountBriefSummary,
-  type ConnectorDefaultAccountBrief,
-} from "./connector-overview";
+} from "./agent-connector-access";
 export {
   connectorAgentAccessContract,
   connectorAgentAccessSchema,

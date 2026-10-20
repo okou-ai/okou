@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 #[cfg(feature = "test-support")]
 mod request_route;
+#[cfg(feature = "test-support")]
+mod unpark_custody;
 
 pub(super) fn prepare_socket_paths(sandbox: &mut FirecrackerSandbox, dir: &Path) {
     sandbox.sock_paths = SockPaths::new(dir.to_path_buf());

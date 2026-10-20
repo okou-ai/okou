@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.759.1](https://github.com/okou-ai/okou/compare/api-v1.759.0...api-v1.759.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** select finalizing sources independently of native history ([#41730](https://github.com/okou-ai/okou/issues/41730)) ([9680638](https://github.com/okou-ai/okou/commit/968063848aea8cf54acd6f56facdf7cdcbd79051))
+
+
+### Refactoring
+
+* **api:** keep official telegram command db local ([#41795](https://github.com/okou-ai/okou/issues/41795)) ([192607e](https://github.com/okou-ai/okou/commit/192607e62e23393f80b0f2a4cea2e0fc23254a9e))
+* **api:** retire delivery format guidance switch ([#41794](https://github.com/okou-ai/okou/issues/41794)) ([d013da9](https://github.com/okou-ai/okou/commit/d013da9a07294cb0f9f24e1fc15228baa55f5888))
+
+
+### Performance Improvements
+
+* load connector and remote directories on demand ([#41709](https://github.com/okou-ai/okou/issues/41709)) ([8e16d76](https://github.com/okou-ai/okou/commit/8e16d761b4f269b9a71c1a9c2d990ad6dbc55188))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.581.1
+    * @okouai/core bumped to 8.774.2
+    * @okouai/db bumped to 1.352.1
+    * @okouai/pi-agent-runtime bumped to 1.50.32
+
 ## [1.759.0](https://github.com/okou-ai/okou/compare/api-v1.758.0...api-v1.759.0) (2026-10-20)
 
 

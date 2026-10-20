@@ -77,12 +77,18 @@ public struct ChatMessageAttachment: Equatable, Identifiable, Sendable {
   public let filename: String
   public let contentType: String
   public let size: Int?
+  public let renderedFileID: String?
+  public var downloadID: String { renderedFileID ?? id }
 
-  public init(id: String, filename: String, contentType: String, size: Int? = nil) {
+  public init(
+    id: String, filename: String, contentType: String, size: Int? = nil,
+    renderedFileID: String? = nil
+  ) {
     self.id = id
     self.filename = filename
     self.contentType = contentType
     self.size = size
+    self.renderedFileID = renderedFileID
   }
 }
 
@@ -97,6 +103,10 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
   public let runID: String?
   public let isQueued: Bool
   public let isError: Bool
+  public let userMessage: ChatUserMessage?
+  public let inputError: String?
+  public let modelChange: ChatModelChange?
+  public var copyText: String { userMessage?.displayText ?? text }
 
   public init(
     id: String,
@@ -106,7 +116,9 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     createdAt: Date,
     runID: String? = nil,
     isQueued: Bool,
-    isError: Bool
+    isError: Bool,
+    userMessage: ChatUserMessage? = nil, inputError: String? = nil,
+    modelChange: ChatModelChange? = nil
   ) {
     self.id = id
     self.role = role
@@ -116,6 +128,9 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     self.runID = runID
     self.isQueued = isQueued
     self.isError = isError
+    self.userMessage = userMessage
+    self.inputError = inputError
+    self.modelChange = modelChange
   }
 }
 

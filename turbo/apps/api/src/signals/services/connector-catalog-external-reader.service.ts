@@ -18,7 +18,7 @@ import {
   type PublicConnectorCatalogStatusItem,
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   connectorCatalog,
   connectorCatalogEntries,
