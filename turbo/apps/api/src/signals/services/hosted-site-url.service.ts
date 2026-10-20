@@ -7,8 +7,10 @@ import {
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
+  CURRENT_LINK_LAYOUT,
   hostedSitePointerNamespace,
   linkLayoutFromSegment,
+  linkLayoutSegment,
   type LinkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
@@ -85,6 +87,10 @@ const ownedSite$ = command(
         and(
           ownedSiteCondition(args),
           eq(hostedSites.id, args.siteId),
+          eq(
+            hostedSites.linkLayoutSegment,
+            linkLayoutSegment(CURRENT_LINK_LAYOUT),
+          ),
           eq(hostedDeployments.status, "ready"),
           isNull(sql`${hostedDeployments.manifest}->>'access'`),
         ),

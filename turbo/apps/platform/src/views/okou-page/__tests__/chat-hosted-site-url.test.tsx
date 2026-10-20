@@ -24,11 +24,15 @@ import {
 } from "./chat-resources-test-helpers.ts";
 
 const deploymentId = "00000000-0000-4000-8000-000000000041";
-const deploymentUrl = `https://dpl-${deploymentId}.okou.app/`;
 const siteId = "00000000-0000-4000-8000-000000000042";
 const artifactId = "00000000-0000-4000-8000-000000000043";
 
-async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
+async function setupHostedSite(
+  sidebar: boolean,
+  initialSlug = "launch-site",
+  hostDomain = "okou.app",
+) {
+  const deploymentUrl = `https://dpl-${deploymentId}.${hostDomain}/`;
   let currentSlug = initialSlug;
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
@@ -36,7 +40,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", "launch-site.html"),
     sourceUrl: deploymentUrl,
-    aliasUrl: `https://${initialSlug}.okou.app`,
+    aliasUrl: `https://${initialSlug}.${hostDomain}`,
   };
   const run = artifactRun({
     artifactId,
@@ -52,7 +56,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
         ? hostedSiteArtifactDetail(summary, {
             siteId,
             slug: currentSlug,
-            url: `https://${currentSlug}.okou.app`,
+            url: `https://${currentSlug}.${hostDomain}`,
           })
         : null;
     },
@@ -63,7 +67,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
           files: run.files.map((file) => {
             return {
               ...file,
-              aliasUrl: `https://${currentSlug}.okou.app`,
+              aliasUrl: `https://${currentSlug}.${hostDomain}`,
               artifactKind: "hosted-site" as const,
             };
           }),
@@ -94,7 +98,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
     return respond(200, {
       siteId,
       publicSlug: currentSlug,
-      url: `https://${currentSlug}.okou.app`,
+      url: `https://${currentSlug}.${hostDomain}`,
       isActive: true,
     });
   });
@@ -106,7 +110,7 @@ async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
     return respond(200, {
       siteId,
       publicSlug: currentSlug,
-      url: `https://${currentSlug}.okou.app`,
+      url: `https://${currentSlug}.${hostDomain}`,
       isActive: true,
     });
   });
@@ -205,3 +209,34 @@ test("a reopened chat shows and copies the current site address despite the orig
     ]);
   });
 });
+
+test.each([false, true])(
+  "legacy websites keep their share link without URL customization (sidebar=%s)",
+  async (sidebar) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const preview = await setupHostedSite(
+      sidebar,
+      "legacy-site",
+      "sites.vm0.io",
+    );
+    const title = await within(preview).findByTestId("artifact-title-link");
+    expect(title).toHaveTextContent("legacy-site.sites.vm0.io");
+    expect(title).toHaveAttribute("href", "https://legacy-site.sites.vm0.io/");
+    const shareLabel = sidebar ? "Share artifact" : "Share";
+    await waitFor(() => {
+      expect(buttonNamed(shareLabel, preview)).toBeEnabled();
+    });
+    click(buttonNamed(shareLabel, preview));
+    const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
+    await within(shareMenu).findByText("legacy-site.sites.vm0.io");
+    expect(
+      queryAllByRoleFast("button", shareMenu).find((button) => {
+        return button.textContent?.trim() === "Customize URL";
+      }),
+    ).toBeUndefined();
+    click(buttonNamed("Copy link", shareMenu));
+    await waitFor(() => {
+      expect(clipboard.writes.at(-1)).toBe("https://legacy-site.sites.vm0.io");
+    });
+  },
+);
