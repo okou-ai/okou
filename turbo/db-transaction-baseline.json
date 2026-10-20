@@ -7,16 +7,6 @@
       "owner": "insertBenchmarkRunBatch$"
     },
     {
-      "id": "TX-0007",
-      "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
-      "owner": "publishPreparedAgentInstructions$"
-    },
-    {
-      "id": "TX-0008",
-      "file": "turbo/apps/api/src/signals/routes/agent-instructions.ts",
-      "owner": "reserveAgentInstructionPublication$"
-    },
-    {
       "id": "TX-0011",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentInner$"
@@ -410,11 +400,6 @@
       "id": "TX-0210",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "discardDormantMaterialization$"
-    },
-    {
-      "id": "TX-0216",
-      "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
-      "owner": "cleanupBootstrapCandidate$"
     },
     {
       "id": "TX-0218",

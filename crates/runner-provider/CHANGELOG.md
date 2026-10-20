@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.9.1...runner-provider-v0.10.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare owned peer home waits and hostname heartbeats ([#41747](https://github.com/okou-ai/okou/issues/41747)) ([61c7678](https://github.com/okou-ai/okou/commit/61c7678ee8630a0e3f15ec314eadbf4058bb4e54))
+
 ## [0.9.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.9.0...runner-provider-v0.9.1) (2026-10-20)
 
 

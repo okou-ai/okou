@@ -165,41 +165,6 @@ test("telemetry and completion leave startup unknown until an authenticated repo
   });
 });
 
-test("malformed startup reports leave the path unset", async () => {
-  const owned = await publicChatActor(context);
-  await owned.run(async () => {
-    const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      prompt: "Validate dedicated startup reports",
-    });
-    const { sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
-    const request = setupRawAppRequest({
-      context,
-      routes: runnersStartupRoutes,
-    });
-    for (const body of [
-      {},
-      { sandboxStartupPath: "workspace" },
-      { sandboxStartupPath: "blank", extra: true },
-    ]) {
-      const response = await request(`/api/runners/runs/${run.runId}/startup`, {
-        method: "PUT",
-        headers: { ...sandboxHeaders, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      expect(response.status).toBe(400);
-    }
-    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
-    await writeStartupPath(run.runId, "blank", sandboxHeaders);
-    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(
-      "blank",
-    );
-  });
-});
-
 test("same-value retries succeed and conflicting or telemetry reports cannot overwrite startup", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {

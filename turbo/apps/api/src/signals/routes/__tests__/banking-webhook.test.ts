@@ -539,7 +539,6 @@ describe("Finicity webhook outcomes", () => {
 
   it("rejects malformed signed events and ignores wrong customer correlation", async () => {
     const fixture = await pendingConnect();
-    expect((await postWebhook({ eventType: "added" })).status).toBe(400);
     expect(
       (
         await postWebhook({

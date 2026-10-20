@@ -2152,41 +2152,64 @@ def _finish_response_handling(
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     websocket_inspection.release(flow)
-    if response_streaming.has_pending_response_inspection(flow):
-        return _complete_error_after_inspection(flow)
     try:
-        _handle_error(flow)
-    finally:
+        if response_streaming.has_pending_response_inspection(flow):
+            return _complete_error(flow, _handle_error_after_inspection(flow))
+        continuation = _handle_error(flow)
+    except BaseException:
         _release_terminal_flow_state(flow, release_tracking=True)
+        raise
+    if continuation is not None:
+        return _complete_error(flow, continuation)
+    _release_terminal_flow_state(flow, release_tracking=True)
     return None
 
 
-async def _complete_error_after_inspection(flow: http.HTTPFlow) -> None:
+async def _handle_error_after_inspection(flow: http.HTTPFlow) -> None:
+    await responseinspection(flow)
+    continuation = _handle_error(flow)
+    if continuation is not None:
+        await continuation
+
+
+async def _complete_error(flow: http.HTTPFlow, continuation: Awaitable[None]) -> None:
     try:
-        await responseinspection(flow)
-        _handle_error(flow)
+        await continuation
     finally:
         _release_terminal_flow_state(flow, release_tracking=True)
 
 
-def _handle_error(flow: http.HTTPFlow) -> None:
+def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     """Handle registered-run terminal work after a connection-level error."""
     start_time = flow.metadata.pop(metadata_keys.HTTP_REQUEST_START_MONOTONIC, None)
     codex_model_catalog_cache.handle_error(flow)
 
+    if not flow_metadata.run_id(flow.metadata):
+        return None
+
+    latency_ms = elapsed_ms(start_time)
+    connector_diagnostics.handle_error(flow)
+
+    # Complete captured model evidence remains observable on errors. Keep the
+    # pre-inspection network timing and connector interruption policy intact.
+    response_streaming.start_buffered_response_inspection(flow, interrupted=True)
+    if response_streaming.has_pending_response_inspection(flow):
+        return _finish_error_after_inspection(flow, latency_ms=latency_ms)
+    _finish_error_handling(flow, latency_ms=latency_ms)
+    return None
+
+
+async def _finish_error_after_inspection(flow: http.HTTPFlow, *, latency_ms: int) -> None:
+    await responseinspection(flow)
+    _finish_error_handling(flow, latency_ms=latency_ms)
+
+
+def _finish_error_handling(flow: http.HTTPFlow, *, latency_ms: int) -> None:
     run_id = flow_metadata.run_id(flow.metadata)
     network_log_path = flow_metadata.network_log_path(flow.metadata)
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-
-    if not run_id:
-        return
-
-    latency_ms = elapsed_ms(start_time)
     original_url = flow.metadata[metadata_keys.ORIGINAL_URL]
     firewall_action = flow_metadata.firewall_action(flow.metadata)
-
-    connector_diagnostics.handle_error(flow)
-
     request_size = _request_size(flow)
     error_msg = flow.error.msg if flow.error else "unknown error"
 

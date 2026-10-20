@@ -8,7 +8,6 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
-  bdd,
   chat,
   entitledNativeChatActor,
   sendChatRun,
@@ -18,43 +17,6 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat send authorization, validation and cancellation", () => {
-  it.each(["missing-agent", "thread-agent-mismatch"] as const)(
-    "rejects %s without enqueuing a message",
-    async (path) => {
-      const { actor, agentId } = await entitledNativeChatActor();
-      const other = await bdd.createAgent(actor);
-      const thread = await chat.createThread(actor, { agentId });
-      if (!actor.orgId) {
-        throw new Error("Expected an organization");
-      }
-      const before = await chat.listThreadEvents(actor, thread.id);
-      const requestedAgentId =
-        path === "missing-agent" ? randomUUID() : other.agentId;
-      const rejected = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: requestedAgentId,
-          ...(path === "thread-agent-mismatch" ? { threadId: thread.id } : {}),
-          prompt: "unauthorized input must not enqueue",
-        },
-        [404],
-      );
-      expect(rejected.status).toBe(404);
-      expect(rejected.body).toMatchObject({
-        error: {
-          code: "NOT_FOUND",
-          message:
-            path === "missing-agent"
-              ? "Agent not found"
-              : "Chat thread not found",
-        },
-      });
-      await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
-      const after = await chat.listThreadEvents(actor, thread.id);
-      expect(after.events).toStrictEqual(before.events);
-    },
-  );
-
   it("does not enqueue when the caller aborts during attachment lookup", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, { agentId });

@@ -79,6 +79,10 @@ readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
+# DB-only instruction edits no longer publish the legacy Storage HEAD.
+readonly AGENT_INSTRUCTIONS_CLAIM_READER_PATH=turbo/apps/api/src/signals/services/agent-instructions-claim.service.ts
+# #41393 prepared inline file injection before release 2 emits it.
+readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29
 readonly PI_MEMORY_INPUT_REVISION_WRITER_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
@@ -702,6 +706,17 @@ if ! git merge-base --is-ancestor "$guest_storage_output_completion_reader_commi
   fail "Rollback target predates the Guest Storage-output completion reader: ${guest_storage_output_completion_reader_commit}."
 fi
 
+# Resolve the squash-merged DB reader from main; pre-cutover APIs would read
+# stale Storage after DB-only edits, even though the additive schema still fits.
+agent_instructions_claim_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$AGENT_INSTRUCTIONS_CLAIM_READER_PATH" | sed -n '1p')
+if [[ ! "$agent_instructions_claim_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Agent instructions DB reader on main."
+fi
+if ! git merge-base --is-ancestor "$agent_instructions_claim_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent instructions DB reader: ${agent_instructions_claim_reader_commit}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
@@ -747,6 +762,10 @@ if ! git merge-base --is-ancestor "$BUNDLED_ONLY_CLI_RUNNER_COMMIT" "$runner_tag
 fi
 if ! git merge-base --is-ancestor "$PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the pair-free disk telemetry writer: ${PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates inline Agent instructions: ${AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT}."
 fi
 
 runner_matrix=$("${script_dir}/../runner/runner-host-architecture-groups.sh" target-matrix)

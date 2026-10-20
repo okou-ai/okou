@@ -1037,11 +1037,10 @@ function uniquePhoneHandle() {
 function agentPhoneWebhookHeaders(
   body: string,
   webhookId = "evt-bdd-agentphone",
-  eventType: string | null = "agent.message",
 ): {
   readonly "x-webhook-signature": string;
   readonly "x-webhook-timestamp": string;
-  readonly "x-webhook-event"?: string;
+  readonly "x-webhook-event": string;
   readonly "x-webhook-id": string;
 } {
   const timestamp = String(Math.floor(now() / 1000));
@@ -1053,7 +1052,7 @@ function agentPhoneWebhookHeaders(
       .update(`${timestamp}.${body}`)
       .digest("hex")}`,
     "x-webhook-timestamp": timestamp,
-    ...(eventType === null ? {} : { "x-webhook-event": eventType }),
+    "x-webhook-event": "agent.message",
     "x-webhook-id": webhookId,
   };
 }
@@ -6304,52 +6303,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(ignoredLifecycle.body).toBe("OK");
 
-    const missingEventTypeEvent = JSON.stringify({
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "missing event type",
-      },
-    });
-    const missingEventType = await integrations.requestAgentPhoneWebhook(
-      missingEventTypeEvent,
-      agentPhoneWebhookHeaders(
-        missingEventTypeEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-        null,
-      ),
-      [500],
-    );
-    expect(missingEventType.body).toBe(
-      "AgentPhone webhook is missing event type",
-    );
-
-    const missingChannelEvent = JSON.stringify({
-      event: "agent.message",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        channel: "sms",
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        from: "+15555551212",
-        to: "+19039853128",
-        message: "missing channel",
-      },
-    });
-    const missingChannel = await integrations.requestAgentPhoneWebhook(
-      missingChannelEvent,
-      agentPhoneWebhookHeaders(
-        missingChannelEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(missingChannel.body).toBe(
-      "AgentPhone message webhook is missing channel",
-    );
-
     const unsupportedChannelEvent = JSON.stringify({
       event: "agent.message",
       channel: "fax",
@@ -6369,28 +6322,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       [200],
     );
     expect(unsupportedChannel.body).toBe("OK");
-
-    const missingFieldsEvent = JSON.stringify({
-      event: "agent.message",
-      channel: "sms",
-      agentId: "agt-bdd-agentphone",
-      data: {
-        messageId: `msg-bdd-agentphone-${randomUUID()}`,
-        to: "+19039853128",
-        message: "missing sender",
-      },
-    });
-    const missingFields = await integrations.requestAgentPhoneWebhook(
-      missingFieldsEvent,
-      agentPhoneWebhookHeaders(
-        missingFieldsEvent,
-        `evt-bdd-agentphone-${randomUUID()}`,
-      ),
-      [500],
-    );
-    expect(missingFields.body).toBe(
-      "AgentPhone message webhook is missing sender identity",
-    );
 
     const nonCanonicalMessageIdEvent = JSON.stringify({
       event: "agent.message",

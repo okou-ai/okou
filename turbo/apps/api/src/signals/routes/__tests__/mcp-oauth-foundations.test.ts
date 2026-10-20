@@ -662,6 +662,7 @@ describe("MCP OAuth foundations", () => {
         runnersJobClaimContract,
       ).claim({
         headers: runnerHeaders,
+        extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: run.runId },
         body: {
           runnerIdentity,

@@ -205,7 +205,6 @@ import type {
 import type {
   ChatThreadExecutionSnapshot,
   ChatThreadContinuation,
-  ChatThreadContinuationRoute,
 } from "./chat-session-continuity.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
 
@@ -250,10 +249,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { isStaffOrg } from "@okouai/core/staff-org";
-import {
-  getInstructionsStorageName,
-  MEMORY_ARTIFACT_NAME,
-} from "@okouai/core/storage-names";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import type {
   AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
@@ -527,10 +523,6 @@ function threadRunModelFields(model: ThreadModelSelection) {
     modelProviderCredentialScope: model.modelProviderCredentialScope,
     selectedModelOverride: model.selectedModelOverride,
     builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
-    threadSessionRoute: {
-      selectedModel: model.selectedModelOverride,
-      cliAgentType: model.cliAgentType,
-    },
     codexServiceTier: model.codexServiceTier,
     piExecution: model.piExecution,
   };
@@ -2720,7 +2712,6 @@ export function createThreadClaimRunObjects(
       command.owner.userId,
       command.owner.orgId,
       {
-        instructionsStorageName: getInstructionsStorageName(agent.name),
         preloadedAgentExecutionObservation: {
           requestUserId: command.owner.userId,
           requestOrgId: command.owner.orgId,
@@ -5137,7 +5128,6 @@ interface ThreadRunCommand {
   readonly callbacks?: readonly AgentRunsCreateRunCallback[];
   readonly chatThreadId: string;
   readonly connectorSourceId?: string;
-  readonly threadSessionRoute?: ChatThreadContinuationRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
@@ -5383,6 +5373,9 @@ function buildStoredExecutionContextDraft(
   }
   return {
     context: {
+      ...(args.resolved.agentId === null
+        ? {}
+        : { agentInstructionsSource: "agent" as const }),
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,
@@ -5614,14 +5607,7 @@ function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
   return { ...body, secrets: pendingOkouTokenSecrets(body.secrets) };
 }
 
-interface ProductResolutionOptions {
-  readonly instructionsStorageName: string;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
-}
-
 interface ResolveAgentExecutionOptions {
-  readonly instructionsStorageName: string;
   readonly agentObservation?: RunAgentObservation;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
@@ -5665,7 +5651,6 @@ interface RunAgentObservation {
 
 function resolveAgentObservation(
   row: RunAgentObservation | undefined,
-  options: ProductResolutionOptions,
 ): ResolvedAgentExecution | CreateRunErrorResult {
   if (!row) {
     return notFound("Agent not found");
@@ -5674,7 +5659,6 @@ function resolveAgentObservation(
     agentId: row.agentId,
     ownerUserId: row.agentOwner,
     orgId: row.agentOrgId,
-    instructionsStorageName: options.instructionsStorageName,
   };
 }
 
@@ -5700,9 +5684,8 @@ function resolveProductAgentExecution(
           agentId,
           ownerUserId: preloaded.ownerUserId,
           orgId: preloaded.agentOrgId,
-          instructionsStorageName: options.instructionsStorageName,
         }
-      : resolveAgentObservation(options.agentObservation, options);
+      : resolveAgentObservation(options.agentObservation);
   if (isRouteError(resolved)) {
     return resolved;
   }

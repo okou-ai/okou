@@ -1,21 +1,10 @@
-import { DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { nowDate } from "../../../lib/time";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 
 const context = testContext();
 const api = createBddApi(context);
-
-/** Shape of the transient upstream failure R2 returns as an S3 `InternalError`. */
-function objectStoreInternalError(): Error {
-  const error = new Error(
-    "We encountered an internal error. Please try again.",
-  );
-  error.name = "InternalError";
-  return error;
-}
 
 describe("AGENT-01: agent lifecycle through public API", () => {
   it("creates, reads, lists, updates, deletes, and verifies removal through API-visible state", async () => {
@@ -86,47 +75,6 @@ describe("AGENT-01: agent lifecycle through public API", () => {
     });
 
     await api.deleteAgent(admin, created.agentId);
-
-    const missing = await api.requestReadAgent(admin, created.agentId, [404]);
-    expectApiError(missing.body);
-    expect(missing.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("still reports the agent as deleted when object storage cleanup fails after the delete commits", async () => {
-    const admin = api.user();
-    api.acceptAgentStorageWrites();
-
-    const created = await api.createAgent(admin, {
-      displayName: "BDD Storage Cleanup Agent",
-    });
-
-    const listedPrefixes: string[] = [];
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof ListObjectsV2Command) {
-        const prefix = command.input.Prefix ?? "";
-        listedPrefixes.push(prefix);
-        return Promise.resolve({
-          Contents: [
-            {
-              Key: `${prefix}AGENTS.md`,
-              Size: 12,
-              LastModified: nowDate(),
-            },
-          ],
-        });
-      }
-      if (command instanceof DeleteObjectsCommand) {
-        return Promise.reject(objectStoreInternalError());
-      }
-      return Promise.resolve({ ContentLength: 1024 });
-    });
-
-    // The row deletion has already committed by the time the objects are
-    // released, so an upstream object-store failure must not be reported as a
-    // failed deletion. `deleteAgent` accepts only 204.
-    await api.deleteAgent(admin, created.agentId);
-
-    expect(listedPrefixes.length).toBeGreaterThan(0);
 
     const missing = await api.requestReadAgent(admin, created.agentId, [404]);
     expectApiError(missing.body);

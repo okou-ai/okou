@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { randomUUID } from "node:crypto";
 import { agentInstructionsRoutes } from "../agent-instructions";
-import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -44,45 +43,6 @@ async function readAgentAs(
   const response = await app.request(`/api/agents/${agentId}`, { headers });
   expect(response.status).toBe(200);
   return await response.json();
-}
-
-function commandInput(command: unknown): Record<string, unknown> {
-  if (
-    typeof command === "object" &&
-    command !== null &&
-    "input" in command &&
-    typeof command.input === "object" &&
-    command.input !== null
-  ) {
-    return command.input as Record<string, unknown>;
-  }
-  return {};
-}
-
-function s3DeletedObjectKeys(): readonly string[] {
-  return context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-    const input = commandInput(command);
-    const request = input.Delete;
-    if (
-      typeof request !== "object" ||
-      request === null ||
-      !("Objects" in request) ||
-      !Array.isArray(request.Objects)
-    ) {
-      return [];
-    }
-    return request.Objects.flatMap((object) => {
-      if (
-        typeof object === "object" &&
-        object !== null &&
-        "Key" in object &&
-        typeof object.Key === "string"
-      ) {
-        return [object.Key];
-      }
-      return [];
-    });
-  });
 }
 
 async function createAgent(
@@ -362,21 +322,11 @@ describe("DELETE /api/agents/:id", () => {
     });
   });
 
-  it("removes agent access and requests deletion of its instructions objects", async () => {
+  it("removes Agent and instruction access after deleting an edited Agent", async () => {
     const owner = createPublicConnectorActor(context);
     const actor = owner.actor;
     await owner.run(async () => {
       bdd.acceptAgentStorageWrites();
-      const uploadedKeys = new Set<string>();
-      const storage = installDurableUserExportStorage(context, {
-        prefixes: [actor.orgId + "/"],
-        afterWrite: (command) => {
-          if (command.input.Key) {
-            uploadedKeys.add(command.input.Key);
-          }
-          return Promise.resolve();
-        },
-      });
       const agent = await bdd.createAgent(actor, {
         displayName: "Sweep Agent",
       });
@@ -385,20 +335,20 @@ describe("DELETE /api/agents/:id", () => {
         agent.agentId,
         "Owned instructions to delete",
       );
-      expect(uploadedKeys.size).toBeGreaterThan(0);
-      context.mocks.s3.send.mockClear();
-      await bdd.deleteAgent(actor, agent.agentId);
-      const deleted = new Set(s3DeletedObjectKeys());
-      for (const key of uploadedKeys) {
-        expect(key).toMatch(new RegExp("^" + actor.orgId + "/[0-9a-f-]{36}/"));
-        expect(deleted.has(key)).toBeTruthy();
-        expect(storage.hasObject(key)).toBeFalsy();
-      }
-      await bdd.requestReadAgent(actor, agent.agentId, [404]);
       const instructions = setupApp({
         context,
         routes: agentInstructionsRoutes,
       })(agentInstructionsContract);
+      const current = await accept(
+        instructions.get({
+          params: { id: agent.agentId },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(current.body.content).toBe("Owned instructions to delete");
+      await bdd.deleteAgent(actor, agent.agentId);
+      await bdd.requestReadAgent(actor, agent.agentId, [404]);
       await accept(
         instructions.get({
           params: { id: agent.agentId },

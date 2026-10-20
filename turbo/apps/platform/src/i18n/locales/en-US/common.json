@@ -3947,6 +3947,26 @@
       "connected": "{{connector}} connected"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Could not update authorization. Refresh and try again.",
+    "allow": "Allow for 1 hour",
+    "approved": "Shell access allowed",
+    "deadline": "Expires {{date}}",
+    "denied": "Request denied",
+    "deny": "Deny",
+    "description": "The agent needs permission to use Shell on your computer.",
+    "details": "Open details",
+    "expired": "Authorization expired",
+    "loading": "Loading authorization…",
+    "pending": "Ready for approval",
+    "refresh": "Refresh",
+    "revoke": "Revoke access",
+    "revoked": "Shell access revoked",
+    "scope": "Only this chat and computer. Existing terminals stay open when access ends.",
+    "title": "Desktop Shell access",
+    "unavailable": "Authorization unavailable",
+    "waiting": "Approval is unavailable while a Run is active or the selected computer has changed."
+  },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
     "categories": {

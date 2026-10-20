@@ -20,6 +20,7 @@ import aws_sigv4
 import connector_intent
 import connector_runtime_metadata
 import connector_template_syntax
+import content_length
 from firewall_auth_config import auth_config_injects_ordinary_upstream_credentials
 from firewall_matching import base_url as _firewall_base_url
 from firewall_matching import patterns as _firewall_patterns
@@ -1738,16 +1739,12 @@ def _content_length_may_have_body(
 ) -> bool:
     if headers is None:
         return False
-    for name, value in headers:
-        if name.lower() != "content-length":
-            continue
-        for part in value.split(","):
-            stripped = part.strip(" \t")
-            if not stripped or not stripped.isascii() or not stripped.isdecimal():
-                return True
-            if int(stripped) > 0:
-                return True
-    return False
+    parsed = content_length.parse(
+        (value for name, value in headers if name.lower() == "content-length"),
+        max_value=0,
+    )
+    # With a zero ceiling, only missing fields or agreed zeroes exclude a body.
+    return parsed.kind not in ("missing", "valid")
 
 
 def _form_action_values(

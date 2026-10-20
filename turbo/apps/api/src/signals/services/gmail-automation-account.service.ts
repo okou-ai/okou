@@ -6,11 +6,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { command } from "ccstate";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { writeDb$, type Db } from "../external/db";
-import {
-  workflowAutomationDefaultAccountReadPlan,
-  workflowAutomationSelectedAccountReadPlan,
-} from "./workflow-automation-account.service";
+import { writeDb$ } from "../external/db";
 
 const GMAIL_EVENT_TYPES = ["gmail-new-message", "gmail-label-applied"] as const;
 
@@ -29,81 +25,46 @@ export function gmailAutomationResolvedLabelInvalidationWrite(
   };
 }
 
-export async function reprojectGmailAutomationsForOwner(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): Promise<void> {
-  const automations = await db
-    .select({
-      id: workflowAutomations.id,
-      workflowId: workflowAutomations.workflowId,
-      eventType: workflowAutomations.eventType,
-      eventConfig: workflowAutomations.eventConfig,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-    })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.kind, "event"),
-        inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
-      ),
-    );
+export function gmailAutomationProjectionColumns() {
+  return {
+    id: workflowAutomations.id,
+    workflowId: workflowAutomations.workflowId,
+    eventType: workflowAutomations.eventType,
+    eventConfig: workflowAutomations.eventConfig,
+    eventConnectorId: workflowAutomations.eventConnectorId,
+  };
+}
 
-  for (const automation of automations) {
-    const workflowScope = {
-      ...args,
-      workflowId: automation.workflowId,
+export function gmailAutomationProjectionCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return and(
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.kind, "event"),
+    inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
+  );
+}
+
+export function gmailAutomationProjectionConfig(
+  automation: Pick<
+    typeof workflowAutomations.$inferSelect,
+    "eventType" | "eventConfig"
+  >,
+) {
+  let eventConfig = automation.eventConfig;
+  if (automation.eventType === "gmail-label-applied") {
+    const config = gmailLabelAppliedEventConfigSchema.parse(
+      automation.eventConfig,
+    );
+    eventConfig = {
+      provider: config.provider,
+      event: config.event,
+      labelName: config.labelName,
     };
-    const eventConnectorId = await (async () => {
-      const accountScope = {
-        ...workflowScope,
-        connectorSlug: "gmail" as const,
-      };
-      return await (async () => {
-        const selected =
-          workflowAutomationSelectedAccountReadPlan(accountScope);
-        const [selection] = await db
-          .select(selected.columns)
-          .from(selected.from)
-          .innerJoin(selected.join.table, selected.join.on)
-          .where(selected.where)
-          .limit(selected.limit);
-        if (selection) {
-          return selection.connectorId;
-        }
-        const fallback = workflowAutomationDefaultAccountReadPlan(accountScope);
-        const [defaultAccount] = await db
-          .select(fallback.columns)
-          .from(fallback.from)
-          .where(fallback.where)
-          .limit(fallback.limit);
-        return defaultAccount?.connectorId ?? null;
-      })();
-    })();
-    if (automation.eventConnectorId === eventConnectorId) {
-      continue;
-    }
-    let eventConfig = automation.eventConfig;
-    if (automation.eventType === "gmail-label-applied") {
-      const config = gmailLabelAppliedEventConfigSchema.parse(
-        automation.eventConfig,
-      );
-      eventConfig = {
-        provider: config.provider,
-        event: config.event,
-        labelName: config.labelName,
-      };
-    }
-    await db
-      .update(workflowAutomations)
-      .set({ eventConnectorId, eventConfig })
-      .where(eq(workflowAutomations.id, automation.id));
   }
+  return eventConfig;
 }
 
 export const readGmailAutomationConnectorId$ = command(

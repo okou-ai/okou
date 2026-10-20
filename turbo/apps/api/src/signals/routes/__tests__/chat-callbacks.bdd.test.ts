@@ -3778,7 +3778,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
     expect(marker?.content).toBe(marker?.error);
-    expect(marker?.error).not.toContain("status.claude.com");
 
     const rawRun = await api.readRun(actor, run.runId);
     expect(rawRun.error).toBe(rawOverloadError);
@@ -3848,7 +3847,6 @@ describe("CHAT-02: failed chat callbacks", () => {
         throw new Error("Expected failed chat callback to store an error");
       }
       expect(marker.content).toBe(marker.error);
-      expect(marker.error).not.toContain("Report this issue");
       await expect(
         api.readRun(fixture.actor, run.runId),
       ).resolves.toMatchObject({

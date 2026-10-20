@@ -132,6 +132,7 @@ describe("private Runner VNC authority", () => {
         runnersJobClaimContract,
       ).claim({
         headers: vncRunnerHeaders,
+        extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: runId },
         body: {
           runnerIdentity,

@@ -689,8 +689,7 @@ function GoogleDriveMenuItem({
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
 
-  const pendingMode = pending.get(syncTarget.artifactId);
-  if (pendingMode === mode) {
+  if (pending.get(syncTarget.artifactId)?.has(mode)) {
     return (
       <DropdownMenuItem disabled>
         <Loader2 size={14} className="animate-spin" />
@@ -701,7 +700,7 @@ function GoogleDriveMenuItem({
     );
   }
 
-  if (pendingMode || !connectorListLoaded || connectionPending) {
+  if (!connectorListLoaded || connectionPending) {
     return (
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}

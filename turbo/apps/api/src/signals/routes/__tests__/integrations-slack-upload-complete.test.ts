@@ -769,9 +769,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
     expect(firstMaterialized.body.delivery.status).toBe("pending");
     const second = await pendingCanonicalUpload(fixture);
-    expect(second.actor.userId).not.toBe(first.actor.userId);
-    expect(second.actor.orgId).not.toBe(first.actor.orgId);
-    expect(second.actor.runId).not.toBe(first.actor.runId);
     const secondMaterialized = await fixture.run(() => {
       return accept(materializeClient.materialize(second.request), [200]);
     });

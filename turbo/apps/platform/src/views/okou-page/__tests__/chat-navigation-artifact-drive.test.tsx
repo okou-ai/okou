@@ -95,7 +95,7 @@ interface DriveMockOptions {
   readonly returnOriginal?: boolean;
   readonly selectedAccountReady?: boolean;
   readonly agentAuthorized?: boolean;
-  readonly waitForSync?: () => Promise<void>;
+  readonly waitForSync?: (mode: GoogleDriveUploadMode) => Promise<void>;
   readonly failingMode?: GoogleDriveUploadMode;
 }
 
@@ -354,7 +354,7 @@ function installDriveMocks(
     artifactGoogleDriveContract.uploadWithMode,
     async ({ params, body, respond }) => {
       syncRequests.push({ artifactId: params.artifactId, ...body });
-      await options.waitForSync?.();
+      await options.waitForSync?.(body.mode);
       if (body.mode === options.failingMode) {
         return respond(400, {
           error: { code: "BAD_REQUEST", message: "Drive upload failed" },
@@ -1301,7 +1301,7 @@ describe("google editor conversion", () => {
       });
     }),
   )(
-    "separates $app and Drive progress during a $mode upload",
+    "keeps the other upload action available during a $mode upload to $app or Drive",
     async ({ filename, contentType, app, mode }) => {
       mockWideScreen();
       const upload = context.mocks.deferred<void>();
@@ -1337,7 +1337,7 @@ describe("google editor conversion", () => {
       });
       click(buttonNamed("Download artifact", artifactPreview()));
       await waitFor(() => {
-        expect(roleItemNamed("menuitem", idleLabel)).toHaveAttribute(
+        expect(roleItemNamed("menuitem", idleLabel)).not.toHaveAttribute(
           "aria-disabled",
           "true",
         );
@@ -1398,6 +1398,123 @@ describe("google editor conversion", () => {
         "aria-disabled",
         "true",
       );
+    },
+  );
+
+  async function startConcurrentUploads(failingMode?: GoogleDriveUploadMode) {
+    const uploads = {
+      google: context.mocks.deferred<void>(),
+      original: context.mocks.deferred<void>(),
+    };
+    const drive = installDriveMocks(context, "connected", {
+      filename: "report.txt",
+      contentType: "text/plain",
+      selectedAccountReady: true,
+      ...(failingMode ? { failingMode } : {}),
+      waitForSync: (mode) => {
+        return uploads[mode].promise;
+      },
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
+    });
+    const { downloadButton } = await openDriveMessageMenu(
+      "Upload to Google Docs",
+    );
+    click(roleItemNamed("menuitem", "Upload to Google Docs"));
+    await waitFor(() => {
+      expect(downloadButton()).toHaveAttribute("aria-expanded", "false");
+    });
+    click(downloadButton());
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Upload to Google Drive"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    click(roleItemNamed("menuitem", "Upload to Google Drive"));
+    await waitFor(() => {
+      expect(downloadButton()).toHaveAttribute("aria-expanded", "false");
+    });
+    click(downloadButton());
+    await waitFor(() => {
+      const pending = queryAllByRoleFast("menuitem").filter((item) => {
+        return item.textContent?.trim() === "Syncing artifact...";
+      });
+      expect(pending).toHaveLength(2);
+      for (const item of pending) {
+        expect(item).toHaveAttribute("aria-disabled", "true");
+      }
+    });
+    expect(roleItemNamed("menuitem", "Download")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    return { uploads, drive };
+  }
+
+  it.each(["google", "original"] as const)(
+    "preserves concurrent upload progress and the editor link when %s finishes first",
+    async (firstMode) => {
+      const { uploads, drive } = await startConcurrentUploads();
+      uploads[firstMode].resolve();
+      await waitFor(() => {
+        expect(
+          queryAllByRoleFast("menuitem").filter((item) => {
+            return item.textContent?.trim() === "Syncing artifact...";
+          }),
+        ).toHaveLength(1);
+      });
+      uploads[firstMode === "google" ? "original" : "google"].resolve();
+      await waitFor(() => {
+        expect(
+          queryAllByRoleFast("menuitem").filter((item) => {
+            return item.textContent?.trim() === "Syncing artifact...";
+          }),
+        ).toHaveLength(0);
+        expect(
+          roleItemNamed("menuitem", "Open in Google Docs"),
+        ).toHaveAttribute(
+          "href",
+          "https://drive.google.test/file/drive-file-1",
+        );
+      });
+      expect(
+        drive.syncRequests.map((request) => {
+          return request.mode;
+        }),
+      ).toStrictEqual(["google", "original"]);
+    },
+  );
+
+  it.each(["google", "original"] as const)(
+    "restores only the failed %s upload while the other upload is pending",
+    async (failingMode) => {
+      const { uploads } = await startConcurrentUploads(failingMode);
+      uploads[failingMode].resolve();
+      await expect(
+        screen.findByText("Drive upload failed"),
+      ).resolves.toBeInTheDocument();
+      expect(
+        roleItemNamed(
+          "menuitem",
+          `Upload to Google ${failingMode === "google" ? "Docs" : "Drive"}`,
+        ),
+      ).not.toHaveAttribute("aria-disabled", "true");
+      expect(roleItemNamed("menuitem", "Syncing artifact...")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      uploads[failingMode === "google" ? "original" : "google"].resolve();
+      await waitFor(() => {
+        expect(
+          queryAllByRoleFast("menuitem").filter((item) => {
+            return item.textContent?.trim() === "Syncing artifact...";
+          }),
+        ).toHaveLength(0);
+      });
     },
   );
 

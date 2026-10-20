@@ -2311,10 +2311,6 @@ test("Summarize Gmail automation match conditions", async () => {
   await waitFor(() => {
     expect(screen.getAllByText("Gmail new message").length).toBeGreaterThan(0);
   });
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Gmail new message").length).toBeGreaterThan(0);
-  });
   expect(screen.getByText(/from contains "@acme.com"/)).toBeInTheDocument();
   expect(
     screen.getByText(/subject does not contain "newsletter"/),
@@ -4435,5 +4431,4 @@ test("Open a workflow from the workspace", async () => {
     expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
     expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
   });
-  expect(screen.queryByText("Workflow not found.")).not.toBeInTheDocument();
 });

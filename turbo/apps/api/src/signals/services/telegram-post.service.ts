@@ -751,14 +751,14 @@ const resolveOfficialUserLink$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly telegramUserId: string;
       readonly telegramUsername?: string | null;
       readonly telegramDisplayName?: string | null;
     },
     signal: AbortSignal,
   ): Promise<OfficialTelegramUserLink | null> => {
-    const [direct] = await args.db
+    const db = set(writeDb$);
+    const [direct] = await db
       .select()
       .from(telegramOfficialUserLinks)
       .where(eq(telegramOfficialUserLinks.telegramUserId, args.telegramUserId))
@@ -1508,7 +1508,6 @@ const handleOfficialCommand$ = command(
     const userLink = await set(
       resolveOfficialUserLink$,
       {
-        db: args.db,
         telegramUserId: fromUserId,
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,
@@ -1671,7 +1670,6 @@ const processOfficialWebhookMessage$ = command(
     const userLink = await set(
       resolveOfficialUserLink$,
       {
-        db,
         telegramUserId: String(args.message.from?.id ?? 0),
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,

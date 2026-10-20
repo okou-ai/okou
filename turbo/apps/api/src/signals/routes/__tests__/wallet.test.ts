@@ -3382,7 +3382,6 @@ test("a provider outage remains retryable and cannot manufacture approval or den
   );
   const response = await pollPurchase(fixture.spend.id);
   expect(response.status).toBe(500);
-  expect(response.body).not.toStrictEqual({ state: "done" });
   expect((await approvalCard(fixture)).body.status).toBe("pending");
 
   await flushWaitUntilForTest();

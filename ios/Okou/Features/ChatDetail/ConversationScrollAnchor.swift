@@ -9,7 +9,6 @@ final class ConversationScrollAnchor {
   private var position: ConversationReadingPosition?
   private var displayLink: CADisplayLink?
   private var settlingFrames = 0
-  private var needsReveal = false
   private var followsBottom = false
   private var reportedPosition: ConversationReadingPosition?
   var isScrolling = false {
@@ -43,14 +42,13 @@ final class ConversationScrollAnchor {
   }
 
   func restore(_ position: ConversationReadingPosition) {
-    // A snapshot can recycle the anchor cell even while its old marker is attached.
-    needsReveal = true
+    // Revealing an already mounted row first snaps it to the top for one frame.
+    // Only materialize the row below when no current native marker is available.
     preserve(position)
   }
 
   func followBottom() {
     position = nil
-    needsReveal = false
     followsBottom = true
     layoutDidChange()
   }
@@ -58,7 +56,6 @@ final class ConversationScrollAnchor {
   func cancel() {
     position = nil
     followsBottom = false
-    needsReveal = false
     displayLink?.invalidate()
     displayLink = nil
     settlingFrames = 0
@@ -138,12 +135,6 @@ final class ConversationScrollAnchor {
       return
     }
     guard let position else { return }
-    if needsReveal, let revealRow {
-      needsReveal = false
-      revealRow(position.messageID)
-      layoutDidChange()
-      return
-    }
     guard
       let marker = markers.allObjects.first(where: {
         $0.messageID == position.messageID && isEligible($0, in: scrollView)

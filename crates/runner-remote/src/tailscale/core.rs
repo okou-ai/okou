@@ -26,6 +26,14 @@ struct Active {
     opening: Option<oneshot::Sender<Result<Stream, Failure>>>,
 }
 
+impl Active {
+    fn finish_opening(&mut self, result: Result<Stream, Failure>) {
+        if let Some(opening) = self.opening.take() {
+            let _ = opening.send(result);
+        }
+    }
+}
+
 type Capacity =
     Pin<Box<dyn Future<Output = Result<OwnedSemaphorePermit, tokio::sync::AcquireError>> + Send>>;
 
@@ -199,9 +207,7 @@ impl Core {
                     .is_some_and(oneshot::Sender::is_closed)
             {
                 active.connection.retire();
-                if let Some(opening) = active.opening.take() {
-                    let _ = opening.send(Err(Failure::Cancelled));
-                }
+                active.finish_opening(Err(Failure::Cancelled));
                 return false;
             }
             true
@@ -292,15 +298,11 @@ impl Core {
             let active = self.active.get_mut(index).ok_or(Failure::DomainFailed)?;
             match active.connection.poll(cx) {
                 Ok(Some(stream)) => {
-                    if let Some(opening) = active.opening.take() {
-                        let _ = opening.send(Ok(stream));
-                    }
+                    active.finish_opening(Ok(stream));
                 }
                 Ok(None) => {}
                 Err(failure) => {
-                    if let Some(opening) = active.opening.take() {
-                        let _ = opening.send(Err(failure));
-                    }
+                    active.finish_opening(Err(failure));
                     self.active.swap_remove(index);
                     self.peers.maintain()?;
                     continue;
@@ -323,9 +325,7 @@ impl Core {
                 Ok(None) => {}
                 Err(Failure::Cancelled) => {
                     active.connection.retire();
-                    if let Some(opening) = active.opening.take() {
-                        let _ = opening.send(Err(Failure::Cancelled));
-                    }
+                    active.finish_opening(Err(Failure::Cancelled));
                     self.active.swap_remove(index);
                     self.peers.maintain()?;
                 }

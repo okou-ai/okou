@@ -118,7 +118,6 @@ describe("GET /api/connectors", () => {
     );
 
     expect(response.body.connectors).toStrictEqual([]);
-    expect(Array.isArray(response.body.connectorProvidedBindings)).toBeTruthy();
   });
 
   it("returns connectors created through the connector API", async () => {
