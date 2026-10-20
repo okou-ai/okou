@@ -31,6 +31,7 @@ mod incoming_work;
 mod later_parking;
 mod logical_progress;
 mod logical_work;
+mod native_unpark;
 mod observer_loss;
 mod optional;
 mod pressure;
@@ -104,6 +105,7 @@ enum Corpus {
     BatchReplacement,
     ClaimLoss,
     SpeculativeFault(bool),
+    NativeUnpark(native_unpark::Fault),
     DualHistory(bool),
     ClaimUnavailable(claim_peer::Outcome),
     ClaimProducerLost { cancelled: bool, restored: bool },
@@ -1275,6 +1277,8 @@ async fn exercise_selected_factories(
                                     real_api_claims::order()?,
                                     if second { "b" } else { "a" }
                                 )
+                            } else if let Corpus::NativeUnpark(fault) = corpus {
+                                fault.name().into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1682,6 +1686,7 @@ async fn exercise_retirement(
             | Corpus::ClaimUnavailable(_)
             | Corpus::ClaimProducerLost { .. }
             | Corpus::RealApiClaimant(_)
+            | Corpus::NativeUnpark(_)
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -2032,13 +2037,18 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
-                if let Corpus::SpeculativeFault(panic) = corpus {
+                let speculative_injection = match corpus {
+                    Corpus::SpeculativeFault(panic) => Some(speculative_fault::Injection::Callback(panic)),
+                    Corpus::NativeUnpark(fault) => Some(speculative_fault::Injection::Native(fault)),
+                    _ => None,
+                };
+                if let Some(injection) = speculative_injection {
                     speculative_fault::exercise(transitions::Context {
                         factory:factory.clone(),pool:pool.clone(),status:status.clone(),
                         operations:operations.clone(),budget:budget.clone(),tracker:tracker.clone(),
                         rootfs_hash:rootfs_hash.clone(),reuse_key:reuse_key.clone(),
                     },inputs,proof.ok_or_else(||io::Error::other("speculative fault proof missing"))?,
-                    paths.base_dir(),backing.clone(),run_id,panic).await?;
+                    paths.base_dir(),backing.clone(),run_id,injection).await?;
                     return Ok(None);
                 }
                 if let Corpus::ClaimProducerLost { cancelled, .. } = corpus {

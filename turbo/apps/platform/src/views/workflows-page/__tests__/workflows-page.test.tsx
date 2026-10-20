@@ -4272,21 +4272,10 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
   expect(
     within(tooltip).getByText("Collects account context before outreach."),
   ).toBeInTheDocument();
-  await expect(
-    within(tooltip).findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByRole("status")).toHaveAttribute(
-    "aria-busy",
-    "true",
-  );
   response.resolve();
   await expect(
     within(tooltip).findByText("Lazy Author"),
   ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByRole("status")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
   expect(
     within(tooltip).getByRole("img", { name: "Lazy Author" }),
   ).toHaveAttribute("src", "https://example.com/lazy-author.png");

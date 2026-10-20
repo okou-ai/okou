@@ -336,6 +336,347 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
   }, 90_000);
 
+  it.each(["claude-code", "pi"] as const)(
+    "retains the newer %s producer after delayed initialization and repeated completion",
+    async (framework) => {
+      const { actor, agentId, runnerGroup } =
+        framework === "pi"
+          ? await entitledChatActor()
+          : await entitledNativeChatActor();
+      if (framework === "pi") {
+        await configureSubscriptionPiModel(actor);
+      }
+      const first = await sendChatRun(actor, {
+        agentId,
+        prompt: "initialize the first native context",
+        model: framework === "pi" ? "gpt-6-luna" : "claude-fable-5-1",
+      });
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      const firstSession = framework === "pi" ? first.threadId : randomUUID();
+      await webhooks.requestAgentEvents(
+        {
+          runId: first.runId,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: firstSession,
+              sequenceNumber: 0,
+            },
+          ],
+        },
+        firstClaim.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
+        cliAgentType: framework,
+        cliAgentSessionId: firstSession,
+      });
+      await flushWaitUntilForTest();
+
+      const second = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt: "continue with a newer producer",
+      });
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      expect(secondClaim.claim.nativeContinuation).toMatchObject({
+        sessionId: firstSession,
+        generationRunId: first.runId,
+      });
+      const secondSession = framework === "pi" ? first.threadId : randomUUID();
+      await webhooks.requestAgentEvents(
+        {
+          runId: second.runId,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: secondSession,
+              sequenceNumber: 0,
+            },
+          ],
+        },
+        secondClaim.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await completeChatRunOk(second.runId, secondClaim.sandboxHeaders, {
+        cliAgentType: framework,
+        cliAgentSessionId: secondSession,
+      });
+      await flushWaitUntilForTest();
+
+      await webhooks.requestAgentEvents(
+        {
+          runId: first.runId,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: firstSession,
+              sequenceNumber: 1,
+            },
+          ],
+        },
+        firstClaim.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
+        cliAgentType: framework,
+        cliAgentSessionId: firstSession,
+      });
+      await flushWaitUntilForTest();
+      await waitForRunStatus(actor, first.runId, "completed");
+
+      const third = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt: "inspect the winning native binding",
+      });
+      const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+      expect(thirdClaim.claim.nativeContinuation).toMatchObject({
+        sessionId: secondSession,
+        generationRunId: second.runId,
+      });
+      await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
+    },
+    90_000,
+  );
+
+  it("saves a released Run's recovery outputs without replacing a newer native binding", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "fail before native initialization",
+      model: "claude-fable-5-1",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    await failChatRun(
+      first.runId,
+      firstClaim.sandboxHeaders,
+      "Runner fallback",
+    );
+    await waitForRunStatus(actor, first.runId, "failed");
+
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "establish the current native context",
+    });
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
+    const secondSession = randomUUID();
+    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders, {
+      cliAgentType: "claude-code",
+      cliAgentSessionId: secondSession,
+    });
+    await flushWaitUntilForTest();
+
+    const outputs = {
+      runId: first.runId,
+      cliAgentType: "claude-code",
+      cliAgentSessionId: randomUUID(),
+      cliAgentSessionHistoryDisposition: "native_only",
+    } as const;
+    await webhooks.requestAgentRunOutputs(
+      outputs,
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    const recovered = await api.readRun(actor, first.runId);
+    expect(recovered).toMatchObject({
+      status: "failed",
+      result: {
+        frameworkSessionId: expect.any(String),
+        storageOutputs: expect.any(Array),
+      },
+    });
+    await webhooks.requestAgentRunOutputs(
+      outputs,
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    expect((await api.readRun(actor, first.runId)).result).toStrictEqual(
+      recovered.result,
+    );
+
+    const third = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "resume the current context after late recovery",
+    });
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+    expect(thirdClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: secondSession,
+      generationRunId: second.runId,
+    });
+    await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
+  }, 90_000);
+
+  it.each(["failed", "cancelled"] as const)(
+    "keeps the first native context fresh when initialization arrives after a %s Run released its slot",
+    async (status) => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const first = await sendChatRun(actor, {
+        agentId,
+        prompt: "finish without native initialization",
+        model: "claude-fable-5-1",
+      });
+      const claimed = await claimChatRun(runnerGroup, first.runId);
+      if (status === "cancelled") {
+        await cancelChatRun(actor, first.runId, claimed.sandboxHeaders);
+      } else {
+        await failChatRun(
+          first.runId,
+          claimed.sandboxHeaders,
+          "Runtime stopped before initialization",
+        );
+      }
+      await waitForRunStatus(actor, first.runId, status);
+      await webhooks.requestAgentEvents(
+        {
+          runId: first.runId,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: randomUUID(),
+              sequenceNumber: 0,
+            },
+          ],
+        },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const second = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt: "start the first native context",
+      });
+      const next = await claimChatRun(runnerGroup, second.runId);
+      expect(next.claim.nativeContinuation).toMatchObject({
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      });
+      await cancelChatRun(actor, second.runId, next.sandboxHeaders);
+    },
+    90_000,
+  );
+
+  it.each(["claude-code", "pi"] as const)(
+    "captures %s initialization during cancellation recovery before releasing the slot",
+    async (framework) => {
+      const { actor, agentId, runnerGroup } =
+        framework === "pi"
+          ? await entitledChatActor()
+          : await entitledNativeChatActor();
+      if (framework === "pi") {
+        await configureSubscriptionPiModel(actor);
+      }
+      const first = await sendChatRun(actor, {
+        agentId,
+        prompt: "cancel while native initialization is in flight",
+        model: framework === "pi" ? "gpt-6-luna" : "claude-fable-5-1",
+      });
+      const claimed = await claimChatRun(runnerGroup, first.runId);
+      await cancelChatRun(actor, first.runId);
+      const sessionId = framework === "pi" ? first.threadId : randomUUID();
+      await webhooks.requestAgentEvents(
+        {
+          runId: first.runId,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: sessionId,
+              sequenceNumber: 0,
+            },
+          ],
+        },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      // Release recovery without completion metadata: only the initialization
+      // receipt can have supplied the binding observed by the next claim.
+      await failChatRun(first.runId, claimed.sandboxHeaders, "Run cancelled");
+      await waitForRunStatus(actor, first.runId, "cancelled");
+      const second = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt: "continue from the cancelled native context",
+      });
+      const next = await claimChatRun(runnerGroup, second.runId);
+      expect(next.claim.nativeContinuation).toMatchObject({
+        sessionId,
+        generationRunId: first.runId,
+      });
+      await cancelChatRun(actor, second.runId, next.sandboxHeaders);
+    },
+    90_000,
+  );
+
+  it.each(["claude-code", "pi"] as const)(
+    "preserves the %s binding when initialization, completion and cancellation overlap",
+    async (framework) => {
+      const { actor, agentId, runnerGroup } =
+        framework === "pi"
+          ? await entitledChatActor()
+          : await entitledNativeChatActor();
+      if (framework === "pi") {
+        await configureSubscriptionPiModel(actor);
+      }
+      const first = await sendChatRun(actor, {
+        agentId,
+        prompt: "race native initialization against finalization",
+        model: framework === "pi" ? "gpt-6-luna" : "claude-fable-5-1",
+      });
+      const claimed = await claimChatRun(runnerGroup, first.runId);
+      const sessionId = framework === "pi" ? first.threadId : randomUUID();
+      await Promise.all([
+        webhooks.requestAgentEvents(
+          {
+            runId: first.runId,
+            events: [
+              {
+                type: "system",
+                subtype: "init",
+                session_id: sessionId,
+                sequenceNumber: 0,
+              },
+            ],
+          },
+          claimed.sandboxHeaders,
+          [200],
+        ),
+        completeChatRunOk(first.runId, claimed.sandboxHeaders, {
+          cliAgentType: framework,
+          cliAgentSessionId: sessionId,
+        }),
+        api.requestCancelRun(actor, first.runId, [200, 400]),
+      ]);
+      await flushWaitUntilForTest();
+      const settled = await api.readRun(actor, first.runId);
+      expect(["completed", "cancelled"]).toContain(settled.status);
+      const second = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt: "resume after concurrent finalization",
+      });
+      const next = await claimChatRun(runnerGroup, second.runId);
+      expect(next.claim.nativeContinuation).toMatchObject({
+        sessionId,
+        generationRunId: first.runId,
+      });
+      await cancelChatRun(actor, second.runId, next.sandboxHeaders);
+    },
+    90_000,
+  );
+
   it("resumes the thread's latest session when a waiting input is picked", async () => {
     // Two blockers keep the next send waiting, independent of the plan's own
     // concurrency limit.

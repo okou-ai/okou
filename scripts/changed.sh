@@ -97,13 +97,41 @@ cd "$REPO_ROOT/turbo"
 # Skip version inference so a worktree-local install cannot change the tool.
 # Pin registry resolution so the dedicated npm cache can serve warm runs.
 TURBO_VERSION=2.11.7
-if TURBO_BIN=$(npx -y "turbo@${TURBO_VERSION}" --skip-infer bin 2>"$TEMP_DIR/current.stderr"); then
+turbo_resolver=(npx -y "turbo@${TURBO_VERSION}" --skip-infer bin)
+resolution_command="npx -y turbo@${TURBO_VERSION} --skip-infer bin"
+if [[ -n "${TURBO_TOOL_DIR:-}" ]]; then
+  if [[ "$TURBO_TOOL_DIR" != /* || "$TURBO_TOOL_DIR" == / ]]; then
+    echo "Error: TURBO_TOOL_DIR must be an absolute tool directory" >&2
+    exit 2
+  fi
+  if [[ ! -f "$TURBO_TOOL_DIR/node_modules/turbo/package.json" ]]; then
+    if npm install --prefix "$TURBO_TOOL_DIR" --no-audit --no-fund \
+      --ignore-scripts --include=optional --package-lock=false "turbo@${TURBO_VERSION}" \
+      >"$TEMP_DIR/current.json" 2>"$TEMP_DIR/current.stderr"; then
+      :
+    else
+      status=$?
+      report_hash_failure current "$CURRENT_COMMIT" "$status" "Turbo executable installation failed" \
+        "npm install pinned Turbo"
+      exit "$status"
+    fi
+  fi
+  if ! jq -e --arg version "$TURBO_VERSION" \
+    '.name == "turbo" and .version == $version' \
+    "$TURBO_TOOL_DIR/node_modules/turbo/package.json" >/dev/null 2>&1; then
+    echo "Error: Cached Turbo package does not match the pinned version" >&2
+    exit 2
+  fi
+  turbo_resolver=("$TURBO_TOOL_DIR/node_modules/.bin/turbo" --skip-infer bin)
+  resolution_command='cached turbo --skip-infer bin'
+fi
+if TURBO_BIN=$("${turbo_resolver[@]}" 2>"$TEMP_DIR/current.stderr"); then
   :
 else
   status=$?
   printf '%s' "$TURBO_BIN" >"$TEMP_DIR/current.json"
   report_hash_failure current "$CURRENT_COMMIT" "$status" "Turbo executable resolution failed" \
-    "npx -y turbo@${TURBO_VERSION} --skip-infer bin"
+    "$resolution_command"
   exit "$status"
 fi
 CURRENT_HASHES=$(calculate_hashes current "$CURRENT_COMMIT")

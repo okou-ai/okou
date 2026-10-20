@@ -5250,7 +5250,7 @@
         "description": "Priorità quotidiane entro le 7:00 nel tuo fuso orario.",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
-        "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",
+        "preparationFailed": "Temporaneamente non disponibile. Okou riproverà automaticamente.",
         "preparing": "Preparazione del primo riepilogo mattutino. Puoi disattivarlo in qualsiasi momento.",
         "retry": "Riprova",
         "retryMessage": "Non è stato possibile caricare o aggiornare le impostazioni di Morning Brief. Riprova per continuare.",
@@ -5259,7 +5259,7 @@
       "proactiveSuggestions": {
         "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
         "missingDefaultAgent": "Scegli un Agent predefinito disponibile per ricevere suggerimenti proattivi.",
-        "preparationFailed": "Impossibile completare la configurazione. Riprova.",
+        "preparationFailed": "Temporaneamente non disponibile. Okou riproverà automaticamente.",
         "preparing": "Preparazione dei suggerimenti orari. Puoi disattivarli in qualsiasi momento.",
         "retry": "Riprova",
         "retryMessage": "Impossibile caricare o aggiornare le impostazioni. Riprova.",

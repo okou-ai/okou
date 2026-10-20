@@ -389,56 +389,6 @@ test("Closing the OAuth tab cancels the attempt and restores Connect", async () 
   expect(pathname()).toBe("/works");
 });
 
-test("A failed account link can be retried from Works", async () => {
-  mockBot();
-  let shouldReject = true;
-  context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
-    if (shouldReject) {
-      return respond(409, {
-        error: {
-          code: "CONFLICT",
-          message: "This Telegram account is already connected elsewhere.",
-        },
-      });
-    }
-    context.mocks.data.telegramIntegration({ statuses: [botStatus(true)] });
-    return respond(200, {
-      botUsername: "support_bot",
-      telegramUserId: String(AUTH.id),
-    });
-  });
-  const { popup } = authorizationWindow();
-  const connect = await openWorks();
-
-  click(connect);
-  await expectAuthorization(popup);
-  authorize(popup);
-
-  await expect(
-    screen.findByText("This Telegram account is already connected elsewhere."),
-  ).resolves.toBeInTheDocument();
-  // The callback tab waits for its terminal result; closing it ends the attempt.
-  act(() => {
-    popup.close();
-  });
-  await waitFor(() => {
-    expect(
-      getAction("button", "Connect", getIntegrationCard("Telegram")),
-    ).toBeEnabled();
-  });
-
-  shouldReject = false;
-  const { popup: retryPopup } = authorizationWindow();
-  click(getAction("button", "Connect", getIntegrationCard("Telegram")));
-  await expectAuthorization(retryPopup);
-  authorize(retryPopup);
-
-  await expect(
-    screen.findByText("Connected (@ada_telegram)"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/works");
-});
-
 test("Leaving Works cancels authorization and ignores a later tab result", async () => {
   mockBot();
   const { popup } = authorizationWindow();

@@ -59,9 +59,6 @@ export const persistMorningBriefAutomationToggle$ = command(
       .set({
         enabled: args.enabled,
         nextRunAt: args.enabled ? args.nextRunAt : null,
-        consecutiveFailures: args.enabled
-          ? 0
-          : args.automation.consecutiveFailures,
         updatedAt: args.now,
         officialIntendedEnabled: args.enabled,
         ...(args.inheritedAutonomyBudget === undefined

@@ -325,10 +325,6 @@ The nine surviving triggers are checked in `EXPECTED_PERMANENT_TRIGGERS` in
 Keep these exceptions local to the existing definitions; do not add new ones.
 The inventory script is explicitly checked despite the general test exclusion.
 
-Test files and existing fault-injection fixtures may create temporary triggers.
-They are excluded in the owning package's ESLint configuration. Production code
-must not import those test fixtures.
-
 Run the rule through the existing package ESLint command:
 
 ```sh

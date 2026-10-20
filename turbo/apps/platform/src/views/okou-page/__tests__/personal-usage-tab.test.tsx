@@ -236,9 +236,7 @@ function mockPersonalUsageStory(
   tier: "limited-free-1" | "pro" = "pro",
   mockUsagePackCredits = true,
   role: "admin" | "member" = "admin",
-  failPageOnce: number | null = null,
 ): UsageRecordRequestLog {
-  let failedPage = false;
   const requests: UsageRecordRequestLog = {
     ranges: [],
   };
@@ -251,15 +249,6 @@ function mockPersonalUsageStory(
   mockBillingStatus(tier);
   context.mocks.api(usageRecordContract.get, ({ query, respond }) => {
     requests.ranges.push(query.range);
-    if (query.page === failPageOnce && !failedPage) {
-      failedPage = true;
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Usage page is temporarily unavailable",
-        },
-      });
-    }
     return respond(200, personalUsagePage(rows, query.page, query.pageSize));
   });
   if (mockUsagePackCredits) {

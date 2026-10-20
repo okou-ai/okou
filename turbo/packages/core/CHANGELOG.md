@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.774.3](https://github.com/okou-ai/okou/compare/core-v8.774.2...core-v8.774.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* **app:** fit pwa keyboard viewport behind a targeted rollout ([#41753](https://github.com/okou-ai/okou/issues/41753)) ([244e8ab](https://github.com/okou-ai/okou/commit/244e8ab6447c3de11d805c814969dcf15cb6e39c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+
 ## [8.774.2](https://github.com/okou-ai/okou/compare/core-v8.774.1...core-v8.774.2) (2026-10-20)
 
 

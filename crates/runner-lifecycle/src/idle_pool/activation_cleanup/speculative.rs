@@ -55,6 +55,26 @@ impl GuardedSpeculativeIdleOwner {
         self.state
     }
 
+    /// Observe real terminal unpark while retaining the original capsule.
+    /// Fixtures cancel this borrowed wait before releasing response IO;
+    /// covered cleanup still owns all saving and state transitions.
+    #[cfg(feature = "test-support")]
+    pub async fn observe_terminal_unpark_for_test(&mut self) -> Result<(), String> {
+        if self.state != SpeculativeActivationState::Uncertain {
+            return Err("terminal observation requires uncertain speculative custody".into());
+        }
+        let owner = self.owner.as_mut().ok_or("speculative resource consumed")?;
+        Self::validate(owner).map_err(|error| error.to_string())?;
+        owner
+            .sandbox
+            .as_mut()
+            .ok_or("speculative resource consumed")?
+            .unpark_for_terminal_operations()
+            .await
+            .map_err(|error| error.to_string())?;
+        Self::validate(owner).map_err(|error| error.to_string())
+    }
+
     pub fn matches_claim(
         &self,
         reuse_key: Option<&str>,

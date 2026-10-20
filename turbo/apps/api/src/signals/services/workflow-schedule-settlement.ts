@@ -3,6 +3,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
+import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
 
 /** A newer toggle, revocation or settlement already owns the successor. */
 class InFlightScheduleSuperseded extends Error {}
@@ -28,7 +29,6 @@ export interface InFlightScheduleAdvance {
   readonly automationValues: {
     readonly consecutiveFailures: number;
     readonly enabled?: boolean;
-    readonly officialIntendedEnabled?: boolean;
     readonly nextRunAt: Date | null;
     readonly updatedAt: Date;
   };
@@ -68,9 +68,10 @@ export async function advanceInFlightSchedule(
           ...(ordinary
             ? {
                 consecutiveFailures: nextCount,
-                officialIntendedEnabled: sql`CASE WHEN ${disable} AND ${workflowAutomations.officialBlueprintKey} = 'daily-delivery' THEN false ELSE ${workflowAutomations.officialIntendedEnabled} END`,
-                enabled: sql`CASE WHEN ${disable} THEN false ELSE ${workflowAutomations.enabled} END`,
-                nextRunAt: sql`CASE WHEN ${disable} THEN NULL ELSE ${args.automationValues.nextRunAt}::timestamp END`,
+                ...scheduleFailurePauseValues(
+                  disable,
+                  args.automationValues.nextRunAt,
+                ),
               }
             : {}),
         })
@@ -92,6 +93,7 @@ export async function advanceInFlightSchedule(
           intervalSeconds: workflowAutomations.intervalSeconds,
           timezone: workflowAutomations.timezone,
           enabled: workflowAutomations.enabled,
+          nextRunAt: workflowAutomations.nextRunAt,
         });
       if (committed === undefined) {
         throw new InFlightScheduleSuperseded();
@@ -108,7 +110,7 @@ export async function advanceInFlightSchedule(
         intervalSeconds: committed.intervalSeconds,
         timezone: committed.timezone,
         completedAt: args.at,
-        shouldDisable: !committed.enabled,
+        shouldDisable: !committed.enabled && committed.nextRunAt === null,
       });
       await sp
         .update(workflowAutomations)

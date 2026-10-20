@@ -1,4 +1,4 @@
-import { decode, encode } from "gpt-tokenizer/encoding/o200k_base";
+import { decode, encode } from "./memory-tokenizer";
 
 export const PI_MEMORY_ROOT = "/home/user/.pi/agent/memory";
 export const PI_MEMORY_SUMMARY_MAX_BYTES = 64 * 1024;

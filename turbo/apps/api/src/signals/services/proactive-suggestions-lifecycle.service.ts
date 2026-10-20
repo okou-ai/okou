@@ -35,7 +35,7 @@ function ownerMinute(owner: ProactiveSuggestionsOwner): number {
 }
 
 /** The source preference is business intent, never a worker claim or lease. */
-function proactiveSuggestionsOwnerEnabledSql(
+export function proactiveSuggestionsOwnerEnabledSql(
   owner: ProactiveSuggestionsOwner,
   agentId: string,
 ) {
@@ -98,7 +98,6 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
   async (
     { get, set },
     owner: ProactiveSuggestionsOwner,
-    retry: boolean,
     signal: AbortSignal,
   ) => {
     const eligibility = await set(
@@ -206,16 +205,13 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
         enabled: true,
         officialIntendedEnabled: true,
         nextRunAt: next,
-        ...(retry ? { consecutiveFailures: 0 } : {}),
         updatedAt: at,
       })
       .where(
         and(
           eq(workflowAutomations.workflowId, installed.id),
           eq(workflowAutomations.officialBlueprintKey, blueprint.key),
-          retry
-            ? eq(workflowAutomations.enabled, false)
-            : eq(workflowAutomations.officialIntendedEnabled, false),
+          eq(workflowAutomations.officialIntendedEnabled, false),
           proactiveSuggestionsOwnerEnabledSql(owner, eligibility.agentId),
         ),
       );
@@ -259,7 +255,7 @@ export const reconcileProactiveSuggestions$ = command(
       signal.throwIfAborted();
       for (const owner of candidates) {
         const result = await settle(
-          set(ensureProactiveSuggestionsWorkflow$, owner, false, signal),
+          set(ensureProactiveSuggestionsWorkflow$, owner, signal),
           signal,
         );
         if (!result.ok) {

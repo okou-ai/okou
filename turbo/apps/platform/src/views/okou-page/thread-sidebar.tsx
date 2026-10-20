@@ -163,7 +163,7 @@ function ThreadArtifactsPanel({
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
   const openCatalogArtifact = useSet(sidebar.openCatalogArtifact$);
-  const loadMore = useSet(sidebar.artifactCatalog.loadMore$);
+  const [paging, loadMore] = useLoadableSet(sidebar.artifactCatalog.loadMore$);
   const [retryLoadable, retryCatalog] = useLoadableSet(
     sidebar.artifactCatalog.retry$,
   );
@@ -179,7 +179,7 @@ function ThreadArtifactsPanel({
     catalogLoadable.data.nextCursor !== null;
 
   const handleScroll = (event: ReactUIEvent<HTMLElement>) => {
-    if (!hasMore) {
+    if (!hasMore || paging.state === "loading") {
       return;
     }
     const viewport = event.currentTarget;

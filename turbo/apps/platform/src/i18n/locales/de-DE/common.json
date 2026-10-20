@@ -5187,7 +5187,7 @@
         "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
-        "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",
+        "preparationFailed": "Vorübergehend nicht verfügbar. Okou versucht es automatisch erneut.",
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
         "retry": "Erneut versuchen",
         "retryMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden. Versuchen Sie es erneut.",
@@ -5196,7 +5196,7 @@
       "proactiveSuggestions": {
         "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
         "missingDefaultAgent": "Wähle einen verfügbaren Standard-Agent für proaktive Vorschläge.",
-        "preparationFailed": "Die Einrichtung konnte nicht abgeschlossen werden. Versuche es erneut.",
+        "preparationFailed": "Vorübergehend nicht verfügbar. Okou versucht es automatisch erneut.",
         "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",
         "retry": "Erneut versuchen",
         "retryMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden. Versuche es erneut.",

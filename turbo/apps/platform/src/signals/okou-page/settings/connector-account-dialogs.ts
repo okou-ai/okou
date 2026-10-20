@@ -13,7 +13,7 @@ import type {
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
-import { onRef, onRejection, resetSignal, waitLoopUntil } from "../../utils.ts";
+import { onRef, resetSignal, waitLoopUntil } from "../../utils.ts";
 import {
   connectorAccountDeletionImpact$,
   readConnectorAccount$,
@@ -437,14 +437,7 @@ export const saveConnectorAccountRename$ = command(
     const signal = set(resetConnectorAccountRenameSave$, pageSignal);
     // Save becomes disabled while pending; keep its focus in the mounted form.
     get(internalAccountRenameInput$)?.focus();
-    return onRejection(
-      set(saveConnectorAccountRenameCommand$, target, signal),
-      () => {
-        if (!signal.aborted) {
-          get(internalAccountRenameInput$)?.focus();
-        }
-      },
-    );
+    return set(saveConnectorAccountRenameCommand$, target, signal);
   },
 );
 
