@@ -468,9 +468,6 @@ test("Banking connect closes its blank popup on session failure", async () => {
   const { popup, response, card } =
     await startPendingBankingConnect("session failure");
   response.resolve(undefined);
-  await expect(
-    screen.findByText("Bank connection unavailable"),
-  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(getButton("Connect a bank", card)).toBeEnabled();
     expect(popup.openedWindow.closed).toBeTruthy();

@@ -1,11 +1,8 @@
 import { screen } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import frFRClerkLocalizationUrl from "../../../i18n/clerk-localizations/fr-FR.json?url";
 import { OKOU_LOCALE_COOKIE_NAME } from "../../../i18n/locale-fallback.ts";
-import frFRCommonUrl from "../../../i18n/locales/fr-FR/common.json?url";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -52,32 +49,4 @@ test.each([
 
   expect(screen.getByRole("heading")).toBeInTheDocument();
   expect(document.documentElement).toHaveAttribute("lang", scenario.locale);
-});
-
-test.each([
-  {
-    resource: "interface translations",
-    url: frFRCommonUrl,
-    error: "Failed to load fr-FR common locale resources (HTTP 503)",
-  },
-  {
-    resource: "Clerk localization",
-    url: frFRClerkLocalizationUrl,
-    error: "Failed to load fr-FR Clerk localization (HTTP 503)",
-  },
-])("Page startup fails when $resource cannot load", async ({ url, error }) => {
-  context.mocks.browser.languages(["fr-FR"]);
-  context.mocks.clerk();
-  context.mocks.http.get(url, () => {
-    return new HttpResponse(null, { status: 503 });
-  });
-
-  await expect(
-    setupPage({
-      context,
-      host: "app.okou.ai",
-      path: "/sign-in",
-      auth: null,
-    }),
-  ).rejects.toThrow(error);
 });

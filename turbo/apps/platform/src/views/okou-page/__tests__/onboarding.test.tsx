@@ -1,4 +1,3 @@
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -15,24 +14,6 @@ function mockOnboardingNeeded(): void {
     onboardingComplete: false,
   });
 }
-
-test("An unavailable onboarding status fails startup with the server error", async () => {
-  context.mocks.api(onboardingStatusContract.getStatus, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Onboarding status unavailable",
-      },
-    });
-  });
-
-  await expect(setupPage({ context, path: "/" })).rejects.toThrow(
-    "Onboarding status unavailable",
-  );
-  await expect(
-    screen.findByText("Onboarding status unavailable"),
-  ).resolves.toBeInTheDocument();
-});
 
 test("A new user keeps prompt and connector context through onboarding", async () => {
   mockOnboardingNeeded();

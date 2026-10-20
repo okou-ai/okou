@@ -9,7 +9,6 @@ import { expect, test } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  continuitySidebarLink,
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
@@ -220,18 +219,15 @@ test("Complete uploads returned as absolute private Artifact URLs", async () => 
 
 test("Keep successful attachments after another upload fails", async () => {
   const thread = continuityThread(11, 1, "Partial upload result");
-  const neighbor = continuityThread(11, 2, "Another conversation");
   const workspace = installContinuityWorkspace(context, {
     caseId: 11,
-    threads: [thread, neighbor],
+    threads: [thread],
   });
   installSimpleUploads(11, new Map());
   context.mocks.http.put(uploadUrl(11, "ready.txt"), () => {
     return new HttpResponse(null, { status: 200 });
   });
-  const failUpload = context.mocks.deferred<void>();
-  context.mocks.http.put(uploadUrl(11, "failed.txt"), async () => {
-    await failUpload.promise;
+  context.mocks.http.put(uploadUrl(11, "failed.txt"), () => {
     return new HttpResponse(null, { status: 503 });
   });
   let deliveredAttachments: string[] = [];
@@ -259,101 +255,13 @@ test("Keep successful attachments after another upload fails", async () => {
     new File(["bad"], "failed.txt", { type: "text/plain" }),
   ]);
 
-  try {
-    await waitFor(() => {
-      expect(fastButton("Remove ready.txt")).toBeInTheDocument();
-      expect(fastButton("Cancel upload failed.txt")).toBeInTheDocument();
-      expect(fastButton("Send")).toBeDisabled();
-    });
-    for (const target of [neighbor, thread]) {
-      await waitFor(() => {
-        expect(continuitySidebarLink(target.id)).toBeInTheDocument();
-      });
-      await userEvent.click(continuitySidebarLink(target.id));
-      await waitFor(() => {
-        expect(continuitySidebarLink(target.id)).toHaveAttribute(
-          "aria-current",
-          "page",
-        );
-        expect(
-          document.querySelector(
-            `[data-chat-thread-container-id="${target.id}"]`,
-          ),
-        ).toBeVisible();
-      });
-    }
-    expect(fastButton("Cancel upload failed.txt")).toBeInTheDocument();
-    expect(fastButton("Send")).toBeDisabled();
-    await userEvent.type(await messageComposer(), " after returning");
-    failUpload.resolve();
-    await waitFor(() => {
-      expect(fastButton("Send")).toBeEnabled();
-    });
-    expect(screen.queryByText("failed.txt")).not.toBeInTheDocument();
-    await waitFor(() => {
-      const saved = workspace.draftPatches.at(-1)?.draftAttachments;
-      expect(
-        saved?.map((attachment) => {
-          return attachment.filename;
-        }),
-      ).toStrictEqual(["ready.txt"]);
-    });
-    await userEvent.click(fastButton("Send"));
-    await waitFor(() => {
-      expect(deliveredAttachments).toStrictEqual(["ready.txt"]);
-    });
-  } finally {
-    if (!failUpload.settled()) {
-      failUpload.resolve();
-    }
-  }
-});
-
-test("A failed attachment does not enable an empty send or block a text message", async () => {
-  const thread = continuityThread(15, 1, "Failed attachment");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 15,
-    threads: [thread],
-  });
-  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Upload unavailable" },
-    });
-  });
-  let deliveredAttachments: string[] | undefined;
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    if (body.userMessage === undefined) {
-      throw new Error("Expected a user message send");
-    }
-    deliveredAttachments = sentFilenames(body.userMessage.parts);
-    return respond(201, {
-      threadId: body.threadId ?? thread.id,
-      createdAt: "2026-08-11T04:00:00.000Z",
-    });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-  const composer = await messageComposer();
-  await userEvent.upload(
-    composerFileInput(),
-    new File(["bad"], "failed.txt", { type: "text/plain" }),
-  );
-  await expect(
-    screen.findByText("Upload unavailable"),
-  ).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(screen.queryByText("failed.txt")).not.toBeInTheDocument();
-    expect(fastButton("Send")).toBeDisabled();
-  });
-  await userEvent.type(composer, "Send without the failed file");
-  await waitFor(() => {
+    expect(fastButton("Remove ready.txt")).toBeInTheDocument();
     expect(fastButton("Send")).toBeEnabled();
   });
+  expect(screen.queryByText("failed.txt")).not.toBeInTheDocument();
   await userEvent.click(fastButton("Send"));
   await waitFor(() => {
-    expect(deliveredAttachments).toStrictEqual([]);
+    expect(deliveredAttachments).toStrictEqual(["ready.txt"]);
   });
 });

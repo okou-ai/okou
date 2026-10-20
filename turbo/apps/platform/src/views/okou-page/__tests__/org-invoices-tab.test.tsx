@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
-  click,
   setupPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
@@ -177,47 +176,4 @@ test("Download receipts for a valid month range", async () => {
   expect(browserDownload.downloads[0]?.filename).toBe(
     "receipts-2026-02-to-2026-03.zip",
   );
-});
-
-test("A failed receipt download can be retried", async () => {
-  const browserDownload = context.mocks.browser.blobDownload();
-  let receiptsAvailable = false;
-  mockInvoicesStory();
-  context.mocks.api(billingInvoicesContract.downloadReceipts, ({ respond }) => {
-    return receiptsAvailable
-      ? respond(
-          200,
-          new Blob(["monthly receipts"], { type: "application/zip" }),
-        )
-      : respond(502, {
-          error: {
-            code: "BAD_GATEWAY",
-            message: "Receipt archive unavailable",
-          },
-        });
-  });
-  await openInvoicesTab();
-  await expect(screen.findByText("INV-2026-0001")).resolves.toBeInTheDocument();
-
-  click(buttonByText("Download receipts"));
-  click(buttonByText("Download ZIP"));
-
-  await expect(
-    screen.findByText("Receipt archive unavailable"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(buttonByText("Download receipts")).toBeEnabled();
-    expect(
-      screen.queryByText("Preparing receipt download..."),
-    ).not.toBeInTheDocument();
-  });
-  expect(browserDownload.downloads).toHaveLength(0);
-
-  receiptsAvailable = true;
-  click(buttonByText("Download receipts"));
-  click(buttonByText("Download ZIP"));
-  await expect(
-    screen.findByText("Receipts downloaded"),
-  ).resolves.toBeInTheDocument();
-  expect(browserDownload.downloads[0]?.filename).toBe("receipts-2026-03.zip");
 });

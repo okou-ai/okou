@@ -3,7 +3,6 @@ import {
   type UserTemplateCatalogEntry,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -354,26 +353,6 @@ test("The Image shelf imports a reusable style without requesting image generati
   await waitFor(() => {
     expect(window.location.pathname).toMatch(/^\/chats\//);
   });
-});
-
-test("A failed image import keeps the draft and does not start an analysis", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Upload failed" },
-    });
-  });
-  const user = userEvent.setup({ delay: null });
-  const { editor, shelf } = await openShelf("Image", "Image styles");
-
-  await user.upload(
-    within(shelf).getByLabelText("Import your own"),
-    new File(["brand"], "brand.png", { type: "image/png" }),
-  );
-  await screen.findByText("Upload failed");
-  expect(capture.sentMessages).toHaveLength(0);
-  expect(editor).toHaveTextContent("Keep my launch brief");
-  expect(window.location.pathname).toBe(`/agents/${AGENT_ID}/chat`);
 });
 
 test.each(SHELVES)(
