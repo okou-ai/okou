@@ -10,6 +10,7 @@ import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
 import { onRef } from "../../utils.ts";
+import { userPreferences$ } from "./user-preferences.ts";
 
 export type MorningBriefPreferenceState =
   | {
@@ -49,6 +50,8 @@ function preferenceState(
 export const morningBriefPreference$ = computed(async (get) => {
   get(morningBriefPreferenceVersion$);
   get(searchParams$);
+  // Initialization and time zone saves can recover the existing installation.
+  await get(userPreferences$);
   const client = get(apiClient$)(morningBriefPreferenceContract);
   const result = await accept(client.get(), [200, 409]);
   return preferenceState(result);
@@ -72,11 +75,20 @@ export const updateMorningBriefPreference$ = command(
   },
 );
 
-export const retryMorningBriefPreference$ = command(({ set }) => {
-  set(morningBriefPreferenceVersion$, (version) => {
-    return version + 1;
-  });
-});
+export const retryMorningBriefPreference$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const client = get(apiClient$)(morningBriefPreferenceContract);
+    const result = await accept(
+      client.retry({ fetchOptions: { signal } }),
+      [200, 409],
+    );
+    signal.throwIfAborted();
+    set(morningBriefPreferenceVersion$, (version) => {
+      return version + 1;
+    });
+    return preferenceState(result);
+  },
+);
 
 export const morningBriefPreferenceCardRef$ = onRef(
   command(({ get }, element: HTMLElement, signal: AbortSignal) => {
