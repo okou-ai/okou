@@ -6,6 +6,7 @@ import {
   createDeferredPromise,
   onRejection,
   waitForOperation,
+  withAbortAfter,
   withCleanup,
   type DeferredPromise,
 } from "../signals/utils.ts";
@@ -59,12 +60,19 @@ export async function downloadWorker(
   }
   // Registration belongs to the origin and cannot be aborted. Retire this
   // caller's wait before opening WSS or preparing an attachment on a late reply.
-  const registration = await waitForOperation(
-    navigator.serviceWorker.register(workerUrl, {
-      scope: SCOPE,
-      updateViaCache: "none",
-    }),
-    AbortSignal.any([signal, AbortSignal.timeout(IDLE_MS)]),
+  const registration = await withAbortAfter(
+    IDLE_MS,
+    signal,
+    async (deadlineSignal) => {
+      return await waitForOperation(
+        navigator.serviceWorker.register(workerUrl, {
+          scope: SCOPE,
+          updateViaCache: "none",
+        }),
+        deadlineSignal,
+      );
+    },
+    new DOMException("The operation timed out", "TimeoutError"),
   );
   signal.throwIfAborted();
   const worker =
@@ -78,24 +86,29 @@ export async function downloadWorker(
   if (worker.state === "activated") {
     return worker;
   }
-  const ready = createDeferredPromise<ServiceWorker>(
-    AbortSignal.any([signal, AbortSignal.timeout(IDLE_MS)]),
+  return await withAbortAfter(
+    IDLE_MS,
+    signal,
+    async (readySignal) => {
+      const ready = createDeferredPromise<ServiceWorker>(readySignal);
+      const inspect = () => {
+        if (ready.settled()) {
+          return;
+        }
+        if (worker.state === "activated") {
+          ready.resolve(worker);
+        } else if (worker.state === "redundant") {
+          ready.reject(new FileDownloadError("updateRequired"));
+        }
+      };
+      worker.addEventListener("statechange", inspect);
+      inspect();
+      return await withCleanup(ready.promise, () => {
+        worker.removeEventListener("statechange", inspect);
+      });
+    },
+    new DOMException("The operation timed out", "TimeoutError"),
   );
-  const inspect = () => {
-    if (ready.settled()) {
-      return;
-    }
-    if (worker.state === "activated") {
-      ready.resolve(worker);
-    } else if (worker.state === "redundant") {
-      ready.reject(new FileDownloadError("updateRequired"));
-    }
-  };
-  worker.addEventListener("statechange", inspect);
-  inspect();
-  return await withCleanup(ready.promise, () => {
-    worker.removeEventListener("statechange", inspect);
-  });
 }
 
 /** One bounded port queue; a failed consumer closes its dedicated WSS source. */
@@ -153,16 +166,20 @@ export class SandboxFileDownload {
     if (this.closed || this.pending) {
       throw new FileDownloadError("unavailable");
     }
-    const deadline = AbortSignal.timeout(IDLE_MS);
-    const pending = createDeferredPromise<DownloadMessage>(
-      AbortSignal.any([this.signal, deadline]),
+    return await withAbortAfter(
+      IDLE_MS,
+      this.signal,
+      async (deadline) => {
+        const pending = createDeferredPromise<DownloadMessage>(deadline);
+        this.pending = pending;
+        return await onRejection(pending.promise, () => {
+          if (deadline.aborted && !this.signal.aborted) {
+            this.fail(new FileDownloadError("unavailable"));
+          }
+        });
+      },
+      new DOMException("The operation timed out", "TimeoutError"),
     );
-    this.pending = pending;
-    return await onRejection(pending.promise, () => {
-      if (deadline.aborted) {
-        this.fail(new FileDownloadError("unavailable"));
-      }
-    });
   }
 
   chunk(offset: string, data: Uint8Array<ArrayBuffer>, final: boolean): void {
