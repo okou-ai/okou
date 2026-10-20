@@ -18,7 +18,10 @@ final class ConversationHistoryFixture: Sendable {
     self.init(rows: (0..<count).map { Self.row($0 + 1) })
   }
 
-  init(rows initial: [String], fileOrigin: URL? = nil) {
+  init(
+    rows initial: [String], fileOrigin: URL? = nil,
+    usage: ChatHTTPFixture.Handler? = nil
+  ) {
     let rows = HistoryRows(initial)
     self.rows = rows
     let requests = requests
@@ -28,6 +31,9 @@ final class ConversationHistoryFixture: Sendable {
       }
       let path = "/api/chat-threads/\(Self.threadID)"
       switch request.url?.path {
+      case path + "/usage":
+        guard let usage else { throw URLError(.unsupportedURL) }
+        return try await usage(request)
       case "/api/web/file-url":
         guard let fileOrigin else { throw URLError(.unsupportedURL) }
         let id =

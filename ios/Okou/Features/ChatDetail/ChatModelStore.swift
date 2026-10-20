@@ -15,6 +15,8 @@ final class ChatModelStore {
   private(set) var active = false
   private var revision = 0
   private var closed = false
+  private var reportingCatalog: ModelCatalog?
+  private var catalogTask: Task<Void, Never>?
   private let didFail: @MainActor (Error) -> Void
 
   init(client: APIClient, webURL: URL, didFail: @escaping @MainActor (Error) -> Void) {
@@ -43,6 +45,33 @@ final class ChatModelStore {
       didFail(error)
     }
   }
+
+  var usageCatalog: ModelCatalog? { configuration?.catalog ?? reportingCatalog }
+
+  /// Reporting needs model names even when the model picker has never opened.
+  /// This read does not activate model selection or load subscription quotas.
+  func loadUsageCatalog() async {
+    guard !closed, !Task.isCancelled, usageCatalog == nil else { return }
+    if let catalogTask {
+      await catalogTask.value
+      return
+    }
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer { catalogTask = nil }
+      do {
+        let result = try await service.catalog()
+        guard !closed, !Task.isCancelled else { return }
+        reportingCatalog = result
+      } catch is CancellationError {
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        didFail(error)
+      }
+    }
+    catalogTask = task
+    await task.value
+  }
   func report(_ failure: Error) {
     guard !closed else { return }
     didFail(failure)
@@ -57,6 +86,9 @@ final class ChatModelStore {
     closed = true
     revision += 1
     configuration = nil
+    catalogTask?.cancel()
+    catalogTask = nil
+    reportingCatalog = nil
     subscriptions.close()
   }
 }

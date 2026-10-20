@@ -10,6 +10,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   case work(ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat)
   case footer(ChatExecutionState, hasMessages: Bool)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
+  case usage(runID: String, state: ConversationRunUsageState)
 
   var id: String {
     switch self {
@@ -18,6 +19,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .work(let section, _, _, _): section.id
     case .footer: "conversation-bottom"
     case .followups: "conversation-followups"
+    case .usage(let runID, _): "usage:\(runID)"
     }
   }
 

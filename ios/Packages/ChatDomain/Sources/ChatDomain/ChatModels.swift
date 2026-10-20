@@ -168,6 +168,8 @@ public struct ChatHistory: Equatable, Sendable {
   public var persistedEventIDs: Set<String> = []
   public let latestRunFinishAt: Date?
   public let recommendedFollowups: ChatRecommendedFollowupSource?
+  public let usageEventIDs: [String: String]
+  public let runUsageAnchors: [String: String]
 
   public init(
     messages: [ChatMessage],
@@ -178,12 +180,16 @@ public struct ChatHistory: Equatable, Sendable {
     persistedEventIDs: Set<String> = [],
     workSections: [ChatWorkSection] = [],
     latestRunFinishAt: Date? = nil,
-    recommendedFollowups: ChatRecommendedFollowupSource? = nil
+    recommendedFollowups: ChatRecommendedFollowupSource? = nil,
+    usageEventIDs: [String: String] = [:],
+    runUsageAnchors: [String: String] = [:]
   ) {
     self.messages = messages
     self.workSections = workSections
     self.latestRunFinishAt = latestRunFinishAt
     self.recommendedFollowups = recommendedFollowups
+    self.usageEventIDs = usageEventIDs
+    self.runUsageAnchors = runUsageAnchors
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
     self.activityRunID = activityRunID
