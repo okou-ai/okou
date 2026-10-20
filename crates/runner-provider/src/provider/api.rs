@@ -850,7 +850,13 @@ impl JobProvider for ApiProvider {
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
         let run_id = candidate.run_id();
         let _in_flight = self.in_flight_claims.register(run_id, &self.poll_wakeups);
+        let cancellation_lookup_started_at = Instant::now();
         let cancellation = self.cancel_tokens.handle(run_id).await;
+        info!(
+            run_id = %run_id,
+            cancellation_lookup_ms = duration_ms(cancellation_lookup_started_at.elapsed()),
+            "claim cancellation lookup completed"
+        );
         // Only an HTTP poll can opt this candidate into the v4 claim protocol.
         // Legacy/notification candidates omit the claim capability, so even a
         // stale hint cannot claim a v4 Run without the durable barrier.
@@ -1589,6 +1595,7 @@ impl ApiClient {
         runner_hostname: Option<&str>,
         installed_okou_cli: Option<&InstalledOkouCli>,
     ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
+        let claim_started_at = Instant::now();
         let run_id = candidate.run_id();
         let body = claim_request_body(
             candidate,
@@ -1596,45 +1603,138 @@ impl ApiClient {
             runner_hostname,
             installed_okou_cli,
         );
-        let run_id = run_id.to_string();
+        let run_id_string = run_id.to_string();
         let request = self.http.request_resolved_route(
             routes::runners::jobs::by_id::claim::route(
                 routes::runners::jobs::by_id::claim::Params {
-                    id: run_id.as_str(),
+                    id: run_id_string.as_str(),
                 },
             ),
             &self.token,
         );
         let request = request.json(&body);
         let request_to_response_headers_started_at = Instant::now();
-        let resp = send_api(request, "claim").await?;
-        let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();
+        let request = request.prepare("claim").map_err(|error| match error {
+            ProviderError::Api(message) => ProviderError::Api(format!("claim: {message}")),
+            error => error,
+        })?;
+        let request_context = request.context().clone();
+        // This is the handoff to reqwest execution, not a physical socket write.
+        // Connection, transport, edge and server work are not split by this clock.
+        let execution_started_at = Instant::now();
+        info!(
+            run_id = %run_id,
+            client_request_id = %request_context.client_request_id,
+            client_session_id = %request_context.client_session_id,
+            client_version = %request_context.client_version,
+            discovery_source = body.telemetry.discovery_source,
+            job_discovered_to_execution_ms = duration_ms(candidate.job_discovered_elapsed()),
+            local_admission_to_execution_ms = candidate.local_admission_elapsed().map(duration_ms),
+            request_prepare_ms = duration_ms(claim_started_at.elapsed()),
+            direct_candidate_notification_to_enqueue_ms = body.telemetry.direct_candidate_notification_to_enqueue_ms,
+            direct_candidate_inbox_wait_ms = body.telemetry.direct_candidate_inbox_wait_ms,
+            provider_discovery_to_main_loop_ms = body.telemetry.provider_discovery_to_main_loop_ms,
+            main_loop_to_local_admission_ms = body.telemetry.main_loop_to_local_admission_ms,
+            poll_due_to_job_discovered_ms = body.telemetry.poll_due_to_job_discovered_ms,
+            poll_http_request_ms = body.telemetry.poll_http_request_ms,
+            "claim request execution started"
+        );
+        let mut status = None;
+        let mut headers_elapsed = None;
+        let mut body_read_elapsed = None;
+        let mut decode_elapsed = None;
+        let result = async {
+            let resp = request.send().await?;
+            let headers_received_at = Instant::now();
+            let request_to_response_headers_elapsed =
+                headers_received_at.duration_since(request_to_response_headers_started_at);
+            let execution_to_response_headers_elapsed =
+                headers_received_at.duration_since(execution_started_at);
+            headers_elapsed = Some(execution_to_response_headers_elapsed);
+            status = Some(resp.status().as_u16());
+            info!(
+                run_id = %run_id,
+                client_request_id = %request_context.client_request_id,
+                client_session_id = %request_context.client_session_id,
+                http_status = status,
+                execution_to_response_headers_ms = duration_ms(execution_to_response_headers_elapsed),
+                "claim response headers received"
+            );
 
-        if resp.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
+            if resp.status() == StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+
+            let body_read_started_at = Instant::now();
+            let resp = check_api_status(resp, "claim").await;
+            if resp.is_err() {
+                body_read_elapsed = Some(body_read_started_at.elapsed());
+            }
+            let resp = resp?;
+            let content_encoding = resp
+                .headers()
+                .get(reqwest::header::CONTENT_ENCODING)
+                .cloned();
+            let body_read_started_at = Instant::now();
+            let body = read_claim_response_body(resp, || {}).await;
+            body_read_elapsed = Some(body_read_started_at.elapsed());
+            let (body, response_first_body_chunk_wait_elapsed, response_body_read_elapsed) = body?;
+            let response_decode_started_at = Instant::now();
+            let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode);
+            let response_decode_elapsed = response_decode_started_at.elapsed();
+            decode_elapsed = Some(response_decode_elapsed);
+            let context = context?;
+            let response_attribution = ClaimResponseAttribution::from_body_and_encoding(
+                body.len(),
+                content_encoding.as_ref(),
+            );
+
+            Ok(Some(SuccessfulClaimResponse {
+                context,
+                request_to_response_headers_elapsed,
+                response_body_read_elapsed,
+                response_first_body_chunk_wait_elapsed,
+                response_decode_elapsed,
+                response_attribution,
+            }))
         }
-
-        let resp = check_api_status(resp, "claim").await?;
-        let content_encoding = resp
-            .headers()
-            .get(reqwest::header::CONTENT_ENCODING)
-            .cloned();
-        let (body, response_first_body_chunk_wait_elapsed, response_body_read_elapsed) =
-            read_claim_response_body(resp, || {}).await?;
-        let response_decode_started_at = Instant::now();
-        let context = decode_api_json_bytes(&body).map_err(ClaimApiError::ResponseDecode)?;
-        let response_decode_elapsed = response_decode_started_at.elapsed();
-        let response_attribution =
-            ClaimResponseAttribution::from_body_and_encoding(body.len(), content_encoding.as_ref());
-
-        Ok(Some(SuccessfulClaimResponse {
-            context,
-            request_to_response_headers_elapsed,
-            response_body_read_elapsed,
-            response_first_body_chunk_wait_elapsed,
-            response_decode_elapsed,
-            response_attribution,
-        }))
+        .await;
+        let outcome = match &result {
+            // The provider still validates the returned Run before accepting
+            // ownership; decoding alone must not report a successful claim.
+            Ok(Some(_)) => "response_decoded",
+            Ok(None) => "unavailable",
+            Err(ClaimApiError::Request(ProviderError::ApiStatus(_))) => "http_error",
+            Err(ClaimApiError::Request(ProviderError::ApiTransport(_))) => "transport_error",
+            Err(ClaimApiError::Request(_)) => "request_error",
+            Err(ClaimApiError::ResponseRead(_)) => "response_read_error",
+            Err(ClaimApiError::ResponseDecode(_)) => "response_decode_error",
+        };
+        let transport = match &result {
+            Err(ClaimApiError::Request(ProviderError::ApiTransport(error))) => Some(error),
+            _ => None,
+        };
+        let completed_at = Instant::now();
+        info!(
+            run_id = %run_id,
+            client_request_id = %request_context.client_request_id,
+            client_session_id = %request_context.client_session_id,
+            client_version = %request_context.client_version,
+            outcome,
+            response_run_id = result.as_ref().ok().and_then(Option::as_ref)
+                .map(|response| response.context.run_id.to_string()),
+            http_status = status,
+            response_headers_received = headers_elapsed.is_some(),
+            claim_elapsed_ms = duration_ms(completed_at.duration_since(claim_started_at)),
+            execution_to_completion_ms = duration_ms(completed_at.duration_since(execution_started_at)),
+            execution_to_response_headers_ms = headers_elapsed.map(duration_ms),
+            response_body_read_ms = body_read_elapsed.map(duration_ms),
+            response_decode_ms = decode_elapsed.map(duration_ms),
+            transport_failure_kind = transport.map(|error| error.failure_kind.as_str()),
+            transport_failure_cause = transport.map(|error| error.failure_cause.as_str()),
+            "claim request completed"
+        );
+        result
     }
 
     #[cfg(test)]
@@ -2204,6 +2304,7 @@ mod tests {
 
     const TEST_HEARTBEAT_GENERATION: u64 = 7;
 
+    mod claim_observation;
     mod parallel_claim;
 
     fn api_client_for_url(api_url: String) -> ApiClient {
