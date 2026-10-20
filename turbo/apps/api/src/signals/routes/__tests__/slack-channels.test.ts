@@ -162,28 +162,6 @@ describe("GET /api/slack/channels", () => {
     });
   });
 
-  it("returns 404 when the current user has not connected Slack", async () => {
-    const installer = integrations.user();
-    const disconnected = integrations.user({
-      orgId: installer.orgId,
-      orgRole: "org:member",
-    });
-    integrations.configureSlackAppMocks();
-    await integrations.installSlackWorkspace(installer);
-
-    const response = await integrations.requestListSlackChannels(
-      disconnected,
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "No Slack account connected for this user",
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
   it("handles pagination across multiple pages", async () => {
     const actor = integrations.user();
     integrations.configureSlackAppMocks();

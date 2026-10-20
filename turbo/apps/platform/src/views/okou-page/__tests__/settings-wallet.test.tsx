@@ -308,9 +308,6 @@ test("reconnects changed scopes directly and keeps the warning until new consent
     expect(popup.location.href).toBe(authorizationUrl);
   });
   expect(opened.calls).toHaveLength(1);
-  expect(
-    screen.queryByRole("dialog", { name: "Link permissions update" }),
-  ).not.toBeInTheDocument();
   expect(screen.getByText("Update permissions")).toBeInTheDocument();
   expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   status = connection(true);

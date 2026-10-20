@@ -194,7 +194,6 @@ describe("CHAT-02: model-first routing", () => {
           provider: "openai-codex",
           model: selectedModel,
         });
-        expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
         expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
         const credentials = claimEnvironment(claimed.claim);
         expect(credentials.CHATGPT_ACCESS_TOKEN).toBe(

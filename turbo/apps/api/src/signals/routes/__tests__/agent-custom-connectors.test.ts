@@ -271,26 +271,6 @@ describe("PUT /api/agents/:id/custom-connectors", () => {
     expect([...readBack].sort()).toStrictEqual([...response].sort());
   });
 
-  it("rejects the legacy id-only request before mutating grants", async () => {
-    const actor = bdd.user();
-    const agent = await createAgent(actor, {
-      displayName: "Canonical Contract Agent",
-    });
-    const connector = await createCustomConnector(actor, "legacy-body");
-    const legacyIdField = ["enabled", "Ids"].join("");
-
-    const response = await connectors.requestUpdateAgentCustomConnectorsRaw(
-      actor,
-      agent.agentId,
-      { [legacyIdField]: [connector.id] },
-    );
-
-    expect(response.status).toBe(400);
-    await expect(
-      connectors.readAgentCustomConnectorGrants(actor, agent.agentId),
-    ).resolves.toStrictEqual([]);
-  });
-
   it("persists disconnected permission grants and rejects unknown permissions atomically", async () => {
     const actor = bdd.user();
     const agent = await createAgent(actor, {

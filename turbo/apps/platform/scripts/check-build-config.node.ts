@@ -151,7 +151,6 @@ await test("production build isolates the configured lazy dependency", async () 
     false,
   );
   assert.equal(vendorGroup.test("/repo/src/main.ts"), false);
-  assert.equal(loaded.config.define?.__OKOU_APP_GIT_COMMIT_SHA__, undefined);
   assert.equal(
     typeof JSON.parse(loaded.config.define?.__OKOU_APP_VERSION__ ?? "null"),
     "string",

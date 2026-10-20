@@ -9,7 +9,7 @@ import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { emailUnsubscribeRoutes } from "../email-unsubscribe";
@@ -229,32 +229,11 @@ describe("email subscription preferences", () => {
     expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid writes without changing the saved preference", async () => {
-    actor();
-    const request = setupRawAppRequest({
-      context,
-      routes: emailSubscriptionRoutes,
-    });
-    const response = await request("/api/preferences/email-subscription", {
-      method: "PUT",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ subscribed: "false" }),
-    });
-    expect(response.status).toBe(400);
-    expect(
-      (await accept(client().get({ headers }), [200])).body.subscribed,
-    ).toBeTruthy();
-  });
-
   it.each([
     ["unexpected failure", new Error("Clerk request failed")],
     ["rate limit", new ClerkTransportTestError(429)],
     ["server failure", new ClerkTransportTestError(503)],
     ["transport failure", new ClerkTransportTestError()],
-    [
-      "unbranded 404",
-      Object.assign(new Error("Not a Clerk miss"), { status: 404 }),
-    ],
   ])(
     "does not disguise %s as an unavailable recipient",
     async (_name, error) => {

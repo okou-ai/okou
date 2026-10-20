@@ -2145,7 +2145,7 @@
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
     "relations": {
-      "communications": "Nachrichten",
+      "communications": "Chats",
       "idle": "Inaktiv",
       "loadFailed": "Laden fehlgeschlagen",
       "messageUnavailable": "Nachricht nicht verfügbar",
@@ -2177,11 +2177,8 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
-      "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
-      "loadingLinks": "Links werden geladen",
       "retry": "Erneut versuchen",
       "title": "Chat-Ressourcen"
     },
@@ -5175,7 +5172,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
-        "description": "Tägliche Prioritäten um 7 Uhr in deiner Zeitzone.",
+        "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",

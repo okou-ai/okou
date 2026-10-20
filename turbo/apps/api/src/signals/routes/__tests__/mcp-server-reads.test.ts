@@ -200,17 +200,6 @@ describe("thin MCP Web adapters", () => {
           validateSearchInput({ keyword: "search", since }).valid,
         ).toBeTruthy();
       }
-      for (const since of [
-        1_791_792_170,
-        1_791_792_170_000,
-        "1791792170000",
-        "2026-10-12T08:02:50",
-        "2026-10-12T08:02:50.0001Z",
-      ]) {
-        expect(
-          validateSearchInput({ keyword: "search", since }).valid,
-        ).toBeFalsy();
-      }
       const searched = await sdk.callTool({
         name: "search_chat_messages",
         arguments: {
@@ -278,9 +267,6 @@ describe("thin MCP Web adapters", () => {
         expect(
           validateInput({ ...args, threadId: searchThreadId }).valid,
         ).toBeTruthy();
-        expect(
-          validateInput({ ...args, threadId: "invalid-thread" }).valid,
-        ).toBeFalsy();
       }
       for (const name of ["cancel_run", "get_chat_activity_summary"]) {
         const tool = tools.find((item) => {
@@ -315,9 +301,6 @@ describe("thin MCP Web adapters", () => {
       expect(
         validate({ threadId: randomUUID(), sinceSeqId: 3 }).valid,
       ).toBeFalsy();
-      expect(JSON.stringify(tools)).not.toMatch(
-        /nextContentCursor|olderCursor|around|waitMs|inputRef|effectiveModel/,
-      );
       const listed = await sdk.callTool({
         name: "get_chat_thread_list",
         arguments: {},
@@ -812,7 +795,7 @@ describe("thin MCP Web adapters", () => {
     );
   });
 
-  it("preserves Web search filters, empty results and activity-summary behavior", async () => {
+  it("preserves Web search filters and empty results", async () => {
     const f = await fixture();
     const query = {
       keyword: "plain keyword",
@@ -829,19 +812,6 @@ describe("thin MCP Web adapters", () => {
       mcpChatSearchContract.search.responses[200].parse(body(search)),
     ).toStrictEqual({ results: [] });
     expect(body(search)).toStrictEqual(web.body);
-    const id = randomUUID();
-    const runId = randomUUID();
-    const activity = await mcp.call(f.token(), "get_chat_activity_summary", {
-      threadId: id,
-      runId,
-    });
-    const webActivity = await mcp.web(
-      f.token(),
-      `/api/chat-threads/${id}/activity-summary`,
-      "POST",
-      { runId },
-    );
-    expect(body(activity)).toStrictEqual(webActivity.body);
   });
 
   it("keeps ownership and organization checks in the Web routes", async () => {

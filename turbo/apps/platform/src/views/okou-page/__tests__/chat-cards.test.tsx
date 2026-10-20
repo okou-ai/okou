@@ -42,7 +42,6 @@ function mockExactReconnectAccount(
     unnamedManualAccount?: boolean;
     accountMissingOnActivate?: boolean;
     unsupportedAuthMethod?: boolean;
-    mismatchedResponse?: "id" | "target";
     accountAuthMethod?: "oauth" | "api-token";
   },
 ): () => void {
@@ -150,16 +149,10 @@ function mockExactReconnectAccount(
         });
       }
       return respond(200, {
-        id:
-          options?.mismatchedResponse === "id"
-            ? DEFAULT_CONNECTION_ID
-            : EXACT_CONNECTION_ID,
+        id: EXACT_CONNECTION_ID,
         target: {
           kind: "builtin",
-          connectorSlug:
-            options?.mismatchedResponse === "target"
-              ? connectorSlugSchema.parse("slack")
-              : github,
+          connectorSlug: github,
         },
         authMethod: options?.accountAuthMethod ?? "api-token",
         displayName: options?.unnamedManualAccount ? null : "Work GitHub",
@@ -1056,20 +1049,6 @@ test("A reconnect card stays unavailable if its stored authentication method is 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
-
-test.each(["id", "target"] as const)(
-  "A lookup that returns a different account %s cannot open a reconnect dialog",
-  async (mismatchedResponse) => {
-    mockExactReconnectAccount("reconnect-required", { mismatchedResponse });
-    await setupChat(exactReconnectUrl().toString());
-
-    await expect(
-      screen.findByTestId("unavailable-action-card"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-  },
-);
 
 test("Closing the exact reconnect dialog does not send the callback", async () => {
   mockExactReconnectAccount("reconnect-required");

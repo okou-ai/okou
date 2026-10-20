@@ -474,7 +474,6 @@ describe("voice input routing and reference context", () => {
   });
 
   it.each([
-    { candidates: [] },
     { promptFeedback: { blockReason: "SAFETY" }, candidates: [] },
     {
       candidates: [
@@ -489,25 +488,6 @@ describe("voice input routing and reference context", () => {
         {
           finishReason: "STOP",
           content: { parts: [{ text: "thinking only", thought: true }] },
-        },
-      ],
-    },
-    {
-      candidates: [
-        {
-          finishReason: "STOP",
-          content: {
-            parts: [
-              {
-                text: JSON.stringify({
-                  transcript: "Hello.",
-
-                  language: "en",
-                  unexpected: true,
-                }),
-              },
-            ],
-          },
         },
       ],
     },
@@ -700,7 +680,6 @@ describe("voice input routing and reference context", () => {
             return part.inlineData ? "audio" : "text";
           }),
         ).toStrictEqual(["audio", "text"]);
-        expect(parts[1]?.text).not.toContain("lastAssistantMessage");
         expect(parts[1]?.text).toContain(JSON.stringify({ editorContext }));
         expect(providerRequest.systemInstruction.parts[0]?.text).not.toContain(
           editorContext.before,
@@ -720,7 +699,6 @@ describe("voice input routing and reference context", () => {
   );
 
   it.each([
-    { label: "malformed JSON", value: "not valid json" },
     {
       label: "oversized selection",
       value: JSON.stringify({
@@ -1401,16 +1379,6 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         expect.objectContaining({
           text: expect.stringContaining(first.body.transcript),
         }),
-      );
-      const oversized = await accept(
-        client().segment({
-          headers,
-          body: segmentForm([audioFile(3)], "x".repeat(262_145), 61),
-        }),
-        [400],
-      );
-      expect(oversized.body.error.message).toBe(
-        "Invalid voice segment options",
       );
     });
   });

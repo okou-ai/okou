@@ -137,8 +137,7 @@ test("French uses local number formatting", async () => {
     });
   });
   await setupPage({ context, path: `/activities/${runId}` });
-  const activityLabels = await screen.findAllByText("Read two files");
-  expect(activityLabels).not.toHaveLength(0);
+  await screen.findAllByText("Read two files");
 
   const settings = await openSettingsDialog("Settings");
   await selectLanguage("Language", "Français");

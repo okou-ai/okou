@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
 import worker from "./index";
 import { fetchWorker } from "./test-helpers";
 
@@ -8,6 +10,16 @@ const token = "a".repeat(48);
 const origin = `https://pv-${token}.okou.app`;
 const prefix = `private-sites/okou/${deploymentId}`;
 const grantKey = `private-previews/okou/${token}.json`;
+const server = setupServer();
+beforeAll(() => {
+  return server.listen({ onUnhandledRequest: "error" });
+});
+afterEach(() => {
+  return server.resetHandlers();
+});
+afterAll(() => {
+  return server.close();
+});
 
 function fixture(immutableContent = true) {
   const files = {
@@ -97,6 +109,60 @@ function fixture(immutableContent = true) {
 }
 
 describe("private HTML preview gateway", () => {
+  it("enforces Site policy before preview assets and disables long browser caching", async () => {
+    const f = fixture();
+    const env = {
+      ...f.env,
+      HOSTED_SITE_API_ORIGIN: "https://authority.test",
+      HOSTED_SITE_ACCESS_ENABLED: "true",
+    };
+    let allowed = true;
+    server.use(
+      http.get("https://authority.test/api/host/sites/site/access", () => {
+        return HttpResponse.json(
+          allowed
+            ? { allowed: true, decision: "allow" }
+            : { allowed: false, decision: "deny" },
+        );
+      }),
+    );
+    const first = await fetchWorker(
+      new Request(`${origin}/assets/site.css`),
+      env,
+    );
+    expect(first.status).toBe(200);
+    expect(first.headers.get("Cache-Control")).toBe("private, no-store");
+    allowed = false;
+    f.reads.length = 0;
+    expect(
+      (await fetchWorker(new Request(`${origin}/assets/site.css`), env)).status,
+    ).toBe(404);
+    expect(f.reads).not.toContain(`${prefix}/assets/site.css`);
+  });
+
+  it("preserves preview credentials and asset caching before activation when the API is unavailable", async () => {
+    const f = fixture();
+    server.use(
+      http.get("https://authority.test/*", () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const env = { ...f.env, HOSTED_SITE_API_ORIGIN: "https://authority.test" };
+    const response = await fetchWorker(
+      new Request(`${origin}/assets/site.css`),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "private, max-age=31536000, must-revalidate",
+    );
+    f.grant.expiresAt = "2000-01-01T00:00:00.000Z";
+    f.objects.set(grantKey, JSON.stringify(f.grant));
+    expect(
+      (await fetchWorker(new Request(`${origin}/assets/site.css`), env)).status,
+    ).toBe(404);
+  });
+
   it("serves every bundled resource and navigation with a deployment credential, without cookies", async () => {
     const { env, files } = fixture();
     for (const [path, [body, contentType]] of Object.entries(files)) {

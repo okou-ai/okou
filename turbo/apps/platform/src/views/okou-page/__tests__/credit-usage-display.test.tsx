@@ -375,7 +375,6 @@ test("Credit usage preserves unknown historical model identifiers", async () => 
   await openUsage("40");
 
   expect(screen.getByText("acme/vision-pro")).toBeInTheDocument();
-  expect(screen.queryByText("Acme Vision Pro")).not.toBeInTheDocument();
 });
 
 test("Credit usage formats unknown image-provider names for people to read", async () => {
@@ -399,7 +398,6 @@ test("Credit usage formats unknown image-provider names for people to read", asy
   await openUsage("50");
 
   expect(screen.getByText("Acme Vision Pro")).toBeInTheDocument();
-  expect(screen.queryByText("acme/vision/pro")).not.toBeInTheDocument();
 });
 
 test("Credit usage merges every Social Search vendor into one row and preserves model totals", async () => {

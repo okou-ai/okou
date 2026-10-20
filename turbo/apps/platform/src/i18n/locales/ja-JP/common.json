@@ -2138,7 +2138,7 @@
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
     "relations": {
-      "communications": "メッセージ",
+      "communications": "チャット",
       "idle": "待機",
       "loadFailed": "読み込み失敗",
       "messageUnavailable": "メッセージ取得不可",
@@ -2169,11 +2169,8 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "emptyLinks": "このチャットにはまだリンクがありません",
       "expand": "展開",
-      "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
-      "loadingLinks": "リンクを読み込み中",
       "retry": "再試行",
       "title": "チャットのリソース"
     },
@@ -5155,7 +5152,7 @@
       },
       "morningBrief": {
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
-        "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
+        "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",

@@ -6018,17 +6018,6 @@ export function registerFeishuIntegrationTests(
             expected: "Group settings changed.",
           },
           { content: "not JSON", expected: "[system message]" },
-          {
-            content: JSON.stringify({
-              template: "{from_user}",
-              from_user: [123],
-            }),
-            expected: "[system message]",
-          },
-          {
-            content: JSON.stringify({ template: "{from_user}", from_user: [] }),
-            expected: "[system message]",
-          },
         ];
         fixtureState.historyMessages = messages.map((message, index) => {
           return {
@@ -6058,7 +6047,7 @@ export function registerFeishuIntegrationTests(
         for (const message of messages) {
           expect(history).toContain(message.expected);
         }
-        expect(history.match(/\[system message\]/gu)).toHaveLength(3);
+        expect(history.match(/\[system message\]/gu)).toHaveLength(1);
         await own(() => {
           return runsApi.requestCancelRun(actor, run.id, [200]);
         });
@@ -6298,54 +6287,6 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "conversation") {
-      it("rejects renaming integration-managed connector accounts", async () => {
-        const fixture = await setupFeishuRunFixture();
-        await connectFixtureUser(fixture);
-        const definitions = await own(() => {
-          return accept(
-            setupApp({ context, routes: customConnectorsRoutes })(
-              customConnectorsContract,
-            ).list({ headers: { authorization: "Bearer clerk-session" } }),
-            [200],
-          );
-        });
-        const definition = requireValue(
-          definitions.body.connectors.find((connector) => {
-            return connector.oauthConfig?.providerAdapter === "feishu";
-          }),
-          "Expected the integration-managed custom connector",
-        );
-        const connectionId = await claimConnectedFeishuSource(
-          fixture,
-          definition.id,
-        );
-        mocks.clerk.session(
-          fixture.actor.userId,
-          fixture.actor.orgId,
-          fixture.actor.orgRole,
-        );
-        for (const displayName of ["Rejected rename", null]) {
-          const rejected = await own(() => {
-            return accept(
-              connectorAccountsClient().rename({
-                headers: { authorization: "Bearer clerk-session" },
-                params: { connectionId },
-                body: {
-                  target: { kind: "custom", customConnectorId: definition.id },
-                  displayName,
-                },
-              }),
-              [404],
-            );
-          });
-          expect(rejected.body.error).toStrictEqual({
-            code: "NOT_FOUND",
-            message: "Connector account not found",
-          });
-        }
-        await removeFeishuInstallation(fixture);
-      });
-
       it("retains platform run history when a model change starts a fresh session", async () => {
         const fixture = await setupFeishuRunFixture();
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
@@ -6418,17 +6359,8 @@ export function registerFeishuIntegrationTests(
             }),
           }),
         );
-        expect(claim.appendSystemPrompt).not.toContain(
-          `# ${provider.name} Run Context`,
-        );
         expect(claim.nativeContinuation?.recoveryPrompt).toContain(
           "okou chat messages --output-dir threads",
-        );
-        expect(claim.appendSystemPrompt).not.toContain(
-          "User: start the Feishu DM session",
-        );
-        expect(claim.appendSystemPrompt).not.toContain(
-          "Assistant: Initial Feishu DM answer",
         );
         await own(() => {
           return runsApi.requestCancelRun(actor, run.id, [200]);

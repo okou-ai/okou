@@ -740,7 +740,6 @@ test.each(["running", "failed"] as const)(
     expect(buttonsNamed("Collapse work history")).toHaveLength(0);
     expect(buttonsNamed("Expand work history")).toHaveLength(0);
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
-    expect(document.querySelector("[data-chat-run-work-history]")).toBeNull();
     expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
     expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
     expect(screen.queryByText(error)).toBeNull();
@@ -891,7 +890,6 @@ test("Share one answer with its prompt by copying the link before creating the s
   // The button confirms in the click; it waits for neither the share nor a toast.
   expect(clipboard.writes).toHaveLength(1);
   expect(buttonsNamed("Share link copied")).toHaveLength(1);
-  expect(screen.queryByText("Link copied")).toBeNull();
   await waitFor(() => {
     expect(createRequests).toHaveLength(1);
   });

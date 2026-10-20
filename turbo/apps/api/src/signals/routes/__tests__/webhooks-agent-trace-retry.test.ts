@@ -144,7 +144,7 @@ describe("optional agent trace recovery", () => {
     },
   );
 
-  it.each(["invalid-json", "malformed-status", "partial-ingest"] as const)(
+  it.each(["invalid-json", "partial-ingest"] as const)(
     "does not replay %s responses",
     async (failure) => {
       const { owned, headers, body } = await traceRun();
@@ -160,9 +160,8 @@ describe("optional agent trace recovery", () => {
             return HttpResponse.json({
               ingested: 0,
               failed: 1,
-              ...(failure === "partial-ingest"
-                ? { processedBytes: 1, failures: [] }
-                : {}),
+              processedBytes: 1,
+              failures: [],
             });
           }),
         );

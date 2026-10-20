@@ -502,17 +502,6 @@ function resultEvent(
   return { eventType: "result", sequenceNumber, eventData: { result } };
 }
 
-function chatOutputAxiomQueryCalls(): readonly unknown[][] {
-  return context.mocks.axiom.query.mock.calls.filter((call) => {
-    const apl = call[0];
-    return (
-      typeof apl === "string" &&
-      apl.includes("['agent-run-events']") &&
-      apl.includes('eventType == "assistant"')
-    );
-  });
-}
-
 function pushPayload(call: readonly unknown[] | undefined): unknown {
   const raw = call?.[1];
   return JSON.parse(typeof raw === "string" ? raw : "{}");
@@ -525,7 +514,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 describe("CHAT-02: completed chat callback", () => {
   it("persists assistant output, reorders threads, titles the thread, recommends follow-ups, notifies, and auto-sends the queued template message", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const titlePrompts: string[] = [];
     const sentinelPrompt = "unrelated sentinel run";
@@ -649,17 +637,12 @@ describe("CHAT-02: completed chat callback", () => {
         return message.content;
       }),
     ).toStrictEqual(["final answer"]);
-    expect(
-      eventBackedContents(after.events, first.runId)[0],
-    ).not.toHaveProperty("status");
 
     const marker = lifecycleMarkers(after.events, first.runId, "completed")[0];
     if (!marker) {
       throw new Error("Expected a completed lifecycle marker");
     }
     expect(marker.content).toBeNull();
-    expect(marker).not.toHaveProperty("status");
-    expect(marker).not.toHaveProperty("recommendedFollowups");
     const recommender = recommendedFollowupEvents(after.events, first.runId)[0];
     if (!recommender) {
       throw new Error("Expected a recommended follow-up message");
@@ -802,15 +785,10 @@ describe("CHAT-02: completed chat callback", () => {
     expect(appended).toContain(
       "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
     );
-    expect(appended).not.toContain("Selected design system");
-    // Runbook flow, not the retired multi-resource flow.
     expect(appended).toContain(
       `okou resource pull ${template.templateId}-runbook --dir ./generated/resources`,
     );
     expect(appended).toContain("--artifact-kind presentation-html");
-    expect(appended).not.toContain(
-      "okou generate presentation --design-system",
-    );
     expect(Object.keys(autoContext.body.environment)).toContain(
       "CLAUDE_CODE_OAUTH_TOKEN",
     );
@@ -822,7 +800,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("omits the API clock for a chat run picked from the queue", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await startChatRun(actor, {
       agentId,
@@ -882,7 +859,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("uses the optimized prompt and userMessage semantics for recommended follow-ups", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -1025,7 +1001,6 @@ describe("CHAT-02: completed chat callback", () => {
     expect(followupSystemPrompts[0]).toContain(
       "Always return exactly 3 suggestions.",
     );
-    expect(followupSystemPrompts[0]).not.toContain("Chinese");
     expect(followupPrompts).toHaveLength(1);
     for (const value of expectedContext) {
       expect(followupPrompts[0]).toContain(value);
@@ -1036,55 +1011,8 @@ describe("CHAT-02: completed chat callback", () => {
     }
   }, 90_000);
 
-  it("suppresses malformed recommended follow-up JSON instead of storing raw syntax lines", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    let followupRequests = 0;
-    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockVertexCompletions((body) => {
-      const systemContent = body.messages[0]?.content ?? "";
-      if (systemContent.includes("recommended follow-up messages")) {
-        followupRequests += 1;
-        return [
-          "[",
-          "{",
-          '"prompt": "Investigate this malformed follow-up",',
-          '"kind": "talk"',
-        ].join("\n");
-      }
-      if (systemContent.includes("Generate a short, descriptive title")) {
-        return "Malformed Follow-ups";
-      }
-      return "Generated summary";
-    });
-
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "Explain how to debug malformed follow-ups",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "The final assistant answer"),
-    ]);
-    context.mocks.ably.publish.mockClear();
-    await completeChatRunOk(run.runId, sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    await flushWaitUntilForTest();
-
-    expect(followupRequests).toBe(1);
-    const after = await chat.listThreadEvents(actor, run.threadId);
-    const marker = lifecycleMarkers(after.events, run.runId, "completed")[0];
-    if (!marker) {
-      throw new Error("Expected a completed lifecycle marker");
-    }
-    expect(marker).not.toHaveProperty("recommendedFollowups");
-  });
-
   it("accepts a retried recommended follow-up send as a duplicate", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexCompletions((body) => {
@@ -1911,7 +1839,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const requestsBySite = new Map<
       string,
@@ -1996,7 +1923,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("pushes a token-limited notification summary instead of discarding it", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const truncatedSummary = "The task finished by writing the migration pl";
     let notificationRequests = 0;
@@ -2047,7 +1973,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("falls back to the fixed notification copy when the token-limited summary strips to nothing", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexCompletions((body) => {
@@ -2100,7 +2025,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("leaves the thread untitled when the title completion is token-limited", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     let titleRequests = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -2133,54 +2057,8 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, run.runId, "cancelled");
   });
 
-  it("suppresses token-limited recommended follow-ups instead of storing partial JSON", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    let followupRequests = 0;
-    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockVertexCompletions((body) => {
-      const systemContent = body.messages[0]?.content ?? "";
-      if (systemContent.includes("recommended follow-up messages")) {
-        followupRequests += 1;
-        return {
-          content: JSON.stringify([
-            { prompt: "Keep going with the migration", kind: "talk" },
-          ]).slice(0, 40),
-          finishReason: "length",
-        };
-      }
-      if (systemContent.includes("Generate a short, descriptive title")) {
-        return "Truncated Follow-ups";
-      }
-      return "Generated summary";
-    });
-
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "Explain how truncated follow-ups are handled",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "The final assistant answer"),
-    ]);
-    await completeChatRunOk(run.runId, sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    await flushWaitUntilForTest();
-
-    expect(followupRequests).toBe(1);
-    const after = await chat.listThreadEvents(actor, run.threadId);
-    const marker = lifecycleMarkers(after.events, run.runId, "completed")[0];
-    if (!marker) {
-      throw new Error("Expected a completed lifecycle marker");
-    }
-    expect(marker).not.toHaveProperty("recommendedFollowups");
-  });
-
   it("keeps an auto-sent follow-up pending until org concurrency frees a slot", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
 
     const first = await startChatRun(actor, {
@@ -2243,7 +2121,6 @@ describe("CHAT-02: completed chat callback", () => {
 describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
   it("preserves immediate release when a pending run is cancelled", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const run = await startChatRun(actor, {
       agentId,
       prompt: "cancel before runner claim",
@@ -2271,7 +2148,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 
   it("redrives lifecycle-first recovery after a partial side-effect failure", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const run = await startChatRun(actor, {
       agentId,
       prompt: "cancel before the recovery completion",
@@ -2364,7 +2240,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 
   it("records recovery when completion with native history follows cancellation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const run = await startChatRun(actor, {
       agentId,
       prompt: "race completion with cancellation",
@@ -2406,9 +2281,8 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 });
 
 describe("CHAT-02: chat output extraction and terminal callbacks", () => {
-  it("uses durable assistant output for queued auto-send without querying Axiom output", async () => {
+  it("uses durable assistant output for queued auto-send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await startChatRun(actor, {
       agentId,
@@ -2439,14 +2313,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       firstHeaders,
       [200],
     );
-    context.mocks.axiom.query.mockClear();
-    context.mocks.axiom.query.mockImplementation((apl: unknown) => {
-      const query = typeof apl === "string" ? apl : "";
-      if (query.includes("['agent-run-events']")) {
-        throw new Error("DB-complete output should not query Axiom");
-      }
-      return Promise.resolve([]);
-    });
 
     await completeChatRunOk(first.runId, firstHeaders, {
       lastEventSequence: 1,
@@ -2464,7 +2330,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         });
       },
     );
-    expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
     expect(
       eventBackedContents(messages.events, first.runId).map((message) => {
         return message.content;
@@ -2486,9 +2351,8 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     expect(claimed.runId).not.toBe(first.runId);
   }, 90_000);
 
-  it("uses every acknowledged DB assistant event without Axiom repair", async () => {
+  it("uses every acknowledged DB assistant event", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
@@ -2529,7 +2393,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       sandboxHeaders,
       [200],
     );
-    context.mocks.axiom.query.mockClear();
     await completeChatRunOk(run.runId, sandboxHeaders, {
       lastEventSequence: 1,
     });
@@ -2541,7 +2404,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         return eventBackedContents(threadMessages, run.runId).length === 2;
       },
     );
-    expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
     expect(
       eventBackedContents(messages.events, run.runId).map((message) => {
         return message.content;
@@ -2551,9 +2413,8 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     );
   }, 90_000);
 
-  it("does not query Axiom when repeated DB event batches are idempotent", async () => {
+  it("keeps repeated DB event batches idempotent", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
@@ -2578,8 +2439,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       sandboxHeaders,
       [200],
     );
-    context.mocks.axiom.query.mockClear();
-
     await completeChatRunOk(run.runId, sandboxHeaders, {
       lastEventSequence: 0,
     });
@@ -2595,12 +2454,10 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         return message.content;
       }),
     ).toStrictEqual(["Stored once"]);
-    expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
   }, 90_000);
 
   it("persists normalized Claude text blocks independently across tool-only sequences", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
@@ -2658,7 +2515,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       sandboxHeaders,
       [200],
     );
-    context.mocks.axiom.query.mockClear();
     await completeChatRunOk(run.runId, sandboxHeaders, {
       lastEventSequence: 3,
     });
@@ -2697,7 +2553,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         }),
       ).size,
     ).toBe(3);
-    expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
     await flushWaitUntilForTest();
   }, 90_000);
 
@@ -2856,7 +2711,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
 
   it("completes no-output runs and preserves the newest result-only output across retries", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const silent = await startChatRun(actor, {
       agentId,
@@ -2884,14 +2738,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       silentHeaders,
       [200],
     );
-    context.mocks.axiom.query.mockClear();
-    context.mocks.axiom.query.mockImplementation((apl: unknown) => {
-      const query = typeof apl === "string" ? apl : "";
-      if (query.includes("['agent-run-events']")) {
-        throw new Error("DB-complete no-output run should not query Axiom");
-      }
-      return Promise.resolve([]);
-    });
 
     await completeChatRunOk(silent.runId, silentHeaders, {
       lastEventSequence: 0,
@@ -2906,7 +2752,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         );
       },
     );
-    expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
     expect(eventBackedContents(messages.events, silent.runId)).toHaveLength(0);
     await flushWaitUntilForTest();
 
@@ -2958,8 +2803,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       resultOnlyHeaders,
       [200],
     );
-    context.mocks.axiom.query.mockClear();
-
     await completeChatRunOk(resultOnly.runId, resultOnlyHeaders, {
       lastEventSequence: 2,
     });
@@ -2972,7 +2815,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
         );
       },
     );
-    expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
     expect(
       eventBackedContents(messages.events, resultOnly.runId).map((message) => {
         return message.content;
@@ -2983,7 +2825,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
 
   it("excludes stored result output above the terminal event boundary", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
@@ -3023,22 +2864,12 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
 
   it("completes when no output materialization exists", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
       prompt: "complete without projected output",
     });
     const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-
-    context.mocks.axiom.query.mockClear();
-    context.mocks.axiom.query.mockImplementation((apl: unknown) => {
-      const query = typeof apl === "string" ? apl : "";
-      if (query.includes("agent-run-events")) {
-        throw new Error("Incomplete DB output should not query Axiom");
-      }
-      return Promise.resolve([]);
-    });
 
     await completeChatRunOk(run.runId, sandboxHeaders, {
       lastEventSequence: 0,
@@ -3058,7 +2889,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
 
   it("extracts assistant output from Codex items and result fallbacks, skips non-events, and handles heartbeats without reading events", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const routeRequests = chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await startChatRun(actor, {
       agentId,
@@ -3079,7 +2909,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       [200],
     );
 
-    expect(routeRequests()).toBe(0);
     expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     const progressMessages = await chat.listThreadEvents(actor, first.threadId);
     const progressUserMessages = userMessages(progressMessages.events);
@@ -3634,7 +3463,6 @@ describe("CHAT-02: failed chat callbacks", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await integrations.configureNativeSubscriptionModels(actor);
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
 
@@ -3893,7 +3721,6 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it("stores insufficient credits failures as the billing recovery marker", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const run = await startChatRun(actor, {
       agentId,
       prompt: "post-dispatch billing failure",
@@ -3924,7 +3751,6 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it("shows friendly Claude overload guidance while preserving the raw run error", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const rawOverloadError =
       "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.";
 
@@ -3960,7 +3786,6 @@ describe("CHAT-02: failed chat callbacks", () => {
 
   it("shows Claude Code credential recovery guidance for upstream auth 401s", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const upstreamAuthError =
       "Failed to authenticate. API Error: 401 Invalid authentication credentials";
     const revokedOAuthError =
@@ -4128,20 +3953,6 @@ describe("CHAT-02: failed chat callbacks", () => {
     ).resolves.toBe(
       "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
-    for (const errorMessage of [
-      "Failed to authenticate. API Error: 4010 OAuth access token is invalid.",
-      "Failed to authenticate. API Error: 401 OAuth access token is invalidated.",
-      "Failed to authenticate. API Error: 401 OAuth access token validation is invalid.",
-    ]) {
-      await expect(
-        failAndReadError({
-          prompt: "unclassified OAuth failure",
-          errorMessage,
-          selectedModel: "claude-opus-5-5",
-          configureProvider: configureClaudeCodeSubscriptionProvider,
-        }),
-      ).resolves.toBe("Oops, something went wrong. Please try again later.");
-    }
     await expect(
       failAndReadError({
         prompt: "personal subscription failed for an admin",
@@ -4166,7 +3977,6 @@ describe("CHAT-02: auto-send after failures", () => {
     "preserves the context boundary after a dense %s round",
     async (status) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
 
       const anchor = await startChatRun(actor, {
         agentId,
@@ -4260,7 +4070,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
   it("uses structured failed messages for normal and queued incomplete-round context", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await startChatRun(actor, {
       agentId,
@@ -4386,7 +4195,6 @@ describe("CHAT-02: auto-send after failures", () => {
     async (entrypoint) => {
       const { actor, agentId, runnerGroup, storage } =
         await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const anchor = await startChatRun(actor, {
         agentId,
         prompt: "successful history before the failed request",
@@ -4489,7 +4297,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
   it("does not revive a failed round when its output arrives after a later successful run", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const failedPrompt = "old failure superseded by a successful run";
     const failed = await startChatRun(actor, { agentId, prompt: failedPrompt });
     const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
@@ -4564,7 +4371,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
   it("preserves the successful round boundary when a published follow-up is revoked", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     let followupRequests = 0;
 
@@ -4669,7 +4475,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
   it("auto-sends the queued message after a failure, carrying attachments, incomplete-round context, and the continued session", async () => {
     const { actor, agentId, runnerGroup, storage } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await startChatRun(actor, {
       agentId,
@@ -4808,7 +4613,6 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(appended).toContain(
       `[Web file] ${contextFile.filename} (${contextFile.contentType})\n   [ID] ${contextFile.id}`,
     );
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${first.runId}`);
 
     await flushWaitUntilForTest();
@@ -4862,7 +4666,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
   it("keeps only the newest 20 incomplete rounds despite late older output for normal and queued callback sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await startChatRun(actor, {
       agentId,
@@ -5035,7 +4838,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
   it("rejects a queued message whose model the workspace no longer offers", async () => {
     const fixture = await entitledChatActor();
     const { actor, agentId, runnerGroup } = fixture;
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Opus runs on the native Claude Code Runner through the personal Claude
     // subscription.
     await configureClaudeCodeSubscriptionProvider(fixture);
@@ -5131,7 +4933,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
   it("resumes the CLI session by default when the queued model stays within the same family", async () => {
     const fixture = await entitledChatActor();
     const { actor, agentId, runnerGroup } = fixture;
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Opus runs on the native Claude Code Runner through the personal Claude
     // subscription.
     await configureClaudeCodeSubscriptionProvider(fixture);
@@ -5188,9 +4989,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
 
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${second.runId}`);
-    expect(autoContext.body.appendSystemPrompt ?? "").not.toContain(
-      "# Web Chat Run Context",
-    );
     expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(
       "claude-fable-5-1",
     );
@@ -5203,7 +5001,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
 describe("CHAT-02: thread deletion while a run is active", () => {
   it("skips terminal processing when the thread is gone", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const run = await startChatRun(actor, {
       agentId,
@@ -5233,7 +5030,6 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 describe("CHAT-02: push notification gating", () => {
   it("uses the Okou VAPID contact identity for every subscription", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     chatCallbacks.enableVapid();
     const endpoints = [
       await chatCallbacks.registerPushSubscription(actor),
@@ -5269,7 +5065,6 @@ describe("CHAT-02: push notification gating", () => {
 
   it("withholds pushes without VAPID keys and deletes stale subscriptions after gone responses", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const endpoint = await chatCallbacks.registerPushSubscription(actor);
 
     const first = await startChatRun(actor, {

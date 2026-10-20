@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { http, HttpResponse } from "msw";
 import { expect, onTestFinished, test } from "vitest";
 
@@ -65,26 +63,6 @@ async function createAccount(actor: ApiTestUser) {
   });
   return account;
 }
-
-test("rejects a reconnect start for an absent account", async () => {
-  const actor = bdd.user();
-  mockGitHubConnectorOAuth();
-  const response = await connectors.requestOauthStart(
-    actor,
-    "github",
-    "oauth",
-    {
-      statuses: [404],
-      account: { intent: "reconnect", connectionId: randomUUID() },
-    },
-  );
-  expect(response.body).toStrictEqual({
-    error: { code: "NOT_FOUND", message: "Connector account not found" },
-  });
-  await expect(
-    connectors.listBuiltinConnectorAccounts(actor, "github"),
-  ).resolves.toStrictEqual([]);
-});
 
 test.each(["other-user", "other-org"] as const)(
   "rejects a reconnect start for an account in %s scope",

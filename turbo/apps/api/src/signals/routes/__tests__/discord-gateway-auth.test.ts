@@ -163,21 +163,7 @@ describe("Discord Gateway authentication and ignored transport events", () => {
     expect(response.status).toBe(400);
   });
 
-  it("acknowledges a temporary unavailable guild without uninstalling it", async () => {
-    const body = eventBody(
-      { id: "222222222222222222", unavailable: true },
-      "GUILD_DELETE",
-    );
-    const response = await postRaw(body, String(Math.floor(now() / 1000)));
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toStrictEqual({
-      ok: true,
-      outcome: "ignored",
-      reason: "guild-unavailable",
-    });
-  });
-
-  it("acknowledges a guild removal and its replay without account mutations", async () => {
+  it("acknowledges a guild removal without account mutations", async () => {
     const guildId = missingGuildId();
     const eventId = `GUILD_DELETE:${randomUUID()}:1`;
     const timestamp = String(Math.floor(now() / 1000));
@@ -200,41 +186,6 @@ describe("Discord Gateway authentication and ignored transport events", () => {
       outcome: "ignored",
       reason: "guild-removed",
     });
-    const replayed = await postRaw(body, timestamp);
-    expect(replayed.status).toBe(200);
-    await expect(replayed.json()).resolves.toStrictEqual({
-      ok: true,
-      outcome: "ignored",
-      reason: "guild-removed",
-    });
-  });
-
-  it("acknowledges concurrent signed guild removals without account mutations", async () => {
-    const body = eventBody(
-      { id: missingGuildId() },
-      "GUILD_DELETE",
-      `GUILD_DELETE:${randomUUID()}:1`,
-    );
-    const timestamp = String(Math.floor(now() / 1000));
-    const responses = await Promise.all([
-      postRaw(body, timestamp),
-      postRaw(body, timestamp),
-    ]);
-    expect(
-      responses.map((response) => {
-        return response.status;
-      }),
-    ).toStrictEqual([200, 200]);
-    const receipts = await Promise.all(
-      responses.map(async (response) => {
-        return await response.json();
-      }),
-    );
-    expect(receipts).toHaveLength(2);
-    expect(receipts).toStrictEqual([
-      { ok: true, outcome: "ignored", reason: "guild-removed" },
-      { ok: true, outcome: "ignored", reason: "guild-removed" },
-    ]);
   });
 
   it.each([

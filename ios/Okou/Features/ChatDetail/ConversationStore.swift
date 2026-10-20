@@ -60,7 +60,6 @@ final class ConversationStore {
   let measurements = ConversationMeasurementCache()
   let activitySummary: ConversationActivitySummary
   private var detailOwner: UUID?
-  private var activitySummaryEnabled = false
 
   private let sync: ChatSync
   private let commands: ChatCommands
@@ -274,11 +273,6 @@ final class ConversationStore {
     await task.value
   }
 
-  func setActivitySummaryEnabled(_ enabled: Bool) {
-    activitySummaryEnabled = enabled
-    reconcileActivitySummary()
-  }
-
   func setDetailVisible(_ visible: Bool, owner: UUID) {
     if visible {
       detailOwner = owner
@@ -293,7 +287,7 @@ final class ConversationStore {
 
   func reconcileActivitySummary() {
     activitySummary.demand(
-      !closed && !needsUpgrade && activitySummaryEnabled && detailOwner != nil && isVisible()
+      !closed && !needsUpgrade && detailOwner != nil && isVisible()
         && !isStopping
         && history?.executionState == .running ? history?.activityRunID : nil)
   }

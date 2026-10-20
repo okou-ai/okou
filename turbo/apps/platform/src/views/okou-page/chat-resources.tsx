@@ -6,7 +6,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Package } from "lucide-react";
+import { Copy, Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -26,7 +26,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
+import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
@@ -86,30 +86,11 @@ function ChatResourcesButtonInner({
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
-  const content = useLastLoadable(resources.content$);
-  const data = useLastResolved(resources.content$);
-  const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  const origin = useGet(thread.relations.origin$);
-  const chats = useLastLoadable(thread.relations.chats.data$);
-  const hasRelations =
-    relationsEnabled &&
-    (origin?.kind === "source" ||
-      chats.state === "hasError" ||
-      (chats.state === "hasData" &&
-        (chats.data.items.length > 0 || chats.data.failed)));
-  if (
-    !hasRelations &&
-    content.state !== "hasError" &&
-    !data?.artifacts.length &&
-    !data?.links.length
-  ) {
-    return null;
-  }
+  const visible = open && boundary !== null;
 
   return (
     <Popover
-      open={open && boundary !== null}
+      open={visible}
       modal={false}
       onOpenChange={(nextOpen, details) => {
         if (details.reason === "trigger-press") {
@@ -188,7 +169,7 @@ function ChatResourcesButtonInner({
             "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody thread={thread} />
+        {visible ? <ChatResourcesBody thread={thread} /> : null}
       </PopoverContent>
     </Popover>
   );
@@ -201,7 +182,9 @@ function ResourceOutputRow({
   readonly artifact: ArtifactSummary;
   readonly thread: ChatPanelSignals;
 }) {
+  const { t } = useTranslation();
   const openArtifact = useSet(openThreadCatalogArtifact$);
+  const copyArtifact = useSet(copyChatResourceArtifact$);
   const pageSignal = useGet(pageSignal$);
   const changes = useGet(hostedSiteUrlChanges$);
   const titleLink =
@@ -231,20 +214,93 @@ function ResourceOutputRow({
         />
         <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
       </Button>
-      <CopyResourceLink
-        artifactId={artifact.id}
-        catalog={thread.resources.catalog}
-      />
+      <Button
+        showTooltip
+        variant="quiet"
+        size="icon-xs"
+        aria-label={t(($) => {
+          return $.chat.resources.copyLink;
+        })}
+        className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+        onClick={() => {
+          return detach(
+            copyArtifact(thread.resources.catalog, artifact.id, pageSignal),
+            Reason.DomCallback,
+          );
+        }}
+      >
+        <Copy size={14} />
+      </Button>
     </li>
+  );
+}
+
+function ChatResourcesStatus({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const content = useLastLoadable(thread.resources.content$);
+  const data = useLastResolved(thread.resources.content$);
+  const reload = useSet(thread.resources.catalog.reload$);
+  const origin = useGet(thread.relations.origin$);
+  const chats = useLastLoadable(thread.relations.chats.data$);
+  if (content.state === "hasError") {
+    return (
+      <div
+        role="alert"
+        className="flex items-center justify-between gap-2 py-3 text-xs text-muted-foreground"
+      >
+        <p>
+          {t(($) => {
+            return $.chat.resources.loadFailed;
+          })}
+        </p>
+        <Button variant="quiet" size="xs" onClick={reload}>
+          {t(($) => {
+            return $.chat.resources.retry;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  const hasContent =
+    origin?.kind === "source" ||
+    Boolean(data?.artifacts.length) ||
+    (chats.state === "hasData" && chats.data.items.length > 0);
+  if (hasContent) {
+    return null;
+  }
+  if (
+    data === null ||
+    content.state === "loading" ||
+    chats.state === "loading"
+  ) {
+    return (
+      <p role="status" className="py-4 text-sm text-muted-foreground">
+        {t(($) => {
+          return $.settings.shared.loading;
+        })}
+      </p>
+    );
+  }
+  if (data === undefined || chats.state !== "hasData" || chats.data.failed) {
+    return null;
+  }
+  return (
+    <p className="py-4 text-sm text-muted-foreground">
+      {t(($) => {
+        return $.artifacts.catalog.emptyTitle;
+      })}
+    </p>
   );
 }
 
 function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const artifactsId = `${thread.threadId}-resource-artifacts`;
   const { t } = useTranslation();
-  const content = useLastLoadable(thread.resources.content$);
   const data = useLastResolved(thread.resources.content$);
-  const reload = useSet(thread.resources.catalog.reload$);
   const [paging, loadMore] = useLoadableSet(thread.resources.catalog.loadMore$);
   const pageSignal = useGet(pageSignal$);
   const expanded = useGet(thread.resources.expandedSections$);
@@ -313,33 +369,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
             )}
           </section>
         )}
-        <ChatResourceLinks
-          thread={thread}
-          preview={{
-            limit: RESOURCE_PREVIEW_LIMIT,
-            expanded: expanded.links,
-            onToggle: (trigger) => {
-              toggleSection("links", trigger);
-            },
-          }}
-        />
-        {content.state === "hasError" && (
-          <div
-            role="alert"
-            className="flex items-center justify-between gap-2 py-3 text-xs text-muted-foreground"
-          >
-            <p>
-              {t(($) => {
-                return $.chat.resources.loadFailed;
-              })}
-            </p>
-            <Button variant="quiet" size="xs" onClick={reload}>
-              {t(($) => {
-                return $.chat.resources.retry;
-              })}
-            </Button>
-          </div>
-        )}
+        <ChatResourcesStatus thread={thread} />
       </div>
     </>
   );

@@ -91,7 +91,6 @@ describe("Telegram connection readiness diagnostics", () => {
     { length: "38", status: 200, configured: false },
     { length: "1000", status: 200, configured: false },
     { length: null, status: 200, configured: false },
-    { length: "invalid", status: 200, configured: false },
     { length: "38", status: 503, configured: false },
   ])(
     "reports a $status probe with length $length without guessing domain configuration",

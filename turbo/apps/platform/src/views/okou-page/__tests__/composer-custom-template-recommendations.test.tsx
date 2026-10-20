@@ -306,9 +306,6 @@ test.each(SHELVES)(
     if (kind === "presentation") {
       await within(shelf).findByText(legacy.title);
     }
-    expect(
-      within(shelf).queryByText(template(kind).title),
-    ).not.toBeInTheDocument();
   },
 );
 

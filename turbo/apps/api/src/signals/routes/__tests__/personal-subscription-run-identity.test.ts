@@ -810,32 +810,28 @@ describe("personal subscription run identity", () => {
     );
   });
 
-  it.each([false, true])(
-    "retains pending bindings when a replacement changes the active identity (organization API: %s)",
-    async () => {
-      const f = await fixture("codex-oauth-token");
+  it("retains pending bindings when a replacement changes the active identity", async () => {
+    const f = await fixture("codex-oauth-token");
 
-      const first = await f.start();
-      const pending = await f.start();
-      const firstClaim = await f.claim(first);
-      const captured = accountId(firstClaim, f.type);
-      await connect(f.actor, f.type, "identity-b");
-      await expect(resolve(firstClaim, f.type)).resolves.toMatchObject({
-        "ChatGPT-Account-ID": "identity-a",
-      });
-      const pendingClaim = await f.claim(pending);
-      expect(accountId(pendingClaim, f.type)).toBe(captured);
-      await expect(resolve(pendingClaim, f.type)).resolves.toMatchObject({
-        "ChatGPT-Account-ID": "identity-a",
-      });
-      await runs.requestCancelRun(f.actor, first, [200]);
-      await runs.requestCancelRun(f.actor, pending, [200]);
-      expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-        captured,
-      );
-    },
-    20_000,
-  );
+    const first = await f.start();
+    const pending = await f.start();
+    const firstClaim = await f.claim(first);
+    const captured = accountId(firstClaim, f.type);
+    await connect(f.actor, f.type, "identity-b");
+    await expect(resolve(firstClaim, f.type)).resolves.toMatchObject({
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    const pendingClaim = await f.claim(pending);
+    expect(accountId(pendingClaim, f.type)).toBe(captured);
+    await expect(resolve(pendingClaim, f.type)).resolves.toMatchObject({
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    await runs.requestCancelRun(f.actor, first, [200]);
+    await runs.requestCancelRun(f.actor, pending, [200]);
+    expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
+      captured,
+    );
+  }, 20_000);
 
   it("keeps both admitted identities when reconnect merges a duplicate account", async () => {
     const f = await fixture("codex-oauth-token");

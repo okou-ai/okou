@@ -704,11 +704,6 @@ describe("connector catalog v4 preparation", () => {
     expect((await sync()).body.outcome).toBe("accepted");
 
     const catalog = await publicCatalog();
-    const slugs = catalog.body.connectors.map((connector) => {
-      return connector.slug;
-    });
-    expect(slugs).not.toContain("attio");
-    expect(slugs).not.toContain("monday");
     expect(catalog.body.connectors).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ slug: "attio-mcp", popularityRank: 25 }),

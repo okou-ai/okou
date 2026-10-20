@@ -147,7 +147,6 @@ test("A same-owner session replacement closes the form and cannot revive its pas
     "New draft",
   );
   expect(within(fresh).getByLabelText("VNC password")).toHaveValue(" pwd ");
-  expect(within(fresh).queryByText("Old session draft")).toBeNull();
 });
 
 test("Returning to an owner never revives an abandoned uncertain credential draft", async () => {

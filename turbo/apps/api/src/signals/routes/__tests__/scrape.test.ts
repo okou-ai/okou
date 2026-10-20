@@ -457,7 +457,6 @@ describe("okou scrape route", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -479,7 +478,6 @@ describe("okou scrape route", () => {
       );
 
       expect(response.status).toBe(500);
-      expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
     },
   );

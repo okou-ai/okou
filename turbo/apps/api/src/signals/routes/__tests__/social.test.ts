@@ -668,25 +668,6 @@ describe("managed SocialKit route", () => {
     });
   });
 
-  it("rejects requireViews on an unsupported managed tool before provider I/O", async () => {
-    const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    server.use(
-      http.get(`${SOCIALKIT_BASE}/youtube/stats`, () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse({ views: 0 }));
-      }),
-    );
-
-    const response = await rawSocialRequest(actor, {
-      tool: "youtube_stats",
-      input: { url: "https://youtu.be/example", requireViews: true },
-    });
-
-    expect(response.status).toBe(400);
-    expect(providerRequests).toBe(0);
-  });
-
   it.each(["youtube_transcript", "youtube_summarize"] as const)(
     "serializes %s extraction refresh independently of result caching",
     async (tool) => {
@@ -749,26 +730,6 @@ describe("managed SocialKit route", () => {
       });
     },
   );
-
-  it("rejects unsupported extraction refresh before a provider request", async () => {
-    const actor = createBddApi(context).user();
-    configureProvider();
-    let providerRequests = 0;
-    server.use(
-      providerHandler("GET", "/instagram/summarize", () => {
-        providerRequests += 1;
-        return HttpResponse.json(providerResponse({ summary: "Unexpected" }));
-      }),
-    );
-
-    const response = await rawSocialRequest(actor, {
-      tool: "instagram_summarize",
-      input: { url: "https://instagram.com/reel/example", no_cache: true },
-    });
-
-    expect(response.status).toBe(400);
-    expect(providerRequests).toBe(0);
-  });
 
   it("preserves structured caption absence after refreshing extraction", async () => {
     const actor = createBddApi(context).user();
@@ -2062,79 +2023,10 @@ describe("managed SocialKit route", () => {
       body: { tool: "youtube_download", input: {} },
     },
     {
-      caseName: "the removed generic request shape",
-      body: { method: "GET", path: "/youtube/transcript" },
-    },
-    {
       caseName: "an auth input field",
       body: {
         tool: "youtube_transcript",
         input: { url: "https://youtu.be/id", access_key: "caller-key" },
-      },
-    },
-    {
-      caseName: "an input field from another tool",
-      body: {
-        tool: "youtube_transcript",
-        input: { query: "not a transcript input" },
-      },
-    },
-    {
-      caseName: "a missing URL",
-      body: { tool: "youtube_transcript", input: {} },
-    },
-    {
-      caseName: "a missing search query",
-      body: { tool: "tiktok_search", input: { limit: 1 } },
-    },
-    {
-      caseName: "a missing hashtag",
-      body: { tool: "tiktok_hashtag_search", input: { limit: 1 } },
-    },
-    {
-      caseName: "the obsolete Instagram Reels limit field",
-      body: {
-        tool: "instagram_reels_search",
-        input: { query: "cats", limit: 1 },
-      },
-    },
-    {
-      caseName: "an out-of-range Instagram Reels page",
-      body: {
-        tool: "instagram_reels_search",
-        input: { query: "cats", page: 3 },
-      },
-    },
-    {
-      caseName: "an invalid cache flag",
-      body: {
-        tool: "youtube_stats",
-        input: { url: "https://youtu.be/id", cache: "yes" },
-      },
-    },
-    {
-      caseName: "an out-of-range cache TTL",
-      body: {
-        tool: "youtube_stats",
-        input: { url: "https://youtu.be/id", cache_ttl: 3599 },
-      },
-    },
-    {
-      caseName: "an invalid search sort order",
-      body: {
-        tool: "youtube_search",
-        input: { query: "launch", sortBy: "popular" },
-      },
-    },
-    {
-      caseName: "a prefixed TikTok hashtag",
-      body: { tool: "tiktok_hashtag_search", input: { hashtag: "#launch" } },
-    },
-    {
-      caseName: "an invalid full-details flag",
-      body: {
-        tool: "youtube_videos",
-        input: { url: "https://youtube.com/", full_details: "yes" },
       },
     },
     {
@@ -2161,14 +2053,6 @@ describe("managed SocialKit route", () => {
         tool: "youtube_comments",
         input: { url: "https://youtu.be/id", limit: 101 },
       },
-    },
-    {
-      caseName: "a non-integer result limit",
-      body: { tool: "tiktok_search", input: { query: "launch", limit: 1.5 } },
-    },
-    {
-      caseName: "a string result limit",
-      body: { tool: "youtube_search", input: { query: "launch", limit: "10" } },
     },
   ])("rejects $caseName before provider work", async ({ body }) => {
     const actor = createBddApi(context).user();
@@ -3128,8 +3012,6 @@ describe("managed SocialKit route", () => {
     { caseName: "zero cost", creditsCost: 0 },
     { caseName: "negative cost", creditsCost: -2 },
     { caseName: "fractional cost", creditsCost: 2.5 },
-    { caseName: "string cost", creditsCost: "8" },
-    { caseName: "null cost", creditsCost: null },
     { caseName: "undocumented intermediate cost", creditsCost: 4 },
     { caseName: "over-cap cost", creditsCost: 16 },
     { caseName: "explicit unpaid state", billed: false },

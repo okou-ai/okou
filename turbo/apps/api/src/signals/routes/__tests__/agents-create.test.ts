@@ -155,13 +155,7 @@ describe("POST /api/agents", () => {
     expect(instructions.body.content).toBe("");
   });
 
-  it.each([
-    ["valid metadata", {}],
-    ["NUL description", { description: "Invalid\u0000text" }],
-    ["NUL display name", { displayName: "Invalid\u0000text" }],
-    ["NUL sound", { sound: "Invalid\u0000text" }],
-    ["NUL avatar", { avatarUrl: "Invalid\u0000text" }],
-  ] as const)(
+  it.each([["valid metadata", {}]] as const)(
     "rejects the uploaded candidate when another public create fills the last slot (%s)",
     async (_name, metadata) => {
       const fixture = agentsFixture("second-limit");

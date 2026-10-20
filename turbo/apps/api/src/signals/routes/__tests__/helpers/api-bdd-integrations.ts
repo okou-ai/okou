@@ -19,7 +19,6 @@ import {
   integrationsSlackMessageContract,
   integrationsSlackUploadCompleteContract,
   integrationsSlackUploadInitContract,
-  integrationsTelegramUploadCompleteContract,
   type GithubUploadCompleteBody,
   type GithubUploadInitBody,
   type PhoneUploadCompleteBody,
@@ -30,7 +29,6 @@ import {
   type SlackUploadCompleteBody,
   type SlackUploadInitBody,
   type TelegramUploadInitBody,
-  type TelegramUploadCompleteBody,
 } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import {
@@ -809,23 +807,6 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
-    async requestSlackConnect(
-      actor: ApiTestUser | null,
-      body: SlackConnectBody,
-      statuses: readonly (202 | 400 | 401 | 403 | 404)[],
-    ) {
-      const client = setupApp({ context, routes: slackConnectRoutes })(
-        slackConnectContract,
-      );
-      return await accept(
-        client.connect({
-          headers: authenticate(context, routeMocks, actor),
-          body: { ...body, requestUserScopes: true },
-        }),
-        statuses,
-      );
-    },
-
     async requestSlackOauthInstall(
       query: {
         readonly orgId?: string;
@@ -1514,24 +1495,6 @@ export function createBddIntegrationApi(context: TestContext) {
       })(integrationsTelegramUploadInitContract);
       return await accept(
         client.init({
-          headers: authenticate(context, routeMocks, actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestTelegramUploadComplete(
-      actor: ApiTestUser | null,
-      body: TelegramUploadCompleteBody,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 502)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramUploadCompleteRoutes,
-      })(integrationsTelegramUploadCompleteContract);
-      return await accept(
-        client.complete({
           headers: authenticate(context, routeMocks, actor),
           body,
         }),

@@ -111,6 +111,14 @@ function builtinMcpConnectors(
       ) {
         return [];
       }
+      const runtimeAvailable =
+        builtinConnectorCredentialStatusWithMethod({
+          method: runtimeMethod.method,
+          automaticAuthType: row.automaticAuthType,
+          storedNeedsReconnect: row.needsReconnect,
+          tokenExpiresAt: row.tokenExpiresAt,
+          now: nowDate(),
+        }) === "available";
       return [
         {
           target: { kind: "builtin", connectorSlug: row.slug },
@@ -119,14 +127,8 @@ function builtinMcpConnectors(
           displayName: connector.catalogConnector.label,
           transport: mcp.transport,
           endpoint: mcp.endpoint,
-          connected:
-            builtinConnectorCredentialStatusWithMethod({
-              method: runtimeMethod.method,
-              automaticAuthType: row.automaticAuthType,
-              storedNeedsReconnect: row.needsReconnect,
-              tokenExpiresAt: row.tokenExpiresAt,
-              now: nowDate(),
-            }) === "available",
+          runtimeAvailable,
+          connected: runtimeAvailable,
         },
       ];
     });
@@ -323,6 +325,7 @@ export function runMcpConnectorList(
         displayName: response.displayName,
         transport: response.transport,
         endpoint: response.endpoint,
+        runtimeAvailable: response.connected,
         connected: response.connected,
       };
     });

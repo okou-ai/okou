@@ -2145,7 +2145,7 @@
       "skipAutomationEvent": "Skip automation event"
     },
     "relations": {
-      "communications": "Messages",
+      "communications": "Chats",
       "idle": "Idle",
       "loadFailed": "Could not load",
       "messageUnavailable": "Message unavailable",
@@ -2177,11 +2177,8 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
-      "links": "Links",
       "loadFailed": "Could not load resources",
-      "loadingLinks": "Loading links",
       "retry": "Try again",
       "title": "Resources"
     },
@@ -5167,7 +5164,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent. Retry when reconciliation finishes.",
-        "description": "Daily priorities at 7:00 AM in your time zone.",
+        "description": "Daily priorities by 7:00 AM in your time zone.",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
         "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",

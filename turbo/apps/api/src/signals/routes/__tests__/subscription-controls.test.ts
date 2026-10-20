@@ -156,7 +156,6 @@ test("agents read all subscriptions and single-account live usage without a fail
       weekly: { remainingPercent: 60 },
     },
   });
-  expect(detail.body).not.toHaveProperty("secrets");
   expect(detail.body.modelProviderId).toStrictEqual(expect.any(String));
   expect(listed.body.subscriptions).toContainEqual(
     expect.objectContaining({

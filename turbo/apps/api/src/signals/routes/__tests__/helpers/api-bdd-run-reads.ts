@@ -128,19 +128,6 @@ export function createRunReadsApi(context: TestContext) {
       );
     },
 
-    /** Exercises the HTTP boundary with a query shape from a removed client. */
-    async requestListLogsWithRemovedAutomationSource(
-      actor: ApiTestUser | null,
-    ) {
-      return await accept(
-        setupApp({ context, routes: logsRoutes })(logsListContract).list({
-          headers: authenticate(context, actor),
-          query: { triggerSource: "automation" } as unknown as LogsListQuery,
-        }),
-        [400],
-      );
-    },
-
     /** Lists logs with a raw bearer credential (Okou run token). */
     async requestListLogsAs<TStatus extends 200 | 401 | 403>(
       authorization: string,

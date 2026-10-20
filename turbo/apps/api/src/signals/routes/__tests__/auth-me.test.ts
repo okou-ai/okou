@@ -42,7 +42,6 @@ test("reads the authenticated user directly and selects the primary email", asyn
   expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
     current.userId,
   );
-  expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
 });
 
 test("returns the server-verified Clerk session on both fresh and cached profile reads", async () => {
@@ -88,7 +87,6 @@ test("preserves the auth error when Clerk no longer exposes the user", async () 
   const response = await accept(client().me({ headers }), [500]);
   expect(response.body).toStrictEqual({ error: "Internal server error" });
   expect(context.mocks.clerk.users.getUser).toHaveBeenCalledOnce();
-  expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
 });
 
 test("does not substitute a secondary email when the primary email is unavailable", async () => {

@@ -101,7 +101,6 @@ async function waitForPickedInput(
 describe("CHAT-02: model-first routing", () => {
   it("adds Codex image upload guidance for web chat Codex sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const prompt =
       "generate an image in web chat using the aurora-21210 color palette";
 
@@ -156,7 +155,6 @@ describe("CHAT-02: model-first routing", () => {
       "Never send a reply automatically; the user always sends",
     );
     expect(appendSystemPrompt).toContain(CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET);
-    expect(appendSystemPrompt).not.toContain("When running in Codex");
     let previousSectionIndex = -1;
     for (const section of [
       "# Agent Identity",
@@ -175,7 +173,6 @@ describe("CHAT-02: model-first routing", () => {
 
   it("queues an existing-thread input with its model until the active run releases the thread", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -418,7 +415,6 @@ describe("CHAT-02: model-first routing", () => {
       claimChatRun,
     } = await publicChatActor(context);
     await own(async () => {
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       await api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
       });
@@ -537,7 +533,6 @@ describe("CHAT-02: model-first routing", () => {
 
   it("keeps the enqueued model after thread and member defaults change", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -633,7 +628,6 @@ describe("CHAT-02: model-first routing", () => {
 
   it("does not overwrite a concurrent explicit thread model selection", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -725,7 +719,6 @@ describe("CHAT-02: model-first routing", () => {
       claimChatRun,
     } = await publicChatActor(context);
     await own(async () => {
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       await api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-sonnet-5-5",
       });

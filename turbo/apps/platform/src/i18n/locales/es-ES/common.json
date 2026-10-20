@@ -2185,7 +2185,7 @@
       "skipAutomationEvent": "Omitir evento de automatización"
     },
     "relations": {
-      "communications": "Mensajes",
+      "communications": "Chats",
       "idle": "Inactivo",
       "loadFailed": "Error al cargar",
       "messageUnavailable": "Mensaje no disponible",
@@ -2218,11 +2218,8 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
-      "emptyLinks": "Aún no hay enlaces en este chat",
       "expand": "Expandir",
-      "links": "Enlaces",
       "loadFailed": "No se pudieron cargar los recursos",
-      "loadingLinks": "Cargando enlaces",
       "retry": "Reintentar",
       "title": "Recursos del chat"
     },
@@ -5242,7 +5239,7 @@
       },
       "morningBrief": {
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
-        "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
+        "description": "Prioridades diarias antes de las 7:00 en tu zona horaria.",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
         "preparationFailed": "La configuración se reintentará automáticamente. También puedes reintentar ahora.",

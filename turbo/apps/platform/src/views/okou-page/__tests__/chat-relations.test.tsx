@@ -192,7 +192,7 @@ test.each(["children", "communications"] as const)(
     ).toHaveTextContent("Slack");
     expect(within(sourcePanel).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(sourcePanel).queryByRole("region", { name: "Messages" }),
+      within(sourcePanel).queryByRole("region", { name: "Chats" }),
     ).not.toBeInTheDocument();
 
     response.resolve();
@@ -201,7 +201,7 @@ test.each(["children", "communications"] as const)(
     expect(within(panel).getByText("Slack")).toBeInTheDocument();
     expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(panel).getByRole("region", { name: "Messages" }),
+      within(panel).getByRole("region", { name: "Chats" }),
     ).toBeInTheDocument();
   },
 );
@@ -239,7 +239,6 @@ test("Keep loaded relationships visible while retrying a failed source", async (
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
-  expect(within(panel).queryByLabelText("Refresh")).not.toBeInTheDocument();
   retrying = true;
   click(buttonNamed("Try again", panel));
   await requested.promise;
@@ -249,7 +248,7 @@ test("Keep loaded relationships visible while retrying a failed source", async (
   await within(panel).findByText("Updated child");
 });
 
-test("Hide the resources popup and trigger when the last resource disappears", async () => {
+test("Keep the resources popup and trigger when the last resource disappears", async () => {
   let empty = false;
   await setupRelations({
     mock: () => {
@@ -272,19 +271,17 @@ test("Hide the resources popup and trigger when the last resource disappears", a
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
   click(buttonNamed("Try again", panel));
-  await waitFor(() => {
-    expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
-  });
+  await within(panel).findByText("No artifacts found");
+  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("region", { name: "Resources" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
+  ).toBeInTheDocument();
+  expect(buttonNamed("Open artifacts")).toBeEnabled();
 });
 
-test("Hide the next chat's popup while its relationships load", async () => {
+test("Keep the next chat's popup available while its relationships load", async () => {
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
@@ -326,11 +323,15 @@ test("Hide the next chat's popup while its relationships load", async () => {
       "Next related chat",
     );
   });
-  expect(
-    screen.queryByRole("region", { name: "Resources" }),
-  ).not.toBeInTheDocument();
-  response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(within(panel).findByRole("status")).resolves.toHaveTextContent(
+    "Loading",
+  );
+  expect(
+    within(panel).queryByText("Next related chat"),
+  ).not.toBeInTheDocument();
+  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
+  response.resolve();
   await within(panel).findByText("Research child");
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
 });
@@ -385,7 +386,6 @@ test("Show the first source and created chats, then open message rows in their r
   await expect(
     within(panel).findByText("Please check the launch plan"),
   ).resolves.toBeInTheDocument();
-  expect(panel.querySelector("[title]")).toBeNull();
   expect(within(panel).getAllByText("Sent", { exact: true })).toHaveLength(1);
   expect(within(panel).getAllByText("Received", { exact: true })).toHaveLength(
     1,
@@ -466,7 +466,7 @@ test("Show empty chats and unavailable relationship targets without inventing an
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
   expect(
-    within(panel).getByRole("region", { name: "Messages" }),
+    within(panel).getByRole("region", { name: "Chats" }),
   ).toBeInTheDocument();
 });
 
@@ -508,49 +508,31 @@ test("Keep resources and relationships hidden while chat resources are disabled"
     screen.queryByRole("region", { name: "Resources" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("region", { name: "Messages" }),
+    screen.queryByRole("region", { name: "Chats" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
 });
 
-test.each(["artifacts", "links"] as const)(
-  "Show %s without an empty related chats section",
-  async (resource) => {
-    await setupRelations({
-      events:
-        resource === "links"
-          ? [
-              {
-                id: RUN,
-                role: "user",
-                content: "[Reference](https://example.test/reference)",
-                runId: RUN,
-                createdAt: WHEN,
-              },
-            ]
-          : [prompt()],
-      mock: () => {
-        if (resource === "artifacts") {
-          context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-            return respond(200, {
-              artifacts: [artifactSummary(EVENT, "file", "report.pdf")],
-              nextCursor: null,
-            });
-          });
-        }
-      },
-    });
-    const popup = await screen.findByRole("region", { name: "Resources" });
-    await within(popup).findByText(
-      resource === "artifacts" ? "report.pdf" : "Reference",
-    );
-    expect(
-      within(popup).queryByRole("region", { name: "Messages" }),
-    ).not.toBeInTheDocument();
-  },
-);
+test("Show artifacts without an empty related chats section", async () => {
+  await setupRelations({
+    events: [prompt()],
+    mock: () => {
+      context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+        return respond(200, {
+          artifacts: [artifactSummary(EVENT, "file", "report.pdf")],
+          nextCursor: null,
+        });
+      });
+    },
+  });
+  const popup = await screen.findByRole("region", { name: "Resources" });
+  await within(popup).findByText("report.pdf");
+  expect(
+    within(popup).queryByRole("region", { name: "Chats" }),
+  ).not.toBeInTheDocument();
+});
 
 test("Keep received messages accessible when the peer is unavailable and avoid linking sent messages to it", async () => {
   await setupRelations({
@@ -682,7 +664,7 @@ test("Preview three unique chats and expand the complete list", async () => {
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   const messages = await within(panel).findByRole("region", {
-    name: "Messages",
+    name: "Chats",
   });
   expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).getAllByText("Child 1")).toHaveLength(1);
@@ -728,7 +710,7 @@ test("Show exactly three related chats without an expand control", async () => {
       });
     },
   });
-  const messages = await screen.findByRole("region", { name: "Messages" });
+  const messages = await screen.findByRole("region", { name: "Chats" });
   expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).queryByText("Expand")).not.toBeInTheDocument();
 });

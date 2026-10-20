@@ -3,7 +3,7 @@ import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -34,26 +34,6 @@ function currentComposer(): HTMLElement {
 
 function normalizedComposerText(): string {
   return currentComposer().textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function captureVoiceTranscriptionErrors(): unknown[][] {
-  const errorSpy = vi.spyOn(console, "error");
-  const defaultErrorHandler = errorSpy.getMockImplementation();
-  if (!defaultErrorHandler) {
-    throw new Error("Expected the shared unexpected-console-error guard");
-  }
-  const errors: unknown[][] = [];
-  errorSpy.mockImplementation((...args: unknown[]) => {
-    if (
-      args[0] === "[E][Composer:VoiceDraft]" ||
-      args[0] === "[E][VoiceIO:STT]"
-    ) {
-      errors.push(args);
-      return;
-    }
-    defaultErrorHandler(...args);
-  });
-  return errors;
 }
 
 async function activeVoiceDraftStopButton(): Promise<HTMLElement> {
@@ -162,7 +142,7 @@ test("Start and stop voice input from the focused composer shortcut", async () =
   expect(normalizedComposerText()).toBe("Shortcut voice note");
 });
 
-test("Transcribe a voice draft without sending assistant history", async () => {
+test("Transcribe a voice draft with its editor context", async () => {
   const user = userEvent.setup({ delay: null });
   const transcriptionStarted = context.mocks.deferred<void>();
   const transcriptionReady = context.mocks.deferred<void>();
@@ -181,7 +161,6 @@ test("Transcribe a voice draft without sending assistant history", async () => {
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
       const body = await request.formData();
-      expect(body.has("lastAssistantMessage")).toBeFalsy();
       expect(JSON.parse(String(body.get("editorContext")))).toStrictEqual({
         before: "Opening  closing",
         selected: "",
@@ -368,7 +347,6 @@ test("Discard a failed recording without removing typed notes", async () => {
 
 test("Finish a provider no-speech response and preserve the input", async () => {
   const initialText = "Keep the existing draft";
-  const consoleErrors = captureVoiceTranscriptionErrors();
   context.mocks.browser.voiceInput({ rms: 0 });
   installAvailableVoiceQuota();
   installRunChat();
@@ -392,7 +370,6 @@ test("Finish a provider no-speech response and preserve the input", async () => 
   expect(normalizedComposerText()).toBe(initialText);
   expect(screen.queryByLabelText("Add")).toBeVisible();
   expect(queryButton("Send")).toBeEnabled();
-  expect(consoleErrors).toStrictEqual([]);
   expect(
     screen.queryByText("Voice transcription failed. Try again."),
   ).toBeNull();

@@ -1,9 +1,10 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogDiscoveryResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse,
+  type PublicConnectorCatalogStatusReaderItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -27,8 +28,8 @@ const internalReloadBuiltinConnectors$ = state(0);
 
 /** UI completion is the saved default's configuration and credential facts. */
 export function withMemberAccountStatus<
-  T extends { readonly slug: ConnectorSlug; readonly connected: boolean },
->(item: T, summaries: ReadonlyMap<string, ConnectorAccountSummary>): T {
+  T extends { readonly slug: ConnectorSlug },
+>(item: T, summaries: ReadonlyMap<string, ConnectorAccountSummary>) {
   const account = summaries.get(
     connectorAccountTargetKey({ kind: "builtin", connectorSlug: item.slug }),
   )?.defaultConnection;
@@ -37,24 +38,34 @@ export function withMemberAccountStatus<
       "Connector account setup information is unavailable. Refresh and try again.",
     );
   }
+  return withMemberAccount(item, account);
+}
+
+/** Project a known canonical default for UI; unknown setup never claims readiness. */
+export function withMemberAccount<T extends { readonly slug: ConnectorSlug }>(
+  item: T,
+  account: ConnectorAccountSummary["defaultConnection"] | undefined,
+): T & {
+  readonly connected: boolean;
+  readonly connection: Exclude<
+    PlatformConnectorCatalogStatusItem["connection"],
+    undefined
+  >;
+} {
   return {
     ...item,
     connected:
       account?.connectionStatus === "connected" &&
       account.setupStatus === "complete",
-    ...("connection" in item
+    connection: account
       ? {
-          connection: account
-            ? {
-                id: account.id,
-                authMethod: account.authMethod,
-                externalUsername: account.externalUsername,
-                externalEmail: account.externalEmail,
-                reconnectReason: account.reconnectReason,
-              }
-            : null,
+          id: account.id,
+          authMethod: account.authMethod,
+          externalUsername: account.externalUsername,
+          externalEmail: account.externalEmail,
+          reconnectReason: account.reconnectReason,
         }
-      : {}),
+      : null,
   };
 }
 
@@ -228,7 +239,7 @@ export const loadConnectorCatalogItem$ = command(
     { get },
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
-  ): Promise<PlatformConnectorCatalogStatusItem | null> => {
+  ): Promise<PublicConnectorCatalogStatusReaderItem | null> => {
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
     const result = await accept(

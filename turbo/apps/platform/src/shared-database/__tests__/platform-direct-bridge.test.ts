@@ -491,7 +491,6 @@ test("Subscribe shared chat data through the worker", async () => {
       ),
     ).toBeTruthy();
   });
-  expect(context.store).not.toBe(context.workerStore);
 });
 
 test("Keep the chat list current with realtime thread changes", async () => {

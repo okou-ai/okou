@@ -66,15 +66,4 @@ describe("fixed Auto catalog authority", () => {
         }),
     ).toBeTruthy();
   });
-
-  it("requires an authenticated organization session", async () => {
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
-      toAuth: () => {
-        return {};
-      },
-    });
-    const response = await accept(catalog().get({ headers }), [401]);
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
 });

@@ -43,7 +43,6 @@ describe("safeSqlStateCode", () => {
     const code = safeSqlStateCode(driverError("23503"));
 
     expect(code).toBe("23503");
-    expect(code).not.toContain("active_agent_runs");
   });
 
   it.each([

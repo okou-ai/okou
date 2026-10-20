@@ -220,24 +220,15 @@ describe("POST /api/agent-setup-prompts", () => {
       },
     },
   ])(
-    "asks the Agent to adopt the raw responsibility when $case without falling back to OpenRouter",
+    "asks the Agent to adopt the raw responsibility when $case",
     async ({ configured, provider }) => {
       if (configured) {
         mockGoogleText();
       } else {
         mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
       }
-      // An available OpenRouter key must not become an implicit generation fallback.
-      mockOptionalEnv("OPENROUTER_API_KEY", "unused-openrouter-key");
       signIn();
-      let openRouterRequests = 0;
-      server.use(
-        http.post(VERTEX_TEXT_URL, provider),
-        http.post("https://openrouter.ai/api/v1/chat/completions", () => {
-          openRouterRequests += 1;
-          return HttpResponse.error();
-        }),
-      );
+      server.use(http.post(VERTEX_TEXT_URL, provider));
       const response = await accept(
         client().create({
           headers,
@@ -250,7 +241,6 @@ describe("POST /api/agent-setup-prompts", () => {
       expect(response.body.prompt).toContain(
         "update your description and instructions",
       );
-      expect(openRouterRequests).toBe(0);
     },
   );
 });

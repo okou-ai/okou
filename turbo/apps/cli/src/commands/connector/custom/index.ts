@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   getAgent,

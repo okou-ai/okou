@@ -2,9 +2,12 @@ import type { FormEvent } from "react";
 
 import {
   isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
   type CustomConnectorValueInput,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   Button,
   Dialog,
@@ -358,12 +361,13 @@ export function CustomConnectorConnectDialog(
 ) {
   const { connector } = props;
   if (isIntegrationManagedCustomConnector(connector)) {
+    const status = customConnectorManagedStatusSchema.parse(connector);
     return (
       <CustomConnectorConnectDialogContent
         {...props}
         setupAvailable
-        missingRequiredFields={connector.missingRequiredFields}
-        configuredFieldKeys={connector.configuredFieldKeys}
+        missingRequiredFields={status.missingRequiredFields}
+        configuredFieldKeys={status.configuredFieldKeys}
       />
     );
   }

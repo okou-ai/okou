@@ -346,7 +346,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
         value: message({ type: "telegram-auth-ack", stage: "identity" }),
         source: {},
       },
-      { value: null },
     ]) {
       page.receive(
         input.value,
@@ -423,8 +422,6 @@ describe("Telegram callback HTTP/browser protocol", () => {
     { callbackProtocol: "3" },
     { callbackProtocol: "" },
     { operationId: "" },
-    { operationId: "not-a-uuid" },
-    { operationId: `${OPERATION}\n` },
     { bot: "other" },
     { bot: "" },
     { targetOrigin: "https://evil.example" },

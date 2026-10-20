@@ -50,14 +50,16 @@ export function fallbackCategoryLabel(category: string): string {
  */
 function sortedCategoryConnectors<
   T extends {
-    connected: boolean;
+    connected?: boolean;
     label: string;
     popularityRank?: number;
   },
 >(items: readonly T[]): T[] {
   return [...items].sort((a, b) => {
-    if (a.connected !== b.connected) {
-      return a.connected ? -1 : 1;
+    const leftConnected = a.connected === true;
+    const rightConnected = b.connected === true;
+    if (leftConnected !== rightConnected) {
+      return leftConnected ? -1 : 1;
     }
     const rankDelta =
       (a.popularityRank ?? Number.MAX_SAFE_INTEGER) -
@@ -72,7 +74,7 @@ function sortedCategoryConnectors<
 export function groupConnectorsByCategory<
   T extends {
     category: string;
-    connected: boolean;
+    connected?: boolean;
     label: string;
     popularityRank?: number;
   },

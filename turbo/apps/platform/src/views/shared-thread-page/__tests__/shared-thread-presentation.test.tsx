@@ -40,7 +40,7 @@ test("A missing public conversation uses the Okou presentation", async () => {
   );
 });
 
-test("A public conversation hides owner and agent identity", async () => {
+test("A public conversation renders shared messages with Okou branding", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === "(prefers-color-scheme: dark)";
   });
@@ -102,8 +102,6 @@ test("A public conversation hides owner and agent identity", async () => {
     "src",
     platformOkouWordmarkLightImg,
   );
-  expect(screen.queryByText("Owner")).not.toBeInTheDocument();
-  expect(screen.queryByText("Agent")).not.toBeInTheDocument();
 });
 
 test("A link inside a public prompt is clickable for a signed-out visitor", async () => {

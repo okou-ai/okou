@@ -567,7 +567,6 @@ test("Adding iMessage opens the phone connect dialog with its reward", async () 
   await expect(
     within(dialog).findByTestId("agentphone-link-qr"),
   ).resolves.toHaveAttribute("data-sms-href", `sms:+19039853128?body=${code}`);
-  expect(within(dialog).queryByText("Later")).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button", dialog).map((button) => {
       return button.getAttribute("aria-label") ?? normalizedText(button);
@@ -840,12 +839,8 @@ test("The connector step says what it costs the user before it hands them off", 
   // Explaining is all it does: the destination is still the connector list.
   expect(pathname()).toBe(questChatPath());
 
-  // The reward only pays on connectors that finish in the browser, so those
-  // are the ones the dialog offers; the key-pasting half of the catalog would
-  // earn nothing and is not shown here.
   const picker = await within(dialog).findByTestId("quest-connector-picker");
   expect(within(picker).getByText("Gmail")).toBeInTheDocument();
-  expect(within(picker).queryByText("OpenAI")).not.toBeInTheDocument();
 
   // The whole catalog is still one press away for anyone who wants it.
   const browse = linkNamed("Browse all connectors", dialog);

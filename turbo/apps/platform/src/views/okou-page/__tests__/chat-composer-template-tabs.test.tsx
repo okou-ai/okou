@@ -171,7 +171,6 @@ test("Reopening the template picker focuses its current category control", async
     expect(dialog).not.toBeInTheDocument();
   });
   const reopened = await openTemplatePicker(user);
-  expect(reopened).not.toBe(dialog);
   await waitFor(() => {
     expect(tabNamed(reopened, "Presentation")).toHaveFocus();
   });

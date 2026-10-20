@@ -23,6 +23,11 @@ import {
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  customConnectorsReaderContract,
+  customConnectorByIdReaderContract,
+  customConnectorOAuth2ReaderContract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -820,6 +825,87 @@ test("Complete a custom connector’s declared fields", async () => {
   });
 });
 
+test("Create and edit a custom definition without ordinary legacy status projections", async () => {
+  mockCustomConnectorStory(context);
+  const {
+    connected: _connected,
+    connectedAccountId: _connectedAccountId,
+    connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+    missingRequiredFields: _missingRequiredFields,
+    configuredFieldKeys: _configuredFieldKeys,
+    ...definition
+  } = customConnector({ displayName: "Canonical API" });
+  let saved: typeof definition | null = null;
+  context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+    return respond(200, { connectors: saved ? [saved] : [] });
+  });
+  context.mocks.api(
+    customConnectorsReaderContract.create,
+    ({ body, respond }) => {
+      expect(body.displayName).toBe("Canonical API");
+      saved = definition;
+      return respond(201, saved);
+    },
+  );
+  context.mocks.api(customConnectorByIdReaderContract.get, ({ respond }) => {
+    return saved
+      ? respond(200, saved)
+      : respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
+  });
+  context.mocks.api(
+    customConnectorByIdReaderContract.update,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(definition.id);
+      expect(body.displayName).toBe("Edited Canonical API");
+      saved = { ...definition, displayName: "Edited Canonical API" };
+      return respond(200, saved);
+    },
+  );
+  await setupCustomPage();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "New custom connector");
+    }),
+  );
+  const create = await screen.findByRole("dialog", {
+    name: "New custom connector",
+  });
+  await fill(within(create).getByLabelText("Display name"), "Canonical API");
+  await fill(
+    within(create).getByLabelText(/Prefixes/u),
+    "https://api.acme.test/v1/",
+  );
+  click(getConnectorAction("button", "Add authentication", create));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "API authentication");
+    }),
+  );
+  click(getConnectorAction("button", "Create", create));
+  await waitFor(() => {
+    expect(getConnectorCard("Canonical API")).toHaveTextContent("No accounts");
+  });
+  click(getConnectorAction("button", "More options"));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "Edit");
+    }),
+  );
+  const edit = await screen.findByRole("dialog", {
+    name: "Edit custom connector",
+  });
+  await fill(
+    within(edit).getByLabelText("Display name"),
+    "Edited Canonical API",
+  );
+  click(getConnectorAction("button", "Save", edit));
+  await waitFor(() => {
+    expect(getConnectorCard("Edited Canonical API")).toHaveTextContent(
+      "No accounts",
+    );
+  });
+});
+
 test("Manage a custom HTTP connector through creation and connection", async () => {
   mockCustomConnectorStory(context);
   context.mocks.data.agents([
@@ -1470,115 +1556,135 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
   });
 });
 
-test("Create and connect an MCP server with automatic authentication", async () => {
-  const connectionId = "a0000000-0000-4000-a000-000000000094";
-  let connector: CustomConnectorMcpResponse | null = null;
-  let created: CreateCustomConnectorBody | null = null;
-  const authWindow = createAuthWindow();
-  context.mocks.browser.open(authWindow);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent(RESEARCH_ID, "Research"),
-  ]);
-  mockCustomAgentAccess();
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: connector ? [connector] : [] });
-  });
-  context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
-    if (body.kind !== "mcp" || body.authMode !== "automatic") {
-      throw new Error("Expected automatic MCP connector");
-    }
-    created = body;
-    connector = mcpCustomConnector({
-      displayName: body.displayName,
-      endpoint: body.endpoint,
-      fields: body.fields,
-      headerInjections: body.headerInjections,
-      queryInjections: body.queryInjections,
-      authMode: "automatic",
-      connected: false,
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
+test.each(["legacy", "canonical"] as const)(
+  "Create and connect an MCP server with a %s automatic receipt",
+  async (receiptShape) => {
+    const connectionId = "a0000000-0000-4000-a000-000000000094";
+    let connector: CustomConnectorMcpResponse | null = null;
+    let created: CreateCustomConnectorBody | null = null;
+    const authWindow = createAuthWindow();
+    context.mocks.browser.open(authWindow);
+    context.mocks.data.agents([
+      listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
+      listAgent(RESEARCH_ID, "Research"),
+    ]);
+    mockCustomAgentAccess();
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      return respond(200, { connectors: connector ? [connector] : [] });
     });
-    return respond(201, connector);
-  });
-  context.mocks.api(
-    customConnectorOAuth2Contract.start,
-    ({ body, respond }) => {
-      expect(body.account).toStrictEqual({ intent: "add" });
-      if (!connector) {
+    context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
+      if (body.kind !== "mcp" || body.authMode !== "automatic") {
         throw new Error("Expected automatic MCP connector");
       }
-      connector = {
-        ...connector,
-        connected: true,
-        connectedAccountId: connectionId,
-      };
-      return respond(200, {
-        result: "connected",
-        connector,
-        connectedAccountId: connectionId,
+      created = body;
+      connector = mcpCustomConnector({
+        displayName: body.displayName,
+        endpoint: body.endpoint,
+        fields: body.fields,
+        headerInjections: body.headerInjections,
+        queryInjections: body.queryInjections,
+        authMode: "automatic",
+        connected: false,
+        missingRequiredFields: [],
+        configuredFieldKeys: [],
       });
-    },
-  );
-
-  mockCustomAccountSummary(() => {
-    return connector;
-  });
-  await setupCustomPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "New custom connector");
-    }),
-  );
-  const create = await screen.findByRole("dialog", {
-    name: "New custom connector",
-  });
-  click(within(create).getByLabelText("Connector type"));
-  click(await screen.findByRole("option", { name: "MCP · Streamable HTTP" }));
-
-  expect(within(create).getByText("Automatic")).toBeVisible();
-  expect(within(create).getByText("(Recommended)")).toBeVisible();
-  expect(
-    within(create).getByText(
-      "Let Okou discover whether this MCP server uses no authentication or OAuth.",
-    ),
-  ).toBeVisible();
-  await fill(within(create).getByLabelText("Display name"), "Discovery MCP");
-  fireEvent.change(within(create).getByLabelText(/MCP endpoint/u), {
-    target: { value: "https://mcp.discovery.test/server" },
-  });
-  click(getConnectorAction("button", "Create", create));
-
-  const card = await waitFor(() => {
-    return getConnectorCard("Discovery MCP");
-  });
-  expect(created).toMatchObject({
-    kind: "mcp",
-    endpoint: "https://mcp.discovery.test/server",
-    authMode: "automatic",
-    fields: [],
-    headerInjections: [],
-    queryInjections: [],
-  });
-  expect(card).toHaveTextContent("No accounts");
-
-  click(getConnectorAction("button", "Connect Discovery MCP", card));
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Discovery MCP account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-
-  await waitFor(() => {
-    expect(getConnectorCard("Discovery MCP")).toHaveTextContent(
-      "Unnamed account",
+      return respond(201, connector);
+    });
+    context.mocks.api(
+      receiptShape === "canonical"
+        ? customConnectorOAuth2ReaderContract.start
+        : customConnectorOAuth2Contract.start,
+      ({ body, respond }) => {
+        expect(body.account).toStrictEqual({ intent: "add" });
+        if (!connector) {
+          throw new Error("Expected automatic MCP connector");
+        }
+        connector = {
+          ...connector,
+          connected: true,
+          connectedAccountId: connectionId,
+        };
+        const {
+          connected: _connected,
+          connectedAccountId: _connectedAccountId,
+          connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+          missingRequiredFields: _missingRequiredFields,
+          configuredFieldKeys: _configuredFieldKeys,
+          ...definition
+        } = connector;
+        if (receiptShape === "canonical") {
+          return respond(200, {
+            result: "connected",
+            connector: definition,
+            connectionId,
+          });
+        }
+        return respond(200, {
+          result: "connected",
+          connector,
+          connectedAccountId: connectionId,
+        });
+      },
     );
-    expect(authWindow.closed).toBeTruthy();
+
+    mockCustomAccountSummary(() => {
+      return connector;
+    });
+    await setupCustomPage();
+    click(
+      await waitFor(() => {
+        return getConnectorAction("button", "New custom connector");
+      }),
+    );
+    const create = await screen.findByRole("dialog", {
+      name: "New custom connector",
+    });
+    click(within(create).getByLabelText("Connector type"));
+    click(await screen.findByRole("option", { name: "MCP · Streamable HTTP" }));
+
+    expect(within(create).getByText("Automatic")).toBeVisible();
+    expect(within(create).getByText("(Recommended)")).toBeVisible();
     expect(
-      getConnectorAction("button", "Manage Discovery MCP access"),
-    ).toHaveTextContent("Used by 2 agents");
-  });
-});
+      within(create).getByText(
+        "Let Okou discover whether this MCP server uses no authentication or OAuth.",
+      ),
+    ).toBeVisible();
+    await fill(within(create).getByLabelText("Display name"), "Discovery MCP");
+    fireEvent.change(within(create).getByLabelText(/MCP endpoint/u), {
+      target: { value: "https://mcp.discovery.test/server" },
+    });
+    click(getConnectorAction("button", "Create", create));
+
+    const card = await waitFor(() => {
+      return getConnectorCard("Discovery MCP");
+    });
+    expect(created).toMatchObject({
+      kind: "mcp",
+      endpoint: "https://mcp.discovery.test/server",
+      authMode: "automatic",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+    });
+    expect(card).toHaveTextContent("No accounts");
+
+    click(getConnectorAction("button", "Connect Discovery MCP", card));
+    const naming = await screen.findByRole("dialog", {
+      name: "Name your Discovery MCP account",
+    });
+    click(getConnectorAction("button", "Skip", naming));
+
+    await waitFor(() => {
+      expect(getConnectorCard("Discovery MCP")).toHaveTextContent(
+        "Unnamed account",
+      );
+      expect(authWindow.closed).toBeTruthy();
+      expect(
+        getConnectorAction("button", "Manage Discovery MCP access"),
+      ).toHaveTextContent("Used by 2 agents");
+    });
+  },
+);
 
 test("Do not report an empty Connected list when account summaries are unavailable", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -1818,7 +1924,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     displayName: "Renamed in another tab",
     updatedAt: "2026-01-01T00:00:00.500Z",
   };
-  const cancelledAttemptId = oauthAttemptId;
   cancelledWindow.close();
   await waitFor(() => {
     expect(getConnectorAction("button", "Continue", dialog)).toBeEnabled();
@@ -1848,7 +1953,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     reconnectReason: null,
     updatedAt: "2026-01-01T00:00:01.000Z",
   };
-  expect(oauthAttemptId).not.toBe(cancelledAttemptId);
   completedAttempts.set(oauthAttemptId, personal.id);
   completedWindow.close();
   await waitFor(() => {

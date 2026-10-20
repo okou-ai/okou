@@ -16,7 +16,7 @@ const {
 } = createDesktopUpdatePublicApi(context);
 
 describe("desktop update routes", () => {
-  it("rejects unidentified and retired-product manifests and recovers when the publisher corrects them", async () => {
+  it("rejects unidentified manifests and recovers when the publisher corrects them", async () => {
     const url = okouZipUrl("1.2.3");
     const manifest = stableManifest("1.2.3", {
       "1.2.3": darwinArm64Release("1.2.3", url),
@@ -27,17 +27,15 @@ describe("desktop update routes", () => {
       releases: manifest.releases,
     };
 
-    for (const invalid of [unidentified, { ...manifest, product: "zero" }]) {
-      countingManifestHandler(() => {
-        return HttpResponse.json(invalid);
-      });
-      for (const path of [
-        "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
-        "http://api.test/api/desktop/updates/stable/darwin/arm64/dmg",
-      ]) {
-        const response = await appRequest(path);
-        expect(response.status).toBe(500);
-      }
+    countingManifestHandler(() => {
+      return HttpResponse.json(unidentified);
+    });
+    for (const path of [
+      "http://api.test/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
+      "http://api.test/api/desktop/updates/stable/darwin/arm64/dmg",
+    ]) {
+      const response = await appRequest(path);
+      expect(response.status).toBe(500);
     }
 
     mockDesktopUpdateManifest(manifest);

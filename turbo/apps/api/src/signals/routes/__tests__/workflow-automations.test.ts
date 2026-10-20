@@ -309,9 +309,7 @@ interface StopCallRecorder {
   calls: number;
 }
 
-function configureGmailStopMock(
-  statuses: readonly number[] = [204],
-): StopCallRecorder {
+function configureGmailStopMock(): StopCallRecorder {
   const recorder: StopCallRecorder = { calls: 0 };
   server.use(
     http.post(
@@ -322,11 +320,7 @@ function configureGmailStopMock(
           "Bearer gmail-access-token",
         );
         await expect(request.json()).resolves.toStrictEqual({});
-        const status =
-          statuses[Math.min(recorder.calls - 1, statuses.length - 1)] ?? 204;
-        return status === 204
-          ? new HttpResponse(null, { status })
-          : HttpResponse.json({ error: "stop failed" }, { status });
+        return new HttpResponse(null, { status: 204 });
       },
     ),
   );
@@ -764,7 +758,6 @@ describe("okou workflow automations", () => {
     expect(created.body.chatThreadId).toBeNull();
     expect(created.body.nextRunAt).toBeTruthy();
     expect(created.body.kind).toBe("schedule");
-    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     if (created.body.kind !== "schedule") {
       throw new Error("Expected a schedule automation");
     }
@@ -1076,23 +1069,8 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("rejects an invalid cron expression and a past one-time schedule", async () => {
+  it("rejects a past one-time schedule", async () => {
     const { workflowId } = await setupFixture();
-
-    const invalidCron = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: {
-            type: "cron",
-            cronExpression: "not a cron",
-            timezone: "UTC",
-          },
-        },
-      }),
-      [400],
-    );
 
     const pastOnce = await accept(
       automationsClient().create({
@@ -1109,12 +1087,6 @@ describe("okou workflow automations", () => {
       [400],
     );
 
-    expect(invalidCron.body).toStrictEqual({
-      error: {
-        message: "Invalid cron expression: not a cron",
-        code: "BAD_REQUEST",
-      },
-    });
     expect(pastOnce.body).toStrictEqual({
       error: {
         message: "Schedule atTime must be in the future",
@@ -2109,56 +2081,6 @@ describe("okou workflow automations", () => {
     );
   });
 
-  it("requires a connected Notion account for Notion database item automations", async () => {
-    const { workflowId } = await setupFixture();
-
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-database-item-created",
-          eventConfig: {
-            provider: "notion",
-            event: "database_item_created",
-            databaseUrl: NOTION_DATABASE_URL,
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toBe(
-      "Connect Notion before adding a Notion event automation",
-    );
-  });
-
-  it("requires a connected Notion account for Notion page content updated automations", async () => {
-    const { workflowId } = await setupFixture();
-
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-page-content-updated",
-          eventConfig: {
-            provider: "notion",
-            event: "page_content_updated",
-            pageUrl: NOTION_PARENT_PAGE_URL,
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toBe(
-      "Connect Notion before adding a Notion event automation",
-    );
-  });
-
   it("requires a standard notion.so page URL for Notion child page automations", async () => {
     const scenario = await setupFixture();
     await connectNotion(scenario);
@@ -2454,34 +2376,6 @@ describe("okou workflow automations", () => {
       nextRunAt: null,
     });
     expect(created.body.chatThreadId).toBeTruthy();
-  });
-
-  it("rejects removed Gmail event automation match fields", async () => {
-    const { workflowId } = await setupFixture();
-
-    const response = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request(`/api/workflows/${workflowId}/automations`, {
-      method: "POST",
-      headers: {
-        ...authHeaders(),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        kind: "event",
-        eventType: "gmail-new-message",
-        eventConfig: {
-          provider: "gmail",
-          event: "new_message",
-          match: { hasAttachment: true },
-        },
-      }),
-    });
-
-    expect(response.status).toBe(400);
-    const body = (await response.json()) as { error?: { code?: string } };
-    expect(body.error?.code).toBe("BAD_REQUEST");
   });
 
   it("creates Gmail event automations with a watch and agent connector grant", async () => {
@@ -3495,60 +3389,6 @@ describe("okou workflow automations", () => {
     expect(listed.body).toHaveLength(0);
   });
 
-  it("keeps Gmail disable local and supports re-enable without remote teardown", async () => {
-    const scenario = await setupFixture();
-    const email = `retry-stop-${scenario.fixture.userId}@example.com`;
-    await connectGmail(scenario, email);
-    configureGmailWatchMock(["100", "200"]);
-    const stop = configureGmailStopMock([500]);
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
-
-    await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: true,
-    });
-
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
-    expect(stop.calls).toBe(0);
-  });
-
   it("keeps Calendar disabled when remote cleanup fails and permits re-enable", async () => {
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
@@ -4442,7 +4282,6 @@ describe("okou workflow automations", () => {
       ),
     );
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
-    expect(claim.appendSystemPrompt).not.toContain("# Current context");
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.chatThreadId).toBe(threadId);

@@ -4,8 +4,6 @@ import Textual
 
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
-  let supportsAttachments: Bool
-  let supportsActivitySummary: Bool
   let topContentInset: CGFloat
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,12 +12,9 @@ struct ChatDetailView: View {
   @State private var activityOwner = UUID()
 
   init(
-    conversation: ConversationStore, supportsAttachments: Bool = false,
-    supportsActivitySummary: Bool = false, topContentInset: CGFloat = 0
+    conversation: ConversationStore, topContentInset: CGFloat = 0
   ) {
     self.conversation = conversation
-    self.supportsAttachments = supportsAttachments
-    self.supportsActivitySummary = supportsActivitySummary
     self.topContentInset = topContentInset
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
@@ -68,11 +63,7 @@ struct ChatDetailView: View {
     .ignoresSafeArea(.container, edges: .vertical)
     .onAppear {
       scrolling.activate(reduceMotion: reduceMotion)
-      conversation.setActivitySummaryEnabled(supportsActivitySummary)
       conversation.setDetailVisible(true, owner: activityOwner)
-    }
-    .onChange(of: supportsActivitySummary) { _, enabled in
-      conversation.setActivitySummaryEnabled(enabled)
     }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
@@ -114,7 +105,7 @@ struct ChatDetailView: View {
         showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-        attachments: conversation.attachmentDraft, supportsAttachments: supportsAttachments,
+        attachments: conversation.attachmentDraft,
         draftState: conversation.composer,
         submit: {
           if history.canStop && !conversation.composer.hasContent {

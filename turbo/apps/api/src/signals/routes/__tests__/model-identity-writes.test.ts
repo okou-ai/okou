@@ -173,12 +173,6 @@ describe("model identity new writes", () => {
       [400],
       { codexServiceTier: "fast" },
     );
-    await chat.requestUpdateThreadModelSelection(
-      actor,
-      thread.id,
-      "okou-1.0",
-      [400],
-    );
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({

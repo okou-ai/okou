@@ -137,9 +137,7 @@ private struct WorkspaceRootView: View {
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, supportsAttachments: store.list.canAttachFiles,
-              supportsActivitySummary: store.list.canShowActivitySummaries,
-              topContentInset: headerHeight
+              conversation: conversation, topContentInset: headerHeight
             )
             .id(conversation.thread.id)
           } else {
@@ -152,7 +150,6 @@ private struct WorkspaceRootView: View {
                   needsUpgrade: store.needsUpgrade,
                   error: store.error ?? store.list.error, attachmentURL: store.webURL,
                   attachments: composer.attachments,
-                  supportsAttachments: store.list.canAttachFiles,
                   draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
                   modelSelection: store.newModelSelection)

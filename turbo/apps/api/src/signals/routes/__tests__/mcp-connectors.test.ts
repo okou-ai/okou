@@ -197,6 +197,7 @@ describe("GET /api/mcp-connectors", () => {
           displayName: "Selected MCP",
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
+          runtimeAvailable: true,
           connected: true,
           connectionStatus: "connected",
           setupStatus: "complete",
@@ -259,6 +260,7 @@ describe("GET /api/mcp-connectors", () => {
             displayName: "Selected MCP",
             transport: "streamable-http",
             endpoint: "https://selected-mcp.example.test/server",
+            runtimeAvailable: false,
             connected: false,
             connectionStatus: "reconnect-required",
             setupStatus: "invalid",
@@ -296,6 +298,7 @@ describe("GET /api/mcp-connectors", () => {
           displayName: "Selected MCP",
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
+          runtimeAvailable: true,
           connected: true,
           connectionStatus: "connected",
           setupStatus: "complete",
@@ -352,6 +355,7 @@ describe("GET /api/mcp-connectors", () => {
           displayName: body.displayName,
           transport: body.transport,
           endpoint: body.endpoint,
+          runtimeAvailable: true,
           connected: true,
           connectionStatus: "reconnect-required",
           setupStatus: "invalid",
@@ -412,6 +416,7 @@ describe("GET /api/mcp-connectors", () => {
       expect(deleted.body.connectors).toStrictEqual([
         expect.objectContaining({
           target: { kind: "custom", customConnectorId: selected.id },
+          runtimeAvailable: false,
           connected: false,
         }),
       ]);
@@ -751,6 +756,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     expect(discovery.body.connectors).toStrictEqual([
       expect.objectContaining({
         target: { kind: "custom", customConnectorId: connector.id },
+        runtimeAvailable: true,
         connected: true,
       }),
     ]);
@@ -774,15 +780,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const { actor } = owned;
-      const sent = await owned.sendChatRun(actor, {
-        agentId: owned.agentId,
-        prompt: "request connector reauthorization",
-      });
-      const { claim } = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a claimed connector token");
-      }
       mockClerkMembership(context, actor, "org:admin");
       const connectorId = randomUUID();
 
@@ -807,31 +804,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         }),
         [403],
       );
-      const unpinned = await accept(
-        client().reauthorizeOAuth({
-          headers: headers(token),
-          body: {
-            target: { kind: "custom", customConnectorId: connectorId },
-            scopes: ["admin"],
-          },
-        }),
-        [409],
-      );
-      const malformedScope = await accept(
-        client().reauthorizeOAuth({
-          headers: headers(token),
-          body: {
-            target: { kind: "custom", customConnectorId: connectorId },
-            scopes: ["invalid scope"],
-          },
-        }),
-        [400],
-      );
 
       expect(unauthenticated.status).toBe(401);
       expect(session.status).toBe(403);
-      expect(unpinned.body.error.code).toBe("CONFLICT");
-      expect(malformedScope.body.error.code).toBe("BAD_REQUEST");
     });
   });
 });

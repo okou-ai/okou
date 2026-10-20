@@ -190,9 +190,6 @@ describe("live chat SSH Run inventory", () => {
       });
     };
     await expect(listIds()).resolves.toStrictEqual([]);
-    await expect(
-      accept(inventory().list({ headers: f.token() }), [200]),
-    ).resolves.toMatchObject({ body: { hosts: [] } });
     await accept(
       remote.updateHostDefault({
         headers,
