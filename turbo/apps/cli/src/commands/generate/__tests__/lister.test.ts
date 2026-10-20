@@ -9,6 +9,11 @@ import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/pai
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import {
+  connectorAccount,
+  connectorAccountSummary,
+  stubConnectorAccountSummaries,
+} from "../../__tests__/helpers/connector-accounts";
+import {
   catalogItem,
   catalogStatusItem,
   manualAuthMethod,
@@ -420,6 +425,16 @@ describe("okou generate lister", () => {
     vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
     server.use(stubConnectors([connector("fal", "default-account-a")]));
+    const target = { kind: "builtin", connectorSlug: "fal" } as const;
+    server.use(
+      stubConnectorAccountSummaries([
+        connectorAccountSummary(target, [
+          connectorAccount(target, {
+            externalUsername: "default-account-a",
+          }),
+        ]),
+      ]),
+    );
 
     await generateCommand.parseAsync(["node", "cli", "image"]);
 

@@ -7,6 +7,7 @@ import { getAgentUserBuiltinConnectors } from "../../../lib/api/domains/agents";
 import {
   listConnectorCatalog,
   listConnectorCatalogStatus,
+  listConnectorAccountSummaries,
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import {
@@ -15,6 +16,12 @@ import {
 } from "../../../lib/command/paid-tools";
 import { getOkouAgentId } from "../../../lib/okou-env";
 import { connectorActionUrl } from "../../connector/action-url";
+import { connectorAccountCliInventoryLabel } from "../../connector/account-label";
+import {
+  memberConnectorFacts,
+  memberConnectorStatusText,
+  type MemberConnectorFacts,
+} from "../../connector/member-status";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountLookups,
@@ -121,6 +128,8 @@ const GENERATION_TYPE_LABELS: Record<GenerationType, string> = {
 type CandidateStatus =
   | "ready"
   | "needs-reconnect"
+  | "needs-scope-update"
+  | "needs-account-review"
   | "not-authorized"
   | "not-connected"
   | "unavailable-for-run";
@@ -165,21 +174,10 @@ function getGenerationConnectors<T extends ConnectorCatalogItem>(
     });
 }
 
-function formatAccount(connector: ConnectorCatalogStatus): string | undefined {
-  if (connector.connection?.externalUsername) {
-    return `@${connector.connection.externalUsername}`;
-  }
-  if (connector.connection?.externalEmail) {
-    return connector.connection.externalEmail;
-  }
-  return undefined;
-}
-
 function getCurrentAction(
   status: CandidateStatus,
   connectorSlug: string,
   label: string,
-  agentId: string | undefined,
   platformOrigin: string,
 ): { actionLabel?: string; actionUrl?: string } {
   if (status === "needs-reconnect") {
@@ -189,21 +187,21 @@ function getCurrentAction(
     };
   }
 
-  if (status === "not-authorized" && agentId) {
+  if (status === "needs-account-review") {
     return {
-      actionLabel: `Authorize ${label}`,
-      actionUrl: `${platformOrigin}/connectors/${connectorSlug}/authorize?agentId=${agentId}`,
+      actionLabel: `Manage ${label} accounts`,
+      actionUrl: `${platformOrigin}/connectors`,
+    };
+  }
+
+  if (status === "needs-scope-update") {
+    return {
+      actionLabel: `Update ${label} permissions`,
+      actionUrl: `${platformOrigin}/connectors/${connectorSlug}/connect`,
     };
   }
 
   if (status === "not-connected") {
-    if (agentId) {
-      return {
-        actionLabel: `Connect and authorize ${label}`,
-        actionUrl: `${platformOrigin}/connectors/${connectorSlug}/connect?agentId=${agentId}`,
-      };
-    }
-
     return {
       actionLabel: `Connect ${label}`,
       actionUrl: `${platformOrigin}/connectors/${connectorSlug}/connect`,
@@ -215,52 +213,46 @@ function getCurrentAction(
 
 function toCurrentCandidate(params: {
   connector: ConnectorCatalogStatus;
-  authorizedConnectorSlugs: Set<string> | null;
-  agentId: string | undefined;
+  facts: MemberConnectorFacts;
   platformOrigin: string;
 }): GenerationCandidate {
-  const { connector, authorizedConnectorSlugs, agentId, platformOrigin } =
-    params;
+  const { connector, facts, platformOrigin } = params;
   const connectorSlug = connector.slug;
 
   let status: CandidateStatus;
   let reason: string;
 
-  if (connector.connectionStatus === "reconnect-required") {
+  if (facts.memberStatus === "reconnect-required") {
     status = "needs-reconnect";
     reason = "connected, reconnect required";
-  } else if (!connector.connected) {
+  } else if (facts.memberStatus === "not-connected") {
     status = "not-connected";
-    reason = agentId
-      ? "not connected or authorized for current agent"
-      : "not connected";
-  } else if (
-    authorizedConnectorSlugs &&
-    !authorizedConnectorSlugs.has(connectorSlug)
-  ) {
-    status = "not-authorized";
-    reason = "connected, not authorized for current agent";
+    reason = "not connected";
+  } else if (facts.memberStatus !== "connected") {
+    status = "needs-account-review";
+    reason = memberConnectorStatusText(facts);
+  } else if (facts.scopeMismatch) {
+    status = "needs-scope-update";
+    reason = "permissions update required";
   } else {
     status = "ready";
-    reason = agentId
-      ? "connected and authorized for current agent"
-      : "connected; agent authorization was not checked";
+    reason = "connected; agent authorization was not checked";
   }
 
+  const account = facts.accountSummary?.defaultConnection;
   return {
     connectorSlug,
     label: connector.label,
     status,
     reason,
-    account: connector.connected ? formatAccount(connector) : undefined,
-    authMethod: connector.connection?.authMethod,
-    ...getCurrentAction(
-      status,
-      connectorSlug,
-      connector.label,
-      agentId,
-      platformOrigin,
-    ),
+    account: account
+      ? connectorAccountCliInventoryLabel({
+          ...account,
+          connectionId: account.id,
+        })
+      : undefined,
+    authMethod: account?.authMethod,
+    ...getCurrentAction(status, connectorSlug, connector.label, platformOrigin),
   };
 }
 
@@ -564,14 +556,16 @@ export async function runLister(
       });
     });
   } else if (connectorGenerationType && catalog.kind === "current") {
-    candidates = getGenerationConnectors(
+    const connectors = getGenerationConnectors(
       connectorGenerationType,
       catalog.connectors,
-    ).map((connector) => {
+    );
+    const summaries =
+      connectors.length > 0 ? await listConnectorAccountSummaries() : new Map();
+    candidates = connectors.map((connector) => {
       return toCurrentCandidate({
         connector,
-        authorizedConnectorSlugs,
-        agentId,
+        facts: memberConnectorFacts(connector, summaries),
         platformOrigin,
       });
     });
