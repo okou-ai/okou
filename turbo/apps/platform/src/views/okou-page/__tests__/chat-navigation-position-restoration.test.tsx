@@ -647,11 +647,13 @@ test.each(["event", "run"])(
     expect(geometry.viewportOffsetFor("Linked message 6")).toBeGreaterThan(
       geometry.viewportHeight(),
     );
-    expect(
-      threadContainer(DEEP_LINK_THREAD_ID).querySelector(
-        "[data-locator-landed]",
-      ),
-    ).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        threadContainer(DEEP_LINK_THREAD_ID).querySelector(
+          "[data-locator-landed]",
+        ),
+      ).not.toBeNull();
+    });
     expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
   },
 );
@@ -713,9 +715,13 @@ test("Follow a run link in the current conversation", async () => {
     linkedText,
     geometry.viewportHeight() * 0.28,
   );
-  expect(
-    threadContainer(DEEP_LINK_THREAD_ID).querySelector("[data-locator-landed]"),
-  ).not.toBeNull();
+  await waitFor(() => {
+    expect(
+      threadContainer(DEEP_LINK_THREAD_ID).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).not.toBeNull();
+  });
   expect(buttonNamed("Scroll to bottom")).toBeInTheDocument();
 });
 

@@ -348,6 +348,19 @@ function ResourceChatRow({
             retry={retry}
           />
         )}
+        {expanded && !unavailable && (
+          // Received cards stay in this chat, so the chat itself needs a way in.
+          <Link
+            pathname={ROUTES.chat}
+            options={{ pathParams: { threadId: chat.threadId } }}
+            className="mb-1 ml-7 flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            {t(($) => {
+              return $.chat.origins.openChat;
+            })}
+            <ArrowUpRight aria-hidden="true" size={12} />
+          </Link>
+        )}
       </li>
     );
   }

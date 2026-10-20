@@ -34,7 +34,6 @@ export const RAIL_PADDING_PX = 24;
 const MAX_TICKS = 24;
 /** Fewer ticks read as stray dashes, not as a scale. */
 const SHOW_MIN_TURNS = 8;
-/** Where a jump parks its target inside the viewport. */
 /** Where a jump lands: a little context stays visible above the target. */
 const JUMP_VIEWPORT_RATIO = 0.28;
 /** Falloff radius, as a multiple of the tick interval, so density feels equal. */

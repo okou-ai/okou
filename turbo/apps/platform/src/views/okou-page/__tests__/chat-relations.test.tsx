@@ -10,7 +10,11 @@ import {
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { hash, pathname } from "../../../signals/location.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -591,6 +595,32 @@ test("Follow a sent message card to the run it started in the other chat", async
     expect(pathname()).toBe(`/chats/${PEER}`);
   });
   expect(hash()).toBe(`#run-${OTHER_RUN}`);
+});
+
+test("Open a chat that only sent messages here from its expanded history", async () => {
+  await setupRelations({
+    mock: () => {
+      mockCommunications(0, { receivedCount: 1 });
+      mockMessages([receivedMessage("The launch plan is ready")]);
+    },
+  });
+  const { panel } = await openMessages("Existing planning chat");
+  const reply = await within(panel).findByText("The launch plan is ready");
+  expect(reply.closest("a")).toHaveAttribute(
+    "href",
+    `/chats/${THREAD}#run-${RUN}`,
+  );
+  const open = queryAllByRoleFast("link", panel).find((link) => {
+    return link.textContent.trim() === "Open chat";
+  });
+  if (!open) {
+    throw new Error("Expected a link to the other chat");
+  }
+  expect(open).toHaveAttribute("href", `/chats/${PEER}`);
+  click(open);
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${PEER}`);
+  });
 });
 
 test("Keep received messages usable when the other chat is unavailable", async () => {
