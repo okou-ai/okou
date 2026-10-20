@@ -68,6 +68,30 @@ describe("Button", () => {
     expect(clicks).toBe(0);
   });
 
+  it("preserves the focused button and its ref across pending transitions", () => {
+    const ref = { current: null as HTMLButtonElement | null };
+    const { rerender } = render(<Button ref={ref}>Try again</Button>);
+    const button = screen.getByRole("button", { name: "Try again" });
+    button.focus();
+
+    rerender(
+      <Button ref={ref} pending>
+        Try again
+      </Button>,
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBe(button);
+    expect(ref.current).toBe(button);
+    expect(button).toHaveFocus();
+    expect(button).toHaveAttribute("aria-busy", "true");
+
+    rerender(<Button ref={ref}>Try again</Button>);
+    expect(screen.getByRole("button", { name: "Try again" })).toBe(button);
+    expect(ref.current).toBe(button);
+    expect(button).toHaveFocus();
+    expect(button).not.toHaveAttribute("aria-busy");
+    expect(button).not.toHaveAttribute("data-pending");
+  });
+
   it("states the neutral fill with overlays so the fill survives", () => {
     // A translucent `bg-state-*` sets `background-color` and would replace
     // `bg-control-surface`, dropping the fill's warm cast on hover.

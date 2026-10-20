@@ -27,6 +27,41 @@ export interface ButtonBaseProps extends Omit<
   tooltipFullWidth?: boolean;
 }
 
+/** Wraps a prepared button while its owner keeps ref forwarding in JSX. */
+export function withButtonTooltip(
+  button: React.ReactElement,
+  {
+    disabled,
+    showTooltip = false,
+    tooltipFullWidth = false,
+    "aria-label": label,
+  }: Pick<
+    ButtonBaseProps,
+    "disabled" | "showTooltip" | "tooltipFullWidth" | "aria-label"
+  >,
+) {
+  if (!showTooltip) return button;
+
+  const trigger = disabled ? (
+    <span className={cn("inline-flex", tooltipFullWidth && "w-full")}>
+      {button}
+    </span>
+  ) : (
+    button
+  );
+
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger render={trigger} />
+        <TooltipContent>
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 /** Internal rendering and tooltip behavior shared by styled button controls. */
 export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
   (
@@ -55,26 +90,12 @@ export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
       </ButtonPrimitive>
     );
 
-    if (!showTooltip) return button;
-
-    const trigger = buttonProps.disabled ? (
-      <span className={cn("inline-flex", tooltipFullWidth && "w-full")}>
-        {button}
-      </span>
-    ) : (
-      button
-    );
-
-    return (
-      <TooltipProvider delay={200}>
-        <Tooltip>
-          <TooltipTrigger render={trigger} />
-          <TooltipContent>
-            <p className="text-xs">{buttonProps["aria-label"]}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
+    return withButtonTooltip(button, {
+      disabled: buttonProps.disabled,
+      showTooltip,
+      tooltipFullWidth,
+      "aria-label": buttonProps["aria-label"],
+    });
   },
 );
 ButtonBase.displayName = "ButtonBase";
