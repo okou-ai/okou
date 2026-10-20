@@ -64,6 +64,8 @@ impl IdleSandboxIdentity {
 #[derive(Clone)]
 pub(super) struct IdleSandboxMetadata {
     pub(super) identity: IdleSandboxIdentity,
+    /// Actual producer; tenant-free blank preparation has no producing Run.
+    pub(super) source_run_id: Option<RunId>,
     /// Identity of the parked sandbox. Survives reuse (next job's `run_id`
     /// differs, but `sandbox_id` stays the same) and is the join key for
     /// doctor / kill / home-dir naming.
@@ -225,6 +227,7 @@ impl ParkedIdleCandidate {
             },
             metadata: IdleSandboxMetadata {
                 identity: IdleSandboxIdentity::Blank(sandbox_id),
+                source_run_id: None,
                 sandbox_id,
                 profile_name,
                 rootfs_hash,
@@ -264,6 +267,7 @@ impl ParkedIdleCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
+        debug_assert_eq!(self.metadata.source_run_id, Some(predecessor_run_id));
         debug_assert_eq!(
             self.metadata.history_generation_run_id,
             Some(predecessor_run_id)
@@ -316,6 +320,7 @@ impl ImmediateHandoffCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
+        debug_assert_eq!(self.metadata.source_run_id, Some(predecessor_run_id));
         debug_assert_eq!(
             self.metadata.history_generation_run_id,
             Some(predecessor_run_id)
@@ -397,7 +402,12 @@ impl FinalizingHandoffCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> Result<ReservedIdleSandbox, Box<Self>> {
-        if self.successor_run_id == successor_run_id
+        let source = match &self.candidate {
+            IdleParkCandidate::Ordinary(candidate) => candidate.metadata.source_run_id,
+            IdleParkCandidate::Immediate(candidate) => candidate.metadata.source_run_id,
+        };
+        if source == Some(predecessor_run_id)
+            && self.successor_run_id == successor_run_id
             && self.predecessor_run_id == predecessor_run_id
         {
             Ok(match self.candidate {
@@ -529,6 +539,7 @@ impl ReusableIdleSandbox {
         } = self;
         let IdleSandboxMetadata {
             identity,
+            source_run_id: _,
             sandbox_id: _,
             profile_name: _,
             rootfs_hash,
@@ -1092,6 +1103,10 @@ impl ReservedIdleSandbox {
 
     pub fn history_generation_run_id(&self) -> Option<RunId> {
         self.metadata().history_generation_run_id
+    }
+
+    pub fn source_run_id(&self) -> Option<RunId> {
+        self.metadata().source_run_id
     }
 
     pub fn validate_home_promotion_identity(

@@ -208,6 +208,8 @@ pub struct ExecutorConfig {
 
 /// Per-job sandbox parameters resolved from the profile config.
 pub struct JobParams {
+    /// Required producer for a source-home preference; checked under the cache entry lock.
+    pub home_source_run_id: Option<RunId>,
     pub profile_name: String,
     pub vcpu: u32,
     pub memory_mb: u32,

@@ -66,6 +66,7 @@ impl ActivationResources<'_> {
 }
 
 pub struct ReuseAdmissionRequest<'a> {
+    pub home_source_run_id: Option<RunId>,
     pub profile_name: &'a str,
     pub rootfs_hash: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
@@ -878,6 +879,7 @@ pub async fn try_reuse_from_pool(
     cancellation: &RunCancellationHandle,
 ) -> Result<ReuseFromPoolReady, ReuseFromPoolFailure> {
     let ReuseAdmissionRequest {
+        home_source_run_id,
         profile_name,
         rootfs_hash,
         device_rate_limits,
@@ -895,7 +897,9 @@ pub async fn try_reuse_from_pool(
     let started_at = Instant::now();
     // Take the entry under the pool lock, then drop the lock before any awaits
     // so unpark does not block other take/park operations.
-    let exact = {
+    let exact = if home_source_run_id.is_some() {
+        None
+    } else {
         let mut pool = ctx.idle_pool.lock().await;
         reuse_key
             .and_then(|reuse_key| pool.take_reserved(reuse_key))
@@ -903,11 +907,12 @@ pub async fn try_reuse_from_pool(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
-    let claimed_home_cache_reuse_key = ctx.home_cache.is_some()
-        && reuse_key.is_some_and(|reuse_key| {
-            ctx.home_cache_snapshot
-                .might_contain_home_cache_reuse_key(reuse_key)
-        });
+    let claimed_home_cache_reuse_key = home_source_run_id.is_some()
+        || ctx.home_cache.is_some()
+            && reuse_key.is_some_and(|reuse_key| {
+                ctx.home_cache_snapshot
+                    .might_contain_home_cache_reuse_key(reuse_key)
+            });
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),

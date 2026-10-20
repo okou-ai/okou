@@ -136,6 +136,7 @@ impl BlankPreparationResource {
             }
             Ok(IdleSandboxMetadata {
                 identity: super::IdleSandboxIdentity::Blank(self.config.id),
+                source_run_id: None,
                 sandbox_id: self.config.id,
                 profile_name: self.profile_name.clone(),
                 rootfs_hash: self.rootfs_hash.clone(),

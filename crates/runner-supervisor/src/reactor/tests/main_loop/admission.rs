@@ -1,12 +1,13 @@
 use super::super::super::*;
 use super::super::support::{
     SpeculativeIdleSeedSpec, TEST_HEARTBEAT_GENERATION, TEST_RUNNER_ID, assert_run_exits_within,
-    context_with_session, minimal_context, mock_run_config, mock_run_config_with_overrides,
-    push_job, seed_home_cache_state, seed_idle_pool, seed_idle_pool_with_history_generation,
-    seed_idle_pool_with_overrides, seed_idle_pool_with_speculative_timezone, shutdown,
-    status_idle_reuse_keys_and_active_runs, test_profiles, two_profiles, wait_budget_count,
-    wait_cancel_handle, wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
-    wait_idle_pool_len, wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
+    context_with_native_source, context_with_session, minimal_context, mock_run_config,
+    mock_run_config_with_overrides, push_job, seed_home_cache_state, seed_home_cache_state_for_run,
+    seed_idle_pool, seed_idle_pool_with_history_generation, seed_idle_pool_with_overrides,
+    seed_idle_pool_with_speculative_timezone, shutdown, status_idle_reuse_keys_and_active_runs,
+    test_profiles, two_profiles, wait_budget_count, wait_cancel_handle, wait_cancel_token,
+    wait_cancel_token_removed, wait_discover_entered, wait_idle_pool_len,
+    wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
 };
 use sandbox::SandboxId;
 use std::sync::Arc;
@@ -1724,7 +1725,11 @@ async fn finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_de
     let successor_run_id = RunId::new_v4();
     env.provider.set_claim_result(
         successor_run_id,
-        Some(context_with_reuse_key(successor_run_id, reuse_key)),
+        Some(context_with_native_source(
+            successor_run_id,
+            reuse_key,
+            predecessor_run_id,
+        )),
     );
     env.handle
         .discover_tx
@@ -1835,7 +1840,11 @@ async fn late_finalizing_successor_can_take_over_the_running_predecessor() {
     let successor_run_id = RunId::new_v4();
     env.provider.set_claim_result(
         successor_run_id,
-        Some(context_with_reuse_key(successor_run_id, reuse_key)),
+        Some(context_with_native_source(
+            successor_run_id,
+            reuse_key,
+            predecessor_run_id,
+        )),
     );
     env.handle
         .discover_tx
@@ -1915,7 +1924,11 @@ async fn finalizing_successor_reuses_after_a_normal_telemetry_close_tail() {
     let successor_run_id = RunId::new_v4();
     env.provider.set_claim_result(
         successor_run_id,
-        Some(context_with_reuse_key(successor_run_id, reuse_key)),
+        Some(context_with_native_source(
+            successor_run_id,
+            reuse_key,
+            predecessor_run_id,
+        )),
     );
     let preference_deadline = tokio::time::Instant::now().into_std()
         + Duration::from_millis(
@@ -2449,8 +2462,14 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
     .await;
 
     let run_id = RunId::new_v4();
-    env.provider
-        .set_claim_result(run_id, Some(context_with_reuse_key(run_id, reuse_key)));
+    env.provider.set_claim_result(
+        run_id,
+        Some(context_with_native_source(
+            run_id,
+            reuse_key,
+            history_generation_run_id,
+        )),
+    );
     env.handle
         .discover_tx
         .send(

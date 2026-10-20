@@ -520,6 +520,7 @@ mod tests {
         let inbox = direct_candidate_inbox(1);
         let candidate_run_id = run_id(5);
         let first_history_generation = run_id(6);
+        let source = run_id(8);
         let first_deadline = StdInstant::now() + Duration::from_secs(5);
         inbox
             .push(
@@ -530,7 +531,7 @@ mod tests {
                     Some("session:first-decision".to_string()),
                     Some(ranked_preference_context(
                         10,
-                        RunnerPreferenceTarget::HomeCache,
+                        RunnerPreferenceTarget::SourceHomeCache(source),
                         first_deadline,
                     )),
                 )
@@ -547,7 +548,7 @@ mod tests {
                     Some("session:must-not-replace".to_string()),
                     Some(ranked_preference_context(
                         20,
-                        RunnerPreferenceTarget::ExactSandbox,
+                        RunnerPreferenceTarget::SourceSandbox(run_id(9)),
                         StdInstant::now() + Duration::from_secs(30),
                     )),
                 )
@@ -578,7 +579,10 @@ mod tests {
             Some(first_history_generation)
         );
         let preference = candidate.runner_preference().expect("runner preference");
-        assert_eq!(preference.target(), RunnerPreferenceTarget::HomeCache);
+        assert_eq!(
+            preference.target(),
+            RunnerPreferenceTarget::SourceHomeCache(source)
+        );
         assert_eq!(preference.deadline(), first_deadline);
         assert!(
             preference.targets(RunnerProcessIdentity::new(uuid::Uuid::from_u128(10), 7).unwrap())
@@ -589,7 +593,7 @@ mod tests {
         assert!(matches!(
             telemetry.runner_preference,
             RunnerPreference::Preference(
-                crate::provider::RunnerPreferenceDecision::HomeCache { .. }
+                crate::provider::RunnerPreferenceDecision::SourceHomeCache { .. }
             )
         ));
         assert_eq!(

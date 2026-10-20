@@ -121,7 +121,8 @@ impl GuardedFinalizingHandoffOwner {
 
     fn validate_metadata(&self) -> Result<(), MemoryOperationError> {
         let owner = self.owner.as_ref().ok_or(MemoryOperationError::Consumed)?;
-        if owner.metadata.history_generation_run_id != Some(self.predecessor())
+        if owner.metadata.source_run_id != Some(self.predecessor())
+            || owner.metadata.history_generation_run_id != Some(self.predecessor())
             || owner.metadata.reuse_key().is_none()
         {
             return Err(MemoryOperationError::OwnershipInvariant);

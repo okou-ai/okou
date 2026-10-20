@@ -106,13 +106,19 @@ impl HomeCacheStateSnapshot {
     }
 
     /// Validated local readiness, independent of advertised caps/active-key filtering.
-    /// Checkout still owns scope, image-shape and exclusive-lock validation.
-    pub fn contains_compatible_home(&self, reuse_key: &str, profile: &str) -> bool {
+    /// Checkout must recheck the immutable generation under its entry lock.
+    pub fn contains_source_home(
+        &self,
+        reuse_key: &str,
+        profile: &str,
+        source: runner_types::ids::RunId,
+    ) -> bool {
         self.lock_inner().entries.values().any(|state| {
             state.reuse_key == reuse_key
                 && state.home_caches.iter().any(|home| {
                     home.profile == profile
                         && home.home_affinity_version == runner_types::types::HOME_AFFINITY_VERSION
+                        && home.source_run_id == source
                 })
         })
     }
@@ -344,6 +350,7 @@ mod tests {
 
     fn home_cache(profile: &str) -> HomeCacheCapability {
         HomeCacheCapability {
+            source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
             profile: profile.to_owned(),
             home_affinity_version: HOME_AFFINITY_VERSION,
         }

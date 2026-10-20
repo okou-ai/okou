@@ -198,7 +198,11 @@ export const runnerPreferenceSchema = z.union([
     .object({
       kind: z.literal("preference"),
       runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.enum(["finalizingPredecessor", "peerFinalizingPredecessor"]),
+      tier: z.enum([
+        "finalizingPredecessor",
+        "peerFinalizingPredecessor",
+        "sourceHomeCache",
+      ]),
       expiresAt: z.string().datetime({ offset: true }),
       finalizingSourceRunId: z.uuid(),
     })
@@ -207,7 +211,17 @@ export const runnerPreferenceSchema = z.union([
     .object({
       kind: z.literal("preference"),
       runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.enum(["exactSandbox", "reusableSandbox", "homeCache"]),
+      tier: z.literal("exactSandbox"),
+      expiresAt: z.string().datetime({ offset: true }),
+      // Old serving API writers omit this until #41875; retire in #41876.
+      finalizingSourceRunId: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("preference"),
+      runnerIdentity: runnerProcessIdentitySchema,
+      tier: z.enum(["reusableSandbox", "homeCache"]),
       expiresAt: z.string().datetime({ offset: true }),
     })
     .strict(),
@@ -486,6 +500,8 @@ export const heldSandboxStateSchema = z.object({
   reusableSandbox: z.object({
     profile: z.string(),
     historyGenerationRunId: z.uuid().optional(),
+    // Optional until old observation writers/rows retire under #41876.
+    sourceRunId: z.uuid().optional(),
   }),
 });
 
@@ -499,7 +515,13 @@ export const heldHomeStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
   homeCaches: z
-    .array(z.object({ profile: z.string(), homeAffinityVersion: z.literal(1) }))
+    .array(
+      z.object({
+        profile: z.string(),
+        homeAffinityVersion: z.literal(1),
+        sourceRunId: z.uuid().optional(),
+      }),
+    )
     .min(1)
     .max(8),
 });

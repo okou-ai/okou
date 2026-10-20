@@ -60,6 +60,7 @@ struct Fixture {
     operations: HostMemoryOperations,
     admission: Option<GuardedSpeculativeAdmission>,
     history: RunId,
+    producer: RunId,
 }
 
 struct RetainedHome {
@@ -102,6 +103,7 @@ impl Fixture {
             sandbox = sandbox.with_backing_process(backing);
         }
         let history = RunId::new_v4();
+        let producer = home.promotion.run_id();
         let retained_home = RetainedHome {
             _dir: home._dir.clone(),
             cache: home.cache.clone(),
@@ -110,6 +112,8 @@ impl Fixture {
         };
         let HomePromotionFixture { promotion, .. } = home;
         let candidate = ParkedIdleCandidateBuilder::new("thread:spec-supervisor", lease)
+            .with_source_run_id(producer)
+            .with_last_completed_at("2026-10-20T00:00:00Z")
             .with_sandbox_id(home.sandbox_id)
             .with_sandbox(Box::new(sandbox))
             .with_factory(factory)
@@ -163,6 +167,7 @@ impl Fixture {
             operations,
             admission: Some(admission),
             history,
+            producer,
         }
     }
 
@@ -266,12 +271,15 @@ async fn rejected_claim_reparks_and_returns_the_original_exact_owner() {
     let mut fixture = Fixture::new(Some(backing), 64).await;
     let (provider, _) = MockJobProvider::new(CancellationToken::new());
     let mut admission = fixture.admission.take().unwrap();
+    let candidate = fixture.candidate(RunId::new_v4())
+        .with_history_generation_run_id(None)
+        .with_parsed_runner_preference_context(runner_provider::parse_runner_preference(Some(serde_json::json!({
+            "kind": "preference", "tier": "exactSandbox",
+            "runnerIdentity": { "runnerId": "11111111-1111-4111-8111-111111111111", "heartbeatGeneration": 7 },
+            "expiresAt": "2099-01-01T00:00:00Z", "finalizingSourceRunId": fixture.producer
+        }))).unwrap());
     admission
-        .prepare_and_claim(
-            provider,
-            fixture.candidate(RunId::new_v4()),
-            &fixture.tracker,
-        )
+        .prepare_and_claim(provider, candidate, &fixture.tracker)
         .await
         .unwrap();
     assert!(admission.commit().is_err());
@@ -284,6 +292,23 @@ async fn rejected_claim_reparks_and_returns_the_original_exact_owner() {
     assert!(result.retirement.is_none());
     assert_eq!(result.snapshot.idle_sandboxes.len(), 1);
     assert_eq!(fixture.overrides.park_call_count(), 1);
+    assert_eq!(
+        fixture.pool.lock().await.held_sandbox_states()[0]
+            .reusable_sandbox
+            .source_run_id,
+        fixture.producer
+    );
+    let requests: Vec<guest_contracts::reuse_preparation::ReusePreparationRequest> = fixture
+        .overrides
+        .exec_calls()
+        .into_iter()
+        .filter(|call| call.cmd.contains("guest-agent prepare-for-reuse"))
+        .map(|call| serde_json::from_slice(call.stdin_bytes.as_deref().unwrap()).unwrap())
+        .collect();
+    assert_eq!(
+        requests.last().unwrap().current_runtime_dir,
+        format!("/home/user/.vm0/guest-agent/runs/{}", fixture.producer)
+    );
     fixture.retained().await;
 }
 

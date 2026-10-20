@@ -150,6 +150,7 @@ async fn repark_preserves_original_timestamp_history_and_complete_lease() {
     let mut fixture = JobFixture::new("thread:spec-repark", Some(backing)).await;
     reuse_report(&fixture.overrides);
     let mut candidate = fixture.candidate();
+    let producer = candidate.metadata.source_run_id.unwrap();
     let history = RunId::new_v4();
     candidate.metadata.history_generation_run_id = Some(history);
     let mut pool = IdlePool::new(IdlePoolConfig::default());
@@ -175,6 +176,7 @@ async fn repark_preserves_original_timestamp_history_and_complete_lease() {
         .unwrap_or_else(|_| panic!("parked owner"));
     assert_eq!(entry.parked_at, timestamp);
     assert_eq!(entry.metadata.history_generation_run_id, Some(history));
+    assert_eq!(entry.metadata.source_run_id, Some(producer));
     let calls = fixture.overrides.exec_calls();
     let call = calls
         .iter()
@@ -182,7 +184,10 @@ async fn repark_preserves_original_timestamp_history_and_complete_lease() {
         .unwrap();
     let request: guest_contracts::reuse_preparation::ReusePreparationRequest =
         serde_json::from_slice(call.stdin_bytes.as_ref().unwrap()).unwrap();
-    assert!(request.current_runtime_dir.contains(&history.to_string()));
+    assert_eq!(
+        request.current_runtime_dir,
+        format!("/home/user/.vm0/guest-agent/runs/{producer}")
+    );
     assert!(!request.current_runtime_dir.contains(&run.to_string()));
     retained(&fixture).await;
 }

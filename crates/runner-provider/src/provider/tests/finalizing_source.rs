@@ -33,6 +33,35 @@ fn finalizing_source_survives_context_and_claim_telemetry_without_native_history
 }
 
 #[test]
+fn ready_source_preferences_preserve_producer_without_native_history() {
+    for (tier, expected) in [
+        ("exactSandbox", RunnerPreferenceTier::ExactSandbox),
+        ("sourceHomeCache", RunnerPreferenceTier::SourceHomeCache),
+    ] {
+        let source = RunId::new_v4();
+        let mut wire = preference(source);
+        wire["tier"] = serde_json::json!(tier);
+        let context = parse_runner_preference(Some(wire.clone())).unwrap();
+        let candidate = JobCandidate::new(RunId::new_v4(), "vm0/default".into())
+            .with_parsed_runner_preference_context(context);
+        let active = candidate.runner_preference().unwrap();
+        assert_eq!(active.tier(), expected);
+        assert_eq!(active.target().source_run_id(), Some(source));
+        assert_eq!(candidate.history_generation_run_id(), None);
+        assert_eq!(
+            serde_json::to_value(
+                candidate
+                    .runner_preference_claim_telemetry()
+                    .unwrap()
+                    .runner_preference
+            )
+            .unwrap(),
+            wire
+        );
+    }
+}
+
+#[test]
 fn malformed_source_does_not_become_an_active_preference() {
     for invalid in [serde_json::json!("not-a-run-id"), serde_json::Value::Null] {
         let mut wire = preference(RunId::new_v4());

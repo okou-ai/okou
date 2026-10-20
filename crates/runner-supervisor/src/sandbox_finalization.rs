@@ -259,6 +259,7 @@ fn mark_reuse_state_refresh(
 }
 
 fn mark_home_cache_snapshot_promoted(
+    source_run_id: RunId,
     snapshot: &HomeCacheStateSnapshot,
     cache_key: Option<&str>,
     reuse_key: Option<&str>,
@@ -275,6 +276,7 @@ fn mark_home_cache_snapshot_promoted(
                 home_caches: vec![HomeCacheCapability {
                     profile: profile_name.to_owned(),
                     home_affinity_version: HOME_AFFINITY_VERSION,
+                    source_run_id,
                 }],
             },
         );
@@ -640,6 +642,7 @@ async fn finalize_sandbox_for_completion_inner(
             )
             .await;
             reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                run_id,
                 &home_cache_snapshot,
                 home_cache_key.as_deref(),
                 home_promotion_reuse_key.as_deref(),
@@ -726,6 +729,7 @@ async fn finalize_sandbox_for_completion_inner(
                     )
                     .await;
                     let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        run_id,
                         &home_cache_snapshot,
                         home_cache_key.as_deref(),
                         Some(&reuse_key),
@@ -782,6 +786,7 @@ async fn finalize_sandbox_for_completion_inner(
                     )
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
+                        run_id,
                         &home_cache_snapshot,
                         home_cache_key.as_deref(),
                         Some(&reuse_key),
@@ -843,6 +848,7 @@ async fn finalize_sandbox_for_completion_inner(
             )
             .await;
             reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                run_id,
                 &home_cache_snapshot,
                 home_cache_key.as_deref(),
                 Some(&reuse_key),
@@ -941,6 +947,7 @@ async fn finalize_sandbox_for_completion_inner(
             )
             .await;
             reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                run_id,
                 &home_cache_snapshot,
                 home_cache_key.as_deref(),
                 Some(&reuse_key),
@@ -967,6 +974,7 @@ async fn finalize_sandbox_for_completion_inner(
                     )
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
+                        run_id,
                         &home_cache_snapshot,
                         home_cache_key.as_deref(),
                         Some(&reuse_key),
@@ -1043,6 +1051,7 @@ async fn finalize_sandbox_for_completion_inner(
                     )
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
+                        run_id,
                         &home_cache_snapshot,
                         home_cache_key.as_deref(),
                         Some(&reuse_key),
@@ -1083,6 +1092,7 @@ async fn finalize_sandbox_for_completion_inner(
                         )
                         .await;
                         reuse_state_changed = mark_home_cache_snapshot_promoted(
+                            run_id,
                             &home_cache_snapshot,
                             home_cache_key.as_deref(),
                             Some(&reuse_key),
@@ -1115,6 +1125,7 @@ async fn finalize_sandbox_for_completion_inner(
                     )
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
+                        run_id,
                         &home_cache_snapshot,
                         home_cache_key.as_deref(),
                         Some(&reuse_key),
@@ -1171,6 +1182,7 @@ async fn finalize_sandbox_for_completion_inner(
                         )
                         .await;
                         reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                            run_id,
                             &home_cache_snapshot,
                             home_cache_key.as_deref(),
                             Some(&reuse_key),

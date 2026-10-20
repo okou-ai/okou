@@ -179,6 +179,53 @@ fn reusable_reservation_is_exclusive_and_restorable() {
 }
 
 #[test]
+fn source_reservation_matches_published_producer_without_native_history() {
+    let mut pool = IdlePool::new(pool_config(0));
+    let source = RunId::new_v4();
+    let candidate = ParkedIdleCandidateBuilder::new("thread", make_budget_lease(2, 2048))
+        .with_source_run_id(source)
+        .with_last_completed_at("2026-10-20T00:00:00Z")
+        .build();
+    let sandbox_id = candidate.sandbox_id();
+    assert!(matches!(pool.park(candidate), ParkResult::Parked));
+    let revision = pool.status_snapshot().revision;
+    assert!(matches!(
+        pool.reserve_reusable_source("thread", "vm0/large", &None, source),
+        Err(ExactIdleReservationMiss::ProfileMismatch)
+    ));
+    assert!(matches!(
+        pool.reserve_reusable_source("thread", "vm0/default", &None, RunId::new_v4()),
+        Err(ExactIdleReservationMiss::SourceMismatch)
+    ));
+    assert!(matches!(
+        pool.reserve_reusable_native_source("thread", "vm0/default", &None, source),
+        Err(ExactIdleReservationMiss::HistoryGenerationMismatch)
+    ));
+    assert_eq!(pool.status_snapshot().revision, revision);
+    assert_eq!(
+        pool.held_sandbox_states()[0].reusable_sandbox.source_run_id,
+        source
+    );
+    let reserved = pool
+        .reserve_reusable_source("thread", "vm0/default", &None, source)
+        .unwrap();
+    assert_eq!(reserved.source_run_id(), Some(source));
+    assert!(pool.is_empty());
+    assert!(matches!(
+        pool.restore_reserved(reserved),
+        RestoreReservedIdleResult::Restored
+    ));
+    assert_eq!(
+        pool.status_snapshot().idle_sandboxes[0].sandbox_id,
+        sandbox_id
+    );
+    assert_eq!(
+        pool.held_sandbox_states()[0].reusable_sandbox.source_run_id,
+        source
+    );
+}
+
+#[test]
 fn reusable_generation_reservation_classifies_exact_misses() {
     let mut pool = IdlePool::new(pool_config(0));
     let held_generation_run_id = RunId::new_v4();
@@ -632,9 +679,14 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
     let mut pool = IdlePool::new(pool_config(0));
     let history_generation_run_id = RunId::new_v4();
     let unconfirmed = make_candidate_for("sess-unconfirmed", 2, 2048);
-    let confirmed_b = make_candidate_for("sess-b", 2, 2048)
-        .with_last_completed_at("2026-05-28T00:00:01.000Z".to_string());
+    let source_a = RunId::new_v4();
+    let source_b = RunId::new_v4();
+    let confirmed_b = ParkedIdleCandidateBuilder::new("sess-b", make_budget_lease(2, 2048))
+        .with_source_run_id(source_b)
+        .with_last_completed_at("2026-05-28T00:00:01.000Z")
+        .build();
     let confirmed_a = ParkedIdleCandidateBuilder::new("sess-a", make_budget_lease(2, 2048))
+        .with_source_run_id(source_a)
         .with_mock_sandbox_name("test")
         .with_history_generation_run_id(history_generation_run_id)
         .with_last_completed_at("2026-05-28T00:00:00.000Z")
@@ -651,6 +703,7 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
                 reuse_key: "sess-a".to_string(),
                 last_completed_at: "2026-05-28T00:00:00.000Z".to_string(),
                 reusable_sandbox: ReusableSandboxState {
+                    source_run_id: source_a,
                     profile: "vm0/default".to_string(),
                     history_generation_run_id: Some(history_generation_run_id),
                 },
@@ -659,6 +712,7 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
                 reuse_key: "sess-b".to_string(),
                 last_completed_at: "2026-05-28T00:00:01.000Z".to_string(),
                 reusable_sandbox: ReusableSandboxState {
+                    source_run_id: source_b,
                     profile: "vm0/default".to_string(),
                     history_generation_run_id: None,
                 },

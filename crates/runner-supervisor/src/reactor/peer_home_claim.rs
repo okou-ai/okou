@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use futures_util::FutureExt;
 use runner_provider::{ClaimedJob, RunCancellationRegistration};
+use runner_types::ids::RunId;
 
 use super::job_discovery::{
     DiscoveredJobProfile, build_spawn_job_request, claimed_activation_resources,
@@ -23,6 +24,7 @@ use crate::resource_budget::BudgetLease;
 use runner_types::types::SandboxReuseResult;
 
 pub(super) struct PeerHomeClaimRequest {
+    pub(super) source_run_id: RunId,
     pub(super) claimed: ClaimedJob,
     pub(super) cancellation: RunCancellationRegistration,
     pub(super) lease: BudgetLease,
@@ -33,6 +35,7 @@ pub(super) struct PeerHomeClaimRequest {
 }
 
 pub(super) struct PeerHomeClaim {
+    source_run_id: RunId,
     activation: ClaimedActivationGuard,
     deadline: Instant,
 }
@@ -40,6 +43,7 @@ pub(super) struct PeerHomeClaim {
 impl PeerHomeClaim {
     pub(super) fn new(request: PeerHomeClaimRequest, ctx: &SpawnContext) -> Self {
         let PeerHomeClaimRequest {
+            source_run_id,
             claimed,
             cancellation,
             lease,
@@ -64,8 +68,10 @@ impl PeerHomeClaim {
             timing.record_blank_pool_selection(selection);
         }
         Self {
+            source_run_id,
             activation: ClaimedActivationGuard::new(
                 ClaimedJobSetup {
+                    home_source_run_id: None,
                     claimed,
                     cancellation,
                     rootfs_hash: profile.rootfs_hash,
@@ -102,14 +108,17 @@ impl PeerHomeClaim {
                 .await);
         }
         let started_at = Instant::now();
-        if let Err(error) = self.wait_for_home(&ctx).await {
-            return Ok(self
-                .activation
-                .recover(error.recovery_reason(), error.to_string())
-                .await?
-                .into_cancellation()
-                .await);
-        }
+        let home_source_run_id = match self.wait_for_home(&ctx).await {
+            Ok(source) => source,
+            Err(error) => {
+                return Ok(self
+                    .activation
+                    .recover(error.recovery_reason(), error.to_string())
+                    .await?
+                    .into_cancellation()
+                    .await);
+            }
+        };
         let setup = self.activation.setup()?;
         setup
             .pre_spawn_timing
@@ -127,7 +136,7 @@ impl PeerHomeClaim {
         let prepared = AssertUnwindSafe(build_spawn_job_request(&mut self.activation, &ctx))
             .catch_unwind()
             .await;
-        let request = match prepared {
+        let mut request = match prepared {
             Ok(Ok(request)) => request,
             Ok(Err(error)) => {
                 return Ok(self
@@ -149,32 +158,37 @@ impl PeerHomeClaim {
                 std::panic::resume_unwind(panic);
             }
         };
+        request.job_profile.home_source_run_id = home_source_run_id;
         Ok(run_job(request, ctx).await)
     }
 
-    async fn wait_for_home(&mut self, ctx: &SpawnContext) -> Result<(), ClaimedActivationError> {
+    async fn wait_for_home(
+        &mut self,
+        ctx: &SpawnContext,
+    ) -> Result<Option<RunId>, ClaimedActivationError> {
         if ctx.exec_config.home_cache.is_none() {
-            return Ok(());
+            return Ok(None);
         }
         let setup = self.activation.setup()?;
         let Some(reuse_key) = setup.claimed.context().reuse_key().map(str::to_owned) else {
-            return Ok(());
+            return Ok(None);
         };
         let profile = setup.profile_name.clone();
         let cancelled = setup.cancellation.handle().token();
         let mut committed = ctx.home_cache_snapshot.subscribe_committed();
         let deadline = tokio::time::Instant::from_std(self.deadline);
         loop {
-            if ctx
-                .home_cache_snapshot
-                .contains_compatible_home(&reuse_key, &profile)
-            {
-                return Ok(());
+            if ctx.home_cache_snapshot.contains_source_home(
+                &reuse_key,
+                &profile,
+                self.source_run_id,
+            ) {
+                return Ok(Some(self.source_run_id));
             }
             tokio::select! {
                 biased;
-                () = cancelled.cancelled() => return Ok(()),
-                () = tokio::time::sleep_until(deadline) => return Ok(()),
+                () = cancelled.cancelled() => return Ok(None),
+                () = tokio::time::sleep_until(deadline) => return Ok(None),
                 update = committed.changed() => {
                     // This task retains the snapshot and its sender through ctx.
                     update?;

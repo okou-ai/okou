@@ -359,6 +359,7 @@ pub async fn exercise(
                 let Winner {claim,mut parts,lease,..}=winner.transfer()?;
                 let promotion=parts.home_promotion.take().ok_or_else(||io::Error::other("checked winner promotion absent"))?;
                 let candidate = ParkedIdleCandidateBuilder::new(&input.reuse_key,lease).with_sandbox(parts.sandbox)
+                    .with_source_run_id(claim.run_id)
                     .with_factory(context.factory.clone()).with_sandbox_id(id).with_profile_name(fixture::PROFILE)
                     .with_rootfs_hash(&context.rootfs_hash).with_history_generation_run_id(input.original_run_id)
                     .with_last_completed_at(input.original_completed_at.clone()).with_home_promotion(promotion)

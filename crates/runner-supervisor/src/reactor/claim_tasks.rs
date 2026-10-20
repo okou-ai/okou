@@ -212,6 +212,7 @@ async fn prepare_claimed(
     context: Arc<AdmissionContext>,
 ) -> ClaimTaskOutcome {
     let AdmittedClaim {
+        home_source_run_id,
         claimed,
         resource,
         cancellation,
@@ -219,9 +220,14 @@ async fn prepare_claimed(
         blank_pool_selection,
     } = admission;
     let resource = match resource {
-        AdmittedResource::PeerFinalizing { lease, deadline } => {
+        AdmittedResource::PeerFinalizing {
+            lease,
+            deadline,
+            source_run_id,
+        } => {
             return ClaimTaskOutcome::PeerHome(Box::new(PeerHomeClaim::new(
                 PeerHomeClaimRequest {
+                    source_run_id,
                     claimed,
                     cancellation,
                     lease,
@@ -271,6 +277,7 @@ async fn prepare_claimed(
     let spawn_ctx = &context.spawn_ctx;
     let prepared = prepare_admitted_job(
         SandboxAdmittedJob {
+            home_source_run_id,
             claimed,
             resource,
             cancellation,

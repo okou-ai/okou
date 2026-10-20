@@ -2860,6 +2860,7 @@ mod tests {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
                 reusable_sandbox: runner_types::types::ReusableSandboxState {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
                     history_generation_run_id: None,
                 },
@@ -2868,6 +2869,7 @@ mod tests {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
                 home_caches: vec![runner_types::types::HomeCacheCapability {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
                     home_affinity_version: runner_types::types::HOME_AFFINITY_VERSION,
                 }],
@@ -4510,6 +4512,7 @@ mod tests {
                                 "heartbeatGeneration": 7
                             },
                             "tier": "exactSandbox",
+                            "finalizingSourceRunId": "33333333-3333-4333-8333-333333333333",
                             "expiresAt": "2999-01-01T00:00:00.000Z"
                         }
                     }
@@ -4538,6 +4541,10 @@ mod tests {
             .runner_preference()
             .expect("canonical preference should be parsed");
         assert_eq!(preference.tier(), RunnerPreferenceTier::ExactSandbox);
+        assert_eq!(
+            preference.target().source_run_id(),
+            Some("33333333-3333-4333-8333-333333333333".parse().unwrap())
+        );
         assert!(
             preference.targets(
                 RunnerProcessIdentity::new(

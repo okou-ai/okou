@@ -451,6 +451,7 @@ const preferenceResolutionByTier = {
   peerFinalizingPredecessor: "peer_finalizing_predecessor",
   reusableSandbox: "matching_reusable_sandbox",
   homeCache: "matching_home_cache",
+  sourceHomeCache: "matching_source_home_cache",
 } as const satisfies Record<PositiveRunnerPreference["tier"], string>;
 
 const noPreferenceResolutionByReason = {

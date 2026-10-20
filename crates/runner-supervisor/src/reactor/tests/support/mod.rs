@@ -13,11 +13,14 @@ pub(super) use self::env::{
 };
 pub(super) use self::idle_pool::{
     HomePromotionSeedSpec, SpeculativeIdleSeedSpec, TestParkedIdleCandidateSpec,
-    seed_home_cache_state, seed_idle_pool, seed_idle_pool_with_history_generation,
-    seed_idle_pool_with_home_promotion, seed_idle_pool_with_overrides,
-    seed_idle_pool_with_speculative_timezone, seed_idle_pool_with_timing,
+    seed_home_cache_state, seed_home_cache_state_for_run, seed_idle_pool,
+    seed_idle_pool_with_history_generation, seed_idle_pool_with_home_promotion,
+    seed_idle_pool_with_overrides, seed_idle_pool_with_speculative_timezone,
+    seed_idle_pool_with_timing,
 };
-pub(super) use self::jobs::{context_with_session, minimal_context, push_job, shutdown};
+pub(super) use self::jobs::{
+    context_with_native_source, context_with_session, minimal_context, push_job, shutdown,
+};
 pub(super) use self::status::{
     publish_idle_status, status_idle_reuse_keys, status_idle_reuse_keys_and_active_runs,
     wait_status_idle_empty_with_active_run, wait_status_idle_reuse_keys_and_active_runs,

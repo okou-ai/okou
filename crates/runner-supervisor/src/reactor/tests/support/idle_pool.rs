@@ -207,7 +207,10 @@ async fn seed_idle_pool_with_overrides_and_generation(
         .with_guest_timezone_intent(guest_timezone_intent)
         .with_last_completed_at(TEST_LAST_COMPLETED_AT);
     let candidate = match history_generation_run_id {
-        Some(run_id) => builder.with_history_generation_run_id(run_id).build(),
+        Some(run_id) => builder
+            .with_source_run_id(run_id)
+            .with_history_generation_run_id(run_id)
+            .build(),
         None => builder.build(),
     };
     let mut guard = pool.lock().await;
@@ -290,8 +293,26 @@ pub(in super::super) async fn seed_home_cache_state(
     reuse_key: &str,
     profile_name: &str,
     image_size_bytes: u64,
-) {
-    let run_id = RunId::new_v4();
+) -> RunId {
+    seed_home_cache_state_for_run(
+        cache,
+        paths,
+        reuse_key,
+        profile_name,
+        image_size_bytes,
+        RunId::new_v4(),
+    )
+    .await
+}
+
+pub(in super::super) async fn seed_home_cache_state_for_run(
+    cache: &HomeImageCache,
+    paths: &RunnerPaths,
+    reuse_key: &str,
+    profile_name: &str,
+    image_size_bytes: u64,
+    run_id: RunId,
+) -> RunId {
     let sandbox_id = SandboxId::new_v4();
     let lease = cache
         .prepare(HomeImagePrepareRequest {
@@ -326,6 +347,7 @@ pub(in super::super) async fn seed_home_cache_state(
             .await
             .unwrap()
     );
+    run_id
 }
 
 pub(in super::super) struct TestParkedIdleCandidateSpec<'a> {
@@ -348,7 +370,10 @@ pub(in super::super) async fn seed_idle_pool_with_timing(
         .with_profile_name(spec.profile_name)
         .with_rootfs_hash(super::env::TEST_ROOTFS_HASH);
     let candidate = match spec.history_generation_run_id {
-        Some(run_id) => builder.with_history_generation_run_id(run_id).build(),
+        Some(run_id) => builder
+            .with_source_run_id(run_id)
+            .with_history_generation_run_id(run_id)
+            .build(),
         None => builder.build(),
     };
     let mut guard = pool.lock().await;

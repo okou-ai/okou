@@ -254,6 +254,7 @@ pub async fn prepare(request: Request) -> TestResult<Completion> {
                 .home_promotion
                 .ok_or_else(|| io::Error::other("native reuse lost original home promotion"))?;
             let mut candidate = ParkedIdleCandidateBuilder::new(&context.reuse_key, lease)
+                .with_source_run_id(original)
                 .with_sandbox(parts.sandbox)
                 .with_factory(context.factory.clone())
                 .with_sandbox_id(id)

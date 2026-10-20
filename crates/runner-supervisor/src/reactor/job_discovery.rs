@@ -165,6 +165,7 @@ pub(super) struct PreparedDiscoveredJob {
 
 /// Ordinary claimed custody, excluding the specialized finalizing successor.
 pub(super) struct SandboxAdmittedJob {
+    pub(super) home_source_run_id: Option<RunId>,
     pub(super) claimed: ClaimedJob,
     pub(super) resource: SandboxAdmittedResource,
     pub(super) cancellation: RunCancellationRegistration,
@@ -344,6 +345,7 @@ pub(super) async fn prepare_admitted_job(
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let SandboxAdmittedJob {
+        home_source_run_id,
         claimed,
         resource,
         cancellation,
@@ -426,6 +428,7 @@ pub(super) async fn prepare_admitted_job(
             } = match try_reuse_from_pool(
                 run_id,
                 ReuseAdmissionRequest {
+                    home_source_run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb: job_home_disk_mb,
@@ -614,6 +617,7 @@ pub(super) async fn prepare_admitted_job(
 
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
+            home_source_run_id,
             claimed,
             rootfs_hash: job_rootfs_hash,
             cancellation,
@@ -719,6 +723,7 @@ fn finish_spawn_job_request(
 ) -> Result<SpawnJobRequest, ClaimedActivationError> {
     let sandbox_id = activation.sandbox_id();
     let ClaimedJobSetup {
+        home_source_run_id,
         claimed,
         rootfs_hash,
         cancellation,
@@ -745,6 +750,7 @@ fn finish_spawn_job_request(
         claimed,
         sandbox_id,
         job_profile: JobProfile {
+            home_source_run_id,
             profile_name,
             rootfs_hash,
             vcpu,

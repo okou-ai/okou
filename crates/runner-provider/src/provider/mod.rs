@@ -43,6 +43,7 @@ pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
     PeerFinalizingPredecessor,
+    SourceHomeCache,
     ReusableSandbox,
     HomeCache,
 }
@@ -52,8 +53,9 @@ impl RunnerPreferenceTier {
         match self {
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
-            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 3,
-            Self::ExactSandbox => 4,
+            Self::SourceHomeCache => 3,
+            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 4,
+            Self::ExactSandbox => 5,
         }
     }
 }
@@ -101,6 +103,13 @@ pub enum RunnerPreferenceDecision {
     ExactSandbox {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
+        // Old API writers omit this until #41875; retire that shape in #41876.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_present_source"
+        )]
+        finalizing_source_run_id: Option<RunId>,
     },
     FinalizingPredecessor {
         runner_identity: RunnerProcessIdentity,
@@ -120,25 +129,49 @@ pub enum RunnerPreferenceDecision {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
     },
+    SourceHomeCache {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        finalizing_source_run_id: RunId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunnerPreferenceTarget {
     ExactSandbox,
+    SourceSandbox(RunId),
     FinalizingPredecessor(RunId),
     PeerFinalizingPredecessor(RunId),
     ReusableSandbox,
     HomeCache,
+    SourceHomeCache(RunId),
+}
+
+fn deserialize_present_source<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<RunId>, D::Error> {
+    RunId::deserialize(deserializer).map(Some)
 }
 
 impl RunnerPreferenceTarget {
     fn tier(self) -> RunnerPreferenceTier {
         match self {
-            Self::ExactSandbox => RunnerPreferenceTier::ExactSandbox,
+            Self::ExactSandbox | Self::SourceSandbox(_) => RunnerPreferenceTier::ExactSandbox,
             Self::FinalizingPredecessor(_) => RunnerPreferenceTier::FinalizingPredecessor,
             Self::PeerFinalizingPredecessor(_) => RunnerPreferenceTier::PeerFinalizingPredecessor,
             Self::ReusableSandbox => RunnerPreferenceTier::ReusableSandbox,
             Self::HomeCache => RunnerPreferenceTier::HomeCache,
+            Self::SourceHomeCache(_) => RunnerPreferenceTier::SourceHomeCache,
+        }
+    }
+
+    pub fn source_run_id(self) -> Option<RunId> {
+        match self {
+            Self::SourceSandbox(source)
+            | Self::FinalizingPredecessor(source)
+            | Self::PeerFinalizingPredecessor(source)
+            | Self::SourceHomeCache(source) => Some(source),
+            Self::ExactSandbox | Self::ReusableSandbox | Self::HomeCache => None,
         }
     }
 
@@ -151,6 +184,12 @@ impl RunnerPreferenceTarget {
             Self::ExactSandbox => RunnerPreferenceDecision::ExactSandbox {
                 runner_identity,
                 expires_at,
+                finalizing_source_run_id: None,
+            },
+            Self::SourceSandbox(source) => RunnerPreferenceDecision::ExactSandbox {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id: Some(source),
             },
             Self::FinalizingPredecessor(finalizing_source_run_id) => {
                 RunnerPreferenceDecision::FinalizingPredecessor {
@@ -174,6 +213,11 @@ impl RunnerPreferenceTarget {
                 runner_identity,
                 expires_at,
             },
+            Self::SourceHomeCache(source) => RunnerPreferenceDecision::SourceHomeCache {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id: source,
+            },
         }
     }
 }
@@ -184,9 +228,13 @@ impl RunnerPreferenceDecision {
             Self::ExactSandbox {
                 runner_identity,
                 expires_at,
+                finalizing_source_run_id,
             } => (
                 runner_identity,
-                RunnerPreferenceTarget::ExactSandbox,
+                finalizing_source_run_id.map_or(
+                    RunnerPreferenceTarget::ExactSandbox,
+                    RunnerPreferenceTarget::SourceSandbox,
+                ),
                 expires_at,
             ),
             Self::FinalizingPredecessor {
@@ -221,6 +269,15 @@ impl RunnerPreferenceDecision {
             } => (
                 runner_identity,
                 RunnerPreferenceTarget::HomeCache,
+                expires_at,
+            ),
+            Self::SourceHomeCache {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::SourceHomeCache(*finalizing_source_run_id),
                 expires_at,
             ),
         };

@@ -32,6 +32,53 @@ const home = {
 };
 
 describe("canonical home affinity contracts", () => {
+  it.each([undefined, "33333333-3333-4333-8333-333333333333"])(
+    "preserves reachable heartbeat resource producers %s",
+    (sourceRunId) => {
+      const source = sourceRunId === undefined ? {} : { sourceRunId };
+      const heldSandboxStates = [
+        {
+          reuseKey: home.reuseKey,
+          lastCompletedAt: home.lastCompletedAt,
+          reusableSandbox: { profile: "vm0/default", ...source },
+        },
+      ];
+      const heldHomeStates = [
+        {
+          ...home,
+          homeCaches: [
+            { profile: "vm0/default", homeAffinityVersion: 1, ...source },
+            { profile: "vm0/large", homeAffinityVersion: 1, ...source },
+          ],
+        },
+      ];
+      const parsed = heartbeatBodySchema.parse({
+        ...canonicalHeartbeat(),
+        heldSandboxStates,
+        heldHomeStates,
+      });
+      expect(parsed.heldSandboxStates).toEqual(heldSandboxStates);
+      expect(parsed.heldHomeStates).toEqual(heldHomeStates);
+    },
+  );
+
+  it.each(["exactSandbox", "sourceHomeCache"])(
+    "preserves the previous Run on %s",
+    (tier) => {
+      const preference = {
+        kind: "preference",
+        runnerIdentity: {
+          runnerId: canonicalHeartbeat().runnerId,
+          heartbeatGeneration: 7,
+        },
+        tier,
+        expiresAt: "2099-01-01T00:00:00Z",
+        finalizingSourceRunId: "33333333-3333-4333-8333-333333333333",
+      };
+      expect(runnerPreferenceSchema.parse(preference)).toEqual(preference);
+    },
+  );
+
   it("requires whole home inventory, including explicit empty state", () => {
     const { heldHomeStates, ...missingInventory } = canonicalHeartbeat();
     expect(heartbeatBodySchema.safeParse(missingInventory).success).toBe(false);

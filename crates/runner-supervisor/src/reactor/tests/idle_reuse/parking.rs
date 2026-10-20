@@ -148,6 +148,10 @@ async fn job_without_cli_session_parks_and_reuses_by_reuse_key() {
         let sandbox_states = pool.held_sandbox_states();
         assert_eq!(sandbox_states.len(), 1);
         assert_eq!(sandbox_states[0].reuse_key, reuse_key);
+        assert_eq!(
+            sandbox_states[0].reusable_sandbox.source_run_id,
+            first_run_id
+        );
     }
 
     let second_run_id = RunId::new_v4();
@@ -162,6 +166,12 @@ async fn job_without_cli_session_parks_and_reuses_by_reuse_key() {
     assert_eq!(second_completion.exit_code, 0);
     assert_eq!(second_completion.sandbox_id, Some(sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
+    assert_eq!(
+        idle_pool.lock().await.held_sandbox_states()[0]
+            .reusable_sandbox
+            .source_run_id,
+        second_run_id
+    );
 
     shutdown(&env, run_handle).await;
 }
