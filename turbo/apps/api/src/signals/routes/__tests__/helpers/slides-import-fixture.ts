@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import AdmZip from "adm-zip";
 import { http, HttpResponse } from "msw";
 import { SaxesParser } from "saxes";
+import { z } from "zod";
 import { server } from "../../../../mocks/server";
 
 const font = readFileSync(
@@ -421,7 +422,7 @@ export function uploadedSlidesText(bytes: Uint8Array) {
     if (tag.local === "cNvPr") {
       current.id = attrs.id!;
     }
-    if (tag.local === "ext") {
+    if (tag.uri === drawingNamespace && tag.local === "ext") {
       current.width = Number(attrs.cx) / 12_700;
     }
     if (tag.local === "rPr") {
@@ -450,4 +451,197 @@ export function uploadedSlidesText(bytes: Uint8Array) {
   });
   parser.write(archive.readAsText("ppt/slides/slide1.xml")).close();
   return result;
+}
+
+/** A real CLI export: do not reconstruct this deck from expected XML. */
+export function slidesTextProvenanceFixture(): Buffer {
+  return readFileSync(
+    new URL("../fixtures/slides-text-provenance.pptx", import.meta.url),
+  );
+}
+
+interface ImportedText {
+  readonly id: string;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+function importedText(file: Uint8Array): ImportedText[] {
+  const archive = new AdmZip(Buffer.from(file));
+  const result: ImportedText[] = [];
+  let item = { id: "", text: "", x: 0, y: 0, width: 0, height: 0 };
+  let inside = false,
+    reading = false;
+  const parser = new SaxesParser({ xmlns: true });
+  parser.on("opentag", (tag) => {
+    const attrs = Object.fromEntries(
+      Object.values(tag.attributes).map((attr) => {
+        return [attr.local, attr.value];
+      }),
+    );
+    if (tag.uri === presentationNamespace && tag.local === "sp") {
+      inside = true;
+      item = { id: "", text: "", x: 0, y: 0, width: 0, height: 0 };
+    }
+    if (!inside) {
+      return;
+    }
+    if (tag.uri === presentationNamespace && tag.local === "cNvPr") {
+      item.id = "google-" + attrs.id;
+    }
+    if (tag.uri === drawingNamespace && tag.local === "off") {
+      item.x = Number(attrs.x);
+      item.y = Number(attrs.y);
+    }
+    if (tag.uri === drawingNamespace && tag.local === "ext") {
+      item.width = Number(attrs.cx);
+      item.height = Number(attrs.cy);
+    }
+    if (tag.uri === drawingNamespace && tag.local === "t") {
+      reading = true;
+    }
+  });
+  parser.on("text", (text) => {
+    if (reading) {
+      item.text += text;
+    }
+  });
+  parser.on("closetag", (tag) => {
+    if (tag.uri === drawingNamespace && tag.local === "t") {
+      reading = false;
+    }
+    if (tag.uri === presentationNamespace && tag.local === "sp") {
+      if (item.text) {
+        result.push(item);
+      }
+      inside = false;
+    }
+  });
+  parser.write(archive.readAsText("ppt/slides/slide1.xml")).close();
+  return result;
+}
+
+const styleRequestSchema = z.object({
+  requests: z.array(
+    z.object({
+      updateTextStyle: z.object({
+        objectId: z.string(),
+        textRange: z.object({ startIndex: z.number(), endIndex: z.number() }),
+        style: z.object({
+          weightedFontFamily: z.object({
+            fontFamily: z.string(),
+            weight: z.number(),
+          }),
+          bold: z.boolean(),
+          italic: z.boolean(),
+        }),
+      }),
+    }),
+  ),
+  writeControl: z.object({ requiredRevisionId: z.literal("import-revision") }),
+});
+
+export function mockSlidesFontRestoration(
+  uploaded: { readonly bodies: readonly Uint8Array[] },
+  failure?: "write" | "ambiguous" | "readback" | "complete",
+) {
+  const writes: z.infer<typeof styleRequestSchema>["requests"] = [];
+  const completions: unknown[] = [];
+  server.use(
+    http.get("https://slides.googleapis.com/v1/presentations/:id", () => {
+      const items = importedText(uploaded.bodies[0]!);
+      const pageElements = items.map((item) => {
+        const updates = writes.filter((write) => {
+          return write.updateTextStyle.objectId === item.id;
+        });
+        const textElements = updates.length
+          ? updates.map(({ updateTextStyle: write }) => {
+              return {
+                startIndex: write.textRange.startIndex,
+                endIndex: write.textRange.endIndex,
+                textRun: {
+                  content: item.text.slice(
+                    write.textRange.startIndex,
+                    write.textRange.endIndex,
+                  ),
+                  style:
+                    failure === "readback"
+                      ? {
+                          weightedFontFamily: {
+                            fontFamily: "Wrong Font",
+                            weight: 400,
+                          },
+                        }
+                      : write.style,
+                },
+              };
+            })
+          : [
+              {
+                startIndex: 0,
+                endIndex: item.text.length,
+                textRun: {
+                  content: item.text,
+                  style: {
+                    weightedFontFamily: {
+                      fontFamily: "Import Test",
+                      weight: 400,
+                    },
+                  },
+                },
+              },
+            ];
+        return {
+          objectId: item.id,
+          size: {
+            width: { magnitude: item.width, unit: "EMU" },
+            height: { magnitude: item.height, unit: "EMU" },
+          },
+          transform: {
+            scaleX: 1,
+            scaleY: 1,
+            translateX: item.x,
+            translateY: item.y,
+            unit: "EMU",
+          },
+          shape: { text: { textElements } },
+        };
+      });
+      if (failure === "ambiguous" && pageElements[0]) {
+        pageElements.push({ ...pageElements[0], objectId: "duplicate" });
+      }
+      return HttpResponse.json({
+        revisionId: "import-revision",
+        slides: [{ pageElements }],
+      });
+    }),
+    http.post(
+      "https://slides.googleapis.com/v1/presentations/:id",
+      async ({ request }) => {
+        const body = styleRequestSchema.parse(await request.json());
+        if (failure === "write") {
+          return new HttpResponse(null, { status: 409 });
+        }
+        writes.push(...body.requests);
+        return HttpResponse.json({
+          replies: body.requests.map(() => {
+            return {};
+          }),
+        });
+      },
+    ),
+    http.patch(
+      "https://www.googleapis.com/drive/v3/files/:id",
+      async ({ request }) => {
+        completions.push(await request.json());
+        return HttpResponse.json(
+          {},
+          { status: failure === "complete" ? 503 : 200 },
+        );
+      },
+    ),
+  );
+  return { writes, completions };
 }
