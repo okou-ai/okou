@@ -21,16 +21,16 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorExternalCodeSessionContract,
-  builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
-  builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
   builtinConnectorAutomaticReaderResponseSchema,
+  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
 } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type {
@@ -1145,7 +1145,10 @@ export const submitBuiltinManualGrant$ = command(
         );
         connectorStateChanged = true;
         signal.throwIfAborted();
-        const connectionId = result.body.connectionId ?? result.body.id;
+        const { connectionId } =
+          builtinConnectorManualGrantContract.connect.responses[200].parse(
+            result.body,
+          );
         if (
           !(await readCompletedBuiltinConnectorAccount(
             createClient,
@@ -1266,7 +1269,10 @@ export const connectBuiltinConnectorNoAuth$ = command(
         );
         connectorStateChanged = true;
         signal.throwIfAborted();
-        const connectionId = result.body.connectionId ?? result.body.id;
+        const { connectionId } =
+          builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
+            result.body,
+          );
         if (
           !(await readCompletedBuiltinConnectorAccount(
             createClient,
@@ -1591,8 +1597,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           }),
           [200],
         );
-        const pollResult = pollResponse.body;
-        if (pollResult.status === "complete") {
+        if (pollResponse.body.status === "complete") {
           connectorStateChanged = true;
         }
 
@@ -1608,10 +1613,13 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           return { stop: true };
         }
 
+        signal.throwIfAborted();
+        const pollResult =
+          builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
+            pollResponse.body,
+          );
         if (pollResult.status === "complete") {
-          signal.throwIfAborted();
-          const connectionId =
-            pollResult.connectionId ?? pollResult.connector.id;
+          const connectionId = pollResult.connectionId;
           if (
             !(await readCompletedBuiltinConnectorAccount(
               get(apiClient$),
@@ -2248,8 +2256,10 @@ const completeConnectorExternalCode$ = command(
           return false;
         }
 
-        const connectionId =
-          completeResult.body.connectionId ?? completeResult.body.connector.id;
+        const { connectionId } =
+          builtinConnectorExternalCodeSessionContract.complete.responses[200].parse(
+            completeResult.body,
+          );
         if (
           !(await readCompletedBuiltinConnectorAccount(
             createClient,

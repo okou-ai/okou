@@ -15,6 +15,16 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+#[tokio::test]
+async fn malformed_tls_handshake_still_fails_the_derp_fixture() {
+    let server = super::Server::secure().await;
+    let mut socket = bounded(TcpStream::connect(server.address)).await.unwrap();
+    bounded(socket.write_all(b"invalid tls client hello"))
+        .await
+        .unwrap();
+    assert!(matches!(bounded(server.task).await, Err(error) if error.is_panic()));
+}
+
 struct BeforeWrite<F> {
     socket: TcpStream,
     before: Option<F>,

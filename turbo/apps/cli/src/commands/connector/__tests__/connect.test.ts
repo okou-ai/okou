@@ -71,7 +71,10 @@ describe("okou connector connect command", () => {
     connectCommand.setOptionValueWithSource("value", [], "default");
     connectCommand.setOptionValue("input", undefined);
     server.use(stubCustomConnectors([]));
-    server.use(stubConnectorAccounts([]), stubConnectorAccountDetails());
+    server.use(
+      stubConnectorAccounts([]),
+      stubConnectorAccountDetails({ authMethod: "api-token" }),
+    );
   });
 
   afterEach(() => {
@@ -417,7 +420,7 @@ describe("okou connector connect command", () => {
   });
 
   it.each([undefined, DEFAULT_CONNECTION_ID])(
-    "prints JSON with optional builtin operation identity %s",
+    "normalizes builtin operation identity %s and strips credentials",
     async (connectionId) => {
       server.use(
         http.post(
@@ -451,8 +454,104 @@ describe("okou connector connect command", () => {
         slug: "openai",
         authMethod: "api-token",
       });
-      expect(JSON.parse(output).connectionId).toBe(connectionId);
+      expect(JSON.parse(output).connectionId).toBe(DEFAULT_CONNECTION_ID);
       expect(output).not.toContain("secret-must-not-appear");
+    },
+  );
+
+  it("renders canonical builtin completion from its exact verified account", async () => {
+    const account = connectorAccount(
+      { kind: "builtin", connectorSlug: "openai" },
+      {
+        id: SIBLING_CONNECTION_ID,
+        authMethod: "api-token",
+        externalUsername: "operated-account",
+        isDefault: false,
+      },
+    );
+    const accountRequests: string[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/connectors/openai/manual-grant",
+        () => {
+          return HttpResponse.json({
+            connectionId: SIBLING_CONNECTION_ID,
+            accessToken: "secret-must-not-appear",
+          });
+        },
+      ),
+      http.get(
+        "http://localhost:3000/api/connector-accounts/:connectionId",
+        ({ params }) => {
+          accountRequests.push(String(params.connectionId));
+          return HttpResponse.json(account);
+        },
+      ),
+    );
+    await connectCommand.parseAsync([
+      "node",
+      "cli",
+      "openai",
+      "--add",
+      "--value",
+      "apiKey=secret-input",
+      "--json",
+    ]);
+    expect(accountRequests).toStrictEqual([SIBLING_CONNECTION_ID]);
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
+      id: SIBLING_CONNECTION_ID,
+      connectionId: SIBLING_CONNECTION_ID,
+      slug: "openai",
+      authMethod: "api-token",
+      externalUsername: "operated-account",
+    });
+    expect(output).not.toContain("secret");
+    expect(JSON.parse(output)).not.toHaveProperty("target");
+    expect(JSON.parse(output)).not.toHaveProperty("isDefault");
+  });
+
+  it.each([
+    {},
+    { connectionId: "secret-invalid-id" },
+    { connectionId: DEFAULT_CONNECTION_ID, id: SIBLING_CONNECTION_ID },
+    { connectionId: DEFAULT_CONNECTION_ID, slug: "stripe" },
+    { connectionId: DEFAULT_CONNECTION_ID, authMethod: "oauth" },
+  ])(
+    "rejects invalid builtin operation receipt %j before account lookup",
+    async (receipt) => {
+      let accountRequests = 0;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/connectors/openai/manual-grant",
+          () => {
+            return HttpResponse.json(receipt);
+          },
+        ),
+        http.get(
+          "http://localhost:3000/api/connector-accounts/:connectionId",
+          () => {
+            accountRequests++;
+            return HttpResponse.json({});
+          },
+        ),
+      );
+      await expect(
+        connectCommand.parseAsync([
+          "node",
+          "cli",
+          "openai",
+          "--add",
+          "--value",
+          "apiKey=secret-input",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(accountRequests).toBe(0);
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+      expect(mockConsoleError.mock.calls.flat().join("\n")).not.toContain(
+        "secret",
+      );
     },
   );
 
