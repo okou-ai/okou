@@ -14,6 +14,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  RunningIndicator,
   surfaceVariants,
   Tooltip,
   TooltipContent,
@@ -340,6 +341,24 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
     <div
       data-resource-scroll
       className="isolate mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 [overflow-anchor:none]"
+      onScroll={(event) => {
+        if (
+          !expanded.artifacts ||
+          !data?.nextCursor ||
+          paging.state === "loading" ||
+          paging.state === "hasError"
+        ) {
+          return;
+        }
+        const viewport = event.currentTarget;
+        const distanceFromBottom =
+          viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+        // Allow for fractional scroll positions at the bottom.
+        if (distanceFromBottom > 1) {
+          return;
+        }
+        detach(loadMore(pageSignal), Reason.DomCallback);
+      }}
     >
       <ChatOrigin thread={thread} />
       <ChatRelationships thread={thread} />
@@ -378,22 +397,44 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               }}
             />
           )}
-          {expanded.artifacts && data.nextCursor && (
-            <Button
-              variant="quiet"
-              size="xs"
-              disabled={paging.state === "loading"}
-              onClick={() => {
-                detach(loadMore(pageSignal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return paging.state === "hasError"
-                  ? $.chat.resources.retry
-                  : $.artifacts.catalog.loadMore;
-              })}
-            </Button>
-          )}
+          {expanded.artifacts &&
+            data.nextCursor &&
+            paging.state === "loading" && (
+              <p
+                role="status"
+                className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
+              >
+                <RunningIndicator />
+                {t(($) => {
+                  return $.chat.resources.loading;
+                })}
+              </p>
+            )}
+          {expanded.artifacts &&
+            data.nextCursor &&
+            paging.state === "hasError" && (
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground"
+              >
+                <p>
+                  {t(($) => {
+                    return $.chat.resources.loadFailed;
+                  })}
+                </p>
+                <Button
+                  variant="quiet"
+                  size="xs"
+                  onClick={() => {
+                    detach(loadMore(pageSignal), Reason.DomCallback);
+                  }}
+                >
+                  {t(($) => {
+                    return $.chat.resources.retry;
+                  })}
+                </Button>
+              </div>
+            )}
         </section>
       )}
       <ChatResourcesStatus thread={thread} />
