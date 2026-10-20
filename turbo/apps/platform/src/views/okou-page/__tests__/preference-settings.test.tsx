@@ -15,6 +15,42 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
+test("keeps the Morning Brief switch on while the platform recovers its schedule", async () => {
+  let preference: MorningBriefPreferenceResponse = {
+    enabled: true,
+    status: "error",
+    unavailableReason: null,
+  };
+  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+    return respond(200, preference);
+  });
+  context.mocks.api(
+    morningBriefPreferenceContract.update,
+    ({ body, respond }) => {
+      preference = { ...preference, enabled: body.enabled, status: "paused" };
+      return respond(200, preference);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=preference" });
+  const card = await screen.findByTestId("morning-brief-preference");
+  await expect(
+    within(card).findByText(
+      "Temporarily unavailable. Okou will retry automatically.",
+    ),
+  ).resolves.toBeInTheDocument();
+  const toggle = within(card).getByRole("switch", { name: "Morning brief" });
+  expect(toggle).toBeChecked();
+  expect(
+    queryAllByRoleFast("button", card).find((button) => {
+      return button.textContent?.trim() === "Retry";
+    }),
+  ).toBeUndefined();
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).not.toBeChecked();
+  });
+});
+
 async function expectUnifiedSection(
   section: "preference" | "model" | "debug",
   heading: "Preference" | "Use more models" | "Debug",

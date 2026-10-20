@@ -1238,6 +1238,287 @@ async function prepareBriefMember({
   return { actor, createdAt };
 }
 
+describe("Official Workflow failure recovery", () => {
+  async function failScheduleOccurrence(
+    actor: ApiTestUser,
+    automation: WorkflowAutomationSummary,
+    runnerGroup: ReturnType<typeof runs.configureRunnerGroup>,
+  ) {
+    if (!automation.nextRunAt) {
+      throw new Error("Expected the next schedule occurrence");
+    }
+    const scheduledAt = new Date(automation.nextRunAt).getTime();
+    const fired = await fireOfficialSchedule(actor, automation);
+    mockNow(scheduledAt + 1000);
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(fired.runId);
+    await webhooks.requestAgentComplete(
+      {
+        runId: fired.runId,
+        exitCode: 1,
+        error: "Managed provider temporarily unavailable",
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    return (
+      await accept(
+        automationClient().get({
+          headers: authHeaders(actor),
+          params: { id: automation.id },
+        }),
+        [200],
+      )
+    ).body;
+  }
+
+  async function preparePausedOfficialSchedule(
+    name: "agent-suggestions" | "morning-brief",
+  ) {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "UTC");
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    if (name === "agent-suggestions") {
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.AgentSuggestion]: true },
+      );
+      await accept(
+        setupApp({ context, routes: proactiveSuggestionsRoutes })(
+          proactiveSuggestionsContract,
+        ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+        [200],
+      );
+    } else {
+      await connectBriefSource(actor);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+    }
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const installation = listed.body.find((workflow) => {
+      return workflow.official?.definitionName === name;
+    });
+    if (!installation) {
+      throw new Error("Expected the Official installation");
+    }
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: installation.id },
+      }),
+      [200],
+    );
+    let automation = detail.body.automations[0];
+    if (!automation) {
+      throw new Error("Expected an Official schedule");
+    }
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    for (let failure = 0; failure < 3; failure += 1) {
+      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+    }
+    expect(automation).toMatchObject({
+      enabled: false,
+      official: { intendedEnabled: true },
+    });
+    expect(automation.nextRunAt).not.toBeNull();
+    return { actor, automation, runnerGroup };
+  }
+
+  it.each(["agent-suggestions", "morning-brief"] as const)(
+    "restores %s at its next period without a user enable operation",
+    async (name) => {
+      const { actor, automation, runnerGroup } =
+        await preparePausedOfficialSchedule(name);
+      const preference =
+        name === "morning-brief"
+          ? await readBriefPreference(actor)
+          : await accept(
+              setupApp({ context, routes: proactiveSuggestionsRoutes })(
+                proactiveSuggestionsContract,
+              ).get({ headers: authHeaders(actor) }),
+              [200],
+            );
+      expect(preference.body).toMatchObject({ enabled: true, status: "error" });
+      if (!automation.nextRunAt) {
+        throw new Error("Expected automatic recovery time");
+      }
+      mockNow(new Date(automation.nextRunAt).getTime() - 60_000);
+      await executeAutomationCron();
+      const waiting = await accept(
+        automationClient().get({
+          headers: authHeaders(actor),
+          params: { id: automation.id },
+        }),
+        [200],
+      );
+      expect(waiting.body.enabled).toBeFalsy();
+      const recovered = await fireOfficialSchedule(actor, automation);
+      mockNow(new Date(automation.nextRunAt).getTime() + 1000);
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(recovered.runId);
+      const stillRecovering =
+        name === "morning-brief"
+          ? await readBriefPreference(actor)
+          : await accept(
+              setupApp({ context, routes: proactiveSuggestionsRoutes })(
+                proactiveSuggestionsContract,
+              ).get({ headers: authHeaders(actor) }),
+              [200],
+            );
+      expect(stillRecovering.body).toMatchObject({
+        enabled: true,
+        status: "error",
+      });
+      await createChatEventsFixture(context).completeChatRunOk(
+        recovered.runId,
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
+      );
+      await flushWaitUntilForTest();
+      const healthy =
+        name === "morning-brief"
+          ? await readBriefPreference(actor)
+          : await accept(
+              setupApp({ context, routes: proactiveSuggestionsRoutes })(
+                proactiveSuggestionsContract,
+              ).get({ headers: authHeaders(actor) }),
+              [200],
+            );
+      expect(healthy.body).toMatchObject({ enabled: true, status: "enabled" });
+    },
+  );
+
+  it.each(["user opt-out", "feature unavailable"] as const)(
+    "does not resume paused suggestions after %s",
+    async (reason) => {
+      const { actor, automation } =
+        await preparePausedOfficialSchedule("agent-suggestions");
+      if (!actor.orgId || !automation.nextRunAt) {
+        throw new Error("Expected an owned schedule");
+      }
+      if (reason === "user opt-out") {
+        await accept(
+          setupApp({ context, routes: proactiveSuggestionsRoutes })(
+            proactiveSuggestionsContract,
+          ).update({ headers: authHeaders(actor), body: { enabled: false } }),
+          [200],
+        );
+      } else {
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.AgentSuggestion]: false },
+        );
+      }
+      mockNow(new Date(automation.nextRunAt).getTime());
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+      const stopped = await accept(
+        automationClient().get({
+          headers: authHeaders(actor),
+          params: { id: automation.id },
+        }),
+        [200],
+      );
+      expect(stopped.body.enabled).toBeFalsy();
+    },
+  );
+
+  it("does not resume a fault-paused brief after catalog retirement", async () => {
+    const { actor, automation } =
+      await preparePausedOfficialSchedule("morning-brief");
+    const retired = await syncCatalog(
+      catalog(
+        [...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES, "connector-doctor"].map(
+          (name) => {
+            return {
+              name,
+              lifecycle: "retired" as const,
+              presentation: { category: "productivity" as const },
+            };
+          },
+        ),
+      ),
+    );
+    expect(retired.body).toMatchObject({
+      outcome: "accepted",
+      diagnostics: [],
+    });
+    if (!automation.nextRunAt) {
+      throw new Error("Expected the recovery occurrence");
+    }
+    mockNow(new Date(automation.nextRunAt));
+    await executeAutomationCron();
+    const stopped = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(stopped.body).toMatchObject({
+      enabled: false,
+      official: { intendedEnabled: true },
+    });
+  });
+
+  it("keeps user-created schedules stopped after three failures", async () => {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+      isolatePg: true,
+      timezone: "UTC",
+    });
+    const workflowId = await workflowBdd.createWorkflow(actor, {
+      agentId: defaultAgentId,
+      name: "user-managed-schedule",
+    });
+    let automation = (
+      await accept(
+        automationClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 600 } },
+        }),
+        [201],
+      )
+    ).body;
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    for (let failure = 0; failure < 3; failure += 1) {
+      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+    }
+    expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
+    mockNow(new Date("2030-01-02T00:00:00.000Z"));
+    await executeAutomationCron();
+    const stopped = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(stopped.body).toMatchObject({ enabled: false, nextRunAt: null });
+  });
+});
+
 describe("Morning Brief explicit installation", () => {
   it.each(["ordinary-first", "official-first"] as const)(
     "keeps Morning Brief enrollment on the Official identity with same-name user content (%s)",
@@ -1861,10 +2142,10 @@ describe("Morning Brief catalog reconciliation", () => {
     await runs.heartbeatRunner(runnerGroup);
     const first = await fireOfficialSchedule(actor, initial);
     const firstClaim = await runs.claimRunnerJob(first.runId);
-    await webhooks.requestAgentComplete(
-      { runId: first.runId, exitCode: 0 },
+    await createChatEventsFixture(context).completeChatRunOk(
+      first.runId,
       { authorization: `Bearer ${firstClaim.sandboxToken}` },
-      [200],
+      { cliAgentType: "pi", cliAgentSessionId: firstClaim.piSessionId },
     );
     await flushWaitUntilForTest();
     mockNow(new Date(initial.nextRunAt).getTime() + 1000);
@@ -2868,10 +3149,10 @@ describe("Morning Brief workflow selection", () => {
           ]);
         }
         await withMockNowForTest(new Date(schedule.nextRunAt), async () => {
-          await webhooks.requestAgentComplete(
-            { runId: fired.runId, exitCode: 0 },
+          await createChatEventsFixture(context).completeChatRunOk(
+            fired.runId,
             { authorization: `Bearer ${claim.sandboxToken}` },
-            [200],
+            { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
           );
           await flushWaitUntilForTest();
         });
@@ -2989,10 +3270,10 @@ describe("Morning Brief workflow selection", () => {
         readMorningBriefAutomations(actor, installation.id),
       ).resolves.toMatchObject([{ id: initial.id, nextRunAt: null }]);
       await withMockNowForTest(new Date(schedule.nextRunAt), async () => {
-        await webhooks.requestAgentComplete(
-          { runId, exitCode: 0 },
+        await createChatEventsFixture(context).completeChatRunOk(
+          runId,
           { authorization: `Bearer ${claim.sandboxToken}` },
-          [200],
+          { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
         );
         await flushWaitUntilForTest();
       });

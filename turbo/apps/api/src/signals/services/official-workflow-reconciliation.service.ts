@@ -4027,7 +4027,12 @@ const reconcileCurrentBlueprintLifecycleGap$ = command(
     ) {
       return null;
     }
-    if (automation.officialIntendedEnabled && !automation.enabled) {
+    if (
+      automation.officialIntendedEnabled &&
+      !automation.enabled &&
+      // Failure-threshold pauses belong to the timed recovery lane.
+      automation.consecutiveFailures < 3
+    ) {
       const enabled = await set(
         enableWorkflowAutomation$,
         { orgId: args.orgId, member: args.member, automationId: automation.id },

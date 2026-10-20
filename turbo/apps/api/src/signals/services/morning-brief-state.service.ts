@@ -52,6 +52,8 @@ interface MorningBriefOwnership {
 interface MorningBriefAutomationState {
   readonly id: string;
   readonly enabled: boolean;
+  readonly intendedEnabled: boolean;
+  readonly consecutiveFailures: number;
   readonly cronExpression: string | null;
   readonly timezone: string;
   readonly nextRunAt: Date | null;
@@ -240,6 +242,8 @@ const loadMorningBriefAutomationState$ = command(
       .select({
         id: workflowAutomations.id,
         enabled: workflowAutomations.enabled,
+        intendedEnabled: workflowAutomations.officialIntendedEnabled,
+        consecutiveFailures: workflowAutomations.consecutiveFailures,
         nextRunAt: workflowAutomations.nextRunAt,
         timezone: workflowAutomations.timezone,
         cronExpression: workflowAutomations.cronExpression,
@@ -271,12 +275,17 @@ const loadMorningBriefAutomationState$ = command(
     ) {
       return "unexpected-schedule";
     }
-    if (automation.reconciliationStatus !== "current") {
+    if (
+      automation.reconciliationStatus !== "current" ||
+      automation.intendedEnabled === null
+    ) {
       return "unreconciled-installation";
     }
     return {
       id: automation.id,
       enabled: automation.enabled,
+      intendedEnabled: automation.intendedEnabled,
+      consecutiveFailures: automation.consecutiveFailures,
       cronExpression: automation.cronExpression,
       timezone: automation.timezone,
       nextRunAt: automation.nextRunAt,

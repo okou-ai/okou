@@ -198,8 +198,14 @@ const projectInstalledPreference$ = command(
       kind: "ok",
       workflowId: state.installation.id,
       preference: {
-        enabled: state.automation.enabled,
-        status: state.automation.enabled ? "enabled" : "paused",
+        enabled: state.automation.intendedEnabled,
+        status: !state.automation.intendedEnabled
+          ? "paused"
+          : state.automation.consecutiveFailures > 0
+            ? "error"
+            : state.automation.enabled
+              ? "enabled"
+              : "preparing",
         unavailableReason: null,
       },
     };

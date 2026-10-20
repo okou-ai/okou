@@ -5168,7 +5168,7 @@
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
+        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
@@ -5177,7 +5177,7 @@
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
-        "preparationFailed": "Penyiapan tidak dapat diselesaikan. Coba lagi.",
+        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
