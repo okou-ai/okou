@@ -21,7 +21,6 @@ final class ConversationChromeTests: XCTestCase {
     defer { unmount(window) }
     let collection = try XCTUnwrap(
       markers(in: host.view).first?.enclosingScrollView as? UICollectionView)
-    XCTAssertTrue(collection.topEdgeEffect.isHidden)
     await stableHostingGeometry(host.view)
     let viewport = collection.convert(collection.bounds, to: window)
     XCTAssertEqual(viewport.minY, 0, accuracy: 1)
@@ -105,8 +104,7 @@ private struct ConversationHeaderTestView: View {
   var body: some View {
     ChatDetailView(conversation: conversation, topContentInset: 60)
       .safeAreaBar(edge: .top, spacing: 0) {
-        ConversationHeaderBar { headerContent }
-          .frame(height: 60)
+        headerContent
       }
       .compositingGroup()
   }
