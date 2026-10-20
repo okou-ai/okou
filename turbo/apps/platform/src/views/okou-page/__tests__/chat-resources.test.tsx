@@ -120,6 +120,21 @@ test("Retry a resource loading error without showing an empty state", async () =
   expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
 });
 
+test("Name the closed resource trigger in a tooltip until the panel opens", async () => {
+  await setupResources({ preferred: false });
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  const user = userEvent.setup();
+  await user.hover(resourceButton());
+  const tooltip = await screen.findByText("Open artifacts");
+  await user.click(resourceButton());
+  await waitFor(() => {
+    expect(tooltip).not.toBeInTheDocument();
+  });
+  expect(resourceState()).toStrictEqual({ open: true, visible: true });
+});
+
 test("Show all three resources without an overflow control at the limit", async () => {
   const { panel } = await setupOverflowResources(3);
   for (const name of ["Artifacts", "Links"]) {

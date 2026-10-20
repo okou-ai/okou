@@ -15,6 +15,10 @@ import {
   PopoverContent,
   PopoverTrigger,
   surfaceVariants,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -73,16 +77,13 @@ function ChatResourcesButtonInner({
 }) {
   const { t } = useTranslation();
   const popupRef = useSet(thread.resources.popupOnRef$);
-  const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
   const open = useLastResolved(resources.open$) ?? false;
   const wide = useGet(resources.wide$);
-  const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
-  const anchorRef = useSet(resources.anchorOnRef$);
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
@@ -132,37 +133,11 @@ function ChatResourcesButtonInner({
         setOpen(nextOpen);
       }}
     >
-      <PopoverTrigger
-        ref={anchorRef}
-        aria-haspopup={undefined}
-        disabled={saving}
-        onBlur={(event) => {
-          // The artifact button and popup form one keyboard interaction zone.
-          blurControl(event.relatedTarget);
-        }}
-        render={
-          <Button
-            focusableWhenDisabled
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn(
-              "shrink-0 duration-150",
-              largeTarget && "size-11",
-              open &&
-                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-            )}
-            aria-label={t(($) => {
-              return $.chat.thread.openArtifacts;
-            })}
-            aria-pressed={open}
-            aria-busy={saving}
-          />
-        }
-      >
-        <Package size={18} />
-      </PopoverTrigger>
+      <ChatResourcesTrigger
+        thread={thread}
+        open={open}
+        largeTarget={largeTarget}
+      />
       <PopoverContent
         ref={popupRef}
         // Persistent resources share the chat's keyboard context.
@@ -191,6 +166,65 @@ function ChatResourcesButtonInner({
         <ChatResourcesBody thread={thread} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+function ChatResourcesTrigger({
+  thread,
+  open,
+  largeTarget,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly open: boolean;
+  readonly largeTarget: boolean;
+}) {
+  const { t } = useTranslation();
+  const anchorRef = useSet(thread.resources.anchorOnRef$);
+  const blurControl = useSet(thread.resources.blurControl$);
+  const saving = useGet(thread.resources.saving$);
+  const label = t(($) => {
+    return $.chat.thread.openArtifacts;
+  });
+  return (
+    <TooltipProvider delay={300}>
+      {/* The open panel sits below the button, where the tooltip would cover it. */}
+      <Tooltip disabled={open}>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              ref={anchorRef}
+              aria-haspopup={undefined}
+              disabled={saving}
+              onBlur={(event) => {
+                // The artifact button and popup form one keyboard interaction zone.
+                blurControl(event.relatedTarget);
+              }}
+              render={
+                <Button
+                  focusableWhenDisabled
+                  type="button"
+                  variant="quiet"
+                  size="icon-sm"
+                  iconSize="md"
+                  className={cn(
+                    "shrink-0 duration-150",
+                    largeTarget && "size-11",
+                    open &&
+                      "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
+                  )}
+                  aria-label={label}
+                  aria-pressed={open}
+                  aria-busy={saving}
+                />
+              }
+            />
+          }
+        >
+          <Package size={18} />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
