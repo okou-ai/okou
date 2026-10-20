@@ -116,7 +116,7 @@ export async function setupResources(
 }
 
 export function resourceButton() {
-  return buttonNamed("Open artifacts");
+  return buttonNamed("Resources");
 }
 export function resourcePanel() {
   return screen.queryByRole("region", { name: "Resources" });
@@ -133,7 +133,7 @@ export function composer() {
 
 export function resourceState() {
   return {
-    open: resourceButton().getAttribute("aria-pressed") === "true",
+    open: resourceButton().getAttribute("aria-expanded") === "true",
     visible: resourcePanel() !== null,
   };
 }

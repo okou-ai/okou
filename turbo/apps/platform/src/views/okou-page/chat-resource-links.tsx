@@ -1,20 +1,36 @@
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Copy } from "lucide-react";
+import { Copy, Link2 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type { ArtifactCatalogSignals } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import {
   copyChatResourceLink$,
   copyChatResourceArtifact$,
+  type ChatResourceLink,
 } from "../../signals/chat-page/chat-resources.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
+  RESOURCE_GLYPH_CLASS,
+  RESOURCE_ROW_CLASS,
+  RESOURCE_SECTION_CLASS,
 } from "./chat-resource-section.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+
+function linkTitle(link: ChatResourceLink) {
+  return link.title === link.url
+    ? link.title.replace(/^https?:\/\//u, "")
+    : link.title;
+}
+
+// A link labelled with its own address already shows where it goes.
+function linkHost(link: ChatResourceLink) {
+  const host = new URL(link.url).hostname.replace(/^www\./u, "");
+  return link.title === link.url || link.title.includes(host) ? null : host;
+}
 
 export function CopyResourceLink(
   source:
@@ -36,7 +52,7 @@ export function CopyResourceLink(
       aria-label={t(($) => {
         return $.chat.resources.copyLink;
       })}
-      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+      className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
       onClick={() => {
         return detach(
           "artifactId" in source
@@ -72,7 +88,7 @@ export function ChatResourceLinks({
   }
   return (
     <section
-      className={showHeading ? "py-3" : undefined}
+      className={showHeading ? RESOURCE_SECTION_CLASS : undefined}
       aria-label={t(($) => {
         return $.chat.resources.links;
       })}
@@ -97,15 +113,22 @@ export function ChatResourceLinks({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-8 min-w-0 flex-1 items-center rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
+                  className={RESOURCE_ROW_CLASS}
                 >
-                  <HoverScrollTitle
-                    title={
-                      link.title === link.url
-                        ? link.title.replace(/^https?:\/\//u, "")
-                        : link.title
-                    }
-                  />
+                  <span className={RESOURCE_GLYPH_CLASS}>
+                    <Link2 size={16} />
+                  </span>
+                  <HoverScrollTitle title={linkTitle(link)} />
+                  {linkHost(link) && (
+                    // The address stays the link's accessible destination; the
+                    // host only helps sighted users scan.
+                    <span
+                      aria-hidden="true"
+                      className="max-w-32 shrink-0 truncate text-xs text-muted-foreground"
+                    >
+                      {linkHost(link)}
+                    </span>
+                  )}
                 </a>
                 <CopyResourceLink url={link.url} />
               </li>

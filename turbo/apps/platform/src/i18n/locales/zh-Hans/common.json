@@ -2138,16 +2138,11 @@
       "skipAutomationEvent": "跳过自动化事件"
     },
     "relations": {
-      "communications": "消息",
-      "idle": "空闲",
+      "chats": "对话",
       "loadFailed": "加载失败",
-      "messageUnavailable": "消息不可用",
       "origin": "发起自",
       "queued": "排队中",
-      "received": "收到",
       "running": "运行中",
-      "sent": "发出",
-      "toggleMessages": "与 {{title}} 的消息往来",
       "unavailable": "不可访问",
       "untitled": "未命名"
     },
@@ -2169,10 +2164,12 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
+      "empty": "这个对话的成果、链接和关联对话会显示在这里。",
       "emptyLinks": "此聊天中暂无链接",
       "expand": "展开",
       "links": "链接",
       "loadFailed": "无法加载聊天资源",
+      "loading": "正在加载资源",
       "loadingLinks": "正在加载链接",
       "retry": "重试",
       "title": "聊天资源"
@@ -5065,6 +5062,10 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
+        "resources": {
+          "description": "有足够空间时，在对话旁显示该对话的成果、链接和关联对话。",
+          "title": "自动打开资源面板"
+        },
         "sectionTitle": "聊天"
       },
       "debug": {

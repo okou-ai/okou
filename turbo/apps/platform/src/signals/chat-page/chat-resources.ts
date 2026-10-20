@@ -1,4 +1,4 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { marked } from "marked";
@@ -13,11 +13,8 @@ import {
   hostedSiteUrlChanges$,
 } from "../hosted-site-url-changes.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import {
-  userPreferences$,
-  updateUserPreference$,
-} from "../okou-page/settings/user-preferences.ts";
-import { onRef, onRejection, withCleanup } from "../utils.ts";
+import { userPreferences$ } from "../okou-page/settings/user-preferences.ts";
+import { onRef } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 
 export const chatResourcePanelEnabled$ = computed((get) => {
@@ -25,52 +22,11 @@ export const chatResourcePanelEnabled$ = computed((get) => {
 });
 
 const RESOURCE_PANEL_MIN_GUTTER = 408;
-const optimisticPreference$ = state<boolean | null>(null);
-const preferenceRevision$ = state(0);
-const savingPreference$ = computed((get) => {
-  return get(optimisticPreference$) !== null;
-});
 
-const resourcePreference$ = computed(async (get) => {
-  const optimistic = get(optimisticPreference$);
-  return (
-    optimistic ?? (await get(userPreferences$)).chatResourcesEnabledByDefault
-  );
+/** Whether the resource panel opens on its own in chats with resources. */
+export const chatResourcesEnabledByDefault$ = computed(async (get) => {
+  return (await get(userPreferences$)).chatResourcesEnabledByDefault;
 });
-
-const saveResourcePreference$ = command(
-  async ({ get, set }, enabled: boolean, signal: AbortSignal) => {
-    if (get(savingPreference$)) {
-      return;
-    }
-    set(optimisticPreference$, enabled);
-    set(preferenceRevision$, (revision) => {
-      return revision + 1;
-    });
-    await withCleanup(
-      onRejection(
-        async () => {
-          await set(
-            updateUserPreference$,
-            { chatResourcesEnabledByDefault: enabled },
-            signal,
-          );
-          signal.throwIfAborted();
-          await get(userPreferences$);
-          signal.throwIfAborted();
-        },
-        () => {
-          set(preferenceRevision$, (revision) => {
-            return revision + 1;
-          });
-        },
-      ),
-      () => {
-        set(optimisticPreference$, null);
-      },
-    );
-  },
-);
 
 export interface ChatResourceLink {
   readonly url: string;
@@ -255,38 +211,25 @@ function createChatResourcePanelSignals() {
   const boundary$ = state<HTMLElement | null>(null);
   const collisionBoundary$ = state<HTMLElement | null>(null);
   const messageColumn$ = state<HTMLElement | null>(null);
-  const temporary$ = state<{
+  // The user's choice in this chat. A close always holds; an open made with
+  // room beside the transcript steps aside while that room is gone.
+  const choice$ = state<{
     readonly open: boolean;
-    readonly revision: number;
+    readonly narrow: boolean;
   } | null>(null);
   const wide$ = computed((get) => {
     return get(gutterWidth$) > RESOURCE_PANEL_MIN_GUTTER;
   });
-  const open$ = computed(async (get) => {
-    const temporary = get(temporary$);
-    const revision = get(preferenceRevision$);
-    const wide = get(wide$);
-    const preferred = await get(resourcePreference$);
-    return temporary?.revision === revision
-      ? temporary.open
-      : preferred && wide;
+  const automatic$ = computed(async (get) => {
+    return get(wide$) && (await get(chatResourcesEnabledByDefault$));
+  });
+  const chosen$ = computed((get) => {
+    const choice = get(choice$);
+    return choice ? choice.open && (choice.narrow || get(wide$)) : null;
   });
   const setOpen$ = command(({ get, set }, open: boolean) => {
-    set(temporary$, { open, revision: get(preferenceRevision$) });
+    set(choice$, { open, narrow: !get(wide$) });
   });
-  const changePreference$ = command(
-    async ({ get, set }, enabled: boolean, signal: AbortSignal) => {
-      if (get(savingPreference$)) {
-        return;
-      }
-      // Apply immediately, even when the narrow layout would normally be closed.
-      set(temporary$, {
-        open: enabled,
-        revision: get(preferenceRevision$) + 1,
-      });
-      await set(saveResourcePreference$, enabled, signal);
-    },
-  );
   const measure$ = command(({ get, set }) => {
     const viewport = get(boundary$);
     const column = get(messageColumn$);
@@ -298,9 +241,6 @@ function createChatResourcePanelSignals() {
       viewport.getBoundingClientRect().right -
         column.getBoundingClientRect().right,
     );
-    if (width > RESOURCE_PANEL_MIN_GUTTER !== get(wide$)) {
-      set(temporary$, null);
-    }
     set(gutterWidth$, width);
   });
   const layoutOnRef$ = onRef(
@@ -318,7 +258,7 @@ function createChatResourcePanelSignals() {
       // Use the whole pane so the composer does not shorten the resource list.
       set(collisionBoundary$, element);
       set(messageColumn$, column);
-      set(temporary$, null);
+      set(choice$, null);
       const measure = () => {
         set(measure$);
       };
@@ -333,7 +273,7 @@ function createChatResourcePanelSignals() {
           set(boundary$, null);
           set(collisionBoundary$, null);
           set(messageColumn$, null);
-          set(temporary$, null);
+          set(choice$, null);
         },
         { once: true },
       );
@@ -354,10 +294,10 @@ function createChatResourcePanelSignals() {
   });
 
   return {
-    open$,
+    automatic$,
+    chosen$,
     wide$,
     setOpen$,
-    changePreference$,
     measure$,
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,
@@ -373,9 +313,6 @@ function createChatResourcePanelSignals() {
     popupAnchor$: computed((get) => {
       return resourcePopupAnchor(get(boundary$));
     }),
-    saving$: computed((get) => {
-      return get(savingPreference$);
-    }),
   };
 }
 
@@ -383,11 +320,10 @@ export function createChatResourceSignals(
   groups$: Computed<readonly ChatEventGroup[]>,
   catalog: ArtifactCatalogSignals,
   initialEventsReady$: Computed<boolean>,
-  closeMessages$: Command<void, []>,
 ) {
   const panel = createChatResourcePanelSignals();
   const expandedSections$ = state({
-    messages: false,
+    chats: false,
     artifacts: false,
     links: false,
   });
@@ -398,13 +334,10 @@ export function createChatResourceSignals(
     toggleSection$: command(
       (
         { get, set },
-        section: "messages" | "artifacts" | "links",
+        section: "chats" | "artifacts" | "links",
         trigger: HTMLElement,
       ) => {
         if (get(expandedSections$)[section]) {
-          if (section === "messages") {
-            set(closeMessages$);
-          }
           const group = trigger.closest("section");
           const scroll = trigger.closest<HTMLElement>("[data-resource-scroll]");
           if (group && scroll) {

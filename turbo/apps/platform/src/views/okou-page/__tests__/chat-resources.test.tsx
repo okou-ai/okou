@@ -28,10 +28,9 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Hide the resource trigger and panel when there is no content", async () => {
+test("Keep the resource trigger in a chat without resources and explain the empty panel", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, {
     catalog: [],
     artifactRuns: () => {
@@ -44,12 +43,20 @@ test("Hide the resource trigger and panel when there is no content", async () =>
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  await screen.findByTestId("chat-thread-header-title");
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(resourceButton()).toBeInTheDocument();
+  });
   expect(resourcePanel()).not.toBeInTheDocument();
+  click(resourceButton());
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(
+    within(panel).findByText(
+      "Artifacts, links, and related chats from this chat appear here.",
+    ),
+  ).resolves.toBeInTheDocument();
 });
 
-test("Hide the resource trigger until content has loaded", async () => {
+test("Show the resource trigger before content loads and fill the open panel when it arrives", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -67,16 +74,17 @@ test("Hide the resource trigger until content has loaded", async () => {
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
-  expect(resourcePanel()).not.toBeInTheDocument();
-  response.resolve();
   await waitFor(() => {
     expect(resourceButton()).toBeInTheDocument();
   });
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
+  await within(panel).findByText("Loading resources");
+  response.resolve();
   await within(panel).findByText("report.pdf");
-  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
+  expect(
+    within(panel).queryByText("Loading resources"),
+  ).not.toBeInTheDocument();
 });
 
 test("Retry a resource loading error without showing an empty state", async () => {
@@ -127,7 +135,7 @@ test("Name the closed resource trigger in a tooltip until the panel opens", asyn
   });
   const user = userEvent.setup();
   await user.hover(resourceButton());
-  const tooltip = await screen.findByText("Open artifacts");
+  const tooltip = await screen.findByText("Resources");
   await user.click(resourceButton());
   await waitFor(() => {
     expect(tooltip).not.toBeInTheDocument();
@@ -266,7 +274,7 @@ test("Open in the actual right gutter and preserve links while removing duplicat
   expect(within(panel).queryByText("Report")).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button").filter((button) => {
-      return button.getAttribute("aria-label") === "Open artifacts";
+      return button.getAttribute("aria-label") === "Resources";
     }),
   ).toHaveLength(1);
   expect(screen.queryByText("Show resources")).not.toBeInTheDocument();

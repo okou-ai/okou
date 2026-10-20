@@ -2145,16 +2145,11 @@
       "skipAutomationEvent": "Skip automation event"
     },
     "relations": {
-      "communications": "Messages",
-      "idle": "Idle",
+      "chats": "Chats",
       "loadFailed": "Could not load",
-      "messageUnavailable": "Message unavailable",
       "origin": "From",
       "queued": "Queued",
-      "received": "Received",
       "running": "Running",
-      "sent": "Sent",
-      "toggleMessages": "Messages with {{title}}",
       "unavailable": "Unavailable",
       "untitled": "Untitled"
     },
@@ -2177,10 +2172,12 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
+      "empty": "Artifacts, links, and related chats from this chat appear here.",
       "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
       "links": "Links",
       "loadFailed": "Could not load resources",
+      "loading": "Loading resources",
       "loadingLinks": "Loading links",
       "retry": "Try again",
       "title": "Resources"
@@ -5077,6 +5074,10 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
+        "resources": {
+          "description": "Show a chat's artifacts, links, and related chats beside the conversation when there is room.",
+          "title": "Open resources automatically"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
