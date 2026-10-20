@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
@@ -15,7 +14,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { connectedConnectorsRoutes } from "../connected-connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorOverviewRoutes } from "../connector-overview";
 import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
@@ -27,7 +25,6 @@ const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
   ...connectedConnectorsRoutes,
-  ...connectorOverviewRoutes,
   ...builtinConnectorsRoutes,
   ...connectorAccountRoutes,
   ...customConnectorsRoutes,
@@ -187,25 +184,6 @@ test("returns only saved connector briefs, independently of account defaults and
   expect((await accept(client.list({ headers }), [200])).body).toStrictEqual(
     listed,
   );
-
-  // The additive reader does not replace or narrow the legacy response.
-  const legacy = (
-    await accept(app(connectorOverviewContract).overview({ headers }), [200])
-  ).body;
-  expect(legacy.builtinConnectors).toStrictEqual(listed.builtinConnectors);
-  expect(legacy.customConnectors).toStrictEqual(listed.customConnectors);
-  expect(legacy.accountSummaries).toContainEqual(
-    expect.objectContaining({
-      target,
-      accountCount: 2,
-      defaultConnection: expect.objectContaining({
-        id: second.body.id,
-        displayName: "Work",
-      }),
-    }),
-  );
-  expect(legacy.computerUseHosts).toStrictEqual([]);
-  expect(typeof legacy.cloudBrowserEnabledByDefault).toBe("boolean");
 
   mocks.clerk.session(`user_${randomUUID()}`, orgId);
   expect((await accept(client.list({ headers }), [200])).body).toStrictEqual({

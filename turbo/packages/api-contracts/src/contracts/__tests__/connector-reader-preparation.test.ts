@@ -5,7 +5,6 @@ import {
   type ConnectorAccountTarget,
 } from "../connector-accounts";
 import { chatThreadConnectorSelectionContract } from "../chat-threads";
-import { connectorOverviewContract } from "../connector-overview";
 import { mcpConnectorsContract } from "../mcp-connectors";
 
 const connectionId = "11111111-1111-4111-8111-111111111111";
@@ -38,7 +37,6 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
   const { id: _id, ...identity } = brief;
   return {
     account,
-    brief,
     inspection: {
       ...identity,
       kind: "available",
@@ -78,7 +76,7 @@ describe.each(targets)("$kind account reader preparation", (target) => {
       configuredFieldKeys: ["token"],
     },
   ])("retains old or additive setup metadata without defaults: %j", (setup) => {
-    const { account, brief, inspection, mcp } = payloads(target, setup);
+    const { account, inspection, mcp } = payloads(target, setup);
     const summary = {
       target,
       accountCount: 1,
@@ -115,16 +113,6 @@ describe.each(targets)("$kind account reader preparation", (target) => {
         results: [inspection],
       }),
     ).toStrictEqual({ results: [inspection] });
-    const overview = {
-      builtinConnectors: [],
-      customConnectors: [],
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
-      accountSummaries: [{ ...summary, defaultConnection: brief }],
-    };
-    expect(
-      connectorOverviewContract.overview.responses[200].parse(overview),
-    ).toStrictEqual(overview);
     expect(
       mcpConnectorsContract.list.responses[200].parse({ connectors: [mcp] }),
     ).toStrictEqual({ connectors: [mcp] });
@@ -142,7 +130,7 @@ describe.each(targets)("$kind account reader preparation", (target) => {
     { missingRequiredFields: "token" },
     { configuredFieldKeys: [42] },
   ])("rejects malformed account metadata: %j", (setup) => {
-    const { account, brief, inspection, mcp } = payloads(target, setup);
+    const { account, inspection, mcp } = payloads(target, setup);
     expect(
       connectorAccountsContract.connections.responses[200].safeParse({
         connections: [account],
@@ -152,22 +140,6 @@ describe.each(targets)("$kind account reader preparation", (target) => {
     expect(
       connectorAccountsContract.inspect.responses[200].safeParse({
         results: [inspection],
-      }).success,
-    ).toBe(false);
-    expect(
-      connectorOverviewContract.overview.responses[200].safeParse({
-        builtinConnectors: [],
-        customConnectors: [],
-        computerUseHosts: [],
-        cloudBrowserEnabledByDefault: true,
-        accountSummaries: [
-          {
-            target,
-            accountCount: 1,
-            attentionCount: 0,
-            defaultConnection: brief,
-          },
-        ],
       }).success,
     ).toBe(false);
     expect(

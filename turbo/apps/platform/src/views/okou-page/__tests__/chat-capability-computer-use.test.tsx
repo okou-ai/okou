@@ -5,7 +5,6 @@ import {
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -183,16 +182,6 @@ function observeResourceLists(): string[] {
       cloudBrowserEnabledByDefault: true,
       sshHosts: [],
       vncHosts: [],
-    });
-  });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
-    requested.push("legacy overview");
-    return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: [],
-      computerUseHosts: [],
-      cloudBrowserEnabledByDefault: true,
     });
   });
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {

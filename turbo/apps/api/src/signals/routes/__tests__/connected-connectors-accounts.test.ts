@@ -6,7 +6,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { builtinConnectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorOAuth2Contract,
@@ -19,7 +18,6 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { connectorOverviewRoutes } from "../connector-overview";
 import { connectedConnectorsRoutes } from "../connected-connectors";
 import { builtinConnectorsOauthDeviceAuthRoutes } from "../connectors-oauth-device-auth";
 import { customConnectorsRoutes } from "../custom-connectors";
@@ -34,7 +32,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 
 test.each(["builtin", "custom"] as const)(
-  "%s overview preserves saved accounts when the default requires reconnect",
+  "%s connected directory includes saved accounts when the default requires reconnect",
   async (kind) => {
     const startedAt = now();
     // Issue the original grant in the past so both database and application
@@ -51,14 +49,13 @@ test.each(["builtin", "custom"] as const)(
     mocks.clerk.session(userId, orgId, "org:admin");
     mockClerkMembership(
       context,
-      { userId, orgId, orgRole: "org:admin", email: "overview@example.test" },
+      { userId, orgId, orgRole: "org:admin", email: "connected@example.test" },
       "org:admin",
     );
     const app = await setupApp({
       context,
       isolatePg: true,
       routes: [
-        ...connectorOverviewRoutes,
         ...connectedConnectorsRoutes,
         ...connectorAccountRoutes,
         ...connectorCatalogRoutes,
@@ -75,7 +72,6 @@ test.each(["builtin", "custom"] as const)(
     mockStripeCliDashboardAuth();
     const headers = { authorization: "Bearer clerk-session" };
     const accounts = app(connectorAccountsContract);
-    const overview = app(connectorOverviewContract);
     let target: ConnectorAccountTarget = {
       kind: "builtin",
       connectorSlug: "stripe",
@@ -98,10 +94,6 @@ test.each(["builtin", "custom"] as const)(
         [201],
       );
       target = { kind: "custom", customConnectorId: definition.body.id };
-    }
-
-    async function readOverview() {
-      return (await accept(overview.overview({ headers }), [200])).body;
     }
 
     async function connect(displayName: string) {
@@ -174,20 +166,8 @@ test.each(["builtin", "custom"] as const)(
       ).body.connectionId;
     }
 
-    expect((await readOverview()).accountSummaries).toStrictEqual([]);
     const originalDefault = await connect("Original default");
     mockNow(startedAt);
-    expect((await readOverview()).accountSummaries).toMatchObject([
-      {
-        target,
-        accountCount: 1,
-        attentionCount: 1,
-        defaultConnection: {
-          id: originalDefault,
-          connectionStatus: "reconnect-required",
-        },
-      },
-    ]);
     const savedBriefs = (
       await accept(app(connectedConnectorsContract).list({ headers }), [200])
     ).body;
@@ -203,18 +183,6 @@ test.each(["builtin", "custom"] as const)(
     });
     const work = await connect("Work");
     const personal = await connect("Personal");
-    const mixed = await readOverview();
-    expect(mixed.accountSummaries).toMatchObject([
-      {
-        target,
-        accountCount: 3,
-        attentionCount: 1,
-        defaultConnection: {
-          id: originalDefault,
-          connectionStatus: "reconnect-required",
-        },
-      },
-    ]);
     const listed = await accept(
       accounts.connections({ headers, query: target }),
       [200],
@@ -226,9 +194,6 @@ test.each(["builtin", "custom"] as const)(
       }),
     ).toHaveLength(2);
     if (target.kind === "builtin") {
-      expect(mixed.builtinConnectors).toMatchObject([
-        { slug: target.connectorSlug },
-      ]);
       const catalog = await accept(
         app(connectorCatalogContract).get({
           headers,
@@ -241,9 +206,6 @@ test.each(["builtin", "custom"] as const)(
         connectionStatus: "reconnect-required",
       });
     } else {
-      expect(mixed.customConnectors).toMatchObject([
-        { id: target.customConnectorId },
-      ]);
       const definitions = await accept(
         app(customConnectorsContract).list({ headers }),
         [200],
@@ -253,27 +215,6 @@ test.each(["builtin", "custom"] as const)(
       ]);
     }
 
-    mocks.clerk.session(`user_${randomUUID()}`, orgId);
-    const otherUser = await readOverview();
-    expect(otherUser.accountSummaries).toStrictEqual([]);
-    expect(otherUser.builtinConnectors).toStrictEqual([]);
-    expect(otherUser.customConnectors).toStrictEqual([]);
-    mocks.clerk.session(userId, orgId, "org:admin");
-    await accept(
-      accounts.setDefault({
-        headers,
-        params: { connectionId: work },
-        body: { target },
-      }),
-      [200],
-    );
-    expect((await readOverview()).accountSummaries).toMatchObject([
-      {
-        accountCount: 3,
-        attentionCount: 1,
-        defaultConnection: { id: work, connectionStatus: "connected" },
-      },
-    ]);
     for (const connectionId of [work, personal]) {
       await accept(
         accounts.delete({
@@ -284,16 +225,6 @@ test.each(["builtin", "custom"] as const)(
         [200],
       );
     }
-    expect((await readOverview()).accountSummaries).toMatchObject([
-      {
-        accountCount: 1,
-        attentionCount: 1,
-        defaultConnection: {
-          id: originalDefault,
-          connectionStatus: "reconnect-required",
-        },
-      },
-    ]);
     await accept(
       accounts.delete({
         headers,
@@ -302,8 +233,6 @@ test.each(["builtin", "custom"] as const)(
       }),
       [200],
     );
-    const empty = await readOverview();
-    expect(empty.accountSummaries).toStrictEqual([]);
     expect(
       (await accept(app(connectedConnectorsContract).list({ headers }), [200]))
         .body,
@@ -311,7 +240,5 @@ test.each(["builtin", "custom"] as const)(
       builtinConnectors: [],
       customConnectors: [],
     });
-    expect(empty.builtinConnectors).toStrictEqual([]);
-    expect(empty.customConnectors).toStrictEqual([]);
   },
 );
