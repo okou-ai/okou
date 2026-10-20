@@ -289,26 +289,25 @@ async function loadConnection(
   return connectorId ? { ...connection, connectorId } : undefined;
 }
 
-async function markIngressFailed(
-  db: Db,
-  ingressId: string,
-  error: unknown,
-): Promise<void> {
-  const message = error instanceof Error ? error.message : "Unknown error";
-  await db
-    .update(feishuChatIngress)
-    .set({
-      status: "failed",
-      lastError: message.slice(0, 4000),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        eq(feishuChatIngress.status, "processing"),
-      ),
-    );
-}
+const markIngressFailed$ = command(
+  async ({ set }, ingressId: string, error: unknown): Promise<void> => {
+    const db = set(writeDb$);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    await db
+      .update(feishuChatIngress)
+      .set({
+        status: "failed",
+        lastError: message.slice(0, 4000),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(feishuChatIngress.id, ingressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      );
+  },
+);
 
 interface PersistedCanonicalFeishuIngress {
   readonly orgId: string;
@@ -1114,7 +1113,7 @@ export const processCanonicalFeishuIngress$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
-      await markIngressFailed(db, args.ingressId, result.error);
+      await set(markIngressFailed$, args.ingressId, result.error);
       signal.throwIfAborted();
       L.error("Failed to process canonical Feishu ingress", {
         ingressId: args.ingressId,
