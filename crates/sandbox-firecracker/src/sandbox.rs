@@ -2992,21 +2992,31 @@ impl Sandbox for FirecrackerSandbox {
             }
         };
 
-        self.run_bounded_guest_operation(operation, |guest| async move {
-            validate_exec_capture_timeout(timeout_ms)?;
-            guest
-                .guest_state_restore(
-                    request.unix_seconds,
-                    request.unix_nanoseconds,
-                    request.entropy,
-                    timezone,
-                    timeout_ms,
-                    Duration::from_millis(u64::from(timeout_ms) + 5_000),
-                )
-                .await
-                .map(guest_state_restore_exec_result)
-        })
-        .await
+        let result = self
+            .run_bounded_guest_operation(operation, |guest| async move {
+                validate_exec_capture_timeout(timeout_ms)?;
+                guest
+                    .guest_state_restore(
+                        request.unix_seconds,
+                        request.unix_nanoseconds,
+                        request.entropy,
+                        timezone,
+                        timeout_ms,
+                        Duration::from_millis(u64::from(timeout_ms) + 5_000),
+                    )
+                    .await
+                    .map(guest_state_restore_exec_result)
+            })
+            .await;
+        #[cfg(feature = "test-support")]
+        if result
+            .as_ref()
+            .is_ok_and(sandbox::helper_exec::helper_exec_succeeded)
+        {
+            self.run_preparation_checkpoint(crate::GuestPreparationStage::Restore)
+                .await?;
+        }
+        result
     }
 
     async fn read_file(&self, path: &str, max_bytes: u64) -> sandbox::Result<Option<Vec<u8>>> {

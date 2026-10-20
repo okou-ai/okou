@@ -55,6 +55,17 @@ export const chatEventSnapshots = pgTable(
     return [
       index("chat_event_snapshots_thread_idx").on(table.chatThreadId),
       index("chat_event_snapshots_object_key_idx").on(table.objectKey),
+      // Keep this predicate aligned with global snapshot candidate discovery.
+      index("chat_event_snapshots_repair_candidates_idx").on(
+        table.archiveSchemaVersion,
+        table.chatThreadId,
+      ).where(sql`(
+          ${table.lastSeqId} <= 0
+          OR ${table.terminalSeqId} IS NULL
+          OR btrim(${table.objectKey}) = ''
+          OR NOT (${table.objectKey} ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')
+          OR ${table.objectKey} ~ '^chat-events/[0-9a-f-]{36}/[0-9]+-[0-9a-f]{64}[.]ndjson[.]gz$'
+        )`),
       uniqueIndex("chat_event_snapshots_thread_version_unique").on(
         table.chatThreadId,
         table.archiveSchemaVersion,

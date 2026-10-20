@@ -1,5 +1,5 @@
 {
-  "id": "e39e1cc6-98db-4459-aa83-30414b063d79",
+  "id": "9edf6db5-2f7f-4682-80f2-d4f2c07b3f3a",
   "prevId": "a31c2829-a259-43af-93f3-346d0e6dbe17",
   "version": "7",
   "dialect": "postgresql",
@@ -6750,6 +6750,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_event_snapshots_repair_candidates_idx": {
+          "name": "chat_event_snapshots_repair_candidates_idx",
+          "columns": [
+            {
+              "expression": "archive_schema_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "(\n          \"chat_event_snapshots\".\"last_seq_id\" <= 0\n          OR \"chat_event_snapshots\".\"terminal_seq_id\" IS NULL\n          OR btrim(\"chat_event_snapshots\".\"object_key\") = ''\n          OR NOT (\"chat_event_snapshots\".\"object_key\" ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')\n          OR \"chat_event_snapshots\".\"object_key\" ~ '^chat-events/[0-9a-f-]{36}/[0-9]+-[0-9a-f]{64}[.]ndjson[.]gz$'\n        )",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -16620,56 +16642,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.hosted_site_visibility": {
-      "name": "hosted_site_visibility",
-      "schema": "",
-      "columns": {
-        "site_id": {
-          "name": "site_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "hosted_site_visibility_site_id_hosted_sites_id_fk": {
-          "name": "hosted_site_visibility_site_id_hosted_sites_id_fk",
-          "tableFrom": "hosted_site_visibility",
-          "tableTo": "hosted_sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "hosted_site_visibility_audience": {
-          "name": "hosted_site_visibility_audience",
-          "value": "\"hosted_site_visibility\".\"visibility\" IN ('private', 'organization', 'public')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.hosted_deployments": {

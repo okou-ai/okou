@@ -182,7 +182,11 @@ final class ComposerDraftStore {
               persist()
               return
             }
-            if revision == 0 && !attachments.savedItems.contains(where: { $0.uploaded == nil }) {
+            // Providers can still be preparing their file. Preserve that action
+            // through the same conflict path as interrupted local attachments.
+            if revision == 0 && attachments.importingCount == 0
+              && !attachments.savedItems.contains(where: { $0.uploaded == nil })
+            {
               if remote != value { apply(remote) }
             } else if remote != baseline && remote != value {
               conflictingRemote = remote

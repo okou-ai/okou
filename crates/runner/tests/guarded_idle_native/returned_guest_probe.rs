@@ -133,6 +133,9 @@ impl Probe {
     }
 
     async fn observe(&self, observation: GuestPreparationObservation) -> io::Result<()> {
+        if observation.stage == GuestPreparationStage::Restore {
+            return Ok(());
+        }
         let home = self.home(&observation.sandbox_id)?;
         {
             let mut state = self

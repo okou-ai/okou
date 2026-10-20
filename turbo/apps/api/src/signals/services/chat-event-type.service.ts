@@ -4,16 +4,7 @@ import {
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import {
-  and,
-  eq,
-  inArray,
-  isNotNull,
-  not,
-  or,
-  type SQL,
-  type SQLWrapper,
-} from "drizzle-orm";
+import { and, inArray, isNotNull, not, or, type SQL } from "drizzle-orm";
 
 import {
   canonicalChatEventContent,
@@ -43,18 +34,4 @@ export function chatEventTextCondition(): SQL {
  */
 export function runOwnedChatEventCondition(): SQL {
   return not(chatEventTypeIn(["control.interrupt"]));
-}
-
-/** Shared collision-safe run lookup for artifact and thread readers. */
-export function runOwnedChatEventForRunCondition(args: {
-  readonly runId: string | SQLWrapper;
-  readonly chatThreadId?: string;
-}): SQL {
-  return and(
-    eq(chatEvents.runId, args.runId),
-    args.chatThreadId === undefined
-      ? undefined
-      : eq(chatEvents.chatThreadId, args.chatThreadId),
-    runOwnedChatEventCondition(),
-  ) as SQL;
 }

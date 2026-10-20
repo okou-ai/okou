@@ -2483,8 +2483,15 @@
     {
       "idx": 1432,
       "version": "7",
-      "when": 1792475865678,
-      "tag": "1432_messy_darkstar",
+      "when": 1792475798219,
+      "tag": "1432_chat_event_snapshot_repair_candidates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1433,
+      "version": "7",
+      "when": 1792477220904,
+      "tag": "1433_handy_dexter_bennett",
       "breakpoints": true
     }
   ]
