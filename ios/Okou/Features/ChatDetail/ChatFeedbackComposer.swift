@@ -89,6 +89,7 @@ struct ChatFeedbackComposer: View {
         focusedBlock = id
         isFocused = true
         scroll.scrollTo(id, anchor: .bottom)
+        state.consumeFocusRequest(request)
       }
       .onChange(of: state.editorGeneration) { _, _ in
         focusedBlock = isFocused ? state.editorBlocks.last?.id : nil
@@ -97,6 +98,7 @@ struct ChatFeedbackComposer: View {
         if let request = state.focusRequest {
           focusedBlock = request.blockID
           isFocused = true
+          state.consumeFocusRequest(request)
         } else if isFocused {
           focusedBlock = blocks.last?.id
         }

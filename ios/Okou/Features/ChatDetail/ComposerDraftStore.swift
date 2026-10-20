@@ -73,6 +73,10 @@ final class ComposerDraftStore {
     editorGeneration = UUID()
   }
 
+  func consumeFocusRequest(_ request: EditorFocusRequest) {
+    if focusRequest == request { focusRequest = nil }
+  }
+
   @discardableResult func addFeedback(_ selection: ChatFeedbackSelection) -> UUID? {
     guard !closed, document.isSupported else { return nil }
     document.parts.append(selection.part)

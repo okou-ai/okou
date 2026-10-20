@@ -7,6 +7,13 @@ public struct ChatFeedbackSelection: Equatable, Sendable {
   public let quote: String
   public let range: NSRange
 
+  // ECMAScript String.trim whitespace, matching the PWA selection snapshot.
+  private static let whitespace = CharacterSet(
+    charactersIn:
+      "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}"
+      + "\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}"
+      + "\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+
   public init?(message: ChatMessage, range: NSRange) {
     guard message.role == .assistant, !message.isError, !message.isQueued,
       !message.id.isEmpty, range.location != NSNotFound, range.length > 0,
@@ -18,11 +25,11 @@ public struct ChatFeedbackSelection: Equatable, Sendable {
     guard passage.utf16.count == range.length,
       String(message.text[..<selected.lowerBound]).utf16.count == range.location
     else { return nil }
-    let quote = passage.trimmingCharacters(in: .whitespacesAndNewlines)
+    let quote = passage.trimmingCharacters(in: Self.whitespace)
     guard !quote.isEmpty else { return nil }
     // trimStart separately: trailing whitespace must not shift the start.
     let trimmedStart = passage.unicodeScalars.drop(while: {
-      CharacterSet.whitespacesAndNewlines.contains($0)
+      Self.whitespace.contains($0)
     })
     let start =
       range.location + passage.utf16.count

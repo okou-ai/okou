@@ -247,13 +247,13 @@ private struct QuoteHarness: View {
       onDismiss: {
         if let pendingQuote { conversation.composer.addFeedback(pendingQuote) }
         pendingQuote = nil
-      }
-    ) {
-      MessageTextSelectionSheet(text: message.text, message: message) {
-        pendingQuote = $0
-        selecting = false
-      }
-    }
+      },
+      content: {
+        MessageTextSelectionSheet(text: message.text, message: message) {
+          pendingQuote = $0
+          selecting = false
+        }
+      })
   }
 }
 

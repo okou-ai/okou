@@ -21,6 +21,21 @@ final class ChatFeedbackSelectionTests: XCTestCase {
     XCTAssertNil(read.parts.first?.source)
   }
 
+  func testWhitespaceTrimmingMatchesThePWASelectionRules() throws {
+    let text = "🌷 Prefix\u{FEFF}\u{00A0}Passage\u{2029}\u{FEFF}"
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message(text),
+        range: (text as NSString).range(of: "\u{FEFF}\u{00A0}Passage\u{2029}\u{FEFF}")))
+    XCTAssertEqual(selection.quote, "Passage")
+    XCTAssertEqual(selection.range, (text as NSString).range(of: "Passage"))
+    let nonWhitespace = "\u{0085}Passage\u{0085}"
+    XCTAssertEqual(
+      ChatFeedbackSelection(
+        message: message(nonWhitespace),
+        range: NSRange(location: 0, length: nonWhitespace.utf16.count))?.quote, nonWhitespace)
+  }
+
   func testOnlyNonemptyAssistantSelectionsWithValidUnicodeBoundariesCanBeQuoted() {
     let text = "🌷  Text"
     for range in [
